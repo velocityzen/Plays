@@ -5,8 +5,8 @@ use std::time::{Duration, Instant};
 
 use gpui::prelude::*;
 use gpui::{
-    AnyElement, ClickEvent, Context, EventEmitter, ImageId, ObjectFit, RenderImage, SharedString,
-    Window, black, div, img, linear_color_stop, linear_gradient, px, relative,
+    AnyElement, ClickEvent, Context, EventEmitter, ImageId, MouseButton, ObjectFit, RenderImage,
+    SharedString, Window, black, div, img, linear_color_stop, linear_gradient, px, relative,
 };
 
 use super::theme::{Theme, overlay};
@@ -592,7 +592,11 @@ impl Render for PlayerView {
                         ),
                 )
             })
-            .child(header.occlude())
-            .child(controls.occlude())
+            // Clicks on the bars mustn't reach the surface underneath (which
+            // toggles playback), but they can't `occlude()` either: an occluding
+            // child stops its parent counting as hovered, which would hide the
+            // bars as soon as the pointer moved onto them.
+            .child(header.on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation()))
+            .child(controls.on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation()))
     }
 }
