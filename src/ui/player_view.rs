@@ -1,5 +1,4 @@
 use std::cell::{Cell, RefCell};
-use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -12,7 +11,7 @@ use gpui::{
 
 use super::theme::{Theme, overlay};
 use super::widgets::{Slide, SliderColors, format_time, icon, icon_button, slider};
-use crate::media::{Mixer, Player, PlayerOptions};
+use crate::media::{Mixer, Player, PlayerOptions, Source};
 use crate::settings::{ControlsVisibility, Settings, VideoFit};
 
 /// Frames that were on screen wait here for a few display frames before their
@@ -68,24 +67,21 @@ impl EventEmitter<PlayerEvent> for PlayerView {}
 
 impl PlayerView {
     pub fn new(
-        path: PathBuf,
+        source: Source,
         mixer: Option<Arc<Mixer>>,
         settings: &Settings,
         graveyard: Graveyard,
     ) -> Self {
-        let title = path
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_else(|| path.display().to_string())
-            .into();
+        let title = source.name().into();
         let player = Player::open(
-            path,
+            source,
             mixer,
             PlayerOptions {
                 autoplay: settings.autoplay,
                 looping: settings.loop_by_default,
                 volume: settings.default_volume,
                 max_short_side: settings.max_resolution.short_side(),
+                hardware_decoding: settings.hardware_decoding,
             },
         );
         Self {
@@ -194,12 +190,13 @@ impl PlayerView {
                 .max_w(px(420.))
                 .px_4()
                 .text_center()
-                .child(
-                    div()
-                        .text_sm()
-                        .text_color(theme.danger)
-                        .child("Can't play this file"),
-                )
+                .child(div().text_sm().text_color(theme.danger).child(
+                    if self.player.is_network() {
+                        "Can't play this stream"
+                    } else {
+                        "Can't play this file"
+                    },
+                ))
                 .child(div().text_xs().text_color(theme.text_muted).child(error))
                 .into_any_element();
         }
@@ -211,7 +208,11 @@ impl PlayerView {
             _ => div()
                 .text_sm()
                 .text_color(theme.text_muted)
-                .child("Opening…")
+                .child(if self.player.is_network() {
+                    "Connecting…"
+                } else {
+                    "Opening…"
+                })
                 .into_any_element(),
         }
     }
@@ -310,6 +311,11 @@ impl Render for PlayerView {
         let group: SharedString = format!("tile-{}", cx.entity_id()).into();
         let view = cx.weak_entity();
         let duration = self.player.duration();
+        let live = info.as_ref().is_some_and(|i| i.live);
+        // A stream that has started and then stalls; opening has its own message.
+        let stalled = self.player.is_buffering()
+            && self.player.is_network()
+            && (has_video || info.as_ref().is_some_and(|i| !i.has_video));
         let position = self.scrub.unwrap_or_else(|| self.player.position());
         let progress = duration
             .filter(|d| *d > 0.0)
@@ -326,7 +332,10 @@ impl Render for PlayerView {
             if let Some(fps) = info.frame_rate {
                 parts.push(format!("{} fps", (fps * 100.0).round() / 100.0));
             }
-            parts.extend(info.video_codec.clone());
+            parts.extend(info.video_codec.as_ref().map(|codec| match info.hardware {
+                Some(api) => format!("{codec} ({api})"),
+                None => codec.clone(),
+            }));
             parts.extend(info.audio_codec.clone());
             parts.join(" · ")
         });
@@ -436,18 +445,20 @@ impl Render for PlayerView {
                     linear_color_stop(overlay::scrim(), 1.),
                 )),
         )
-        .child(div().px_1().child(slider(
-            "seek",
-            progress,
-            self.seek_drag.clone(),
-            view.clone(),
-            SliderColors {
-                track: overlay::track(),
-                fill: theme.accent,
-                knob: overlay::text(),
-            },
-            Self::on_seek,
-        )))
+        .when(!live, |this| {
+            this.child(div().px_1().child(slider(
+                "seek",
+                progress,
+                self.seek_drag.clone(),
+                view.clone(),
+                SliderColors {
+                    track: overlay::track(),
+                    fill: theme.accent,
+                    knob: overlay::text(),
+                },
+                Self::on_seek,
+            )))
+        })
         .child(
             div()
                 .flex()
@@ -461,6 +472,23 @@ impl Render for PlayerView {
                         }),
                     ),
                 )
+                .when(live, |this| {
+                    this.child(
+                        div()
+                            .flex_none()
+                            .flex()
+                            .items_center()
+                            .gap_1()
+                            .ml_1()
+                            .px_1p5()
+                            .rounded(px(4.))
+                            .bg(theme.danger)
+                            .text_xs()
+                            .font_weight(gpui::FontWeight::SEMIBOLD)
+                            .text_color(overlay::text())
+                            .child("LIVE"),
+                    )
+                })
                 .child(
                     div()
                         .flex_none()
@@ -470,23 +498,25 @@ impl Render for PlayerView {
                         .child(time_label),
                 )
                 .child(div().flex_1())
-                .child(
-                    icon_button(
-                        "loop",
-                        "loop",
-                        if looping {
-                            theme.accent
-                        } else {
-                            overlay::text_muted()
-                        },
-                        overlay::hover(),
+                .when(!live, |this| {
+                    this.child(
+                        icon_button(
+                            "loop",
+                            "loop",
+                            if looping {
+                                theme.accent
+                            } else {
+                                overlay::text_muted()
+                            },
+                            overlay::hover(),
+                        )
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            let looping = !this.player.is_looping();
+                            this.player.set_looping(looping);
+                            cx.notify();
+                        })),
                     )
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        let looping = !this.player.is_looping();
-                        this.player.set_looping(looping);
-                        cx.notify();
-                    })),
-                )
+                })
                 .when(has_audio, |this| {
                     this.child(
                         icon_button("mute", volume_icon, overlay::text(), overlay::hover())
@@ -540,6 +570,28 @@ impl Render for PlayerView {
                     .on_click(cx.listener(Self::on_surface_click))
                     .child(self.render_content(&theme, fit)),
             )
+            .when(stalled, |this| {
+                this.child(
+                    div()
+                        .absolute()
+                        .top_0()
+                        .left_0()
+                        .size_full()
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .child(
+                            div()
+                                .px_3()
+                                .py_1()
+                                .rounded_full()
+                                .bg(overlay::scrim())
+                                .text_xs()
+                                .text_color(overlay::text())
+                                .child("Buffering…"),
+                        ),
+                )
+            })
             .child(header.occlude())
             .child(controls.occlude())
     }

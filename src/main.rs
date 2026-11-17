@@ -11,16 +11,27 @@ use std::path::PathBuf;
 use ffmpeg_next as ffmpeg;
 use gpui::Application;
 
+use crate::media::Source;
+
 fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("plays=info"))
         .init();
 
     ffmpeg::init().expect("initializing FFmpeg");
     ffmpeg::util::log::set_level(ffmpeg::util::log::Level::Error);
+    // Sets up TLS libraries before any thread opens an https:// stream.
+    // SAFETY: called once, before any other FFmpeg use on other threads.
+    unsafe {
+        ffmpeg::ffi::avformat_network_init();
+    }
 
-    let files: Vec<PathBuf> = std::env::args_os().skip(1).map(PathBuf::from).collect();
+    // Files, folders and stream URLs can be given on the command line.
+    let sources: Vec<Source> = std::env::args_os()
+        .skip(1)
+        .map(|arg| Source::from_arg(PathBuf::from(arg)))
+        .collect();
 
     Application::new()
         .with_assets(assets::Assets)
-        .run(move |cx| app::run(cx, files));
+        .run(move |cx| app::run(cx, sources));
 }

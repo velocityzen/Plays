@@ -16,6 +16,7 @@ macro_rules! icons {
 
 icons!(
     "close",
+    "link",
     "loop",
     "maximize",
     "minimize",

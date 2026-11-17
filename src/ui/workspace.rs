@@ -7,10 +7,12 @@ use gpui::{
     PathPromptOptions, Subscription, Window, div, px,
 };
 
+use super::open_url::{OpenUrlDialog, OpenUrlEvent};
 use super::player_view::{Graveyard, PlayerEvent, PlayerView};
 use super::theme::Theme;
 use super::widgets::{button, icon, icon_button};
 use crate::app::{self, AudioEngine};
+use crate::media::Source;
 use crate::settings::Settings;
 
 /// Extensions picked up when a whole folder is opened.
@@ -31,6 +33,7 @@ pub struct Workspace {
     tiles: Vec<Tile>,
     maximized: Option<EntityId>,
     graveyard: Graveyard,
+    open_url: Option<(Entity<OpenUrlDialog>, Subscription)>,
     _settings_subscription: Subscription,
 }
 
@@ -67,18 +70,31 @@ impl Workspace {
             tiles: Vec::new(),
             maximized: None,
             graveyard: Graveyard::default(),
+            open_url: None,
             _settings_subscription: settings_subscription,
         }
     }
 
     pub fn open_paths(&mut self, paths: Vec<PathBuf>, cx: &mut Context<Self>) {
+        self.open_sources(paths.into_iter().map(Source::File).collect(), cx);
+    }
+
+    /// Open files, the media files in folders, and streams.
+    pub fn open_sources(&mut self, sources: Vec<Source>, cx: &mut Context<Self>) {
         let settings = cx.global::<Settings>().clone();
         let mixer = AudioEngine::mixer(cx);
-        for path in expand_folders(paths) {
-            log::info!("opening {}", path.display());
+        let sources = sources.into_iter().flat_map(|source| match source {
+            Source::File(path) => expand_folders(vec![path])
+                .into_iter()
+                .map(Source::File)
+                .collect(),
+            stream => vec![stream],
+        });
+        for source in sources {
+            log::info!("opening {source}");
             let graveyard = self.graveyard.clone();
             let mixer = mixer.clone();
-            let view = cx.new(|_| PlayerView::new(path, mixer, &settings, graveyard));
+            let view = cx.new(|_| PlayerView::new(source, mixer, &settings, graveyard));
             let subscription = cx.subscribe(&view, |this, view, event, cx| match event {
                 PlayerEvent::Close => this.close(view.entity_id(), cx),
                 PlayerEvent::ToggleMaximize => this.toggle_maximize(view.entity_id(), cx),
@@ -104,6 +120,25 @@ impl Workspace {
             }
         })
         .detach();
+    }
+
+    /// Show the "Open URL" dialog, or focus it if it is already up.
+    pub fn show_open_url(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some((dialog, _)) = &self.open_url {
+            dialog.read(cx).focus(window, cx);
+            return;
+        }
+        let dialog = cx.new(|cx| OpenUrlDialog::new(window, cx));
+        let subscription = cx.subscribe_in(&dialog, window, |this, _, event, window, cx| {
+            if let OpenUrlEvent::Open(source) = event {
+                this.open_sources(vec![source.clone()], cx);
+            }
+            this.open_url = None;
+            window.focus(&this.focus_handle);
+            cx.notify();
+        });
+        self.open_url = Some((dialog, subscription));
+        cx.notify();
     }
 
     fn close(&mut self, id: EntityId, cx: &mut Context<Self>) {
@@ -195,10 +230,33 @@ impl Workspace {
         let client_decorated = matches!(window.window_decorations(), Decorations::Client { .. });
         let count = self.tiles.len();
         let playing = self.any_playing(cx);
-        let status = match count {
-            0 => "Nothing open".to_string(),
-            1 => "1 file".to_string(),
-            n => format!("{n} files"),
+        let streams = self
+            .tiles
+            .iter()
+            .filter(|t| t.view.read(cx).player().is_network())
+            .count();
+        let plural = |n: usize, one: &str, many: &str| match n {
+            1 => format!("1 {one}"),
+            n => format!("{n} {many}"),
+        };
+        // Narrow windows get icon-only buttons so the toolbar still fits.
+        let compact = window.viewport_size().width < px(760.);
+        let tool = |id: &'static str, icon_name: &'static str, label: &'static str| {
+            if compact {
+                icon_button(id, icon_name, theme.text, theme.surface_hover)
+            } else {
+                button(id, Some(icon_name), label, theme)
+            }
+        };
+        let status = match (count - streams, streams) {
+            (0, 0) => "Nothing open".to_string(),
+            (files, 0) => plural(files, "file", "files"),
+            (0, streams) => plural(streams, "stream", "streams"),
+            (files, streams) => format!(
+                "{} · {}",
+                plural(files, "file", "files"),
+                plural(streams, "stream", "streams")
+            ),
         };
 
         div()
@@ -214,25 +272,28 @@ impl Workspace {
             .border_color(theme.border)
             .bg(theme.surface)
             .child(
-                button("open", Some("plus"), "Open…", theme)
+                tool("open", "plus", "Open…")
                     .on_click(cx.listener(|this, _, window, cx| this.prompt_open(window, cx))),
+            )
+            .child(
+                tool("open-url", "link", "Open URL…")
+                    .on_click(cx.listener(|this, _, window, cx| this.show_open_url(window, cx))),
             )
             .when(count > 0, |this| {
                 this.child(
-                    button(
+                    tool(
                         "play-pause-all",
-                        Some(if playing { "pause" } else { "play" }),
+                        if playing { "pause" } else { "play" },
                         if playing { "Pause all" } else { "Play all" },
-                        theme,
                     )
                     .on_click(cx.listener(|this, _, _, cx| this.toggle_all(cx))),
                 )
                 .child(
-                    button("restart-all", Some("replay"), "Restart all", theme)
+                    tool("restart-all", "replay", "Restart all")
                         .on_click(cx.listener(|this, _, _, cx| this.restart_all(cx))),
                 )
                 .child(
-                    button("close-all", Some("close"), "Close all", theme)
+                    tool("close-all", "close", "Close all")
                         .on_click(cx.listener(|this, _, _, cx| this.close_all(cx))),
                 )
             })
@@ -296,10 +357,10 @@ impl Workspace {
     }
 
     fn render_empty(&self, theme: &Theme, cx: &mut Context<Self>) -> impl IntoElement {
-        let shortcut = if cfg!(target_os = "macos") {
-            "⌘O"
+        let (open_shortcut, url_shortcut) = if cfg!(target_os = "macos") {
+            ("⌘O", "⇧⌘O")
         } else {
-            "Ctrl+O"
+            ("Ctrl+O", "Shift+Ctrl+O")
         };
         div()
             .size_full()
@@ -314,11 +375,23 @@ impl Workspace {
             .child(icon("music").size(px(36.)).text_color(theme.text_muted))
             .child(div().text_lg().child("Drop videos and audio files here"))
             .child(div().text_sm().text_color(theme.text_muted).child(format!(
-                "Everything you open plays side by side. Press {shortcut} to browse."
+                "Everything you open plays side by side. Press {open_shortcut} to browse, \
+                 or {url_shortcut} to open a stream."
             )))
             .child(
-                button("open-empty", Some("plus"), "Open files…", theme)
-                    .on_click(cx.listener(|this, _, window, cx| this.prompt_open(window, cx))),
+                div()
+                    .flex()
+                    .gap_2()
+                    .child(
+                        button("open-empty", Some("plus"), "Open files…", theme).on_click(
+                            cx.listener(|this, _, window, cx| this.prompt_open(window, cx)),
+                        ),
+                    )
+                    .child(
+                        button("open-url-empty", Some("link"), "Open URL…", theme).on_click(
+                            cx.listener(|this, _, window, cx| this.show_open_url(window, cx)),
+                        ),
+                    ),
             )
     }
 
@@ -363,16 +436,16 @@ impl Render for Workspace {
         let theme = Theme::get(window, cx);
         let drop_highlight = theme.drop_highlight;
 
-        div()
+        // The dialog sits next to the workspace rather than inside it, so the
+        // workspace's single-key shortcuts (space, j, k, l, m) don't fire while
+        // typing a URL.
+        let workspace = div()
             .id("workspace")
             .key_context("Workspace")
             .track_focus(&self.focus_handle)
             .size_full()
             .flex()
             .flex_col()
-            .bg(theme.background)
-            .text_color(theme.text)
-            .font_family(theme.font.clone())
             .child(self.render_toolbar(window, cx, &theme))
             .child(
                 div()
@@ -391,7 +464,18 @@ impl Render for Workspace {
                             this.child(self.render_grid(cx))
                         }
                     }),
-            )
+            );
+
+        div()
+            .relative()
+            .size_full()
+            .bg(theme.background)
+            .text_color(theme.text)
+            .font_family(theme.font.clone())
+            .child(workspace)
+            .when_some(self.open_url.as_ref(), |this, (dialog, _)| {
+                this.child(dialog.clone())
+            })
     }
 }
 

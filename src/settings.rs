@@ -63,6 +63,8 @@ pub struct Settings {
     pub seek_step_seconds: u32,
     pub video_fit: VideoFit,
     pub max_resolution: MaxResolution,
+    /// Decode video on the GPU when the hardware supports it.
+    pub hardware_decoding: bool,
     /// 0 picks a column count automatically.
     pub columns: u32,
     pub controls: ControlsVisibility,
@@ -80,6 +82,7 @@ impl Default for Settings {
             seek_step_seconds: 10,
             video_fit: VideoFit::Contain,
             max_resolution: MaxResolution::P1080,
+            hardware_decoding: true,
             columns: 0,
             controls: ControlsVisibility::OnHover,
             show_titles: true,

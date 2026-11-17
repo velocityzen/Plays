@@ -6,13 +6,19 @@ once, side by side. All UI, including the settings window, is built with
 GPU-accelerated UI framework.
 
 - Open any number of files (or whole folders): each gets a tile in an auto-sized grid.
+- Open network streams with **Open URL…**: HTTP(S) files, HLS and DASH
+  playlists, RTMP and RTSP. Live streams show a LIVE badge; streams that stall
+  pause and resume instead of skipping ahead.
+- Hardware video decoding: VideoToolbox on macOS; VA-API, NVDEC or VDPAU on
+  Linux. Videos the GPU can't decode fall back to software automatically.
 - Every file has its own play/pause, seek bar, loop, mute and volume.
 - Toolbar and shortcuts control all files at once: play/pause, seek, mute, restart, close.
 - Audio from every file is mixed into one output. A/V sync follows the audio clock.
 - Audio-only files show their cover art (or a note) and a level meter.
 - Settings window: theme, master volume, default volume, autoplay, loop,
-  seek step, fit/fill scaling, decode resolution limit, grid columns,
-  controls visibility, file names. Saved as JSON in the user config dir.
+  seek step, fit/fill scaling, decode resolution limit, hardware decoding,
+  grid columns, controls visibility, file names. Saved as JSON in the user
+  config dir.
 
 ## Building
 
@@ -28,7 +34,7 @@ brew install ffmpeg pkgconf
 ```
 
 ```bash
-cargo run --release -- path/to/video.mp4 path/to/song.mp3
+cargo run --release -- path/to/video.mp4 path/to/song.mp3 https://example.com/live.m3u8
 ```
 
 If `pkg-config` isn't installed, point the build at FFmpeg directly:
@@ -47,6 +53,9 @@ sudo apt install build-essential pkg-config clang libclang-dev \
 ```
 
 gpui renders with Vulkan on Linux, so a working Vulkan driver is required.
+For hardware decoding, install your GPU's VA-API driver (`intel-media-va-driver`
+or `mesa-va-drivers`), or use NVIDIA's driver for NVDEC. The tile header shows
+the API in use, for example `h264 (VA-API)`.
 Audio goes through ALSA (PipeWire and PulseAudio provide an ALSA device).
 FFmpeg 5.1 or newer is recommended.
 
@@ -55,6 +64,7 @@ FFmpeg 5.1 or newer is recommended.
 | Action | Shortcut |
 | --- | --- |
 | Open files | `⌘O` / `Ctrl+O`, or drop files/folders on the window |
+| Open a stream URL | `⌘⇧O` / `Ctrl+Shift+O` (pre-filled from the clipboard) |
 | Play/pause all | `Space` or `K` |
 | Seek all back/forward | `←` `→` or `J` `L` (step set in Settings) |
 | Restart all | `Home` |
@@ -68,27 +78,36 @@ button) to maximize it, drag the bar to scrub.
 ## How it works
 
 ```
-                   ┌──────────── decoder thread (one per file) ────────────┐
- file ─ FFmpeg ─▶  │ demux ─▶ video packets ─▶ decode ─▶ swscale → BGRA ──▶ │ ─▶ video frame queue ─┐
-                   │       └▶ audio packets ─▶ decode ─▶ swresample f32 ──▶ │ ─▶ audio queue ─┐     │
-                   └──────────────────────────────────────────────────────┘                 │     │
-   cpal output callback: mix every playing audio queue ◀────────────────────────────────────┘     │
-        └─ reports the time being heard to each player's clock                                     │
-   gpui render (every display frame while playing): show the newest frame with pts ≤ clock ◀───────┘
+                ┌ demux thread ┐   ┌──────────── decode thread (one per file/stream) ──────────────┐
+ file/URL ──▶   │ read ahead   │ ─▶│ video packets ─▶ decode (CPU or GPU) ─▶ swscale → BGRA ──────▶ │ ─▶ video frame queue ─┐
+   FFmpeg       │ & seek       │ ─▶│ audio packets ─▶ decode ─▶ swresample f32 ───────────────────▶ │ ─▶ audio queue ─┐     │
+                └──────────────┘   └───────────────────────────────────────────────────────────────┘                 │     │
+   cpal output callback: mix every playing audio queue ◀────────────────────────────────────────────────────────────┘     │
+        └─ reports the time being heard to each player's clock                                                             │
+   gpui render (every display frame while playing): show the newest frame with pts ≤ clock ◀───────────────────────────────┘
 ```
 
-- `src/media/decoder.rs`: per-file thread. Reads packets only when a decoder
-  needs input, parks packets for a stream whose output queue is full, converts
+- `src/media/decoder.rs`: two threads per file or stream. The demux thread
+  reads packets ahead (about a second for files, up to 15 s for network
+  streams so a slow connection doesn't stall decoding) and carries out seeks.
+  The decode thread decodes only while its output queues have room, converts
   video to BGRA `RenderImage`s (with the right YUV matrix and pixel aspect),
   resamples audio to the mixer's rate, and handles accurate seeking.
+- `src/media/hwaccel.rs`: shares one hardware device per API between all
+  decoders and copies GPU frames back for conversion. If the GPU can't take a
+  stream, or keeps failing on it, decoding switches to software.
+- `src/media/source.rs`: files and stream URLs. URLs are logged without
+  credentials or query strings.
 - `src/media/audio.rs`: one cpal output stream that mixes all players and
   applies per-player and master volume.
 - `src/media/clock.rs`: per-player clock that runs on wall time and is eased
   toward the audio position on every audio callback.
 - `src/media/player.rs`: the UI-side handle: play/pause/seek, frame selection,
-  buffering after seeks, end-of-file and looping.
-- `src/ui/`: gpui views (`workspace`, `player_view`, `settings_view`) and
-  small hand-made widgets (buttons, switch, segmented control, slider).
+  buffering after seeks (and, for streams, until a second is read ahead or
+  when the network runs dry), end-of-file and looping.
+- `src/ui/`: gpui views (`workspace`, `player_view`, `settings_view`,
+  `open_url`) and small hand-made widgets (buttons, switch, segmented control,
+  slider, and a text field based on gpui's input example).
 
 Frames are uploaded to gpui's texture atlas through `img()`. Replaced frames
 are released with `Window::drop_image` a few display frames later, so GPU
@@ -102,14 +121,20 @@ cargo test
 
 The engine tests generate short clips with the `ffmpeg` command line tool
 (skipped if it isn't installed) and check opening, accurate seeking, audio
-resampling through the mixer, end of file, looping and keeping up when frames
-are consumed rarely.
+resampling through the mixer, end of file, looping, keeping up when frames
+are consumed rarely, and hardware decoding (VideoToolbox is required on
+macOS). Stream tests serve the clips from a small HTTP server on localhost:
+HTTP files, HLS (normal and live), a connection that stalls mid-way,
+unreachable hosts, and closing while a connection hangs.
 
 ## Limitations
 
-- Software decoding only (no VideoToolbox/VAAPI), and every frame is converted
-  to BGRA on the CPU. Lower the decode resolution limit in Settings when
-  playing many high-resolution files.
+- Every frame is converted to BGRA on the CPU, including frames decoded on
+  the GPU, which are copied back first. Lower the decode resolution limit in
+  Settings when playing many high-resolution files.
+- Resuming a paused live stream continues from where it paused rather than
+  jumping to the live edge, and after a long pause the server may have closed
+  the connection.
 - No subtitles, playlists, playback speed or audio device selection.
 - On GNOME Wayland (client-side decorations) the window can be moved from the
   toolbar but has no resize handles.

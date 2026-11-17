@@ -1,6 +1,5 @@
 //! App-wide state, actions, key bindings, menus and windows.
 
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use gpui::{
@@ -8,16 +7,18 @@ use gpui::{
     TitlebarOptions, WindowBounds, WindowHandle, WindowOptions, actions, point, px, size,
 };
 
-use crate::media::{AudioOutput, Mixer};
+use crate::media::{AudioOutput, Mixer, Source};
 use crate::settings::Settings;
 use crate::ui::settings_view::SettingsView;
 use crate::ui::theme::{UiFont, pick_ui_font};
 use crate::ui::workspace::Workspace;
+use crate::ui::{open_url, text_input};
 
 actions!(
     plays,
     [
         OpenFiles,
+        OpenUrl,
         OpenSettings,
         Quit,
         CloseWindow,
@@ -72,7 +73,7 @@ impl Global for MainWindow {}
 struct SettingsWindow(Option<WindowHandle<SettingsView>>);
 impl Global for SettingsWindow {}
 
-pub fn run(cx: &mut App, files: Vec<PathBuf>) {
+pub fn run(cx: &mut App, sources: Vec<Source>) {
     let settings = Settings::load();
     let audio = match AudioOutput::new(settings.master_volume) {
         Ok(output) => AudioEngine {
@@ -117,9 +118,9 @@ pub fn run(cx: &mut App, files: Vec<PathBuf>) {
         .expect("opening the main window");
     cx.set_global(MainWindow(window));
 
-    if !files.is_empty() {
+    if !sources.is_empty() {
         window
-            .update(cx, |workspace, _, cx| workspace.open_paths(files, cx))
+            .update(cx, |workspace, _, cx| workspace.open_sources(sources, cx))
             .ok();
     }
 
@@ -165,6 +166,12 @@ fn register_actions(cx: &mut App) {
             workspace.prompt_open(window, cx);
         })
     });
+    cx.on_action(|_: &OpenUrl, cx| {
+        with_workspace(cx, |workspace, window, cx| {
+            window.activate_window();
+            workspace.show_open_url(window, cx);
+        })
+    });
     cx.on_action(|_: &CloseAll, cx| with_workspace(cx, |w, _, cx| w.close_all(cx)));
     cx.on_action(|_: &PlayPauseAll, cx| with_workspace(cx, |w, _, cx| w.toggle_all(cx)));
     cx.on_action(|_: &PlayAll, cx| with_workspace(cx, |w, _, cx| w.play_all(cx)));
@@ -176,8 +183,11 @@ fn register_actions(cx: &mut App) {
 }
 
 fn bind_keys(cx: &mut App) {
+    text_input::bind_keys(cx);
+    open_url::bind_keys(cx);
     cx.bind_keys([
         KeyBinding::new("secondary-o", OpenFiles, None),
+        KeyBinding::new("secondary-shift-o", OpenUrl, None),
         KeyBinding::new("secondary-,", OpenSettings, None),
         KeyBinding::new("secondary-q", Quit, None),
         KeyBinding::new("secondary-w", CloseWindow, None),
@@ -209,6 +219,7 @@ fn set_menus(cx: &mut App) {
             name: "File".into(),
             items: vec![
                 MenuItem::action("Open…", OpenFiles),
+                MenuItem::action("Open URL…", OpenUrl),
                 MenuItem::separator(),
                 MenuItem::action("Close All Files", CloseAll),
                 MenuItem::action("Close Window", CloseWindow),

@@ -246,6 +246,21 @@ impl Render for SettingsView {
                     |v, _, cx| update_settings(cx, true, |s| s.max_resolution = v),
                 ),
             ),
+            row(
+                "Hardware decoding",
+                Some(
+                    if cfg!(target_os = "macos") {
+                        "Decode on the GPU with VideoToolbox when it supports the video. For files opened from now on."
+                    } else {
+                        "Decode on the GPU with VA-API, NVDEC or VDPAU when one supports the video. For files opened from now on."
+                    }
+                    .into(),
+                ),
+                &theme,
+                switch("hardware", s.hardware_decoding, &theme).on_click(|_, _, cx| {
+                    update_settings(cx, true, |s| s.hardware_decoding = !s.hardware_decoding)
+                }),
+            ),
         ];
 
         let layout = vec![
