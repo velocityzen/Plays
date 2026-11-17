@@ -9,6 +9,7 @@ use parking_lot::Mutex;
 use super::audio::{AudioSource, Mixer};
 use super::clock::Clock;
 use super::decoder::{self, Command, DecodeOptions, MediaInfo, Shared, VideoFrame, VideoQueue};
+use super::picture::Picture;
 use super::source::Source;
 
 /// Network streams start (and resume after running dry) once this many
@@ -32,8 +33,9 @@ pub struct PlayerOptions {
 /// What the view needs to do after advancing the player.
 #[derive(Default)]
 pub struct Tick {
-    /// The frame that was on screen until now; it must be released from the GPU atlas.
-    pub retired: Option<Arc<RenderImage>>,
+    /// The frame that was on screen until now. If it was drawn, the GPU may
+    /// still be using it (and an image is in gpui's atlas until released).
+    pub retired: Option<Picture>,
     /// Keep redrawing every display frame.
     pub animate: bool,
 }
@@ -159,8 +161,8 @@ impl Player {
         self.shared.error.lock().clone()
     }
 
-    pub fn frame(&self) -> Option<Arc<RenderImage>> {
-        self.current.as_ref().map(|f| f.image.clone())
+    pub fn frame(&self) -> Option<Picture> {
+        self.current.as_ref().map(|f| f.picture.clone())
     }
 
     #[cfg(test)]
@@ -335,7 +337,7 @@ impl Player {
             }
         }
         if let Some(frame) = next {
-            tick.retired = self.current.replace(frame).map(|f| f.image);
+            tick.retired = self.current.replace(frame).map(|f| f.picture);
         }
         let video_drained = queued_frames == Some(0);
         let current_pts = self
@@ -411,11 +413,11 @@ impl Player {
         tick
     }
 
-    /// Take every image this player may have drawn, so they can be released.
-    pub fn take_images(&mut self) -> Vec<Arc<RenderImage>> {
-        let mut images: Vec<_> = self.current.take().map(|f| f.image).into_iter().collect();
-        images.extend(self.shared.cover.lock().take());
-        images
+    /// Take every picture this player may have drawn, so they can be released.
+    pub fn take_pictures(&mut self) -> Vec<Picture> {
+        let mut pictures: Vec<_> = self.current.take().map(|f| f.picture).into_iter().collect();
+        pictures.extend(self.shared.cover.lock().take().map(Picture::Image));
+        pictures
     }
 }
 

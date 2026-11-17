@@ -1,9 +1,9 @@
 //! Hardware video decoding through FFmpeg's hwaccel API: VideoToolbox on macOS;
 //! VA-API, NVDEC (CUDA) or VDPAU on Linux, whichever works first.
 //!
-//! Frames are decoded on the GPU and copied back to memory for conversion, so
-//! the rest of the pipeline is the same as for software decoding. That copy is
-//! cheap next to decoding, which is where almost all the CPU time goes.
+//! On macOS, frames stay on the GPU and are drawn from there (see
+//! `videotoolbox`). Elsewhere, and whenever that isn't possible, they are
+//! copied back to memory and converted like software-decoded frames.
 
 use std::collections::HashMap;
 use std::ptr;

@@ -4219,6 +4219,8 @@ name = "plays"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "core-foundation 0.10.0",
+ "core-video",
  "cpal",
  "dirs 6.0.0",
  "env_logger",

@@ -144,7 +144,7 @@ impl Workspace {
     fn close(&mut self, id: EntityId, cx: &mut Context<Self>) {
         if let Some(index) = self.tiles.iter().position(|t| t.view.entity_id() == id) {
             let tile = self.tiles.remove(index);
-            tile.view.update(cx, |view, _| view.release_images());
+            tile.view.update(cx, |view, _| view.release_pictures());
         }
         if self.maximized == Some(id) {
             self.maximized = None;
@@ -154,7 +154,7 @@ impl Workspace {
 
     pub fn close_all(&mut self, cx: &mut Context<Self>) {
         for tile in self.tiles.drain(..) {
-            tile.view.update(cx, |view, _| view.release_images());
+            tile.view.update(cx, |view, _| view.release_pictures());
         }
         self.maximized = None;
         cx.notify();

@@ -5,41 +5,45 @@ use std::time::{Duration, Instant};
 
 use gpui::prelude::*;
 use gpui::{
-    AnyElement, ClickEvent, Context, EventEmitter, ImageId, MouseButton, ObjectFit, RenderImage,
-    SharedString, Window, black, div, img, linear_color_stop, linear_gradient, px, relative,
+    AnyElement, ClickEvent, Context, EventEmitter, MouseButton, ObjectFit, SharedString, Window,
+    black, div, img, linear_color_stop, linear_gradient, px, relative,
 };
 
 use super::theme::{Theme, overlay};
 use super::widgets::{Slide, SliderColors, format_time, icon, icon_button, slider};
-use crate::media::{Mixer, Player, PlayerOptions, Source};
+use crate::media::picture::PictureId;
+use crate::media::{Mixer, Picture, Player, PlayerOptions, Source};
 use crate::settings::{ControlsVisibility, Settings, VideoFit};
 
-/// Frames that were on screen wait here for a few display frames before their
-/// GPU textures are freed, so a frame still in flight on the GPU keeps its texture.
+/// Frames that were on screen wait here for a few display frames before they
+/// are released, so a frame still in flight on the GPU keeps its texture (or,
+/// for a surface, its buffer isn't refilled with a newer frame).
 #[derive(Clone, Default)]
 pub struct Graveyard(Rc<RefCell<Vec<Buried>>>);
 
 /// A retired frame and when it went off screen.
-type Buried = (Arc<RenderImage>, Instant);
+type Buried = (Picture, Instant);
 
 const RELEASE_DELAY: Duration = Duration::from_millis(60);
 
 impl Graveyard {
-    pub fn bury(&self, image: Arc<RenderImage>) {
-        self.0.borrow_mut().push((image, Instant::now()));
+    pub fn bury(&self, picture: Picture) {
+        self.0.borrow_mut().push((picture, Instant::now()));
     }
 
-    /// Free textures that have been off screen long enough. Returns whether any are left.
+    /// Release frames that have been off screen long enough. Returns whether any are left.
     pub fn collect(&self, window: &mut Window) -> bool {
-        let mut images = self.0.borrow_mut();
-        images.retain(|(image, buried)| {
+        let mut pictures = self.0.borrow_mut();
+        pictures.retain(|(picture, buried)| {
             let expired = buried.elapsed() >= RELEASE_DELAY;
-            if expired {
+            // Images live in gpui's texture atlas until dropped from it;
+            // surfaces only need their last reference to go.
+            if expired && let Picture::Image(image) = picture {
                 let _ = window.drop_image(image.clone());
             }
             !expired
         });
-        !images.is_empty()
+        !pictures.is_empty()
     }
 }
 
@@ -58,8 +62,8 @@ pub struct PlayerView {
     scrub: Option<f64>,
     resume_after_scrub: bool,
     level: f32,
-    /// The frame handed to gpui in the last render (and so maybe uploaded to the GPU).
-    drawn: Option<ImageId>,
+    /// The frame handed to gpui in the last render (and so maybe in use on the GPU).
+    drawn: Option<PictureId>,
     pub maximized: bool,
 }
 
@@ -107,10 +111,11 @@ impl PlayerView {
     }
 
     /// Release a frame that is no longer current. Only frames that were rendered
-    /// can have a GPU texture; the rest are simply dropped.
-    fn retire(&mut self, image: Arc<RenderImage>) {
-        if self.drawn == Some(image.id) {
-            self.graveyard.bury(image);
+    /// can be in use on the GPU; the rest are simply dropped.
+    fn retire(&mut self, picture: Picture) {
+        if self.drawn == Some(picture.id()) {
+            self.drawn = None;
+            self.graveyard.bury(picture);
         }
     }
 
@@ -120,18 +125,18 @@ impl PlayerView {
         let was_playing = self.player.is_playing();
         let tick = self.player.tick();
         let advanced = tick.retired.is_some();
-        if let Some(image) = tick.retired {
-            self.retire(image);
+        if let Some(picture) = tick.retired {
+            self.retire(picture);
         }
         if advanced || was_playing != self.player.is_playing() {
             cx.notify();
         }
     }
 
-    /// Hand every texture this tile drew to the graveyard; call before dropping it.
-    pub fn release_images(&mut self) {
-        for image in self.player.take_images() {
-            self.graveyard.bury(image);
+    /// Hand every frame this tile drew to the graveyard; call before dropping it.
+    pub fn release_pictures(&mut self) {
+        for picture in self.player.take_pictures() {
+            self.graveyard.bury(picture);
         }
     }
 
@@ -201,7 +206,14 @@ impl PlayerView {
                 .into_any_element();
         }
         if let Some(frame) = self.player.frame() {
-            return img(frame).size_full().object_fit(fit).into_any_element();
+            return match frame {
+                Picture::Image(image) => img(image).size_full().object_fit(fit).into_any_element(),
+                #[cfg(target_os = "macos")]
+                Picture::Surface(surface) => gpui::surface(surface.buffer().clone())
+                    .size_full()
+                    .object_fit(fit)
+                    .into_any_element(),
+            };
         }
         match self.player.info() {
             Some(info) if !info.has_video => self.render_audio(theme),
@@ -279,10 +291,10 @@ impl PlayerView {
 impl Render for PlayerView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let tick = self.player.tick();
-        if let Some(image) = tick.retired {
-            self.retire(image);
+        if let Some(picture) = tick.retired {
+            self.retire(picture);
         }
-        self.drawn = self.player.frame().map(|frame| frame.id);
+        self.drawn = self.player.frame().map(|frame| frame.id());
         let level = self.player.level();
         self.level = if level > self.level {
             level

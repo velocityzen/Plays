@@ -10,7 +10,8 @@ GPU-accelerated UI framework.
   playlists, RTMP and RTSP. Live streams show a LIVE badge; streams that stall
   pause and resume instead of skipping ahead.
 - Hardware video decoding: VideoToolbox on macOS; VA-API, NVDEC or VDPAU on
-  Linux. Videos the GPU can't decode fall back to software automatically.
+  Linux. Videos the GPU can't decode fall back to software automatically. On
+  macOS, hardware-decoded frames never leave the GPU (zero-copy).
 - Every file has its own play/pause, seek bar, loop, mute and volume.
 - Toolbar and shortcuts control all files at once: play/pause, seek, mute, restart, close.
 - Audio from every file is mixed into one output. A/V sync follows the audio clock.
@@ -94,8 +95,14 @@ button) to maximize it, drag the bar to scrub.
   video to BGRA `RenderImage`s (with the right YUV matrix and pixel aspect),
   resamples audio to the mixer's rate, and handles accurate seeking.
 - `src/media/hwaccel.rs`: shares one hardware device per API between all
-  decoders and copies GPU frames back for conversion. If the GPU can't take a
-  stream, or keeps failing on it, decoding switches to software.
+  decoders and copies GPU frames back for conversion where they can't be drawn
+  directly. If the GPU can't take a stream, or keeps failing on it, decoding
+  switches to software.
+- `src/media/videotoolbox.rs` (macOS): the zero-copy path. A
+  `VTPixelTransferSession` converts each VideoToolbox frame on the GPU into
+  the full-range NV12, BT.601 surface gpui's `surface()` element draws,
+  scaling it to the display size on the way. Untagged video gets the same
+  matrix guess as in software (BT.709 from 720 lines up).
 - `src/media/source.rs`: files and stream URLs. URLs are logged without
   credentials or query strings.
 - `src/media/audio.rs`: one cpal output stream that mixes all players and
@@ -109,9 +116,15 @@ button) to maximize it, drag the bar to scrub.
   `open_url`) and small hand-made widgets (buttons, switch, segmented control,
   slider, and a text field based on gpui's input example).
 
-Frames are uploaded to gpui's texture atlas through `img()`. Replaced frames
-are released with `Window::drop_image` a few display frames later, so GPU
-memory stays flat during playback.
+Software-decoded frames (and, on Linux, hardware-decoded ones) are uploaded to
+gpui's texture atlas through `img()`; on macOS, hardware-decoded frames are
+drawn in place with `surface()`. Replaced frames are kept a few display frames
+in case the GPU is still reading them, then released (images with
+`Window::drop_image`), so GPU memory stays flat during playback.
+
+Playing four 4K H.264 files at once on an Apple silicon Mac takes about 20% of
+one core with zero-copy, against about 100% when hardware frames are copied
+back and converted on the CPU.
 
 ## Tests
 
@@ -123,15 +136,19 @@ The engine tests generate short clips with the `ffmpeg` command line tool
 (skipped if it isn't installed) and check opening, accurate seeking, audio
 resampling through the mixer, end of file, looping, keeping up when frames
 are consumed rarely, and hardware decoding (VideoToolbox is required on
-macOS). Stream tests serve the clips from a small HTTP server on localhost:
+macOS). On macOS, zero-copy frames are read back and run through the surface
+shader's math, and must match the software path's colors for SD and HD video,
+tagged or not, limited or full range. Stream tests serve the clips from a small HTTP server on localhost:
 HTTP files, HLS (normal and live), a connection that stalls mid-way,
 unreachable hosts, and closing while a connection hangs.
 
 ## Limitations
 
-- Every frame is converted to BGRA on the CPU, including frames decoded on
-  the GPU, which are copied back first. Lower the decode resolution limit in
-  Settings when playing many high-resolution files.
+- On Linux, every frame is converted to BGRA on the CPU, including frames
+  decoded on the GPU, which are copied back first (gpui's Linux renderer
+  can't draw GPU surfaces). Lower the decode resolution limit in Settings when
+  playing many high-resolution files. The same applies on macOS to videos
+  VideoToolbox can't decode, such as VP9.
 - Resuming a paused live stream continues from where it paused rather than
   jumping to the live edge, and after a long pause the server may have closed
   the connection.

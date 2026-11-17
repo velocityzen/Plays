@@ -4,8 +4,9 @@
 //! ahead into one queue per stream: about a second for files, and up to
 //! `STREAM_READ_AHEAD` for network streams so a slow or bursty connection
 //! doesn't stall playback. The decode thread turns those packets into a small
-//! queue of display-ready video frames (BGRA, wrapped in a gpui `RenderImage`)
-//! and keeps the player's audio source topped up with resampled stereo `f32`.
+//! queue of display-ready video frames and keeps the player's audio source
+//! topped up with resampled stereo `f32`. Frames are BGRA images, except on
+//! macOS with hardware decoding, where they stay on the GPU (`videotoolbox`).
 //! It only decodes while an output queue has room, so memory stays bounded
 //! however much is read ahead.
 
@@ -29,7 +30,10 @@ use parking_lot::{Condvar, Mutex};
 use super::audio::{AudioChunk, AudioSource, SOURCE_CHANNELS};
 use super::clock::Clock;
 use super::hwaccel;
+use super::picture::Picture;
 use super::source::Source;
+#[cfg(target_os = "macos")]
+use super::videotoolbox;
 
 /// Decoded video kept ahead of the playhead, by memory.
 const VIDEO_QUEUE_BYTES: usize = 32 * 1024 * 1024;
@@ -86,7 +90,7 @@ pub struct MediaInfo {
 pub struct VideoFrame {
     pub pts: f64,
     pub serial: u64,
-    pub image: Arc<RenderImage>,
+    pub picture: Picture,
 }
 
 #[derive(Default)]
@@ -703,6 +707,10 @@ struct VideoDecoder {
     hardware: Option<&'static str>,
     /// Whether the last frame came from the hardware decoder, as last reported.
     reported: Option<bool>,
+    /// Turns hardware frames into surfaces, created on first use; `Err` once
+    /// that failed, after which frames are copied to memory instead.
+    #[cfg(target_os = "macos")]
+    surfaces: Option<Result<videotoolbox::Converter, ()>>,
     errors: u32,
     next_pts: f64,
     finished: bool,
@@ -773,6 +781,8 @@ impl VideoDecoder {
             downloaded: frame::Video::empty(),
             hardware,
             reported: None,
+            #[cfg(target_os = "macos")]
+            surfaces: None,
             errors: 0,
             next_pts: 0.0,
             finished: false,
@@ -903,22 +913,62 @@ impl VideoDecoder {
             if late && !session.shared.video.lock().frames.is_empty() {
                 continue;
             }
-            let frame = if on_gpu {
-                if let Err(err) = hwaccel::download(&self.decoded, &mut self.downloaded) {
-                    log::warn!("{err:#}");
-                    continue;
-                }
-                &self.downloaded
-            } else {
-                &self.decoded
-            };
-            match convert(&mut self.scaler, self.max_short_side, frame) {
-                Ok(image) => session.shared.video.lock().frames.push_back(VideoFrame {
+            if let Some(picture) = self.picture(on_gpu, session) {
+                session.shared.video.lock().frames.push_back(VideoFrame {
                     pts,
                     serial: session.serial,
-                    image,
-                }),
-                Err(err) => log::warn!("video conversion failed: {err:#}"),
+                    picture,
+                });
+            }
+        }
+    }
+
+    /// Make the decoded frame drawable.
+    fn picture(&mut self, on_gpu: bool, session: &Session) -> Option<Picture> {
+        #[cfg(target_os = "macos")]
+        if on_gpu && let Some(surface) = self.surface(session) {
+            return Some(Picture::Surface(surface));
+        }
+        let frame = if on_gpu {
+            if let Err(err) = hwaccel::download(&self.decoded, &mut self.downloaded) {
+                log::warn!("{err:#}");
+                return None;
+            }
+            &self.downloaded
+        } else {
+            &self.decoded
+        };
+        convert(&mut self.scaler, self.max_short_side, frame)
+            .inspect_err(|err| log::warn!("video conversion failed: {err:#}"))
+            .ok()
+            .map(Picture::Image)
+    }
+
+    /// Convert a hardware frame without it leaving the GPU. `None` if that
+    /// isn't possible, in which case it never is again for this video.
+    #[cfg(target_os = "macos")]
+    fn surface(&mut self, session: &Session) -> Option<videotoolbox::Surface> {
+        let (width, height) = output_size(
+            self.decoded.width(),
+            self.decoded.height(),
+            self.decoded.aspect_ratio(),
+            self.max_short_side,
+        );
+        let converter = self
+            .surfaces
+            .get_or_insert_with(|| {
+                videotoolbox::Converter::new().map_err(|err| {
+                    log::warn!("{}: {err:#}; copying frames from the GPU", session.name)
+                })
+            })
+            .as_mut()
+            .ok()?;
+        match converter.convert(&self.decoded, width, height) {
+            Ok(surface) => Some(surface),
+            Err(err) => {
+                log::warn!("{}: {err:#}; copying frames from the GPU", session.name);
+                self.surfaces = Some(Err(()));
+                None
             }
         }
     }

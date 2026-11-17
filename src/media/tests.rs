@@ -306,6 +306,162 @@ fn decodes_on_the_gpu_when_available() {
     }
 }
 
+/// Hardware-decoded frames stay on the GPU and are drawn by gpui's surface
+/// shader, which always converts with the BT.601 matrix from full-range NV12.
+/// Whatever the video's own matrix and range, they must come out in the same
+/// colors as the same frame converted to BGRA in software.
+#[cfg(target_os = "macos")]
+#[test]
+fn surfaces_match_software_colors() {
+    use super::picture::Picture;
+
+    let cases: &[(&str, &str, &[&str])] = &[
+        // Untagged video is assumed BT.601 below 720 lines and BT.709 from there.
+        ("colors-sd.mp4", "640x360", &["-pix_fmt", "yuv420p"]),
+        ("colors-hd.mp4", "1280x720", &["-pix_fmt", "yuv420p"]),
+        (
+            "colors-709-sd.mp4",
+            "640x360",
+            &["-pix_fmt", "yuv420p", "-colorspace", "bt709"],
+        ),
+        (
+            "colors-601-hd.mp4",
+            "1280x720",
+            &["-pix_fmt", "yuv420p", "-colorspace", "smpte170m"],
+        ),
+        (
+            "colors-full.mp4",
+            "640x360",
+            &["-pix_fmt", "yuvj420p", "-color_range", "pc"],
+        ),
+    ];
+    for &(name, size, extra) in cases {
+        let source = format!("testsrc2=size={size}:rate=30:duration=1");
+        let mut args = vec!["-f", "lavfi", "-i", &source, "-c:v", "libx264", "-crf", "8"];
+        args.extend_from_slice(extra);
+        let Some(path) = media(name, &args) else {
+            eprintln!("ffmpeg not found, skipping");
+            return;
+        };
+        let first_frame = |hardware| {
+            let mut player = Player::open(
+                Source::File(path.clone()),
+                None,
+                PlayerOptions {
+                    hardware_decoding: hardware,
+                    ..options(false, false)
+                },
+            );
+            assert!(wait_until(Duration::from_secs(5), || {
+                player.tick();
+                player.frame_pts().is_some()
+            }));
+            player.frame().unwrap()
+        };
+        let Picture::Surface(surface) = first_frame(true) else {
+            panic!("{name}: hardware frames should stay on the GPU");
+        };
+        let Picture::Image(image) = first_frame(false) else {
+            panic!("{name}: software frames should be images");
+        };
+
+        let surface = surface_to_rgb(surface.buffer());
+        let (width, height) = (surface.width, surface.height);
+        let bgra = image.as_bytes(0).unwrap();
+        assert_eq!(bgra.len(), width * height * 4, "{name}: sizes differ");
+        let software = |x: usize, y: usize, c: usize| f64::from(bgra[(y * width + x) * 4 + 2 - c]);
+
+        // Compare 8x8 block averages. VideoToolbox resamples chroma a little
+        // differently from swscale while converting, which shows along sharp
+        // color edges (the timecode, the thin rainbow line), so judge the bulk
+        // of the picture. Done right, 90% of blocks are within about a level;
+        // a wrong matrix puts that at 20 levels or more.
+        let mut diffs = Vec::new();
+        for by in (0..height).step_by(8) {
+            for bx in (0..width).step_by(8) {
+                let (ys, xs) = (by..(by + 8).min(height), bx..(bx + 8).min(width));
+                let n = (ys.len() * xs.len()) as f64;
+                for c in 0..3 {
+                    let (mut a, mut b) = (0.0, 0.0);
+                    for y in ys.clone() {
+                        for x in xs.clone() {
+                            a += surface.get(x, y, c);
+                            b += software(x, y, c);
+                        }
+                    }
+                    diffs.push((a - b).abs() / n);
+                }
+            }
+        }
+        diffs.sort_by(f64::total_cmp);
+        let mean = diffs.iter().sum::<f64>() / diffs.len() as f64;
+        let p90 = diffs[diffs.len() * 9 / 10];
+        assert!(
+            mean < 1.5 && p90 < 3.0,
+            "{name}: colors differ by {mean:.2} levels on average, {p90:.2} at the 90th percentile"
+        );
+    }
+}
+
+/// RGB (0-255) of a surface as gpui's Metal shader computes it.
+#[cfg(target_os = "macos")]
+struct SurfaceRgb {
+    width: usize,
+    height: usize,
+    rgb: Vec<f64>,
+}
+
+#[cfg(target_os = "macos")]
+impl SurfaceRgb {
+    fn get(&self, x: usize, y: usize, c: usize) -> f64 {
+        self.rgb[(y * self.width + x) * 3 + c]
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn surface_to_rgb(buffer: &core_video::pixel_buffer::CVPixelBuffer) -> SurfaceRgb {
+    use core_video::pixel_buffer::{
+        kCVPixelBufferLock_ReadOnly, kCVPixelFormatType_420YpCbCr8BiPlanarFullRange,
+    };
+
+    assert_eq!(
+        buffer.get_pixel_format(),
+        kCVPixelFormatType_420YpCbCr8BiPlanarFullRange
+    );
+    let (width, height) = (buffer.get_width(), buffer.get_height());
+    assert_eq!(buffer.lock_base_address(kCVPixelBufferLock_ReadOnly), 0);
+    let plane = |index: usize| {
+        let rows = buffer.get_height_of_plane(index);
+        let stride = buffer.get_bytes_per_row_of_plane(index);
+        // SAFETY: the buffer is locked, and a plane is `rows * stride` bytes.
+        unsafe {
+            std::slice::from_raw_parts(
+                buffer.get_base_address_of_plane(index) as *const u8,
+                rows * stride,
+            )
+        }
+    };
+    let (luma, chroma) = (plane(0), plane(1));
+    let luma_stride = buffer.get_bytes_per_row_of_plane(0);
+    let chroma_stride = buffer.get_bytes_per_row_of_plane(1);
+    let mut rgb = Vec::with_capacity(width * height * 3);
+    for y in 0..height {
+        for x in 0..width {
+            let l = f64::from(luma[y * luma_stride + x]) / 255.0;
+            let i = (y / 2) * chroma_stride + (x / 2) * 2;
+            let cb = f64::from(chroma[i]) / 255.0;
+            let cr = f64::from(chroma[i + 1]) / 255.0;
+            // gpui's `surface_fragment` matrix.
+            let r = l + 1.402 * cr - 0.701;
+            let g = l - 0.3441 * cb - 0.7141 * cr + 0.5291;
+            let b = l + 1.772 * cb - 0.886;
+            rgb.extend([r, g, b].map(|v| v.clamp(0.0, 1.0) * 255.0));
+        }
+    }
+    buffer.unlock_base_address(kCVPixelBufferLock_ReadOnly);
+    SurfaceRgb { width, height, rgb }
+}
+
 // ---------------------------------------------------------------------------
 // Network streams, served from a tiny HTTP server on localhost.
 
