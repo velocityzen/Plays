@@ -4,8 +4,8 @@ use std::rc::Rc;
 use gpui::prelude::*;
 use gpui::{AnyElement, App, Context, FocusHandle, SharedString, Window, div, px};
 
+use super::components::{Button, Segmented, Slide, Slider, Switch};
 use super::theme::Theme;
-use super::widgets::{Slide, SliderColors, button, segmented, slider, switch};
 use crate::app::AudioEngine;
 use crate::settings::{ControlsVisibility, MaxResolution, Settings, ThemeMode, VideoFit};
 
@@ -100,7 +100,6 @@ fn percent_slider(
     id: &'static str,
     value: f32,
     dragging: Rc<Cell<bool>>,
-    cx: &mut Context<SettingsView>,
     theme: &Theme,
     apply: impl Fn(&mut Settings, f32) + Copy + 'static,
 ) -> impl IntoElement {
@@ -110,21 +109,12 @@ fn percent_slider(
         .items_center()
         .gap_2()
         .w(px(200.))
-        .child(slider(
-            id,
-            value,
-            dragging,
-            cx.weak_entity(),
-            SliderColors {
-                track: theme.track,
-                fill: theme.accent,
-                knob: theme.accent,
-            },
-            move |_, value, slide, _, cx| {
-                let value = (value * 100.0).round() / 100.0;
-                update_settings(cx, slide == Slide::End, |s| apply(s, value));
-            },
-        ))
+        .child(
+            Slider::new(id, value, dragging).on_change(move |event, _, cx| {
+                let value = (event.value * 100.0).round() / 100.0;
+                update_settings(cx, event.slide == Slide::End, |s| apply(s, value));
+            }),
+        )
         .child(
             div()
                 .w(px(40.))
@@ -150,16 +140,15 @@ impl Render for SettingsView {
                 "Play files when opened",
                 None,
                 &theme,
-                switch("autoplay", s.autoplay, &theme)
-                    .on_click(|_, _, cx| update_settings(cx, true, |s| s.autoplay = !s.autoplay)),
+                Switch::new("autoplay", s.autoplay)
+                    .on_toggle(|&on, _, cx| update_settings(cx, true, |s| s.autoplay = on)),
             ),
             row(
                 "Loop new files",
                 None,
                 &theme,
-                switch("loop", s.loop_by_default, &theme).on_click(|_, _, cx| {
-                    update_settings(cx, true, |s| s.loop_by_default = !s.loop_by_default)
-                }),
+                Switch::new("loop", s.loop_by_default)
+                    .on_toggle(|&on, _, cx| update_settings(cx, true, |s| s.loop_by_default = on)),
             ),
             row(
                 "Volume for new files",
@@ -169,7 +158,6 @@ impl Render for SettingsView {
                     "default-volume",
                     s.default_volume,
                     self.default_drag.clone(),
-                    cx,
                     &theme,
                     |s, v| s.default_volume = v,
                 ),
@@ -178,13 +166,12 @@ impl Render for SettingsView {
                 "Seek step",
                 Some("Left and right arrow keys move every file by this much".into()),
                 &theme,
-                segmented(
+                Segmented::new(
                     "seek-step",
                     &[(5, "5 s"), (10, "10 s"), (30, "30 s"), (60, "60 s")],
                     s.seek_step_seconds,
-                    &theme,
-                    |v, _, cx| update_settings(cx, true, |s| s.seek_step_seconds = v),
-                ),
+                )
+                .on_select(|&v, _, cx| update_settings(cx, true, |s| s.seek_step_seconds = v)),
             ),
         ];
 
@@ -197,7 +184,6 @@ impl Render for SettingsView {
                     "master-volume",
                     s.master_volume,
                     self.master_drag.clone(),
-                    cx,
                     &theme,
                     |s, v| s.master_volume = v,
                 ),
@@ -220,19 +206,18 @@ impl Render for SettingsView {
                 "Scaling",
                 None,
                 &theme,
-                segmented(
+                Segmented::new(
                     "fit",
                     &[(VideoFit::Contain, "Fit"), (VideoFit::Cover, "Fill")],
                     s.video_fit,
-                    &theme,
-                    |v, _, cx| update_settings(cx, true, |s| s.video_fit = v),
-                ),
+                )
+                .on_select(|&v, _, cx| update_settings(cx, true, |s| s.video_fit = v)),
             ),
             row(
                 "Decode resolution limit",
                 Some("For files opened from now on. Lower limits save CPU and memory with many videos.".into()),
                 &theme,
-                segmented(
+                Segmented::new(
                     "max-resolution",
                     &[
                         (MaxResolution::Original, "Full"),
@@ -242,9 +227,8 @@ impl Render for SettingsView {
                         (MaxResolution::P480, "480p"),
                     ],
                     s.max_resolution,
-                    &theme,
-                    |v, _, cx| update_settings(cx, true, |s| s.max_resolution = v),
-                ),
+                )
+                .on_select(|&v, _, cx| update_settings(cx, true, |s| s.max_resolution = v)),
             ),
             row(
                 "Hardware decoding",
@@ -257,9 +241,8 @@ impl Render for SettingsView {
                     .into(),
                 ),
                 &theme,
-                switch("hardware", s.hardware_decoding, &theme).on_click(|_, _, cx| {
-                    update_settings(cx, true, |s| s.hardware_decoding = !s.hardware_decoding)
-                }),
+                Switch::new("hardware", s.hardware_decoding)
+                    .on_toggle(|&on, _, cx| update_settings(cx, true, |s| s.hardware_decoding = on)),
             ),
         ];
 
@@ -268,7 +251,7 @@ impl Render for SettingsView {
                 "Theme",
                 None,
                 &theme,
-                segmented(
+                Segmented::new(
                     "theme",
                     &[
                         (ThemeMode::System, "System"),
@@ -276,44 +259,40 @@ impl Render for SettingsView {
                         (ThemeMode::Light, "Light"),
                     ],
                     s.theme,
-                    &theme,
-                    |v, _, cx| update_settings(cx, true, |s| s.theme = v),
-                ),
+                )
+                .on_select(|&v, _, cx| update_settings(cx, true, |s| s.theme = v)),
             ),
             row(
                 "Columns",
                 None,
                 &theme,
-                segmented(
+                Segmented::new(
                     "columns",
                     &[(0, "Auto"), (1, "1"), (2, "2"), (3, "3"), (4, "4")],
                     s.columns,
-                    &theme,
-                    |v, _, cx| update_settings(cx, true, |s| s.columns = v),
-                ),
+                )
+                .on_select(|&v, _, cx| update_settings(cx, true, |s| s.columns = v)),
             ),
             row(
                 "Player controls",
                 None,
                 &theme,
-                segmented(
+                Segmented::new(
                     "controls",
                     &[
                         (ControlsVisibility::OnHover, "On hover"),
                         (ControlsVisibility::Always, "Always"),
                     ],
                     s.controls,
-                    &theme,
-                    |v, _, cx| update_settings(cx, true, |s| s.controls = v),
-                ),
+                )
+                .on_select(|&v, _, cx| update_settings(cx, true, |s| s.controls = v)),
             ),
             row(
                 "Show file names",
                 None,
                 &theme,
-                switch("titles", s.show_titles, &theme).on_click(|_, _, cx| {
-                    update_settings(cx, true, |s| s.show_titles = !s.show_titles)
-                }),
+                Switch::new("titles", s.show_titles)
+                    .on_toggle(|&on, _, cx| update_settings(cx, true, |s| s.show_titles = on)),
             ),
         ];
 
@@ -357,7 +336,7 @@ impl Render for SettingsView {
                                     .text_color(theme.text_muted)
                                     .child(path_hint),
                             )
-                            .child(button("reset", None, "Reset to defaults", &theme).on_click(
+                            .child(Button::new("reset", "Reset to defaults").on_click(
                                 |_, _, cx| update_settings(cx, true, |s| *s = Settings::default()),
                             )),
                     ),

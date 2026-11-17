@@ -113,8 +113,9 @@ button) to maximize it, drag the bar to scrub.
   buffering after seeks (and, for streams, until a second is read ahead or
   when the network runs dry), end-of-file and looping.
 - `src/ui/`: gpui views (`workspace`, `player_view`, `settings_view`,
-  `open_url`) and small hand-made widgets (buttons, switch, segmented control,
-  slider, and a text field based on gpui's input example).
+  `open_url`) and a text field based on gpui's input example.
+- `src/ui/components/`: the reusable controls (icon, buttons, switch,
+  segmented control, slider), one `RenderOnce` component per file.
 
 Software-decoded frames (and, on Linux, hardware-decoded ones) are uploaded to
 gpui's texture atlas through `img()`; on macOS, hardware-decoded frames are

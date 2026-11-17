@@ -9,8 +9,8 @@ use gpui::{
     black, div, img, linear_color_stop, linear_gradient, px, relative,
 };
 
+use super::components::{Icon, IconButton, Slide, Slider, SliderEvent};
 use super::theme::{Theme, overlay};
-use super::widgets::{Slide, SliderColors, format_time, icon, icon_button, slider};
 use crate::media::picture::PictureId;
 use crate::media::{Mixer, Picture, Player, PlayerOptions, Source};
 use crate::settings::{ControlsVisibility, Settings, VideoFit};
@@ -150,12 +150,12 @@ impl PlayerView {
         cx.notify();
     }
 
-    fn on_seek(&mut self, value: f32, slide: Slide, _: &mut Window, cx: &mut Context<Self>) {
+    fn on_seek(&mut self, event: &SliderEvent, _: &mut Window, cx: &mut Context<Self>) {
         let Some(duration) = self.player.duration() else {
             return;
         };
-        let time = value as f64 * duration;
-        match slide {
+        let time = event.value as f64 * duration;
+        match event.slide {
             Slide::Start => {
                 self.resume_after_scrub = self.player.is_playing();
                 self.player.pause();
@@ -177,7 +177,8 @@ impl PlayerView {
         cx.notify();
     }
 
-    fn on_volume(&mut self, value: f32, _: Slide, _: &mut Window, cx: &mut Context<Self>) {
+    fn on_volume(&mut self, event: &SliderEvent, _: &mut Window, cx: &mut Context<Self>) {
+        let value = event.value;
         self.player.set_volume(value);
         if value > 0.0 && self.player.is_muted() {
             self.player.set_muted(false);
@@ -244,7 +245,7 @@ impl PlayerView {
                 .size(px(96.))
                 .rounded_full()
                 .bg(theme.surface_hover)
-                .child(icon("music").size(px(40.)).text_color(theme.accent))
+                .child(Icon::new("music").size(px(40.)).color(theme.accent))
                 .into_any_element(),
         };
         let title = self
@@ -321,7 +322,6 @@ impl Render for PlayerView {
             || self.player.error().is_some();
 
         let group: SharedString = format!("tile-{}", cx.entity_id()).into();
-        let view = cx.weak_entity();
         let duration = self.player.duration();
         let live = info.as_ref().is_some_and(|i| i.live);
         // A stream that has started and then stalls; opening has its own message.
@@ -422,20 +422,20 @@ impl Render for PlayerView {
                 }),
         )
         .child(
-            icon_button(
+            IconButton::new(
                 "maximize",
                 if self.maximized {
                     "minimize"
                 } else {
                     "maximize"
                 },
-                overlay::text(),
-                overlay::hover(),
             )
+            .overlay()
             .on_click(cx.listener(|_, _, _, cx| cx.emit(PlayerEvent::ToggleMaximize))),
         )
         .child(
-            icon_button("close", "close", overlay::text(), overlay::hover())
+            IconButton::new("close", "close")
+                .overlay()
                 .on_click(cx.listener(|_, _, _, cx| cx.emit(PlayerEvent::Close))),
         );
 
@@ -458,18 +458,14 @@ impl Render for PlayerView {
                 )),
         )
         .when(!live, |this| {
-            this.child(div().px_1().child(slider(
-                "seek",
-                progress,
-                self.seek_drag.clone(),
-                view.clone(),
-                SliderColors {
-                    track: overlay::track(),
-                    fill: theme.accent,
-                    knob: overlay::text(),
-                },
-                Self::on_seek,
-            )))
+            this.child(
+                div().px_1().child(
+                    Slider::new("seek", progress, self.seek_drag.clone())
+                        .overlay()
+                        .fill(theme.accent)
+                        .on_change(cx.listener(Self::on_seek)),
+                ),
+            )
         })
         .child(
             div()
@@ -477,12 +473,12 @@ impl Render for PlayerView {
                 .items_center()
                 .gap_0p5()
                 .child(
-                    icon_button("play", play_icon, overlay::text(), overlay::hover()).on_click(
-                        cx.listener(|this, _, _, cx| {
+                    IconButton::new("play", play_icon)
+                        .overlay()
+                        .on_click(cx.listener(|this, _, _, cx| {
                             this.player.toggle();
                             cx.notify();
-                        }),
-                    ),
+                        })),
                 )
                 .when(live, |this| {
                     this.child(
@@ -512,48 +508,43 @@ impl Render for PlayerView {
                 .child(div().flex_1())
                 .when(!live, |this| {
                     this.child(
-                        icon_button(
-                            "loop",
-                            "loop",
-                            if looping {
+                        IconButton::new("loop", "loop")
+                            .overlay()
+                            .color(if looping {
                                 theme.accent
                             } else {
                                 overlay::text_muted()
-                            },
-                            overlay::hover(),
-                        )
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            let looping = !this.player.is_looping();
-                            this.player.set_looping(looping);
-                            cx.notify();
-                        })),
-                    )
-                })
-                .when(has_audio, |this| {
-                    this.child(
-                        icon_button("mute", volume_icon, overlay::text(), overlay::hover())
+                            })
                             .on_click(cx.listener(|this, _, _, cx| {
-                                let muted = !this.player.is_muted();
-                                this.player.set_muted(muted);
+                                let looping = !this.player.is_looping();
+                                this.player.set_looping(looping);
                                 cx.notify();
                             })),
                     )
-                    .child(div().w(px(72.)).pr_1().child(slider(
-                        "volume",
-                        if self.player.is_muted() {
-                            0.0
-                        } else {
-                            self.player.volume()
-                        },
-                        self.volume_drag.clone(),
-                        view.clone(),
-                        SliderColors {
-                            track: overlay::track(),
-                            fill: overlay::text(),
-                            knob: overlay::text(),
-                        },
-                        Self::on_volume,
-                    )))
+                })
+                .when(has_audio, |this| {
+                    this.child(IconButton::new("mute", volume_icon).overlay().on_click(
+                        cx.listener(|this, _, _, cx| {
+                            let muted = !this.player.is_muted();
+                            this.player.set_muted(muted);
+                            cx.notify();
+                        }),
+                    ))
+                    .child(
+                        div().w(px(72.)).pr_1().child(
+                            Slider::new(
+                                "volume",
+                                if self.player.is_muted() {
+                                    0.0
+                                } else {
+                                    self.player.volume()
+                                },
+                                self.volume_drag.clone(),
+                            )
+                            .overlay()
+                            .on_change(cx.listener(Self::on_volume)),
+                        ),
+                    )
                 }),
         );
 
@@ -610,5 +601,29 @@ impl Render for PlayerView {
             // bars as soon as the pointer moved onto them.
             .child(header.on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation()))
             .child(controls.on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation()))
+    }
+}
+
+fn format_time(seconds: f64) -> String {
+    let total = seconds.max(0.0).floor() as u64;
+    let (h, m, s) = (total / 3600, (total / 60) % 60, total % 60);
+    if h > 0 {
+        format!("{h}:{m:02}:{s:02}")
+    } else {
+        format!("{m}:{s:02}")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::format_time;
+
+    #[test]
+    fn formats_times() {
+        assert_eq!(format_time(0.0), "0:00");
+        assert_eq!(format_time(59.9), "0:59");
+        assert_eq!(format_time(61.0), "1:01");
+        assert_eq!(format_time(3725.0), "1:02:05");
+        assert_eq!(format_time(-3.0), "0:00");
     }
 }

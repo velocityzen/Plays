@@ -6,9 +6,9 @@ use gpui::{
     SharedString, Subscription, Window, actions, div, hsla, px,
 };
 
+use super::components::{Button, Icon};
 use super::text_input::TextInput;
 use super::theme::Theme;
-use super::widgets::{button, icon};
 use crate::media::Source;
 
 actions!(open_url, [Confirm, Cancel]);
@@ -85,7 +85,6 @@ impl Focusable for OpenUrlDialog {
 impl Render for OpenUrlDialog {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = Theme::get(window, cx);
-        let accent = theme.accent;
 
         let card = div()
             .id("open-url-card")
@@ -107,7 +106,7 @@ impl Render for OpenUrlDialog {
                     .flex()
                     .items_center()
                     .gap_2()
-                    .child(icon("link").size(px(16.)).text_color(theme.accent))
+                    .child(Icon::new("link").color(theme.accent))
                     .child(
                         div()
                             .text_base()
@@ -130,19 +129,12 @@ impl Render for OpenUrlDialog {
                     .flex()
                     .justify_end()
                     .gap_2()
-                    .child(button("open-url-cancel", None, "Cancel", &theme).on_click(
+                    .child(Button::new("open-url-cancel", "Cancel").on_click(
                         cx.listener(|this, _, window, cx| this.cancel(&Cancel, window, cx)),
                     ))
-                    .child(
-                        button("open-url-open", None, "Open", &theme)
-                            .bg(accent)
-                            .border_color(accent)
-                            .text_color(gpui::white())
-                            .hover(move |style| style.bg(accent.opacity(0.85)))
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.confirm(&Confirm, window, cx)
-                            })),
-                    ),
+                    .child(Button::new("open-url-open", "Open").primary().on_click(
+                        cx.listener(|this, _, window, cx| this.confirm(&Confirm, window, cx)),
+                    )),
             );
 
         div()

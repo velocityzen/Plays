@@ -3,14 +3,14 @@ use std::time::Duration;
 
 use gpui::prelude::*;
 use gpui::{
-    Context, Decorations, Entity, EntityId, ExternalPaths, FocusHandle, MouseButton,
-    PathPromptOptions, Subscription, Window, div, px,
+    AnyElement, App, ClickEvent, Context, Decorations, Entity, EntityId, ExternalPaths,
+    FocusHandle, MouseButton, PathPromptOptions, Subscription, Window, div, px,
 };
 
+use super::components::{Button, Icon, IconButton};
 use super::open_url::{OpenUrlDialog, OpenUrlEvent};
 use super::player_view::{Graveyard, PlayerEvent, PlayerView};
 use super::theme::Theme;
-use super::widgets::{button, icon, icon_button};
 use crate::app::{self, AudioEngine};
 use crate::media::Source;
 use crate::settings::Settings;
@@ -239,15 +239,7 @@ impl Workspace {
             1 => format!("1 {one}"),
             n => format!("{n} {many}"),
         };
-        // Narrow windows get icon-only buttons so the toolbar still fits.
         let compact = window.viewport_size().width < px(760.);
-        let tool = |id: &'static str, icon_name: &'static str, label: &'static str| {
-            if compact {
-                icon_button(id, icon_name, theme.text, theme.surface_hover)
-            } else {
-                button(id, Some(icon_name), label, theme)
-            }
-        };
         let status = match (count - streams, streams) {
             (0, 0) => "Nothing open".to_string(),
             (files, 0) => plural(files, "file", "files"),
@@ -271,31 +263,42 @@ impl Workspace {
             .border_b_1()
             .border_color(theme.border)
             .bg(theme.surface)
-            .child(
-                tool("open", "plus", "Open…")
-                    .on_click(cx.listener(|this, _, window, cx| this.prompt_open(window, cx))),
-            )
-            .child(
-                tool("open-url", "link", "Open URL…")
-                    .on_click(cx.listener(|this, _, window, cx| this.show_open_url(window, cx))),
-            )
+            .child(tool(
+                compact,
+                "open",
+                "plus",
+                "Open…",
+                cx.listener(|this, _, window, cx| this.prompt_open(window, cx)),
+            ))
+            .child(tool(
+                compact,
+                "open-url",
+                "link",
+                "Open URL…",
+                cx.listener(|this, _, window, cx| this.show_open_url(window, cx)),
+            ))
             .when(count > 0, |this| {
-                this.child(
-                    tool(
-                        "play-pause-all",
-                        if playing { "pause" } else { "play" },
-                        if playing { "Pause all" } else { "Play all" },
-                    )
-                    .on_click(cx.listener(|this, _, _, cx| this.toggle_all(cx))),
-                )
-                .child(
-                    tool("restart-all", "replay", "Restart all")
-                        .on_click(cx.listener(|this, _, _, cx| this.restart_all(cx))),
-                )
-                .child(
-                    tool("close-all", "close", "Close all")
-                        .on_click(cx.listener(|this, _, _, cx| this.close_all(cx))),
-                )
+                this.child(tool(
+                    compact,
+                    "play-pause-all",
+                    if playing { "pause" } else { "play" },
+                    if playing { "Pause all" } else { "Play all" },
+                    cx.listener(|this, _, _, cx| this.toggle_all(cx)),
+                ))
+                .child(tool(
+                    compact,
+                    "restart-all",
+                    "replay",
+                    "Restart all",
+                    cx.listener(|this, _, _, cx| this.restart_all(cx)),
+                ))
+                .child(tool(
+                    compact,
+                    "close-all",
+                    "close",
+                    "Close all",
+                    cx.listener(|this, _, _, cx| this.close_all(cx)),
+                ))
             })
             .child(
                 // Empty toolbar space moves the window when we draw our own decorations.
@@ -317,41 +320,27 @@ impl Workspace {
                     .child(status),
             )
             .child(
-                icon_button(
-                    "settings",
-                    "settings",
-                    theme.text_muted,
-                    theme.surface_hover,
-                )
-                .on_click(|_, window, cx| window.dispatch_action(Box::new(app::OpenSettings), cx)),
+                IconButton::new("settings", "settings")
+                    .color(theme.text_muted)
+                    .on_click(|_, window, cx| {
+                        window.dispatch_action(Box::new(app::OpenSettings), cx)
+                    }),
             )
             .when(client_decorated, |this| {
                 this.child(
-                    icon_button(
-                        "minimize-window",
-                        "window-min",
-                        theme.text_muted,
-                        theme.surface_hover,
-                    )
-                    .on_click(|_, window, _| window.minimize_window()),
+                    IconButton::new("minimize-window", "window-min")
+                        .color(theme.text_muted)
+                        .on_click(|_, window, _| window.minimize_window()),
                 )
                 .child(
-                    icon_button(
-                        "zoom-window",
-                        "window-max",
-                        theme.text_muted,
-                        theme.surface_hover,
-                    )
-                    .on_click(|_, window, _| window.zoom_window()),
+                    IconButton::new("zoom-window", "window-max")
+                        .color(theme.text_muted)
+                        .on_click(|_, window, _| window.zoom_window()),
                 )
                 .child(
-                    icon_button(
-                        "close-window",
-                        "close",
-                        theme.text_muted,
-                        theme.surface_hover,
-                    )
-                    .on_click(|_, window, _| window.remove_window()),
+                    IconButton::new("close-window", "close")
+                        .color(theme.text_muted)
+                        .on_click(|_, window, _| window.remove_window()),
                 )
             })
     }
@@ -372,7 +361,7 @@ impl Workspace {
             .rounded(px(12.))
             .border_2()
             .border_color(theme.border)
-            .child(icon("music").size(px(36.)).text_color(theme.text_muted))
+            .child(Icon::new("music").size(px(36.)).color(theme.text_muted))
             .child(div().text_lg().child("Drop videos and audio files here"))
             .child(div().text_sm().text_color(theme.text_muted).child(format!(
                 "Everything you open plays side by side. Press {open_shortcut} to browse, \
@@ -383,14 +372,18 @@ impl Workspace {
                     .flex()
                     .gap_2()
                     .child(
-                        button("open-empty", Some("plus"), "Open files…", theme).on_click(
-                            cx.listener(|this, _, window, cx| this.prompt_open(window, cx)),
-                        ),
+                        Button::new("open-empty", "Open files…")
+                            .icon("plus")
+                            .on_click(
+                                cx.listener(|this, _, window, cx| this.prompt_open(window, cx)),
+                            ),
                     )
                     .child(
-                        button("open-url-empty", Some("link"), "Open URL…", theme).on_click(
-                            cx.listener(|this, _, window, cx| this.show_open_url(window, cx)),
-                        ),
+                        Button::new("open-url-empty", "Open URL…")
+                            .icon("link")
+                            .on_click(
+                                cx.listener(|this, _, window, cx| this.show_open_url(window, cx)),
+                            ),
                     ),
             )
     }
@@ -480,6 +473,26 @@ impl Render for Workspace {
 }
 
 /// Replace folders with the media files directly inside them.
+/// A toolbar button. Narrow windows show just its icon so the toolbar still fits.
+fn tool(
+    compact: bool,
+    id: &'static str,
+    icon: &'static str,
+    label: &'static str,
+    on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+) -> AnyElement {
+    if compact {
+        IconButton::new(id, icon)
+            .on_click(on_click)
+            .into_any_element()
+    } else {
+        Button::new(id, label)
+            .icon(icon)
+            .on_click(on_click)
+            .into_any_element()
+    }
+}
+
 fn expand_folders(paths: Vec<PathBuf>) -> Vec<PathBuf> {
     let mut files = Vec::new();
     for path in paths {
