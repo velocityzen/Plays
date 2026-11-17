@@ -25,6 +25,7 @@ icons!(
     "pause",
     "play",
     "plus",
+    "pop-out",
     "replay",
     "settings",
     "stop",

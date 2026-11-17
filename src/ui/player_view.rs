@@ -5,8 +5,8 @@ use std::time::{Duration, Instant};
 
 use gpui::prelude::*;
 use gpui::{
-    AnyElement, ClickEvent, Context, EventEmitter, MouseButton, ObjectFit, SharedString, Window,
-    black, div, img, linear_color_stop, linear_gradient, px, relative,
+    AnyElement, ClickEvent, Context, Decorations, EventEmitter, MouseButton, ObjectFit,
+    SharedString, Window, black, div, img, linear_color_stop, linear_gradient, px, relative,
 };
 
 use super::components::{Icon, IconButton, Slide, Slider, SliderEvent};
@@ -49,7 +49,10 @@ impl Graveyard {
 
 pub enum PlayerEvent {
     Close,
+    /// Fill the grid with this tile, or the screen when it has a window of its own.
     ToggleMaximize,
+    /// Move to a window of its own.
+    PopOut,
 }
 
 pub struct PlayerView {
@@ -65,6 +68,8 @@ pub struct PlayerView {
     /// The frame handed to gpui in the last render (and so maybe in use on the GPU).
     drawn: Option<PictureId>,
     pub maximized: bool,
+    /// In a window of its own rather than a tile in the grid.
+    standalone: bool,
 }
 
 impl EventEmitter<PlayerEvent> for PlayerView {}
@@ -99,7 +104,12 @@ impl PlayerView {
             level: 0.0,
             drawn: None,
             maximized: false,
+            standalone: false,
         }
+    }
+
+    pub fn title(&self) -> SharedString {
+        self.title.clone()
     }
 
     pub fn player(&self) -> &Player {
@@ -131,6 +141,20 @@ impl PlayerView {
         if advanced || was_playing != self.player.is_playing() {
             cx.notify();
         }
+    }
+
+    /// Take this tile out of the grid to draw it in a window of its own, whose
+    /// frames are released through `graveyard`.
+    pub fn move_to_window(&mut self, graveyard: Graveyard) {
+        // Pictures drawn so far are in the old window's texture atlas, so the
+        // old window releases them; the new one uploads its own copies.
+        let cover = self.player.cover().map(Picture::Image);
+        for picture in self.player.frame().into_iter().chain(cover) {
+            self.graveyard.bury(picture);
+        }
+        self.graveyard = graveyard;
+        self.standalone = true;
+        self.maximized = false;
     }
 
     /// Hand every frame this tile drew to the graveyard; call before dropping it.
@@ -321,6 +345,16 @@ impl Render for PlayerView {
             || !self.player.is_playing()
             || self.player.error().is_some();
 
+        // In a window of its own, the button fills the screen instead of the grid.
+        let maximized = if self.standalone {
+            window.is_fullscreen()
+        } else {
+            self.maximized
+        };
+        // A player window drawing its own decorations moves by its header.
+        let movable =
+            self.standalone && matches!(window.window_decorations(), Decorations::Client { .. });
+
         let group: SharedString = format!("tile-{}", cx.entity_id()).into();
         let duration = self.player.duration();
         let live = info.as_ref().is_some_and(|i| i.live);
@@ -401,6 +435,9 @@ impl Render for PlayerView {
                 .flex()
                 .items_baseline()
                 .gap_2()
+                .when(movable, |this| {
+                    this.on_mouse_down(MouseButton::Left, |_, window, _| window.start_window_move())
+                })
                 .when(show_titles, |this| {
                     this.child(
                         div()
@@ -421,17 +458,17 @@ impl Render for PlayerView {
                     )
                 }),
         )
-        .child(
-            IconButton::new(
-                "maximize",
-                if self.maximized {
-                    "minimize"
-                } else {
-                    "maximize"
-                },
+        .when(!self.standalone, |this| {
+            this.child(
+                IconButton::new("pop-out", "pop-out")
+                    .overlay()
+                    .on_click(cx.listener(|_, _, _, cx| cx.emit(PlayerEvent::PopOut))),
             )
-            .overlay()
-            .on_click(cx.listener(|_, _, _, cx| cx.emit(PlayerEvent::ToggleMaximize))),
+        })
+        .child(
+            IconButton::new("maximize", if maximized { "minimize" } else { "maximize" })
+                .overlay()
+                .on_click(cx.listener(|_, _, _, cx| cx.emit(PlayerEvent::ToggleMaximize))),
         )
         .child(
             IconButton::new("close", "close")
@@ -554,7 +591,7 @@ impl Render for PlayerView {
             .relative()
             .size_full()
             .overflow_hidden()
-            .rounded(px(8.))
+            .when(!self.standalone, |this| this.rounded(px(8.)))
             .bg(if has_video || info.as_ref().is_some_and(|i| i.has_video) {
                 black()
             } else {

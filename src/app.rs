@@ -12,7 +12,7 @@ use crate::settings::Settings;
 use crate::ui::settings_view::SettingsView;
 use crate::ui::theme::{UiFont, pick_ui_font};
 use crate::ui::workspace::Workspace;
-use crate::ui::{open_url, text_input};
+use crate::ui::{open_url, player_window, text_input};
 
 actions!(
     plays,
@@ -185,6 +185,7 @@ fn register_actions(cx: &mut App) {
 fn bind_keys(cx: &mut App) {
     text_input::bind_keys(cx);
     open_url::bind_keys(cx);
+    player_window::bind_keys(cx);
     cx.bind_keys([
         KeyBinding::new("secondary-o", OpenFiles, None),
         KeyBinding::new("secondary-shift-o", OpenUrl, None),

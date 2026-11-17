@@ -10,6 +10,7 @@ use gpui::{
 use super::components::{Button, Icon, IconButton};
 use super::open_url::{OpenUrlDialog, OpenUrlEvent};
 use super::player_view::{Graveyard, PlayerEvent, PlayerView};
+use super::player_window;
 use super::theme::Theme;
 use crate::app::{self, AudioEngine};
 use crate::media::Source;
@@ -98,6 +99,7 @@ impl Workspace {
             let subscription = cx.subscribe(&view, |this, view, event, cx| match event {
                 PlayerEvent::Close => this.close(view.entity_id(), cx),
                 PlayerEvent::ToggleMaximize => this.toggle_maximize(view.entity_id(), cx),
+                PlayerEvent::PopOut => this.pop_out(view.entity_id(), cx),
             });
             self.tiles.push(Tile {
                 view,
@@ -146,6 +148,22 @@ impl Workspace {
             let tile = self.tiles.remove(index);
             tile.view.update(cx, |view, _| view.release_pictures());
         }
+        if self.maximized == Some(id) {
+            self.maximized = None;
+        }
+        cx.notify();
+    }
+
+    /// Move a tile's player into a window of its own, where it keeps playing.
+    fn pop_out(&mut self, id: EntityId, cx: &mut Context<Self>) {
+        let Some(index) = self.tiles.iter().position(|t| t.view.entity_id() == id) else {
+            return;
+        };
+        if let Err(err) = player_window::open(self.tiles[index].view.clone(), cx) {
+            log::error!("could not open a player window: {err:#}");
+            return;
+        }
+        self.tiles.remove(index);
         if self.maximized == Some(id) {
             self.maximized = None;
         }
@@ -472,7 +490,6 @@ impl Render for Workspace {
     }
 }
 
-/// Replace folders with the media files directly inside them.
 /// A toolbar button. Narrow windows show just its icon so the toolbar still fits.
 fn tool(
     compact: bool,
@@ -493,6 +510,7 @@ fn tool(
     }
 }
 
+/// Replace folders with the media files directly inside them.
 fn expand_folders(paths: Vec<PathBuf>) -> Vec<PathBuf> {
     let mut files = Vec::new();
     for path in paths {

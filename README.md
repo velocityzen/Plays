@@ -13,6 +13,7 @@ GPU-accelerated UI framework.
   Linux. Videos the GPU can't decode fall back to software automatically. On
   macOS, hardware-decoded frames never leave the GPU (zero-copy).
 - Every file has its own play/pause, seek bar, loop, mute and volume.
+- Any tile can pop out into a window of its own and keep playing there.
 - Toolbar and shortcuts control all files at once: play/pause, seek, mute, restart, close.
 - Audio from every file is mixed into one output. A/V sync follows the audio clock.
 - Audio-only files show their cover art (or a note) and a level meter.
@@ -74,7 +75,11 @@ FFmpeg 5.1 or newer is recommended.
 | Settings | `⌘,` / `Ctrl+,` |
 
 On a tile: click the picture to play/pause, double-click (or the corner
-button) to maximize it, drag the bar to scrub.
+button) to maximize it, drag the bar to scrub. The button next to maximize
+moves the file into a window of its own, which keeps playing. There the
+same keys (`Space`, `←` `→`, `Home`, `M`) control just that file,
+double-click or `F` toggles full screen, and `Esc` leaves it. Closing the
+main window quits, closing player windows too.
 
 ## How it works
 
@@ -112,8 +117,8 @@ button) to maximize it, drag the bar to scrub.
 - `src/media/player.rs`: the UI-side handle: play/pause/seek, frame selection,
   buffering after seeks (and, for streams, until a second is read ahead or
   when the network runs dry), end-of-file and looping.
-- `src/ui/`: gpui views (`workspace`, `player_view`, `settings_view`,
-  `open_url`) and a text field based on gpui's input example.
+- `src/ui/`: gpui views (`workspace`, `player_view`, `player_window`,
+  `settings_view`, `open_url`) and a text field based on gpui's input example.
 - `src/ui/components/`: the reusable controls (icon, buttons, switch,
   segmented control, slider), one `RenderOnce` component per file.
 
