@@ -2851,6 +2851,8 @@ impl Window {
             corner_radii: quad.corner_radii.scale(scale_factor),
             border_widths: quad.border_widths.scale(scale_factor),
             border_style: quad.border_style,
+            corner_smoothing: quad.corner_smoothing,
+            pad: 0,
         });
     }
 
@@ -5019,9 +5021,21 @@ pub struct PaintQuad {
     pub border_color: Hsla,
     /// The style of the quad's borders.
     pub border_style: BorderStyle,
+    /// Plays: how far the rounded corners are superellipses rather than
+    /// circular arcs, from 0 (circular) to 1.
+    pub corner_smoothing: f32,
 }
 
 impl PaintQuad {
+    /// Plays: sets how far the rounded corners are superellipses rather than
+    /// circular arcs, from 0 (circular) to 1.
+    pub fn corner_smoothing(self, corner_smoothing: f32) -> Self {
+        PaintQuad {
+            corner_smoothing: corner_smoothing.clamp(0., 1.),
+            ..self
+        }
+    }
+
     /// Sets the corner radii of the quad.
     pub fn corner_radii(self, corner_radii: impl Into<Corners<Pixels>>) -> Self {
         PaintQuad {
@@ -5071,6 +5085,7 @@ pub fn quad(
         border_widths: border_widths.into(),
         border_color: border_color.into(),
         border_style,
+        corner_smoothing: 0.,
     }
 }
 
@@ -5083,6 +5098,7 @@ pub fn fill(bounds: impl Into<Bounds<Pixels>>, background: impl Into<Background>
         border_widths: (0.).into(),
         border_color: transparent_black(),
         border_style: BorderStyle::default(),
+        corner_smoothing: 0.,
     }
 }
 
@@ -5099,5 +5115,6 @@ pub fn outline(
         border_widths: (1.).into(),
         border_color: border_color.into(),
         border_style,
+        corner_smoothing: 0.,
     }
 }

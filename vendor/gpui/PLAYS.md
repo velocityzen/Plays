@@ -34,6 +34,24 @@ Cargo.toml. Everything Plays changed is marked "Plays" in the code.
 - The layer asks for EDR (`wantsExtendedDynamicRangeContent`) only while HDR
   surfaces are on screen, and for 120 frames after, since EDR costs power.
 
+Superellipse corners (`src/styled.rs`, `src/style.rs`, `src/window.rs`,
+`src/scene.rs`, and the quad shaders in `shaders.metal` and `shaders.wgsl`):
+
+- `.superellipse(radius)` rounds corners like `.rounded(radius)`, but as
+  superellipses (squircles): the curve starts with no curvature and spreads
+  along more of each side, so there is no kink where it meets them, like
+  Apple's continuous corners. It sets the radii and `Style::corner_smoothing`
+  to 0.6; `PaintQuad::corner_smoothing` sets it on a quad painted directly.
+- `Quad` carries `corner_smoothing`, and `pad` so its size stays a multiple
+  of 8 as WGSL lays it out. In the quad shaders, `squircle_corner` turns a
+  radius and smoothing into the corner's extent and exponent, less when the
+  quad has no room, so a corner as round as it allows (a pill) stays
+  circular. `squircle_sdf` is its distance field, divided by its gradient so
+  antialiasing and borders are even. Quads without smoothing, and so
+  everything `.rounded`, take the old code and are drawn exactly as before.
+- Not smoothed: shadows, images, the layout of dashes on dashed borders,
+  and Windows, whose shader only has the new fields.
+
 `src/text_system/line.rs`: a line of text paints in a layer as wide as
 the width it is aligned in, not just as wide as the text. Centered text
 (Plays' subtitles) used to fall outside its layer, so a popover drawn over

@@ -468,6 +468,10 @@ struct Quad {
     Hsla border_color;
     Corners corner_radii;
     Edges border_widths;
+    // Plays: superellipse corners aren't drawn on Windows; these keep the
+    // struct the same size as gpui's `Quad`.
+    float corner_smoothing;
+    uint pad;
 };
 
 struct QuadVertexOutput {

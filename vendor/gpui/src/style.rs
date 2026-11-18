@@ -248,6 +248,10 @@ pub struct Style {
     #[refineable]
     pub corner_radii: Corners<AbsoluteLength>,
 
+    /// Plays: how far the rounded corners are superellipses rather than
+    /// circular arcs, from 0 (circular) to 1
+    pub corner_smoothing: f32,
+
     /// Box shadow of the element
     pub box_shadow: Vec<BoxShadow>,
 
@@ -641,14 +645,17 @@ impl Style {
                 None => Hsla::default(),
             };
             border_color.a = 0.;
-            window.paint_quad(quad(
-                bounds,
-                corner_radii,
-                background_color.unwrap_or_default(),
-                Edges::default(),
-                border_color,
-                self.border_style,
-            ));
+            window.paint_quad(
+                quad(
+                    bounds,
+                    corner_radii,
+                    background_color.unwrap_or_default(),
+                    Edges::default(),
+                    border_color,
+                    self.border_style,
+                )
+                .corner_smoothing(self.corner_smoothing),
+            );
         }
 
         continuation(window, cx);
@@ -656,7 +663,8 @@ impl Style {
         if self.is_border_visible() {
             let border_widths = self.border_widths.to_pixels(rem_size);
             let max_border_width = border_widths.max();
-            let max_corner_radius = corner_radii.max();
+            // Plays: a superellipse corner curves over more of the sides.
+            let max_corner_radius = corner_radii.max() * (1. + self.corner_smoothing);
 
             let top_bounds = Bounds::from_corners(
                 bounds.origin,
@@ -684,7 +692,8 @@ impl Style {
                 border_widths,
                 self.border_color.unwrap_or_default(),
                 self.border_style,
-            );
+            )
+            .corner_smoothing(self.corner_smoothing);
 
             window.with_content_mask(Some(ContentMask { bounds: top_bounds }), |window| {
                 window.paint_quad(quad.clone());
@@ -765,6 +774,7 @@ impl Default for Style {
             border_color: None,
             border_style: BorderStyle::default(),
             corner_radii: Corners::default(),
+            corner_smoothing: 0.,
             box_shadow: Default::default(),
             text: TextStyleRefinement::default(),
             mouse_cursor: None,

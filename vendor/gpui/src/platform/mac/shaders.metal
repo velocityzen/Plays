@@ -28,6 +28,9 @@ float pick_corner_radius(float2 center_to_point, Corners_ScaledPixels corner_rad
 float quad_sdf(float2 point, Bounds_ScaledPixels bounds,
                Corners_ScaledPixels corner_radii);
 float quad_sdf_impl(float2 center_to_point, float corner_radius);
+float2 squircle_corner(float corner_radius, float2 half_size, float smoothing);
+float squircle_corner_sdf(float2 corner_center_to_point, float2 radii, float exponent);
+float squircle_sdf(float2 corner_center_to_point, float extent, float exponent);
 float gaussian(float x, float sigma);
 float2 erf(float2 x);
 float blur_along_x(float x, float y, float sigma, float corner,
@@ -127,8 +130,13 @@ fragment float4 quad_fragment(QuadFragmentInput input [[stage_in]],
   // minimum distance between the center of the pixel and the edge.
   const float antialias_threshold = 0.5;
 
-  // Radius of the nearest corner
-  float corner_radius = pick_corner_radius(center_to_point, quad.corner_radii);
+  // Radius of the nearest corner. Plays: for a superellipse corner, how far
+  // along the sides it curves, and its exponent (2 for a circular arc).
+  float2 corner = squircle_corner(
+    pick_corner_radius(center_to_point, quad.corner_radii), half_size,
+    quad.corner_smoothing);
+  float corner_radius = corner.x;
+  float corner_exponent = corner.y;
 
   // Width of the nearest borders
   float2 border = float2(
@@ -179,7 +187,9 @@ fragment float4 quad_fragment(QuadFragmentInput input [[stage_in]],
   }
 
   // Signed distance of the point to the outside edge of the quad's border
-  float outer_sdf = quad_sdf_impl(corner_center_to_point, corner_radius);
+  float outer_sdf = corner_exponent == 2.0
+    ? quad_sdf_impl(corner_center_to_point, corner_radius)
+    : squircle_sdf(corner_center_to_point, corner_radius, corner_exponent);
 
   // Approximate signed distance of the point to the inside edge of the quad's
   // border. It is negative outside this edge (within the border), and
@@ -202,7 +212,9 @@ fragment float4 quad_fragment(QuadFragmentInput input [[stage_in]],
     inner_sdf = -(outer_sdf + reduced_border.x);
   } else {
     float2 ellipse_radii = max(float2(0.0), float2(corner_radius) - reduced_border);
-    inner_sdf = quarter_ellipse_sdf(corner_center_to_point, ellipse_radii);
+    inner_sdf = corner_exponent == 2.0
+      ? quarter_ellipse_sdf(corner_center_to_point, ellipse_radii)
+      : -squircle_corner_sdf(corner_center_to_point, ellipse_radii, corner_exponent);
   }
 
   // Negative when inside the border
@@ -1276,6 +1288,49 @@ float quad_sdf_impl(float2 corner_center_to_point, float corner_radius) {
 
         return signed_distance_to_inset_quad - corner_radius;
     }
+}
+
+// Plays: the extent and exponent of a corner of `corner_radius` with
+// `smoothing` (see `Quad::corner_smoothing`). A smoothed corner is a
+// superellipse, |x|^n + |y|^n = extent^n from the corner's center: it curves
+// over (1 + e) times the radius with exponent 2 + e * 10/3, where e is the
+// smoothing, or less when the quad has no room for it. Its curvature is zero
+// where it meets the straight sides, so there is no kink there. 0.6 makes
+// exponent 4 over 1.6 times the radius, close to Apple's continuous corners.
+// A corner as round as the quad allows, or without smoothing, stays a
+// circular arc (exponent 2), drawn exactly as before.
+float2 squircle_corner(float corner_radius, float2 half_size, float smoothing) {
+  float room = min(half_size.x, half_size.y);
+  if (smoothing <= 0.0 || corner_radius <= 0.0 || room <= 0.0) {
+    return float2(corner_radius, 2.0);
+  }
+  float radius = min(corner_radius, room);
+  float e = clamp(room / radius - 1.0, 0.0, smoothing);
+  return float2(radius * (1.0 + e), 2.0 + e * (10.0 / 3.0));
+}
+
+// Plays: signed distance of a point from a superellipse corner, positive
+// outside. `corner_center_to_point` is from the corner's center, both
+// components > 0, and `radii` its extent along x and y.
+float squircle_corner_sdf(float2 corner_center_to_point, float2 radii, float exponent) {
+  float2 r = max(radii, float2(0.001));
+  float2 a = corner_center_to_point / r;
+  float norm = pow(pow(a.x, exponent) + pow(a.y, exponent), 1.0 / exponent);
+  if (norm < 0.001) {
+    return -min(r.x, r.y);
+  }
+  // Divided by the length of the gradient, so near the edge it is a
+  // distance in pixels and antialiasing and borders are even all round.
+  float2 gradient = pow(a / norm, float2(exponent - 1.0)) / r;
+  return (norm - 1.0) / max(length(gradient), 0.0001);
+}
+
+// Plays: `quad_sdf_impl` for a superellipse corner.
+float squircle_sdf(float2 corner_center_to_point, float extent, float exponent) {
+  if (corner_center_to_point.x > 0.0 && corner_center_to_point.y > 0.0) {
+    return squircle_corner_sdf(corner_center_to_point, float2(extent), exponent);
+  }
+  return max(corner_center_to_point.x, corner_center_to_point.y) - extent;
 }
 
 // A standard gaussian function, used for weighting samples

@@ -12,6 +12,9 @@ pub use gpui_macros::{
 
 const ELLIPSIS: SharedString = SharedString::new_static("…");
 
+/// Plays: the corner smoothing `superellipse` uses, close to Apple's.
+const SUPERELLIPSE_SMOOTHING: f32 = 0.6;
+
 /// A trait for elements that can be styled.
 /// Use this to opt-in to a utility CSS-like styling API.
 #[cfg_attr(
@@ -375,6 +378,23 @@ pub trait Styled: Sized {
         Self: Sized,
     {
         self.style().background = Some(fill.into());
+        self
+    }
+
+    /// Plays: rounds every corner like `rounded`, but as a superellipse (a
+    /// squircle) rather than a circular arc. The curve starts with no
+    /// curvature and spreads along more of each side, so there is no kink
+    /// where a straight side meets it, like Apple's continuous corners. A
+    /// radius as large as the element allows still makes a circle or a
+    /// capsule.
+    fn superellipse(mut self, radius: impl Into<AbsoluteLength>) -> Self {
+        let radius = radius.into();
+        let corners = &mut self.style().corner_radii;
+        corners.top_left = Some(radius);
+        corners.top_right = Some(radius);
+        corners.bottom_right = Some(radius);
+        corners.bottom_left = Some(radius);
+        self.style().corner_smoothing = Some(SUPERELLIPSE_SMOOTHING);
         self
     }
 

@@ -358,6 +358,49 @@ fn quad_sdf_impl(corner_center_to_point: vec2<f32>, corner_radius: f32) -> f32 {
     }
 }
 
+// Plays: the extent and exponent of a corner of `corner_radius` with
+// `smoothing` (see `Quad::corner_smoothing`). A smoothed corner is a
+// superellipse, |x|^n + |y|^n = extent^n from the corner's center: it curves
+// over (1 + e) times the radius with exponent 2 + e * 10/3, where e is the
+// smoothing, or less when the quad has no room for it. Its curvature is zero
+// where it meets the straight sides, so there is no kink there. 0.6 makes
+// exponent 4 over 1.6 times the radius, close to Apple's continuous corners.
+// A corner as round as the quad allows, or without smoothing, stays a
+// circular arc (exponent 2), drawn exactly as before.
+fn squircle_corner(corner_radius: f32, half_size: vec2<f32>, smoothing: f32) -> vec2<f32> {
+    let room = min(half_size.x, half_size.y);
+    if (smoothing <= 0.0 || corner_radius <= 0.0 || room <= 0.0) {
+        return vec2<f32>(corner_radius, 2.0);
+    }
+    let radius = min(corner_radius, room);
+    let e = clamp(room / radius - 1.0, 0.0, smoothing);
+    return vec2<f32>(radius * (1.0 + e), 2.0 + e * (10.0 / 3.0));
+}
+
+// Plays: signed distance of a point from a superellipse corner, positive
+// outside. `corner_center_to_point` is from the corner's center, both
+// components > 0, and `radii` its extent along x and y.
+fn squircle_corner_sdf(corner_center_to_point: vec2<f32>, radii: vec2<f32>, exponent: f32) -> f32 {
+    let r = max(radii, vec2<f32>(0.001));
+    let a = corner_center_to_point / r;
+    let norm = pow(pow(a.x, exponent) + pow(a.y, exponent), 1.0 / exponent);
+    if (norm < 0.001) {
+        return -min(r.x, r.y);
+    }
+    // Divided by the length of the gradient, so near the edge it is a
+    // distance in pixels and antialiasing and borders are even all round.
+    let gradient = pow(a / norm, vec2<f32>(exponent - 1.0)) / r;
+    return (norm - 1.0) / max(length(gradient), 0.0001);
+}
+
+// Plays: `quad_sdf_impl` for a superellipse corner.
+fn squircle_sdf(corner_center_to_point: vec2<f32>, extent: f32, exponent: f32) -> f32 {
+    if (corner_center_to_point.x > 0.0 && corner_center_to_point.y > 0.0) {
+        return squircle_corner_sdf(corner_center_to_point, vec2<f32>(extent), exponent);
+    }
+    return max(corner_center_to_point.x, corner_center_to_point.y) - extent;
+}
+
 // Abstract away the final color transformation based on the
 // target alpha compositing mode.
 fn blend_color(color: vec4<f32>, alpha_factor: f32) -> vec4<f32> {
@@ -484,6 +527,9 @@ struct Quad {
     border_color: Hsla,
     corner_radii: Corners,
     border_widths: Edges,
+    // Plays: see `Quad::corner_smoothing`.
+    corner_smoothing: f32,
+    pad: u32,
 }
 var<storage, read> b_quads: array<Quad>;
 
@@ -556,8 +602,13 @@ fn fs_quad(input: QuadVarying) -> @location(0) vec4<f32> {
     // minimum distance between the center of the pixel and the edge.
     let antialias_threshold = 0.5;
 
-    // Radius of the nearest corner
-    let corner_radius = pick_corner_radius(center_to_point, quad.corner_radii);
+    // Radius of the nearest corner. Plays: for a superellipse corner, how far
+    // along the sides it curves, and its exponent (2 for a circular arc).
+    let corner = squircle_corner(
+        pick_corner_radius(center_to_point, quad.corner_radii), half_size,
+        quad.corner_smoothing);
+    let corner_radius = corner.x;
+    let corner_exponent = corner.y;
 
     // Width of the nearest borders
     let border = vec2<f32>(
@@ -615,7 +666,10 @@ fn fs_quad(input: QuadVarying) -> @location(0) vec4<f32> {
 
     // Signed distance of the point to the outside edge of the quad's border. It
     // is positive outside this edge, and negative inside.
-    let outer_sdf = quad_sdf_impl(corner_center_to_point, corner_radius);
+    var outer_sdf = quad_sdf_impl(corner_center_to_point, corner_radius);
+    if (corner_exponent != 2.0) {
+        outer_sdf = squircle_sdf(corner_center_to_point, corner_radius, corner_exponent);
+    }
 
     // Approximate signed distance of the point to the inside edge of the quad's
     // border. It is negative outside this edge (within the border), and
@@ -638,7 +692,11 @@ fn fs_quad(input: QuadVarying) -> @location(0) vec4<f32> {
         inner_sdf = -(outer_sdf + reduced_border.x);
     } else {
         let ellipse_radii = max(vec2<f32>(0.0), corner_radius - reduced_border);
-        inner_sdf = quarter_ellipse_sdf(corner_center_to_point, ellipse_radii);
+        if (corner_exponent == 2.0) {
+            inner_sdf = quarter_ellipse_sdf(corner_center_to_point, ellipse_radii);
+        } else {
+            inner_sdf = -squircle_corner_sdf(corner_center_to_point, ellipse_radii, corner_exponent);
+        }
     }
 
     // Negative when inside the border

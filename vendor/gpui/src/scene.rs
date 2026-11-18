@@ -459,6 +459,11 @@ pub(crate) struct Quad {
     pub border_color: Hsla,
     pub corner_radii: Corners<ScaledPixels>,
     pub border_widths: Edges<ScaledPixels>,
+    /// Plays: how far rounded corners are superellipses rather than circular
+    /// arcs, from 0 (circular). See `squircle_corner` in the shaders.
+    pub corner_smoothing: f32,
+    /// Plays: keeps the size a multiple of 8, as WGSL lays the struct out.
+    pub pad: u32,
 }
 
 impl From<Quad> for Primitive {
