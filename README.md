@@ -248,8 +248,9 @@ HDR-aware apps show right. Text subtitles are laid out as on a tile
 showing just the picture, in the style Settings give them; bitmap ones go
 where the stream puts them.
 
-On a tile: click the picture to play/pause, double-click (or the corner
-button) to maximize it, drag the bar to scrub. In the middle under the bar,
+On a tile: click the picture to make it the tile shortcuts go to,
+double-click it (or the corner button) to maximize it, drag the bar to
+scrub. In the middle under the bar,
 the previous and next buttons open the media file before or after this one
 in its folder, by name, in the same tile; between them, skip back and
 forward go by the seek step, around play/pause. The track button (next to

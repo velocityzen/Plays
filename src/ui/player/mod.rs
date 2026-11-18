@@ -319,13 +319,12 @@ impl PlayerView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        // Single click toggles playback. A double click toggles twice, which
-        // leaves playback as it was, and expands the tile.
-        self.player.toggle();
+        // A single click only makes the tile the one shortcuts go to (on
+        // mouse down); a double click expands it.
         if event.click_count() == 2 {
             self.toggle_expanded(window, cx);
+            cx.notify();
         }
-        cx.notify();
     }
 
     /// Expand the tile to fill its window, or the window to fill the screen
