@@ -6,7 +6,7 @@ use futures::StreamExt as _;
 use futures::channel::mpsc::UnboundedReceiver;
 use gpui::{
     AnyWindowHandle, App, AppContext as _, Bounds, Global, KeyBinding, Menu, MenuItem,
-    SystemMenuType, TitlebarOptions, WindowBounds, WindowHandle, WindowOptions, actions, px, size,
+    SystemMenuType, TitlebarOptions, WindowBounds, WindowHandle, WindowOptions, actions,
 };
 
 use crate::hotkeys::*;
@@ -15,9 +15,12 @@ use crate::media::{AudioOutput, Mixer, Source, picture};
 use crate::settings::{SUBTITLE_POSITION_RANGE, SUBTITLE_SIZE_RANGE, Settings, SubtitleStyle};
 use crate::ui::player_view::PlayerView;
 use crate::ui::settings_view::SettingsView;
+use crate::ui::theme::layout::{
+    SETTINGS_WINDOW_MIN_SIZE, SETTINGS_WINDOW_SIZE, TRAFFIC_LIGHTS, WINDOW_SIZE,
+};
 use crate::ui::theme::{UiFont, pick_ui_font, refresh_system_colors};
 use crate::ui::workspace::Workspace;
-use crate::ui::{TRAFFIC_LIGHTS, open_url, text_input};
+use crate::ui::{open_url, text_input};
 
 // The playback ones, which can be rebound, are in `hotkeys`.
 actions!(
@@ -102,8 +105,7 @@ pub fn run(cx: &mut App, sources: Vec<Source>, mut opened: UnboundedReceiver<Vec
     bind_keys(cx);
     watch_hotkeys(cx);
 
-    let window =
-        Workspace::open_window(size(px(1280.), px(800.)), cx).expect("opening the first window");
+    let window = Workspace::open_window(WINDOW_SIZE, cx).expect("opening the first window");
 
     if !sources.is_empty() {
         window
@@ -415,7 +417,7 @@ pub fn open_settings(cx: &mut App) {
     {
         return;
     }
-    let bounds = Bounds::centered(None, size(px(720.), px(520.)), cx);
+    let bounds = Bounds::centered(None, SETTINGS_WINDOW_SIZE, cx);
     // On macOS the sidebar runs up under the traffic lights, as in System
     // Settings.
     let mac = cfg!(target_os = "macos");
@@ -428,7 +430,7 @@ pub fn open_settings(cx: &mut App) {
                     appears_transparent: mac,
                     traffic_light_position: mac.then_some(TRAFFIC_LIGHTS),
                 }),
-                window_min_size: Some(size(px(680.), px(420.))),
+                window_min_size: Some(SETTINGS_WINDOW_MIN_SIZE),
                 app_id: Some("plays".into()),
                 focus: true,
                 ..Default::default()

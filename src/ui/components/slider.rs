@@ -7,6 +7,9 @@ use gpui::{
     MouseMoveEvent, MouseUpEvent, Pixels, Point, Window, canvas, div, px, relative,
 };
 
+use crate::ui::theme::controls::{
+    SLIDER_HEIGHT, SLIDER_KNOB, SLIDER_KNOB_DRAGGED, SLIDER_MIN_WIDTH, SLIDER_TRACK,
+};
 use crate::ui::theme::{Theme, overlay};
 
 /// Where a drag is.
@@ -87,20 +90,24 @@ impl RenderOnce for Slider {
         let value = self.value.clamp(0.0, 1.0);
         let dragging = self.dragging;
         let on_change = self.on_change.unwrap_or_else(|| Rc::new(|_, _, _| {}));
-        let knob = if dragging.get() { px(12.) } else { px(10.) };
+        let knob = if dragging.get() {
+            SLIDER_KNOB_DRAGGED
+        } else {
+            SLIDER_KNOB
+        };
 
         div()
             .id(self.id)
             .relative()
             .flex()
             .items_center()
-            .h(px(16.))
+            .h(SLIDER_HEIGHT)
             .w_full()
-            .min_w(px(32.))
+            .min_w(SLIDER_MIN_WIDTH)
             .child(
                 div()
                     .w_full()
-                    .h(px(4.))
+                    .h(SLIDER_TRACK)
                     .rounded_full()
                     .bg(track)
                     .child(div().h_full().w(relative(value)).rounded_full().bg(fill)),
@@ -108,7 +115,7 @@ impl RenderOnce for Slider {
             .child(
                 div()
                     .absolute()
-                    .top((px(16.) - knob) / 2.)
+                    .top((SLIDER_HEIGHT - knob) / 2.)
                     .left(relative(value))
                     .ml(-knob / 2.)
                     .size(knob)

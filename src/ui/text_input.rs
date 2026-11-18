@@ -13,7 +13,10 @@ use gpui::{
 };
 use unicode_segmentation::UnicodeSegmentation as _;
 
-use super::theme::Theme;
+use super::theme::controls::{
+    CARET_WIDTH, COMPOSING_UNDERLINE, SELECTION, TEXT_INPUT_HEIGHT, TEXT_SCROLL_MARGIN,
+};
+use super::theme::{Theme, radius};
 
 actions!(
     text_input,
@@ -499,7 +502,7 @@ impl Element for TextElement {
                     len: marked.end - marked.start,
                     underline: Some(UnderlineStyle {
                         color: Some(run.color),
-                        thickness: px(1.0),
+                        thickness: COMPOSING_UNDERLINE,
                         wavy: false,
                     }),
                     ..run.clone()
@@ -526,12 +529,12 @@ impl Element for TextElement {
             line.x_for_index(cursor)
         };
         let width = bounds.size.width;
-        let max_scroll = (line.width - width + px(2.)).max(px(0.));
+        let max_scroll = (line.width - width + TEXT_SCROLL_MARGIN).max(px(0.));
         let mut scroll_x = input.scroll_x;
         if cursor_x < scroll_x {
             scroll_x = cursor_x;
-        } else if cursor_x > scroll_x + width - px(2.) {
-            scroll_x = cursor_x - width + px(2.);
+        } else if cursor_x > scroll_x + width - TEXT_SCROLL_MARGIN {
+            scroll_x = cursor_x - width + TEXT_SCROLL_MARGIN;
         }
         let scroll_x = scroll_x.clamp(px(0.), max_scroll);
         let left = bounds.left() - scroll_x;
@@ -540,7 +543,7 @@ impl Element for TextElement {
             let cursor = fill(
                 Bounds::new(
                     point(left + cursor_x, bounds.top()),
-                    size(px(1.5), bounds.size.height),
+                    size(CARET_WIDTH, bounds.size.height),
                 ),
                 colors.cursor,
             );
@@ -609,7 +612,7 @@ impl Render for TextInput {
         let focused = self.focus_handle.is_focused(window);
         self.colors = Colors {
             placeholder: theme.text_muted,
-            selection: theme.accent.opacity(0.3),
+            selection: theme.accent.opacity(SELECTION),
             cursor: theme.accent,
         };
         div()
@@ -636,9 +639,9 @@ impl Render for TextInput {
             .flex()
             .items_center()
             .w_full()
-            .h(px(34.))
+            .h(TEXT_INPUT_HEIGHT)
             .px_2p5()
-            .rounded(px(6.))
+            .superellipse(radius::CONTROL)
             .border_1()
             .border_color(if focused { theme.accent } else { theme.border })
             .bg(theme.background)

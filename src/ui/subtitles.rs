@@ -11,6 +11,10 @@ use gpui::{
     TextRun, Window, WrappedLine, canvas, fill, point, px, rgb, size,
 };
 
+use super::theme::subtitles::{
+    ABOVE_CONTROLS, BACKGROUND_PADDING, BACKGROUND_RADIUS, EDGE_OPACITY, EDGE_WIDTH, FONT_SIZE,
+    LINE_HEIGHT, MAX_FONT_SIZE, MIN_BOTTOM, MIN_FONT_SIZE, SHADOW_OFFSET, WRAP_WIDTH,
+};
 use crate::media::subtitles::{CueContent, Placement, Text};
 use crate::settings::{SubtitleArea, SubtitleEdge, SubtitleStyle};
 
@@ -75,7 +79,7 @@ const OUTLINE: [(f32, f32); 8] = [
 ];
 
 /// A shadow is the text drawn in the edge color below and to the right.
-const SHADOW: [(f32, f32); 1] = [(1.3, 1.3)];
+const SHADOW: [(f32, f32); 1] = [(SHADOW_OFFSET, SHADOW_OFFSET)];
 
 /// A cue's text, shaped for painting.
 struct Block {
@@ -123,11 +127,13 @@ pub(crate) fn paint(
     };
     let (left, top) = (f32::from(area.left()), f32::from(area.top()));
     let (width, height) = (f32::from(area.size.width), f32::from(area.size.height));
-    let font_size = (f32::from(visible.size.height) * 0.05).clamp(13.0, 48.0) * style.size;
+    let font_size = (f32::from(visible.size.height) * FONT_SIZE)
+        .clamp(MIN_FONT_SIZE, MAX_FONT_SIZE)
+        * style.size;
     let metrics = Metrics {
         font_size,
-        line_height: font_size * 1.2,
-        wrap_width: width * 0.9,
+        line_height: font_size * LINE_HEIGHT,
+        wrap_width: width * WRAP_WIDTH,
     };
     let family = if style.font.is_empty() {
         layout.font.clone()
@@ -135,7 +141,7 @@ pub(crate) fn paint(
         SharedString::from(style.font.clone())
     };
     let text_color: Hsla = rgb(style.color.0).into();
-    let edge_color = Hsla::from(rgb(style.edge_color.0)).opacity(0.85);
+    let edge_color = Hsla::from(rgb(style.edge_color.0)).opacity(EDGE_OPACITY);
 
     let blocks: Vec<Block> = cues
         .iter()
@@ -164,12 +170,13 @@ pub(crate) fn paint(
         return;
     }
 
-    let offset = (height * style.position).max(4.0);
+    let offset = (height * style.position).max(MIN_BOTTOM);
     let mut bottom = top + height - offset;
     let controls_showing = layout.controls_pinned
         || (layout.mouse_in_window && bounds.contains(&window.mouse_position()));
     if controls_showing {
-        let above_controls = bounds.bottom() - layout.controls_height - px(font_size * 0.25);
+        let above_controls =
+            bounds.bottom() - layout.controls_height - px(font_size * ABOVE_CONTROLS);
         bottom = bottom.min(f32::from(above_controls));
     }
 
@@ -179,7 +186,7 @@ pub(crate) fn paint(
         SubtitleEdge::Outline => &OUTLINE,
         SubtitleEdge::Shadow => &SHADOW,
     };
-    let edge_width = (font_size * 0.075).max(1.0);
+    let edge_width = (font_size * EDGE_WIDTH).max(1.0);
     let background = Hsla::from(rgb(style.background.0)).opacity(style.background_opacity);
     for placement in [Placement::Top, Placement::Middle, Placement::Bottom] {
         let blocks: Vec<&Block> = blocks.iter().filter(|b| b.placement == placement).collect();
@@ -239,7 +246,7 @@ fn paint_background(
     color: Hsla,
     window: &mut Window,
 ) {
-    let padding = metrics.font_size * 0.3;
+    let padding = metrics.font_size * BACKGROUND_PADDING;
     for (row, width) in row_widths(line).into_iter().enumerate() {
         let rect = Bounds {
             origin: point(
@@ -248,7 +255,8 @@ fn paint_background(
             ),
             size: size(px(width + 2.0 * padding), px(metrics.line_height)),
         };
-        window.paint_quad(fill(rect, color).corner_radii(px(metrics.font_size * 0.12)));
+        window
+            .paint_quad(fill(rect, color).superellipse(px(metrics.font_size * BACKGROUND_RADIUS)));
     }
 }
 

@@ -1,7 +1,7 @@
 use gpui::prelude::*;
-use gpui::{AnyElement, App, Refineable, StyleRefinement, Window, div, px};
+use gpui::{AnyElement, App, Refineable, StyleRefinement, Window, div};
 
-use crate::ui::theme::{Theme, overlay};
+use crate::ui::theme::{Theme, overlay, radius};
 
 /// A floating panel to put anything in. By default it is a menu's: the
 /// theme's surface color with a hairline border, rounded corners and a
@@ -55,13 +55,13 @@ impl RenderOnce for Panel {
         let panel = div().overflow_hidden().text_sm();
         let mut panel = if self.overlay {
             panel
-                .superellipse(px(24.))
+                .superellipse(radius::OVERLAY)
                 .bg(overlay::scrim())
                 .text_color(overlay::text())
         } else {
             let theme = Theme::get(window, cx);
             panel
-                .rounded(px(8.))
+                .superellipse(radius::MENU)
                 .border_1()
                 .border_color(theme.border)
                 .bg(theme.surface)

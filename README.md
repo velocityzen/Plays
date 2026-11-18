@@ -130,8 +130,8 @@ For your file manager's **Open With** menu, put the `plays` binary on your
 | Close all | `⌘⇧W` / `Ctrl+Shift+W` |
 | Settings | `⌘,` / `Ctrl+,` |
 
-Shortcuts act on the active tile: the one last clicked (outlined while a
-window has several and the mouse is over it), or the maximized one. A short
+Shortcuts act on the active tile: the one last clicked, or the maximized
+one. A short
 note on the tile says what changed; switching tracks rolls a reel, like a
 slot machine's, to the track picked, with the ones before and after it
 faded above and below. To change shortcuts, open Settings → Hotkeys,

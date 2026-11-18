@@ -13,8 +13,14 @@ use gpui::{
 use super::components::{Button, IconButton};
 use super::open_url::{OpenUrlDialog, OpenUrlEvent, UrlForm};
 use super::player_view::{Graveyard, PlayerEvent, PlayerView};
+use super::theme::layout::{
+    AUDIO_WINDOW_SIZE, COMPACT_WIDTH, DROP_INSET, RING_BORDER, RING_BORDER_DROP,
+    RING_FORM_MAX_WIDTH, RING_FORM_MIN_WIDTH, RING_FORM_SCALE, RING_MARGIN, RING_MAX_DIAMETER,
+    RING_MIN_DIAMETER, RING_SCALE, TILE_GAP, TOOLBAR_HEIGHT, TRAFFIC_LIGHTS, VIDEO_WINDOW_SIZE,
+    WINDOW_MIN_SIZE, WINDOW_SIZE,
+};
 use super::theme::{self, Theme};
-use super::{TRAFFIC_LIGHTS, traffic_lights};
+use super::traffic_lights;
 use crate::app::{self, AudioEngine};
 use crate::media::{Player, Source, picture};
 use crate::settings::{ControlsVisibility, Settings};
@@ -26,27 +32,13 @@ const MEDIA_EXTENSIONS: &[&str] = &[
     "ogv", "opus", "ts", "vob", "wav", "weba", "webm", "wma", "wmv", "wv",
 ];
 
-const WINDOW_MIN_SIZE: Size<Pixels> = Size {
-    width: px(480.),
-    height: px(320.),
-};
 /// macOS has the menu bar for what the toolbar does, so its windows show
 /// just the video, with the traffic lights over it like other video players.
 /// Linux has no menu bar, and the toolbar is what moves the window there
 /// when it draws its own decorations.
 const TOOLBAR: bool = cfg!(not(target_os = "macos"));
-const TOOLBAR_HEIGHT: Pixels = px(44.);
-/// The empty window's ring: its share of the window's shorter side, and its
-/// smallest and largest sizes. It is drawn 2 points wide.
-const RING_SCALE: f32 = 0.8;
-const RING_MIN_DIAMETER: Pixels = px(300.);
-const RING_MAX_DIAMETER: Pixels = px(480.);
 /// The area under the toolbar, which files are dropped on.
 const CONTENT_GROUP: &str = "content";
-/// Between tiles, which otherwise fill the window.
-const TILE_GAP: Pixels = px(2.);
-/// Around the grid while files are dragged over it.
-const DROP_INSET: Pixels = px(6.);
 
 struct Tile {
     view: Entity<PlayerView>,
@@ -458,7 +450,7 @@ impl Workspace {
             1 => format!("1 {one}"),
             n => format!("{n} {many}"),
         };
-        let compact = window.viewport_size().width < px(760.);
+        let compact = window.viewport_size().width < COMPACT_WIDTH;
         let status = match (count - streams, streams) {
             (0, 0) => "Nothing open".to_string(),
             (files, 0) => plural(files, "file", "files"),
@@ -584,9 +576,11 @@ impl Workspace {
         let shorter = viewport.width.min(height);
         // Small windows get a larger share, so what is inside still fits.
         let diameter = (shorter * RING_SCALE)
-            .max(RING_MIN_DIAMETER.min(shorter - px(16.)))
+            .max(RING_MIN_DIAMETER.min(shorter - RING_MARGIN))
             .min(RING_MAX_DIAMETER);
-        let form_width = (diameter * 0.62).max(px(210.)).min(px(320.));
+        let form_width = (diameter * RING_FORM_SCALE)
+            .max(RING_FORM_MIN_WIDTH)
+            .min(RING_FORM_MAX_WIDTH);
         let accent = theme.accent;
 
         let ring = div()
@@ -594,9 +588,9 @@ impl Workspace {
             .size(diameter)
             .rounded_full()
             .border_2()
-            .border_color(theme.text.opacity(0.1))
+            .border_color(theme.text.opacity(RING_BORDER))
             .group_drag_over::<ExternalPaths>(CONTENT_GROUP, move |style| {
-                style.border_color(accent.opacity(0.6))
+                style.border_color(accent.opacity(RING_BORDER_DROP))
             })
             .flex()
             .flex_col()
@@ -818,11 +812,13 @@ fn window_size_for(player: &Player) -> Size<Pixels> {
     let content = match info.as_ref().and_then(|i| i.video_size) {
         Some((width, height)) if width > 0 && height > 0 => {
             let (width, height) = (width as f32, height as f32);
-            let scale = (1280. / width).min(800. / height).min(1.);
+            let scale = (WINDOW_SIZE.width / px(width))
+                .min(WINDOW_SIZE.height / px(height))
+                .min(1.);
             size(px(width * scale), px(height * scale))
         }
-        _ if info.as_ref().is_some_and(|i| !i.has_video) => size(px(420.), px(420.)),
-        _ => size(px(960.), px(540.)),
+        _ if info.as_ref().is_some_and(|i| !i.has_video) => AUDIO_WINDOW_SIZE,
+        _ => VIDEO_WINDOW_SIZE,
     };
     // The toolbar has a 1px border under it.
     let toolbar = if TOOLBAR {

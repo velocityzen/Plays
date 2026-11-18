@@ -1,8 +1,11 @@
 use gpui::prelude::*;
-use gpui::{App, ClickEvent, ElementId, SharedString, Window, div, px, white};
+use gpui::{App, ClickEvent, ElementId, SharedString, Window, div, white};
 
 use super::{ClickHandler, Icon};
-use crate::ui::theme::Theme;
+use crate::ui::theme::controls::{
+    BUTTON_HEIGHT, BUTTON_ICON, PRIMARY_ACTIVE, PRIMARY_HOVER, PRIMARY_SHORTCUT,
+};
+use crate::ui::theme::{Theme, radius};
 
 /// A regular text button with an optional leading icon, and optionally its
 /// keyboard shortcut after the label.
@@ -67,7 +70,12 @@ impl RenderOnce for Button {
         let theme = Theme::get(window, cx);
         let accent = theme.accent;
         let (background, border, hover, active) = if self.primary {
-            (accent, accent, accent.opacity(0.85), accent.opacity(0.7))
+            (
+                accent,
+                accent,
+                accent.opacity(PRIMARY_HOVER),
+                accent.opacity(PRIMARY_ACTIVE),
+            )
         } else {
             (
                 theme.surface,
@@ -77,7 +85,7 @@ impl RenderOnce for Button {
             )
         };
         let (text, icon, shortcut) = if self.primary {
-            (white(), white(), white().opacity(0.7))
+            (white(), white(), white().opacity(PRIMARY_SHORTCUT))
         } else {
             (theme.text, theme.text_muted, theme.text_muted)
         };
@@ -87,7 +95,7 @@ impl RenderOnce for Button {
             .flex_none()
             .items_center()
             .gap_1p5()
-            .h(px(28.))
+            .h(BUTTON_HEIGHT)
             .map(|this| {
                 if self.wide {
                     this.px_4()
@@ -95,7 +103,7 @@ impl RenderOnce for Button {
                     this.px_2p5()
                 }
             })
-            .rounded(px(6.))
+            .superellipse(radius::CONTROL)
             .border_1()
             .border_color(border)
             .bg(background)
@@ -106,7 +114,7 @@ impl RenderOnce for Button {
             .active(move |style| style.bg(active))
             .when_some(self.on_click, |this, handler| this.on_click(handler))
             .when_some(self.icon, |this, name| {
-                this.child(Icon::new(name).size(px(14.)).color(icon))
+                this.child(Icon::new(name).size(BUTTON_ICON).color(icon))
             })
             .child(self.label)
             .when_some(self.shortcut, |this, keys| {

@@ -650,6 +650,10 @@ pub(crate) struct PolychromeSprite {
     pub content_mask: ContentMask<ScaledPixels>,
     pub corner_radii: Corners<ScaledPixels>,
     pub tile: AtlasTile,
+    /// Plays: how far rounded corners are superellipses, as for `Quad`.
+    pub corner_smoothing: f32,
+    /// Plays: keeps the size a multiple of 8, as WGSL lays the struct out.
+    pub smoothing_pad: u32,
 }
 
 impl From<PolychromeSprite> for Primitive {

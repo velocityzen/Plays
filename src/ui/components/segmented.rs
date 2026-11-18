@@ -1,9 +1,10 @@
 use std::rc::Rc;
 
 use gpui::prelude::*;
-use gpui::{App, ElementId, Window, div, px};
+use gpui::{App, ElementId, Window, div};
 
-use crate::ui::theme::Theme;
+use crate::ui::theme::controls::{SEGMENT_HEIGHT, SEGMENTED_PADDING};
+use crate::ui::theme::{Theme, radius};
 
 type SelectHandler<T> = Rc<dyn Fn(&T, &mut Window, &mut App) + 'static>;
 
@@ -45,9 +46,9 @@ impl<T: Copy + PartialEq + 'static> RenderOnce for Segmented<T> {
             .flex()
             .flex_none()
             .flex_wrap()
-            .p(px(2.))
-            .gap(px(2.))
-            .rounded(px(7.))
+            .p(SEGMENTED_PADDING)
+            .gap(SEGMENTED_PADDING)
+            .superellipse(radius::FRAME)
             .bg(theme.surface_active)
             .children(
                 self.options
@@ -59,9 +60,9 @@ impl<T: Copy + PartialEq + 'static> RenderOnce for Segmented<T> {
                             .id(index)
                             .flex()
                             .items_center()
-                            .h(px(24.))
+                            .h(SEGMENT_HEIGHT)
                             .px_2p5()
-                            .rounded(px(5.))
+                            .superellipse(radius::ITEM)
                             .text_sm()
                             .cursor_pointer()
                             .when(active, |this| this.bg(surface).text_color(text).shadow_sm())

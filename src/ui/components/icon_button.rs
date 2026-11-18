@@ -1,8 +1,8 @@
 use gpui::prelude::*;
-use gpui::{App, ClickEvent, ElementId, Hsla, SharedString, Window, div, px};
+use gpui::{App, ClickEvent, ElementId, Hsla, SharedString, Window, div};
 
 use super::{ClickHandler, Icon};
-use crate::ui::theme::{Theme, overlay};
+use crate::ui::theme::{Theme, controls, overlay, radius};
 
 /// A square, borderless button showing one icon.
 #[derive(IntoElement)]
@@ -60,8 +60,8 @@ impl RenderOnce for IconButton {
             .flex_none()
             .items_center()
             .justify_center()
-            .size(px(28.))
-            .rounded(px(6.))
+            .size(controls::ICON_BUTTON)
+            .superellipse(radius::CONTROL)
             .cursor_pointer()
             .hover(move |style| style.bg(hover))
             .when_some(self.on_click, |this, handler| this.on_click(handler))

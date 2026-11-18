@@ -1,7 +1,7 @@
 use gpui::prelude::*;
-use gpui::{App, Hsla, Pixels, SharedString, Window, px, svg};
+use gpui::{App, Hsla, Pixels, SharedString, Window, svg};
 
-use crate::ui::theme::Theme;
+use crate::ui::theme::{Theme, controls};
 
 /// One of the app's icons (`assets/icons`), drawn in a single color.
 #[derive(IntoElement)]
@@ -15,7 +15,7 @@ impl Icon {
     pub fn new(name: impl Into<SharedString>) -> Self {
         Self {
             name: name.into(),
-            size: px(16.),
+            size: controls::ICON,
             color: None,
         }
     }

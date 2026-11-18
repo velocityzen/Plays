@@ -472,10 +472,12 @@ impl Element for Img {
                         .corner_radii
                         .to_pixels(window.rem_size())
                         .clamp_radii_for_quad_size(new_bounds.size);
+                    // Plays: with its corner smoothing.
                     window
-                        .paint_image(
+                        .paint_image_with_smoothing(
                             new_bounds,
                             corner_radii,
+                            style.corner_smoothing,
                             data,
                             layout_state.frame_index,
                             self.style.grayscale,

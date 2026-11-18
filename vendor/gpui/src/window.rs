@@ -3056,6 +3056,8 @@ impl Window {
                 content_mask,
                 tile,
                 opacity,
+                corner_smoothing: 0.,
+                smoothing_pad: 0,
             });
         }
         Ok(())
@@ -3136,6 +3138,22 @@ impl Window {
         frame_index: usize,
         grayscale: bool,
     ) -> Result<()> {
+        self.paint_image_with_smoothing(bounds, corner_radii, 0., data, frame_index, grayscale)
+    }
+
+    /// Plays: like `paint_image`, with the rounded corners as far
+    /// superellipses rather than circular arcs as `corner_smoothing` says,
+    /// from 0 (circular) to 1, the way `PaintQuad::corner_smoothing` draws
+    /// them.
+    pub fn paint_image_with_smoothing(
+        &mut self,
+        bounds: Bounds<Pixels>,
+        corner_radii: Corners<Pixels>,
+        corner_smoothing: f32,
+        data: Arc<RenderImage>,
+        frame_index: usize,
+        grayscale: bool,
+    ) -> Result<()> {
         self.invalidator.debug_assert_paint();
 
         let scale_factor = self.scale_factor();
@@ -3172,6 +3190,8 @@ impl Window {
             corner_radii,
             tile,
             opacity,
+            corner_smoothing: corner_smoothing.clamp(0., 1.),
+            smoothing_pad: 0,
         });
         Ok(())
     }
@@ -5034,6 +5054,13 @@ impl PaintQuad {
             corner_smoothing: corner_smoothing.clamp(0., 1.),
             ..self
         }
+    }
+
+    /// Plays: sets the corner radii, with the corners drawn as superellipses
+    /// the way `Styled::superellipse` draws them.
+    pub fn superellipse(self, corner_radii: impl Into<Corners<Pixels>>) -> Self {
+        self.corner_radii(corner_radii)
+            .corner_smoothing(crate::styled::SUPERELLIPSE_SMOOTHING)
     }
 
     /// Sets the corner radii of the quad.

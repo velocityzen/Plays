@@ -5,12 +5,12 @@
 use gpui::prelude::*;
 use gpui::{
     App, Context, Entity, EventEmitter, Focusable, KeyBinding, MouseButton, SharedString,
-    Subscription, Window, actions, div, hsla, px,
+    Subscription, Window, actions, black, div,
 };
 
 use super::components::{Button, Icon};
 use super::text_input::TextInput;
-use super::theme::Theme;
+use super::theme::{Theme, dialog, radius};
 use crate::media::Source;
 
 actions!(open_url, [Confirm, Cancel]);
@@ -178,13 +178,13 @@ impl Render for OpenUrlDialog {
 
         let card = div()
             .id("open-url-card")
-            .w(px(520.))
+            .w(dialog::WIDTH)
             .max_w_full()
             .flex()
             .flex_col()
             .gap_3()
             .p_4()
-            .rounded(px(12.))
+            .superellipse(radius::DIALOG)
             .border_1()
             .border_color(theme.border)
             .bg(theme.surface)
@@ -222,9 +222,9 @@ impl Render for OpenUrlDialog {
             .justify_center()
             // Otherwise the card stretches to the bottom of the window.
             .items_start()
-            .pt(px(96.))
+            .pt(dialog::TOP)
             .px_4()
-            .bg(hsla(0., 0., 0., 0.45))
+            .bg(black().opacity(dialog::BACKDROP))
             .occlude()
             .on_mouse_down(
                 MouseButton::Left,

@@ -35,13 +35,15 @@ Cargo.toml. Everything Plays changed is marked "Plays" in the code.
   surfaces are on screen, and for 120 frames after, since EDR costs power.
 
 Superellipse corners (`src/styled.rs`, `src/style.rs`, `src/window.rs`,
-`src/scene.rs`, and the quad shaders in `shaders.metal` and `shaders.wgsl`):
+`src/scene.rs`, `src/elements/img.rs`, and the quad and image shaders in
+`shaders.metal` and `shaders.wgsl`):
 
 - `.superellipse(radius)` rounds corners like `.rounded(radius)`, but as
   superellipses (squircles): the curve starts with no curvature and spreads
   along more of each side, so there is no kink where it meets them, like
   Apple's continuous corners. It sets the radii and `Style::corner_smoothing`
-  to 0.6; `PaintQuad::corner_smoothing` sets it on a quad painted directly.
+  to 0.6; `PaintQuad::superellipse` (or `corner_smoothing` for another
+  amount) does the same for a quad painted directly.
 - `Quad` carries `corner_smoothing`, and `pad` so its size stays a multiple
   of 8 as WGSL lays it out. In the quad shaders, `squircle_corner` turns a
   radius and smoothing into the corner's extent and exponent, less when the
@@ -49,8 +51,18 @@ Superellipse corners (`src/styled.rs`, `src/style.rs`, `src/window.rs`,
   circular. `squircle_sdf` is its distance field, divided by its gradient so
   antialiasing and borders are even. Quads without smoothing, and so
   everything `.rounded`, take the old code and are drawn exactly as before.
-- Not smoothed: shadows, images, the layout of dashes on dashed borders,
-  and Windows, whose shader only has the new fields.
+- Images too: `PolychromeSprite` carries the smoothing (and a pad), `img`
+  passes its style's to the new `Window::paint_image_with_smoothing`, and
+  the sprite shader cuts the corners with `quad_sdf_smoothed`, which is
+  `quad_sdf` without smoothing.
+- Not smoothed: shadows, the layout of dashes on dashed borders, and
+  Windows, whose shaders only have the new fields.
+
+`over()` in the quad shaders (Metal, WGSL and HLSL) returns clear when both
+colors are clear. It divided by their combined alpha, so the corners of a
+fully see-through rounded quad (any rounded element drawn at opacity 0, for
+example while it fades in) came out 0 / 0. The NaN stayed in the
+`RGBA16Float` drawable and showed as dashed arcs and marks.
 
 `src/text_system/line.rs`: a line of text paints in a layer as wide as
 the width it is aligned in, not just as wide as the text. Centered text

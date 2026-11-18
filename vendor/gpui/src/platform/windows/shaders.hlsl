@@ -238,6 +238,10 @@ float gaussian(float x, float sigma) {
 float4 over(float4 below, float4 above) {
     float4 result;
     float alpha = above.a + below.a * (1.0 - above.a);
+    // Plays: two clear colors blend to clear, not 0 / 0.
+    if (alpha <= 0.0) {
+        return float4(0.0, 0.0, 0.0, 0.0);
+    }
     result.rgb = (above.rgb * above.a + below.rgb * below.a * (1.0 - above.a)) / alpha;
     result.a = alpha;
     return result;
@@ -1138,6 +1142,10 @@ struct PolychromeSprite {
     Bounds content_mask;
     Corners corner_radii;
     AtlasTile tile;
+    // Plays: superellipse corners aren't drawn on Windows; these keep the
+    // struct the same size as gpui's `PolychromeSprite`.
+    float corner_smoothing;
+    uint smoothing_pad;
 };
 
 struct PolychromeSpriteVertexOutput {

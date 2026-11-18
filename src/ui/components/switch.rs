@@ -1,7 +1,8 @@
 use gpui::prelude::*;
-use gpui::{App, ElementId, Window, div, px, white};
+use gpui::{App, ElementId, Window, div, white};
 
 use crate::ui::theme::Theme;
+use crate::ui::theme::controls::{SWITCH_HEIGHT, SWITCH_KNOB, SWITCH_PADDING, SWITCH_WIDTH};
 
 type ToggleHandler = Box<dyn Fn(&bool, &mut Window, &mut App) + 'static>;
 
@@ -39,15 +40,15 @@ impl RenderOnce for Switch {
             .flex_none()
             .items_center()
             .when(on, |this| this.justify_end())
-            .w(px(36.))
-            .h(px(20.))
-            .p(px(2.))
+            .w(SWITCH_WIDTH)
+            .h(SWITCH_HEIGHT)
+            .p(SWITCH_PADDING)
             .rounded_full()
             .cursor_pointer()
             .bg(if on { theme.accent } else { theme.track })
             .when_some(self.on_toggle, |this, handler| {
                 this.on_click(move |_, window, cx| handler(&!on, window, cx))
             })
-            .child(div().size(px(16.)).rounded_full().bg(white()))
+            .child(div().size(SWITCH_KNOB).rounded_full().bg(white()))
     }
 }

@@ -28,6 +28,8 @@ float pick_corner_radius(float2 center_to_point, Corners_ScaledPixels corner_rad
 float quad_sdf(float2 point, Bounds_ScaledPixels bounds,
                Corners_ScaledPixels corner_radii);
 float quad_sdf_impl(float2 center_to_point, float corner_radius);
+float quad_sdf_smoothed(float2 point, Bounds_ScaledPixels bounds,
+                        Corners_ScaledPixels corner_radii, float smoothing);
 float2 squircle_corner(float corner_radius, float2 half_size, float smoothing);
 float squircle_corner_sdf(float2 corner_center_to_point, float2 radii, float exponent);
 float squircle_sdf(float2 corner_center_to_point, float extent, float exponent);
@@ -716,8 +718,8 @@ fragment float4 polychrome_sprite_fragment(
                                           min_filter::linear);
   float4 sample =
       atlas_texture.sample(atlas_texture_sampler, input.tile_position);
-  float distance =
-      quad_sdf(input.position.xy, sprite.bounds, sprite.corner_radii);
+  float distance = quad_sdf_smoothed(input.position.xy, sprite.bounds,
+                                     sprite.corner_radii, sprite.corner_smoothing);
 
   float4 color = sample;
   if (sprite.grayscale) {
@@ -1309,6 +1311,21 @@ float2 squircle_corner(float corner_radius, float2 half_size, float smoothing) {
   return float2(radius * (1.0 + e), 2.0 + e * (10.0 / 3.0));
 }
 
+// Plays: `quad_sdf`, with the corners as far superellipses as `smoothing`
+// says (see `squircle_corner`); without smoothing it is `quad_sdf`.
+float quad_sdf_smoothed(float2 point, Bounds_ScaledPixels bounds,
+                        Corners_ScaledPixels corner_radii, float smoothing) {
+  float2 half_size = float2(bounds.size.width, bounds.size.height) / 2.0;
+  float2 center = float2(bounds.origin.x, bounds.origin.y) + half_size;
+  float2 center_to_point = point - center;
+  float2 corner = squircle_corner(pick_corner_radius(center_to_point, corner_radii),
+                                  half_size, smoothing);
+  float2 corner_center_to_point = fabs(center_to_point) - half_size + corner.x;
+  return corner.y == 2.0
+    ? quad_sdf_impl(corner_center_to_point, corner.x)
+    : squircle_sdf(corner_center_to_point, corner.x, corner.y);
+}
+
 // Plays: signed distance of a point from a superellipse corner, positive
 // outside. `corner_center_to_point` is from the corner's center, both
 // components > 0, and `radii` its extent along x and y.
@@ -1388,6 +1405,11 @@ float4 distance_from_clip_rect_transformed(float2 unit_vertex, Bounds_ScaledPixe
 float4 over(float4 below, float4 above) {
   float4 result;
   float alpha = above.a + below.a * (1.0 - above.a);
+  // Plays: two clear colors blend to clear, not 0 / 0. The NaN would stay in
+  // the RGBA16Float drawable and show at the corners of see-through quads.
+  if (alpha <= 0.0) {
+    return float4(0.0);
+  }
   result.rgb =
       (above.rgb * above.a + below.rgb * below.a * (1.0 - above.a)) / alpha;
   result.a = alpha;

@@ -284,6 +284,10 @@ fn oklab_to_linear_srgb(color: vec4<f32>) -> vec4<f32> {
 
 fn over(below: vec4<f32>, above: vec4<f32>) -> vec4<f32> {
     let alpha = above.a + below.a * (1.0 - above.a);
+    // Plays: two clear colors blend to clear, not 0 / 0.
+    if (alpha <= 0.0) {
+        return vec4<f32>(0.0);
+    }
     let color = (above.rgb * above.a + below.rgb * below.a * (1.0 - above.a)) / alpha;
     return vec4<f32>(color, alpha);
 }
@@ -375,6 +379,21 @@ fn squircle_corner(corner_radius: f32, half_size: vec2<f32>, smoothing: f32) -> 
     let radius = min(corner_radius, room);
     let e = clamp(room / radius - 1.0, 0.0, smoothing);
     return vec2<f32>(radius * (1.0 + e), 2.0 + e * (10.0 / 3.0));
+}
+
+// Plays: `quad_sdf`, with the corners as far superellipses as `smoothing`
+// says (see `squircle_corner`); without smoothing it is `quad_sdf`.
+fn quad_sdf_smoothed(point: vec2<f32>, bounds: Bounds, corner_radii: Corners, smoothing: f32) -> f32 {
+    let half_size = bounds.size / 2.0;
+    let center = bounds.origin + half_size;
+    let center_to_point = point - center;
+    let corner = squircle_corner(pick_corner_radius(center_to_point, corner_radii),
+                                 half_size, smoothing);
+    let corner_center_to_point = abs(center_to_point) - half_size + corner.x;
+    if (corner.y == 2.0) {
+        return quad_sdf_impl(corner_center_to_point, corner.x);
+    }
+    return squircle_sdf(corner_center_to_point, corner.x, corner.y);
 }
 
 // Plays: signed distance of a point from a superellipse corner, positive
@@ -1260,6 +1279,9 @@ struct PolychromeSprite {
     content_mask: Bounds,
     corner_radii: Corners,
     tile: AtlasTile,
+    // Plays: see `PolychromeSprite::corner_smoothing`.
+    corner_smoothing: f32,
+    smoothing_pad: u32,
 }
 var<storage, read> b_poly_sprites: array<PolychromeSprite>;
 
@@ -1292,7 +1314,8 @@ fn fs_poly_sprite(input: PolySpriteVarying) -> @location(0) vec4<f32> {
     }
 
     let sprite = b_poly_sprites[input.sprite_id];
-    let distance = quad_sdf(input.position.xy, sprite.bounds, sprite.corner_radii);
+    let distance = quad_sdf_smoothed(input.position.xy, sprite.bounds,
+                                     sprite.corner_radii, sprite.corner_smoothing);
 
     var color = sample;
     if ((sprite.grayscale & 0xFFu) != 0u) {

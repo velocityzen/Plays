@@ -14,7 +14,15 @@ use gpui::{
 
 use super::components::{Button, Icon, Panel, Segmented, Slide, Slider, Switch};
 use super::subtitles;
-use super::theme::Theme;
+use super::theme::settings::{
+    APPEARANCE_COLOR, AUDIO_COLOR, BADGE, BADGE_ICON, FONT_BUTTON_WIDTH, FONT_CHECK_WIDTH,
+    FONT_MENU_HEIGHT, FONT_MENU_TOP, FONT_MENU_WIDTH, HOTKEY_ADD_ICON, HOTKEY_CHIP_HEIGHT,
+    HOTKEY_KEYS_MAX_WIDTH, HOTKEY_REMOVE_ICON, HOTKEYS_COLOR, OUTPUT_MAX_WIDTH, PLAYBACK_COLOR,
+    PREVIEW_PICTURE, PREVIEW_SIZE, PREVIEW_SKY, PREVIEW_SUN, PREVIEW_SUN_CENTER, PREVIEW_SUN_SIZE,
+    SIDEBAR_ROW_HEIGHT, SIDEBAR_TOP, SIDEBAR_TOP_MAC, SIDEBAR_WIDTH, SLIDER_VALUE_WIDTH,
+    SLIDER_WIDTH, SUBTITLES_COLOR, SWATCH, SWATCH_PADDING, TITLE_HEIGHT, VIDEO_COLOR,
+};
+use super::theme::{Theme, controls, menu, radius};
 use crate::app::AudioEngine;
 use crate::hotkeys::{self, Command, Group, Hotkeys};
 use crate::media::subtitles::{CueContent, parse_ass};
@@ -74,14 +82,14 @@ impl Section {
     /// The badge behind the icon, in macOS's system colors, as System
     /// Settings has them.
     fn color(self) -> Hsla {
-        match self {
-            Self::Playback => rgb(0x34c759),
-            Self::Audio => rgb(0xff375f),
-            Self::Video => rgb(0x0a84ff),
-            Self::Subtitles => rgb(0xff9f0a),
-            Self::Hotkeys => rgb(0x5e5ce6),
-            Self::Appearance => rgb(0x8e8e93),
-        }
+        rgb(match self {
+            Self::Playback => PLAYBACK_COLOR,
+            Self::Audio => AUDIO_COLOR,
+            Self::Video => VIDEO_COLOR,
+            Self::Subtitles => SUBTITLES_COLOR,
+            Self::Hotkeys => HOTKEYS_COLOR,
+            Self::Appearance => APPEARANCE_COLOR,
+        })
         .into()
     }
 }
@@ -149,7 +157,7 @@ fn group(title: Option<&'static str>, theme: &Theme, rows: Vec<AnyElement>) -> A
             div()
                 .flex()
                 .flex_col()
-                .rounded(px(10.))
+                .superellipse(radius::CARD)
                 .border_1()
                 .border_color(theme.border)
                 .bg(theme.surface)
@@ -219,7 +227,7 @@ fn range_slider(
         .flex_none()
         .items_center()
         .gap_2()
-        .w(px(200.))
+        .w(SLIDER_WIDTH)
         .child(
             Slider::new(id, (value - low) / (high - low), dragging).on_change(
                 move |event, _, cx| {
@@ -230,7 +238,7 @@ fn range_slider(
         )
         .child(
             div()
-                .w(px(40.))
+                .w(SLIDER_VALUE_WIDTH)
                 .flex_none()
                 .text_right()
                 .text_sm()
@@ -255,7 +263,7 @@ fn gamma_slider(
         .flex_none()
         .items_center()
         .gap_2()
-        .w(px(200.))
+        .w(SLIDER_WIDTH)
         .child(
             Slider::new(id, position, dragging).on_change(move |event, _, cx| {
                 let gamma = (low + event.value * (high - low)).exp2();
@@ -265,7 +273,7 @@ fn gamma_slider(
         )
         .child(
             div()
-                .w(px(40.))
+                .w(SLIDER_VALUE_WIDTH)
                 .flex_none()
                 .text_right()
                 .text_sm()
@@ -294,8 +302,8 @@ fn swatches(
                     div()
                         .id((id, index))
                         .flex_none()
-                        .size(px(26.))
-                        .p(px(2.))
+                        .size(SWATCH)
+                        .p(SWATCH_PADDING)
                         .rounded_full()
                         .border_2()
                         .border_color(if color == selected {
@@ -319,13 +327,6 @@ fn swatches(
         )
 }
 
-/// The width of the subtitle font button, which its menu lines up with.
-const FONT_BUTTON_WIDTH: f32 = 200.0;
-
-/// The shape of the picture in the subtitle preview: a wide film, so it
-/// shows the bars that "Place on: Tile" lets subtitles go in.
-const PREVIEW_PICTURE: (u32, u32) = (2390, 1000);
-
 const PREVIEW_TEXT: &str = r"Subtitles look like this,\N{\i1}and like this in italics.{\i0}";
 
 /// A 16:9 tile with a letterboxed picture and a cue on it, drawn the way a
@@ -344,7 +345,7 @@ fn subtitle_preview(style: &SubtitleStyle, theme: &Theme) -> AnyElement {
         .flex()
         .justify_center()
         .py_3()
-        .rounded(px(10.))
+        .superellipse(radius::CARD)
         .border_1()
         .border_color(theme.border)
         .bg(theme.surface)
@@ -352,9 +353,9 @@ fn subtitle_preview(style: &SubtitleStyle, theme: &Theme) -> AnyElement {
             div()
                 .relative()
                 .flex_none()
-                .w(px(284.))
-                .h(px(160.))
-                .rounded(px(6.))
+                .w(PREVIEW_SIZE.width)
+                .h(PREVIEW_SIZE.height)
+                .superellipse(radius::CONTROL)
                 .overflow_hidden()
                 .bg(black())
                 .child(
@@ -391,17 +392,21 @@ fn paint_picture(bounds: Bounds<Pixels>, window: &mut Window) {
         picture,
         linear_gradient(
             180.,
-            linear_color_stop(rgb(0x1b2a4a), 0.),
-            linear_color_stop(rgb(0xf4a261), 1.),
+            linear_color_stop(rgb(PREVIEW_SKY.0), 0.),
+            linear_color_stop(rgb(PREVIEW_SKY.1), 1.),
         ),
     ));
-    let sun = picture.size.height * 0.32;
+    let sun = picture.size.height * PREVIEW_SUN_SIZE;
     let center = point(
-        picture.origin.x + picture.size.width * 0.76,
-        picture.origin.y + picture.size.height * 0.36,
+        picture.origin.x + picture.size.width * PREVIEW_SUN_CENTER.x,
+        picture.origin.y + picture.size.height * PREVIEW_SUN_CENTER.y,
     );
     window.paint_quad(
-        fill(Bounds::centered_at(center, size(sun, sun)), rgb(0xffd58a)).corner_radii(sun / 2.),
+        fill(
+            Bounds::centered_at(center, size(sun, sun)),
+            rgb(PREVIEW_SUN),
+        )
+        .corner_radii(sun / 2.),
     );
 }
 
@@ -464,11 +469,11 @@ impl SettingsView {
                     .items_center()
                     .justify_between()
                     .gap_2()
-                    .w(px(FONT_BUTTON_WIDTH))
-                    .h(px(28.))
+                    .w(FONT_BUTTON_WIDTH)
+                    .h(controls::BUTTON_HEIGHT)
                     .pl_2p5()
                     .pr_1p5()
-                    .rounded(px(6.))
+                    .superellipse(radius::CONTROL)
                     .border_1()
                     .border_color(theme.border)
                     .bg(theme.surface)
@@ -479,7 +484,7 @@ impl SettingsView {
                     .child(div().min_w_0().truncate().child(name))
                     .child(
                         Icon::new("chevron-up-down")
-                            .size(px(14.))
+                            .size(controls::BUTTON_ICON)
                             .color(theme.text_muted),
                     ),
             )
@@ -489,8 +494,8 @@ impl SettingsView {
                         anchored()
                             .position_mode(AnchoredPositionMode::Local)
                             .anchor(Corner::TopRight)
-                            .position(point(px(FONT_BUTTON_WIDTH), px(32.)))
-                            .snap_to_window_with_margin(px(8.))
+                            .position(point(FONT_BUTTON_WIDTH, FONT_MENU_TOP))
+                            .snap_to_window_with_margin(menu::WINDOW_MARGIN)
                             .child(self.font_menu(current, theme, cx)),
                     )
                     .with_priority(2),
@@ -535,16 +540,16 @@ impl SettingsView {
                             .flex()
                             .items_center()
                             .gap_1p5()
-                            .h(px(26.))
+                            .h(menu::ROW_HEIGHT)
                             .mx_1()
                             .px_2()
-                            .rounded(px(5.))
+                            .superellipse(radius::ITEM)
                             .cursor_pointer()
                             .hover(|style| style.bg(theme.accent).text_color(white()))
                             .child(
                                 div()
                                     .flex_none()
-                                    .w(px(12.))
+                                    .w(FONT_CHECK_WIDTH)
                                     .when(checked, |this| this.child("✓")),
                             )
                             .child(
@@ -574,9 +579,9 @@ impl SettingsView {
             }),
         )
         .track_scroll(self.font_scroll.clone())
-        .h(px(280.))
+        .h(FONT_MENU_HEIGHT)
         .py_1();
-        Panel::new().occlude().w(px(260.)).child(list)
+        Panel::new().occlude().w(FONT_MENU_WIDTH).child(list)
     }
 
     fn open_fonts(&mut self, _: &ClickEvent, _: &mut Window, cx: &mut Context<Self>) {
@@ -818,9 +823,9 @@ impl SettingsView {
                 .flex_none()
                 .items_center()
                 .gap_1()
-                .h(px(24.))
+                .h(HOTKEY_CHIP_HEIGHT)
                 .px_2()
-                .rounded(px(5.))
+                .superellipse(radius::ITEM)
                 .border_1()
                 .text_sm()
         };
@@ -832,7 +837,7 @@ impl SettingsView {
             .justify_end()
             .items_center()
             .gap_1()
-            .max_w(px(280.))
+            .max_w(HOTKEY_KEYS_MAX_WIDTH)
             .children(keys.iter().map(|key| {
                 let removed = key.clone();
                 chip(format!("{}-{key}", command.id()).into())
@@ -844,9 +849,13 @@ impl SettingsView {
                             .id("remove")
                             .flex_none()
                             .cursor_pointer()
-                            .rounded(px(3.))
+                            .superellipse(radius::SMALL)
                             .hover(|style| style.bg(theme.surface_hover))
-                            .child(Icon::new("close").size(px(10.)).color(theme.text_muted))
+                            .child(
+                                Icon::new("close")
+                                    .size(HOTKEY_REMOVE_ICON)
+                                    .color(theme.text_muted),
+                            )
                             .on_click(move |_, _, cx| {
                                 update_settings(cx, true, |s| s.hotkeys.remove(command, &removed))
                             }),
@@ -867,7 +876,11 @@ impl SettingsView {
                     .border_color(theme.border)
                     .cursor_pointer()
                     .hover(|style| style.bg(theme.surface_hover))
-                    .child(Icon::new("plus").size(px(12.)).color(theme.text_muted))
+                    .child(
+                        Icon::new("plus")
+                            .size(HOTKEY_ADD_ICON)
+                            .color(theme.text_muted),
+                    )
                     .on_click(cx.listener(move |this, _, window, cx| {
                         this.recording = Some(command);
                         this.hotkey_note = None;
@@ -991,7 +1004,7 @@ impl SettingsView {
                         div()
                             .text_sm()
                             .text_color(theme.text_muted)
-                            .max_w(px(260.))
+                            .max_w(OUTPUT_MAX_WIDTH)
                             .truncate()
                             .child(AudioEngine::device_description(cx)),
                     ),
@@ -1165,7 +1178,7 @@ impl SettingsView {
     fn render_sidebar(&self, theme: &Theme, cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .flex_none()
-            .w(px(200.))
+            .w(SIDEBAR_WIDTH)
             .h_full()
             .flex()
             .flex_col()
@@ -1173,9 +1186,9 @@ impl SettingsView {
             .px_2p5()
             // Below the traffic lights, which sit over the sidebar on macOS.
             .pt(if cfg!(target_os = "macos") {
-                px(48.)
+                SIDEBAR_TOP_MAC
             } else {
-                px(10.)
+                SIDEBAR_TOP
             })
             .bg(theme.tile)
             .border_r_1()
@@ -1187,9 +1200,9 @@ impl SettingsView {
                     .flex()
                     .items_center()
                     .gap_2()
-                    .h(px(30.))
+                    .h(SIDEBAR_ROW_HEIGHT)
                     .px_1p5()
-                    .rounded(px(7.))
+                    .superellipse(radius::FRAME)
                     .text_sm()
                     .map(|this| {
                         if selected {
@@ -1207,13 +1220,13 @@ impl SettingsView {
                     .child(
                         div()
                             .flex_none()
-                            .size(px(20.))
-                            .rounded(px(5.))
+                            .size(BADGE)
+                            .superellipse(radius::ITEM)
                             .flex()
                             .items_center()
                             .justify_center()
                             .bg(section.color())
-                            .child(Icon::new(section.icon()).size(px(12.)).color(white())),
+                            .child(Icon::new(section.icon()).size(BADGE_ICON).color(white())),
                     )
                     .child(section.title())
             }))
@@ -1238,7 +1251,7 @@ impl Render for SettingsView {
                 // In line with the traffic lights on macOS, like a title.
                 div()
                     .flex_none()
-                    .h(px(42.))
+                    .h(TITLE_HEIGHT)
                     .px_5()
                     .flex()
                     .items_center()

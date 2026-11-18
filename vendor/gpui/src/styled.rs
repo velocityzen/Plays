@@ -13,7 +13,7 @@ pub use gpui_macros::{
 const ELLIPSIS: SharedString = SharedString::new_static("…");
 
 /// Plays: the corner smoothing `superellipse` uses, close to Apple's.
-const SUPERELLIPSE_SMOOTHING: f32 = 0.6;
+pub(crate) const SUPERELLIPSE_SMOOTHING: f32 = 0.6;
 
 /// A trait for elements that can be styled.
 /// Use this to opt-in to a utility CSS-like styling API.
