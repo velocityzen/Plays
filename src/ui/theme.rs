@@ -275,6 +275,11 @@ pub mod motion {
     /// How long the mouse can rest before a playing tile's header and
     /// controls fade (and the pointer hides), as if it had left the window.
     pub const MOUSE_IDLE: Duration = Duration::from_millis(2500);
+    /// How long files just opened get to say how big their videos are
+    /// before their window is sized for them anyway, and how often it
+    /// looks.
+    pub const FIT_WAIT: Duration = Duration::from_secs(3);
+    pub const FIT_POLL: Duration = Duration::from_millis(50);
     /// How much of the audio level meter's reading is kept each frame as
     /// the sound gets quieter; it rises at once.
     pub const LEVEL_FALLOFF: f32 = 0.88;
@@ -292,6 +297,9 @@ pub mod layout {
     pub const AUDIO_WINDOW_SIZE: Size<Pixels> = size(px(420.), px(420.));
     /// A popped-out tile's window before the size of its video is known.
     pub const VIDEO_WINDOW_SIZE: Size<Pixels> = size(px(960.), px(540.));
+    /// Room a window sized for its videos leaves on its screen, for the
+    /// panels and docks of desktops gpui can't ask (macOS tells).
+    pub const SCREEN_MARGIN: Size<Pixels> = size(px(48.), px(96.));
     pub const SETTINGS_WINDOW_SIZE: Size<Pixels> = size(px(720.), px(520.));
     pub const SETTINGS_WINDOW_MIN_SIZE: Size<Pixels> = size(px(680.), px(420.));
     /// Where the macOS traffic lights go in windows without a title bar.

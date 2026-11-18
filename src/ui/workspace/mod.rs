@@ -3,6 +3,7 @@
 
 mod commands;
 mod empty;
+mod fit;
 mod grid;
 mod mouse;
 mod opening;
@@ -14,8 +15,9 @@ use std::time::{Duration, Instant};
 use anyhow::Result;
 use gpui::prelude::*;
 use gpui::{
-    App, Bounds, Context, Entity, EntityId, ExternalPaths, FocusHandle, Pixels, Size, Subscription,
-    TitlebarOptions, Window, WindowBounds, WindowHandle, WindowOptions, black, div,
+    AnyWindowHandle, App, Bounds, Context, Entity, EntityId, ExternalPaths, FocusHandle, Pixels,
+    Size, Subscription, TitlebarOptions, Window, WindowBounds, WindowHandle, WindowOptions, black,
+    div,
 };
 
 use super::open_url::{OpenUrlDialog, OpenUrlEvent, UrlForm};
@@ -43,6 +45,8 @@ struct Tile {
 /// is one of these; a tile can move to a new one and keep playing.
 pub struct Workspace {
     focus_handle: FocusHandle,
+    /// Its own window, to size for the videos opened in it.
+    window: AnyWindowHandle,
     tiles: Vec<Tile>,
     /// Gamma for SDR and HDR video, as last applied to the tiles.
     gamma: [f32; 2],
@@ -144,6 +148,7 @@ impl Workspace {
         .detach();
         Self {
             focus_handle,
+            window: window.window_handle(),
             tiles: Vec::new(),
             maximized: None,
             active: None,

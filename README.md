@@ -50,6 +50,9 @@ GPU-accelerated UI framework.
   and never replace another.
 - Any tile can pop out into a new window, where it keeps playing. Every
   window works the same: drop more files on it and they play side by side.
+- As files open, their window takes the size of the video, or of a grid
+  with room for each video at its own size, scaled down to fit the screen.
+  After that the window keeps the size you give it.
 - On macOS 12 and later, a tile can play in macOS's own Picture in Picture
   window, over every app and Space, with its play/pause and skip buttons:
   `⌃⌘P`, Video → Picture in Picture, or the button on the tile. The sound
@@ -414,7 +417,8 @@ last window quits.
   to its license.
 - `src/ui/workspace/`: a window, one per window, a file per part: opening
   files, folders and streams (`opening`), the tiles and moving one to its
-  own window (`tiles`), the grid, the empty window's ring (`empty`), the
+  own window (`tiles`), sizing the window for the videos opened in it
+  (`fit`), the grid, the empty window's ring (`empty`), the
   toolbar, the mouse coming, going and resting, and the traffic lights
   (`mouse`), and what the Playback
   commands do to every tile (`commands`).

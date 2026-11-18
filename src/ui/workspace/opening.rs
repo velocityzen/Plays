@@ -39,6 +39,7 @@ impl Workspace {
         }
         let settings = cx.global::<Settings>().clone();
         let mixer = AudioEngine::mixer(cx);
+        let mut opened = Vec::new();
         for source in sources {
             log::info!("opening {source}");
             let graveyard = self.graveyard.clone();
@@ -48,9 +49,11 @@ impl Workspace {
                 view.find_neighbors(cx);
                 view
             });
+            opened.push(view.entity_id());
             self.add_tile(view, cx);
         }
         self.tiles_changed(cx);
+        self.fit_when_known(opened, cx);
     }
 
     pub fn prompt_open(&mut self, window: &mut Window, cx: &mut Context<Self>) {
