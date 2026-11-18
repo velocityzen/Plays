@@ -1,0 +1,116 @@
+//! The bar over the top of a tile: the file's name and what it is, and
+//! buttons to pop the tile out, expand it and close it.
+
+use gpui::prelude::*;
+use gpui::{Context, Div, Window, div, linear_color_stop, linear_gradient};
+
+use super::{PlayerEvent, PlayerView, Reveal};
+use crate::media::decoder::MediaInfo;
+use crate::ui::components::IconButton;
+use crate::ui::theme::layout::TRAFFIC_LIGHTS_WIDTH;
+use crate::ui::theme::overlay;
+
+impl PlayerView {
+    pub(super) fn render_header(
+        &self,
+        reveal: &Reveal,
+        info: Option<&MediaInfo>,
+        show_titles: bool,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) -> Div {
+        let expanded = if self.alone {
+            window.is_fullscreen()
+        } else {
+            self.maximized
+        };
+        // Full screen hides the traffic lights.
+        let under_traffic_lights =
+            cfg!(target_os = "macos") && self.top_left && !window.is_fullscreen();
+        let details = info.map(details);
+
+        reveal
+            .apply(
+                div()
+                    .absolute()
+                    .top_0()
+                    .left_0()
+                    .right_0()
+                    .flex()
+                    .items_center()
+                    .gap_1()
+                    .pl_3()
+                    .pr_1()
+                    // Lines the buttons up with the traffic lights.
+                    .pt_2()
+                    .pb_4()
+                    .when(under_traffic_lights, |this| this.pl(TRAFFIC_LIGHTS_WIDTH))
+                    .bg(linear_gradient(
+                        180.,
+                        linear_color_stop(overlay::scrim(), 0.),
+                        linear_color_stop(overlay::scrim_clear(), 1.),
+                    )),
+            )
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .flex()
+                    .items_baseline()
+                    .gap_2()
+                    .when(show_titles, |this| {
+                        this.child(
+                            div()
+                                .min_w_0()
+                                .truncate()
+                                .text_sm()
+                                .text_color(overlay::text())
+                                .child(self.title.clone()),
+                        )
+                    })
+                    .when_some(details.filter(|d| !d.is_empty()), |this, details| {
+                        this.child(
+                            div()
+                                .flex_none()
+                                .text_xs()
+                                .text_color(overlay::text_muted())
+                                .child(details),
+                        )
+                    }),
+            )
+            .when(!self.alone, |this| {
+                this.child(
+                    IconButton::new("pop-out", "pop-out")
+                        .overlay()
+                        .on_click(cx.listener(|_, _, _, cx| cx.emit(PlayerEvent::PopOut))),
+                )
+            })
+            .child(
+                IconButton::new("maximize", if expanded { "minimize" } else { "maximize" })
+                    .overlay()
+                    .on_click(cx.listener(|this, _, window, cx| this.toggle_expanded(window, cx))),
+            )
+            .child(
+                IconButton::new("close", "close")
+                    .overlay()
+                    .on_click(cx.listener(|_, _, _, cx| cx.emit(PlayerEvent::Close))),
+            )
+    }
+}
+
+/// What the file is: the picture's size, its frame rate, and the codecs.
+fn details(info: &MediaInfo) -> String {
+    let mut parts = Vec::new();
+    if let Some((w, h)) = info.video_size {
+        parts.push(format!("{w}×{h}"));
+    }
+    if let Some(fps) = info.frame_rate {
+        parts.push(format!("{} fps", (fps * 100.0).round() / 100.0));
+    }
+    parts.extend(info.video_codec.as_ref().map(|codec| match info.hardware {
+        Some(api) => format!("{codec} ({api})"),
+        None => codec.clone(),
+    }));
+    parts.extend(info.audio_codec.clone());
+    parts.join(" · ")
+}

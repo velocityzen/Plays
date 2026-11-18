@@ -228,11 +228,15 @@ last window quits.
   start), how they are saved in Settings and shown (`⌃⌘F`, `Ctrl+Alt+F`).
   The keymap is rebuilt from them whenever they change, and the menus show
   them.
-- `src/ui/`: gpui views (`workspace`, one per window, `player_view`,
-  `open_url`) and a text field based on gpui's input example.
+- `src/ui/`: gpui views (`workspace`, one per window, and `open_url`) and a
+  text field based on gpui's input example.
   `subtitles` paints a tile's cues where `object_fit` puts the picture, in
   the style from Settings; the settings' Subtitles pane draws its preview
   with the same code.
+- `src/ui/player/`: a player's tile, a file per part: what fills it
+  (`content`), the header, the controls, the track menu, notes on what
+  shortcuts did (`osd`, with the track reel), what shortcuts do to it
+  (`commands`), and the graveyard frames wait in before they are released.
 - `src/ui/settings/`: the Settings window. Each pane (Playback, Audio,
   Video, Subtitles, Hotkeys, Appearance) is a file of its own with its name
   and icon for the sidebar; `form` has the cards, rows and sliders they are

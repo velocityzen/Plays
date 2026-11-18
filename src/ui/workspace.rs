@@ -12,7 +12,7 @@ use gpui::{
 
 use super::components::{Button, IconButton};
 use super::open_url::{OpenUrlDialog, OpenUrlEvent, UrlForm};
-use super::player_view::{Graveyard, PlayerEvent, PlayerView};
+use super::player::{Graveyard, PlayerEvent, PlayerView};
 use super::theme::layout::{
     AUDIO_WINDOW_SIZE, COMPACT_WIDTH, DROP_INSET, RING_BORDER, RING_BORDER_DROP,
     RING_FORM_MAX_WIDTH, RING_FORM_MIN_WIDTH, RING_FORM_SCALE, RING_MARGIN, RING_MAX_DIAMETER,

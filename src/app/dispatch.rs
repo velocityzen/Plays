@@ -3,7 +3,7 @@
 
 use gpui::{AnyWindowHandle, App, Context, Window, WindowHandle};
 
-use crate::ui::player_view::PlayerView;
+use crate::ui::player::PlayerView;
 use crate::ui::workspace::Workspace;
 
 /// Run `f` on the workspace window in front, which menus, shortcuts and files
