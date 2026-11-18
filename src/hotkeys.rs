@@ -405,8 +405,8 @@ impl Command {
             Self::PlayPause => &["space", "p"],
             Self::SeekForward => &["right"],
             Self::SeekBackward => &["left"],
-            Self::NextFrame => &["alt-right", "."],
-            Self::PreviousFrame => &["alt-left", ","],
+            Self::NextFrame => &["alt-right", ".", ">"],
+            Self::PreviousFrame => &["alt-left", ",", "<"],
             Self::Restart => &["home"],
             Self::PreviousFile => &["secondary-left"],
             Self::NextFile => &["secondary-right"],
@@ -455,6 +455,13 @@ impl Command {
         }
     }
 }
+
+/// Keys commands started out with before they had the ones they have now.
+/// A settings file that still has them gets today's instead.
+const EARLIER_DEFAULTS: &[(Command, &[&str])] = &[
+    (Command::NextFrame, &["alt-right", "."]),
+    (Command::PreviousFrame, &["alt-left", ","]),
+];
 
 /// The keys for every command.
 #[derive(Clone, Debug, PartialEq)]
@@ -548,11 +555,14 @@ impl Hotkeys {
     }
 }
 
+/// Only the commands whose keys were changed, so the others get new
+/// defaults as they come.
 impl Serialize for Hotkeys {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let map: BTreeMap<&str, &Vec<String>> = self
             .0
             .iter()
+            .filter(|(command, keys)| **keys != default_keys(**command))
             .map(|(command, keys)| (command.id(), keys))
             .collect();
         map.serialize(serializer)
@@ -560,21 +570,35 @@ impl Serialize for Hotkeys {
 }
 
 /// Commands the file doesn't mention keep their defaults, so new ones get
-/// theirs; ones it names that no longer exist, and keys that aren't, are
-/// left out.
+/// theirs, as do ones it gives keys they no longer start out with; ones it
+/// names that no longer exist, and keys that aren't, are left out.
 impl<'de> Deserialize<'de> for Hotkeys {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let map = BTreeMap::<String, Vec<String>>::deserialize(deserializer)?;
         let mut hotkeys = Self::default();
         for (id, keys) in map {
             if let Some(command) = Command::from_id(&id) {
-                hotkeys
-                    .0
-                    .insert(command, keys.iter().filter_map(|k| normalize(k)).collect());
+                let keys: Vec<String> = keys.iter().filter_map(|k| normalize(k)).collect();
+                if !is_earlier_default(command, &keys) {
+                    hotkeys.0.insert(command, keys);
+                }
             }
         }
         Ok(hotkeys)
     }
+}
+
+fn is_earlier_default(command: Command, keys: &[String]) -> bool {
+    EARLIER_DEFAULTS
+        .iter()
+        .filter(|(earlier, _)| *earlier == command)
+        .any(|(_, defaults)| {
+            defaults.len() == keys.len()
+                && defaults
+                    .iter()
+                    .zip(keys)
+                    .all(|(default, key)| normalize(default).as_ref() == Some(key))
+        })
 }
 
 /// How a keystroke is shown: `⌃⌘F` on macOS, `Ctrl+Alt+F` elsewhere.
@@ -732,6 +756,23 @@ mod tests {
             Hotkeys::default().keys(Command::Mute)
         );
         assert!(read.0.len() == Command::ALL.len());
+    }
+
+    #[test]
+    fn saves_only_changed_keys_so_new_defaults_arrive() {
+        assert_eq!(serde_json::to_string(&Hotkeys::default()).unwrap(), "{}");
+        let mut hotkeys = Hotkeys::default();
+        hotkeys.remove(Command::Restart, "home");
+        assert_eq!(
+            serde_json::to_string(&hotkeys).unwrap(),
+            r#"{"restart":[]}"#
+        );
+        // A file saved with every command, before `<` and `>` stepped frames.
+        let read: Hotkeys =
+            serde_json::from_str(r#"{"next_frame": ["alt-right", "."], "previous_frame": [","]}"#)
+                .unwrap();
+        assert_eq!(read.keys(Command::NextFrame), ["alt-right", ".", ">"]);
+        assert_eq!(read.keys(Command::PreviousFrame), [","]);
     }
 
     #[test]

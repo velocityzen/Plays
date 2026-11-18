@@ -190,7 +190,7 @@ it again when the dependencies change (`script/bundle-macos` runs it).
 | Open a stream URL | `⌘⇧O` / `Ctrl+Shift+O` (pre-filled from the clipboard) |
 | Play/pause | `Space` or `P` |
 | Seek back/forward | `←` `→` (5 seconds at first; the step is in Settings) |
-| Previous/next frame | `⌥←` `⌥→` / `Alt+←` `Alt+→`, or `,` `.` |
+| Previous/next frame | `⌥←` `⌥→` / `Alt+←` `Alt+→`, or `,` `.`, or `<` `>` |
 | Restart | `Home` |
 | Previous/next file in its folder | `⌘←` `⌘→` / `Ctrl+←` `Ctrl+→` |
 | Loop | `⌘⇧L` / `Ctrl+Shift+L` |

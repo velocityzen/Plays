@@ -143,7 +143,11 @@ fn reports_the_streams_as_the_file_has_them() {
         player.frame_pts().is_some()
     }));
     let info = player.info().unwrap();
-    assert!(info.container.format.contains("MOV"), "{:?}", info.container);
+    assert!(
+        info.container.format.contains("MOV"),
+        "{:?}",
+        info.container
+    );
     assert!(info.container.bit_rate.is_some());
     let video = info.video_details.unwrap();
     assert_eq!(video.profile.as_deref(), Some("High"));
