@@ -257,6 +257,15 @@ impl Player {
         let _ = self.commands.send(Command::Seek { time, serial });
     }
 
+    /// Decode the frame on screen again, for a paused player whose frames
+    /// are now converted differently (a new gamma). It stays on screen
+    /// until the new one is ready.
+    pub fn refresh(&mut self) {
+        if let Some(pts) = self.current.as_ref().map(|frame| frame.pts) {
+            self.seek(pts);
+        }
+    }
+
     pub fn seek_by(&mut self, delta: f64) {
         self.seek(self.position() + delta);
     }

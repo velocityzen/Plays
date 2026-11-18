@@ -15,7 +15,9 @@ macro_rules! icons {
 }
 
 icons!(
+    "appearance",
     "close",
+    "display",
     "link",
     "loop",
     "maximize",

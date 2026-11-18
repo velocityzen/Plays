@@ -49,3 +49,7 @@ opt-level = 3
 
 [profile.release]
 lto = "thin"
+
+# gpui with HDR video on macOS; see vendor/gpui/PLAYS.md for what changed.
+[patch.crates-io]
+gpui = { path = "vendor/gpui" }

@@ -1,6 +1,9 @@
-//! Decoded pictures in the forms gpui can draw.
+//! Decoded pictures in the forms gpui can draw, and the gamma every picture
+//! is shown with.
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::thread;
 
 use gpui::{ImageId, RenderImage};
 
@@ -33,5 +36,85 @@ impl Picture {
             #[cfg(target_os = "macos")]
             Picture::Surface(surface) => PictureId::Surface(surface.id()),
         }
+    }
+}
+
+/// Gamma for SDR and HDR video, the same for every player: `[sdr, hdr]`,
+/// as f32 bits. 1 leaves pictures as they are.
+static GAMMA: [AtomicU32; 2] = [
+    AtomicU32::new(1f32.to_bits()),
+    AtomicU32::new(1f32.to_bits()),
+];
+
+/// Set the gamma of SDR and of HDR video (Dolby Vision included). Decoders
+/// use it for every picture they convert from then on; surfaces carry it
+/// to the GPU when drawn.
+pub fn set_gamma(sdr: f32, hdr: f32) {
+    GAMMA[0].store(sdr.to_bits(), Ordering::Relaxed);
+    GAMMA[1].store(hdr.to_bits(), Ordering::Relaxed);
+}
+
+/// The gamma for HDR video, or for SDR video.
+pub fn gamma(hdr: bool) -> f32 {
+    f32::from_bits(GAMMA[usize::from(hdr)].load(Ordering::Relaxed))
+}
+
+/// Gamma bends an encoded signal between black and SDR white, which stay
+/// put: `signal^(1/gamma)`. Above 1 lifts shadows and midtones, below 1
+/// sinks them. Signals above white (HDR highlights) bend the same way.
+pub fn apply_gamma(signal: f32, gamma: f32) -> f32 {
+    signal.signum() * signal.abs().powf(1.0 / gamma)
+}
+
+/// Gamma for 8-bit samples, as a lookup table.
+pub fn gamma_table(gamma: f32) -> [u8; 256] {
+    std::array::from_fn(|i| (apply_gamma(i as f32 / 255.0, gamma) * 255.0).round() as u8)
+}
+
+/// Make a tightly packed `width` x `height` BGRA picture, with `row` filling
+/// in each row, spread over the CPU's cores.
+pub fn bgra_rows(width: usize, height: usize, row: impl Fn(usize, &mut [u8]) + Sync) -> Vec<u8> {
+    let row_bytes = width * 4;
+    let mut out = vec![0; row_bytes * height];
+    if out.is_empty() {
+        return out;
+    }
+    let threads = thread::available_parallelism()
+        .map_or(1, |n| n.get())
+        .min(8)
+        .min(height.div_ceil(64))
+        .max(1);
+    let rows_per_thread = height.div_ceil(threads);
+    let row = &row;
+    thread::scope(|scope| {
+        for (chunk, out) in out.chunks_mut(rows_per_thread * row_bytes).enumerate() {
+            let first_row = chunk * rows_per_thread;
+            scope.spawn(move || {
+                for (y, out) in out.chunks_exact_mut(row_bytes).enumerate() {
+                    row(first_row + y, out);
+                }
+            });
+        }
+    });
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn gamma_keeps_black_and_white() {
+        for gamma in [0.5, 1.0, 1.4, 2.0] {
+            let table = gamma_table(gamma);
+            assert_eq!((table[0], table[255]), (0, 255));
+        }
+        assert_eq!(gamma_table(1.0), std::array::from_fn(|i| i as u8));
+        // Above 1 lifts the middle, below 1 sinks it.
+        assert!(gamma_table(1.5)[128] > 150);
+        assert!(gamma_table(0.67)[128] < 100);
+        // HDR highlights bend the other way round, toward white.
+        assert!(apply_gamma(2.0, 1.5) < 2.0 && apply_gamma(2.0, 0.67) > 2.0);
+        assert_eq!(apply_gamma(-0.25, 2.0), -0.5);
     }
 }

@@ -462,6 +462,334 @@ fn surface_to_rgb(buffer: &core_video::pixel_buffer::CVPixelBuffer) -> SurfaceRg
     SurfaceRgb { width, height, rgb }
 }
 
+/// HDR video on the GPU becomes 10-bit BT.2020 surfaces tagged with their
+/// transfer function, which Plays' gpui draws with its HDR shader. For an SDR
+/// screen that shader must give the same picture as the CPU's tone mapping of
+/// the same frame decoded in software.
+#[cfg(target_os = "macos")]
+#[test]
+fn hdr_surfaces_match_software_tone_mapping() {
+    use core_foundation::base::TCFType;
+    use core_video::buffer::CVBufferGetAttachment;
+    use core_video::image_buffer::{
+        CVTransferFunctionGetIntegerCodePointForString, kCVImageBufferTransferFunctionKey,
+    };
+    use core_video::pixel_buffer::kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange;
+
+    use super::hdr::Transfer;
+    use super::picture::Picture;
+
+    let cases = [
+        ("hdr10.mp4", "smpte2084", Transfer::Pq, 16),
+        ("hlg.mp4", "arib-std-b67", Transfer::Hlg, 18),
+    ];
+    for (name, trc, transfer, code_point) in cases {
+        let x265 = format!("log-level=error:colorprim=bt2020:transfer={trc}:colormatrix=bt2020nc");
+        let args = [
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=640x360:rate=30:duration=1",
+            "-c:v",
+            "libx265",
+            "-tag:v",
+            "hvc1",
+            "-crf",
+            "8",
+            "-pix_fmt",
+            "yuv420p10le",
+            "-color_primaries",
+            "bt2020",
+            "-color_trc",
+            trc,
+            "-colorspace",
+            "bt2020nc",
+            "-x265-params",
+            &x265,
+        ];
+        let Some(path) = media(name, &args) else {
+            eprintln!("ffmpeg with libx265 not found, skipping");
+            return;
+        };
+        let first_frame = |hardware| {
+            let mut player = Player::open(
+                Source::File(path.clone()),
+                None,
+                PlayerOptions {
+                    hardware_decoding: hardware,
+                    ..options(false, false)
+                },
+            );
+            assert!(wait_until(Duration::from_secs(5), || {
+                player.tick();
+                player.frame_pts().is_some()
+            }));
+            player.frame().unwrap()
+        };
+        let Picture::Surface(surface) = first_frame(true) else {
+            panic!("{name}: hardware frames should stay on the GPU");
+        };
+        let Picture::Image(image) = first_frame(false) else {
+            panic!("{name}: software frames should be images");
+        };
+
+        let buffer = surface.buffer();
+        assert_eq!(
+            buffer.get_pixel_format(),
+            kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange,
+            "{name}: HDR surfaces should be 10-bit"
+        );
+        // SAFETY: reading a tag of a valid buffer.
+        let tagged = unsafe {
+            let value = CVBufferGetAttachment(
+                buffer.as_concrete_TypeRef(),
+                kCVImageBufferTransferFunctionKey,
+                std::ptr::null_mut(),
+            );
+            (!value.is_null()).then(|| CVTransferFunctionGetIntegerCodePointForString(value.cast()))
+        };
+        assert_eq!(tagged, Some(code_point), "{name}: transfer function tag");
+
+        let surface = hdr_surface_to_sdr(buffer, transfer);
+        let (width, height) = (surface.width, surface.height);
+        let bgra = image.as_bytes(0).unwrap();
+        assert_eq!(bgra.len(), width * height * 4, "{name}: sizes differ");
+        let software = |x: usize, y: usize, c: usize| f64::from(bgra[(y * width + x) * 4 + 2 - c]);
+
+        // As in `surfaces_match_software_colors`, compare 8x8 block averages.
+        let mut diffs = Vec::new();
+        for by in (0..height).step_by(8) {
+            for bx in (0..width).step_by(8) {
+                let (ys, xs) = (by..(by + 8).min(height), bx..(bx + 8).min(width));
+                let n = (ys.len() * xs.len()) as f64;
+                for c in 0..3 {
+                    let (mut a, mut b) = (0.0, 0.0);
+                    for y in ys.clone() {
+                        for x in xs.clone() {
+                            a += surface.get(x, y, c);
+                            b += software(x, y, c);
+                        }
+                    }
+                    diffs.push((a - b).abs() / n);
+                }
+            }
+        }
+        diffs.sort_by(f64::total_cmp);
+        let mean = diffs.iter().sum::<f64>() / diffs.len() as f64;
+        let p90 = diffs[diffs.len() * 9 / 10];
+        assert!(
+            mean < 1.5 && p90 < 3.0,
+            "{name}: colors differ by {mean:.2} levels on average, {p90:.2} at the 90th percentile"
+        );
+    }
+}
+
+/// RGB (0-255) of a 10-bit HDR surface as gpui's `surface_hdr_fragment`
+/// computes it for an SDR screen (EDR headroom 1).
+#[cfg(target_os = "macos")]
+fn hdr_surface_to_sdr(
+    buffer: &core_video::pixel_buffer::CVPixelBuffer,
+    transfer: super::hdr::Transfer,
+) -> SurfaceRgb {
+    use core_video::pixel_buffer::kCVPixelBufferLock_ReadOnly;
+
+    use super::hdr::{
+        REFERENCE_WHITE_NITS, Transfer, bt2020_to_bt709, hlg_scene_to_nits, hlg_to_scene,
+        pq_to_nits, srgb_encode, tone_map,
+    };
+
+    let (width, height) = (buffer.get_width(), buffer.get_height());
+    assert_eq!(buffer.lock_base_address(kCVPixelBufferLock_ReadOnly), 0);
+    let plane = |index: usize| {
+        let rows = buffer.get_height_of_plane(index);
+        let stride = buffer.get_bytes_per_row_of_plane(index);
+        // SAFETY: the buffer is locked, and a plane is `rows * stride` bytes
+        // of 16-bit samples.
+        unsafe {
+            std::slice::from_raw_parts(
+                buffer.get_base_address_of_plane(index) as *const u16,
+                rows * stride / 2,
+            )
+        }
+    };
+    let (luma, chroma) = (plane(0), plane(1));
+    let luma_stride = buffer.get_bytes_per_row_of_plane(0) / 2;
+    let chroma_stride = buffer.get_bytes_per_row_of_plane(1) / 2;
+    // BT.2020, video range; the 10 bits are the top ones of each sample.
+    let (kr, kb) = (0.2627f32, 0.0593f32);
+    let kg = 1.0 - kr - kb;
+    let code = |sample: u16| f32::from(sample >> 6);
+    let mut rgb = Vec::with_capacity(width * height * 3);
+    for y in 0..height {
+        for x in 0..width {
+            let l = (code(luma[y * luma_stride + x]) - 64.0) / 876.0;
+            let i = (y / 2) * chroma_stride + (x / 2) * 2;
+            let cb = (code(chroma[i]) - 512.0) / 896.0;
+            let cr = (code(chroma[i + 1]) - 512.0) / 896.0;
+            let signal = [
+                l + 2.0 * (1.0 - kr) * cr,
+                l - 2.0 * kb * (1.0 - kb) / kg * cb - 2.0 * kr * (1.0 - kr) / kg * cr,
+                l + 2.0 * (1.0 - kb) * cb,
+            ]
+            .map(|v| v.clamp(0.0, 1.0));
+            let light = match transfer {
+                Transfer::Pq => signal.map(|s| pq_to_nits(s) / REFERENCE_WHITE_NITS),
+                Transfer::Hlg => hlg_scene_to_nits(signal.map(hlg_to_scene))
+                    .map(|nits| nits / REFERENCE_WHITE_NITS),
+            };
+            let mapped = tone_map(bt2020_to_bt709(light), 1.0);
+            rgb.extend(mapped.map(|v| f64::from(srgb_encode(v.clamp(0.0, 1.0))) * 255.0));
+        }
+    }
+    buffer.unlock_base_address(kCVPixelBufferLock_ReadOnly);
+    SurfaceRgb { width, height, rgb }
+}
+
+/// Dolby Vision profile 5 can't be made with the ffmpeg tool, so this runs
+/// on a file of your own: `PLAYS_DOLBY_VISION_SAMPLE=path cargo test dolby`.
+/// Its surfaces must carry the frame's reshaping and, through the Dolby
+/// Vision shader's math, show what software decoding shows. Both pictures
+/// are saved as PNGs next to the generated test media.
+#[cfg(target_os = "macos")]
+#[test]
+fn dolby_vision_surfaces_match_software() {
+    use core_foundation::base::TCFType;
+    use core_foundation::data::{CFData, CFDataRef};
+    use core_foundation::string::CFString;
+    use core_video::buffer::CVBufferGetAttachment;
+    use core_video::pixel_buffer::kCVPixelBufferLock_ReadOnly;
+
+    use super::dovi::ShaderParams;
+    use super::hdr::{REFERENCE_WHITE_NITS, bt2020_to_bt709, srgb_encode, tone_map};
+    use super::picture::Picture;
+    use super::videotoolbox::DOLBY_VISION_ATTACHMENT;
+
+    let Some(path) = std::env::var_os("PLAYS_DOLBY_VISION_SAMPLE").map(PathBuf::from) else {
+        eprintln!("PLAYS_DOLBY_VISION_SAMPLE isn't set, skipping");
+        return;
+    };
+    ffmpeg_next::init().unwrap();
+    let out_dir = std::env::temp_dir().join("plays-tests");
+    std::fs::create_dir_all(&out_dir).unwrap();
+    for share in [0.2, 0.5] {
+        let frame_at = |hardware| {
+            let mut player = Player::open(
+                Source::File(path.clone()),
+                None,
+                PlayerOptions {
+                    hardware_decoding: hardware,
+                    max_short_side: Some(720),
+                    ..options(false, false)
+                },
+            );
+            assert!(wait_until(Duration::from_secs(10), || {
+                player.tick();
+                player.duration().is_some()
+            }));
+            let time = (player.duration().unwrap() * share).round();
+            player.seek(time);
+            assert!(wait_until(Duration::from_secs(30), || {
+                player.tick();
+                player.frame_pts().is_some_and(|pts| pts >= time - 1.0)
+            }));
+            (player.frame().unwrap(), time)
+        };
+        let (Picture::Surface(surface), time) = frame_at(true) else {
+            panic!("hardware frames should stay on the GPU");
+        };
+        let (Picture::Image(image), _) = frame_at(false) else {
+            panic!("software frames should be images");
+        };
+
+        let buffer = surface.buffer();
+        let key = CFString::from_static_string(DOLBY_VISION_ATTACHMENT);
+        // SAFETY: reading an attachment of a valid buffer.
+        let params = unsafe {
+            let value = CVBufferGetAttachment(
+                buffer.as_concrete_TypeRef(),
+                key.as_concrete_TypeRef(),
+                std::ptr::null_mut(),
+            );
+            assert!(!value.is_null(), "surfaces should carry the reshaping");
+            ShaderParams::from_bytes(CFData::wrap_under_get_rule(value as CFDataRef).bytes())
+        };
+
+        // `surface_dovi_fragment`, for an SDR screen.
+        let (width, height) = (buffer.get_width(), buffer.get_height());
+        assert_eq!(buffer.lock_base_address(kCVPixelBufferLock_ReadOnly), 0);
+        let plane = |index: usize| {
+            let rows = buffer.get_height_of_plane(index);
+            let stride = buffer.get_bytes_per_row_of_plane(index) / 2;
+            // SAFETY: the buffer is locked, and a plane is `rows` rows of
+            // `stride` 16-bit samples.
+            let samples = unsafe {
+                std::slice::from_raw_parts(
+                    buffer.get_base_address_of_plane(index) as *const u16,
+                    rows * stride,
+                )
+            };
+            (samples, stride)
+        };
+        let ((luma, luma_stride), (chroma, chroma_stride)) = (plane(0), plane(1));
+        let mut gpu = Vec::with_capacity(width * height * 3);
+        for y in 0..height {
+            for x in 0..width {
+                let i = (y / 2) * chroma_stride + (x / 2) * 2;
+                let samples = [luma[y * luma_stride + x], chroma[i], chroma[i + 1]]
+                    .map(|s| f32::from(s) / 65536.0);
+                let light = params
+                    .light(samples)
+                    .map(|nits| nits / REFERENCE_WHITE_NITS);
+                let rgb = tone_map(bt2020_to_bt709(light), 1.0);
+                gpu.extend(rgb.map(|v| srgb_encode(v.clamp(0.0, 1.0)) * 255.0));
+            }
+        }
+        buffer.unlock_base_address(kCVPixelBufferLock_ReadOnly);
+
+        let bgra = image.as_bytes(0).unwrap();
+        assert_eq!(bgra.len(), width * height * 4, "sizes differ");
+        let to_png = |name: &str, rgb: &dyn Fn(usize) -> [u8; 3]| {
+            let pixels = (0..width * height).flat_map(rgb).collect();
+            let png = out_dir.join(format!("dolby-vision-{time}-{name}.png"));
+            image::RgbImage::from_raw(width as u32, height as u32, pixels)
+                .unwrap()
+                .save(&png)
+                .unwrap();
+            eprintln!("{}", png.display());
+        };
+        to_png("gpu", &|i| {
+            std::array::from_fn(|c| gpu[i * 3 + c].round() as u8)
+        });
+        to_png("cpu", &|i| [bgra[i * 4 + 2], bgra[i * 4 + 1], bgra[i * 4]]);
+
+        let mut diffs = Vec::new();
+        for by in (0..height).step_by(8) {
+            for bx in (0..width).step_by(8) {
+                let (ys, xs) = (by..(by + 8).min(height), bx..(bx + 8).min(width));
+                let n = (ys.len() * xs.len()) as f64;
+                for c in 0..3 {
+                    let (mut a, mut b) = (0.0, 0.0);
+                    for y in ys.clone() {
+                        for x in xs.clone() {
+                            a += f64::from(gpu[(y * width + x) * 3 + c]);
+                            b += f64::from(bgra[(y * width + x) * 4 + 2 - c]);
+                        }
+                    }
+                    diffs.push((a - b).abs() / n);
+                }
+            }
+        }
+        diffs.sort_by(f64::total_cmp);
+        let mean = diffs.iter().sum::<f64>() / diffs.len() as f64;
+        let p90 = diffs[diffs.len() * 9 / 10];
+        eprintln!("{time}s: {mean:.2} levels apart on average, {p90:.2} at the 90th percentile");
+        assert!(
+            mean < 1.5 && p90 < 3.0,
+            "{time}s: colors differ by {mean:.2} levels on average, {p90:.2} at the 90th percentile"
+        );
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Network streams, served from a tiny HTTP server on localhost.
 

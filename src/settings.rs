@@ -1,4 +1,5 @@
 use std::fs;
+use std::ops::RangeInclusive;
 use std::path::PathBuf;
 
 use gpui::Global;
@@ -69,7 +70,14 @@ pub struct Settings {
     pub columns: u32,
     pub controls: ControlsVisibility,
     pub show_titles: bool,
+    /// Gamma for SDR video, for every open video at once; 1 leaves it be.
+    pub sdr_gamma: f32,
+    /// Gamma for HDR video (Dolby Vision included).
+    pub hdr_gamma: f32,
 }
+
+/// The gamma the settings offer.
+pub const GAMMA_RANGE: RangeInclusive<f32> = 0.5..=2.0;
 
 impl Default for Settings {
     fn default() -> Self {
@@ -86,6 +94,8 @@ impl Default for Settings {
             columns: 0,
             controls: ControlsVisibility::OnHover,
             show_titles: true,
+            sdr_gamma: 1.0,
+            hdr_gamma: 1.0,
         }
     }
 }
@@ -126,6 +136,18 @@ impl Settings {
         if let Err(err) = result {
             log::warn!("could not save settings to {}: {err}", path.display());
         }
+    }
+
+    /// Gamma for SDR and HDR video, within `GAMMA_RANGE` whatever the file
+    /// says.
+    pub fn gamma(&self) -> [f32; 2] {
+        [self.sdr_gamma, self.hdr_gamma].map(|gamma| {
+            if gamma.is_finite() {
+                gamma.clamp(*GAMMA_RANGE.start(), *GAMMA_RANGE.end())
+            } else {
+                1.0
+            }
+        })
     }
 
     pub fn columns_for(&self, count: usize) -> usize {

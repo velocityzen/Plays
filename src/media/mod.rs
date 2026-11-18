@@ -3,6 +3,8 @@
 pub mod audio;
 pub mod clock;
 pub mod decoder;
+pub mod dovi;
+pub mod hdr;
 mod hwaccel;
 pub mod picture;
 pub mod player;

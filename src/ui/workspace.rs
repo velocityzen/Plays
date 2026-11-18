@@ -16,7 +16,7 @@ use super::player_view::{Graveyard, PlayerEvent, PlayerView};
 use super::theme::{self, Theme};
 use super::{TRAFFIC_LIGHTS, traffic_lights};
 use crate::app::{self, AudioEngine};
-use crate::media::{Player, Source};
+use crate::media::{Player, Source, picture};
 use crate::settings::{ControlsVisibility, Settings};
 
 /// Extensions picked up when a whole folder is opened.
@@ -58,6 +58,8 @@ struct Tile {
 pub struct Workspace {
     focus_handle: FocusHandle,
     tiles: Vec<Tile>,
+    /// Gamma for SDR and HDR video, as last applied to the tiles.
+    gamma: [f32; 2],
     maximized: Option<EntityId>,
     graveyard: Graveyard,
     open_url: Option<(Entity<OpenUrlDialog>, Subscription)>,
@@ -97,10 +99,19 @@ impl Workspace {
     fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let focus_handle = cx.focus_handle();
         window.focus(&focus_handle);
-        let settings_subscription = cx.observe_global::<Settings>(|_, cx| {
-            let volume = cx.global::<Settings>().master_volume;
+        let settings_subscription = cx.observe_global::<Settings>(|this: &mut Self, cx| {
+            let settings = cx.global::<Settings>();
+            let (volume, gamma) = (settings.master_volume, settings.gamma());
             if let Some(mixer) = AudioEngine::mixer(cx) {
                 mixer.set_master_volume(volume);
+            }
+            if gamma != this.gamma {
+                this.gamma = gamma;
+                picture::set_gamma(gamma[0], gamma[1]);
+                for tile in &this.tiles {
+                    tile.view
+                        .update(cx, |view, _| view.picture_settings_changed());
+                }
             }
             cx.notify();
         });
@@ -148,6 +159,7 @@ impl Workspace {
             url_form_open: false,
             mouse_inside: true,
             traffic_lights_shown: true,
+            gamma: cx.global::<Settings>().gamma(),
             _settings_subscription: settings_subscription,
             _activation_subscription: activation_subscription,
             _url_form_events: url_form_events,

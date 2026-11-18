@@ -7,6 +7,8 @@
 //! queue of display-ready video frames and keeps the player's audio source
 //! topped up with resampled stereo `f32`. Frames are BGRA images, except on
 //! macOS with hardware decoding, where they stay on the GPU (`videotoolbox`).
+//! HDR frames that become images are tone mapped for an SDR screen (`hdr`),
+//! Dolby Vision ones reshaped first (`dovi`).
 //! It only decodes while an output queue has room, so memory stays bounded
 //! however much is read ahead.
 
@@ -29,8 +31,10 @@ use parking_lot::{Condvar, Mutex};
 
 use super::audio::{AudioChunk, AudioSource, SOURCE_CHANNELS};
 use super::clock::Clock;
+use super::dovi;
+use super::hdr;
 use super::hwaccel;
-use super::picture::Picture;
+use super::picture::{self, Picture};
 use super::source::Source;
 #[cfg(target_os = "macos")]
 use super::videotoolbox;
@@ -683,12 +687,25 @@ fn codec_name(id: codec::Id) -> String {
 // ---------------------------------------------------------------------------
 // Video
 
+/// What a frame is converted to before it becomes BGRA.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Light {
+    /// Straight to BGRA, by swscale.
+    Sdr,
+    /// 16-bit RGB, then tone mapped.
+    Hdr(hdr::Transfer),
+    /// 16-bit 4:4:4 planes, reshaped, then tone mapped.
+    DolbyVision,
+}
+
 struct Scaler {
     context: scaling::Context,
-    key: (Pixel, u32, u32),
+    key: (Pixel, u32, u32, Light),
     width: u32,
     height: u32,
     output: frame::Video,
+    /// For HDR frames, Dolby Vision's included (always PQ).
+    tone_mapper: Option<hdr::ToneMapper>,
 }
 
 struct VideoDecoder {
@@ -990,7 +1007,13 @@ fn convert(
     max_short_side: Option<u32>,
     frame: &frame::Video,
 ) -> Result<Arc<RenderImage>> {
-    let key = (frame.format(), frame.width(), frame.height());
+    let reshaping = dovi::Reshaping::of(frame);
+    let light = match (&reshaping, hdr::Transfer::of(frame)) {
+        (Some(_), _) => Light::DolbyVision,
+        (None, Some(transfer)) => Light::Hdr(transfer),
+        (None, None) => Light::Sdr,
+    };
+    let key = (frame.format(), frame.width(), frame.height(), light);
     if scaler.as_ref().is_none_or(|s| s.key != key) {
         let (width, height) = output_size(
             frame.width(),
@@ -998,36 +1021,81 @@ fn convert(
             frame.aspect_ratio(),
             max_short_side,
         );
+        let (format, tone_mapper) = match light {
+            Light::Sdr => (Pixel::BGRA, None),
+            Light::Hdr(transfer) => (Pixel::RGB48LE, Some(hdr::ToneMapper::new(transfer))),
+            Light::DolbyVision => (
+                Pixel::YUV444P16LE,
+                Some(hdr::ToneMapper::new(hdr::Transfer::Pq)),
+            ),
+        };
         let mut context = scaling::Context::get(
             key.0,
             key.1,
             key.2,
-            Pixel::BGRA,
+            format,
             width,
             height,
             scaling::Flags::BILINEAR,
         )
         .context("creating the pixel converter")?;
-        set_colorspace(&mut context, frame);
+        // Dolby Vision's samples aren't YCbCr: they are only scaled, never
+        // converted.
+        if light != Light::DolbyVision {
+            set_colorspace(&mut context, frame);
+        }
         *scaler = Some(Scaler {
             context,
             key,
             width,
             height,
             output: frame::Video::empty(),
+            tone_mapper,
         });
     }
     let scaler = scaler.as_mut().expect("scaler was just created");
     scaler.context.run(frame, &mut scaler.output)?;
+    let gamma = picture::gamma(light != Light::Sdr);
+    if let Some(mapper) = &mut scaler.tone_mapper {
+        mapper.set_gamma(gamma);
+    }
 
     let (width, height) = (scaler.width, scaler.height);
-    let row = width as usize * 4;
-    let stride = scaler.output.stride(0);
-    let data = scaler.output.data(0);
-    let mut pixels = Vec::with_capacity(row * height as usize);
-    for y in 0..height as usize {
-        pixels.extend_from_slice(&data[y * stride..y * stride + row]);
-    }
+    let output = &scaler.output;
+    let pixels = match (&scaler.tone_mapper, &reshaping) {
+        (Some(mapper), Some(reshaping)) => reshaping.render(
+            mapper,
+            [0, 1, 2].map(|plane| (output.data(plane), output.stride(plane))),
+            width as usize,
+            height as usize,
+        ),
+        (Some(mapper), None) => mapper.run(
+            output.data(0),
+            output.stride(0),
+            width as usize,
+            height as usize,
+        ),
+        (None, _) if gamma == 1.0 => {
+            let (stride, data) = (output.stride(0), output.data(0));
+            let row = width as usize * 4;
+            let mut pixels = Vec::with_capacity(row * height as usize);
+            for y in 0..height as usize {
+                pixels.extend_from_slice(&data[y * stride..y * stride + row]);
+            }
+            pixels
+        }
+        (None, _) => {
+            let (stride, data) = (output.stride(0), output.data(0));
+            let table = picture::gamma_table(gamma);
+            picture::bgra_rows(width as usize, height as usize, |y, out| {
+                let (row, _) = data[y * stride..][..out.len()].as_chunks::<4>();
+                let (out, _) = out.as_chunks_mut::<4>();
+                for (out, &[b, g, r, a]) in out.iter_mut().zip(row) {
+                    *out = [table[b as usize], table[g as usize], table[r as usize], a];
+                }
+            })
+        }
+    };
     // gpui reads image bytes as BGRA, which is exactly what we converted to.
     let buffer = image::RgbaImage::from_raw(width, height, pixels)
         .ok_or_else(|| anyhow!("frame buffer has the wrong size"))?;

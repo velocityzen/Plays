@@ -127,6 +127,15 @@ impl PlayerView {
 
     /// Release a frame that is no longer current. Only frames that were rendered
     /// can be in use on the GPU; the rest are simply dropped.
+    /// How pictures look changed (gamma). Surfaces take it as they are
+    /// drawn and new frames as they are converted, so only a paused video
+    /// showing a converted image needs its frame decoded again.
+    pub fn picture_settings_changed(&mut self) {
+        if !self.player.is_playing() && matches!(self.player.frame(), Some(Picture::Image(_))) {
+            self.player.refresh();
+        }
+    }
+
     fn retire(&mut self, picture: Picture) {
         if self.drawn == Some(picture.id()) {
             self.drawn = None;
@@ -253,7 +262,7 @@ impl PlayerView {
             return match frame {
                 Picture::Image(image) => img(image).size_full().object_fit(fit).into_any_element(),
                 #[cfg(target_os = "macos")]
-                Picture::Surface(surface) => gpui::surface(surface.buffer().clone())
+                Picture::Surface(surface) => gpui::surface(surface.for_drawing())
                     .size_full()
                     .object_fit(fit)
                     .into_any_element(),

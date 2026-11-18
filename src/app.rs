@@ -9,12 +9,12 @@ use gpui::{
     SystemMenuType, TitlebarOptions, WindowBounds, WindowHandle, WindowOptions, actions, px, size,
 };
 
-use crate::media::{AudioOutput, Mixer, Source};
+use crate::media::{AudioOutput, Mixer, Source, picture};
 use crate::settings::Settings;
 use crate::ui::settings_view::SettingsView;
 use crate::ui::theme::{UiFont, pick_ui_font, refresh_system_colors};
 use crate::ui::workspace::Workspace;
-use crate::ui::{open_url, text_input};
+use crate::ui::{TRAFFIC_LIGHTS, open_url, text_input};
 
 actions!(
     plays,
@@ -75,6 +75,8 @@ impl Global for SettingsWindow {}
 /// `opened` brings the URLs the system asks the app to open.
 pub fn run(cx: &mut App, sources: Vec<Source>, mut opened: UnboundedReceiver<Vec<String>>) {
     let settings = Settings::load();
+    let [sdr_gamma, hdr_gamma] = settings.gamma();
+    picture::set_gamma(sdr_gamma, hdr_gamma);
     let audio = match AudioOutput::new(settings.master_volume) {
         Ok(output) => AudioEngine {
             output: Some(output),
@@ -267,16 +269,20 @@ pub fn open_settings(cx: &mut App) {
     {
         return;
     }
-    let bounds = Bounds::centered(None, size(px(560.), px(680.)), cx);
+    let bounds = Bounds::centered(None, size(px(720.), px(520.)), cx);
+    // On macOS the sidebar runs up under the traffic lights, as in System
+    // Settings.
+    let mac = cfg!(target_os = "macos");
     let handle = cx
         .open_window(
             WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
                 titlebar: Some(TitlebarOptions {
                     title: Some("Plays Settings".into()),
-                    ..Default::default()
+                    appears_transparent: mac,
+                    traffic_light_position: mac.then_some(TRAFFIC_LIGHTS),
                 }),
-                window_min_size: Some(size(px(440.), px(360.))),
+                window_min_size: Some(size(px(680.), px(420.))),
                 app_id: Some("plays".into()),
                 focus: true,
                 ..Default::default()
