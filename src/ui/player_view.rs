@@ -5,13 +5,13 @@ use std::time::{Duration, Instant};
 
 use gpui::prelude::*;
 use gpui::{
-    AnchoredPositionMode, AnyElement, ClickEvent, Context, Corner, EventEmitter, FontWeight,
-    MouseButton, ObjectFit, SharedString, Window, anchored, black, deferred, div, img,
+    AnchoredPositionMode, AnyElement, ClickEvent, Context, Corner, Div, EventEmitter, FontWeight,
+    Hsla, MouseButton, ObjectFit, SharedString, Window, anchored, black, deferred, div, img,
     linear_color_stop, linear_gradient, point, px, relative, white,
 };
 
 use super::TRAFFIC_LIGHTS_WIDTH;
-use super::components::{Icon, IconButton, Slide, Slider, SliderEvent};
+use super::components::{Icon, IconButton, Panel, Slide, Slider, SliderEvent};
 use super::subtitles;
 use super::theme::{Theme, overlay};
 use crate::media::decoder::MediaInfo;
@@ -55,6 +55,63 @@ impl Graveyard {
 
 /// How long a note on what a shortcut did shows.
 const OSD_DURATION: Duration = Duration::from_millis(1200);
+/// How long, at the end of that, it takes to fade out.
+const OSD_FADE: Duration = Duration::from_millis(200);
+/// How long the track reel takes to roll to the track picked.
+const REEL_ROLL: Duration = Duration::from_millis(220);
+/// How tall a track's row is, in the menu and on the reel.
+const TRACK_ROW: f32 = 26.;
+/// How bright the tracks before and after the one picked are on the reel.
+const REEL_FADED: f32 = 0.4;
+
+/// The note over a tile on what a shortcut did.
+enum Osd {
+    Text(SharedString),
+    /// A track picked with a shortcut.
+    Reel(TrackReel),
+}
+
+/// The tracks of a kind on a reel, like a slot machine's: the one picked
+/// in the middle, the ones before and after it faded above and below.
+struct TrackReel {
+    /// In the order shortcuts go through them.
+    choices: Vec<TrackChoice>,
+    /// The one picked.
+    at: usize,
+}
+
+/// A track to pick, in the menu or on the reel.
+struct TrackChoice {
+    /// `None` for no subtitles.
+    index: Option<usize>,
+    label: String,
+    /// Its codec and format.
+    detail: Option<String>,
+}
+
+fn track_heading(kind: TrackKind) -> &'static str {
+    match kind {
+        TrackKind::Video => "Video",
+        TrackKind::Audio => "Audio",
+        TrackKind::Subtitle => "Subtitles",
+    }
+}
+
+/// A kind's tracks, and for subtitles "Off" before them.
+fn track_choices(info: &MediaInfo, kind: TrackKind) -> Vec<TrackChoice> {
+    let off = (kind == TrackKind::Subtitle).then(|| TrackChoice {
+        index: None,
+        label: "Off".to_owned(),
+        detail: None,
+    });
+    off.into_iter()
+        .chain(info.tracks(kind).enumerate().map(|(i, track)| TrackChoice {
+            index: Some(track.index),
+            label: track.label(i + 1),
+            detail: Some(track.detail()),
+        }))
+        .collect()
+}
 
 pub enum PlayerEvent {
     Close,
@@ -83,7 +140,7 @@ pub struct PlayerView {
     /// The audio and subtitle track menu is open.
     tracks_open: bool,
     /// A note on what a shortcut did, and when it was shown.
-    osd: Option<(SharedString, Instant)>,
+    osd: Option<(Osd, Instant)>,
     /// The subtitles hidden with a shortcut, to show again.
     hidden_subtitles: Option<usize>,
     /// Shortcuts go to this tile, which is outlined when there are others.
@@ -287,7 +344,7 @@ impl PlayerView {
 
     /// Show a note on what a shortcut did.
     pub fn note(&mut self, text: impl Into<SharedString>, cx: &mut Context<Self>) {
-        self.osd = Some((text.into(), Instant::now()));
+        self.osd = Some((Osd::Text(text.into()), Instant::now()));
         cx.notify();
     }
 
@@ -352,42 +409,33 @@ impl PlayerView {
     }
 
     /// Play the next track of a kind, after the last one going back to the
-    /// first (and, for subtitles, to none).
+    /// first (and, for subtitles, to none), and roll the reel to it.
     pub fn next_track(&mut self, kind: TrackKind, cx: &mut Context<Self>) {
         let Some(info) = self.player.info() else {
             return;
         };
-        let heading = match kind {
-            TrackKind::Video => "Video",
-            TrackKind::Audio => "Audio",
-            TrackKind::Subtitle => "Subtitles",
-        };
-        let labels: Vec<(usize, String)> = info
-            .tracks(kind)
-            .enumerate()
-            .map(|(i, track)| (track.index, track.label(i + 1)))
-            .collect();
-        if labels.is_empty() {
-            self.note(format!("No {} tracks", heading.to_lowercase()), cx);
+        let choices = track_choices(&info, kind);
+        if choices.iter().all(|choice| choice.index.is_none()) {
+            let note = match kind {
+                TrackKind::Video => "No video tracks",
+                TrackKind::Audio => "No audio tracks",
+                TrackKind::Subtitle => "No subtitles",
+            };
+            self.note(note, cx);
             return;
         }
-        let mut choices: Vec<Option<usize>> = labels.iter().map(|(ix, _)| Some(*ix)).collect();
-        if kind == TrackKind::Subtitle {
-            choices.insert(0, None);
-        }
         let selected = info.selected(kind);
-        let next = match choices.iter().position(|choice| *choice == selected) {
-            Some(at) => choices[(at + 1) % choices.len()],
-            None => choices[0],
-        };
-        self.player.select_track(kind, next);
+        let at = choices
+            .iter()
+            .position(|choice| choice.index == selected)
+            .map_or(0, |at| (at + 1) % choices.len());
+        self.player.select_track(kind, choices[at].index);
         if kind == TrackKind::Subtitle {
             self.hidden_subtitles = None;
         }
-        let label = next
-            .and_then(|ix| labels.iter().find(|(i, _)| *i == ix))
-            .map_or_else(|| "Off".to_owned(), |(_, label)| label.clone());
-        self.note(format!("{heading}: {label}"), cx);
+        let reel = TrackReel { choices, at };
+        self.osd = Some((Osd::Reel(reel), Instant::now()));
+        cx.notify();
     }
 
     /// Hide the subtitles showing, or show the ones hidden (or the first).
@@ -434,84 +482,35 @@ impl PlayerView {
         theme: &Theme,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let mut menu = div()
-            .id("tracks-menu")
-            .occlude()
-            .flex()
-            .overflow_hidden()
-            .rounded(px(8.))
-            .border_1()
-            .border_color(theme.border)
-            .bg(theme.surface)
-            .shadow_lg()
-            .text_sm()
-            .text_color(theme.text);
+        let mut menu = Panel::new().occlude().flex();
         let mut first = true;
-        for (kind, heading) in [
-            (TrackKind::Video, "Video"),
-            (TrackKind::Audio, "Audio"),
-            (TrackKind::Subtitle, "Subtitles"),
-        ] {
-            let tracks: Vec<_> = info.tracks(kind).collect();
+        for kind in [TrackKind::Video, TrackKind::Audio, TrackKind::Subtitle] {
+            let heading = track_heading(kind);
+            let choices = track_choices(info, kind);
+            let tracks = choices.iter().filter(|c| c.index.is_some()).count();
             let listed = match kind {
-                TrackKind::Video => tracks.len() > 1,
-                _ => !tracks.is_empty(),
+                TrackKind::Video => tracks > 1,
+                _ => tracks > 0,
             };
             if !listed {
                 continue;
             }
             let selected = info.selected(kind);
-            let mut rows: Vec<(Option<usize>, String, Option<String>)> = Vec::new();
-            if kind == TrackKind::Subtitle {
-                rows.push((None, "Off".to_owned(), None));
-            }
-            rows.extend(
-                tracks.iter().enumerate().map(|(i, track)| {
-                    (Some(track.index), track.label(i + 1), Some(track.detail()))
-                }),
-            );
             let mut list = div().id(heading).max_h(px(320.)).overflow_y_scroll().pb_1();
-            for (index, label, detail) in rows {
-                let checked = selected == index;
+            for choice in &choices {
+                let index = choice.index;
                 list = list.child(
-                    div()
+                    track_row(choice, selected == index, theme.text_muted)
                         .id(("track", index.map_or(0, |i| i + 1)))
                         .group("track-row")
-                        .flex()
-                        .items_center()
-                        .gap_1p5()
                         .mx_1()
-                        .px_2()
-                        .py(px(3.))
-                        .rounded(px(5.))
                         .cursor_pointer()
                         .hover(|style| style.bg(theme.accent).text_color(white()))
                         .on_click(cx.listener(move |this, _, _, cx| {
                             this.player.select_track(kind, index);
                             this.tracks_open = false;
                             cx.notify();
-                        }))
-                        // A character rather than an icon, so it turns white
-                        // with the rest of the row.
-                        .child(
-                            div()
-                                .flex_none()
-                                .w(px(14.))
-                                .when(checked, |this| this.child("✓")),
-                        )
-                        .child(div().flex_1().min_w_0().truncate().child(label))
-                        .when_some(detail, |this, detail| {
-                            this.child(
-                                div()
-                                    .flex_none()
-                                    .text_xs()
-                                    .text_color(theme.text_muted)
-                                    .group_hover("track-row", |style| {
-                                        style.text_color(white().opacity(0.8))
-                                    })
-                                    .child(detail),
-                            )
-                        }),
+                        })),
                 );
             }
             menu = menu.child(
@@ -520,16 +519,7 @@ impl PlayerView {
                     .flex_col()
                     .w(px(240.))
                     .when(!first, |this| this.border_l_1().border_color(theme.border))
-                    .child(
-                        div()
-                            .px_3()
-                            .pt_2()
-                            .pb_1()
-                            .text_xs()
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .text_color(theme.text_muted)
-                            .child(heading),
-                    )
+                    .child(track_heading_row(heading, theme))
                     .child(list),
             );
             first = false;
@@ -969,11 +959,22 @@ impl Render for PlayerView {
                 }),
         );
 
-        let osd = self
-            .osd
-            .as_ref()
-            .filter(|(_, shown)| shown.elapsed() < OSD_DURATION)
-            .map(|(text, _)| text.clone());
+        let osd = self.osd.as_ref().and_then(|(osd, shown)| {
+            let shown = shown.elapsed();
+            let left = OSD_DURATION.checked_sub(shown)?;
+            let fade = (left.as_secs_f32() / OSD_FADE.as_secs_f32()).min(1.0);
+            let note = match osd {
+                Osd::Text(text) => Panel::new()
+                    .overlay()
+                    .rounded_full()
+                    .px_3()
+                    .py_1()
+                    .child(text.clone())
+                    .into_any_element(),
+                Osd::Reel(reel) => render_reel(reel, shown),
+            };
+            Some((note, fade))
+        });
         if osd.is_some() {
             window.request_animation_frame();
         } else {
@@ -1036,18 +1037,17 @@ impl Render for PlayerView {
                         .items_center()
                         .justify_center()
                         .child(
-                            div()
+                            Panel::new()
+                                .overlay()
+                                .rounded_full()
                                 .px_3()
                                 .py_1()
-                                .rounded_full()
-                                .bg(overlay::scrim())
                                 .text_xs()
-                                .text_color(overlay::text())
                                 .child("Buffering…"),
                         ),
                 )
             })
-            .when_some(osd, |this, text| {
+            .when_some(osd, |this, (note, fade)| {
                 this.child(
                     div()
                         .absolute()
@@ -1056,16 +1056,8 @@ impl Render for PlayerView {
                         .w_full()
                         .flex()
                         .justify_center()
-                        .child(
-                            div()
-                                .px_3()
-                                .py_1()
-                                .rounded_full()
-                                .bg(overlay::scrim())
-                                .text_sm()
-                                .text_color(overlay::text())
-                                .child(text),
-                        ),
+                        .opacity(fade)
+                        .child(note),
                 )
             })
             .when(outlined, |this| {
@@ -1099,6 +1091,111 @@ fn close_tracks(
     cx.notify();
 }
 
+/// A track's row: a check if it's the one picked, its name, and what it is
+/// (in `muted`).
+fn track_row(choice: &TrackChoice, checked: bool, muted: Hsla) -> Div {
+    div()
+        .flex()
+        .items_center()
+        .gap_1p5()
+        .h(px(TRACK_ROW))
+        .px_2()
+        .rounded(px(5.))
+        // A character rather than an icon, so it turns white with the rest
+        // of the row in the menu.
+        .child(
+            div()
+                .flex_none()
+                .w(px(14.))
+                .when(checked, |this| this.child("✓")),
+        )
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .truncate()
+                .child(choice.label.clone()),
+        )
+        .when_some(choice.detail.clone(), |this, detail| {
+            this.child(
+                div()
+                    .flex_none()
+                    .text_xs()
+                    .text_color(muted)
+                    .group_hover("track-row", |style| style.text_color(white().opacity(0.8)))
+                    .child(detail),
+            )
+        })
+}
+
+fn track_heading_row(heading: &'static str, theme: &Theme) -> Div {
+    div()
+        .px_3()
+        .pt_2()
+        .pb_1()
+        .text_xs()
+        .font_weight(FontWeight::SEMIBOLD)
+        .text_color(theme.text_muted)
+        .child(heading)
+}
+
+/// The reel `shown` after a track was picked: it rolls up a row, from the
+/// one before in the middle to the one picked, which then has the one
+/// before above it and the next below, faded.
+fn render_reel(reel: &TrackReel, shown: Duration) -> AnyElement {
+    let count = reel.choices.len();
+    let t = (shown.as_secs_f32() / REEL_ROLL.as_secs_f32()).min(1.0);
+    let rolled = 1.0 - (1.0 - t).powi(3);
+    // Rows from the middle once rolled: the one two before is in view above
+    // until it rolls out.
+    let rows: &[isize] = if count > 1 { &[-2, -1, 0, 1] } else { &[0] };
+    let rows = rows.iter().filter_map(|&row| {
+        let distance = row as f32 + if count > 1 { 1.0 - rolled } else { 0.0 };
+        let opacity = reel_opacity(distance, count);
+        if opacity <= 0.0 {
+            return None;
+        }
+        let at = (reel.at as isize + row).rem_euclid(count as isize) as usize;
+        Some(
+            track_row(&reel.choices[at], row == 0, overlay::text_muted())
+                .absolute()
+                .left_0()
+                .right_0()
+                .top(px((1.0 + distance) * TRACK_ROW))
+                .opacity(opacity),
+        )
+    });
+    Panel::new()
+        .overlay()
+        .w(px(240.))
+        .p_1()
+        .child(
+            div()
+                .relative()
+                .h(px(3.0 * TRACK_ROW))
+                .overflow_hidden()
+                .children(rows),
+        )
+        .into_any_element()
+}
+
+/// How bright a row on the reel is `distance` rows from the middle (below
+/// is positive): full there, faded a row away, gone half a row further.
+/// With two tracks the one above is the one below, so only that shows.
+fn reel_opacity(distance: f32, count: usize) -> f32 {
+    let neighbor = match count {
+        0 | 1 => 0.0,
+        2 if distance < 0.0 => 0.0,
+        _ => REEL_FADED,
+    };
+    let away = distance.abs();
+    if away <= 1.0 {
+        1.0 + (neighbor - 1.0) * away
+    } else {
+        neighbor * (1.0 - (away - 1.0) * 2.0).max(0.0)
+    }
+}
+
 fn format_time(seconds: f64) -> String {
     let total = seconds.max(0.0).floor() as u64;
     let (h, m, s) = (total / 3600, (total / 60) % 60, total % 60);
@@ -1111,7 +1208,23 @@ fn format_time(seconds: f64) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::format_time;
+    use super::{REEL_FADED, format_time, reel_opacity};
+
+    #[test]
+    fn fades_the_reel_away_from_the_middle() {
+        let opacity = |distance, count| (reel_opacity(distance, count) * 100.0).round() / 100.0;
+        assert_eq!(opacity(0.0, 5), 1.0);
+        assert_eq!(opacity(-1.0, 5), REEL_FADED);
+        assert_eq!(opacity(1.0, 5), REEL_FADED);
+        assert_eq!(opacity(0.5, 5), 0.7);
+        assert_eq!(opacity(1.5, 5), 0.0);
+        assert_eq!(opacity(-2.0, 5), 0.0);
+        // Two tracks: the other one shows below only.
+        assert_eq!(opacity(1.0, 2), REEL_FADED);
+        assert_eq!(opacity(-1.0, 2), 0.0);
+        assert_eq!(opacity(0.0, 1), 1.0);
+        assert_eq!(opacity(1.0, 1), 0.0);
+    }
 
     #[test]
     fn formats_times() {

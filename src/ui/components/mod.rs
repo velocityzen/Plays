@@ -5,6 +5,7 @@
 mod button;
 mod icon;
 mod icon_button;
+mod panel;
 mod segmented;
 mod slider;
 mod switch;
@@ -12,6 +13,7 @@ mod switch;
 pub use button::Button;
 pub use icon::Icon;
 pub use icon_button::IconButton;
+pub use panel::Panel;
 pub use segmented::Segmented;
 pub use slider::{Slide, Slider, SliderEvent};
 pub use switch::Switch;

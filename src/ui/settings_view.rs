@@ -12,7 +12,7 @@ use gpui::{
     white,
 };
 
-use super::components::{Button, Icon, Segmented, Slide, Slider, Switch};
+use super::components::{Button, Icon, Panel, Segmented, Slide, Slider, Switch};
 use super::subtitles;
 use super::theme::Theme;
 use crate::app::AudioEngine;
@@ -576,19 +576,7 @@ impl SettingsView {
         .track_scroll(self.font_scroll.clone())
         .h(px(280.))
         .py_1();
-        div()
-            .id("fonts-menu")
-            .occlude()
-            .w(px(260.))
-            .rounded(px(8.))
-            .border_1()
-            .border_color(theme.border)
-            .bg(theme.surface)
-            .shadow_lg()
-            .overflow_hidden()
-            .text_sm()
-            .text_color(theme.text)
-            .child(list)
+        Panel::new().occlude().w(px(260.)).child(list)
     }
 
     fn open_fonts(&mut self, _: &ClickEvent, _: &mut Window, cx: &mut Context<Self>) {

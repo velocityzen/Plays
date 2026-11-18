@@ -132,7 +132,9 @@ For your file manager's **Open With** menu, put the `plays` binary on your
 
 Shortcuts act on the active tile: the one last clicked (outlined while a
 window has several and the mouse is over it), or the maximized one. A short
-note on the tile says what changed. To change them, open Settings → Hotkeys,
+note on the tile says what changed; switching tracks rolls a reel, like a
+slot machine's, to the track picked, with the ones before and after it
+faded above and below. To change shortcuts, open Settings → Hotkeys,
 click + by a command and press the keys; a key another command had moves to
 it, and Restore brings IINA's back. The app's own shortcuts above (⌘O, ⌘W
 and so on) stay as they are.
@@ -229,7 +231,9 @@ last window quits.
   the style from Settings; the settings' Subtitles pane draws its preview
   with the same code.
 - `src/ui/components/`: the reusable controls (icon, buttons, switch,
-  segmented control, slider), one `RenderOnce` component per file.
+  segmented control, slider) and a floating panel to put anything in,
+  either a menu's or a note's over the picture, one `RenderOnce` component
+  per file.
 
 Software-decoded frames (and, on Linux, hardware-decoded ones) are uploaded to
 gpui's texture atlas through `img()`; on macOS, hardware-decoded frames are
