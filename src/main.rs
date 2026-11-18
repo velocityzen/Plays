@@ -2,6 +2,7 @@
 
 mod app;
 mod assets;
+mod hotkeys;
 mod media;
 mod settings;
 mod ui;

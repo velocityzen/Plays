@@ -53,8 +53,13 @@ impl Graveyard {
     }
 }
 
+/// How long a note on what a shortcut did shows.
+const OSD_DURATION: Duration = Duration::from_millis(1200);
+
 pub enum PlayerEvent {
     Close,
+    /// Clicked: shortcuts go to this tile now.
+    Activate,
     /// Fill the grid with this tile.
     ToggleMaximize,
     /// Move to a new window.
@@ -77,6 +82,12 @@ pub struct PlayerView {
     cues: Vec<Arc<CueContent>>,
     /// The audio and subtitle track menu is open.
     tracks_open: bool,
+    /// A note on what a shortcut did, and when it was shown.
+    osd: Option<(SharedString, Instant)>,
+    /// The subtitles hidden with a shortcut, to show again.
+    hidden_subtitles: Option<usize>,
+    /// Shortcuts go to this tile, which is outlined when there are others.
+    pub active: bool,
     pub maximized: bool,
     /// The only tile in its window: there is nowhere to expand it to, and
     /// popping it out would leave the window empty.
@@ -121,6 +132,9 @@ impl PlayerView {
             drawn: None,
             cues: Vec::new(),
             tracks_open: false,
+            osd: None,
+            hidden_subtitles: None,
+            active: false,
             maximized: false,
             alone: true,
             top_left: false,
@@ -269,6 +283,138 @@ impl PlayerView {
             self.player.set_muted(false);
         }
         cx.notify();
+    }
+
+    /// Show a note on what a shortcut did.
+    pub fn note(&mut self, text: impl Into<SharedString>, cx: &mut Context<Self>) {
+        self.osd = Some((text.into(), Instant::now()));
+        cx.notify();
+    }
+
+    pub fn play_pause(&mut self, cx: &mut Context<Self>) {
+        self.player.toggle();
+        cx.notify();
+    }
+
+    pub fn seek_by(&mut self, seconds: f64, cx: &mut Context<Self>) {
+        self.player.seek_by(seconds);
+        cx.notify();
+    }
+
+    pub fn restart(&mut self, cx: &mut Context<Self>) {
+        self.player.seek(0.0);
+        cx.notify();
+    }
+
+    /// Pause and show the next frame (`1`) or the one before (`-1`).
+    pub fn step_frame(&mut self, direction: f64, cx: &mut Context<Self>) {
+        let frame = 1.0
+            / self
+                .player
+                .info()
+                .and_then(|info| info.frame_rate)
+                .filter(|fps| *fps > 0.0)
+                .unwrap_or(25.0);
+        let Some(pts) = self.player.frame_pts() else {
+            return;
+        };
+        self.player.pause();
+        // A seek shows the first frame that hasn't ended by its target, so
+        // aim into the middle of the frame wanted.
+        let target = if direction > 0.0 {
+            pts + 1.5 * frame
+        } else {
+            pts - 0.5 * frame
+        };
+        self.player.seek(target.max(0.0));
+        cx.notify();
+    }
+
+    pub fn change_volume(&mut self, delta: f32, cx: &mut Context<Self>) {
+        let volume = (self.player.volume() + delta).clamp(0.0, 1.0);
+        self.player.set_volume(volume);
+        if delta > 0.0 && self.player.is_muted() {
+            self.player.set_muted(false);
+        }
+        self.note(format!("Volume {}%", (volume * 100.0).round()), cx);
+    }
+
+    pub fn toggle_mute(&mut self, cx: &mut Context<Self>) {
+        let muted = !self.player.is_muted();
+        self.player.set_muted(muted);
+        self.note(if muted { "Muted" } else { "Unmuted" }, cx);
+    }
+
+    pub fn toggle_loop(&mut self, cx: &mut Context<Self>) {
+        let looping = !self.player.is_looping();
+        self.player.set_looping(looping);
+        self.note(if looping { "Loop on" } else { "Loop off" }, cx);
+    }
+
+    /// Play the next track of a kind, after the last one going back to the
+    /// first (and, for subtitles, to none).
+    pub fn next_track(&mut self, kind: TrackKind, cx: &mut Context<Self>) {
+        let Some(info) = self.player.info() else {
+            return;
+        };
+        let heading = match kind {
+            TrackKind::Video => "Video",
+            TrackKind::Audio => "Audio",
+            TrackKind::Subtitle => "Subtitles",
+        };
+        let labels: Vec<(usize, String)> = info
+            .tracks(kind)
+            .enumerate()
+            .map(|(i, track)| (track.index, track.label(i + 1)))
+            .collect();
+        if labels.is_empty() {
+            self.note(format!("No {} tracks", heading.to_lowercase()), cx);
+            return;
+        }
+        let mut choices: Vec<Option<usize>> = labels.iter().map(|(ix, _)| Some(*ix)).collect();
+        if kind == TrackKind::Subtitle {
+            choices.insert(0, None);
+        }
+        let selected = info.selected(kind);
+        let next = match choices.iter().position(|choice| *choice == selected) {
+            Some(at) => choices[(at + 1) % choices.len()],
+            None => choices[0],
+        };
+        self.player.select_track(kind, next);
+        if kind == TrackKind::Subtitle {
+            self.hidden_subtitles = None;
+        }
+        let label = next
+            .and_then(|ix| labels.iter().find(|(i, _)| *i == ix))
+            .map_or_else(|| "Off".to_owned(), |(_, label)| label.clone());
+        self.note(format!("{heading}: {label}"), cx);
+    }
+
+    /// Hide the subtitles showing, or show the ones hidden (or the first).
+    pub fn toggle_subtitles(&mut self, cx: &mut Context<Self>) {
+        let Some(info) = self.player.info() else {
+            return;
+        };
+        if let Some(index) = info.subtitle_track {
+            self.hidden_subtitles = Some(index);
+            self.player.select_track(TrackKind::Subtitle, None);
+            self.note("Subtitles hidden", cx);
+            return;
+        }
+        let tracks: Vec<_> = info.tracks(TrackKind::Subtitle).collect();
+        let shown = self
+            .hidden_subtitles
+            .take()
+            .and_then(|index| tracks.iter().position(|t| t.index == index))
+            .or((!tracks.is_empty()).then_some(0));
+        match shown {
+            Some(i) => {
+                self.player
+                    .select_track(TrackKind::Subtitle, Some(tracks[i].index));
+                self.note(format!("Subtitles: {}", tracks[i].label(i + 1)), cx);
+            }
+            None => self.note("No subtitles", cx),
+        }
     }
 
     /// Whether the file has tracks to pick from: subtitles, or more than one
@@ -823,12 +969,29 @@ impl Render for PlayerView {
                 }),
         );
 
+        let osd = self
+            .osd
+            .as_ref()
+            .filter(|(_, shown)| shown.elapsed() < OSD_DURATION)
+            .map(|(text, _)| text.clone());
+        if osd.is_some() {
+            window.request_animation_frame();
+        } else {
+            self.osd = None;
+        }
+        let outlined = self.active && !self.alone && !self.maximized && mouse_in_window;
+
         div()
             .id("player")
             .group(group.clone())
             .relative()
             .size_full()
             .overflow_hidden()
+            .capture_any_mouse_down(cx.listener(|this, _, _, cx| {
+                if !this.active {
+                    cx.emit(PlayerEvent::Activate);
+                }
+            }))
             .bg(if has_video || info.as_ref().is_some_and(|i| i.has_video) {
                 black()
             } else {
@@ -882,6 +1045,38 @@ impl Render for PlayerView {
                                 .text_color(overlay::text())
                                 .child("Buffering…"),
                         ),
+                )
+            })
+            .when_some(osd, |this, text| {
+                this.child(
+                    div()
+                        .absolute()
+                        .top(px(44.))
+                        .left_0()
+                        .w_full()
+                        .flex()
+                        .justify_center()
+                        .child(
+                            div()
+                                .px_3()
+                                .py_1()
+                                .rounded_full()
+                                .bg(overlay::scrim())
+                                .text_sm()
+                                .text_color(overlay::text())
+                                .child(text),
+                        ),
+                )
+            })
+            .when(outlined, |this| {
+                this.child(
+                    div()
+                        .absolute()
+                        .top_0()
+                        .left_0()
+                        .size_full()
+                        .border_2()
+                        .border_color(theme.accent.opacity(0.8)),
                 )
             })
             // Clicks on the bars mustn't reach the surface underneath (which

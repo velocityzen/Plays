@@ -2,8 +2,10 @@ use std::fs;
 use std::ops::RangeInclusive;
 use std::path::PathBuf;
 
-use gpui::Global;
+use gpui::{App, BorrowAppContext, Global};
 use serde::{Deserialize, Serialize};
+
+use crate::hotkeys::Hotkeys;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -208,6 +210,7 @@ pub struct Settings {
     /// Gamma for HDR video (Dolby Vision included).
     pub hdr_gamma: f32,
     pub subtitles: SubtitleStyle,
+    pub hotkeys: Hotkeys,
 }
 
 /// The gamma the settings offer.
@@ -221,7 +224,8 @@ impl Default for Settings {
             default_volume: 0.8,
             autoplay: true,
             loop_by_default: false,
-            seek_step_seconds: 10,
+            // IINA's arrow keys seek 5 seconds.
+            seek_step_seconds: 5,
             video_fit: VideoFit::Contain,
             max_resolution: MaxResolution::P1080,
             hardware_decoding: true,
@@ -231,6 +235,7 @@ impl Default for Settings {
             sdr_gamma: 1.0,
             hdr_gamma: 1.0,
             subtitles: SubtitleStyle::default(),
+            hotkeys: Hotkeys::default(),
         }
     }
 }
@@ -238,6 +243,18 @@ impl Default for Settings {
 impl Global for Settings {}
 
 impl Settings {
+    /// Change the settings, re-render every window and optionally write
+    /// them to disk.
+    pub fn update(cx: &mut App, save: bool, change: impl FnOnce(&mut Settings)) {
+        cx.update_global::<Settings, _>(|settings, _| {
+            change(settings);
+            if save {
+                settings.save();
+            }
+        });
+        cx.refresh_windows();
+    }
+
     pub fn path() -> Option<PathBuf> {
         dirs::config_dir().map(|dir| dir.join("plays").join("settings.json"))
     }

@@ -20,6 +20,7 @@ icons!(
     "chevron-up-down",
     "close",
     "display",
+    "keyboard",
     "link",
     "loop",
     "maximize",

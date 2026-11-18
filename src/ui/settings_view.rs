@@ -6,8 +6,8 @@ use std::sync::Arc;
 use gpui::prelude::*;
 use gpui::{
     AnchoredPositionMode, AnyElement, App, Bounds, ClickEvent, Context, Corner, FocusHandle,
-    FontWeight, Hsla, MouseButton, MouseDownEvent, Pixels, ScrollStrategy, SharedString,
-    UniformListScrollHandle, Window, anchored, black, canvas, deferred, div, fill,
+    FontWeight, Hsla, KeyDownEvent, Keystroke, MouseButton, MouseDownEvent, Pixels, ScrollStrategy,
+    SharedString, UniformListScrollHandle, Window, anchored, black, canvas, deferred, div, fill,
     linear_color_stop, linear_gradient, point, px, rgb, size, transparent_black, uniform_list,
     white,
 };
@@ -16,6 +16,7 @@ use super::components::{Button, Icon, Segmented, Slide, Slider, Switch};
 use super::subtitles;
 use super::theme::Theme;
 use crate::app::AudioEngine;
+use crate::hotkeys::{self, Command, Group, Hotkeys};
 use crate::media::subtitles::{CueContent, parse_ass};
 use crate::settings::{
     ControlsVisibility, GAMMA_RANGE, MaxResolution, Rgb, SUBTITLE_COLORS, SUBTITLE_POSITION_RANGE,
@@ -23,15 +24,8 @@ use crate::settings::{
     ThemeMode, VideoFit,
 };
 
-/// Change the settings, re-render every window and optionally write them to disk.
 fn update_settings(cx: &mut App, save: bool, change: impl FnOnce(&mut Settings)) {
-    cx.update_global::<Settings, _>(|settings, _| {
-        change(settings);
-        if save {
-            settings.save();
-        }
-    });
-    cx.refresh_windows();
+    Settings::update(cx, save, change);
 }
 
 /// The settings window's sections: a sidebar entry and a pane each.
@@ -41,15 +35,17 @@ enum Section {
     Audio,
     Video,
     Subtitles,
+    Hotkeys,
     Appearance,
 }
 
 impl Section {
-    const ALL: [Self; 5] = [
+    const ALL: [Self; 6] = [
         Self::Playback,
         Self::Audio,
         Self::Video,
         Self::Subtitles,
+        Self::Hotkeys,
         Self::Appearance,
     ];
 
@@ -59,6 +55,7 @@ impl Section {
             Self::Audio => "Audio",
             Self::Video => "Video",
             Self::Subtitles => "Subtitles",
+            Self::Hotkeys => "Hotkeys",
             Self::Appearance => "Appearance",
         }
     }
@@ -69,6 +66,7 @@ impl Section {
             Self::Audio => "volume",
             Self::Video => "display",
             Self::Subtitles => "subtitles",
+            Self::Hotkeys => "keyboard",
             Self::Appearance => "appearance",
         }
     }
@@ -81,6 +79,7 @@ impl Section {
             Self::Audio => rgb(0xff375f),
             Self::Video => rgb(0x0a84ff),
             Self::Subtitles => rgb(0xff9f0a),
+            Self::Hotkeys => rgb(0x5e5ce6),
             Self::Appearance => rgb(0x8e8e93),
         }
         .into()
@@ -102,6 +101,10 @@ pub struct SettingsView {
     /// The installed font families, listed the first time the menu opens.
     fonts: Rc<[SharedString]>,
     font_scroll: UniformListScrollHandle,
+    /// The command whose next keystroke becomes one of its shortcuts.
+    recording: Option<Command>,
+    /// What the last shortcut recorded did to another command.
+    hotkey_note: Option<(Command, SharedString)>,
 }
 
 impl SettingsView {
@@ -121,6 +124,8 @@ impl SettingsView {
             fonts_open: false,
             fonts: Rc::new([]),
             font_scroll: UniformListScrollHandle::new(),
+            recording: None,
+            hotkey_note: None,
         }
     }
 }
@@ -762,6 +767,163 @@ impl SettingsView {
 }
 
 impl SettingsView {
+    /// A group of commands for each part of playback, and their keys.
+    fn hotkey_groups(
+        &self,
+        hotkeys: &Hotkeys,
+        theme: &Theme,
+        cx: &mut Context<Self>,
+    ) -> Vec<AnyElement> {
+        let intro = group(
+            None,
+            theme,
+            vec![row(
+                "IINA's shortcuts",
+                Some(
+                    "Shortcuts go to the tile last clicked. Click + and press keys to add \
+                     one; menu shortcuts such as ⌘O stay as they are."
+                        .into(),
+                ),
+                theme,
+                Button::new("restore-hotkeys", "Restore").on_click(|_, _, cx| {
+                    update_settings(cx, true, |s| s.hotkeys = Hotkeys::default())
+                }),
+            )],
+        );
+        let mut groups = vec![intro];
+        for kind in Group::ALL {
+            let rows = Command::ALL
+                .into_iter()
+                .filter(|command| command.group() == kind)
+                .map(|command| {
+                    let note = self
+                        .hotkey_note
+                        .as_ref()
+                        .filter(|(noted, _)| *noted == command)
+                        .map(|(_, note)| note.clone());
+                    row(
+                        command.title(),
+                        note,
+                        theme,
+                        self.hotkey_keys(command, hotkeys.keys(command), theme, cx),
+                    )
+                })
+                .collect();
+            groups.push(group(Some(kind.title()), theme, rows));
+        }
+        groups
+    }
+
+    /// A command's keys, each with a button to remove it, and a button to
+    /// add one (or a prompt while waiting for it).
+    fn hotkey_keys(
+        &self,
+        command: Command,
+        keys: &[String],
+        theme: &Theme,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let chip = |id: SharedString| {
+            div()
+                .id(id)
+                .flex()
+                .flex_none()
+                .items_center()
+                .gap_1()
+                .h(px(24.))
+                .px_2()
+                .rounded(px(5.))
+                .border_1()
+                .text_sm()
+        };
+        let recording = self.recording == Some(command);
+        div()
+            .flex()
+            .flex_none()
+            .flex_wrap()
+            .justify_end()
+            .items_center()
+            .gap_1()
+            .max_w(px(280.))
+            .children(keys.iter().map(|key| {
+                let removed = key.clone();
+                chip(format!("{}-{key}", command.id()).into())
+                    .border_color(theme.border)
+                    .bg(theme.background)
+                    .child(hotkeys::display(key))
+                    .child(
+                        div()
+                            .id("remove")
+                            .flex_none()
+                            .cursor_pointer()
+                            .rounded(px(3.))
+                            .hover(|style| style.bg(theme.surface_hover))
+                            .child(Icon::new("close").size(px(10.)).color(theme.text_muted))
+                            .on_click(move |_, _, cx| {
+                                update_settings(cx, true, |s| s.hotkeys.remove(command, &removed))
+                            }),
+                    )
+            }))
+            .child(if recording {
+                chip(format!("{}-recording", command.id()).into())
+                    .border_color(theme.accent)
+                    .text_color(theme.accent)
+                    .cursor_pointer()
+                    .child("Press keys… (⎋ cancels)")
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.recording = None;
+                        cx.notify();
+                    }))
+            } else {
+                chip(format!("{}-add", command.id()).into())
+                    .border_color(theme.border)
+                    .cursor_pointer()
+                    .hover(|style| style.bg(theme.surface_hover))
+                    .child(Icon::new("plus").size(px(12.)).color(theme.text_muted))
+                    .on_click(cx.listener(move |this, _, window, cx| {
+                        this.recording = Some(command);
+                        this.hotkey_note = None;
+                        window.focus(&this.focus_handle);
+                        cx.notify();
+                    }))
+            })
+            .into_any_element()
+    }
+
+    /// While waiting for a shortcut, the keys pressed become it. Escape
+    /// cancels; the app's own shortcuts (⌘O and so on) never get here.
+    fn record_key(&mut self, event: &KeyDownEvent, _: &mut Window, cx: &mut Context<Self>) {
+        let Some(command) = self.recording else {
+            return;
+        };
+        cx.stop_propagation();
+        if event.is_held {
+            return;
+        }
+        let pressed = &event.keystroke;
+        if pressed.key == "escape" && !pressed.modifiers.modified() {
+            self.recording = None;
+            cx.notify();
+            return;
+        }
+        let key = Keystroke {
+            modifiers: pressed.modifiers,
+            key: pressed.key.clone(),
+            key_char: None,
+        }
+        .unparse();
+        let mut taken = None;
+        update_settings(cx, true, |s| taken = s.hotkeys.add(command, &key));
+        self.hotkey_note = taken.map(|from| {
+            let note = format!("{} was for “{}”", hotkeys::display(&key), from.title());
+            (command, SharedString::from(note))
+        });
+        self.recording = None;
+        cx.notify();
+    }
+}
+
+impl SettingsView {
     /// A section's pane: its groups of rows.
     fn groups(
         &self,
@@ -805,7 +967,7 @@ impl SettingsView {
                     ),
                     row(
                         "Seek step",
-                        Some("Left and right arrow keys move every file by this much".into()),
+                        Some("How far the seek shortcuts move, ← and → at first".into()),
                         theme,
                         Segmented::new(
                             "seek-step",
@@ -948,6 +1110,7 @@ impl SettingsView {
                 ]
             }
             Section::Subtitles => self.subtitle_groups(&s.subtitles.clamped(), theme, window, cx),
+            Section::Hotkeys => self.hotkey_groups(&s.hotkeys, theme, cx),
             Section::Appearance => vec![
                 group(
                     None,
@@ -1050,6 +1213,7 @@ impl SettingsView {
                     .on_click(cx.listener(move |this, _, _, cx| {
                         this.section = section;
                         this.fonts_open = false;
+                        this.recording = None;
                         cx.notify();
                     }))
                     .child(
@@ -1151,6 +1315,7 @@ impl Render for SettingsView {
             .id("settings")
             .key_context("Settings")
             .track_focus(&self.focus_handle)
+            .on_key_down(cx.listener(Self::record_key))
             .size_full()
             .flex()
             .bg(theme.background)

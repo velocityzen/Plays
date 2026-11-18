@@ -168,7 +168,7 @@ impl Player {
         self.current.as_ref().map(|f| f.picture.clone())
     }
 
-    #[cfg(test)]
+    /// When the frame on screen shows, on the media's timeline.
     pub fn frame_pts(&self) -> Option<f64> {
         self.current.as_ref().map(|f| f.pts)
     }

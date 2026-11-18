@@ -61,6 +61,8 @@ pub struct Workspace {
     /// Gamma for SDR and HDR video, as last applied to the tiles.
     gamma: [f32; 2],
     maximized: Option<EntityId>,
+    /// The tile last clicked, which shortcuts go to.
+    active: Option<EntityId>,
     graveyard: Graveyard,
     open_url: Option<(Entity<OpenUrlDialog>, Subscription)>,
     /// The "Open URL" form, which takes the place of the empty window's
@@ -153,6 +155,7 @@ impl Workspace {
             focus_handle,
             tiles: Vec::new(),
             maximized: None,
+            active: None,
             graveyard: Graveyard::default(),
             open_url: None,
             url_form,
@@ -194,6 +197,10 @@ impl Workspace {
     fn add_tile(&mut self, view: Entity<PlayerView>, cx: &mut Context<Self>) {
         let subscription = cx.subscribe(&view, |this, view, event, cx| match event {
             PlayerEvent::Close => this.close(view.entity_id(), cx),
+            PlayerEvent::Activate => {
+                this.active = Some(view.entity_id());
+                this.tiles_changed(cx);
+            }
             PlayerEvent::ToggleMaximize => this.toggle_maximize(view.entity_id(), cx),
             PlayerEvent::PopOut => this.pop_out(view.entity_id(), cx),
         });
@@ -211,16 +218,20 @@ impl Workspace {
         let top_left = self
             .maximized
             .or_else(|| self.tiles.first().map(|t| t.view.entity_id()));
+        let active = self.active_view().map(|view| view.entity_id());
         for tile in &self.tiles {
             let is_top_left = top_left == Some(tile.view.entity_id());
+            let is_active = active == Some(tile.view.entity_id());
             tile.view.update(cx, |view, cx| {
                 if view.alone != alone
                     || view.top_left != is_top_left
                     || view.mouse_in_window != mouse_in_window
+                    || view.active != is_active
                 {
                     view.alone = alone;
                     view.top_left = is_top_left;
                     view.mouse_in_window = mouse_in_window;
+                    view.active = is_active;
                     cx.notify();
                 }
             });
@@ -296,6 +307,9 @@ impl Workspace {
         if self.maximized == Some(id) {
             self.maximized = None;
         }
+        if self.active == Some(id) {
+            self.active = None;
+        }
         self.tiles_changed(cx);
     }
 
@@ -317,6 +331,9 @@ impl Workspace {
         if self.maximized == Some(id) {
             self.maximized = None;
         }
+        if self.active == Some(id) {
+            self.active = None;
+        }
         self.tiles_changed(cx);
         window
             .update(cx, |workspace, _, cx| workspace.adopt(view, cx))
@@ -336,6 +353,7 @@ impl Workspace {
             tile.view.update(cx, |view, _| view.release_pictures());
         }
         self.maximized = None;
+        self.active = None;
         self.tiles_changed(cx);
     }
 
@@ -350,6 +368,28 @@ impl Workspace {
             tile.view.update(cx, |view, _| view.maximized = maximized);
         }
         self.tiles_changed(cx);
+    }
+
+    /// The tile shortcuts go to: the maximized one, else the one last
+    /// clicked, else the first.
+    fn active_view(&self) -> Option<Entity<PlayerView>> {
+        let find = |id: EntityId| self.tiles.iter().find(|t| t.view.entity_id() == id);
+        self.maximized
+            .and_then(find)
+            .or_else(|| self.active.and_then(find))
+            .or_else(|| self.tiles.first())
+            .map(|tile| tile.view.clone())
+    }
+
+    /// Run `f` on the tile shortcuts go to.
+    pub fn with_active(
+        &mut self,
+        cx: &mut Context<Self>,
+        f: impl FnOnce(&mut PlayerView, &mut Context<PlayerView>),
+    ) {
+        if let Some(view) = self.active_view() {
+            view.update(cx, f);
+        }
     }
 
     fn for_each_player(&mut self, cx: &mut Context<Self>, f: impl Fn(&mut crate::media::Player)) {

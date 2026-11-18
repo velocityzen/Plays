@@ -34,8 +34,10 @@ GPU-accelerated UI framework.
   Windows-1251, Shift JIS and the like) is detected and converted.
 - Any tile can pop out into a new window, where it keeps playing. Every
   window works the same: drop more files on it and they play side by side.
-- The menu bar (a toolbar on Linux) and shortcuts control all files in a
-  window at once: play/pause, seek, mute, restart, close.
+- Shortcuts, IINA's to start with, go to the tile last clicked: play/pause,
+  seek, frame step, volume, tracks, subtitle size and height, full screen.
+  With Shift, play/pause, seek, restart and mute go to every file in the
+  window, as does the menu bar (a toolbar on Linux).
 - On macOS, windows show just the video, edge to edge, with the traffic
   lights over it like other video players. While something plays, they fade
   out with the controls when the mouse leaves the window. Colors are macOS's
@@ -47,8 +49,8 @@ GPU-accelerated UI framework.
   every open video as you drag), decode resolution limit, hardware decoding,
   subtitle style (font, weight, size, color, outline or shadow and its color,
   a background box, on the picture or anywhere in the tile, height), with a
-  live preview, grid columns, controls visibility, file names. Saved as JSON
-  in the user config dir.
+  live preview, the keys for every shortcut, grid columns, controls
+  visibility, file names. Saved as JSON in the user config dir.
 
 ## Building
 
@@ -112,12 +114,28 @@ For your file manager's **Open With** menu, put the `plays` binary on your
 | --- | --- |
 | Open files | `⌘O` / `Ctrl+O`, or drop files/folders on the window (or on the Dock icon of `Plays.app`) |
 | Open a stream URL | `⌘⇧O` / `Ctrl+Shift+O` (pre-filled from the clipboard) |
-| Play/pause all | `Space` or `K` |
-| Seek all back/forward | `←` `→` or `J` `L` (step set in Settings) |
-| Restart all | `Home` |
-| Mute/unmute all | `M` |
+| Play/pause | `Space` or `P` |
+| Seek back/forward | `←` `→` (5 seconds at first; the step is in Settings) |
+| Previous/next frame | `⌥←` `⌥→` / `Alt+←` `Alt+→`, or `,` `.` |
+| Restart | `Home` |
+| Loop | `⌘⇧L` / `Ctrl+Shift+L` |
+| Volume down/up | `↓` `↑` |
+| Mute/unmute | `M`, or `⌘/` / `Ctrl+/` |
+| Next audio, subtitle, video track | `⌃⌘A` `⌃⌘S` `⌃⌘V` / `Ctrl+Alt+A` `S` `V` |
+| Show/hide subtitles | `V` |
+| Bigger/smaller subtitles | `⇧G` `⇧F` |
+| Move subtitles up/down | `R` / `⇧R` or `T` |
+| Full screen | `F`, or `⌃⌘F` / `F11`; `Esc` leaves it |
+| Play/pause, seek, restart, mute all | `⇧Space`, `⇧←` `⇧→`, `⇧Home`, `⇧M` |
 | Close all | `⌘⇧W` / `Ctrl+Shift+W` |
 | Settings | `⌘,` / `Ctrl+,` |
+
+Shortcuts act on the active tile: the one last clicked (outlined while a
+window has several and the mouse is over it), or the maximized one. A short
+note on the tile says what changed. To change them, open Settings → Hotkeys,
+click + by a command and press the keys; a key another command had moves to
+it, and Restore brings IINA's back. The app's own shortcuts above (⌘O, ⌘W
+and so on) stay as they are.
 
 On a tile: click the picture to play/pause, double-click (or the corner
 button) to maximize it, drag the bar to scrub. The track button (next to
@@ -201,6 +219,10 @@ last window quits.
 - `src/media/player.rs`: the UI-side handle: play/pause/seek, frame selection,
   buffering after seeks (and, for streams, until a second is read ahead or
   when the network runs dry), end-of-file and looping.
+- `src/hotkeys.rs`: the commands shortcuts can run, their keys (IINA's to
+  start), how they are saved in Settings and shown (`⌃⌘F`, `Ctrl+Alt+F`).
+  The keymap is rebuilt from them whenever they change, and the menus show
+  them.
 - `src/ui/`: gpui views (`workspace`, one per window, `player_view`,
   `settings_view`, `open_url`) and a text field based on gpui's input example.
   `subtitles` paints a tile's cues where `object_fit` puts the picture, in
@@ -248,7 +270,9 @@ times. A clip with an English SRT and a Windows-1251 Russian one beside it
 checks that they are listed and named, that the first shows from the start,
 that seeking back lands in a cue already showing, and that the Russian one
 reads right. Unit tests cover finding files for a video, reading their
-names and telling encodings.
+names and telling encodings, and the shortcuts: no default key used twice, a
+key moving to the command it is given, reading and writing them in the
+settings file, staying out of text fields, and how they are shown.
 
 Stream tests serve the clips from a small HTTP server on localhost:
 HTTP files, HLS (normal and live), a connection that stalls mid-way,
