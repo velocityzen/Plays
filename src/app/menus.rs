@@ -4,7 +4,8 @@
 use gpui::{App, Menu, MenuItem, SystemMenuType};
 
 use super::{
-    CloseAll, CloseWindow, OpenFiles, OpenSettings, OpenUrl, Quit, SetAspectRatio, SetCrop,
+    CloseAll, CloseFile, CloseWindow, OpenFiles, OpenSettings, OpenUrl, Quit, SetAspectRatio,
+    SetCrop,
 };
 use crate::hotkeys::*;
 use crate::ui::framing::{ASPECT_RATIOS, CROPS};
@@ -27,6 +28,7 @@ pub(super) fn set_menus(cx: &mut App) {
                 MenuItem::action("Open…", OpenFiles),
                 MenuItem::action("Open URL…", OpenUrl),
                 MenuItem::separator(),
+                MenuItem::action("Close File", CloseFile),
                 MenuItem::action("Close All Files", CloseAll),
                 MenuItem::action("Close Window", CloseWindow),
             ],

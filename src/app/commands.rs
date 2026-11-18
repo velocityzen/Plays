@@ -4,7 +4,8 @@ use gpui::App;
 
 use super::dispatch::{with_active, with_active_in_window, with_workspace};
 use super::{
-    CloseAll, CloseWindow, OpenFiles, OpenSettings, OpenUrl, Quit, SetAspectRatio, SetCrop,
+    CloseAll, CloseFile, CloseWindow, OpenFiles, OpenSettings, OpenUrl, Quit, SetAspectRatio,
+    SetCrop,
 };
 use crate::hotkeys::*;
 use crate::media::tracks::TrackKind;
@@ -38,6 +39,7 @@ pub(super) fn register(cx: &mut App) {
             workspace.show_open_url(window, cx);
         })
     });
+    cx.on_action(|_: &CloseFile, cx| with_workspace(cx, |w, _, cx| w.close_active(cx)));
     cx.on_action(|_: &CloseAll, cx| with_workspace(cx, |w, _, cx| w.close_all(cx)));
 
     // The tile in front.

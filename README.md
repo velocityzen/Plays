@@ -217,7 +217,9 @@ it again when the dependencies change (`script/bundle-macos` runs it).
 | Picture in Picture (macOS) | `⌃⌘P` |
 | Console | `~` or `` ` `` |
 | Play/pause, seek, restart, mute all | `⇧Space`, `⇧←` `⇧→`, `⇧Home`, `⇧M` |
+| Close the file in front | `⌘W` / `Ctrl+W` (in an empty window, it closes the window) |
 | Close all | `⌘⇧W` / `Ctrl+Shift+W` |
+| Close the window | `⌥⌘W` / `Ctrl+Alt+W` |
 | Settings | `⌘,` / `Ctrl+,` |
 
 Shortcuts act on the active tile: the one last clicked, or the maximized

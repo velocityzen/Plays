@@ -107,6 +107,14 @@ impl Workspace {
         self.tiles_changed(cx);
     }
 
+    /// Close the tile shortcuts go to; the window stays, empty after the
+    /// last.
+    pub fn close_active(&mut self, cx: &mut Context<Self>) {
+        if let Some(view) = self.active_view() {
+            self.close(view.entity_id(), cx);
+        }
+    }
+
     pub fn close_all(&mut self, cx: &mut Context<Self>) {
         for tile in self.tiles.drain(..) {
             tile.view.update(cx, |view, _| view.release_pictures());

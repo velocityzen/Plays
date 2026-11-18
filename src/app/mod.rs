@@ -31,6 +31,7 @@ actions!(
         OpenUrl,
         OpenSettings,
         Quit,
+        CloseFile,
         CloseWindow,
         CloseAll
     ]
