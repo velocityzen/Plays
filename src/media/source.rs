@@ -19,11 +19,26 @@ const MEDIA_EXTENSIONS: &[&str] = &[
 ];
 
 /// The media files directly in `folder`, by name.
+///
+/// It reads the folder once, and looks no further at entries without a
+/// media file's name, nor (usually) at those with one: the listing says
+/// what they are, so a folder on a network drive takes one trip, not one a
+/// file. Slow there all the same, so not for the UI thread.
 pub fn media_in(folder: &Path) -> Vec<PathBuf> {
-    let mut files: Vec<PathBuf> = fs::read_dir(folder)
-        .map(|dir| dir.flatten().map(|entry| entry.path()).collect())
-        .unwrap_or_default();
-    files.retain(|path| path.is_file() && is_media(path));
+    let Ok(entries) = fs::read_dir(folder) else {
+        return Vec::new();
+    };
+    let mut files: Vec<PathBuf> = entries
+        .flatten()
+        .filter(|entry| is_media(Path::new(&entry.file_name())))
+        .filter(|entry| match entry.file_type() {
+            // Links are followed to see what they point at.
+            Ok(kind) if kind.is_symlink() => entry.path().is_file(),
+            Ok(kind) => kind.is_file(),
+            Err(_) => false,
+        })
+        .map(|entry| entry.path())
+        .collect();
     files.sort();
     files
 }
@@ -102,6 +117,8 @@ impl Source {
 
     /// The media files before and after this file in its folder, by name;
     /// none for a stream. It needn't be a media file itself.
+    ///
+    /// Lists the folder (`media_in`), so not for the UI thread.
     pub fn neighbors(&self) -> Neighbors {
         let Self::File(path) = self else {
             return Neighbors::default();
@@ -247,6 +264,33 @@ mod tests {
             Source::Url("https://example.com/live.m3u8".into()).neighbors(),
             Neighbors::default()
         );
+        std::fs::remove_dir_all(&folder).unwrap();
+    }
+
+    #[test]
+    fn lists_media_files_and_links_to_them_but_not_folders() {
+        let folder = std::env::temp_dir().join(format!("plays-media-in-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&folder);
+        std::fs::create_dir_all(folder.join("season.mkv")).unwrap();
+        for name in ["b.mp4", "notes.txt"] {
+            std::fs::write(folder.join(name), b"").unwrap();
+        }
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(folder.join("b.mp4"), folder.join("a.mkv")).unwrap();
+            std::os::unix::fs::symlink(folder.join("season.mkv"), folder.join("c.mkv")).unwrap();
+            std::os::unix::fs::symlink(folder.join("gone.mp4"), folder.join("d.mp4")).unwrap();
+        }
+        let names: Vec<_> = media_in(&folder)
+            .iter()
+            .map(|path| path.file_name().unwrap().to_string_lossy().into_owned())
+            .collect();
+        let expected: &[&str] = if cfg!(unix) {
+            &["a.mkv", "b.mp4"]
+        } else {
+            &["b.mp4"]
+        };
+        assert_eq!(names, expected);
         std::fs::remove_dir_all(&folder).unwrap();
     }
 

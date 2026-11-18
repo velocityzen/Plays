@@ -205,7 +205,11 @@ impl PlayerView {
             .child(
                 Button::icon("previous", "previous")
                     .overlay()
-                    .disabled(self.neighbors.previous.is_none())
+                    .disabled(
+                        self.neighbors
+                            .as_ref()
+                            .is_none_or(|neighbors| neighbors.previous.is_none()),
+                    )
                     .on_click(cx.listener(|this, _, _, cx| this.open_neighbor(-1, cx))),
             )
             .child(
@@ -228,7 +232,11 @@ impl PlayerView {
             .child(
                 Button::icon("next", "next")
                     .overlay()
-                    .disabled(self.neighbors.next.is_none())
+                    .disabled(
+                        self.neighbors
+                            .as_ref()
+                            .is_none_or(|neighbors| neighbors.next.is_none()),
+                    )
                     .on_click(cx.listener(|this, _, _, cx| this.open_neighbor(1, cx))),
             )
     }

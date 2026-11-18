@@ -21,8 +21,8 @@ use std::time::Instant;
 
 use gpui::prelude::*;
 use gpui::{
-    Bounds, ClickEvent, Context, Div, EventEmitter, MouseButton, Pixels, SharedString, Window,
-    black, div,
+    Bounds, ClickEvent, Context, Div, EventEmitter, MouseButton, Pixels, SharedString, Task,
+    Window, black, div,
 };
 
 pub use graveyard::Graveyard;
@@ -53,8 +53,10 @@ pub struct PlayerView {
     player: Player,
     title: SharedString,
     /// The files before and after this one in its folder, for the previous
-    /// and next buttons.
-    neighbors: Neighbors,
+    /// and next buttons; `None` while the folder is being listed.
+    neighbors: Option<Neighbors>,
+    /// Lists the folder (`find_neighbors`).
+    finding_neighbors: Task<()>,
     graveyard: Graveyard,
     seek_drag: Rc<Cell<bool>>,
     volume_drag: Rc<Cell<bool>>,
@@ -102,7 +104,6 @@ impl PlayerView {
         graveyard: Graveyard,
     ) -> Self {
         let title = source.name().into();
-        let neighbors = source.neighbors();
         let player = Player::open(
             source,
             mixer,
@@ -117,7 +118,8 @@ impl PlayerView {
         Self {
             player,
             title,
-            neighbors,
+            neighbors: None,
+            finding_neighbors: Task::ready(()),
             graveyard,
             seek_drag: Rc::default(),
             volume_drag: Rc::default(),
@@ -140,15 +142,35 @@ impl PlayerView {
         }
     }
 
+    /// Find the files before and after this one in its folder, in the
+    /// background: the folder may be on a network drive.
+    pub fn find_neighbors(&mut self, cx: &mut Context<Self>) {
+        self.neighbors = None;
+        let source = self.player.source().clone();
+        let listing = cx.background_spawn(async move { source.neighbors() });
+        self.finding_neighbors = cx.spawn(async move |this, cx| {
+            let neighbors = listing.await;
+            this.update(cx, |this, cx| {
+                this.neighbors = Some(neighbors);
+                cx.notify();
+            })
+            .ok();
+        });
+    }
+
     /// Play the media file before (`-1`) or after (`1`) this one in its
     /// folder instead, at the same volume, muted and looping as this one is,
     /// and playing if this one is (or files start playing). Without one,
     /// say so, as only a shortcut gets here then.
     pub fn open_neighbor(&mut self, direction: i32, cx: &mut Context<Self>) {
+        let Some(neighbors) = &self.neighbors else {
+            self.note("Still looking through its folder", cx);
+            return;
+        };
         let neighbor = if direction < 0 {
-            self.neighbors.previous.clone()
+            neighbors.previous.clone()
         } else {
-            self.neighbors.next.clone()
+            neighbors.next.clone()
         };
         let Some(path) = neighbor else {
             let side = if direction < 0 { "previous" } else { "next" };
@@ -168,8 +190,8 @@ impl PlayerView {
         let muted = self.player.is_muted();
         self.release_pictures();
         self.title = source.name().into();
-        self.neighbors = source.neighbors();
         self.player = Player::open(source, self.player.mixer(), options);
+        self.find_neighbors(cx);
         self.player.set_muted(muted);
         self.drawn = None;
         self.scrub = None;

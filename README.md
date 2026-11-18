@@ -331,7 +331,9 @@ last window quits.
   the CPU; surfaces carry it to gpui's shaders each time they are drawn, so a
   change shows at once, even on paused video.
 - `src/media/source.rs`: files and stream URLs. URLs are logged without
-  credentials or query strings.
+  credentials or query strings. Folders are listed (for the media files in
+  one dropped, and a file's previous and next) in the background, as they
+  may be on a network drive, and by name without looking at each file.
 - `src/media/audio.rs`: the mixer, which sums all players and applies
   per-player and master volume. It tells each player's clock what is being
   heard, moved by the player's audio delay, so the picture runs that far

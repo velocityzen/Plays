@@ -19,22 +19,35 @@ impl Workspace {
         self.open_sources(paths.into_iter().map(Source::File).collect(), cx);
     }
 
-    /// Open files, the media files in folders, and streams.
+    /// Open files, the media files in folders, and streams. What is a
+    /// folder, and what is in it, is found in the background (it may be on
+    /// a network drive), then the tiles open in the order given.
     pub fn open_sources(&mut self, sources: Vec<Source>, cx: &mut Context<Self>) {
+        let listing = cx.background_spawn(async move { expand_folders(sources) });
+        cx.spawn(async move |this, cx| {
+            let sources = listing.await;
+            this.update(cx, |this, cx| this.add_players(sources, cx))
+                .ok();
+        })
+        .detach();
+    }
+
+    /// A tile for each of `sources`.
+    fn add_players(&mut self, sources: Vec<Source>, cx: &mut Context<Self>) {
+        if sources.is_empty() {
+            return;
+        }
         let settings = cx.global::<Settings>().clone();
         let mixer = AudioEngine::mixer(cx);
-        let sources = sources.into_iter().flat_map(|source| match source {
-            Source::File(path) => expand_folders(vec![path])
-                .into_iter()
-                .map(Source::File)
-                .collect(),
-            stream => vec![stream],
-        });
         for source in sources {
             log::info!("opening {source}");
             let graveyard = self.graveyard.clone();
             let mixer = mixer.clone();
-            let view = cx.new(|_| PlayerView::new(source, mixer, &settings, graveyard));
+            let view = cx.new(|cx| {
+                let mut view = PlayerView::new(source, mixer, &settings, graveyard);
+                view.find_neighbors(cx);
+                view
+            });
             self.add_tile(view, cx);
         }
         self.tiles_changed(cx);
@@ -82,15 +95,16 @@ impl Workspace {
     }
 }
 
-/// Replace folders with the media files directly inside them.
-fn expand_folders(paths: Vec<PathBuf>) -> Vec<PathBuf> {
-    let mut files = Vec::new();
-    for path in paths {
-        if path.is_dir() {
-            files.extend(media_in(&path));
-        } else {
-            files.push(path);
-        }
-    }
-    files
+/// Replace folders with the media files directly inside them. Looks at
+/// the disk, so not for the UI thread.
+fn expand_folders(sources: Vec<Source>) -> Vec<Source> {
+    sources
+        .into_iter()
+        .flat_map(|source| match source {
+            Source::File(path) if path.is_dir() => {
+                media_in(&path).into_iter().map(Source::File).collect()
+            }
+            source => vec![source],
+        })
+        .collect()
 }
