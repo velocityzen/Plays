@@ -446,6 +446,7 @@ pub mod settings {
     pub const SUBTITLES_COLOR: u32 = 0xff9f0a;
     pub const HOTKEYS_COLOR: u32 = 0x5e5ce6;
     pub const APPEARANCE_COLOR: u32 = 0x8e8e93;
+    pub const ABOUT_COLOR: u32 = 0x30b0c7;
     /// The pane's title bar, in line with the traffic lights on macOS.
     pub const TITLE_HEIGHT: Pixels = px(42.);
     /// A slider with its value next to it, and the value's width.
@@ -465,6 +466,9 @@ pub mod settings {
     pub const FONT_MENU_HEIGHT: Pixels = px(280.);
     /// The most a command's hotkey chips take before wrapping.
     pub const HOTKEY_KEYS_MAX_WIDTH: Pixels = px(280.);
+    /// The most a credit's license takes in About, such as "MIT OR
+    /// Apache-2.0".
+    pub const CREDIT_LICENSE_MAX_WIDTH: Pixels = px(220.);
     /// The subtitle preview's tile, 16:9.
     pub const PREVIEW_SIZE: Size<Pixels> = size(px(284.), px(160.));
     /// The shape of the picture in the subtitle preview: a wide film, so it

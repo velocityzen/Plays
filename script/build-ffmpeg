@@ -1,0 +1,170 @@
+#!/usr/bin/env bash
+# Build the FFmpeg that Plays links into itself, so the app needs no FFmpeg
+# installed: static libraries, decoding only, under the LGPL (no
+# --enable-gpl), with dav1d for AV1. They go in build/ffmpeg, where
+# .cargo/config.toml points the Rust build, and are built again only when
+# this script changes (or with --force). Sources are checked against the
+# checksums below.
+#
+# On macOS FFmpeg uses VideoToolbox and AudioToolbox, and macOS's TLS
+# (Secure Transport), so the app needs nothing beyond macOS. On Linux it
+# uses the system's OpenSSL for TLS, and VA-API, NVDEC and VDPAU when their
+# development packages are installed (see README.md).
+#
+# Needs a C compiler, make, pkg-config, ninja and python3 (for meson, which
+# builds dav1d and is downloaded here), and nasm on x86_64.
+set -euo pipefail
+
+FFMPEG_VERSION=9.0.2
+FFMPEG_SHA256=8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e
+DAV1D_VERSION=1.5.5
+DAV1D_SHA256=ca96b1d0ba3f01f55de7231d775892b64994ba061aaeeaaa4f662a390b3abf9e
+MESON_VERSION=1.12.1
+MESON_SHA256=ab0a6ca09f8ef70c564c8241fb5a23957886a0b53fb58412b5e07eaf07dba743
+
+cd "$(dirname "$0")/.."
+script=$PWD/script/build-ffmpeg
+root=$PWD/build
+prefix=$root/ffmpeg
+sources=$root/sources
+work=$root/work
+
+sha256() {
+    if command -v sha256sum >/dev/null; then
+        sha256sum "$1"
+    else
+        shasum -a 256 "$1"
+    fi | cut -d ' ' -f 1
+}
+
+# Finder can drop a .DS_Store in a folder while it's being removed.
+remove() {
+    rm -rf "$@" 2>/dev/null || rm -rf "$@"
+}
+
+stamp="$(sha256 "$script") $(uname -sm)"
+if [ "${1:-}" != --force ] && [ "$(cat "$prefix/.stamp" 2>/dev/null)" = "$stamp" ]; then
+    echo "FFmpeg $FFMPEG_VERSION is built in $prefix (--force builds it again)"
+    exit 0
+fi
+
+missing=()
+for tool in cc make pkg-config ninja python3 curl tar; do
+    command -v "$tool" >/dev/null || missing+=("$tool")
+done
+case $(uname -m) in
+x86_64 | amd64) command -v nasm >/dev/null || missing+=(nasm) ;;
+esac
+if [ ${#missing[@]} -gt 0 ]; then
+    echo "Building FFmpeg needs ${missing[*]}." >&2
+    if [ "$(uname -s)" = Darwin ]; then
+        echo "Install them with Xcode's command line tools and Homebrew: brew install pkgconf ninja" >&2
+    else
+        echo "README.md lists the packages to install." >&2
+    fi
+    exit 1
+fi
+
+# Download into build/sources, once.
+fetch() {
+    local url=$1 sum=$2
+    local file=$sources/${url##*/}
+    if [ ! -f "$file" ] || [ "$(sha256 "$file")" != "$sum" ]; then
+        mkdir -p "$sources"
+        curl -fL --retry 3 -o "$file.part" "$url"
+        mv "$file.part" "$file"
+        if [ "$(sha256 "$file")" != "$sum" ]; then
+            echo "$file doesn't match its checksum" >&2
+            rm -f "$file"
+            exit 1
+        fi
+    fi
+    tar -xf "$file" -C "$work"
+}
+
+remove "$work" "$prefix"
+mkdir -p "$work"
+fetch "https://ffmpeg.org/releases/ffmpeg-$FFMPEG_VERSION.tar.xz" $FFMPEG_SHA256
+fetch "https://downloads.videolan.org/pub/videolan/dav1d/$DAV1D_VERSION/dav1d-$DAV1D_VERSION.tar.xz" $DAV1D_SHA256
+fetch "https://github.com/mesonbuild/meson/releases/download/$MESON_VERSION/meson-$MESON_VERSION.tar.gz" $MESON_SHA256
+
+case $(uname -s) in
+Darwin)
+    # For the oldest macOS the app runs on, as the rest of it is.
+    MACOSX_DEPLOYMENT_TARGET=$(plutil -extract LSMinimumSystemVersion raw resources/macos/Info.plist)
+    export MACOSX_DEPLOYMENT_TARGET
+    platform=(--enable-videotoolbox --enable-audiotoolbox --enable-securetransport --enable-bzlib)
+    ;;
+*)
+    if ! pkg-config --exists openssl; then
+        echo "Building FFmpeg needs OpenSSL's development files (libssl-dev), for https." >&2
+        exit 1
+    fi
+    platform=(--enable-openssl)
+    # Asking for one whose library is missing is an error, so look first.
+    if pkg-config --exists libva libva-drm; then
+        platform+=(--enable-vaapi)
+    else
+        echo "No VA-API: libva's development files aren't installed."
+    fi
+    if pkg-config --exists ffnvcodec; then
+        platform+=(--enable-ffnvcodec --enable-nvdec)
+    else
+        echo "No NVDEC: nv-codec-headers aren't installed."
+    fi
+    if pkg-config --exists vdpau x11; then
+        platform+=(--enable-vdpau)
+    else
+        echo "No VDPAU: libvdpau's or libx11's development files aren't installed."
+    fi
+    ;;
+esac
+
+# Naming the compiler keeps meson from wrapping it in ccache or sccache,
+# as FFmpeg's own build doesn't either.
+CC=${CC:-cc} python3 "$work/meson-$MESON_VERSION/meson.py" setup "$work/dav1d-build" "$work/dav1d-$DAV1D_VERSION" \
+    --prefix="$prefix" \
+    --libdir=lib \
+    --buildtype=release \
+    --default-library=static \
+    -Denable_tools=false \
+    -Denable_examples=false \
+    -Denable_tests=false
+ninja -C "$work/dav1d-build" install
+
+cd "$work/ffmpeg-$FFMPEG_VERSION"
+# Every library FFmpeg would find on its own is named here instead, so the
+# build is the same wherever it runs. Threads and iconv (for subtitles'
+# character sets) are among them.
+PKG_CONFIG_PATH="$prefix/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" ./configure \
+    --prefix="$prefix" \
+    --enable-static \
+    --disable-shared \
+    --enable-pic \
+    --disable-programs \
+    --disable-doc \
+    --disable-debug \
+    --disable-autodetect \
+    --enable-pthreads \
+    --enable-zlib \
+    --enable-iconv \
+    --disable-avdevice \
+    --disable-avfilter \
+    --disable-encoders \
+    --disable-muxers \
+    --enable-libdav1d \
+    --pkg-config-flags=--static \
+    "${platform[@]}"
+make -j "$(getconf _NPROCESSORS_ONLN)"
+make install
+
+# For the About pane (script/attributions).
+mkdir -p "$prefix/share/licenses/ffmpeg" "$prefix/share/licenses/dav1d"
+cp LICENSE.md COPYING.LGPLv2.1 "$prefix/share/licenses/ffmpeg/"
+cp "$work/dav1d-$DAV1D_VERSION/COPYING" "$prefix/share/licenses/dav1d/"
+printf 'FFMPEG_VERSION=%s\nDAV1D_VERSION=%s\n' "$FFMPEG_VERSION" "$DAV1D_VERSION" >"$prefix/versions"
+
+cd "$root"
+remove "$work"
+echo "$stamp" >"$prefix/.stamp"
+echo "Built FFmpeg $FFMPEG_VERSION in $prefix"

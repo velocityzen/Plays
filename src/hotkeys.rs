@@ -1,6 +1,6 @@
 //! The shortcuts that control playback, which can be changed in Settings.
-//! They start out as IINA's (its `iina-default-input.conf`), for the
-//! commands Plays has, plus a few for every file in a window at once.
+//! Each command starts out with its default keys, among them a few for
+//! every file in a window at once.
 //!
 //! Each command has a gpui action, bound in the `Workspace` key context so
 //! single keys such as space don't fire while typing elsewhere. Keys are
@@ -258,8 +258,8 @@ impl Command {
         }
     }
 
-    /// IINA's keys, where it has the command. `secondary` is ⌘ on macOS
-    /// and Ctrl elsewhere.
+    /// The keys a command starts out with. `secondary` is ⌘ on macOS and
+    /// Ctrl elsewhere.
     fn default_keys(self) -> &'static [&'static str] {
         let mac = cfg!(target_os = "macos");
         match self {
@@ -268,7 +268,6 @@ impl Command {
             Self::SeekBackward => &["left"],
             Self::NextFrame => &["alt-right", "."],
             Self::PreviousFrame => &["alt-left", ","],
-            // IINA has none; Home, as before.
             Self::Restart => &["home"],
             Self::Loop => &["secondary-shift-l"],
             Self::VolumeUp => &["up"],
@@ -288,7 +287,7 @@ impl Command {
             Self::FullScreen if mac => &["ctrl-cmd-f", "f"],
             Self::FullScreen => &["f11", "f"],
             Self::ExitFullScreen => &["escape"],
-            // IINA plays one file a window, so these are Plays' own.
+            // Every file in the window.
             Self::PlayPauseAll => &["shift-space"],
             Self::RestartAll => &["shift-home"],
             Self::SeekForwardAll => &["shift-right"],

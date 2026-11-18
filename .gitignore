@@ -2,3 +2,5 @@
 .DS_Store
 # Local media for trying things out
 /ignore
+# FFmpeg and its sources (script/build-ffmpeg)
+/build

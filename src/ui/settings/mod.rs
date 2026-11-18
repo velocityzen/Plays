@@ -1,6 +1,7 @@
 //! The Settings window: a sidebar of panes, and the pane picked. Each pane
 //! is in its own file, with the name and icon the sidebar shows for it.
 
+mod about;
 mod appearance;
 mod audio;
 mod form;
@@ -15,8 +16,8 @@ use std::rc::Rc;
 
 use gpui::prelude::*;
 use gpui::{
-    AnyElement, App, Bounds, Context, FocusHandle, Global, KeyDownEvent, TitlebarOptions, Window,
-    WindowBounds, WindowHandle, WindowOptions, div, rgb, white,
+    AnyElement, App, Bounds, Context, FocusHandle, Global, KeyDownEvent, SharedString,
+    TitlebarOptions, Window, WindowBounds, WindowHandle, WindowOptions, div, rgb, white,
 };
 
 use super::components::{Badge, Button};
@@ -69,13 +70,14 @@ trait Pane {
 }
 
 /// The panes, in the sidebar's order.
-const PANES: [&dyn Pane; 6] = [
+const PANES: [&dyn Pane; 7] = [
     &playback::PlaybackPane,
     &audio::AudioPane,
     &video::VideoPane,
     &subtitles::SubtitlesPane,
     &hotkeys::HotkeysPane,
     &appearance::AppearancePane,
+    &about::AboutPane,
 ];
 
 pub struct SettingsView {
@@ -86,6 +88,8 @@ pub struct SettingsView {
     drags: HashMap<&'static str, Rc<Cell<bool>>>,
     font_menu: subtitles::FontMenu,
     recording: hotkeys::Recording,
+    /// The credit in About whose license shows.
+    license: Option<SharedString>,
 }
 
 /// The Settings window, once it has been opened.
@@ -136,6 +140,7 @@ impl SettingsView {
             drags: HashMap::new(),
             font_menu: subtitles::FontMenu::default(),
             recording: hotkeys::Recording::default(),
+            license: None,
         }
     }
 

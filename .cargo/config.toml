@@ -1,0 +1,4 @@
+[env]
+# The FFmpeg that script/build-ffmpeg builds, which is linked into the app.
+# Set FFMPEG_DIR to build with another one, such as Homebrew's.
+FFMPEG_DIR = { value = "build/ffmpeg", relative = true }

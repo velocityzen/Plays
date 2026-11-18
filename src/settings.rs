@@ -224,7 +224,7 @@ impl Default for Settings {
             default_volume: 0.8,
             autoplay: true,
             loop_by_default: false,
-            // IINA's arrow keys seek 5 seconds.
+            // How far the arrow keys seek.
             seek_step_seconds: 5,
             video_fit: VideoFit::Contain,
             max_resolution: MaxResolution::P1080,

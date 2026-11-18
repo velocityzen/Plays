@@ -6,11 +6,18 @@
 # Composer; without it the app gets the generic icon. Compiling it takes
 # Xcode 26 or later.
 #
-# The app links to FFmpeg where Homebrew put it, so it runs on Macs that
-# have Homebrew's ffmpeg installed.
+# FFmpeg is built into the app (script/build-ffmpeg, which this runs the
+# first time), so it runs on any Mac, with nothing else installed.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
+
+script/build-ffmpeg
+# The app's own FFmpeg, even where FFMPEG_DIR names another.
+export FFMPEG_DIR=$PWD/build/ffmpeg
+# The credits in Settings > About, for the crates the app is built with now.
+script/attributions
+
 version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
 icon=assets/AppIcon.icon
 work=$(mktemp -d)

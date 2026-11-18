@@ -17,9 +17,12 @@ macro_rules! icons {
 icons!(
     "appearance",
     "check",
+    "chevron-down",
+    "chevron-right",
     "chevron-up-down",
     "close",
     "display",
+    "info",
     "keyboard",
     "link",
     "loop",

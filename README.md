@@ -34,7 +34,7 @@ GPU-accelerated UI framework.
   Windows-1251, Shift JIS and the like) is detected and converted.
 - Any tile can pop out into a new window, where it keeps playing. Every
   window works the same: drop more files on it and they play side by side.
-- Shortcuts, IINA's to start with, go to the tile last clicked: play/pause,
+- Shortcuts go to the tile last clicked: play/pause,
   seek, frame step, volume, tracks, subtitle size and height, full screen.
   With Shift, play/pause, seek, restart and mute go to every file in the
   window, as does the menu bar (a toolbar on Linux).
@@ -54,22 +54,36 @@ GPU-accelerated UI framework.
 
 ## Building
 
-You need a Rust toolchain (1.85+, edition 2024), FFmpeg's development
-libraries, `pkg-config` and `clang` (FFmpeg bindings are generated with bindgen).
+You need a Rust toolchain (1.85+, edition 2024) and `clang` (FFmpeg's
+bindings are generated with bindgen).
+
+FFmpeg is built into the app. `script/build-ffmpeg` builds it once from
+source, which takes a few minutes: FFmpeg 9.0.2 with dav1d for AV1, as
+static libraries that only decode, under the LGPL. It installs them in
+`build/ffmpeg`, where `.cargo/config.toml` points the build, and builds them
+again only when the script changes. It needs `pkg-config`, `ninja` and
+`python3` (meson, which builds dav1d, is downloaded with the sources), and
+`nasm` on x86_64.
 
 ### macOS
 
 Xcode (for the Metal shader compiler) and Homebrew packages:
 
 ```bash
-brew install ffmpeg pkgconf
+brew install pkgconf ninja
+```
+
+```bash
+script/build-ffmpeg
 ```
 
 ```bash
 cargo run --release -- path/to/video.mp4 path/to/song.mp3 https://example.com/live.m3u8
 ```
 
-If `pkg-config` isn't installed, point the build at FFmpeg directly:
+FFmpeg uses VideoToolbox, AudioToolbox and macOS's TLS, so the app needs
+nothing beyond macOS. To build with another FFmpeg instead, such as
+Homebrew's (which is GPL, and which the app then needs installed to run):
 
 ```bash
 FFMPEG_DIR=$(brew --prefix ffmpeg) cargo build --release
@@ -82,31 +96,51 @@ icon, build the app bundle:
 script/bundle-macos
 ```
 
-This makes `target/release/Plays.app`. Once it's in `/Applications` (or has
-been opened once), Finder offers Plays under Open With for video and audio
-files without making it the default player. The app uses Homebrew's FFmpeg,
-so it only runs where that is installed. The script compiles the app icon,
-the Icon Composer file `assets/AppIcon.icon`, into the app, which takes
-Xcode 26 or later.
+This builds FFmpeg first if it isn't built, and makes
+`target/release/Plays.app`, which runs on any Mac. Once it's in
+`/Applications` (or has been opened once), Finder offers Plays under Open
+With for video and audio files without making it the default player. The
+script compiles the app icon, the Icon Composer file `assets/AppIcon.icon`,
+into the app, which takes Xcode 26 or later.
 
 ### Linux (Debian/Ubuntu)
 
 ```bash
-sudo apt install build-essential pkg-config clang libclang-dev \
-  libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libswresample-dev \
+sudo apt install build-essential pkg-config clang libclang-dev nasm ninja-build python3 \
+  libssl-dev zlib1g-dev libva-dev libvdpau-dev libx11-dev libffmpeg-nvenc-dev \
   libasound2-dev libfontconfig-dev libfreetype-dev libxkbcommon-dev libxkbcommon-x11-dev \
   libwayland-dev libx11-xcb-dev libxcb1-dev libvulkan1 mesa-vulkan-drivers
 ```
+
+```bash
+script/build-ffmpeg
+```
+
+```bash
+cargo run --release -- path/to/video.mp4 path/to/song.mp3 https://example.com/live.m3u8
+```
+
+FFmpeg is linked in, but uses the system's OpenSSL for https, and for
+hardware decoding libva (VA-API) and libvdpau, which the script builds it
+with when their development packages are installed (it says which it
+leaves out). NVDEC needs only NVIDIA's driver, at run time.
 
 gpui renders with Vulkan on Linux, so a working Vulkan driver is required.
 For hardware decoding, install your GPU's VA-API driver (`intel-media-va-driver`
 or `mesa-va-drivers`), or use NVIDIA's driver for NVDEC. The tile header shows
 the API in use, for example `h264 (VA-API)`.
 Audio goes through ALSA (PipeWire and PulseAudio provide an ALSA device).
-FFmpeg 5.1 or newer is recommended.
 
 For your file manager's **Open With** menu, put the `plays` binary on your
 `PATH` and copy `resources/linux/plays.desktop` to `~/.local/share/applications/`.
+
+### Licenses
+
+Plays is under the MIT license (`LICENSE`). It is built with FFmpeg (LGPL 2.1
+or later) and dav1d (BSD 2-Clause), from their unchanged source, and with
+the Rust crates in `Cargo.lock`. Settings → About lists them all with their
+licenses, from `resources/attributions.json`; `script/attributions` writes
+it again when the dependencies change (`script/bundle-macos` runs it).
 
 ## Using it
 
@@ -136,7 +170,7 @@ note on the tile says what changed; switching tracks rolls a reel, like a
 slot machine's, to the track picked, with the ones before and after it
 faded above and below. To change shortcuts, open Settings → Hotkeys,
 click + by a command and press the keys; a key another command had moves to
-it, and Restore brings IINA's back. The app's own shortcuts above (⌘O, ⌘W
+it, and Restore brings the defaults back. The app's own shortcuts above (⌘O, ⌘W
 and so on) stay as they are.
 
 On a tile: click the picture to play/pause, double-click (or the corner
@@ -224,8 +258,8 @@ last window quits.
 - `src/app/`: starting the app and its own actions (`mod.rs`), the shared
   audio output, what each action does (`commands`), how actions reach the
   window and tile in front (`dispatch`), the keymap and the menu bar.
-- `src/hotkeys.rs`: the commands shortcuts can run, their keys (IINA's to
-  start), how they are saved in Settings and shown (`⌃⌘F`, `Ctrl+Alt+F`).
+- `src/hotkeys.rs`: the commands shortcuts can run, their default
+  keys, how they are saved in Settings and shown (`⌃⌘F`, `Ctrl+Alt+F`).
   The keymap is rebuilt from them whenever they change, and the menus show
   them.
 - `src/ui/`: gpui views (`open_url`, the player and Settings below) and a
@@ -238,9 +272,10 @@ last window quits.
   shortcuts did (`osd`, with the track reel), what shortcuts do to it
   (`commands`), and the graveyard frames wait in before they are released.
 - `src/ui/settings/`: the Settings window. Each pane (Playback, Audio,
-  Video, Subtitles, Hotkeys, Appearance) is a file of its own with its name
-  and icon for the sidebar; `form` has the cards, rows and sliders they are
-  made of.
+  Video, Subtitles, Hotkeys, Appearance, About) is a file of its own with its
+  name and icon for the sidebar; `form` has the cards, rows and sliders they
+  are made of. About shows the version and the credits, each of which opens
+  to its license.
 - `src/ui/workspace/`: a window, one per window, a file per part: opening
   files, folders and streams (`opening`), the tiles and moving one to its
   own window (`tiles`), the grid, the empty window's ring (`empty`), the
@@ -254,6 +289,9 @@ last window quits.
   a slider and a meter; menu rows, and a popover that opens a menu from a
   button; a badge; a flat card; and a floating panel to put anything in,
   a menu's or a note's over the picture.
+- `build.rs`: links the static FFmpeg with what it needs in turn, read
+  from its pkg-config files (dav1d, zlib, iconv, and macOS's frameworks or
+  Linux's OpenSSL and hardware decoding libraries).
 - `src/ui/theme.rs`: colors, every size, radius and duration the UI uses,
   and named text styles (`text_display`, `text_title`, `text_heading`,
   `text_label`).

@@ -48,7 +48,7 @@ impl Pane for HotkeysPane {
             None,
             theme,
             vec![row(
-                "IINA's shortcuts",
+                "Default shortcuts",
                 Some(
                     "Shortcuts go to the tile last clicked. Click + and press keys to add one; \
                      menu shortcuts such as ⌘O stay as they are."
