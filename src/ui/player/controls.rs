@@ -1,12 +1,14 @@
 //! The controls floating over the bottom of a tile: the seek bar, and under
-//! it play, the time, tracks, loop and volume.
+//! it the time, in the middle the previous file, skip back, play, skip
+//! forward and the next file, and tracks, loop and volume.
 
 use gpui::prelude::*;
-use gpui::{Context, Corner, Div, Pixels, Window, div, px};
+use gpui::{ClickEvent, Context, Corner, Div, Pixels, Window, div, px};
 
 use super::tracks::{close_tracks, has_track_choice};
 use super::{PlayerView, Reveal};
 use crate::media::decoder::MediaInfo;
+use crate::settings::Settings;
 use crate::ui::components::{
     Badge, Button, ComponentSize, Panel, Popover, Slide, Slider, SliderEvent,
 };
@@ -98,81 +100,136 @@ impl PlayerView {
                             .flex()
                             .items_center()
                             .gap_0p5()
-                            .child(
-                                Button::icon("play", play_icon)
-                                    .overlay()
-                                    .on_click(cx.listener(|this, _, _, cx| {
-                                        this.player.toggle();
-                                        cx.notify();
-                                    })),
-                            )
-                            .when(live, |this| {
-                                this.child(Badge::label("LIVE", theme.danger).ml_1())
-                            })
+                            // The time and the buttons on the right take equal
+                            // room, so the transport is in the middle.
                             .child(
                                 div()
-                                    .flex_none()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .flex()
+                                    .items_center()
+                                    .gap_1()
                                     .pl_1()
-                                    .text_xs()
-                                    .text_color(overlay::text())
-                                    .child(time_label),
-                            )
-                            .child(div().flex_1())
-                            .when_some(tracks, |this, info| {
-                                let button = Button::icon("tracks", "subtitles")
-                                    .overlay()
-                                    .selected(subtitles_on)
-                                    .on_click(cx.listener(|this, _, _, cx| {
-                                        this.tracks_open = !this.tracks_open;
-                                        cx.notify();
-                                    }));
-                                this.child(
-                                    Popover::new("tracks-backdrop", button)
-                                        .anchor(Corner::BottomRight, TRACK_MENU_OFFSET)
-                                        .when(self.tracks_open, |this| {
-                                            this.menu(self.render_tracks_menu(info, theme, cx))
-                                        })
-                                        .on_dismiss(cx.listener(close_tracks)),
-                                )
-                            })
-                            .when(!live, |this| {
-                                this.child(
-                                    Button::icon("loop", "loop")
-                                        .overlay()
-                                        .icon_color(overlay::text_muted())
-                                        .selected(looping)
-                                        .on_click(cx.listener(|this, _, _, cx| {
-                                            let looping = !this.player.is_looping();
-                                            this.player.set_looping(looping);
-                                            cx.notify();
-                                        })),
-                                )
-                            })
-                            .when(has_audio, |this| {
-                                this.child(Button::icon("mute", volume_icon).overlay().on_click(
-                                    cx.listener(|this, _, _, cx| {
-                                        let muted = !this.player.is_muted();
-                                        this.player.set_muted(muted);
-                                        cx.notify();
-                                    }),
-                                ))
-                                .child(
-                                    div().w(VOLUME_WIDTH).pr_1().child(
-                                        Slider::new(
-                                            "volume",
-                                            if self.player.is_muted() {
-                                                0.0
-                                            } else {
-                                                self.player.volume()
-                                            },
-                                            self.volume_drag.clone(),
-                                        )
-                                        .overlay()
-                                        .on_change(cx.listener(Self::on_volume)),
+                                    .when(live, |this| {
+                                        this.child(Badge::label("LIVE", theme.danger))
+                                    })
+                                    .child(
+                                        div()
+                                            .min_w_0()
+                                            .truncate()
+                                            .text_xs()
+                                            .text_color(overlay::text())
+                                            .child(time_label),
                                     ),
-                                )
-                            }),
+                            )
+                            .child(self.render_transport(live, play_icon, cx))
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .flex()
+                                    .items_center()
+                                    .justify_end()
+                                    .gap_0p5()
+                                    .when_some(tracks, |this, info| {
+                                        let button = Button::icon("tracks", "subtitles")
+                                            .overlay()
+                                            .selected(subtitles_on)
+                                            .on_click(cx.listener(|this, _, _, cx| {
+                                                this.tracks_open = !this.tracks_open;
+                                                cx.notify();
+                                            }));
+                                        this.child(
+                                            Popover::new("tracks-backdrop", button)
+                                                .anchor(Corner::BottomRight, TRACK_MENU_OFFSET)
+                                                .when(self.tracks_open, |this| {
+                                                    this.menu(
+                                                        self.render_tracks_menu(info, theme, cx),
+                                                    )
+                                                })
+                                                .on_dismiss(cx.listener(close_tracks)),
+                                        )
+                                    })
+                                    .when(!live, |this| {
+                                        this.child(
+                                            Button::icon("loop", "loop")
+                                                .overlay()
+                                                .icon_color(overlay::text_muted())
+                                                .selected(looping)
+                                                .on_click(cx.listener(|this, _, _, cx| {
+                                                    let looping = !this.player.is_looping();
+                                                    this.player.set_looping(looping);
+                                                    cx.notify();
+                                                })),
+                                        )
+                                    })
+                                    .when(has_audio, |this| {
+                                        this.child(
+                                            Button::icon("mute", volume_icon).overlay().on_click(
+                                                cx.listener(|this, _, _, cx| {
+                                                    let muted = !this.player.is_muted();
+                                                    this.player.set_muted(muted);
+                                                    cx.notify();
+                                                }),
+                                            ),
+                                        )
+                                        .child(
+                                            div().w(VOLUME_WIDTH).pr_1().child(
+                                                Slider::new(
+                                                    "volume",
+                                                    if self.player.is_muted() {
+                                                        0.0
+                                                    } else {
+                                                        self.player.volume()
+                                                    },
+                                                    self.volume_drag.clone(),
+                                                )
+                                                .overlay()
+                                                .on_change(cx.listener(Self::on_volume)),
+                                            ),
+                                        )
+                                    }),
+                            ),
                     ),
+            )
+    }
+
+    /// The file before this one in its folder, skip back, play, skip
+    /// forward, and the file after. Skips go by the seek step in Settings,
+    /// as the arrow keys do; a live stream can't skip.
+    fn render_transport(&self, live: bool, play_icon: &'static str, cx: &mut Context<Self>) -> Div {
+        div()
+            .flex()
+            .flex_none()
+            .items_center()
+            .gap_0p5()
+            .child(
+                Button::icon("previous", "previous")
+                    .overlay()
+                    .disabled(self.neighbors.previous.is_none())
+                    .on_click(cx.listener(|this, _, _, cx| this.open_neighbor(-1, cx))),
+            )
+            .child(
+                Button::icon("skip-back", "skip-back")
+                    .overlay()
+                    .disabled(live)
+                    .on_click(cx.listener(skip(-1.0))),
+            )
+            .child(
+                Button::icon("play", play_icon)
+                    .overlay()
+                    .on_click(cx.listener(|this, _, _, cx| this.play_pause(cx))),
+            )
+            .child(
+                Button::icon("skip-forward", "skip-forward")
+                    .overlay()
+                    .disabled(live)
+                    .on_click(cx.listener(skip(1.0))),
+            )
+            .child(
+                Button::icon("next", "next")
+                    .overlay()
+                    .disabled(self.neighbors.next.is_none())
+                    .on_click(cx.listener(|this, _, _, cx| this.open_neighbor(1, cx))),
             )
     }
 
@@ -210,6 +267,16 @@ impl PlayerView {
             self.player.set_muted(false);
         }
         cx.notify();
+    }
+}
+
+/// Skip back (`-1`) or forward (`1`) by the seek step.
+fn skip(
+    direction: f64,
+) -> impl Fn(&mut PlayerView, &ClickEvent, &mut Window, &mut Context<PlayerView>) + 'static {
+    move |this, _, _, cx| {
+        let step = f64::from(cx.global::<Settings>().seek_step_seconds);
+        this.seek_by(step * direction, cx);
     }
 }
 

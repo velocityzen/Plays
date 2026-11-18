@@ -1,6 +1,7 @@
 //! What a player plays: a local file or a network stream.
 
 use std::fmt;
+use std::fs;
 use std::path::{Path, PathBuf};
 
 /// URL schemes FFmpeg can stream from.
@@ -8,6 +9,44 @@ const STREAM_SCHEMES: &[&str] = &[
     "http", "https", "rtmp", "rtmps", "rtmpe", "rtmpt", "rtmpte", "rtmpts", "rtsp", "rtsps", "rtp",
     "srt", "udp", "tcp", "mms", "mmsh", "mmst", "ftp",
 ];
+
+/// Extensions of the media files a folder opens to, and that a file's
+/// previous and next ones are picked from.
+const MEDIA_EXTENSIONS: &[&str] = &[
+    "3gp", "aac", "aif", "aiff", "alac", "ape", "avi", "flac", "flv", "gif", "m2ts", "m4a", "m4b",
+    "m4v", "mka", "mkv", "mov", "mp2", "mp3", "mp4", "mpeg", "mpg", "mts", "mxf", "oga", "ogg",
+    "ogv", "opus", "ts", "vob", "wav", "weba", "webm", "wma", "wmv", "wv",
+];
+
+/// The media files directly in `folder`, by name.
+pub fn media_in(folder: &Path) -> Vec<PathBuf> {
+    let mut files: Vec<PathBuf> = fs::read_dir(folder)
+        .map(|dir| dir.flatten().map(|entry| entry.path()).collect())
+        .unwrap_or_default();
+    files.retain(|path| path.is_file() && is_media(path));
+    files.sort();
+    files
+}
+
+/// A file with a media file's extension, and not hidden.
+fn is_media(path: &Path) -> bool {
+    let hidden = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .is_some_and(|n| n.starts_with('.'));
+    let known = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| MEDIA_EXTENSIONS.contains(&e.to_ascii_lowercase().as_str()));
+    known && !hidden
+}
+
+/// The media files before and after a file in its folder, by name.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Neighbors {
+    pub previous: Option<PathBuf>,
+    pub next: Option<PathBuf>,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Source {
@@ -59,6 +98,33 @@ impl Source {
 
     pub fn is_network(&self) -> bool {
         matches!(self, Self::Url(_))
+    }
+
+    /// The media files before and after this file in its folder, by name;
+    /// none for a stream. It needn't be a media file itself.
+    pub fn neighbors(&self) -> Neighbors {
+        let Self::File(path) = self else {
+            return Neighbors::default();
+        };
+        let (Some(folder), Some(name)) = (path.parent(), path.file_name()) else {
+            return Neighbors::default();
+        };
+        // A bare file name is in the current folder.
+        let listed = if folder.as_os_str().is_empty() {
+            Path::new(".")
+        } else {
+            folder
+        };
+        let names: Vec<_> = media_in(listed)
+            .into_iter()
+            .filter_map(|file| file.file_name().map(ToOwned::to_owned))
+            .collect();
+        let before = names.partition_point(|other| other.as_os_str() < name);
+        let after = names.partition_point(|other| other.as_os_str() <= name);
+        Neighbors {
+            previous: before.checked_sub(1).map(|i| folder.join(&names[i])),
+            next: names.get(after).map(|other| folder.join(other)),
+        }
     }
 
     /// What FFmpeg opens.
@@ -156,6 +222,32 @@ mod tests {
             Source::from_open_url("https://example.com/live.m3u8").is_some_and(|s| s.is_network())
         );
         assert_eq!(Source::from_open_url("mailto:me@example.com"), None);
+    }
+
+    #[test]
+    fn finds_the_media_files_before_and_after_a_file() {
+        let folder = std::env::temp_dir().join(format!("plays-neighbors-{}", std::process::id()));
+        std::fs::create_dir_all(&folder).unwrap();
+        for name in ["a.mkv", "b.txt", "c.mp3", ".d.mp4", "e.MP4"] {
+            std::fs::write(folder.join(name), b"").unwrap();
+        }
+        let neighbors = |name: &str| Source::File(folder.join(name)).neighbors();
+        assert_eq!(
+            neighbors("c.mp3"),
+            Neighbors {
+                previous: Some(folder.join("a.mkv")),
+                next: Some(folder.join("e.MP4")),
+            }
+        );
+        assert_eq!(neighbors("a.mkv").previous, None);
+        assert_eq!(neighbors("e.MP4").next, None);
+        // A file that isn't media still has the ones around it by name.
+        assert_eq!(neighbors("b.txt").next, Some(folder.join("c.mp3")));
+        assert_eq!(
+            Source::Url("https://example.com/live.m3u8".into()).neighbors(),
+            Neighbors::default()
+        );
+        std::fs::remove_dir_all(&folder).unwrap();
     }
 
     #[test]

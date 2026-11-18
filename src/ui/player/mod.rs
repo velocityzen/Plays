@@ -29,7 +29,7 @@ use super::theme::Theme;
 use super::theme::motion::LEVEL_FALLOFF;
 use crate::media::picture::PictureId;
 use crate::media::subtitles::CueContent;
-use crate::media::{Mixer, Picture, Player, PlayerOptions, Source};
+use crate::media::{Mixer, Neighbors, Picture, Player, PlayerOptions, Source};
 use crate::settings::{ControlsVisibility, Settings, VideoFit};
 use osd::Osd;
 
@@ -46,6 +46,9 @@ pub enum PlayerEvent {
 pub struct PlayerView {
     player: Player,
     title: SharedString,
+    /// The files before and after this one in its folder, for the previous
+    /// and next buttons.
+    neighbors: Neighbors,
     graveyard: Graveyard,
     seek_drag: Rc<Cell<bool>>,
     volume_drag: Rc<Cell<bool>>,
@@ -86,6 +89,7 @@ impl PlayerView {
         graveyard: Graveyard,
     ) -> Self {
         let title = source.name().into();
+        let neighbors = source.neighbors();
         let player = Player::open(
             source,
             mixer,
@@ -100,6 +104,7 @@ impl PlayerView {
         Self {
             player,
             title,
+            neighbors,
             graveyard,
             seek_drag: Rc::default(),
             volume_drag: Rc::default(),
@@ -117,6 +122,43 @@ impl PlayerView {
             top_left: false,
             mouse_in_window: true,
         }
+    }
+
+    /// Play the media file before (`-1`) or after (`1`) this one in its
+    /// folder instead, at the same volume, muted and looping as this one is,
+    /// and playing if this one is (or files start playing).
+    pub fn open_neighbor(&mut self, direction: i32, cx: &mut Context<Self>) {
+        let neighbor = if direction < 0 {
+            self.neighbors.previous.clone()
+        } else {
+            self.neighbors.next.clone()
+        };
+        let Some(path) = neighbor else {
+            return;
+        };
+        let source = Source::File(path);
+        log::info!("opening {source}");
+        let settings = cx.global::<Settings>();
+        let options = PlayerOptions {
+            autoplay: self.player.is_playing() || settings.autoplay,
+            looping: self.player.is_looping(),
+            volume: self.player.volume(),
+            max_short_side: settings.max_resolution.short_side(),
+            hardware_decoding: settings.hardware_decoding,
+        };
+        let muted = self.player.is_muted();
+        self.release_pictures();
+        self.title = source.name().into();
+        self.neighbors = source.neighbors();
+        self.player = Player::open(source, self.player.mixer(), options);
+        self.player.set_muted(muted);
+        self.drawn = None;
+        self.scrub = None;
+        self.level = 0.0;
+        self.tracks_open = false;
+        self.hidden_subtitles = None;
+        self.osd = None;
+        cx.notify();
     }
 
     pub fn player(&self) -> &Player {

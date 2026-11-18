@@ -20,4 +20,4 @@ mod videotoolbox;
 pub use audio::{AudioOutput, Mixer};
 pub use picture::Picture;
 pub use player::{Player, PlayerOptions};
-pub use source::Source;
+pub use source::{Neighbors, Source};

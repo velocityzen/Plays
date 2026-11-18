@@ -174,7 +174,10 @@ it, and Restore brings the defaults back. The app's own shortcuts above (âŒ˜O, â
 and so on) stay as they are.
 
 On a tile: click the picture to play/pause, double-click (or the corner
-button) to maximize it, drag the bar to scrub. The track button (next to
+button) to maximize it, drag the bar to scrub. In the middle under the bar,
+the previous and next buttons open the media file before or after this one
+in its folder, by name, in the same tile; between them, skip back and
+forward go by the seek step, around play/pause. The track button (next to
 loop, on files that have subtitles or more than one audio or video track)
 opens the track menu: a column each for audio, subtitles and (when there
 are several) video. For the only tile in a window,

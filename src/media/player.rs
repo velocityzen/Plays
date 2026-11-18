@@ -203,6 +203,11 @@ impl Player {
         self.muted
     }
 
+    /// The mixer its audio goes to, for opening another file in its place.
+    pub fn mixer(&self) -> Option<Arc<Mixer>> {
+        self.mixer.clone()
+    }
+
     pub fn volume(&self) -> f32 {
         self.volume
     }
