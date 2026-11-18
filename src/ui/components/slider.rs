@@ -32,7 +32,8 @@ pub struct SliderEvent {
 type ChangeHandler = Rc<dyn Fn(&SliderEvent, &mut Window, &mut App) + 'static>;
 
 /// A horizontal 0..1 slider that keeps tracking the mouse while dragging,
-/// even outside its own bounds.
+/// even outside its own bounds. Its knob stays within the track, so at
+/// either end it lines up with what is above or below the slider.
 #[derive(IntoElement)]
 pub struct Slider {
     id: ElementId,
@@ -102,6 +103,9 @@ impl RenderOnce for Slider {
         let on_change = self.on_change.unwrap_or_else(|| Rc::new(|_, _, _| {}));
         let size = self.size;
         let height = size.pick(SLIDER_HEIGHT);
+        // The knob's center travels between half its resting size from
+        // either end; dragged, it grows about that center.
+        let inset = size.pick(SLIDER_KNOB) / 2.;
         let knob = size.pick(if dragging.get() {
             SLIDER_KNOB_DRAGGED
         } else {
@@ -120,23 +124,33 @@ impl RenderOnce for Slider {
             .child(
                 div()
                     .absolute()
-                    .top((height - knob) / 2.)
-                    .left(relative(value))
-                    .ml(-knob / 2.)
-                    .size(knob)
-                    .rounded_full()
-                    .bg(knob_color),
+                    .top_0()
+                    .bottom_0()
+                    .left(inset)
+                    .right(inset)
+                    .child(
+                        div()
+                            .absolute()
+                            .top((height - knob) / 2.)
+                            .left(relative(value))
+                            .ml(-knob / 2.)
+                            .size(knob)
+                            .rounded_full()
+                            .bg(knob_color),
+                    ),
             )
             .child(
                 canvas(
                     |bounds, window, _| window.insert_hitbox(bounds, HitboxBehavior::Normal),
                     move |bounds, hitbox, window, _| {
                         window.set_cursor_style(CursorStyle::PointingHand, &hitbox);
+                        // Where the knob's center would be under the mouse.
                         let fraction = move |position: Point<Pixels>| -> f32 {
-                            if bounds.size.width <= px(0.) {
+                            let travel = bounds.size.width - inset * 2.;
+                            if travel <= px(0.) {
                                 return 0.0;
                             }
-                            ((position.x - bounds.left()) / bounds.size.width).clamp(0.0, 1.0)
+                            ((position.x - bounds.left() - inset) / travel).clamp(0.0, 1.0)
                         };
 
                         window.on_mouse_event({
