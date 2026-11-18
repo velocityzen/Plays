@@ -192,7 +192,7 @@ it again when the dependencies change (`script/bundle-macos` runs it).
 | Open files | `⌘O` / `Ctrl+O`, or drop files/folders on the window (or on the Dock icon of `Plays.app`) |
 | Open a stream URL | `⌘⇧O` / `Ctrl+Shift+O` (pre-filled from the clipboard) |
 | Play/pause | `Space` or `P` |
-| Seek back/forward | `←` `→` (5 seconds at first; the step is in Settings) |
+| Seek back/forward | `←` `→` (5 seconds at first; the step is in Settings). Where keyframes are far apart, a skip lands on the nearest one its way, so it shows at once |
 | Previous/next frame | `⌥←` `⌥→` / `Alt+←` `Alt+→`, or `,` `.`, or `<` `>` |
 | Restart | `Home` |
 | Previous/next file in its folder | `⌘←` `⌘→` / `Ctrl+←` `Ctrl+→` |
@@ -280,9 +280,15 @@ last window quits.
   streams so a slow connection doesn't stall decoding) and carries out seeks.
   The decode thread decodes only while its output queues have room, converts
   video to BGRA `RenderImage`s (with the right YUV matrix and pixel aspect),
-  resamples audio to the mixer's rate, and handles accurate seeking. It
-  plays one track of each kind; picking another opens a decoder for it and
-  seeks to the playhead, so the new track starts where playback is.
+  resamples audio to the mixer's rate, and handles accurate seeking: frames
+  no other frame refers to aren't decoded on the way to a seek's target. A
+  skip (the arrow keys, the skip buttons) is accurate when a keyframe is
+  within a second before its target, and otherwise lands on the nearest
+  keyframe its way, which shows at once. It plays one track of each kind;
+  picking an audio or video track opens a decoder for it and seeks to the
+  playhead, so the new track starts where playback is. The other subtitle
+  tracks' packets are kept for a few seconds, so a subtitle track picked
+  starts with them, without a seek.
 - `src/media/details.rs`: what the console shows of the file's format and
   the streams playing, read from their decoders before they decode.
 - `src/media/tracks.rs`: the tracks a file has, and their names for the
@@ -456,7 +462,8 @@ cargo test
 ```
 
 The engine tests generate short clips with the `ffmpeg` command line tool
-(skipped if it isn't installed) and check opening, accurate seeking, audio
+(skipped if it isn't installed) and check opening, accurate seeking, where
+skips land, audio
 resampling through the mixer, end of file, looping, keeping up when frames
 are consumed rarely, and hardware decoding (VideoToolbox is required on
 macOS). On macOS, zero-copy frames are read back and run through the surface

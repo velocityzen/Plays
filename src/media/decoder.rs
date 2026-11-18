@@ -29,6 +29,7 @@ use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use anyhow::{Context as _, Result, anyhow, bail};
+use ffmpeg::Discard;
 use ffmpeg::format::stream::Disposition;
 use ffmpeg::software::{resampling, scaling};
 use ffmpeg::util::{channel_layout::ChannelLayout, color, format::Pixel, format::Sample};
@@ -80,6 +81,12 @@ const STREAM_READ_AHEAD: ReadAhead = ReadAhead {
 /// another one is far ahead (badly interleaved files).
 const MAX_QUEUED_PACKETS: usize = 8192;
 const MAX_QUEUED_BYTES: usize = 64 * 1024 * 1024;
+/// How far a skip's target can be from the keyframe before it and still be
+/// landed on exactly; further, it lands on the nearest keyframe its way
+/// instead of decoding everything in between, in seconds.
+const EXACT_SKIP: f64 = 1.0;
+/// Packets read after a seek to find the video's first, at most.
+const PEEK_PACKETS: usize = 512;
 /// Network reads and connections give up after this long without data.
 const NETWORK_TIMEOUT_MICROS: &str = "15000000";
 /// Consecutive decoding errors after which a hardware decoder is replaced by
@@ -95,10 +102,12 @@ pub enum Command {
     Seek {
         time: f64,
         serial: u64,
+        mode: SeekMode,
     },
-    /// Play another track (by stream index), or no subtitles. Its packets
-    /// are read from wherever the demuxer is, so a seek to the playhead
-    /// should follow.
+    /// Play another track (by stream index), or no subtitles. An audio or
+    /// video track's packets are read from wherever the demuxer is, so a
+    /// seek to the playhead should follow; subtitles start with the packets
+    /// kept of them.
     Select {
         kind: TrackKind,
         index: Option<usize>,
@@ -204,6 +213,9 @@ pub struct Shared {
     pub read_ahead: AtomicU64,
     /// Set when the player goes away; aborts network reads that are blocking.
     pub stop: AtomicBool,
+    /// Where a skip landed (serial, time) when that isn't where it was
+    /// asked to, for the clock.
+    pub landed: Mutex<Option<(u64, f64)>>,
 }
 
 impl Shared {
@@ -241,6 +253,26 @@ pub fn spawn(
         .expect("spawning a decoder thread")
 }
 
+/// How a seek lands.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum SeekMode {
+    /// On the frame asked for, however much has to be decoded to get there.
+    Exact,
+    /// A skip by some seconds, forward or back: on the frame asked for when
+    /// a keyframe is near before it, else on the nearest keyframe its way,
+    /// which shows at once.
+    Skip { forward: bool },
+}
+
+/// A seek for the demux thread.
+#[derive(Clone, Copy, PartialEq, Debug)]
+struct Seek {
+    /// In `AV_TIME_BASE` units, on the file's timeline.
+    target: i64,
+    serial: u64,
+    mode: SeekMode,
+}
+
 /// Per-seek decoding state handed to the stream decoders.
 struct Session<'a> {
     shared: &'a Shared,
@@ -248,6 +280,9 @@ struct Session<'a> {
     serial: u64,
     /// After a seek, output before this time is decoded but thrown away.
     seek_target: Option<f64>,
+    /// The demux thread has said where the last seek landed, so its packets
+    /// can be decoded.
+    settled: bool,
     /// Timestamp of the start of the media, subtracted from every frame.
     /// Taken from the first packet when the container doesn't say.
     start_offset: Option<f64>,
@@ -609,6 +644,7 @@ fn run(
         name: &name,
         serial: shared.serial.load(Ordering::Acquire),
         seek_target: None,
+        settled: true,
         start_offset,
     };
     reset_queues(shared, session.serial);
@@ -639,6 +675,7 @@ fn run(
             serial: session.serial,
             eof: false,
             seek: None,
+            landed: None,
             stopped: false,
         }),
         wake: Condvar::new(),
@@ -681,7 +718,7 @@ fn run(
             loop {
                 match command {
                     Command::Stop => return Ok(()),
-                    Command::Seek { time, serial } => seek = Some((time, serial)),
+                    Command::Seek { time, serial, mode } => seek = Some((time, serial, mode)),
                     Command::Select { kind, index } => selects.push((kind, index)),
                 }
                 command = match commands.try_recv() {
@@ -695,22 +732,44 @@ fn run(
         for (kind, index) in selects {
             decoders.switch(kind, index, &demuxer, shared, &name);
         }
-        if let Some((time, serial)) = seek {
+        if let Some((time, serial, mode)) = seek {
             let target = ((time + session.start_offset()).max(0.0) * AV_TIME_BASE) as i64;
-            demuxer.seek(target, serial);
+            demuxer.seek(Seek {
+                target,
+                serial,
+                mode,
+            });
             let cue_time = shared.subtitles.lock().cue_time(time);
             decoders.reset(cue_time);
             session.serial = serial;
             session.seek_target = Some(time);
+            session.settled = false;
             reset_queues(shared, serial);
+        }
+        // A skip may land on a keyframe away from where it was asked to; its
+        // packets wait until that's known.
+        if !session.settled
+            && let Some(landed) = demuxer.landed(session.serial)
+        {
+            session.settled = true;
+            if let Some(keyframe) = landed {
+                let time = keyframe - session.start_offset();
+                log::debug!("{name}: skipped to the keyframe at {time:.2}s");
+                session.seek_target = Some(time);
+                *shared.landed.lock() = Some((session.serial, time));
+                if let Some(file) = &mut decoders.subtitle_file {
+                    file.seek(shared.subtitles.lock().cue_time(time));
+                }
+            }
         }
 
         let mut progressed = false;
 
         // Decode a packet for each output queue that has room.
-        let video_room = decoders.video.as_ref().is_some_and(|v| {
-            !v.finished && shared.video.lock().frames.len() < v.max_queued_frames()
-        });
+        let video_room = session.settled
+            && decoders.video.as_ref().is_some_and(|v| {
+                !v.finished && shared.video.lock().frames.len() < v.max_queued_frames()
+            });
         if video_room && let Some(v) = &mut decoders.video {
             match demuxer.pop(TrackKind::Video, session.serial) {
                 Next::Packet(packet) => {
@@ -727,10 +786,11 @@ fn run(
                 Next::Wait => {}
             }
         }
-        let audio_room = decoders
-            .audio
-            .as_ref()
-            .is_some_and(|a| !a.finished && a.has_room());
+        let audio_room = session.settled
+            && decoders
+                .audio
+                .as_ref()
+                .is_some_and(|a| !a.finished && a.has_room());
         if audio_room && let Some(a) = &mut decoders.audio {
             match demuxer.pop(TrackKind::Audio, session.serial) {
                 Next::Packet(packet) => {
@@ -750,7 +810,9 @@ fn run(
         // Subtitles are few and small, and each has to be ready before its
         // time, so they are decoded as soon as they are read. A subtitle
         // file is read all at once, so it is decoded as the playhead nears.
-        if let Some(s) = &mut decoders.subtitle {
+        if let Some(s) = &mut decoders.subtitle
+            && session.settled
+        {
             match &mut decoders.subtitle_file {
                 Some(file) => {
                     let now = shared.clock.now();
@@ -895,8 +957,12 @@ struct Packets {
     /// The seek generation the queued packets belong to.
     serial: u64,
     eof: bool,
-    /// A seek (target in `AV_TIME_BASE` units, serial) for the demux thread.
-    seek: Option<(i64, u64)>,
+    /// A seek for the demux thread.
+    seek: Option<Seek>,
+    /// Where the last seek landed, once it has, when that isn't where it
+    /// was asked to: the keyframe's time on the file's timeline. Taken by
+    /// the decode thread.
+    landed: Option<Option<f64>>,
     stopped: bool,
 }
 
@@ -1046,12 +1112,23 @@ impl Demuxer {
         self.packets.lock().cover.take()
     }
 
-    fn seek(&self, target: i64, serial: u64) {
+    fn seek(&self, seek: Seek) {
         let mut packets = self.packets.lock();
         packets.clear();
-        packets.seek = Some((target, serial));
+        packets.seek = Some(seek);
+        packets.landed = None;
         self.publish(&packets);
         self.wake.notify_one();
+    }
+
+    /// Once the demux thread has carried out the seek for `serial`: the
+    /// keyframe it landed on, if not where it was asked to.
+    fn landed(&self, serial: u64) -> Option<Option<f64>> {
+        let mut packets = self.packets.lock();
+        if packets.serial != serial {
+            return None;
+        }
+        Some(packets.landed.take().flatten())
     }
 
     fn stop(&self) {
@@ -1087,18 +1164,31 @@ fn demux(mut input: ffmpeg::format::context::Input, demuxer: &Demuxer, name: &st
             packets.seek
         };
 
-        if let Some((target, serial)) = seek {
-            if let Err(err) = input.seek(target, ..target) {
-                log::warn!(
-                    "{name}: seek to {:.2}s failed: {err}",
-                    target as f64 / AV_TIME_BASE
-                );
-            }
+        if let Some(seek) = seek {
+            let video = {
+                let packets = demuxer.packets.lock();
+                packets.video.as_ref().map(|q| (q.index, q.time_base))
+            };
+            let landing = land(&mut input, seek, video, name);
             let mut packets = demuxer.packets.lock();
             // A newer seek may have come in meanwhile; it runs next time round.
-            if packets.seek == Some((target, serial)) {
+            if packets.seek == Some(seek) {
                 packets.seek = None;
-                packets.serial = serial;
+                packets.serial = seek.serial;
+                packets.landed = Some(landing.keyframe);
+                for packet in landing.packets {
+                    packets.push(packet);
+                }
+                match landing.error {
+                    None => {}
+                    Some(_) if stopping() => return,
+                    Some(ffmpeg::Error::Eof) => packets.eof = true,
+                    Some(err) => {
+                        log::warn!("{name}: read error, treating it as the end: {err}");
+                        packets.eof = true;
+                    }
+                }
+                demuxer.publish(&packets);
             }
             continue;
         }
@@ -1126,6 +1216,89 @@ fn demux(mut input: ffmpeg::format::context::Input, demuxer: &Demuxer, name: &st
         }
         demuxer.publish(&packets);
     }
+}
+
+/// What carrying out a seek read.
+#[derive(Default)]
+struct Landing {
+    /// Read to see where it landed, in the file's order.
+    packets: Vec<Packet>,
+    /// The keyframe landed on, on the file's timeline, when that isn't
+    /// where the seek was asked to.
+    keyframe: Option<f64>,
+    /// What stopped the reading short.
+    error: Option<ffmpeg::Error>,
+}
+
+/// Seek `input` to the keyframe before the target. A skip whose target is
+/// far past it lands on that keyframe instead when going back, or on the
+/// one after the target when going forward, so it shows at once.
+fn land(
+    input: &mut ffmpeg::format::context::Input,
+    seek: Seek,
+    video: Option<(usize, f64)>,
+    name: &str,
+) -> Landing {
+    let target = seek.target;
+    let seconds = target as f64 / AV_TIME_BASE;
+    if let Err(err) = input.seek(target, ..target) {
+        log::warn!("{name}: seek to {seconds:.2}s failed: {err}");
+    }
+    let (SeekMode::Skip { forward }, Some(video)) = (seek.mode, video) else {
+        return Landing::default();
+    };
+    let mut landing = read_to_video(input, video);
+    let Some(keyframe) = landing.keyframe.filter(|k| seconds - k > EXACT_SKIP) else {
+        landing.keyframe = None;
+        return landing;
+    };
+    if !forward {
+        landing.keyframe = Some(keyframe);
+        return landing;
+    }
+    if input.seek(target, target..).is_ok() {
+        let mut after = read_to_video(input, video);
+        if after.keyframe.is_some_and(|k| k >= seconds) {
+            return after;
+        }
+        // Where it went isn't past the target after all: decode from there.
+        after.keyframe = None;
+        return after;
+    }
+    // No keyframe after it: back to the one before, to decode up to it.
+    if let Err(err) = input.seek(target, ..target) {
+        log::warn!("{name}: seek to {seconds:.2}s failed: {err}");
+    }
+    Landing::default()
+}
+
+/// Read up to the first packet of the `video` stream (index, time base),
+/// keeping its time in `keyframe`.
+fn read_to_video(input: &mut ffmpeg::format::context::Input, video: (usize, f64)) -> Landing {
+    let mut landing = Landing::default();
+    while landing.packets.len() < PEEK_PACKETS {
+        let mut packet = Packet::empty();
+        match packet.read(input) {
+            Ok(()) => {
+                let found = packet.stream() == video.0;
+                if found {
+                    landing.keyframe = packet.pts().or(packet.dts()).map(|t| t as f64 * video.1);
+                }
+                landing.packets.push(packet);
+                if found {
+                    break;
+                }
+            }
+            Err(ffmpeg::Error::Other { errno }) if errno == ffmpeg::util::error::EAGAIN => {
+                thread::sleep(IDLE_WAIT);
+            }
+            Err(err) => {
+                landing.error = Some(err);
+                break;
+            }
+        }
+    }
+    landing
 }
 
 fn reset_queues(shared: &Shared, serial: u64) {
@@ -1296,6 +1469,18 @@ impl VideoDecoder {
     }
 
     fn decode(&mut self, packet: &Packet, session: &Session) {
+        // Frames other frames don't refer to aren't decoded on the way to a
+        // seek's target, as they wouldn't be shown: it gets there sooner.
+        let before_target = session.seek_target.is_some_and(|target| {
+            packet_time(packet, self.time_base).is_some_and(|time| {
+                time - session.start_offset() + 2.0 * self.frame_duration <= target
+            })
+        });
+        self.decoder.skip_frame(if before_target {
+            Discard::NonReference
+        } else {
+            Discard::Default
+        });
         if let Err(err) = self.decoder.send_packet(packet) {
             log::debug!("video decode error: {err}");
             self.failed(session);

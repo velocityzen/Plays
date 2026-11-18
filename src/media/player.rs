@@ -9,7 +9,9 @@ use parking_lot::Mutex;
 
 use super::audio::{AudioSource, Mixer};
 use super::clock::Clock;
-use super::decoder::{self, Command, DecodeOptions, MediaInfo, Shared, VideoFrame, VideoQueue};
+use super::decoder::{
+    self, Command, DecodeOptions, MediaInfo, SeekMode, Shared, VideoFrame, VideoQueue,
+};
 use super::picture::Picture;
 use super::source::Source;
 use super::subtitles::{CueContent, CueQueue};
@@ -190,6 +192,7 @@ impl Player {
             eof_serial: AtomicU64::new(0),
             read_ahead: AtomicU64::new(0.0f64.to_bits()),
             stop: AtomicBool::new(false),
+            landed: Mutex::new(None),
         });
         let name = source.name();
         let network = source.is_network();
@@ -327,7 +330,12 @@ impl Player {
         }
     }
 
+    /// Seek to exactly `time`.
     pub fn seek(&mut self, time: f64) {
+        self.seek_to(time, SeekMode::Exact);
+    }
+
+    fn seek_to(&mut self, time: f64, mode: SeekMode) {
         if self.is_live() {
             return;
         }
@@ -339,7 +347,7 @@ impl Player {
         self.ended = false;
         self.start_buffering();
         self.shared.clock.set(time);
-        let _ = self.commands.send(Command::Seek { time, serial });
+        let _ = self.commands.send(Command::Seek { time, serial, mode });
     }
 
     /// Decode the frame on screen again, for a paused player whose frames
@@ -392,8 +400,12 @@ impl Player {
         cues.showing(self.shared.clock.now())
     }
 
+    /// Skip some seconds forward or back. Where keyframes are far apart, it
+    /// lands on the nearest one its way, which shows at once, rather than
+    /// decoding everything up to the time asked for.
     pub fn seek_by(&mut self, delta: f64) {
-        self.seek(self.position() + delta);
+        let forward = delta > 0.0;
+        self.seek_to(self.position() + delta, SeekMode::Skip { forward });
     }
 
     pub fn set_looping(&mut self, looping: bool) {
@@ -474,6 +486,13 @@ impl Player {
             return tick;
         };
         let serial = self.shared.serial.load(Ordering::Acquire);
+        // A skip landed on a keyframe away from where it was asked to.
+        let landed = self.shared.landed.lock().take();
+        if let Some((landed_serial, time)) = landed
+            && landed_serial == serial
+        {
+            self.shared.clock.set(time);
+        }
         let eof = self.shared.eof_serial.load(Ordering::Acquire) == serial;
         let has_audio = info.has_audio && self.shared.audio.is_some();
         let running = self.playing && !self.buffering;

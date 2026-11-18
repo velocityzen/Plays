@@ -494,6 +494,82 @@ fn switches_audio_and_subtitle_tracks() {
     assert_eq!(player.info().unwrap().subtitle_track, None);
 }
 
+/// Seek or skip, and wait until the picture and the playhead are at `expected`.
+fn lands_at(player: &mut Player, go: impl FnOnce(&mut Player), expected: f64) -> (f64, f64) {
+    go(player);
+    wait_until(Duration::from_secs(5), || {
+        player.tick();
+        !player.is_buffering()
+            && player
+                .frame_pts()
+                .is_some_and(|pts| (pts - expected).abs() < 0.045)
+    });
+    (player.frame_pts().unwrap_or(f64::NAN), player.position())
+}
+
+/// Skips land on the time asked for when a keyframe is near before it, and
+/// otherwise on the nearest keyframe their way, which shows at once.
+#[test]
+fn skips_land_on_keyframes_far_from_the_target() {
+    for container in ["mkv", "mp4"] {
+        let Some(path) = media(
+            &format!("keyframes.{container}"),
+            &[
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc=size=160x120:rate=25:duration=12",
+                "-c:v",
+                "libx264",
+                "-x264-params",
+                "keyint=100:min-keyint=100:scenecut=0",
+                "-pix_fmt",
+                "yuv420p",
+            ],
+        ) else {
+            eprintln!("ffmpeg not found, skipping");
+            return;
+        };
+        let mut player = Player::open(Source::File(path), None, options(false, false));
+        assert!(wait_until(Duration::from_secs(5), || {
+            player.tick();
+            player.frame_pts().is_some()
+        }));
+        let near = |(pts, position): (f64, f64), time: f64| {
+            (pts - time).abs() < 0.045 && (position - time).abs() < 0.045
+        };
+
+        // Keyframes are at 0, 4 and 8 seconds.
+        let landed = lands_at(&mut player, |p| p.seek(1.0), 1.0);
+        assert!(
+            near(landed, 1.0),
+            "{container}: seek to 1 landed at {landed:?}"
+        );
+        let landed = lands_at(&mut player, |p| p.seek_by(2.0), 4.0);
+        assert!(near(landed, 4.0), "{container}: 1+2 landed at {landed:?}");
+        let landed = lands_at(&mut player, |p| p.seek_by(0.5), 4.5);
+        assert!(near(landed, 4.5), "{container}: 4+0.5 landed at {landed:?}");
+        let landed = lands_at(&mut player, |p| p.seek(11.0), 11.0);
+        assert!(
+            near(landed, 11.0),
+            "{container}: seek to 11 landed at {landed:?}"
+        );
+        let landed = lands_at(&mut player, |p| p.seek_by(-1.5), 8.0);
+        assert!(
+            near(landed, 8.0),
+            "{container}: 11-1.5 landed at {landed:?}"
+        );
+        let landed = lands_at(&mut player, |p| p.seek_by(-3.5), 4.5);
+        assert!(near(landed, 4.5), "{container}: 8-3.5 landed at {landed:?}");
+        // A seek is exact however far the keyframe.
+        let landed = lands_at(&mut player, |p| p.seek(7.0), 7.0);
+        assert!(
+            near(landed, 7.0),
+            "{container}: seek to 7 landed at {landed:?}"
+        );
+    }
+}
+
 #[test]
 fn plays_subtitle_files_beside_the_video() {
     let dir = std::env::temp_dir().join("plays-tests").join("beside");
