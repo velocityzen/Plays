@@ -70,6 +70,10 @@ pub enum MenuItem {
         /// The OS Action that corresponds to this action, if any
         /// See [`OsAction`] for more information
         os_action: Option<OsAction>,
+
+        /// Plays: shown with a check mark, as the one picked of several
+        /// (macOS).
+        checked: bool,
     },
 }
 
@@ -98,6 +102,7 @@ impl MenuItem {
             name: name.into(),
             action: Box::new(action),
             os_action: None,
+            checked: false,
         }
     }
 
@@ -111,7 +116,17 @@ impl MenuItem {
             name: name.into(),
             action: Box::new(action),
             os_action: Some(os_action),
+            checked: false,
         }
+    }
+
+    /// Plays: show an action's item with a check mark, as the one picked of
+    /// several (macOS). Other items are left as they are.
+    pub fn checked(mut self, checked: bool) -> Self {
+        if let Self::Action { checked: mark, .. } = &mut self {
+            *mark = checked;
+        }
+        self
     }
 
     /// Create an OwnedMenuItem from this MenuItem
@@ -123,10 +138,12 @@ impl MenuItem {
                 name,
                 action,
                 os_action,
+                checked,
             } => OwnedMenuItem::Action {
                 name: name.into(),
                 action,
                 os_action,
+                checked,
             },
             MenuItem::SystemMenu(os_menu) => OwnedMenuItem::SystemMenu(os_menu.owned()),
         }
@@ -177,6 +194,9 @@ pub enum OwnedMenuItem {
         /// The OS Action that corresponds to this action, if any
         /// See [`OsAction`] for more information
         os_action: Option<OsAction>,
+
+        /// Plays: shown with a check mark (macOS).
+        checked: bool,
     },
 }
 
@@ -189,10 +209,12 @@ impl Clone for OwnedMenuItem {
                 name,
                 action,
                 os_action,
+                checked,
             } => OwnedMenuItem::Action {
                 name: name.clone(),
                 action: action.boxed_clone(),
                 os_action: *os_action,
+                checked: *checked,
             },
             OwnedMenuItem::SystemMenu(os_menu) => OwnedMenuItem::SystemMenu(os_menu.clone()),
         }

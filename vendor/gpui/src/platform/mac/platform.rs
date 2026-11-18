@@ -315,6 +315,7 @@ impl MacPlatform {
                     name,
                     action,
                     os_action,
+                    checked,
                 } => {
                     // Note that this is intentionally using earlier bindings, whereas typically
                     // later ones take display precedence. See the discussion on
@@ -411,6 +412,11 @@ impl MacPlatform {
 
                     let tag = actions.len() as NSInteger;
                     let _: () = msg_send![item, setTag: tag];
+                    // Plays: a check mark on the one picked of several
+                    // (NSControlStateValueOn).
+                    if *checked {
+                        let _: () = msg_send![item, setState: 1 as NSInteger];
+                    }
                     actions.push(action.boxed_clone());
                     item
                 }

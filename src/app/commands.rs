@@ -5,7 +5,7 @@ use gpui::App;
 use super::dispatch::{with_active, with_active_in_window, with_workspace};
 use super::{
     About, CloseAll, CloseFile, CloseWindow, OpenFiles, OpenSettings, OpenUrl, Quit,
-    SetAspectRatio, SetCrop,
+    SetAspectRatio, SetAudioDevice, SetCrop,
 };
 use crate::hotkeys::*;
 use crate::media::tracks::TrackKind;
@@ -102,6 +102,10 @@ pub(super) fn register(cx: &mut App) {
     cx.on_action(|action: &SetCrop, cx| {
         let crop = action.0;
         with_active(cx, move |p, cx| p.set_crop(crop, cx))
+    });
+    cx.on_action(|action: &SetAudioDevice, cx| {
+        let device = action.0.clone();
+        Settings::update(cx, true, |s| s.audio_output.device = device);
     });
     cx.on_action(|_: &ToggleFullScreen, cx| {
         with_workspace(cx, |_, window, _| window.toggle_fullscreen())

@@ -12,6 +12,8 @@ use futures::StreamExt as _;
 use futures::channel::mpsc::{UnboundedSender, unbounded};
 use gpui::{App, AppContext as _, Global};
 
+use super::menus;
+
 use crate::media::output::{self, DeviceEvent, DeviceInfo, OpenError, Playing};
 use crate::media::{AudioOutput, Mixer};
 use crate::settings::{AudioOutputSettings, Settings};
@@ -43,6 +45,8 @@ enum Event {
     Device(u64, DeviceEvent),
     /// The device wanted is there again, or it is time to try it again.
     Back(u64),
+    /// An output was connected or disconnected.
+    Devices,
 }
 
 /// The single audio output shared by every player.
@@ -80,6 +84,10 @@ impl AudioEngine {
         cx.set_global(engine);
         Self::reroute(cx);
         Self::list_devices(cx);
+        let events = cx.global::<Self>().events.clone();
+        output::watch_devices(Box::new(move || {
+            events.unbounded_send(Event::Devices).ok();
+        }));
 
         cx.spawn(async move |cx| {
             while let Some(event) = received.next().await {
@@ -95,6 +103,11 @@ impl AudioEngine {
             if wanted == engine.wanted {
                 return;
             }
+            // The Audio menu checks the device picked.
+            if wanted.device != engine.wanted.device {
+                menus::set_menus(cx);
+            }
+            let engine = cx.global_mut::<Self>();
             // Only whether to wait changed, and the device wanted is
             // playing: nothing to move.
             if wanted.device == engine.wanted.device
@@ -126,6 +139,7 @@ impl AudioEngine {
             {
                 Self::reroute(cx)
             }
+            Event::Devices => {}
             // About an output since replaced.
             _ => return,
         }
@@ -191,7 +205,8 @@ impl AudioEngine {
         self.wanted = wanted;
     }
 
-    /// List the output devices again, in the background, for Settings.
+    /// List the output devices again, in the background, for Settings and
+    /// the Audio menu.
     pub fn list_devices(cx: &mut App) {
         let task = cx.background_spawn(async { output::devices() });
         cx.spawn(async move |cx| {
@@ -200,6 +215,7 @@ impl AudioEngine {
                 if cx.global::<Self>().devices != devices {
                     cx.global_mut::<Self>().devices = devices;
                     cx.refresh_windows();
+                    menus::set_menus(cx);
                 }
             })
             .ok();

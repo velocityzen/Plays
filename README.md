@@ -82,8 +82,9 @@ GPU-accelerated UI framework.
   Colors are macOS's
   own, in light and dark, with your accent color.
 - Audio from every file is mixed into one output: the system's default, or
-  a device picked in Settings, remembered from run to run. A/V sync follows
-  the audio clock.
+  a device picked in Settings or, on macOS, Audio → Output Device (which
+  lists outputs as they are plugged in and checks the one picked),
+  remembered from run to run. A/V sync follows the audio clock.
 - Audio-only files show their cover art (or a note) and a level meter.
 - About Plays, in the app menu on macOS: a small window with the app's
   icon, version and the day it was built (Settings → About says them too).
@@ -337,7 +338,8 @@ last window quits.
   matrix guess as in software (BT.709 from 720 lines up). HDR frames go to
   10-bit BT.2020 surfaces tagged with their transfer function instead, and
   Dolby Vision frames are only scaled, carrying their reshaping along.
-- `vendor/gpui`: gpui 0.2.2 with HDR video on macOS (see its `PLAYS.md`). Its
+- `vendor/gpui`: gpui 0.2.2 with HDR video on macOS and check marks on menu
+  items (see its `PLAYS.md`). Its
   window draws in half floats and extended sRGB, everything but video as
   before, and a second surface shader decodes PQ and HLG and tone maps them
   under the screen's current EDR headroom, with the same math as `hdr.rs`.
@@ -389,8 +391,10 @@ last window quits.
 - `src/app/`: starting the app and its own actions (`mod.rs`), the shared
   audio output and which device it plays through (`audio`: the one picked,
   waited for or stood in for while it's away, and watched for to come
-  back), what each action does (`commands`), how actions reach the
-  window and tile in front (`dispatch`), the keymap and the menu bar.
+  back; on macOS, CoreAudio says when outputs come and go), what each
+  action does (`commands`), how actions reach the window and tile in front
+  (`dispatch`), the keymap and the menu bar (set again as outputs come and
+  go or another is picked).
 - `src/hotkeys.rs`: the commands shortcuts can run, their default
   keys, how they are saved in Settings and shown (`⌃⌘F`, `Ctrl+Alt+F`).
   The keymap is rebuilt from them whenever they change, and the menus show

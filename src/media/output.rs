@@ -82,6 +82,82 @@ fn name(device: &cpal::Device) -> String {
         .unwrap_or_else(|_| device.to_string())
 }
 
+/// Call `changed` whenever an output device is connected or disconnected,
+/// from a thread of the system's, for as long as the app runs. Only on
+/// macOS, where nothing else tells; elsewhere the list is read again when
+/// it is shown.
+pub fn watch_devices(changed: Box<dyn Fn() + Send + Sync>) {
+    #[cfg(target_os = "macos")]
+    core_audio::watch_devices(changed);
+    #[cfg(not(target_os = "macos"))]
+    drop(changed);
+}
+
+#[cfg(target_os = "macos")]
+mod core_audio {
+    use std::ffi::c_void;
+
+    /// `kAudioObjectSystemObject`.
+    const SYSTEM_OBJECT: u32 = 1;
+    /// `kAudioHardwarePropertyDevices`, 'dev#'.
+    const DEVICES: u32 = u32::from_be_bytes(*b"dev#");
+    /// `kAudioObjectPropertyScopeGlobal`, 'glob'.
+    const SCOPE_GLOBAL: u32 = u32::from_be_bytes(*b"glob");
+    /// `kAudioObjectPropertyElementMain`.
+    const ELEMENT_MAIN: u32 = 0;
+
+    #[repr(C)]
+    struct PropertyAddress {
+        selector: u32,
+        scope: u32,
+        element: u32,
+    }
+
+    type Listener = extern "C" fn(u32, u32, *const PropertyAddress, *mut c_void) -> i32;
+
+    #[link(name = "CoreAudio", kind = "framework")]
+    unsafe extern "C" {
+        fn AudioObjectAddPropertyListener(
+            object: u32,
+            address: *const PropertyAddress,
+            listener: Listener,
+            client_data: *mut c_void,
+        ) -> i32;
+    }
+
+    type Changed = Box<dyn Fn() + Send + Sync>;
+
+    extern "C" fn devices_changed(
+        _: u32,
+        _: u32,
+        _: *const PropertyAddress,
+        client_data: *mut c_void,
+    ) -> i32 {
+        // SAFETY: the `Changed` leaked in `watch_devices`, never freed.
+        let changed = unsafe { &*client_data.cast::<Changed>() };
+        changed();
+        0
+    }
+
+    pub fn watch_devices(changed: Changed) {
+        let address = PropertyAddress {
+            selector: DEVICES,
+            scope: SCOPE_GLOBAL,
+            element: ELEMENT_MAIN,
+        };
+        // Listened to for as long as the app runs, so never freed.
+        let client_data = Box::into_raw(Box::new(changed)).cast::<c_void>();
+        // SAFETY: `address` is read during the call; `client_data` lives
+        // forever and is only read, by `devices_changed`.
+        let status = unsafe {
+            AudioObjectAddPropertyListener(SYSTEM_OBJECT, &address, devices_changed, client_data)
+        };
+        if status != 0 {
+            log::warn!("can't follow audio outputs coming and going: OSStatus {status}");
+        }
+    }
+}
+
 /// What an output plays through.
 #[derive(Clone, PartialEq, Debug)]
 pub struct Playing {

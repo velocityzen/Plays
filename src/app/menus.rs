@@ -1,16 +1,23 @@
 //! The menu bar. Its items show the keys bound to their actions, so the
-//! keymap sets the menus again whenever it changes.
+//! keymap sets the menus again whenever it changes, and so does the audio
+//! engine as outputs come and go or another is picked.
 
 use gpui::{App, Menu, MenuItem, SystemMenuType};
 
 use super::{
-    About, CloseAll, CloseFile, CloseWindow, OpenFiles, OpenSettings, OpenUrl, Quit,
-    SetAspectRatio, SetCrop,
+    About, AudioEngine, CloseAll, CloseFile, CloseWindow, OpenFiles, OpenSettings, OpenUrl, Quit,
+    SetAspectRatio, SetAudioDevice, SetCrop,
 };
 use crate::hotkeys::*;
+use crate::media::output::DeviceInfo;
+use crate::settings::{AudioDevice, Settings};
 use crate::ui::framing::{ASPECT_RATIOS, CROPS};
 
 pub(super) fn set_menus(cx: &mut App) {
+    let outputs = output_menu(
+        AudioEngine::devices(cx),
+        cx.global::<Settings>().audio_output.device.as_ref(),
+    );
     cx.set_menus(vec![
         Menu {
             name: "Plays".into(),
@@ -113,6 +120,8 @@ pub(super) fn set_menus(cx: &mut App) {
                 MenuItem::action("Reset Audio Delay", ResetAudioDelay),
                 MenuItem::separator(),
                 MenuItem::action("Mute/Unmute All", ToggleMuteAll),
+                MenuItem::separator(),
+                MenuItem::submenu(outputs),
             ],
         },
         Menu {
@@ -132,4 +141,101 @@ pub(super) fn set_menus(cx: &mut App) {
             ],
         },
     ]);
+}
+
+/// The system's default and every output connected, with the one picked
+/// checked; one picked that isn't connected is listed too, as it is still
+/// what the sound waits for.
+fn output_menu(devices: &[DeviceInfo], picked: Option<&AudioDevice>) -> Menu {
+    let mut items = vec![
+        MenuItem::action("System Default", SetAudioDevice(None)).checked(picked.is_none()),
+        MenuItem::separator(),
+    ];
+    items.extend(devices.iter().map(|device| {
+        let checked = picked.is_some_and(|picked| picked.id == device.id);
+        let device = AudioDevice {
+            id: device.id.clone(),
+            name: device.name.clone(),
+        };
+        MenuItem::action(device.name.clone(), SetAudioDevice(Some(device))).checked(checked)
+    }));
+    if let Some(picked) = picked
+        && !devices.iter().any(|device| device.id == picked.id)
+    {
+        items.push(
+            MenuItem::action(
+                format!("{} (Not Connected)", picked.name),
+                SetAudioDevice(Some(picked.clone())),
+            )
+            .checked(true),
+        );
+    }
+    Menu {
+        name: "Output Device".into(),
+        items,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Each action item's name and whether it is checked.
+    fn listed(menu: &Menu) -> Vec<(String, bool)> {
+        menu.items
+            .iter()
+            .filter_map(|item| match item {
+                MenuItem::Action { name, checked, .. } => Some((name.to_string(), *checked)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn device(id: &str, name: &str) -> DeviceInfo {
+        DeviceInfo {
+            id: id.into(),
+            name: name.into(),
+        }
+    }
+
+    #[test]
+    fn checks_the_output_picked() {
+        let devices = [device("a", "Speakers"), device("b", "Headphones")];
+        assert_eq!(
+            listed(&output_menu(&devices, None)),
+            [
+                ("System Default".into(), true),
+                ("Speakers".into(), false),
+                ("Headphones".into(), false),
+            ]
+        );
+        let picked = AudioDevice {
+            id: "b".into(),
+            name: "Headphones".into(),
+        };
+        assert_eq!(
+            listed(&output_menu(&devices, Some(&picked))),
+            [
+                ("System Default".into(), false),
+                ("Speakers".into(), false),
+                ("Headphones".into(), true),
+            ]
+        );
+    }
+
+    #[test]
+    fn lists_the_output_picked_while_it_is_away() {
+        let picked = AudioDevice {
+            id: "c".into(),
+            name: "TV".into(),
+        };
+        assert_eq!(
+            listed(&output_menu(&[device("a", "Speakers")], Some(&picked))),
+            [
+                ("System Default".into(), false),
+                ("Speakers".into(), false),
+                ("TV (Not Connected)".into(), true),
+            ]
+        );
+    }
 }

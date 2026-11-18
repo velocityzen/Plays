@@ -127,6 +127,11 @@ and `shaders.wgsl`):
   `src/media/hdr.rs`. Last comes the gamma, `signal^(1/gamma)`. The
   swapchain isn't sRGB, so the encoded values are written as they are.
 
+`src/platform/app_menu.rs` and `src/platform/mac/platform.rs`: a menu
+item for an action can be `checked(true)`, which macOS shows with a check
+mark (`setState:`), for the output device picked in the Audio menu. Other
+platforms keep the flag and show nothing.
+
 `src/taffy.rs`: two float literals are typed as `f32`, which newer Rust
 warns about otherwise.
 

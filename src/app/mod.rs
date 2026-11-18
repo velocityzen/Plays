@@ -17,7 +17,7 @@ pub use audio::{AudioEngine, Route};
 pub use awake::Awake;
 
 use crate::media::{Source, picture};
-use crate::settings::Settings;
+use crate::settings::{AudioDevice, Settings};
 use crate::ui::framing::Ratio;
 use crate::ui::theme::layout::WINDOW_SIZE;
 use crate::ui::theme::{UiFont, pick_ui_font, refresh_system_colors};
@@ -47,6 +47,11 @@ pub struct SetAspectRatio(pub Option<Ratio>);
 #[derive(Clone, PartialEq, Debug, gpui::Action)]
 #[action(namespace = plays, no_json)]
 pub struct SetCrop(pub Option<Ratio>);
+
+/// Play through this output device, or the system's default.
+#[derive(Clone, PartialEq, Debug, gpui::Action)]
+#[action(namespace = plays, no_json)]
+pub struct SetAudioDevice(pub Option<AudioDevice>);
 
 /// `opened` brings the URLs the system asks the app to open.
 pub fn run(cx: &mut App, sources: Vec<Source>, opened: UnboundedReceiver<Vec<String>>) {
