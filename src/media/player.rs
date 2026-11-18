@@ -43,6 +43,12 @@ pub struct Tick {
 }
 
 /// UI-thread handle to one playing file.
+/// The furthest the sound can be moved from the picture. The demuxer reads
+/// that much further ahead for the stream that is behind.
+pub const MAX_AUDIO_DELAY: f64 = 5.0;
+/// The furthest subtitles can be moved from their times.
+pub const MAX_SUBTITLE_DELAY: f64 = 60.0;
+
 pub struct Player {
     shared: Arc<Shared>,
     commands: Sender<Command>,
@@ -320,6 +326,37 @@ impl Player {
         if let Some(audio) = &self.shared.audio {
             audio.muted.store(muted, Ordering::Relaxed);
         }
+    }
+
+    /// How much later than the picture the sound is heard, in seconds
+    /// (negative: earlier).
+    pub fn audio_delay(&self) -> f64 {
+        self.shared
+            .audio
+            .as_ref()
+            .map_or(0.0, |audio| f64::from(audio.delay.load()))
+    }
+
+    /// Hear the sound `delay` seconds after the picture (negative: before
+    /// it), up to `MAX_AUDIO_DELAY` either way. The sound plays on as it
+    /// was; the picture, and the playhead with it, moves against it.
+    pub fn set_audio_delay(&mut self, delay: f64) {
+        if let Some(audio) = &self.shared.audio {
+            let delay = delay.clamp(-MAX_AUDIO_DELAY, MAX_AUDIO_DELAY);
+            audio.delay.store(delay as f32);
+        }
+    }
+
+    /// How much later than their times subtitles show, in seconds
+    /// (negative: earlier).
+    pub fn subtitle_delay(&self) -> f64 {
+        self.shared.subtitles.lock().delay
+    }
+
+    /// Show subtitles `delay` seconds after their times (negative: before),
+    /// up to `MAX_SUBTITLE_DELAY` either way.
+    pub fn set_subtitle_delay(&mut self, delay: f64) {
+        self.shared.subtitles.lock().delay = delay.clamp(-MAX_SUBTITLE_DELAY, MAX_SUBTITLE_DELAY);
     }
 
     pub fn set_volume(&mut self, volume: f32) {

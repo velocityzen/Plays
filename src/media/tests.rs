@@ -544,6 +544,118 @@ fn reports_the_streams_orientation() {
     );
 }
 
+/// Delaying the sound moves the picture, and the playhead, ahead of it:
+/// the sound plays on as it was.
+#[test]
+fn delays_the_sound_against_the_picture() {
+    let Some(path) = media(
+        "sync.mkv",
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc=size=160x120:rate=25:duration=4",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:sample_rate=48000:duration=4",
+            "-c:v",
+            "libx264",
+            "-g",
+            "25",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "pcm_s16le",
+            "-ac",
+            "2",
+        ],
+    ) else {
+        eprintln!("ffmpeg not found, skipping");
+        return;
+    };
+    let mixer = Mixer::detached(48_000);
+    let mut player = Player::open(
+        Source::File(path),
+        Some(mixer.clone()),
+        options(false, false),
+    );
+    assert!(wait_until(Duration::from_secs(5), || {
+        player.tick();
+        player.frame_pts().is_some()
+    }));
+    player.set_audio_delay(2.0);
+    assert_eq!(player.audio_delay(), 2.0);
+    player.play();
+    let heard = drain_audio(&mut player, &mixer, Duration::from_secs(5), |heard| {
+        heard >= 24_000
+    });
+    let heard = heard as f64 / 48_000.0;
+    let ahead = player.position() - heard;
+    assert!(
+        (ahead - 2.0).abs() < 0.1,
+        "the playhead is {ahead:.3} s ahead of the sound"
+    );
+    assert!(
+        wait_until(Duration::from_secs(5), || {
+            player.tick();
+            player.frame_pts().is_some_and(|pts| pts > heard + 1.8)
+        }),
+        "the picture is at {:?} after {heard:.2} s of sound",
+        player.frame_pts()
+    );
+    player.set_audio_delay(-60.0);
+    assert_eq!(player.audio_delay(), -super::player::MAX_AUDIO_DELAY);
+}
+
+/// A subtitle delay moves when cues show, and seeking keeps it: a seek
+/// lands on a cue that is over by its own time but not as delayed.
+#[test]
+fn delays_subtitles_against_the_picture() {
+    let dir = std::env::temp_dir().join("plays-tests").join("delay");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("clip.srt"),
+        "1\n00:00:01,000 --> 00:00:02,000\nRight on time\n",
+    )
+    .unwrap();
+    let Some(path) = media(
+        "delay/clip.mkv",
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc=size=160x120:rate=25:duration=4",
+            "-c:v",
+            "libx264",
+            "-g",
+            "25",
+            "-pix_fmt",
+            "yuv420p",
+        ],
+    ) else {
+        eprintln!("ffmpeg not found, skipping");
+        return;
+    };
+    let mut player = Player::open(Source::File(path), None, options(false, false));
+    assert!(wait_until(Duration::from_secs(5), || {
+        player.tick();
+        player.frame_pts().is_some()
+    }));
+    let cue = ["Right on time"];
+    let none = Vec::<String>::new();
+    assert_eq!(subtitles_at(&mut player, 1.5, &cue), cue);
+
+    player.set_subtitle_delay(1.0);
+    assert_eq!(subtitles_at(&mut player, 1.5, &[]), none);
+    assert_eq!(subtitles_at(&mut player, 2.8, &cue), cue);
+    assert_eq!(subtitles_at(&mut player, 3.1, &[]), none);
+
+    player.set_subtitle_delay(-0.8);
+    assert_eq!(subtitles_at(&mut player, 0.5, &cue), cue);
+    assert_eq!(subtitles_at(&mut player, 1.5, &[]), none);
+}
+
 /// With the window hidden, frames are only consumed a few times a second. Large
 /// frames fill the queue quickly, so the decoder must skip frames that are
 /// already late instead of falling further and further behind.

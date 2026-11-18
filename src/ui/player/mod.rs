@@ -9,6 +9,7 @@ mod controls;
 mod graveyard;
 mod header;
 mod osd;
+mod sync;
 mod tracks;
 
 use std::cell::Cell;

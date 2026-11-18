@@ -435,8 +435,9 @@ impl Decoders {
         Ok(())
     }
 
-    /// After a seek to `time`.
-    fn reset(&mut self, time: f64) {
+    /// After a seek to `cue_time`, as the subtitles' own timeline has it
+    /// (they may be delayed).
+    fn reset(&mut self, cue_time: f64) {
         if let Some(v) = &mut self.video {
             v.reset();
         }
@@ -447,7 +448,7 @@ impl Decoders {
             s.reset();
         }
         if let Some(file) = &mut self.subtitle_file {
-            file.seek(time);
+            file.seek(cue_time);
         }
     }
 }
@@ -661,7 +662,8 @@ fn run(
         if let Some((time, serial)) = seek {
             let target = ((time + session.start_offset()).max(0.0) * AV_TIME_BASE) as i64;
             demuxer.seek(target, serial);
-            decoders.reset(time);
+            let cue_time = shared.subtitles.lock().cue_time(time);
+            decoders.reset(cue_time);
             session.serial = serial;
             session.seek_target = Some(time);
             reset_queues(shared, serial);
@@ -715,7 +717,8 @@ fn run(
         if let Some(s) = &mut decoders.subtitle {
             match &mut decoders.subtitle_file {
                 Some(file) => {
-                    let until = shared.clock.now() + SUBTITLE_FILE_AHEAD;
+                    let now = shared.clock.now();
+                    let until = shared.subtitles.lock().cue_time(now) + SUBTITLE_FILE_AHEAD;
                     while let Some(packet) = file.next(until) {
                         progressed = true;
                         // Its times start with the video's.
@@ -755,17 +758,20 @@ fn run(
     }
 }
 
-/// Add a decoded cue to those showing or to come, unless a seek went past it.
+/// Add a decoded cue to those showing or to come, unless a seek went past it
+/// (as the subtitle delay puts it).
 fn queue_cue(cue: Option<Cue>, session: &Session) {
     let Some(cue) = cue else {
         return;
     };
-    let before_target = session
-        .seek_target
-        .is_some_and(|target| cue.end.is_some_and(|end| end <= target));
+    let now = session.shared.clock.now();
+    let mut cues = session.shared.subtitles.lock();
+    let before_target = session.seek_target.is_some_and(|target| {
+        let target = cues.cue_time(target);
+        cue.end.is_some_and(|end| end <= target)
+    });
     if !before_target {
-        let mut cues = session.shared.subtitles.lock();
-        cues.prune(session.shared.clock.now());
+        cues.prune(now);
         cues.push(cue);
     }
 }

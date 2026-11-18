@@ -70,10 +70,17 @@ pub struct Cue {
     pub content: Option<Arc<CueContent>>,
 }
 
+/// Cues are kept this long after they end, so moving subtitles later brings
+/// back the ones just over.
+const KEEP_ENDED: f64 = 10.0;
+
 /// Cues decoded ahead of the playhead, for one seek generation.
 #[derive(Default)]
 pub struct CueQueue {
     pub serial: u64,
+    /// How much later than their times cues show, in seconds (negative:
+    /// earlier). Kept across seeks.
+    pub delay: f64,
     /// In start order.
     cues: Vec<Cue>,
 }
@@ -97,17 +104,26 @@ impl CueQueue {
         }
     }
 
-    /// Forget cues that are over at `time`.
-    pub fn prune(&mut self, time: f64) {
-        self.cues.retain(|cue| cue.end.is_none_or(|end| end > time));
+    /// The time on the cues' own timeline when the playhead is at `time`.
+    pub fn cue_time(&self, time: f64) -> f64 {
+        time - self.delay
     }
 
-    /// The cues showing at `time`, oldest first.
+    /// Forget cues that have been over for a while with the playhead at
+    /// `time`.
+    pub fn prune(&mut self, time: f64) {
+        let over = self.cue_time(time) - KEEP_ENDED;
+        self.cues.retain(|cue| cue.end.is_none_or(|end| end > over));
+    }
+
+    /// The cues showing with the playhead at `time`, oldest first.
     pub fn showing(&mut self, time: f64) -> Vec<Arc<CueContent>> {
         self.prune(time);
+        let time = self.cue_time(time);
         self.cues
             .iter()
             .take_while(|cue| cue.start <= time)
+            .filter(|cue| cue.end.is_none_or(|end| end > time))
             .filter_map(|cue| cue.content.clone())
             .collect()
     }
@@ -480,7 +496,28 @@ mod tests {
         assert_eq!(queue.showing(2.5).len(), 2);
         assert_eq!(queue.showing(3.5).len(), 1);
         assert_eq!(queue.showing(4.0).len(), 0);
+        assert_eq!(queue.cues.len(), 2, "kept a while, in case of a delay");
+        assert_eq!(queue.showing(4.0 + KEEP_ENDED).len(), 0);
         assert!(queue.cues.is_empty());
+    }
+
+    #[test]
+    fn shows_cues_later_or_earlier_by_the_delay() {
+        let mut queue = CueQueue::default();
+        queue.push(cue(1.0, Some(3.0)));
+        queue.delay = 1.5;
+        assert_eq!(queue.showing(2.0).len(), 0);
+        assert_eq!(queue.showing(2.5).len(), 1);
+        assert_eq!(queue.showing(4.4).len(), 1);
+        assert_eq!(queue.showing(4.5).len(), 0);
+        // Back earlier, it shows again: ended cues are kept a while.
+        queue.delay = -0.5;
+        assert_eq!(queue.showing(0.4).len(), 0);
+        assert_eq!(queue.showing(0.5).len(), 1);
+        assert_eq!(queue.showing(2.5).len(), 0);
+        // Clearing for a seek keeps the delay.
+        queue.clear(3);
+        assert_eq!(queue.delay, -0.5);
     }
 
     #[test]

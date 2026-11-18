@@ -92,6 +92,10 @@ pub struct AudioSource {
     pub playing: AtomicBool,
     pub volume: AtomicF32,
     pub muted: AtomicBool,
+    /// How much later than the picture the sound is heard, in seconds
+    /// (negative: earlier). The clock, which the picture follows, is kept
+    /// that far ahead of what is heard.
+    pub delay: AtomicF32,
     /// Peak level of the last callback, for the level meter.
     pub peak: AtomicF32,
 }
@@ -106,6 +110,7 @@ impl AudioSource {
             playing: AtomicBool::new(false),
             volume: AtomicF32::new(volume),
             muted: AtomicBool::new(false),
+            delay: AtomicF32::new(0.0),
             peak: AtomicF32::new(0.0),
         }
     }
@@ -162,8 +167,10 @@ impl Mixer {
                 continue;
             }
             if let Some(pts) = queue.read_pts(self.sample_rate) {
-                // What we write now is heard `latency` seconds from now.
-                source.clock.sync(pts - latency, now);
+                // What we write now is heard `latency` seconds from now,
+                // and goes with the picture `delay` seconds later.
+                let delay = f64::from(source.delay.load());
+                source.clock.sync(pts - latency + delay, now);
             }
 
             // The meter shows the player's own level, before the master volume.

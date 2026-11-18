@@ -27,6 +27,9 @@ gpui::actions!(
         VolumeDown,
         ToggleMute,
         NextAudioTrack,
+        AudioEarlier,
+        AudioLater,
+        ResetAudioDelay,
         NextSubtitleTrack,
         NextVideoTrack,
         ToggleSubtitles,
@@ -34,6 +37,9 @@ gpui::actions!(
         SmallerSubtitles,
         SubtitlesUp,
         SubtitlesDown,
+        SubtitlesEarlier,
+        SubtitlesLater,
+        ResetSubtitleDelay,
         RotateRight,
         RotateLeft,
         FlipHorizontally,
@@ -74,6 +80,9 @@ pub enum Command {
     VolumeDown,
     Mute,
     NextAudioTrack,
+    AudioEarlier,
+    AudioLater,
+    ResetAudioDelay,
     NextSubtitleTrack,
     NextVideoTrack,
     ToggleSubtitles,
@@ -81,6 +90,9 @@ pub enum Command {
     SmallerSubtitles,
     SubtitlesUp,
     SubtitlesDown,
+    SubtitlesEarlier,
+    SubtitlesLater,
+    ResetSubtitleDelay,
     RotateRight,
     RotateLeft,
     FlipHorizontally,
@@ -131,7 +143,7 @@ impl Group {
 }
 
 impl Command {
-    pub const ALL: [Self; 34] = [
+    pub const ALL: [Self; 40] = [
         Self::PlayPause,
         Self::SeekForward,
         Self::SeekBackward,
@@ -145,12 +157,18 @@ impl Command {
         Self::VolumeDown,
         Self::Mute,
         Self::NextAudioTrack,
+        Self::AudioEarlier,
+        Self::AudioLater,
+        Self::ResetAudioDelay,
         Self::NextSubtitleTrack,
         Self::ToggleSubtitles,
         Self::BiggerSubtitles,
         Self::SmallerSubtitles,
         Self::SubtitlesUp,
         Self::SubtitlesDown,
+        Self::SubtitlesEarlier,
+        Self::SubtitlesLater,
+        Self::ResetSubtitleDelay,
         Self::NextVideoTrack,
         Self::RotateRight,
         Self::RotateLeft,
@@ -184,6 +202,9 @@ impl Command {
             Self::VolumeDown => "volume_down",
             Self::Mute => "mute",
             Self::NextAudioTrack => "next_audio_track",
+            Self::AudioEarlier => "audio_earlier",
+            Self::AudioLater => "audio_later",
+            Self::ResetAudioDelay => "reset_audio_delay",
             Self::NextSubtitleTrack => "next_subtitle_track",
             Self::NextVideoTrack => "next_video_track",
             Self::ToggleSubtitles => "toggle_subtitles",
@@ -191,6 +212,9 @@ impl Command {
             Self::SmallerSubtitles => "smaller_subtitles",
             Self::SubtitlesUp => "subtitles_up",
             Self::SubtitlesDown => "subtitles_down",
+            Self::SubtitlesEarlier => "subtitles_earlier",
+            Self::SubtitlesLater => "subtitles_later",
+            Self::ResetSubtitleDelay => "reset_subtitle_delay",
             Self::RotateRight => "rotate_right",
             Self::RotateLeft => "rotate_left",
             Self::FlipHorizontally => "flip_horizontally",
@@ -227,6 +251,9 @@ impl Command {
             Self::VolumeDown => "Volume down",
             Self::Mute => "Mute",
             Self::NextAudioTrack => "Next audio track",
+            Self::AudioEarlier => "Audio earlier",
+            Self::AudioLater => "Audio later",
+            Self::ResetAudioDelay => "Reset audio delay",
             Self::NextSubtitleTrack => "Next subtitles",
             Self::NextVideoTrack => "Next video track",
             Self::ToggleSubtitles => "Show/hide subtitles",
@@ -234,6 +261,9 @@ impl Command {
             Self::SmallerSubtitles => "Smaller subtitles",
             Self::SubtitlesUp => "Move subtitles up",
             Self::SubtitlesDown => "Move subtitles down",
+            Self::SubtitlesEarlier => "Subtitles earlier",
+            Self::SubtitlesLater => "Subtitles later",
+            Self::ResetSubtitleDelay => "Reset subtitle delay",
             Self::RotateRight => "Rotate right",
             Self::RotateLeft => "Rotate left",
             Self::FlipHorizontally => "Flip horizontally",
@@ -262,13 +292,22 @@ impl Command {
             | Self::PreviousFile
             | Self::NextFile
             | Self::Loop => Group::Playback,
-            Self::VolumeUp | Self::VolumeDown | Self::Mute | Self::NextAudioTrack => Group::Audio,
+            Self::VolumeUp
+            | Self::VolumeDown
+            | Self::Mute
+            | Self::NextAudioTrack
+            | Self::AudioEarlier
+            | Self::AudioLater
+            | Self::ResetAudioDelay => Group::Audio,
             Self::NextSubtitleTrack
             | Self::ToggleSubtitles
             | Self::BiggerSubtitles
             | Self::SmallerSubtitles
             | Self::SubtitlesUp
-            | Self::SubtitlesDown => Group::Subtitles,
+            | Self::SubtitlesDown
+            | Self::SubtitlesEarlier
+            | Self::SubtitlesLater
+            | Self::ResetSubtitleDelay => Group::Subtitles,
             Self::NextVideoTrack
             | Self::RotateRight
             | Self::RotateLeft
@@ -301,6 +340,9 @@ impl Command {
             Self::VolumeDown => Box::new(VolumeDown),
             Self::Mute => Box::new(ToggleMute),
             Self::NextAudioTrack => Box::new(NextAudioTrack),
+            Self::AudioEarlier => Box::new(AudioEarlier),
+            Self::AudioLater => Box::new(AudioLater),
+            Self::ResetAudioDelay => Box::new(ResetAudioDelay),
             Self::NextSubtitleTrack => Box::new(NextSubtitleTrack),
             Self::NextVideoTrack => Box::new(NextVideoTrack),
             Self::ToggleSubtitles => Box::new(ToggleSubtitles),
@@ -308,6 +350,9 @@ impl Command {
             Self::SmallerSubtitles => Box::new(SmallerSubtitles),
             Self::SubtitlesUp => Box::new(SubtitlesUp),
             Self::SubtitlesDown => Box::new(SubtitlesDown),
+            Self::SubtitlesEarlier => Box::new(SubtitlesEarlier),
+            Self::SubtitlesLater => Box::new(SubtitlesLater),
+            Self::ResetSubtitleDelay => Box::new(ResetSubtitleDelay),
             Self::RotateRight => Box::new(RotateRight),
             Self::RotateLeft => Box::new(RotateLeft),
             Self::FlipHorizontally => Box::new(FlipHorizontally),
@@ -344,6 +389,9 @@ impl Command {
             Self::Mute => &["secondary-/", "m"],
             Self::NextAudioTrack if mac => &["ctrl-cmd-a"],
             Self::NextAudioTrack => &["ctrl-alt-a"],
+            Self::AudioEarlier => &["ctrl--"],
+            Self::AudioLater => &["ctrl-="],
+            Self::ResetAudioDelay => &["ctrl-backspace"],
             Self::NextSubtitleTrack if mac => &["ctrl-cmd-s"],
             Self::NextSubtitleTrack => &["ctrl-alt-s"],
             Self::NextVideoTrack if mac => &["ctrl-cmd-v"],
@@ -353,6 +401,9 @@ impl Command {
             Self::SmallerSubtitles => &["shift-f"],
             Self::SubtitlesUp => &["r"],
             Self::SubtitlesDown => &["shift-r", "t"],
+            Self::SubtitlesEarlier => &["z"],
+            Self::SubtitlesLater => &["x"],
+            Self::ResetSubtitleDelay => &["shift-backspace"],
             Self::RotateRight => &["secondary-r"],
             Self::RotateLeft => &["secondary-l"],
             Self::FlipHorizontally => &["secondary-shift-h"],

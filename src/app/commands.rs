@@ -68,6 +68,14 @@ pub(super) fn register(cx: &mut App) {
     cx.on_action(|_: &NextVideoTrack, cx| {
         with_active(cx, |p, cx| p.next_track(TrackKind::Video, cx))
     });
+    cx.on_action(|_: &AudioEarlier, cx| with_active(cx, |p, cx| p.shift_audio(-0.05, cx)));
+    cx.on_action(|_: &AudioLater, cx| with_active(cx, |p, cx| p.shift_audio(0.05, cx)));
+    cx.on_action(|_: &ResetAudioDelay, cx| with_active(cx, |p, cx| p.set_audio_delay(0.0, cx)));
+    cx.on_action(|_: &SubtitlesEarlier, cx| with_active(cx, |p, cx| p.shift_subtitles(-0.1, cx)));
+    cx.on_action(|_: &SubtitlesLater, cx| with_active(cx, |p, cx| p.shift_subtitles(0.1, cx)));
+    cx.on_action(|_: &ResetSubtitleDelay, cx| {
+        with_active(cx, |p, cx| p.set_subtitle_delay(0.0, cx))
+    });
     cx.on_action(|_: &ToggleSubtitles, cx| with_active(cx, |p, cx| p.toggle_subtitles(cx)));
     cx.on_action(|_: &BiggerSubtitles, cx| change_subtitle_size(cx, 0.1));
     cx.on_action(|_: &SmallerSubtitles, cx| change_subtitle_size(cx, -0.1));

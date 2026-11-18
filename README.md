@@ -37,11 +37,15 @@ GPU-accelerated UI framework.
   with shortcuts or the Video menu, each tile on its own. Videos whose
   files say to turn them (as phones do) show upright. It all happens as the
   picture is drawn, so even a paused video changes at once.
+- Move a file's sound or subtitles earlier or later against the picture,
+  for files that are out of step: the sound in 50 ms steps, subtitles
+  (embedded or in a file beside the video) in 100 ms steps. The sound
+  plays on as it is and the picture moves against it.
 - Any tile can pop out into a new window, where it keeps playing. Every
   window works the same: drop more files on it and they play side by side.
 - Shortcuts go to the tile last clicked: play/pause, seek, frame step,
-  volume, tracks, subtitle size and height, rotation, flips, aspect ratio,
-  crop, full screen.
+  volume, tracks, subtitle size and height, audio and subtitle delay,
+  rotation, flips, aspect ratio, crop, full screen.
   With Shift, play/pause, seek, restart and mute go to every file in the
   window, as does the menu bar (a toolbar on Linux).
 - On macOS, windows show just the video, edge to edge, with the traffic
@@ -166,6 +170,8 @@ it again when the dependencies change (`script/bundle-macos` runs it).
 | Show/hide subtitles | `V` |
 | Bigger/smaller subtitles | `⇧G` `⇧F` |
 | Move subtitles up/down | `R` / `⇧R` or `T` |
+| Audio earlier/later, back in step | `⌃-` `⌃=`, `⌃⌫` / `Ctrl+-` `Ctrl+=`, `Ctrl+Backspace` |
+| Subtitles earlier/later, back in step | `Z` `X`, `⇧⌫` / `Shift+Backspace` |
 | Rotate right/left | `⌘R` `⌘L` / `Ctrl+R` `Ctrl+L` |
 | Flip horizontally/vertically | `⌘⇧H` `⌘⇧V` / `Ctrl+Shift+H` `Ctrl+Shift+V` |
 | Next aspect ratio, next crop | `A`, `C` |
@@ -187,7 +193,9 @@ and so on) stay as they are.
 On macOS, the Video menu also lists every aspect ratio and crop to pick
 from; `A` and `C` go through them in turn, then back to none. Rotating and
 flipping go by the picture as it shows, and cropping keeps its middle;
-opening another file in the tile starts it as its file has it.
+opening another file in the tile starts it as its file has it. The same
+goes for delays, which a note shows as they change ("Audio delay +200 ms").
+The sound can move up to 5 seconds either way, subtitles up to a minute.
 
 On a tile: click the picture to play/pause, double-click (or the corner
 button) to maximize it, drag the bar to scrub. In the middle under the bar,
@@ -230,7 +238,9 @@ last window quits.
   soon as they are read. FFmpeg turns every text format into ASS lines, of
   which the words, line breaks, italics, bold and top/middle/bottom placement
   are kept; bitmaps become images placed as fractions of the picture. A
-  cue without an end (as in PGS) lasts until the next one.
+  cue without an end (as in PGS) lasts until the next one. Cues show by the
+  playhead less the subtitle delay, and are kept 10 seconds after they end
+  so moving subtitles later brings back the ones just over.
 - `src/media/external.rs`: subtitle files beside a video: finding them,
   reading their names, and telling a text file's encoding (with `chardetng`)
   for FFmpeg's iconv to convert. A picked file is read whole and its packets
@@ -273,7 +283,9 @@ last window quits.
 - `src/media/source.rs`: files and stream URLs. URLs are logged without
   credentials or query strings.
 - `src/media/audio.rs`: one cpal output stream that mixes all players and
-  applies per-player and master volume.
+  applies per-player and master volume. It tells each player's clock what
+  is being heard, moved by the player's audio delay, so the picture runs
+  that far ahead of the sound (or behind it).
 - `src/media/clock.rs`: per-player clock that runs on wall time and is eased
   toward the audio position on every audio callback.
 - `src/media/player.rs`: the UI-side handle: play/pause/seek, frame selection,
@@ -297,8 +309,8 @@ last window quits.
 - `src/ui/player/`: a player's tile, a file per part: what fills it
   (`content`), the header, the controls, the track menu, notes on what
   shortcuts did (`osd`, with the track reel), what shortcuts do to it
-  (`commands`, and `adjust` for the picture), and the graveyard frames wait
-  in before they are released.
+  (`commands`, `adjust` for the picture and `sync` for delays), and the
+  graveyard frames wait in before they are released.
 - `src/ui/settings/`: the Settings window. Each pane (Playback, Audio,
   Video, Subtitles, Hotkeys, Appearance, About) is a file of its own with its
   name and icon for the sidebar; `form` has the cards, rows and sliders they
@@ -371,7 +383,10 @@ remuxed with a display matrix must report its turn and flip; unit tests
 check that orientations compose like their matrices, read FFmpeg's own
 matrices right, and that framing samples the right part of the picture,
 turned, reshaped and cropped, with bitmap subtitles landing where the
-picture shows what they cover.
+picture shows what they cover. With the sound delayed, the playhead and the
+picture must run that far ahead of what the mixer has played; with
+subtitles delayed either way, a cue must show only at its moved time,
+including right after a seek past where it originally ended.
 
 Stream tests serve the clips from a small HTTP server on localhost:
 HTTP files, HLS (normal and live), a connection that stalls mid-way,
@@ -397,12 +412,13 @@ unreachable hosts, and closing while a connection hangs.
   used, only italics, bold and top/middle/bottom placement. A cue in the
   file that started before the keyframe a seek lands on is missed (one in a
   subtitle file beside it isn't, unless it started over 30 seconds before).
-  Subtitle files can't be dropped on a tile, and there is no way to shift
-  their timing. In a live stream, a new track starts with its next packets
+  Subtitle files can't be dropped on a tile. Subtitles in the video file
+  itself are read about a second ahead with it, so moved earlier than that
+  they show late. In a live stream, a new track starts with its next packets
   rather than at the playhead.
-- Picture adjustments aren't kept: a file opens as its file has it. A
-  display matrix that isn't a quarter turn goes to the nearest one, and
-  text subtitles stay upright when the picture turns.
+- Picture adjustments and delays aren't kept: a file opens as its file
+  has it. A display matrix that isn't a quarter turn goes to the nearest
+  one, and text subtitles stay upright when the picture turns.
 - No playlists, playback speed or audio device selection.
 - On GNOME Wayland (client-side decorations) the window can be moved from the
   toolbar but has no resize handles.
