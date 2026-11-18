@@ -31,7 +31,12 @@ fn main() {
         .map(|arg| Source::from_arg(PathBuf::from(arg)))
         .collect();
 
-    Application::new()
-        .with_assets(assets::Assets)
-        .run(move |cx| app::run(cx, sources));
+    let app = Application::new().with_assets(assets::Assets);
+    // Files opened from Finder or dropped on the Dock icon. The first ones
+    // arrive before the app has finished launching, so they wait here.
+    let (opened, opened_rx) = futures::channel::mpsc::unbounded();
+    app.on_open_urls(move |urls| {
+        opened.unbounded_send(urls).ok();
+    });
+    app.run(move |cx| app::run(cx, sources, opened_rx));
 }

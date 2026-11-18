@@ -48,6 +48,15 @@ impl Source {
         }
     }
 
+    /// A URL the system asked the app to open: a `file://` URL for a file
+    /// or folder opened from Finder or dropped on the Dock icon, or a stream.
+    pub fn from_open_url(text: &str) -> Option<Self> {
+        match url::Url::parse(text) {
+            Ok(url) if url.scheme() == "file" => url.to_file_path().ok().map(Self::File),
+            _ => Self::parse_url(text).ok(),
+        }
+    }
+
     pub fn is_network(&self) -> bool {
         matches!(self, Self::Url(_))
     }
@@ -131,6 +140,22 @@ mod tests {
             Source::File("movie.mkv".into())
         );
         assert!(Source::from_arg("rtmp://example.com/app/key".into()).is_network());
+    }
+
+    #[test]
+    fn opens_file_urls_from_the_system() {
+        assert_eq!(
+            Source::from_open_url("file:///Users/me/My%20Movies/clip%231.mkv"),
+            Some(Source::File("/Users/me/My Movies/clip#1.mkv".into()))
+        );
+        assert_eq!(
+            Source::from_open_url("file://localhost/tmp/song.mp3"),
+            Some(Source::File("/tmp/song.mp3".into()))
+        );
+        assert!(
+            Source::from_open_url("https://example.com/live.m3u8").is_some_and(|s| s.is_network())
+        );
+        assert_eq!(Source::from_open_url("mailto:me@example.com"), None);
     }
 
     #[test]

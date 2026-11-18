@@ -45,6 +45,20 @@ If `pkg-config` isn't installed, point the build at FFmpeg directly:
 FFMPEG_DIR=$(brew --prefix ffmpeg) cargo build --release
 ```
 
+To open files from Finder (**Open With**) or by dropping them on the Dock
+icon, build the app bundle:
+
+```bash
+script/bundle-macos
+```
+
+This makes `target/release/Plays.app`. Once it's in `/Applications` (or has
+been opened once), Finder offers Plays under Open With for video and audio
+files without making it the default player. The app uses Homebrew's FFmpeg,
+so it only runs where that is installed. The script compiles the app icon,
+the Icon Composer file `assets/AppIcon.icon`, into the app, which takes
+Xcode 26 or later.
+
 ### Linux (Debian/Ubuntu)
 
 ```bash
@@ -61,11 +75,14 @@ the API in use, for example `h264 (VA-API)`.
 Audio goes through ALSA (PipeWire and PulseAudio provide an ALSA device).
 FFmpeg 5.1 or newer is recommended.
 
+For your file manager's **Open With** menu, put the `plays` binary on your
+`PATH` and copy `resources/linux/plays.desktop` to `~/.local/share/applications/`.
+
 ## Using it
 
 | Action | Shortcut |
 | --- | --- |
-| Open files | `⌘O` / `Ctrl+O`, or drop files/folders on the window |
+| Open files | `⌘O` / `Ctrl+O`, or drop files/folders on the window (or on the Dock icon of `Plays.app`) |
 | Open a stream URL | `⌘⇧O` / `Ctrl+Shift+O` (pre-filled from the clipboard) |
 | Play/pause all | `Space` or `K` |
 | Seek all back/forward | `←` `→` or `J` `L` (step set in Settings) |

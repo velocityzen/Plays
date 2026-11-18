@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Plays
+GenericName=Media Player
+Comment=Play many videos and audio files at once
+Exec=plays %F
+Terminal=false
+Categories=AudioVideo;Video;Audio;Player;
+StartupWMClass=plays
+MimeType=video/mp4;video/x-m4v;video/quicktime;video/x-matroska;video/webm;video/ogg;video/mpeg;video/mp2t;video/x-msvideo;video/x-flv;video/3gpp;video/x-ms-wmv;application/mxf;audio/mpeg;audio/mp4;audio/x-m4a;audio/aac;audio/flac;audio/x-flac;audio/ogg;audio/opus;audio/x-wav;audio/wav;audio/x-aiff;audio/webm;audio/x-matroska;audio/x-ms-wma;audio/x-ape;audio/x-wavpack;

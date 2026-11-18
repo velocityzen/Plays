@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+# Build target/release/Plays.app. As an app, Plays can open files from
+# Finder (Open With) and take files and folders dropped on its Dock icon.
+#
+# The app icon comes from assets/AppIcon.icon, made with Icon
+# Composer; without it the app gets the generic icon. Compiling it takes
+# Xcode 26 or later.
+#
+# The app links to FFmpeg where Homebrew put it, so it runs on Macs that
+# have Homebrew's ffmpeg installed.
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
+icon=assets/AppIcon.icon
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+
+cargo build --release
+
+app=target/release/Plays.app
+plist="$app/Contents/Info.plist"
+rm -rf "$app"
+mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+cp target/release/plays "$app/Contents/MacOS/plays"
+sed "s/@VERSION@/$version/g" resources/macos/Info.plist >"$plist"
+
+if [ -d "$icon" ]; then
+    # Assets.car holds the layered icon macOS 26 and later draw, AppIcon.icns
+    # a flat one for older versions. actool also says which Info.plist keys
+    # point at them.
+    if ! xcrun actool "$icon" \
+        --compile "$app/Contents/Resources" \
+        --output-partial-info-plist "$work/icon.plist" \
+        --app-icon AppIcon \
+        --include-all-app-icons \
+        --platform macosx \
+        --target-device mac \
+        --minimum-deployment-target "$(plutil -extract LSMinimumSystemVersion raw "$plist")" \
+        --development-region en \
+        --enable-on-demand-resources NO \
+        --output-format human-readable-text \
+        --warnings --errors >"$work/actool.log"; then
+        cat "$work/actool.log" >&2
+        exit 1
+    fi
+    grep -E ": (warning|error):" "$work/actool.log" >&2 || true
+    if [ ! -f "$app/Contents/Resources/Assets.car" ]; then
+        echo "actool made no icon from $icon" >&2
+        exit 1
+    fi
+    /usr/libexec/PlistBuddy -c "Merge $work/icon.plist" "$plist" >/dev/null
+else
+    echo "No $icon, so the app gets the generic icon."
+fi
+
+plutil -lint "$plist" >/dev/null
+# Sign the bundle as a whole (ad hoc), which seals Info.plist and the icon
+# with the binary.
+codesign --force --sign - "$app"
+
+echo "Built $app"
+echo "Move it to /Applications, or open it once, for Finder to offer it under Open With."

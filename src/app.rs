@@ -2,6 +2,8 @@
 
 use std::sync::Arc;
 
+use futures::StreamExt as _;
+use futures::channel::mpsc::UnboundedReceiver;
 use gpui::{
     App, AppContext as _, Bounds, Global, KeyBinding, Menu, MenuItem, SystemMenuType,
     TitlebarOptions, WindowBounds, WindowHandle, WindowOptions, actions, point, px, size,
@@ -73,7 +75,8 @@ impl Global for MainWindow {}
 struct SettingsWindow(Option<WindowHandle<SettingsView>>);
 impl Global for SettingsWindow {}
 
-pub fn run(cx: &mut App, sources: Vec<Source>) {
+/// `opened` brings the URLs the system asks the app to open.
+pub fn run(cx: &mut App, sources: Vec<Source>, mut opened: UnboundedReceiver<Vec<String>>) {
     let settings = Settings::load();
     let audio = match AudioOutput::new(settings.master_volume) {
         Ok(output) => AudioEngine {
@@ -123,6 +126,32 @@ pub fn run(cx: &mut App, sources: Vec<Source>) {
             .update(cx, |workspace, _, cx| workspace.open_sources(sources, cx))
             .ok();
     }
+
+    cx.spawn(async move |cx| {
+        while let Some(urls) = opened.next().await {
+            let sources: Vec<Source> = urls
+                .iter()
+                .filter_map(|url| {
+                    let source = Source::from_open_url(url);
+                    if source.is_none() {
+                        log::warn!("can't open a URL the system sent");
+                    }
+                    source
+                })
+                .collect();
+            if sources.is_empty() {
+                continue;
+            }
+            cx.update(|cx| {
+                with_workspace(cx, |workspace, window, cx| {
+                    window.activate_window();
+                    workspace.open_sources(sources, cx);
+                })
+            })
+            .ok();
+        }
+    })
+    .detach();
 
     // Closing the main window quits, even if the settings window is still open.
     cx.on_window_closed(move |cx| {

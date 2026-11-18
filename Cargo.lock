@@ -4225,6 +4225,7 @@ dependencies = [
  "dirs 6.0.0",
  "env_logger",
  "ffmpeg-next",
+ "futures",
  "gpui",
  "image",
  "log",
@@ -4232,6 +4233,7 @@ dependencies = [
  "serde",
  "serde_json",
  "unicode-segmentation",
+ "url",
 ]
 
 [[package]]
