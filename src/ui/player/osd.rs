@@ -8,10 +8,10 @@ use gpui::{AnyElement, Context, Div, SharedString, Window, div};
 
 use super::PlayerView;
 use super::tracks::{TrackChoice, track_row};
-use crate::ui::components::Panel;
+use crate::ui::components::{ComponentSize, Panel};
+use crate::ui::theme::menu;
 use crate::ui::theme::motion::{OSD_DURATION, OSD_FADE, REEL_ROLL};
 use crate::ui::theme::player::{NOTE_TOP, REEL_FADED, TRACK_MENU_WIDTH};
-use crate::ui::theme::{menu, overlay};
 
 /// The note over a tile on what a shortcut did.
 pub(super) enum Osd {
@@ -44,13 +44,7 @@ impl PlayerView {
             let left = OSD_DURATION.checked_sub(shown)?;
             let fade = (left.as_secs_f32() / OSD_FADE.as_secs_f32()).min(1.0);
             let note = match osd {
-                Osd::Text(text) => Panel::new()
-                    .overlay()
-                    .rounded_full()
-                    .px_3()
-                    .py_1()
-                    .child(text.clone())
-                    .into_any_element(),
+                Osd::Text(text) => Panel::note(text.clone()).into_any_element(),
                 Osd::Reel(reel) => render_reel(reel, shown),
             };
             Some((note, fade))
@@ -79,6 +73,7 @@ impl PlayerView {
 /// before above it and the next below, faded.
 fn render_reel(reel: &TrackReel, shown: Duration) -> AnyElement {
     let count = reel.choices.len();
+    let row_height = ComponentSize::Medium.pick(menu::ROW_HEIGHT);
     let t = (shown.as_secs_f32() / REEL_ROLL.as_secs_f32()).min(1.0);
     let rolled = 1.0 - (1.0 - t).powi(3);
     // Rows from the middle once rolled: the one two before is in view above
@@ -92,11 +87,12 @@ fn render_reel(reel: &TrackReel, shown: Duration) -> AnyElement {
         }
         let at = (reel.at as isize + row).rem_euclid(count as isize) as usize;
         Some(
-            track_row(&reel.choices[at], row == 0, overlay::text_muted())
+            track_row(("reel", (row + 2) as usize), &reel.choices[at], row == 0)
+                .overlay()
                 .absolute()
                 .left_0()
                 .right_0()
-                .top(menu::ROW_HEIGHT * (1.0 + distance))
+                .top(row_height * (1.0 + distance))
                 .opacity(opacity),
         )
     });
@@ -107,7 +103,7 @@ fn render_reel(reel: &TrackReel, shown: Duration) -> AnyElement {
         .child(
             div()
                 .relative()
-                .h(menu::ROW_HEIGHT * 3.)
+                .h(row_height * 3.)
                 .overflow_hidden()
                 .children(rows),
         )

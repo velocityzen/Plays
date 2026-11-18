@@ -1,6 +1,7 @@
 use gpui::prelude::*;
 use gpui::{App, Hsla, Pixels, SharedString, Window, svg};
 
+use super::{ComponentSize, Sizable};
 use crate::ui::theme::{Theme, controls};
 
 /// One of the app's icons (`assets/icons`), drawn in a single color.
@@ -15,11 +16,12 @@ impl Icon {
     pub fn new(name: impl Into<SharedString>) -> Self {
         Self {
             name: name.into(),
-            size: controls::ICON,
+            size: ComponentSize::Medium.pick(controls::ICON),
             color: None,
         }
     }
 
+    /// A size other than the three of [`Sizable`].
     pub fn size(mut self, size: Pixels) -> Self {
         self.size = size;
         self
@@ -28,6 +30,13 @@ impl Icon {
     /// Defaults to the theme's text color.
     pub fn color(mut self, color: Hsla) -> Self {
         self.color = Some(color);
+        self
+    }
+}
+
+impl Sizable for Icon {
+    fn with_size(mut self, size: ComponentSize) -> Self {
+        self.size = size.pick(controls::ICON);
         self
     }
 }

@@ -6,7 +6,7 @@ use gpui::{AnyElement, App, ClickEvent, Context, Decorations, MouseButton, Windo
 
 use super::Workspace;
 use crate::app;
-use crate::ui::components::{Button, IconButton};
+use crate::ui::components::Button;
 use crate::ui::theme::Theme;
 use crate::ui::theme::layout::{COMPACT_WIDTH, TOOLBAR_HEIGHT};
 
@@ -108,26 +108,26 @@ impl Workspace {
                     .child(status),
             )
             .child(
-                IconButton::new("settings", "settings")
-                    .color(theme.text_muted)
+                Button::icon("settings", "settings")
+                    .icon_color(theme.text_muted)
                     .on_click(|_, window, cx| {
                         window.dispatch_action(Box::new(app::OpenSettings), cx)
                     }),
             )
             .when(client_decorated, |this| {
                 this.child(
-                    IconButton::new("minimize-window", "window-min")
-                        .color(theme.text_muted)
+                    Button::icon("minimize-window", "window-min")
+                        .icon_color(theme.text_muted)
                         .on_click(|_, window, _| window.minimize_window()),
                 )
                 .child(
-                    IconButton::new("zoom-window", "window-max")
-                        .color(theme.text_muted)
+                    Button::icon("zoom-window", "window-max")
+                        .icon_color(theme.text_muted)
                         .on_click(|_, window, _| window.zoom_window()),
                 )
                 .child(
-                    IconButton::new("close-window", "close")
-                        .color(theme.text_muted)
+                    Button::icon("close-window", "close")
+                        .icon_color(theme.text_muted)
                         .on_click(|_, window, _| window.remove_window()),
                 )
             })
@@ -143,12 +143,10 @@ fn tool(
     on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
 ) -> AnyElement {
     if compact {
-        IconButton::new(id, icon)
-            .on_click(on_click)
-            .into_any_element()
+        Button::icon(id, icon).on_click(on_click).into_any_element()
     } else {
         Button::new(id, label)
-            .icon(icon)
+            .icon_left(icon)
             .on_click(on_click)
             .into_any_element()
     }

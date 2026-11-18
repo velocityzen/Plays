@@ -2,14 +2,12 @@
 //! a line on what is happening (opening, an error).
 
 use gpui::prelude::*;
-use gpui::{AnyElement, ObjectFit, SharedString, div, img, relative};
+use gpui::{AnyElement, ObjectFit, SharedString, div, img};
 
 use super::PlayerView;
 use crate::media::Picture;
-use crate::ui::components::Icon;
-use crate::ui::theme::player::{
-    COVER_SIZE, ERROR_MAX_WIDTH, LEVEL_METER_HEIGHT, NO_COVER_ICON, NO_COVER_SIZE,
-};
+use crate::ui::components::{ComponentSize, Icon, Meter};
+use crate::ui::theme::player::{COVER_SIZE, ERROR_MAX_WIDTH, NO_COVER_ICON, NO_COVER_SIZE};
 use crate::ui::theme::{Theme, radius};
 
 impl PlayerView {
@@ -63,7 +61,7 @@ impl PlayerView {
             Some(cover) => img(cover)
                 .size(COVER_SIZE)
                 .object_fit(ObjectFit::Contain)
-                .superellipse(radius::MENU)
+                .superellipse(ComponentSize::Medium.pick(radius::MENU))
                 .into_any_element(),
             None => div()
                 .flex()
@@ -98,20 +96,7 @@ impl PlayerView {
                     .text_color(theme.text)
                     .child(title),
             )
-            .child(
-                div()
-                    .w(COVER_SIZE)
-                    .h(LEVEL_METER_HEIGHT)
-                    .rounded_full()
-                    .bg(theme.track)
-                    .child(
-                        div()
-                            .h_full()
-                            .w(relative(self.level.clamp(0.0, 1.0)))
-                            .rounded_full()
-                            .bg(theme.accent),
-                    ),
-            )
+            .child(Meter::new(self.level).w(COVER_SIZE))
             .into_any_element()
     }
 }

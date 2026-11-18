@@ -8,8 +8,9 @@ use gpui::{
     Subscription, Window, actions, black, div,
 };
 
-use super::components::{Button, Icon};
+use super::components::{Button, Icon, Panel, Sizable};
 use super::text_input::TextInput;
+use super::theme::text::TextStyle;
 use super::theme::{Theme, dialog, radius};
 use crate::media::Source;
 
@@ -43,7 +44,7 @@ impl EventEmitter<OpenUrlEvent> for UrlForm {}
 
 impl UrlForm {
     pub fn new(cx: &mut Context<Self>) -> Self {
-        let input = cx.new(|cx| TextInput::new("https://example.com/live/stream.m3u8", cx));
+        let input = cx.new(|cx| TextInput::new("https://example.com/live/stream.m3u8", cx).large());
         let input_changed = cx.observe(&input, |this, _, cx| {
             if this.error.take().is_some() {
                 cx.notify();
@@ -176,33 +177,23 @@ impl Render for OpenUrlDialog {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = Theme::get(window, cx);
 
-        let card = div()
-            .id("open-url-card")
+        // It takes the mouse, so clicks inside it don't dismiss it.
+        let card = Panel::new()
+            .occlude()
+            .superellipse(radius::DIALOG)
             .w(dialog::WIDTH)
             .max_w_full()
             .flex()
             .flex_col()
             .gap_3()
             .p_4()
-            .superellipse(radius::DIALOG)
-            .border_1()
-            .border_color(theme.border)
-            .bg(theme.surface)
-            .shadow_lg()
-            // Clicks inside the card don't dismiss it.
-            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .child(
                 div()
                     .flex()
                     .items_center()
                     .gap_2()
                     .child(Icon::new("link").color(theme.accent))
-                    .child(
-                        div()
-                            .text_base()
-                            .font_weight(gpui::FontWeight::SEMIBOLD)
-                            .child("Open a stream"),
-                    ),
+                    .child(div().text_title().child("Open a stream")),
             )
             .child(
                 div()

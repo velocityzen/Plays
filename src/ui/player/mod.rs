@@ -298,7 +298,7 @@ impl Render for PlayerView {
         };
 
         let header = self.render_header(&reveal, info.as_ref(), show_titles, window, cx);
-        let controls = self.render_controls(&reveal, info.as_ref(), &theme, window, cx);
+        let controls = self.render_controls(&reveal, info.as_ref(), &theme, cx);
         let osd = self.render_osd(window);
 
         div()
@@ -354,15 +354,7 @@ impl Render for PlayerView {
                         .flex()
                         .items_center()
                         .justify_center()
-                        .child(
-                            Panel::new()
-                                .overlay()
-                                .rounded_full()
-                                .px_3()
-                                .py_1()
-                                .text_xs()
-                                .child("Buffering…"),
-                        ),
+                        .child(Panel::note("Buffering…").text_xs()),
                 )
             })
             .children(osd)

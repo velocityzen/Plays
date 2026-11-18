@@ -2,16 +2,15 @@
 //! shares with the track reel.
 
 use gpui::prelude::*;
-use gpui::{AnyElement, Context, Div, FontWeight, Hsla, MouseDownEvent, Window, div, white};
+use gpui::{AnyElement, Context, Div, ElementId, MouseDownEvent, Window, div};
 
 use super::PlayerView;
 use crate::media::decoder::MediaInfo;
 use crate::media::tracks::TrackKind;
-use crate::ui::components::Panel;
-use crate::ui::theme::player::{
-    TRACK_CHECK_WIDTH, TRACK_DETAIL_HOVER, TRACK_MENU_MAX_HEIGHT, TRACK_MENU_WIDTH,
-};
-use crate::ui::theme::{Theme, menu, radius};
+use crate::ui::components::{MenuRow, Panel};
+use crate::ui::theme::Theme;
+use crate::ui::theme::player::{TRACK_MENU_MAX_HEIGHT, TRACK_MENU_WIDTH};
+use crate::ui::theme::text::TextStyle;
 
 /// A track to pick, in the menu or on the reel.
 pub(super) struct TrackChoice {
@@ -86,17 +85,17 @@ impl PlayerView {
             for choice in &choices {
                 let index = choice.index;
                 list = list.child(
-                    track_row(choice, selected == index, theme.text_muted)
-                        .id(("track", index.map_or(0, |i| i + 1)))
-                        .group("track-row")
-                        .mx_1()
-                        .cursor_pointer()
-                        .hover(|style| style.bg(theme.accent).text_color(white()))
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            this.player.select_track(kind, index);
-                            this.tracks_open = false;
-                            cx.notify();
-                        })),
+                    track_row(
+                        ("track", index.map_or(0, |i| i + 1)),
+                        choice,
+                        selected == index,
+                    )
+                    .mx_1()
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.player.select_track(kind, index);
+                        this.tracks_open = false;
+                        cx.notify();
+                    })),
                 );
             }
             menu = menu.child(
@@ -122,46 +121,16 @@ pub(super) fn close_tracks(
     cx: &mut Context<PlayerView>,
 ) {
     view.tracks_open = false;
-    cx.stop_propagation();
     cx.notify();
 }
 
-/// A track's row: a check if it's the one picked, its name, and what it is
-/// (in `muted`).
-pub(super) fn track_row(choice: &TrackChoice, checked: bool, muted: Hsla) -> Div {
-    div()
-        .flex()
-        .items_center()
-        .gap_1p5()
-        .h(menu::ROW_HEIGHT)
-        .px_2()
-        .superellipse(radius::ITEM)
-        // A character rather than an icon, so it turns white with the rest
-        // of the row in the menu.
-        .child(
-            div()
-                .flex_none()
-                .w(TRACK_CHECK_WIDTH)
-                .when(checked, |this| this.child("✓")),
-        )
-        .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .truncate()
-                .child(choice.label.clone()),
-        )
-        .when_some(choice.detail.clone(), |this, detail| {
-            this.child(
-                div()
-                    .flex_none()
-                    .text_xs()
-                    .text_color(muted)
-                    .group_hover("track-row", |style| {
-                        style.text_color(white().opacity(TRACK_DETAIL_HOVER))
-                    })
-                    .child(detail),
-            )
+/// A track's row, in the menu or on the reel: a check if it's the one
+/// picked, its name, and what it is.
+pub(super) fn track_row(id: impl Into<ElementId>, choice: &TrackChoice, checked: bool) -> MenuRow {
+    MenuRow::new(id, choice.label.clone())
+        .checked(checked)
+        .when_some(choice.detail.clone(), |row, detail| {
+            row.detail(div().text_xs().child(detail))
         })
 }
 
@@ -170,8 +139,7 @@ fn track_heading_row(heading: &'static str, theme: &Theme) -> Div {
         .px_3()
         .pt_2()
         .pb_1()
-        .text_xs()
-        .font_weight(FontWeight::SEMIBOLD)
+        .text_label()
         .text_color(theme.text_muted)
         .child(heading)
 }

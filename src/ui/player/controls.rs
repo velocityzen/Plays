@@ -2,19 +2,18 @@
 //! it play, the time, tracks, loop and volume.
 
 use gpui::prelude::*;
-use gpui::{
-    AnchoredPositionMode, Context, Corner, Div, FontWeight, MouseButton, Pixels, Window, anchored,
-    deferred, div, point, px,
-};
+use gpui::{Context, Corner, Div, Pixels, Window, div, px};
 
 use super::tracks::{close_tracks, has_track_choice};
 use super::{PlayerView, Reveal};
 use crate::media::decoder::MediaInfo;
-use crate::ui::components::{IconButton, Panel, Slide, Slider, SliderEvent};
+use crate::ui::components::{
+    Badge, Button, ComponentSize, Panel, Popover, Slide, Slider, SliderEvent,
+};
 use crate::ui::theme::player::{
     CONTROLS_GAP, CONTROLS_INSET, CONTROLS_PADDING, TRACK_MENU_OFFSET, VOLUME_WIDTH,
 };
-use crate::ui::theme::{Theme, controls, menu, overlay, radius};
+use crate::ui::theme::{Theme, controls, overlay, radius};
 
 /// How far up the tile the controls reach: the seek bar and the buttons in
 /// the panel's padding, and the gap below it. Subtitles stay above them
@@ -22,11 +21,11 @@ use crate::ui::theme::{Theme, controls, menu, overlay, radius};
 pub(super) fn height(live: bool) -> Pixels {
     CONTROLS_INSET
         + CONTROLS_PADDING * 2.
-        + controls::ICON_BUTTON
+        + ComponentSize::Medium.pick(controls::HEIGHT)
         + if live {
             px(0.)
         } else {
-            controls::SLIDER_HEIGHT + CONTROLS_GAP
+            ComponentSize::Medium.pick(controls::SLIDER_HEIGHT) + CONTROLS_GAP
         }
 }
 
@@ -36,7 +35,6 @@ impl PlayerView {
         reveal: &Reveal,
         info: Option<&MediaInfo>,
         theme: &Theme,
-        window: &Window,
         cx: &mut Context<Self>,
     ) -> Div {
         let live = info.is_some_and(|i| i.live);
@@ -100,28 +98,16 @@ impl PlayerView {
                             .flex()
                             .items_center()
                             .gap_0p5()
-                            .child(IconButton::new("play", play_icon).overlay().on_click(
-                                cx.listener(|this, _, _, cx| {
-                                    this.player.toggle();
-                                    cx.notify();
-                                }),
-                            ))
+                            .child(
+                                Button::icon("play", play_icon)
+                                    .overlay()
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        this.player.toggle();
+                                        cx.notify();
+                                    })),
+                            )
                             .when(live, |this| {
-                                this.child(
-                                    div()
-                                        .flex_none()
-                                        .flex()
-                                        .items_center()
-                                        .gap_1()
-                                        .ml_1()
-                                        .px_1p5()
-                                        .superellipse(radius::BADGE)
-                                        .bg(theme.danger)
-                                        .text_xs()
-                                        .font_weight(FontWeight::SEMIBOLD)
-                                        .text_color(overlay::text())
-                                        .child("LIVE"),
-                                )
+                                this.child(Badge::label("LIVE", theme.danger).ml_1())
                             })
                             .child(
                                 div()
@@ -133,63 +119,28 @@ impl PlayerView {
                             )
                             .child(div().flex_1())
                             .when_some(tracks, |this, info| {
-                                let button = IconButton::new("tracks", "subtitles")
+                                let button = Button::icon("tracks", "subtitles")
                                     .overlay()
-                                    .when(subtitles_on, |this| this.color(theme.accent))
+                                    .selected(subtitles_on)
                                     .on_click(cx.listener(|this, _, _, cx| {
                                         this.tracks_open = !this.tracks_open;
                                         cx.notify();
                                     }));
-                                this.child(div().relative().child(button).when(
-                                    self.tracks_open,
-                                    |this| {
-                                        this.child(
-                                            deferred(
-                                                anchored()
-                                                    .position_mode(AnchoredPositionMode::Local)
-                                                    .anchor(Corner::BottomRight)
-                                                    .position(TRACK_MENU_OFFSET)
-                                                    .snap_to_window_with_margin(menu::WINDOW_MARGIN)
-                                                    .child(
-                                                        self.render_tracks_menu(info, theme, cx),
-                                                    ),
-                                            )
-                                            .with_priority(2),
-                                        )
-                                        // Clicks anywhere else close the menu, and do
-                                        // nothing else.
-                                        .child(
-                                            deferred(
-                                                anchored().position(point(px(0.), px(0.))).child(
-                                                    div()
-                                                        .id("tracks-backdrop")
-                                                        .occlude()
-                                                        .w(window.viewport_size().width)
-                                                        .h(window.viewport_size().height)
-                                                        .on_mouse_down(
-                                                            MouseButton::Left,
-                                                            cx.listener(close_tracks),
-                                                        )
-                                                        .on_mouse_down(
-                                                            MouseButton::Right,
-                                                            cx.listener(close_tracks),
-                                                        ),
-                                                ),
-                                            )
-                                            .with_priority(1),
-                                        )
-                                    },
-                                ))
+                                this.child(
+                                    Popover::new("tracks-backdrop", button)
+                                        .anchor(Corner::BottomRight, TRACK_MENU_OFFSET)
+                                        .when(self.tracks_open, |this| {
+                                            this.menu(self.render_tracks_menu(info, theme, cx))
+                                        })
+                                        .on_dismiss(cx.listener(close_tracks)),
+                                )
                             })
                             .when(!live, |this| {
                                 this.child(
-                                    IconButton::new("loop", "loop")
+                                    Button::icon("loop", "loop")
                                         .overlay()
-                                        .color(if looping {
-                                            theme.accent
-                                        } else {
-                                            overlay::text_muted()
-                                        })
+                                        .icon_color(overlay::text_muted())
+                                        .selected(looping)
                                         .on_click(cx.listener(|this, _, _, cx| {
                                             let looping = !this.player.is_looping();
                                             this.player.set_looping(looping);
@@ -198,7 +149,7 @@ impl PlayerView {
                                 )
                             })
                             .when(has_audio, |this| {
-                                this.child(IconButton::new("mute", volume_icon).overlay().on_click(
+                                this.child(Button::icon("mute", volume_icon).overlay().on_click(
                                     cx.listener(|this, _, _, cx| {
                                         let muted = !this.player.is_muted();
                                         this.player.set_muted(muted);

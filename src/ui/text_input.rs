@@ -13,10 +13,9 @@ use gpui::{
 };
 use unicode_segmentation::UnicodeSegmentation as _;
 
-use super::theme::controls::{
-    CARET_WIDTH, COMPOSING_UNDERLINE, SELECTION, TEXT_INPUT_HEIGHT, TEXT_SCROLL_MARGIN,
-};
-use super::theme::{Theme, radius};
+use super::components::{ComponentSize, ControlFrame, Sizable};
+use super::theme::Theme;
+use super::theme::controls::{CARET_WIDTH, COMPOSING_UNDERLINE, SELECTION, TEXT_SCROLL_MARGIN};
 
 actions!(
     text_input,
@@ -71,6 +70,7 @@ pub struct TextInput {
     scroll_x: Pixels,
     is_selecting: bool,
     colors: Colors,
+    size: ComponentSize,
 }
 
 #[derive(Clone, Copy)]
@@ -98,6 +98,7 @@ impl TextInput {
                 selection: gpui::transparent_black(),
                 cursor: gpui::transparent_black(),
             },
+            size: ComponentSize::Medium,
         }
     }
 
@@ -606,6 +607,13 @@ impl Element for TextElement {
     }
 }
 
+impl Sizable for TextInput {
+    fn with_size(mut self, size: ComponentSize) -> Self {
+        self.size = size;
+        self
+    }
+}
+
 impl Render for TextInput {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = Theme::get(window, cx);
@@ -636,16 +644,10 @@ impl Render for TextInput {
             .on_mouse_up(MouseButton::Left, cx.listener(Self::on_mouse_up))
             .on_mouse_up_out(MouseButton::Left, cx.listener(Self::on_mouse_up))
             .on_mouse_move(cx.listener(Self::on_mouse_move))
-            .flex()
-            .items_center()
+            .control_frame(self.size)
             .w_full()
-            .h(TEXT_INPUT_HEIGHT)
-            .px_2p5()
-            .superellipse(radius::CONTROL)
-            .border_1()
             .border_color(if focused { theme.accent } else { theme.border })
             .bg(theme.background)
-            .text_sm()
             .text_color(theme.text)
             .overflow_hidden()
             .child(TextElement { input: cx.entity() })

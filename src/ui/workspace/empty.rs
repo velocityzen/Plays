@@ -2,7 +2,7 @@
 //! buttons inside, or the "Open URL" form while it is open.
 
 use gpui::prelude::*;
-use gpui::{Context, ExternalPaths, FontWeight, Window, div, px};
+use gpui::{Context, ExternalPaths, Window, div, px};
 
 use super::{CONTENT_GROUP, TOOLBAR, Workspace};
 use crate::ui::components::Button;
@@ -11,6 +11,7 @@ use crate::ui::theme::layout::{
     RING_BORDER, RING_BORDER_DROP, RING_FORM_MAX_WIDTH, RING_FORM_MIN_WIDTH, RING_FORM_SCALE,
     RING_MARGIN, RING_MAX_DIAMETER, RING_MIN_DIAMETER, RING_SCALE, TOOLBAR_HEIGHT,
 };
+use crate::ui::theme::text::TextStyle;
 
 impl Workspace {
     /// A ring like the one in the app's icon, as large as the window allows,
@@ -62,12 +63,7 @@ impl Workspace {
                     .w_full()
                     .flex()
                     .justify_center()
-                    .child(
-                        div()
-                            .text_xl()
-                            .font_weight(FontWeight::BOLD)
-                            .child("It plays for you"),
-                    )
+                    .child(div().text_display().child("It plays for you"))
                     .child(
                         div()
                             .absolute()

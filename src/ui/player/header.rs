@@ -6,7 +6,7 @@ use gpui::{Context, Div, Window, div, linear_color_stop, linear_gradient};
 
 use super::{PlayerEvent, PlayerView, Reveal};
 use crate::media::decoder::MediaInfo;
-use crate::ui::components::IconButton;
+use crate::ui::components::Button;
 use crate::ui::theme::layout::TRAFFIC_LIGHTS_WIDTH;
 use crate::ui::theme::overlay;
 
@@ -80,18 +80,18 @@ impl PlayerView {
             )
             .when(!self.alone, |this| {
                 this.child(
-                    IconButton::new("pop-out", "pop-out")
+                    Button::icon("pop-out", "pop-out")
                         .overlay()
                         .on_click(cx.listener(|_, _, _, cx| cx.emit(PlayerEvent::PopOut))),
                 )
             })
             .child(
-                IconButton::new("maximize", if expanded { "minimize" } else { "maximize" })
+                Button::icon("maximize", if expanded { "minimize" } else { "maximize" })
                     .overlay()
                     .on_click(cx.listener(|this, _, window, cx| this.toggle_expanded(window, cx))),
             )
             .child(
-                IconButton::new("close", "close")
+                Button::icon("close", "close")
                     .overlay()
                     .on_click(cx.listener(|_, _, _, cx| cx.emit(PlayerEvent::Close))),
             )

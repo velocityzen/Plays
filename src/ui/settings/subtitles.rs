@@ -7,10 +7,9 @@ use std::sync::Arc;
 
 use gpui::prelude::*;
 use gpui::{
-    AnchoredPositionMode, AnyElement, App, Bounds, ClickEvent, Context, Corner, MouseButton,
-    MouseDownEvent, Pixels, ScrollStrategy, SharedString, UniformListScrollHandle, Window,
-    anchored, black, canvas, deferred, div, fill, linear_color_stop, linear_gradient, point, px,
-    rgb, size, transparent_black, uniform_list, white,
+    AnyElement, App, Bounds, ClickEvent, Context, Corner, MouseDownEvent, Pixels, ScrollStrategy,
+    SharedString, UniformListScrollHandle, Window, black, canvas, div, fill, linear_color_stop,
+    linear_gradient, point, px, rgb, size, transparent_black, uniform_list,
 };
 
 use super::form::{group, percent_slider, range_slider, row, update_settings};
@@ -20,14 +19,14 @@ use crate::settings::{
     Rgb, SUBTITLE_COLORS, SUBTITLE_POSITION_RANGE, SUBTITLE_SIZE_RANGE, Settings, SubtitleArea,
     SubtitleEdge, SubtitleStyle, SubtitleWeight,
 };
-use crate::ui::components::{Icon, Panel, Segmented};
+use crate::ui::components::{Button, Card, ComponentSize, MenuRow, Panel, Popover, Segmented};
 use crate::ui::subtitles;
 use crate::ui::theme::settings::{
-    FONT_BUTTON_WIDTH, FONT_CHECK_WIDTH, FONT_MENU_HEIGHT, FONT_MENU_TOP, FONT_MENU_WIDTH,
-    PREVIEW_PICTURE, PREVIEW_SIZE, PREVIEW_SKY, PREVIEW_SUN, PREVIEW_SUN_CENTER, PREVIEW_SUN_SIZE,
-    SUBTITLES_COLOR, SWATCH, SWATCH_PADDING,
+    FONT_BUTTON_WIDTH, FONT_MENU_HEIGHT, FONT_MENU_TOP, FONT_MENU_WIDTH, PREVIEW_PICTURE,
+    PREVIEW_SIZE, PREVIEW_SKY, PREVIEW_SUN, PREVIEW_SUN_CENTER, PREVIEW_SUN_SIZE, SUBTITLES_COLOR,
+    SWATCH, SWATCH_PADDING,
 };
-use crate::ui::theme::{Theme, controls, menu, radius};
+use crate::ui::theme::{Theme, radius};
 
 pub(super) struct SubtitlesPane;
 
@@ -58,7 +57,7 @@ impl Pane for SubtitlesPane {
         view: &mut SettingsView,
         s: &Settings,
         theme: &Theme,
-        window: &mut Window,
+        _: &mut Window,
         cx: &mut Context<SettingsView>,
     ) -> Vec<AnyElement> {
         let style = s.subtitles.clamped();
@@ -71,7 +70,7 @@ impl Pane for SubtitlesPane {
                         "Font",
                         None,
                         theme,
-                        font_picker(view, &style.font, theme, window, cx),
+                        font_picker(view, &style.font, theme, cx),
                     ),
                     row(
                         "Weight",
@@ -275,21 +274,17 @@ fn preview(style: &SubtitleStyle, theme: &Theme) -> AnyElement {
         })
         .into_iter()
         .collect();
-    div()
+    Card::new()
         .flex()
         .justify_center()
         .py_3()
-        .superellipse(radius::CARD)
-        .border_1()
-        .border_color(theme.border)
-        .bg(theme.surface)
         .child(
             div()
                 .relative()
                 .flex_none()
                 .w(PREVIEW_SIZE.width)
                 .h(PREVIEW_SIZE.height)
-                .superellipse(radius::CONTROL)
+                .superellipse(ComponentSize::Medium.pick(radius::CONTROL))
                 .overflow_hidden()
                 .bg(black())
                 .child(
@@ -349,7 +344,6 @@ fn font_picker(
     view: &SettingsView,
     current: &str,
     theme: &Theme,
-    window: &Window,
     cx: &mut Context<SettingsView>,
 ) -> AnyElement {
     let name = if current.is_empty() {
@@ -357,65 +351,19 @@ fn font_picker(
     } else {
         SharedString::from(current.to_owned())
     };
-    let viewport = window.viewport_size();
-    div()
-        .relative()
-        .flex_none()
-        .child(
-            div()
-                .id("subtitle-font")
-                .flex()
-                .items_center()
-                .justify_between()
-                .gap_2()
-                .w(FONT_BUTTON_WIDTH)
-                .h(controls::BUTTON_HEIGHT)
-                .pl_2p5()
-                .pr_1p5()
-                .superellipse(radius::CONTROL)
-                .border_1()
-                .border_color(theme.border)
-                .bg(theme.surface)
-                .text_sm()
-                .cursor_pointer()
-                .hover(|style| style.bg(theme.surface_hover))
-                .on_click(cx.listener(open_fonts))
-                .child(div().min_w_0().truncate().child(name))
-                .child(
-                    Icon::new("chevron-up-down")
-                        .size(controls::BUTTON_ICON)
-                        .color(theme.text_muted),
-                ),
-        )
-        .when(view.font_menu.open, |this| {
-            this.child(
-                deferred(
-                    anchored()
-                        .position_mode(AnchoredPositionMode::Local)
-                        .anchor(Corner::TopRight)
-                        .position(point(FONT_BUTTON_WIDTH, FONT_MENU_TOP))
-                        .snap_to_window_with_margin(menu::WINDOW_MARGIN)
-                        .child(font_menu(view, current, theme, cx)),
-                )
-                .with_priority(2),
-            )
-            // Clicks anywhere else close the menu, and do nothing else.
-            .child(
-                deferred(
-                    anchored().position(point(px(0.), px(0.))).child(
-                        div()
-                            .id("fonts-backdrop")
-                            .occlude()
-                            .w(viewport.width)
-                            .h(viewport.height)
-                            .on_mouse_down(MouseButton::Left, cx.listener(close_fonts))
-                            .on_mouse_down(MouseButton::Right, cx.listener(close_fonts)),
-                    ),
-                )
-                .with_priority(1),
-            )
-        })
-        .into_any_element()
+    Popover::new(
+        "fonts-backdrop",
+        Button::new("subtitle-font", name)
+            .icon_right("chevron-up-down")
+            .w(FONT_BUTTON_WIDTH)
+            .on_click(cx.listener(open_fonts)),
+    )
+    .anchor(Corner::TopRight, point(FONT_BUTTON_WIDTH, FONT_MENU_TOP))
+    .when(view.font_menu.open, |this| {
+        this.menu(font_menu(view, current, theme, cx))
+    })
+    .on_dismiss(cx.listener(close_fonts))
+    .into_any_element()
 }
 
 /// "System" and every installed family, each with a sample in its font.
@@ -437,39 +385,10 @@ fn font_menu(
                     let family = ix.checked_sub(1).map(|i| fonts[i].clone());
                     let checked = family.as_ref().map_or("", |f| f.as_ref()) == current.as_str();
                     let sample = family.clone().unwrap_or_else(|| theme.font.clone());
-                    div()
-                        .id(ix)
-                        .group("font-row")
-                        .flex()
-                        .items_center()
-                        .gap_1p5()
-                        .h(menu::ROW_HEIGHT)
+                    MenuRow::new(ix, family.clone().unwrap_or_else(|| "System".into()))
+                        .checked(checked)
+                        .detail(div().font_family(sample).child("Aa"))
                         .mx_1()
-                        .px_2()
-                        .superellipse(radius::ITEM)
-                        .cursor_pointer()
-                        .hover(|style| style.bg(theme.accent).text_color(white()))
-                        .child(
-                            div()
-                                .flex_none()
-                                .w(FONT_CHECK_WIDTH)
-                                .when(checked, |this| this.child("✓")),
-                        )
-                        .child(
-                            div()
-                                .flex_1()
-                                .min_w_0()
-                                .truncate()
-                                .child(family.clone().unwrap_or_else(|| "System".into())),
-                        )
-                        .child(
-                            div()
-                                .flex_none()
-                                .font_family(sample)
-                                .text_color(theme.text_muted)
-                                .group_hover("font-row", |style| style.text_color(white()))
-                                .child("Aa"),
-                        )
                         .on_click(cx.listener(move |this, _, _, cx| {
                             this.font_menu.open = false;
                             let font = family.as_ref().map_or_else(String::new, |f| f.to_string());
@@ -517,7 +436,6 @@ fn close_fonts(
     cx: &mut Context<SettingsView>,
 ) {
     view.font_menu.open = false;
-    cx.stop_propagation();
     cx.notify();
 }
 

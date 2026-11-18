@@ -199,36 +199,67 @@ pub mod overlay {
     }
 }
 
+/// Text styles, by what the text is: its size and weight. Its color is up
+/// to where it is.
+pub mod text {
+    use gpui::{FontWeight, Styled};
+
+    pub trait TextStyle: Styled + Sized {
+        /// The one big line of a screen, such as the empty window's.
+        fn text_display(self) -> Self {
+            self.text_xl().font_weight(FontWeight::BOLD)
+        }
+
+        /// A pane's or a dialog's title.
+        fn text_title(self) -> Self {
+            self.text_base().font_weight(FontWeight::BOLD)
+        }
+
+        /// A group's heading, such as a card of settings'.
+        fn text_heading(self) -> Self {
+            self.text_sm().font_weight(FontWeight::SEMIBOLD)
+        }
+
+        /// Small and heavy: a menu column's heading, a badge's word.
+        fn text_label(self) -> Self {
+            self.text_xs().font_weight(FontWeight::SEMIBOLD)
+        }
+    }
+
+    impl<T: Styled> TextStyle for T {}
+}
+
 // How big things are, how round, how far apart and how long they take, by
 // where they are used. Tailwind-like spacing (`p_2`, `gap_1`, `text_sm`) is
 // gpui's own scale and stays in place.
 
 /// Corner radii. They are drawn as superellipses (`.superellipse`), which
 /// curve over more of the sides than a circle of the same radius would.
+/// Components' come in their sizes, `[small, medium, large]`.
 pub mod radius {
     use gpui::{Pixels, px};
 
-    /// Panels over the picture: notes and the track reel.
-    pub const OVERLAY: Pixels = px(24.);
+    /// Panels over the picture; notes and the track reel are medium.
+    pub const OVERLAY: [Pixels; 3] = [px(16.), px(24.), px(32.)];
     /// The controls' panel, which is short and has buttons close to its
     /// corners.
     pub const CONTROLS: Pixels = px(16.);
     /// Dialogs: Open URL.
     pub const DIALOG: Pixels = px(12.);
-    /// Cards in Settings: a group of rows, the subtitle preview.
-    pub const CARD: Pixels = px(10.);
-    /// Menus, and cover art.
-    pub const MENU: Pixels = px(8.);
-    /// A segmented control's frame, and rows in the Settings sidebar.
+    /// Cards: a group of settings, the subtitle preview.
+    pub const CARD: [Pixels; 3] = [px(8.), px(10.), px(12.)];
+    /// Menus; cover art has a medium one's corners.
+    pub const MENU: [Pixels; 3] = [px(6.), px(8.), px(10.)];
+    /// Rows in the Settings sidebar.
     pub const FRAME: Pixels = px(7.);
-    /// Buttons, text fields, the subtitle preview's picture.
-    pub const CONTROL: Pixels = px(6.);
-    /// Rows in menus, segments, hotkey chips and section badges.
-    pub const ITEM: Pixels = px(5.);
-    /// The LIVE badge.
-    pub const BADGE: Pixels = px(4.);
-    /// The remove button in a hotkey chip.
-    pub const SMALL: Pixels = px(3.);
+    /// Buttons, text fields and hotkey chips; the subtitle preview's
+    /// picture has a medium one's corners.
+    pub const CONTROL: [Pixels; 3] = [px(5.), px(6.), px(8.)];
+    /// Rows in menus, segments (their frame adds its padding to theirs),
+    /// and badges with an icon.
+    pub const ITEM: [Pixels; 3] = [px(4.), px(5.), px(6.)];
+    /// Badges with a word, such as LIVE.
+    pub const BADGE: [Pixels; 3] = [px(3.), px(4.), px(5.)];
 }
 
 /// How long things take.
@@ -291,44 +322,71 @@ pub mod layout {
     pub const RING_FORM_MAX_WIDTH: Pixels = px(320.);
 }
 
-/// Menus: the track menu and the subtitle font menu.
+/// Menu rows, by size (the track menu's, the track reel's and the font
+/// menu's are medium), and where menus go.
 pub mod menu {
     use gpui::{Pixels, px};
 
-    /// A row's height (a track's, also on the track reel, and a font's).
-    pub const ROW_HEIGHT: Pixels = px(26.);
+    /// A row's height, the room on its sides, and the space for its check.
+    pub const ROW_HEIGHT: [Pixels; 3] = [px(22.), px(26.), px(30.)];
+    pub const ROW_PADDING: [Pixels; 3] = [px(6.), px(8.), px(10.)];
+    pub const CHECK_WIDTH: [Pixels; 3] = [px(12.), px(14.), px(16.)];
+    /// A row's detail while the row is hovered, as an opacity of white.
+    pub const DETAIL_HOVER: f32 = 0.8;
     /// How far a menu keeps from the window's edges.
     pub const WINDOW_MARGIN: Pixels = px(8.);
 }
 
-/// The controls in `components` and the text field.
+/// The components in `components` and the text field, by size: each list
+/// is `[small, medium, large]`, and medium is the default.
 pub mod controls {
-    use gpui::{Pixels, px};
+    use gpui::{Pixels, Size, px, size};
 
-    pub const BUTTON_HEIGHT: Pixels = px(28.);
-    pub const BUTTON_ICON: Pixels = px(14.);
-    /// A primary button's background when hovered and pressed, as an opacity
-    /// of the accent, and its shortcut's text, as one of white.
-    pub const PRIMARY_HOVER: f32 = 0.85;
-    pub const PRIMARY_ACTIVE: f32 = 0.7;
-    pub const PRIMARY_SHORTCUT: f32 = 0.7;
-    /// An icon button is square.
-    pub const ICON_BUTTON: Pixels = px(28.);
-    /// An icon's size unless it is given one.
-    pub const ICON: Pixels = px(16.);
-    pub const SLIDER_HEIGHT: Pixels = px(16.);
+    /// Buttons, text fields, segmented controls and hotkey chips. An icon
+    /// button is a square this high.
+    pub const HEIGHT: [Pixels; 3] = [px(22.), px(28.), px(34.)];
+    /// The room on their sides, and on a wide button's.
+    pub const PADDING: [Pixels; 3] = [px(8.), px(10.), px(12.)];
+    pub const WIDE_PADDING: [Pixels; 3] = [px(12.), px(16.), px(20.)];
+    /// An icon next to a button's label.
+    pub const BUTTON_ICON: [Pixels; 3] = [px(12.), px(14.), px(16.)];
+    /// An icon on its own, as on an icon button, unless it is given a size.
+    pub const ICON: [Pixels; 3] = [px(12.), px(16.), px(20.)];
+    /// A filled button's (primary, danger) background when hovered and
+    /// pressed, as an opacity of its color, and its shortcut's text, as one
+    /// of white.
+    pub const FILLED_HOVER: f32 = 0.85;
+    pub const FILLED_ACTIVE: f32 = 0.7;
+    pub const FILLED_SHORTCUT: f32 = 0.7;
+    /// A secondary button's tint of the accent, as its opacity: at rest,
+    /// hovered, and pressed or selected.
+    pub const TINT: f32 = 0.12;
+    pub const TINT_HOVER: f32 = 0.18;
+    pub const TINT_ACTIVE: f32 = 0.26;
+    /// A disabled component's opacity.
+    pub const DISABLED: f32 = 0.45;
+    pub const SLIDER_HEIGHT: [Pixels; 3] = [px(12.), px(16.), px(20.)];
     pub const SLIDER_MIN_WIDTH: Pixels = px(32.);
-    pub const SLIDER_TRACK: Pixels = px(4.);
-    pub const SLIDER_KNOB: Pixels = px(10.);
-    pub const SLIDER_KNOB_DRAGGED: Pixels = px(12.);
-    pub const SWITCH_WIDTH: Pixels = px(36.);
-    pub const SWITCH_HEIGHT: Pixels = px(20.);
+    pub const SLIDER_KNOB: [Pixels; 3] = [px(8.), px(10.), px(14.)];
+    pub const SLIDER_KNOB_DRAGGED: [Pixels; 3] = [px(10.), px(12.), px(16.)];
+    /// A meter's bar, which is also a slider's track.
+    pub const METER_HEIGHT: [Pixels; 3] = [px(3.), px(4.), px(6.)];
+    /// A switch, and the room around its knob, which fills the rest of its
+    /// height.
+    pub const SWITCH: [Size<Pixels>; 3] = [
+        size(px(28.), px(16.)),
+        size(px(36.), px(20.)),
+        size(px(44.), px(24.)),
+    ];
     pub const SWITCH_PADDING: Pixels = px(2.);
-    pub const SWITCH_KNOB: Pixels = px(16.);
-    /// The padding in a segmented control, and the gap between segments.
+    /// The padding in a segmented control, and the gap between segments,
+    /// which fill the rest of its height.
     pub const SEGMENTED_PADDING: Pixels = px(2.);
-    pub const SEGMENT_HEIGHT: Pixels = px(24.);
-    pub const TEXT_INPUT_HEIGHT: Pixels = px(34.);
+    /// A badge with an icon, which is square, and its icon; the room on a
+    /// badge with a word's sides.
+    pub const BADGE: [Pixels; 3] = [px(16.), px(20.), px(24.)];
+    pub const BADGE_ICON: [Pixels; 3] = [px(10.), px(12.), px(14.)];
+    pub const BADGE_PADDING: [Pixels; 3] = [px(4.), px(6.), px(8.)];
     pub const CARET_WIDTH: Pixels = px(1.5);
     /// The underline under text an input method is still composing.
     pub const COMPOSING_UNDERLINE: Pixels = px(1.);
@@ -357,10 +415,6 @@ pub mod player {
     pub const TRACK_MENU_WIDTH: Pixels = px(240.);
     /// The most a column of the track menu is tall; it scrolls beyond.
     pub const TRACK_MENU_MAX_HEIGHT: Pixels = px(320.);
-    /// The space for a track's check.
-    pub const TRACK_CHECK_WIDTH: Pixels = px(14.);
-    /// A track's details while its row is hovered, as an opacity of white.
-    pub const TRACK_DETAIL_HOVER: f32 = 0.8;
     /// How bright the tracks before and after the one picked are on the reel.
     pub const REEL_FADED: f32 = 0.4;
     /// How far from the tile's top notes show, below the title bar.
@@ -372,7 +426,6 @@ pub mod player {
     /// The circle standing in for missing cover art, and its icon.
     pub const NO_COVER_SIZE: Pixels = px(96.);
     pub const NO_COVER_ICON: Pixels = px(40.);
-    pub const LEVEL_METER_HEIGHT: Pixels = px(4.);
 }
 
 /// The Settings window.
@@ -385,10 +438,7 @@ pub mod settings {
     pub const SIDEBAR_TOP_MAC: Pixels = px(48.);
     pub const SIDEBAR_TOP: Pixels = px(10.);
     pub const SIDEBAR_ROW_HEIGHT: Pixels = px(30.);
-    /// A section's colored badge and its icon.
-    pub const BADGE: Pixels = px(20.);
-    pub const BADGE_ICON: Pixels = px(12.);
-    /// The badges' colors, macOS's system colors as System Settings has
+    /// The sections' badges' colors, macOS's system colors as System Settings has
     /// them.
     pub const PLAYBACK_COLOR: u32 = 0x34c759;
     pub const AUDIO_COLOR: u32 = 0xff375f;
@@ -413,13 +463,8 @@ pub mod settings {
     pub const FONT_MENU_TOP: Pixels = px(32.);
     pub const FONT_MENU_WIDTH: Pixels = px(260.);
     pub const FONT_MENU_HEIGHT: Pixels = px(280.);
-    /// The space for a font's check.
-    pub const FONT_CHECK_WIDTH: Pixels = px(12.);
-    /// A hotkey chip, and the most a command's chips take before wrapping.
-    pub const HOTKEY_CHIP_HEIGHT: Pixels = px(24.);
+    /// The most a command's hotkey chips take before wrapping.
     pub const HOTKEY_KEYS_MAX_WIDTH: Pixels = px(280.);
-    pub const HOTKEY_REMOVE_ICON: Pixels = px(10.);
-    pub const HOTKEY_ADD_ICON: Pixels = px(12.);
     /// The subtitle preview's tile, 16:9.
     pub const PREVIEW_SIZE: Size<Pixels> = size(px(284.), px(160.));
     /// The shape of the picture in the subtitle preview: a wide film, so it

@@ -15,16 +15,16 @@ use std::rc::Rc;
 
 use gpui::prelude::*;
 use gpui::{
-    AnyElement, App, Bounds, Context, FocusHandle, FontWeight, Global, KeyDownEvent,
-    TitlebarOptions, Window, WindowBounds, WindowHandle, WindowOptions, div, rgb, white,
+    AnyElement, App, Bounds, Context, FocusHandle, Global, KeyDownEvent, TitlebarOptions, Window,
+    WindowBounds, WindowHandle, WindowOptions, div, rgb, white,
 };
 
-use super::components::{Button, Icon};
+use super::components::{Badge, Button};
 use super::theme::layout::{SETTINGS_WINDOW_MIN_SIZE, SETTINGS_WINDOW_SIZE, TRAFFIC_LIGHTS};
 use super::theme::settings::{
-    BADGE, BADGE_ICON, SIDEBAR_ROW_HEIGHT, SIDEBAR_TOP, SIDEBAR_TOP_MAC, SIDEBAR_WIDTH,
-    TITLE_HEIGHT,
+    SIDEBAR_ROW_HEIGHT, SIDEBAR_TOP, SIDEBAR_TOP_MAC, SIDEBAR_WIDTH, TITLE_HEIGHT,
 };
+use super::theme::text::TextStyle;
 use super::theme::{Theme, radius};
 use crate::settings::Settings;
 use form::update_settings;
@@ -186,17 +186,7 @@ impl SettingsView {
                         this.pane = index;
                         cx.notify();
                     }))
-                    .child(
-                        div()
-                            .flex_none()
-                            .size(BADGE)
-                            .superellipse(radius::ITEM)
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .bg(rgb(pane.color()))
-                            .child(Icon::new(pane.icon()).size(BADGE_ICON).color(white())),
-                    )
+                    .child(Badge::icon(pane.icon(), rgb(pane.color())))
                     .child(pane.name())
             }))
     }
@@ -227,8 +217,7 @@ impl Render for SettingsView {
                     .px_5()
                     .flex()
                     .items_center()
-                    .text_base()
-                    .font_weight(FontWeight::BOLD)
+                    .text_title()
                     .child(pane.name()),
             )
             .when_some(pane.header(&settings, &theme), |this, header| {

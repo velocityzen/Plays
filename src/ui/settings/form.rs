@@ -4,13 +4,14 @@
 use std::ops::RangeInclusive;
 
 use gpui::prelude::*;
-use gpui::{AnyElement, App, FontWeight, SharedString, div};
+use gpui::{AnyElement, App, SharedString, div};
 
 use super::SettingsView;
 use crate::settings::Settings;
-use crate::ui::components::{Slide, Slider};
+use crate::ui::components::{Card, Slide, Slider};
+use crate::ui::theme::Theme;
 use crate::ui::theme::settings::{SLIDER_VALUE_WIDTH, SLIDER_WIDTH};
-use crate::ui::theme::{Theme, radius};
+use crate::ui::theme::text::TextStyle;
 
 pub(super) fn update_settings(cx: &mut App, save: bool, change: impl FnOnce(&mut Settings)) {
     Settings::update(cx, save, change);
@@ -27,22 +28,12 @@ pub(super) fn group(
         .flex_col()
         .gap_2()
         .when_some(title, |this, title| {
-            this.child(
-                div()
-                    .px_1()
-                    .text_sm()
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .child(title),
-            )
+            this.child(div().px_1().text_heading().child(title))
         })
         .child(
-            div()
+            Card::new()
                 .flex()
                 .flex_col()
-                .superellipse(radius::CARD)
-                .border_1()
-                .border_color(theme.border)
-                .bg(theme.surface)
                 .children(rows.into_iter().enumerate().map(|(index, row)| {
                     div()
                         .when(index > 0, |this| {

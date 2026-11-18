@@ -8,11 +8,9 @@ use super::form::{group, row, update_settings};
 use super::{Pane, SettingsView};
 use crate::hotkeys::{self, Command, Group, Hotkeys};
 use crate::settings::Settings;
-use crate::ui::components::{Button, Icon};
-use crate::ui::theme::settings::{
-    HOTKEY_ADD_ICON, HOTKEY_CHIP_HEIGHT, HOTKEY_KEYS_MAX_WIDTH, HOTKEY_REMOVE_ICON, HOTKEYS_COLOR,
-};
-use crate::ui::theme::{Theme, radius};
+use crate::ui::components::{Button, ComponentSize, ControlFrame, Icon, Sizable};
+use crate::ui::theme::Theme;
+use crate::ui::theme::settings::{HOTKEY_KEYS_MAX_WIDTH, HOTKEYS_COLOR};
 
 pub(super) struct HotkeysPane;
 
@@ -141,15 +139,9 @@ fn key_chips(
     let chip = |id: SharedString| {
         div()
             .id(id)
-            .flex()
+            .control_frame(ComponentSize::Medium)
             .flex_none()
-            .items_center()
             .gap_1()
-            .h(HOTKEY_CHIP_HEIGHT)
-            .px_2()
-            .superellipse(radius::ITEM)
-            .border_1()
-            .text_sm()
     };
     let recording = view.recording.command == Some(command);
     div()
@@ -165,19 +157,13 @@ fn key_chips(
             chip(format!("{}-{key}", command.id()).into())
                 .border_color(theme.border)
                 .bg(theme.background)
+                // As little room after the remove button as around it.
+                .pr_0p5()
                 .child(hotkeys::display(key))
                 .child(
-                    div()
-                        .id("remove")
-                        .flex_none()
-                        .cursor_pointer()
-                        .superellipse(radius::SMALL)
-                        .hover(|style| style.bg(theme.surface_hover))
-                        .child(
-                            Icon::new("close")
-                                .size(HOTKEY_REMOVE_ICON)
-                                .color(theme.text_muted),
-                        )
+                    Button::icon("remove", "close")
+                        .small()
+                        .icon_color(theme.text_muted)
                         .on_click(move |_, _, cx| {
                             update_settings(cx, true, |s| s.hotkeys.remove(command, &removed))
                         }),
@@ -198,11 +184,7 @@ fn key_chips(
                 .border_color(theme.border)
                 .cursor_pointer()
                 .hover(|style| style.bg(theme.surface_hover))
-                .child(
-                    Icon::new("plus")
-                        .size(HOTKEY_ADD_ICON)
-                        .color(theme.text_muted),
-                )
+                .child(Icon::new("plus").small().color(theme.text_muted))
                 .on_click(cx.listener(move |this, _, window, cx| {
                     this.recording.command = Some(command);
                     this.recording.note = None;

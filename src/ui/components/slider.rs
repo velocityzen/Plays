@@ -7,8 +7,9 @@ use gpui::{
     MouseMoveEvent, MouseUpEvent, Pixels, Point, Window, canvas, div, px, relative,
 };
 
+use super::{ComponentSize, Meter, Sizable};
 use crate::ui::theme::controls::{
-    SLIDER_HEIGHT, SLIDER_KNOB, SLIDER_KNOB_DRAGGED, SLIDER_MIN_WIDTH, SLIDER_TRACK,
+    SLIDER_HEIGHT, SLIDER_KNOB, SLIDER_KNOB_DRAGGED, SLIDER_MIN_WIDTH,
 };
 use crate::ui::theme::{Theme, overlay};
 
@@ -39,6 +40,7 @@ pub struct Slider {
     dragging: Rc<Cell<bool>>,
     overlay: bool,
     fill: Option<Hsla>,
+    size: ComponentSize,
     on_change: Option<ChangeHandler>,
 }
 
@@ -52,6 +54,7 @@ impl Slider {
             dragging,
             overlay: false,
             fill: None,
+            size: ComponentSize::Medium,
             on_change: None,
         }
     }
@@ -78,6 +81,13 @@ impl Slider {
     }
 }
 
+impl Sizable for Slider {
+    fn with_size(mut self, size: ComponentSize) -> Self {
+        self.size = size;
+        self
+    }
+}
+
 impl RenderOnce for Slider {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = Theme::get(window, cx);
@@ -90,32 +100,27 @@ impl RenderOnce for Slider {
         let value = self.value.clamp(0.0, 1.0);
         let dragging = self.dragging;
         let on_change = self.on_change.unwrap_or_else(|| Rc::new(|_, _, _| {}));
-        let knob = if dragging.get() {
+        let size = self.size;
+        let height = size.pick(SLIDER_HEIGHT);
+        let knob = size.pick(if dragging.get() {
             SLIDER_KNOB_DRAGGED
         } else {
             SLIDER_KNOB
-        };
+        });
 
         div()
             .id(self.id)
             .relative()
             .flex()
             .items_center()
-            .h(SLIDER_HEIGHT)
+            .h(height)
             .w_full()
             .min_w(SLIDER_MIN_WIDTH)
-            .child(
-                div()
-                    .w_full()
-                    .h(SLIDER_TRACK)
-                    .rounded_full()
-                    .bg(track)
-                    .child(div().h_full().w(relative(value)).rounded_full().bg(fill)),
-            )
+            .child(Meter::new(value).track(track).fill(fill).with_size(size))
             .child(
                 div()
                     .absolute()
-                    .top((SLIDER_HEIGHT - knob) / 2.)
+                    .top((height - knob) / 2.)
                     .left(relative(value))
                     .ml(-knob / 2.)
                     .size(knob)

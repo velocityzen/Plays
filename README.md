@@ -246,10 +246,17 @@ last window quits.
   own window (`tiles`), the grid, the empty window's ring (`empty`), the
   toolbar, the mouse and traffic lights (`mouse`), and what the Playback
   commands do to every tile (`commands`).
-- `src/ui/components/`: the reusable controls (icon, buttons, switch,
-  segmented control, slider) and a floating panel to put anything in,
-  either a menu's or a note's over the picture, one `RenderOnce` component
-  per file.
+- `src/ui/components/`: the reusable components, one `RenderOnce`
+  component per file, each in three sizes (small, medium, large) with its
+  numbers for each in `theme`. An icon; a button in seven variants
+  (normal, primary, secondary, danger, ghost, link, icon) with its icon
+  on either side, and selected or disabled; a switch, a segmented control,
+  a slider and a meter; menu rows, and a popover that opens a menu from a
+  button; a badge; a flat card; and a floating panel to put anything in,
+  a menu's or a note's over the picture.
+- `src/ui/theme.rs`: colors, every size, radius and duration the UI uses,
+  and named text styles (`text_display`, `text_title`, `text_heading`,
+  `text_label`).
 
 Software-decoded frames (and, on Linux, hardware-decoded ones) are uploaded to
 gpui's texture atlas through `img()`; on macOS, hardware-decoded frames are
