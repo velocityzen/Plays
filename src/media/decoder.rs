@@ -12,7 +12,9 @@
 //! an SDR screen (`hdr`), Dolby Vision ones reshaped first (`dovi`).
 //! Subtitles are decoded into cues as soon as they are read (`subtitles`),
 //! or, from a subtitle file beside the video, a little ahead of the playhead
-//! (`external`).
+//! (`external`). The other subtitle tracks' packets are kept for a few
+//! seconds, so one picked shows without a seek that would drop the frames
+//! queued.
 //! It only decodes while an output queue has room, so memory stays bounded
 //! however much is read ahead. One video, one audio and one subtitle track
 //! play at a time; another can be picked while playing.
@@ -60,6 +62,11 @@ const VIDEO_QUEUE_MAX_FRAMES: usize = 16;
 const AUDIO_QUEUE_SECONDS: f64 = 0.75;
 /// How far ahead of the playhead a subtitle file is decoded.
 const SUBTITLE_FILE_AHEAD: f64 = 2.0;
+/// How long the packets of subtitles not playing are kept from before the
+/// next packet to decode, so a track picked shows what's on now without a
+/// seek, and at most how many of each track.
+const SPARE_SUBTITLE_SECONDS: f64 = 10.0;
+const SPARE_SUBTITLE_PACKETS: usize = 128;
 /// How far the demux thread reads ahead of the decoders.
 const FILE_READ_AHEAD: ReadAhead = ReadAhead {
     seconds: 1.0,
@@ -400,6 +407,13 @@ impl Decoders {
         };
         if kind == TrackKind::Subtitle {
             let (decoder, file) = self.open_subtitles(index)?;
+            // The other track's cues go; this one's come from the packets
+            // kept of it, or its file, without a seek.
+            {
+                let mut cues = shared.subtitles.lock();
+                let serial = cues.serial;
+                cues.clear(serial);
+            }
             // A file's subtitles don't come from the demuxer.
             let queue = match file {
                 Some(_) => None,
@@ -612,6 +626,12 @@ fn run(
                 Some(_) => None,
                 None => queue(TrackKind::Subtitle),
             },
+            spare: decoders
+                .streams
+                .iter()
+                .filter(|s| s.parameters.medium() == media::Type::Subtitle)
+                .map(|s| PacketQueue::new(s.index, f64::from(s.time_base)))
+                .collect(),
             cover_index: cover.as_ref().map(|c| c.index),
             cover: None,
             cover_seen: false,
@@ -824,6 +844,27 @@ impl PacketQueue {
         }
     }
 
+    /// When the next packet starts, in seconds.
+    fn front_time(&self) -> Option<f64> {
+        let packet = self.packets.front()?;
+        Some(packet.dts().or(packet.pts())? as f64 * self.time_base)
+    }
+
+    /// Forget the packets over before `time`, and the oldest past `max`.
+    fn keep_from(&mut self, time: f64, max: usize) {
+        while let Some(packet) = self.packets.front() {
+            let end = packet
+                .pts()
+                .or(packet.dts())
+                .map(|start| (start + packet.duration().max(0)) as f64 * self.time_base);
+            if self.packets.len() > max || end.is_some_and(|end| end < time) {
+                self.packets.pop_front();
+            } else {
+                break;
+            }
+        }
+    }
+
     /// Seconds between the first and the last queued packet.
     fn span(&self) -> f64 {
         let time = |p: &Packet| p.dts().or(p.pts());
@@ -844,6 +885,9 @@ struct Packets {
     /// Decoded as soon as they are read, so they don't count towards
     /// read-ahead.
     subtitle: Option<PacketQueue>,
+    /// The latest packets of each subtitle stream, kept for when it's
+    /// picked; the one playing takes its packets from `subtitle` instead.
+    spare: Vec<PacketQueue>,
     cover_index: Option<usize>,
     cover: Option<Packet>,
     cover_seen: bool,
@@ -898,9 +942,27 @@ impl Packets {
         if let Some(queue) = queue {
             self.bytes += packet.size();
             queue.packets.push_back(packet);
-        } else if self.cover_index == Some(index) && !self.cover_seen {
-            self.cover_seen = true;
-            self.cover = Some(packet);
+            return;
+        }
+        if self.cover_index == Some(index) {
+            if !self.cover_seen {
+                self.cover_seen = true;
+                self.cover = Some(packet);
+            }
+            return;
+        }
+        // Kept from a little before the next packet to decode, or this one.
+        let Some(start) = packet.pts().or(packet.dts()) else {
+            return;
+        };
+        let next = self
+            .queues()
+            .filter_map(PacketQueue::front_time)
+            .reduce(f64::min);
+        if let Some(spare) = self.spare.iter_mut().find(|q| q.index == index) {
+            let next = next.unwrap_or(start as f64 * spare.time_base);
+            spare.packets.push_back(packet);
+            spare.keep_from(next - SPARE_SUBTITLE_SECONDS, SPARE_SUBTITLE_PACKETS);
         }
     }
 
@@ -908,6 +970,7 @@ impl Packets {
         for queue in [&mut self.video, &mut self.audio, &mut self.subtitle]
             .into_iter()
             .flatten()
+            .chain(&mut self.spare)
         {
             queue.packets.clear();
         }
@@ -963,8 +1026,15 @@ impl Demuxer {
     }
 
     /// Queue packets of another stream for a kind of track, or none.
-    fn select(&self, kind: TrackKind, queue: Option<PacketQueue>) {
+    /// Subtitles start with the packets kept of them.
+    fn select(&self, kind: TrackKind, mut queue: Option<PacketQueue>) {
         let mut packets = self.packets.lock();
+        if let Some(queue) = &mut queue
+            && let Some(spare) = packets.spare.iter_mut().find(|q| q.index == queue.index)
+        {
+            queue.packets = std::mem::take(&mut spare.packets);
+            packets.bytes += queue.packets.iter().map(Packet::size).sum::<usize>();
+        }
         if let Some(old) = std::mem::replace(packets.queue(kind), queue) {
             packets.bytes -= old.packets.iter().map(Packet::size).sum::<usize>();
         }

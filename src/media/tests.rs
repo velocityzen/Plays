@@ -460,7 +460,17 @@ fn switches_audio_and_subtitle_tracks() {
     assert_eq!(player.info().unwrap().audio_track, Some(audio[1]));
     player.pause();
 
+    // Picked in the middle of a cue, it shows without a seek, which would
+    // drop the frames queued.
+    assert_eq!(subtitles_at(&mut player, 1.5, &[]), Vec::<String>::new());
+    let serial = player.serial();
     player.select_track(TrackKind::Subtitle, Some(subtitles[0]));
+    let shown = wait_until(Duration::from_secs(2), || {
+        player.tick();
+        subtitle_text(&player) == ["Hello there"]
+    });
+    assert!(shown, "showing {:?}", subtitle_text(&player));
+    assert_eq!(player.serial(), serial, "picking subtitles seeked");
     assert_eq!(
         subtitles_at(&mut player, 1.5, &["Hello there"]),
         ["Hello there"]

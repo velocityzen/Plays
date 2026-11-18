@@ -368,10 +368,18 @@ impl Player {
             let mut cues = self.shared.subtitles.lock();
             let serial = cues.serial;
             cues.clear(serial);
-        } else if !self.is_live() {
-            // Live streams can't seek; theirs starts with the next packet.
+        } else if kind != TrackKind::Subtitle && !self.is_live() {
+            // Subtitles start with the packets kept of them, so the picture
+            // plays on; the others start at the playhead. Live streams can't
+            // seek; theirs starts with the next packet.
             self.seek(self.position());
         }
+    }
+
+    /// The seek generation, for tests to tell whether something seeked.
+    #[cfg(test)]
+    pub(super) fn serial(&self) -> u64 {
+        self.shared.serial.load(Ordering::Acquire)
     }
 
     /// The subtitles showing now.
