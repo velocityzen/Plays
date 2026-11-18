@@ -119,7 +119,7 @@ impl Workspace {
             (grid.height + toolbar).max(WINDOW_MIN_SIZE.height),
         );
         log::debug!("sizing the window for its videos: {content:?}");
-        screen::set_content_size(window, content);
+        screen::set_content_size(window, content, cx);
     }
 }
 
@@ -183,12 +183,14 @@ mod screen {
     }
 
     /// Resize the window's content, keeping it where it was as far as the
-    /// screen allows.
-    pub fn set_content_size(window: &mut Window, content: Size<Pixels>) {
+    /// screen allows, once the update this is called in is over.
+    pub fn set_content_size(window: &mut Window, content: Size<Pixels>, cx: &App) {
         #[cfg(target_os = "macos")]
-        if mac::set_content_size(window, content) {
+        if mac::set_content_size(window, content, cx) {
             return;
         }
+        #[cfg(not(target_os = "macos"))]
+        let _ = cx;
         window.resize(content);
     }
 
@@ -197,7 +199,7 @@ mod screen {
     #[cfg(target_os = "macos")]
     #[allow(unexpected_cfgs)]
     mod mac {
-        use gpui::{Pixels, Size, Window, px, size};
+        use gpui::{App, Pixels, Size, Window, px, size};
         use objc::runtime::{Object, YES};
         use objc::{msg_send, sel, sel_impl};
         use raw_window_handle::{HasWindowHandle, RawWindowHandle};
@@ -248,14 +250,39 @@ mod screen {
 
         /// Whether it could: centered where the window was, then moved
         /// back inside the screen's visible part, animated.
-        pub fn set_content_size(window: &Window, content: Size<Pixels>) -> bool {
+        ///
+        /// Animating runs right through, and AppKit tells gpui each size on
+        /// the way, which gpui can't take while the window is being updated
+        /// (it would keep laying the window out at its old size). So, as
+        /// gpui's own `Window::resize` does, this resizes it once the update
+        /// is over.
+        pub fn set_content_size(window: &Window, content: Size<Pixels>, cx: &App) -> bool {
             let Some(ns_window) = ns_window(window) else {
                 return false;
             };
-            let Some(visible) = visible(ns_window) else {
+            if visible(ns_window).is_none() {
                 return false;
+            }
+            // SAFETY: a live window, on the main thread; released once the
+            // task below is done with it.
+            let _: *mut Object = unsafe { msg_send![ns_window, retain] };
+            cx.foreground_executor()
+                .spawn(async move {
+                    animate_to(ns_window, content);
+                    // SAFETY: retained above, on the main thread.
+                    let _: () = unsafe { msg_send![ns_window, release] };
+                })
+                .detach();
+            true
+        }
+
+        /// Animate `ns_window` to `content`, centered where it was, inside the
+        /// screen's visible part.
+        fn animate_to(ns_window: *mut Object, content: Size<Pixels>) {
+            let Some(visible) = visible(ns_window) else {
+                return;
             };
-            // SAFETY: a live window, on the main thread.
+            // SAFETY: a window retained by the caller, on the main thread.
             unsafe {
                 let old: NSRect = msg_send![ns_window, frame];
                 let wanted = NSRect {
@@ -273,7 +300,6 @@ mod screen {
                     .clamp(visible.y, visible.y + visible.height - frame.height);
                 let _: () = msg_send![ns_window, setFrame: frame display: YES animate: YES];
             }
-            true
         }
     }
 }
