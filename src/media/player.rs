@@ -50,6 +50,7 @@ pub const MAX_AUDIO_DELAY: f64 = 5.0;
 pub const MAX_SUBTITLE_DELAY: f64 = 60.0;
 
 pub struct Player {
+    source: Source,
     shared: Arc<Shared>,
     commands: Sender<Command>,
     mixer: Option<Arc<Mixer>>,
@@ -137,7 +138,7 @@ impl Player {
         let network = source.is_network();
         let (commands, receiver) = mpsc::channel();
         decoder::spawn(
-            source,
+            source.clone(),
             shared.clone(),
             DecodeOptions {
                 max_short_side: options.max_short_side,
@@ -146,6 +147,7 @@ impl Player {
             receiver,
         );
         Self {
+            source,
             stats: Stats::new(name),
             network,
             shared,
@@ -177,6 +179,17 @@ impl Player {
     /// When the frame on screen shows, on the media's timeline.
     pub fn frame_pts(&self) -> Option<f64> {
         self.current.as_ref().map(|f| f.pts)
+    }
+
+    /// When the frame on screen shows in its stream's time base, to decode
+    /// it again (`still`).
+    pub fn frame_timestamp(&self) -> Option<i64> {
+        self.current.as_ref().and_then(|f| f.timestamp)
+    }
+
+    /// What is playing.
+    pub fn source(&self) -> &Source {
+        &self.source
     }
 
     pub fn cover(&self) -> Option<Arc<RenderImage>> {

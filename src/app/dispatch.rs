@@ -37,6 +37,17 @@ pub(super) fn with_active(
     with_workspace(cx, |workspace, _, cx| workspace.with_active(cx, f));
 }
 
+/// Run `f` on the tile shortcuts go to in the window in front, with that
+/// window.
+pub(super) fn with_active_in_window(
+    cx: &mut App,
+    f: impl FnOnce(&mut PlayerView, &mut Window, &mut Context<PlayerView>) + 'static,
+) {
+    with_workspace(cx, |workspace, window, cx| {
+        workspace.with_active(cx, |player, cx| f(player, window, cx))
+    });
+}
+
 /// The first of `windows` that is a workspace window.
 pub(super) fn first_workspace(
     windows: impl IntoIterator<Item = AnyWindowHandle>,

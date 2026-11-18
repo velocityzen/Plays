@@ -90,6 +90,8 @@ pub(super) fn set_menus(cx: &mut App) {
                 }),
                 MenuItem::separator(),
                 MenuItem::action("Reset Picture", ResetPicture),
+                MenuItem::separator(),
+                MenuItem::action("Take Screenshot", TakeScreenshot),
             ],
         },
         Menu {

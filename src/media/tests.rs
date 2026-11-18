@@ -1555,3 +1555,117 @@ fn closing_aborts_a_hanging_connection() {
     assert!(closed, "the connection was left open");
     assert!(start.elapsed() < Duration::from_secs(2));
 }
+
+/// Screenshots decode the frame shown again, at full size whatever the
+/// resolution limit, and find exactly that frame though it isn't a keyframe.
+#[test]
+fn stills_are_the_frame_shown_at_full_size() {
+    use super::still;
+
+    // Each frame a flat grey a few levels brighter than the one before.
+    let Some(path) = media(
+        "frames.mkv",
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "color=black:size=640x360:rate=25:duration=2,format=yuv420p,\
+             geq=lum='16+4*N':cb=128:cr=128",
+            "-c:v",
+            "libx264",
+            "-g",
+            "50",
+            "-crf",
+            "1",
+            "-pix_fmt",
+            "yuv420p",
+        ],
+    ) else {
+        eprintln!("ffmpeg not found, skipping");
+        return;
+    };
+    let source = Source::File(path);
+    let mut player = Player::open(
+        source.clone(),
+        None,
+        PlayerOptions {
+            max_short_side: Some(180),
+            ..options(false, false)
+        },
+    );
+    assert!(wait_until(Duration::from_secs(5), || {
+        player.tick();
+        player.frame_pts().is_some()
+    }));
+    player.seek(1.0);
+    assert!(wait_until(Duration::from_secs(5), || {
+        player.tick();
+        player
+            .frame_pts()
+            .is_some_and(|pts| (pts - 1.0).abs() < 0.01)
+    }));
+    assert_eq!(player.frame().unwrap().size(), (320, 180));
+    let stream = player.info().unwrap().video_track.unwrap();
+    let timestamp = player.frame_timestamp().unwrap();
+
+    let grey = |still: &still::Still| f64::from(still.pixels[still.pixels.len() / 2][1]) / 257.0;
+    // Frame `n` in full-range RGB.
+    let frame = |n: f64| 4.0 * n * 255.0 / 219.0;
+    let shot = still::grab(&source, stream, timestamp, false).unwrap();
+    assert_eq!((shot.width, shot.height, shot.hdr), (640, 360, None));
+    assert!((grey(&shot) - frame(25.0)).abs() < 1.5, "{}", grey(&shot));
+    // The first frame, which is a keyframe, too.
+    let first = still::grab(&source, stream, 0, false).unwrap();
+    assert!(grey(&first) < 1.5, "{}", grey(&first));
+}
+
+/// HDR stills either look as an SDR screen shows them or keep their PQ
+/// signal, which tone maps to the same picture.
+#[test]
+fn hdr_stills_keep_their_signal() {
+    use super::hdr::{REFERENCE_WHITE_NITS, ToneMapper, Transfer, pq_to_nits};
+    use super::still;
+
+    let Some(path) = media(
+        "still-pq.mp4",
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=320x180:rate=25:duration=1",
+            "-c:v",
+            "libx265",
+            "-crf",
+            "8",
+            "-pix_fmt",
+            "yuv420p10le",
+            "-color_primaries",
+            "bt2020",
+            "-color_trc",
+            "smpte2084",
+            "-colorspace",
+            "bt2020nc",
+            "-x265-params",
+            "log-level=error:colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc",
+        ],
+    ) else {
+        eprintln!("ffmpeg with libx265 not found, skipping");
+        return;
+    };
+    let source = Source::File(path);
+    let sdr = still::grab(&source, 0, 0, false).unwrap();
+    let hdr = still::grab(&source, 0, 0, true).unwrap();
+    assert_eq!(sdr.hdr, None);
+    assert_eq!(hdr.hdr, Some(Transfer::Pq));
+    assert_eq!((hdr.width, hdr.height), (sdr.width, sdr.height));
+    let mapper = ToneMapper::new(Transfer::Pq);
+    let mut worst = 0;
+    for (kept, shown) in hdr.pixels.iter().zip(&sdr.pixels).step_by(97) {
+        let light = kept.map(|s| pq_to_nits(f32::from(s) / 65535.0) / REFERENCE_WHITE_NITS);
+        let [b, g, r, _] = mapper.output(light);
+        for (mapped, shown) in [r, g, b].into_iter().zip(shown) {
+            worst = worst.max((i32::from(mapped) - i32::from(shown / 257)).abs());
+        }
+    }
+    assert!(worst <= 3, "kept HDR tone maps {worst} levels off");
+}

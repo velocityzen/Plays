@@ -186,6 +186,81 @@ impl SubtitleStyle {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ScreenshotFormat {
+    Png,
+    Jpeg,
+}
+
+impl ScreenshotFormat {
+    pub fn extension(self) -> &'static str {
+        match self {
+            Self::Png => "png",
+            Self::Jpeg => "jpg",
+        }
+    }
+}
+
+/// How screenshots of HDR video are saved.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ScreenshotHdr {
+    /// Tone mapped, as an SDR screen shows it.
+    Sdr,
+    /// As it is, in a 16-bit PNG tagged BT.2020 PQ or HLG.
+    Keep,
+}
+
+/// Where screenshots go and what they are like.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ScreenshotSettings {
+    /// `None` for the Pictures folder.
+    pub folder: Option<PathBuf>,
+    pub format: ScreenshotFormat,
+    /// JPEG quality, from 1 to 100.
+    pub jpeg_quality: u8,
+    /// With the subtitles showing drawn in.
+    pub subtitles: bool,
+    pub hdr: ScreenshotHdr,
+}
+
+pub const JPEG_QUALITY_RANGE: RangeInclusive<u8> = 50..=100;
+
+impl Default for ScreenshotSettings {
+    fn default() -> Self {
+        Self {
+            folder: None,
+            format: ScreenshotFormat::Png,
+            jpeg_quality: 90,
+            subtitles: true,
+            hdr: ScreenshotHdr::Sdr,
+        }
+    }
+}
+
+impl ScreenshotSettings {
+    /// The folder screenshots go to: the one picked, else Pictures (or
+    /// home, on a system without one).
+    pub fn folder(&self) -> Option<PathBuf> {
+        self.folder
+            .clone()
+            .or_else(dirs::picture_dir)
+            .or_else(dirs::home_dir)
+    }
+
+    /// Whether HDR video is saved as HDR, which only PNG can be.
+    pub fn keeps_hdr(&self) -> bool {
+        self.hdr == ScreenshotHdr::Keep && self.format == ScreenshotFormat::Png
+    }
+
+    pub fn jpeg_quality(&self) -> u8 {
+        self.jpeg_quality
+            .clamp(*JPEG_QUALITY_RANGE.start(), *JPEG_QUALITY_RANGE.end())
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
@@ -210,6 +285,7 @@ pub struct Settings {
     /// Gamma for HDR video (Dolby Vision included).
     pub hdr_gamma: f32,
     pub subtitles: SubtitleStyle,
+    pub screenshots: ScreenshotSettings,
     pub hotkeys: Hotkeys,
 }
 
@@ -235,6 +311,7 @@ impl Default for Settings {
             sdr_gamma: 1.0,
             hdr_gamma: 1.0,
             subtitles: SubtitleStyle::default(),
+            screenshots: ScreenshotSettings::default(),
             hotkeys: Hotkeys::default(),
         }
     }
@@ -338,6 +415,32 @@ mod tests {
         assert!(json.contains(r##""color":"#ffd60a""##), "{json}");
         assert!(
             serde_json::from_str::<Settings>(r#"{ "subtitles": { "color": "red" } }"#).is_err()
+        );
+    }
+
+    #[test]
+    fn reads_screenshot_settings() {
+        let settings: Settings = serde_json::from_str(
+            r#"{ "screenshots": { "folder": "/tmp/shots", "format": "jpeg", "jpeg_quality": 7 } }"#,
+        )
+        .unwrap();
+        let shots = &settings.screenshots;
+        assert_eq!(shots.folder(), Some(PathBuf::from("/tmp/shots")));
+        assert_eq!(shots.format.extension(), "jpg");
+        assert_eq!(shots.jpeg_quality(), 50);
+        assert!(shots.subtitles);
+        // HDR is kept only in PNGs.
+        let keep = ScreenshotSettings {
+            hdr: ScreenshotHdr::Keep,
+            ..shots.clone()
+        };
+        assert!(!keep.keeps_hdr());
+        assert!(
+            ScreenshotSettings {
+                format: ScreenshotFormat::Png,
+                ..keep
+            }
+            .keeps_hdr()
         );
     }
 

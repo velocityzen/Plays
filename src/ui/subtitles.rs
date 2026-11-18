@@ -3,6 +3,7 @@
 //! settings say, and lifted above the controls while they show; bitmaps go
 //! where the stream places them on the picture, and turn and crop with it.
 
+use std::rc::Rc;
 use std::sync::Arc;
 
 use gpui::prelude::*;
@@ -65,9 +66,9 @@ const SHADOW: [(f32, f32); 1] = [(SHADOW_OFFSET, SHADOW_OFFSET)];
 /// A cue's text, shaped for painting.
 struct Block {
     placement: Placement,
-    lines: Vec<WrappedLine>,
+    lines: Vec<Rc<WrappedLine>>,
     /// The same lines in the edge color, if there is an edge.
-    edges: Vec<WrappedLine>,
+    edges: Vec<Rc<WrappedLine>>,
     height: f32,
 }
 
@@ -124,20 +125,94 @@ pub(crate) fn paint(
         SubtitleArea::Picture => visible,
         SubtitleArea::Tile => bounds,
     };
+    let controls_showing = layout.controls_pinned
+        || (layout.mouse_in_window && bounds.contains(&window.mouse_position()));
+    let place = TextPlace {
+        visible,
+        area,
+        controls_top: controls_showing.then(|| bounds.bottom() - layout.controls_height),
+    };
+    let family = family(&style, &layout.font);
+    for mark in text_marks(cues, &style, &family, &place, window) {
+        match mark {
+            TextMark::Background {
+                bounds,
+                radius,
+                color,
+            } => window.paint_quad(fill(bounds, color).superellipse(radius)),
+            TextMark::Line {
+                line,
+                area,
+                line_height,
+            } => {
+                let _ = line.paint(
+                    area.origin,
+                    line_height,
+                    TextAlign::Center,
+                    Some(area),
+                    window,
+                    cx,
+                );
+            }
+        }
+    }
+}
+
+/// The font family `style` names, or `default` if it names none.
+pub(crate) fn family(style: &SubtitleStyle, default: &SharedString) -> SharedString {
+    if style.font.is_empty() {
+        default.clone()
+    } else {
+        SharedString::from(style.font.clone())
+    }
+}
+
+/// Where text subtitles go.
+pub(crate) struct TextPlace {
+    /// The part of the picture that shows, which the text is sized by.
+    pub visible: Bounds<Pixels>,
+    /// Where the text goes.
+    pub area: Bounds<Pixels>,
+    /// The top of the controls, while they show; text at the bottom goes
+    /// above them.
+    pub controls_top: Option<Pixels>,
+}
+
+/// What text subtitles draw, in order.
+pub(crate) enum TextMark {
+    /// A box behind a row of text.
+    Background {
+        bounds: Bounds<Pixels>,
+        radius: Pixels,
+        color: Hsla,
+    },
+    /// A line of text, wrapped into rows, each centered across `area`.
+    Line {
+        line: Rc<WrappedLine>,
+        area: Bounds<Pixels>,
+        line_height: Pixels,
+    },
+}
+
+/// Lay out the text of `cues` in `place`, in `style` (clamped) and the
+/// font `family`.
+pub(crate) fn text_marks(
+    cues: &[Arc<CueContent>],
+    style: &SubtitleStyle,
+    family: &SharedString,
+    place: &TextPlace,
+    window: &mut Window,
+) -> Vec<TextMark> {
+    let area = place.area;
     let (left, top) = (f32::from(area.left()), f32::from(area.top()));
     let (width, height) = (f32::from(area.size.width), f32::from(area.size.height));
-    let font_size = (f32::from(visible.size.height) * FONT_SIZE)
+    let font_size = (f32::from(place.visible.size.height) * FONT_SIZE)
         .clamp(MIN_FONT_SIZE, MAX_FONT_SIZE)
         * style.size;
     let metrics = Metrics {
         font_size,
         line_height: font_size * LINE_HEIGHT,
         wrap_width: width * WRAP_WIDTH,
-    };
-    let family = if style.font.is_empty() {
-        layout.font.clone()
-    } else {
-        SharedString::from(style.font.clone())
     };
     let text_color: Hsla = rgb(style.color.0).into();
     let edge_color = Hsla::from(rgb(style.edge_color.0)).opacity(EDGE_OPACITY);
@@ -146,11 +221,11 @@ pub(crate) fn paint(
         .iter()
         .flat_map(|cue| &cue.texts)
         .map(|text| {
-            let lines = shape(text, text_color, &metrics, &family, &style, window);
+            let lines = shape(text, text_color, &metrics, family, style, window);
             let edges = match style.edge {
                 SubtitleEdge::None => Vec::new(),
                 SubtitleEdge::Outline | SubtitleEdge::Shadow => {
-                    shape(text, edge_color, &metrics, &family, &style, window)
+                    shape(text, edge_color, &metrics, family, style, window)
                 }
             };
             let height = lines
@@ -165,17 +240,15 @@ pub(crate) fn paint(
             }
         })
         .collect();
+    let mut marks = Vec::new();
     if blocks.is_empty() {
-        return;
+        return marks;
     }
 
     let offset = (height * style.position).max(MIN_BOTTOM);
     let mut bottom = top + height - offset;
-    let controls_showing = layout.controls_pinned
-        || (layout.mouse_in_window && bounds.contains(&window.mouse_position()));
-    if controls_showing {
-        let above_controls =
-            bounds.bottom() - layout.controls_height - px(font_size * ABOVE_CONTROLS);
+    if let Some(controls_top) = place.controls_top {
+        let above_controls = controls_top - px(font_size * ABOVE_CONTROLS);
         bottom = bottom.min(f32::from(above_controls));
     }
 
@@ -187,6 +260,15 @@ pub(crate) fn paint(
     };
     let edge_width = (font_size * EDGE_WIDTH).max(1.0);
     let background = Hsla::from(rgb(style.background.0)).opacity(style.background_opacity);
+    let line_height = px(metrics.line_height);
+    let line_mark = |line: &Rc<WrappedLine>, (x, y): (f32, f32)| TextMark::Line {
+        line: line.clone(),
+        area: Bounds {
+            origin: point(px(x), px(y)),
+            size: size(px(metrics.wrap_width), line.size(line_height).height),
+        },
+        line_height,
+    };
     for placement in [Placement::Top, Placement::Middle, Placement::Bottom] {
         let blocks: Vec<&Block> = blocks.iter().filter(|b| b.placement == placement).collect();
         let total: f32 = blocks.iter().map(|b| b.height).sum();
@@ -198,65 +280,46 @@ pub(crate) fn paint(
         for block in blocks {
             for (i, line) in block.lines.iter().enumerate() {
                 if style.background_opacity > 0.0 {
-                    paint_background(line, x, y, &metrics, background, window);
+                    marks.extend(backgrounds(line, x, y, &metrics, background));
                 }
                 if let Some(edge) = block.edges.get(i) {
                     for (dx, dy) in edge_offsets {
-                        let at = (x + dx * edge_width, y + dy * edge_width);
-                        paint_line(edge, at, &metrics, window, cx);
+                        marks.push(line_mark(edge, (x + dx * edge_width, y + dy * edge_width)));
                     }
                 }
-                paint_line(line, (x, y), &metrics, window, cx);
-                y += f32::from(line.size(px(metrics.line_height)).height);
+                marks.push(line_mark(line, (x, y)));
+                y += f32::from(line.size(line_height).height);
             }
         }
     }
-}
-
-/// Paint a line of text centered in the wrap width from `(x, y)`.
-fn paint_line(
-    line: &WrappedLine,
-    (x, y): (f32, f32),
-    metrics: &Metrics,
-    window: &mut Window,
-    cx: &mut App,
-) {
-    let line_height = px(metrics.line_height);
-    let area = Bounds {
-        origin: point(px(x), px(y)),
-        size: size(px(metrics.wrap_width), line.size(line_height).height),
-    };
-    let _ = line.paint(
-        area.origin,
-        line_height,
-        TextAlign::Center,
-        Some(area),
-        window,
-        cx,
-    );
+    marks
 }
 
 /// A box behind each row a line of text wrapped into.
-fn paint_background(
+fn backgrounds(
     line: &WrappedLine,
     x: f32,
     y: f32,
     metrics: &Metrics,
     color: Hsla,
-    window: &mut Window,
-) {
+) -> impl Iterator<Item = TextMark> {
     let padding = metrics.font_size * BACKGROUND_PADDING;
-    for (row, width) in row_widths(line).into_iter().enumerate() {
-        let rect = Bounds {
-            origin: point(
-                px(x + (metrics.wrap_width - width) / 2.0 - padding),
-                px(y + row as f32 * metrics.line_height),
-            ),
-            size: size(px(width + 2.0 * padding), px(metrics.line_height)),
-        };
-        window
-            .paint_quad(fill(rect, color).superellipse(px(metrics.font_size * BACKGROUND_RADIUS)));
-    }
+    let (wrap_width, line_height) = (metrics.wrap_width, metrics.line_height);
+    let radius = px(metrics.font_size * BACKGROUND_RADIUS);
+    row_widths(line)
+        .into_iter()
+        .enumerate()
+        .map(move |(row, width)| TextMark::Background {
+            bounds: Bounds {
+                origin: point(
+                    px(x + (wrap_width - width) / 2.0 - padding),
+                    px(y + row as f32 * line_height),
+                ),
+                size: size(px(width + 2.0 * padding), px(line_height)),
+            },
+            radius,
+            color,
+        })
 }
 
 /// How wide each row of a wrapped line is, measured as gpui centers them:
@@ -287,7 +350,7 @@ fn shape(
     family: &SharedString,
     style: &SubtitleStyle,
     window: &mut Window,
-) -> Vec<WrappedLine> {
+) -> Vec<Rc<WrappedLine>> {
     let weight = style.weight.value();
     let runs: Vec<TextRun> = text
         .spans
@@ -322,6 +385,6 @@ fn shape(
             Some(px(metrics.wrap_width)),
             None,
         )
-        .map(|lines| lines.into_vec())
+        .map(|lines| lines.into_iter().map(Rc::new).collect())
         .unwrap_or_default()
 }

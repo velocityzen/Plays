@@ -41,11 +41,18 @@ GPU-accelerated UI framework.
   for files that are out of step: the sound in 50 ms steps, subtitles
   (embedded or in a file beside the video) in 100 ms steps. The sound
   plays on as it is and the picture moves against it.
+- Take a screenshot of a tile with `S` or Video → Take Screenshot: the
+  frame it shows, saved as PNG or JPEG at the video's full resolution
+  (whatever the decode limit), turned, reshaped and cropped as it shows,
+  with the subtitles showing drawn in. HDR video is saved as an SDR screen
+  shows it, or kept as HDR in a 16-bit PNG. Files are named after the video
+  and the time, `Movie 01-23-45.678.png`, in Pictures or a folder you pick,
+  and never replace another.
 - Any tile can pop out into a new window, where it keeps playing. Every
   window works the same: drop more files on it and they play side by side.
 - Shortcuts go to the tile last clicked: play/pause, seek, frame step,
   volume, tracks, subtitle size and height, audio and subtitle delay,
-  rotation, flips, aspect ratio, crop, full screen.
+  rotation, flips, aspect ratio, crop, screenshots, full screen.
   With Shift, play/pause, seek, restart and mute go to every file in the
   window, as does the menu bar (a toolbar on Linux).
 - On macOS, windows show just the video, edge to edge, with the traffic
@@ -59,7 +66,8 @@ GPU-accelerated UI framework.
   every open video as you drag), decode resolution limit, hardware decoding,
   subtitle style (font, weight, size, color, outline or shadow and its color,
   a background box, on the picture or anywhere in the tile, height), with a
-  live preview, the keys for every shortcut, grid columns, controls
+  live preview, where screenshots go and what they are like, the keys for
+  every shortcut, grid columns, controls
   visibility, file names. Saved as JSON in the user config dir.
 
 ## Building
@@ -176,6 +184,7 @@ it again when the dependencies change (`script/bundle-macos` runs it).
 | Flip horizontally/vertically | `⌘⇧H` `⌘⇧V` / `Ctrl+Shift+H` `Ctrl+Shift+V` |
 | Next aspect ratio, next crop | `A`, `C` |
 | Picture as the file has it | `⌘0` / `Ctrl+0` |
+| Take a screenshot | `S` |
 | Full screen | `F`, or `⌃⌘F` / `F11`; `Esc` leaves it |
 | Play/pause, seek, restart, mute all | `⇧Space`, `⇧←` `⇧→`, `⇧Home`, `⇧M` |
 | Close all | `⌘⇧W` / `Ctrl+Shift+W` |
@@ -196,6 +205,15 @@ flipping go by the picture as it shows, and cropping keeps its middle;
 opening another file in the tile starts it as its file has it. The same
 goes for delays, which a note shows as they change ("Audio delay +200 ms").
 The sound can move up to 5 seconds either way, subtitles up to a minute.
+
+A screenshot's note says which folder it went to. Settings → Screenshots
+picks the folder (Pictures at first; Show opens it), PNG or JPEG and the
+JPEG's quality, whether subtitles go in, and how HDR video is saved: as
+an SDR screen shows it (tone mapped, with the HDR gamma), or as it is, in
+a 16-bit PNG tagged BT.2020 PQ or HLG (its cICP chunk), which only
+HDR-aware apps show right. Text subtitles are laid out as on a tile
+showing just the picture, in the style Settings give them; bitmap ones go
+where the stream puts them.
 
 On a tile: click the picture to play/pause, double-click (or the corner
 button) to maximize it, drag the bar to scrub. In the middle under the bar,
@@ -276,6 +294,10 @@ last window quits.
   and the one a video's display matrix asks for.
 - `vendor/xattr`: xattr 0.2.3, which gpui reaches, building on Linux with
   today's libc (see its `PLAYS.md`).
+- `src/media/still.rs`: a frame decoded again on its own for a screenshot:
+  the file opened again, sought to the keyframe before the frame shown and
+  decoded in software up to it (found by its timestamp), then converted at
+  full size, tone mapped as playback does, or as BT.2020 PQ or HLG.
 - `src/media/picture.rs`: the forms a decoded picture takes, and the gamma
   for SDR and HDR video that every player shares. Converted frames get it on
   the CPU; surfaces carry it to gpui's shaders each time they are drawn, so a
@@ -305,14 +327,17 @@ last window quits.
   where to sample the frame. `subtitles` paints a tile's cues on the
   picture it frames, in the style from Settings, turning and cropping
   bitmap ones with it; the settings' Subtitles pane draws its preview with
-  the same code.
+  the same code. `screenshot` saves a tile's frame: bitmap subtitles laid
+  on it, then turned and cropped on the CPU as `framing` says, then text
+  subtitles laid out by `subtitles` and drawn with the glyphs gpui
+  rasterizes, and written as PNG (with `png`, which can tag HDR) or JPEG.
 - `src/ui/player/`: a player's tile, a file per part: what fills it
   (`content`), the header, the controls, the track menu, notes on what
   shortcuts did (`osd`, with the track reel), what shortcuts do to it
-  (`commands`, `adjust` for the picture and `sync` for delays), and the
-  graveyard frames wait in before they are released.
+  (`commands`, `adjust` for the picture, `sync` for delays and
+  `screenshot`), and the graveyard frames wait in before they are released.
 - `src/ui/settings/`: the Settings window. Each pane (Playback, Audio,
-  Video, Subtitles, Hotkeys, Appearance, About) is a file of its own with its
+  Video, Subtitles, Screenshots, Hotkeys, Appearance, About) is a file of its own with its
   name and icon for the sidebar; `form` has the cards, rows and sliders they
   are made of. About shows the version and the credits, each of which opens
   to its license.
@@ -388,6 +413,15 @@ picture must run that far ahead of what the mixer has played; with
 subtitles delayed either way, a cue must show only at its moved time,
 including right after a seek past where it originally ended.
 
+Screenshots: a still of a player capped at 180 lines must still be the full
+640x360, and exactly the frame shown (each frame a different grey) though
+it isn't a keyframe; an HDR10 still kept as PQ must tone map to the same
+picture as one saved for SDR. Unit tests check screenshot file names,
+never replacing a file, turning and cropping on the CPU, bitmap subtitles
+and boxes landing where they should, subtitles over HDR at reference
+white, PNGs (8-bit sRGB, or 16-bit with cICP) and JPEGs, and the math
+that turns light back into PQ and HLG signals.
+
 Stream tests serve the clips from a small HTTP server on localhost:
 HTTP files, HLS (normal and live), a connection that stalls mid-way,
 unreachable hosts, and closing while a connection hangs.
@@ -416,6 +450,12 @@ unreachable hosts, and closing while a connection hangs.
   itself are read about a second ahead with it, so moved earlier than that
   they show late. In a live stream, a new track starts with its next packets
   rather than at the playhead.
+- Screenshots of live streams can't be taken (the frame can't be found
+  again). Text subtitles in a screenshot are laid out for the picture
+  rather than the tile, so in a small tile, whose text is held to a least
+  size, they come out relatively smaller. HDR JPEGs (with a gain map)
+  aren't made, and HDR PNGs carry no mastering display or light level
+  metadata.
 - Picture adjustments and delays aren't kept: a file opens as its file
   has it. A display matrix that isn't a quarter turn goes to the nearest
   one, and text subtitles stay upright when the picture turns.

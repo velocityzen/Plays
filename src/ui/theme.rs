@@ -444,6 +444,7 @@ pub mod settings {
     pub const AUDIO_COLOR: u32 = 0xff375f;
     pub const VIDEO_COLOR: u32 = 0x0a84ff;
     pub const SUBTITLES_COLOR: u32 = 0xff9f0a;
+    pub const SCREENSHOTS_COLOR: u32 = 0xbf5af2;
     pub const HOTKEYS_COLOR: u32 = 0x5e5ce6;
     pub const APPEARANCE_COLOR: u32 = 0x8e8e93;
     pub const ABOUT_COLOR: u32 = 0x30b0c7;
@@ -518,4 +519,8 @@ pub mod subtitles {
     /// The background box's padding either side and corner radius, in em.
     pub const BACKGROUND_PADDING: f32 = 0.3;
     pub const BACKGROUND_RADIUS: f32 = 0.12;
+    /// Screenshots lay subtitles out as on a tile showing just the picture,
+    /// this tall: tall enough that the font size isn't held to its least
+    /// or most, so it is `FONT_SIZE` of the picture.
+    pub const TEXT_HEIGHT: f32 = 720.;
 }

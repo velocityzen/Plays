@@ -155,6 +155,8 @@ impl MediaInfo {
 
 pub struct VideoFrame {
     pub pts: f64,
+    /// When it shows in its stream's own time base, to find it again.
+    pub timestamp: Option<i64>,
     pub serial: u64,
     pub picture: Picture,
 }
@@ -241,7 +243,11 @@ impl Session<'_> {
     }
 }
 
-fn open_input(source: &Source, shared: &Arc<Shared>) -> Result<ffmpeg::format::context::Input> {
+/// Open the file or stream; network reads give up once `stop` says so.
+pub(super) fn open_input(
+    source: &Source,
+    stop: impl Fn() -> bool + Send + 'static,
+) -> Result<ffmpeg::format::context::Input> {
     let mut options = ffmpeg::Dictionary::new();
     if source.is_network() {
         options.set("rw_timeout", NETWORK_TIMEOUT_MICROS);
@@ -252,13 +258,8 @@ fn open_input(source: &Source, shared: &Arc<Shared>) -> Result<ffmpeg::format::c
         // Like most players: UDP rarely makes it through NAT and firewalls.
         options.set("rtsp_transport", "tcp");
     }
-    let interrupt = shared.clone();
-    ffmpeg::format::input_with_interrupt_and_dictionary(
-        source.location(),
-        move || interrupt.stop.load(Ordering::Relaxed),
-        options,
-    )
-    .with_context(|| format!("could not open {source}"))
+    ffmpeg::format::input_with_interrupt_and_dictionary(source.location(), stop, options)
+        .with_context(|| format!("could not open {source}"))
 }
 
 /// What the decode thread keeps of each stream once the demux thread has the file.
@@ -459,7 +460,8 @@ fn run(
     options: DecodeOptions,
     commands: &Receiver<Command>,
 ) -> Result<()> {
-    let input = open_input(source, shared)?;
+    let interrupt = shared.clone();
+    let input = open_input(source, move || interrupt.stop.load(Ordering::Relaxed))?;
     let name = source.name();
     let mut tracks: Vec<Track> = input.streams().filter_map(|s| Track::of(&s)).collect();
     let mut decoders = Decoders {
@@ -1076,7 +1078,7 @@ enum Light {
     DolbyVision,
 }
 
-struct Scaler {
+pub(super) struct Scaler {
     context: scaling::Context,
     key: (Pixel, u32, u32, Light),
     width: u32,
@@ -1114,7 +1116,7 @@ struct VideoDecoder {
 }
 
 /// Open a decoder for the stream, on the GPU when asked and possible.
-fn open_video(
+pub(super) fn open_video(
     parameters: &codec::Parameters,
     hardware: bool,
 ) -> Result<(ffmpeg::decoder::Video, Option<&'static str>)> {
@@ -1281,9 +1283,8 @@ impl VideoDecoder {
             let on_gpu = hwaccel::is_hardware_frame(&self.decoded);
             self.report(on_gpu, session);
 
-            let pts = self
-                .decoded
-                .timestamp()
+            let timestamp = self.decoded.timestamp();
+            let pts = timestamp
                 .map(|ts| ts as f64 * self.time_base - session.start_offset())
                 .unwrap_or(self.next_pts);
             self.next_pts = pts + self.frame_duration;
@@ -1306,6 +1307,7 @@ impl VideoDecoder {
             if let Some(picture) = self.picture(on_gpu, session) {
                 session.shared.video.lock().frames.push_back(VideoFrame {
                     pts,
+                    timestamp,
                     serial: session.serial,
                     picture,
                 });
@@ -1383,6 +1385,21 @@ fn convert(
     max_short_side: Option<u32>,
     frame: &frame::Video,
 ) -> Result<Arc<RenderImage>> {
+    let (width, height, pixels) = convert_pixels(scaler, max_short_side, frame)?;
+    // gpui reads image bytes as BGRA, which is exactly what we converted to.
+    let buffer = image::RgbaImage::from_raw(width, height, pixels)
+        .ok_or_else(|| anyhow!("frame buffer has the wrong size"))?;
+    Ok(Arc::new(RenderImage::new(vec![image::Frame::new(buffer)])))
+}
+
+/// Convert a decoded frame to tightly packed BGRA for an SDR screen, its
+/// width and height and its pixels: corrected for non-square pixels,
+/// scaled down to `max_short_side`, HDR tone mapped, with the gamma set.
+pub(super) fn convert_pixels(
+    scaler: &mut Option<Scaler>,
+    max_short_side: Option<u32>,
+    frame: &frame::Video,
+) -> Result<(u32, u32, Vec<u8>)> {
     let reshaping = dovi::Reshaping::of(frame);
     let light = match (&reshaping, hdr::Transfer::of(frame)) {
         (Some(_), _) => Light::DolbyVision,
@@ -1472,10 +1489,7 @@ fn convert(
             })
         }
     };
-    // gpui reads image bytes as BGRA, which is exactly what we converted to.
-    let buffer = image::RgbaImage::from_raw(width, height, pixels)
-        .ok_or_else(|| anyhow!("frame buffer has the wrong size"))?;
-    Ok(Arc::new(RenderImage::new(vec![image::Frame::new(buffer)])))
+    Ok((width, height, pixels))
 }
 
 /// Size to convert a frame to: corrects non-square pixels and applies the
@@ -1502,7 +1516,7 @@ pub(crate) fn output_size(
 }
 
 /// Use the right YUV matrix and range so colors match other players.
-fn set_colorspace(context: &mut scaling::Context, frame: &frame::Video) {
+pub(super) fn set_colorspace(context: &mut scaling::Context, frame: &frame::Video) {
     use ffmpeg::ffi;
     let matrix = match frame.color_space() {
         color::Space::BT709 => ffi::SWS_CS_ITU709,

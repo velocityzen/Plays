@@ -1,7 +1,7 @@
 use crate::{
-    App, Bounds, Half, Hsla, LineLayout, Pixels, Point, Result, SharedString, StrikethroughStyle,
-    TextAlign, UnderlineStyle, Window, WrapBoundary, WrappedLineLayout, black, fill, point, px,
-    size,
+    App, Bounds, FontId, GlyphId, Half, Hsla, LineLayout, Pixels, Point, Result, SharedString,
+    StrikethroughStyle, TextAlign, UnderlineStyle, Window, WrapBoundary, WrappedLineLayout, black,
+    fill, point, px, size,
 };
 use derive_more::{Deref, DerefMut};
 use smallvec::SmallVec;
@@ -106,6 +106,23 @@ impl ShapedLine {
     }
 }
 
+/// Plays: a glyph of a line, where `WrappedLine::paint` puts it.
+#[derive(Clone, Debug)]
+pub struct LineGlyph {
+    /// Where it sits on its baseline.
+    pub origin: Point<Pixels>,
+    /// The font it is from.
+    pub font_id: FontId,
+    /// Which glyph of the font it is.
+    pub glyph_id: GlyphId,
+    /// The size it is drawn at.
+    pub font_size: Pixels,
+    /// Drawn in its own colors rather than `color`.
+    pub is_emoji: bool,
+    /// The color of its run.
+    pub color: Hsla,
+}
+
 /// A line of text that has been shaped, decorated, and wrapped by the text layout system.
 #[derive(Clone, Default, Debug, Deref, DerefMut)]
 pub struct WrappedLine {
@@ -152,6 +169,80 @@ impl WrappedLine {
         )?;
 
         Ok(())
+    }
+
+    /// Plays: the glyphs `paint` draws with the same arguments, and where,
+    /// to draw them somewhere other than a window (into an image, say).
+    /// Underlines and strikethroughs are left out.
+    pub fn glyphs(
+        &self,
+        origin: Point<Pixels>,
+        line_height: Pixels,
+        align: TextAlign,
+        bounds: Option<Bounds<Pixels>>,
+    ) -> Vec<LineGlyph> {
+        let layout = &self.layout.unwrapped_layout;
+        let align_width = match bounds {
+            Some(bounds) => Some(bounds.size.width),
+            None => self.layout.wrap_width,
+        }
+        .unwrap_or(layout.width);
+        // The same steps as `paint_line`.
+        let padding_top = (line_height - layout.ascent - layout.descent) / 2.;
+        let baseline_offset = point(px(0.), padding_top + layout.ascent);
+        let mut decoration_runs = self.decoration_runs.iter();
+        let mut wraps = self.wrap_boundaries.iter().peekable();
+        let mut run_end = 0;
+        let mut color = black();
+        let mut glyph_origin = point(
+            aligned_origin_x(origin, align_width, px(0.0), &align, layout, wraps.peek()),
+            origin.y,
+        );
+        let mut prev_glyph_position = Point::default();
+        let mut glyphs = Vec::new();
+        for (run_ix, run) in layout.runs.iter().enumerate() {
+            for (glyph_ix, glyph) in run.glyphs.iter().enumerate() {
+                glyph_origin.x += glyph.position.x - prev_glyph_position.x;
+                if wraps.peek() == Some(&&WrapBoundary { run_ix, glyph_ix }) {
+                    wraps.next();
+                    glyph_origin.x = aligned_origin_x(
+                        origin,
+                        align_width,
+                        glyph.position.x,
+                        &align,
+                        layout,
+                        wraps.peek(),
+                    );
+                    glyph_origin.y += line_height;
+                }
+                prev_glyph_position = glyph.position;
+                if glyph.index >= run_end {
+                    let mut style_run = decoration_runs.next();
+                    while let Some(run) = style_run {
+                        if glyph.index < run_end + (run.len as usize) {
+                            break;
+                        }
+                        run_end += run.len as usize;
+                        style_run = decoration_runs.next();
+                    }
+                    if let Some(style_run) = style_run {
+                        run_end += style_run.len as usize;
+                        color = style_run.color;
+                    } else {
+                        run_end = layout.len;
+                    }
+                }
+                glyphs.push(LineGlyph {
+                    origin: glyph_origin + baseline_offset,
+                    font_id: run.font_id,
+                    glyph_id: glyph.id,
+                    font_size: layout.font_size,
+                    is_emoji: glyph.is_emoji,
+                    color,
+                });
+            }
+        }
+        glyphs
     }
 
     /// Paint the background of line of text to the window.

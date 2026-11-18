@@ -16,6 +16,7 @@ macro_rules! icons {
 
 icons!(
     "appearance",
+    "camera",
     "check",
     "chevron-down",
     "chevron-right",

@@ -11,6 +11,7 @@ pub mod orientation;
 pub mod picture;
 pub mod player;
 pub mod source;
+pub mod still;
 pub mod subtitles;
 #[cfg(test)]
 mod tests;

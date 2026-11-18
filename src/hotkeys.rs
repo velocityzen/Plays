@@ -47,6 +47,7 @@ gpui::actions!(
         NextAspectRatio,
         NextCrop,
         ResetPicture,
+        TakeScreenshot,
         ToggleFullScreen,
         ExitFullScreen,
         PlayPauseAll,
@@ -100,6 +101,7 @@ pub enum Command {
     NextAspectRatio,
     NextCrop,
     ResetPicture,
+    TakeScreenshot,
     FullScreen,
     ExitFullScreen,
     PlayPauseAll,
@@ -143,7 +145,7 @@ impl Group {
 }
 
 impl Command {
-    pub const ALL: [Self; 40] = [
+    pub const ALL: [Self; 41] = [
         Self::PlayPause,
         Self::SeekForward,
         Self::SeekBackward,
@@ -177,6 +179,7 @@ impl Command {
         Self::NextAspectRatio,
         Self::NextCrop,
         Self::ResetPicture,
+        Self::TakeScreenshot,
         Self::FullScreen,
         Self::ExitFullScreen,
         Self::PlayPauseAll,
@@ -222,6 +225,7 @@ impl Command {
             Self::NextAspectRatio => "next_aspect_ratio",
             Self::NextCrop => "next_crop",
             Self::ResetPicture => "reset_picture",
+            Self::TakeScreenshot => "take_screenshot",
             Self::FullScreen => "full_screen",
             Self::ExitFullScreen => "exit_full_screen",
             Self::PlayPauseAll => "play_pause_all",
@@ -271,6 +275,7 @@ impl Command {
             Self::NextAspectRatio => "Next aspect ratio",
             Self::NextCrop => "Next crop",
             Self::ResetPicture => "Reset picture",
+            Self::TakeScreenshot => "Take screenshot",
             Self::FullScreen => "Full screen",
             Self::ExitFullScreen => "Exit full screen",
             Self::PlayPauseAll => "Play/pause all",
@@ -315,7 +320,8 @@ impl Command {
             | Self::FlipVertically
             | Self::NextAspectRatio
             | Self::NextCrop
-            | Self::ResetPicture => Group::Video,
+            | Self::ResetPicture
+            | Self::TakeScreenshot => Group::Video,
             Self::FullScreen | Self::ExitFullScreen => Group::Window,
             Self::PlayPauseAll
             | Self::RestartAll
@@ -360,6 +366,7 @@ impl Command {
             Self::NextAspectRatio => Box::new(NextAspectRatio),
             Self::NextCrop => Box::new(NextCrop),
             Self::ResetPicture => Box::new(ResetPicture),
+            Self::TakeScreenshot => Box::new(TakeScreenshot),
             Self::FullScreen => Box::new(ToggleFullScreen),
             Self::ExitFullScreen => Box::new(ExitFullScreen),
             Self::PlayPauseAll => Box::new(PlayPauseAll),
@@ -411,6 +418,7 @@ impl Command {
             Self::NextAspectRatio => &["a"],
             Self::NextCrop => &["c"],
             Self::ResetPicture => &["secondary-0"],
+            Self::TakeScreenshot => &["s"],
             Self::FullScreen if mac => &["ctrl-cmd-f", "f"],
             Self::FullScreen => &["f11", "f"],
             Self::ExitFullScreen => &["escape"],

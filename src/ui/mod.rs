@@ -2,6 +2,7 @@ pub mod components;
 pub mod framing;
 pub mod open_url;
 pub mod player;
+pub mod screenshot;
 pub mod settings;
 mod subtitles;
 mod system_colors;

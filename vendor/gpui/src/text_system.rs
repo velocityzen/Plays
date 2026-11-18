@@ -13,7 +13,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    Bounds, DevicePixels, Hsla, Pixels, PlatformTextSystem, Point, Result, SharedString, Size,
+    Bounds, DevicePixels, Hsla, IsZero, Pixels, PlatformTextSystem, Point, Result, SharedString, Size,
     StrikethroughStyle, UnderlineStyle, px,
 };
 use anyhow::{Context as _, anyhow};
@@ -326,6 +326,60 @@ impl TextSystem {
         self.platform_text_system
             .rasterize_glyph(params, raster_bounds)
     }
+
+    /// Plays: rasterize a glyph of a line into memory, as
+    /// `Window::paint_glyph` (or `paint_emoji`) would draw it at
+    /// `scale_factor`. `None` for a glyph without pixels, such as a space.
+    pub fn rasterize_line_glyph(
+        &self,
+        glyph: &LineGlyph,
+        scale_factor: f32,
+    ) -> Result<Option<GlyphRaster>> {
+        let origin = glyph.origin.scale(scale_factor);
+        // The same steps as `paint_glyph` and `paint_emoji`.
+        let subpixel_variant = if glyph.is_emoji {
+            Point::default()
+        } else {
+            Point {
+                x: (origin.x.0.fract() * SUBPIXEL_VARIANTS_X as f32).floor() as u8,
+                y: (origin.y.0.fract() * SUBPIXEL_VARIANTS_Y as f32).floor() as u8,
+            }
+        };
+        let params = RenderGlyphParams {
+            font_id: glyph.font_id,
+            glyph_id: glyph.glyph_id,
+            font_size: glyph.font_size,
+            subpixel_variant,
+            scale_factor,
+            is_emoji: glyph.is_emoji,
+        };
+        let raster_bounds = self.raster_bounds(&params)?;
+        if raster_bounds.is_zero() {
+            return Ok(None);
+        }
+        let (size, bytes) = self.rasterize_glyph(&params)?;
+        let origin = Point {
+            x: DevicePixels(origin.x.0.floor() as i32) + raster_bounds.origin.x,
+            y: DevicePixels(origin.y.0.floor() as i32) + raster_bounds.origin.y,
+        };
+        Ok(Some(GlyphRaster {
+            origin,
+            size,
+            bytes,
+        }))
+    }
+}
+
+/// Plays: a glyph rasterized into memory.
+#[derive(Clone, Debug)]
+pub struct GlyphRaster {
+    /// Where its top left pixel goes, in device pixels.
+    pub origin: Point<DevicePixels>,
+    /// Its width and height, in device pixels.
+    pub size: Size<DevicePixels>,
+    /// A byte of coverage a pixel, row by row; for emoji four, BGRA with
+    /// straight alpha.
+    pub bytes: Vec<u8>,
 }
 
 /// The GPUI text layout subsystem.

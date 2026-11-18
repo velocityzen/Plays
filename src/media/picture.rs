@@ -86,8 +86,17 @@ pub fn gamma_table(gamma: f32) -> [u8; 256] {
 /// Make a tightly packed `width` x `height` BGRA picture, with `row` filling
 /// in each row, spread over the CPU's cores.
 pub fn bgra_rows(width: usize, height: usize, row: impl Fn(usize, &mut [u8]) + Sync) -> Vec<u8> {
-    let row_bytes = width * 4;
-    let mut out = vec![0; row_bytes * height];
+    rows(width * 4, height, row)
+}
+
+/// Make `height` rows of `row_len` items each, with `row` filling in each
+/// row, spread over the CPU's cores.
+pub fn rows<T: Clone + Default + Send>(
+    row_len: usize,
+    height: usize,
+    row: impl Fn(usize, &mut [T]) + Sync,
+) -> Vec<T> {
+    let mut out = vec![T::default(); row_len * height];
     if out.is_empty() {
         return out;
     }
@@ -99,10 +108,10 @@ pub fn bgra_rows(width: usize, height: usize, row: impl Fn(usize, &mut [u8]) + S
     let rows_per_thread = height.div_ceil(threads);
     let row = &row;
     thread::scope(|scope| {
-        for (chunk, out) in out.chunks_mut(rows_per_thread * row_bytes).enumerate() {
+        for (chunk, out) in out.chunks_mut(rows_per_thread * row_len).enumerate() {
             let first_row = chunk * rows_per_thread;
             scope.spawn(move || {
-                for (y, out) in out.chunks_exact_mut(row_bytes).enumerate() {
+                for (y, out) in out.chunks_exact_mut(row_len).enumerate() {
                     row(first_row + y, out);
                 }
             });

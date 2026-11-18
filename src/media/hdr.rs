@@ -34,6 +34,15 @@ const BT2020_TO_BT709: [[f32; 3]; 3] = [
     [-0.124_550, 1.1329, -0.008_349],
     [-0.018_151, -0.100_579, 1.118_73],
 ];
+const BT709_TO_BT2020: [[f32; 3]; 3] = [
+    [0.627_404, 0.329_283, 0.043_313],
+    [0.069_097, 0.919_540, 0.011_362],
+    [0.016_391, 0.088_013, 0.895_595],
+];
+/// HLG's OETF constants (BT.2100).
+const HLG_A: f32 = 0.178_832_77;
+const HLG_B: f32 = 1.0 - 4.0 * HLG_A;
+const HLG_C: f32 = 0.559_910_7;
 
 /// How an HDR picture encodes light.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -55,40 +64,89 @@ impl Transfer {
     }
 }
 
+/// PQ's constants (SMPTE ST 2084).
+const PQ_M1: f32 = 2610.0 / 16384.0;
+const PQ_M2: f32 = 2523.0 / 4096.0 * 128.0;
+const PQ_C1: f32 = 3424.0 / 4096.0;
+const PQ_C2: f32 = 2413.0 / 4096.0 * 32.0;
+const PQ_C3: f32 = 2392.0 / 4096.0 * 32.0;
+
 /// PQ's EOTF: a signal in 0..=1 to nits.
 pub fn pq_to_nits(signal: f32) -> f32 {
-    const M1: f32 = 2610.0 / 16384.0;
-    const M2: f32 = 2523.0 / 4096.0 * 128.0;
-    const C1: f32 = 3424.0 / 4096.0;
-    const C2: f32 = 2413.0 / 4096.0 * 32.0;
-    const C3: f32 = 2392.0 / 4096.0 * 32.0;
-    let p = signal.clamp(0.0, 1.0).powf(1.0 / M2);
-    10000.0 * ((p - C1).max(0.0) / (C2 - C3 * p)).powf(1.0 / M1)
+    let p = signal.clamp(0.0, 1.0).powf(1.0 / PQ_M2);
+    10000.0 * ((p - PQ_C1).max(0.0) / (PQ_C2 - PQ_C3 * p)).powf(1.0 / PQ_M1)
+}
+
+/// PQ's inverse EOTF: nits to a signal in 0..=1.
+pub fn nits_to_pq(nits: f32) -> f32 {
+    let y = (nits / 10000.0).clamp(0.0, 1.0).powf(PQ_M1);
+    ((PQ_C1 + PQ_C2 * y) / (1.0 + PQ_C3 * y)).powf(PQ_M2)
 }
 
 /// HLG's inverse OETF: a signal in 0..=1 to scene light in 0..=1.
 pub fn hlg_to_scene(signal: f32) -> f32 {
-    const A: f32 = 0.178_832_77;
-    const B: f32 = 1.0 - 4.0 * A;
-    const C: f32 = 0.559_910_7;
     let e = signal.clamp(0.0, 1.0);
     if e <= 0.5 {
         e * e / 3.0
     } else {
-        (((e - C) / A).exp() + B) / 12.0
+        (((e - HLG_C) / HLG_A).exp() + HLG_B) / 12.0
     }
+}
+
+/// HLG's OETF: scene light in 0..=1 to a signal in 0..=1.
+pub fn scene_to_hlg(light: f32) -> f32 {
+    let e = light.clamp(0.0, 1.0);
+    if e <= 1.0 / 12.0 {
+        (3.0 * e).sqrt()
+    } else {
+        HLG_A * (12.0 * e - HLG_B).ln() + HLG_C
+    }
+}
+
+fn bt2020_luma(rgb: [f32; 3]) -> f32 {
+    0.2627 * rgb[0] + 0.6780 * rgb[1] + 0.0593 * rgb[2]
 }
 
 /// HLG's OOTF: scene light in BT.2020 RGB to nits on its nominal display.
 pub fn hlg_scene_to_nits(rgb: [f32; 3]) -> [f32; 3] {
-    let luma = 0.2627 * rgb[0] + 0.6780 * rgb[1] + 0.0593 * rgb[2];
-    let gain = HLG_PEAK_NITS * luma.max(0.0).powf(HLG_GAMMA - 1.0);
+    let gain = HLG_PEAK_NITS * bt2020_luma(rgb).max(0.0).powf(HLG_GAMMA - 1.0);
+    rgb.map(|c| gain * c)
+}
+
+/// HLG's inverse OOTF: nits on its nominal display, in BT.2020 RGB, to
+/// scene light.
+pub fn hlg_nits_to_scene(rgb: [f32; 3]) -> [f32; 3] {
+    let luma = bt2020_luma(rgb) / HLG_PEAK_NITS;
+    if luma <= 0.0 {
+        return [0.0; 3];
+    }
+    let gain = luma.powf((1.0 - HLG_GAMMA) / HLG_GAMMA) / HLG_PEAK_NITS;
     rgb.map(|c| gain * c)
 }
 
 /// Linear BT.2020 RGB to linear BT.709 (sRGB) RGB.
 pub fn bt2020_to_bt709(rgb: [f32; 3]) -> [f32; 3] {
     BT2020_TO_BT709.map(|row| row[0] * rgb[0] + row[1] * rgb[1] + row[2] * rgb[2])
+}
+
+/// Linear BT.709 (sRGB) RGB to linear BT.2020 RGB.
+pub fn bt709_to_bt2020(rgb: [f32; 3]) -> [f32; 3] {
+    BT709_TO_BT2020.map(|row| row[0] * rgb[0] + row[1] * rgb[1] + row[2] * rgb[2])
+}
+
+/// Linear BT.2020 light, relative to SDR white, as an HDR signal in 0..=1.
+pub fn encode(light: [f32; 3], transfer: Transfer) -> [f32; 3] {
+    let nits = light.map(|c| c.max(0.0) * REFERENCE_WHITE_NITS);
+    match transfer {
+        Transfer::Pq => nits.map(nits_to_pq),
+        Transfer::Hlg => hlg_nits_to_scene(nits).map(scene_to_hlg),
+    }
+}
+
+/// An sRGB color as an HDR signal, its white at HDR reference white: what
+/// SDR things (subtitles) drawn over HDR video should be.
+pub fn sdr_to_hdr(srgb: [f32; 3], transfer: Transfer) -> [f32; 3] {
+    encode(bt709_to_bt2020(srgb.map(srgb_decode)), transfer)
 }
 
 /// Brightness relative to SDR white, fitted under `headroom`: unchanged up
@@ -120,6 +178,15 @@ pub fn srgb_encode(linear: f32) -> f32 {
         12.92 * linear
     } else {
         1.055 * linear.powf(1.0 / 2.4) - 0.055
+    }
+}
+
+/// sRGB's decoding to linear light in 0..=1.
+pub fn srgb_decode(signal: f32) -> f32 {
+    if signal <= 0.040_45 {
+        signal / 12.92
+    } else {
+        ((signal + 0.055) / 1.055).powf(2.4)
     }
 }
 
@@ -251,9 +318,47 @@ mod tests {
 
     #[test]
     fn white_stays_white_across_primaries() {
-        for c in bt2020_to_bt709([1.0; 3]) {
+        for c in bt2020_to_bt709([1.0; 3])
+            .into_iter()
+            .chain(bt709_to_bt2020([1.0; 3]))
+        {
             assert!(close(c, 1.0, 1e-3));
         }
+        let color = [0.8, 0.3, 0.1];
+        for (a, b) in bt2020_to_bt709(bt709_to_bt2020(color))
+            .into_iter()
+            .zip(color)
+        {
+            assert!(close(a, b, 1e-4), "{a} {b}");
+        }
+    }
+
+    #[test]
+    fn encodes_light_back_into_signals() {
+        for signal in [0.0, 0.1, 0.5081, 0.5806, 0.9, 1.0] {
+            assert!(
+                close(nits_to_pq(pq_to_nits(signal)), signal, 1e-4),
+                "{signal}"
+            );
+            assert!(
+                close(scene_to_hlg(hlg_to_scene(signal)), signal, 1e-4),
+                "{signal}"
+            );
+        }
+        for srgb in [0.0, 0.02, 0.5, 1.0] {
+            assert!(close(srgb_encode(srgb_decode(srgb)), srgb, 1e-5), "{srgb}");
+        }
+        let scene = [0.3, 0.2, 0.1];
+        let back = hlg_nits_to_scene(hlg_scene_to_nits(scene));
+        for (a, b) in back.into_iter().zip(scene) {
+            assert!(close(a, b, 1e-5), "{a} {b}");
+        }
+        // SDR white lands on HDR reference white.
+        let white = sdr_to_hdr([1.0; 3], Transfer::Pq);
+        assert!(white.iter().all(|&c| close(c, 0.5806, 1e-3)), "{white:?}");
+        let white = sdr_to_hdr([1.0; 3], Transfer::Hlg);
+        assert!(white.iter().all(|&c| close(c, 0.75, 5e-3)), "{white:?}");
+        assert_eq!(sdr_to_hdr([0.0; 3], Transfer::Hlg), [0.0; 3]);
     }
 
     #[test]

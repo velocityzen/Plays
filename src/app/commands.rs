@@ -2,7 +2,7 @@
 
 use gpui::App;
 
-use super::dispatch::{with_active, with_workspace};
+use super::dispatch::{with_active, with_active_in_window, with_workspace};
 use super::{
     CloseAll, CloseWindow, OpenFiles, OpenSettings, OpenUrl, Quit, SetAspectRatio, SetCrop,
 };
@@ -88,6 +88,9 @@ pub(super) fn register(cx: &mut App) {
     cx.on_action(|_: &NextAspectRatio, cx| with_active(cx, |p, cx| p.next_aspect_ratio(cx)));
     cx.on_action(|_: &NextCrop, cx| with_active(cx, |p, cx| p.next_crop(cx)));
     cx.on_action(|_: &ResetPicture, cx| with_active(cx, |p, cx| p.reset_picture(cx)));
+    cx.on_action(|_: &TakeScreenshot, cx| {
+        with_active_in_window(cx, |p, window, cx| p.take_screenshot(window, cx))
+    });
     cx.on_action(|action: &SetAspectRatio, cx| {
         let aspect = action.0;
         with_active(cx, move |p, cx| p.set_aspect_ratio(aspect, cx))

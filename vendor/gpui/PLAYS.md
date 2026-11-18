@@ -88,6 +88,13 @@ the width it is aligned in, not just as wide as the text. Centered text
 (Plays' subtitles) used to fall outside its layer, so a popover drawn over
 it later could end up beneath it.
 
+Text drawn into memory, for Plays' screenshots with subtitles:
+`WrappedLine::glyphs` (`src/text_system/line.rs`) lists the glyphs `paint`
+would draw, where, and in what color, the same way `paint_line` places
+them; `TextSystem::rasterize_line_glyph` (`src/text_system.rs`) rasterizes
+one at a scale factor as `Window::paint_glyph` or `paint_emoji` would, into
+a `GlyphRaster` of coverage (or BGRA for emoji) and where it goes.
+
 `src/taffy.rs`: two float literals are typed as `f32`, which newer Rust
 warns about otherwise.
 

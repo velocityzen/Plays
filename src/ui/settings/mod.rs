@@ -7,6 +7,7 @@ mod audio;
 mod form;
 mod hotkeys;
 mod playback;
+mod screenshots;
 mod subtitles;
 mod video;
 
@@ -70,11 +71,12 @@ trait Pane {
 }
 
 /// The panes, in the sidebar's order.
-const PANES: [&dyn Pane; 7] = [
+const PANES: [&dyn Pane; 8] = [
     &playback::PlaybackPane,
     &audio::AudioPane,
     &video::VideoPane,
     &subtitles::SubtitlesPane,
+    &screenshots::ScreenshotsPane,
     &hotkeys::HotkeysPane,
     &appearance::AppearancePane,
     &about::AboutPane,

@@ -23,9 +23,11 @@ ffmpeg-next = { version = "9.1", default-features = false, features = [
     "software-scaling",
 ] }
 gpui = "0.2.2"
-image = { version = "0.25", default-features = false }
+# JPEG for screenshots; PNG goes straight through `png`, which can tag HDR.
+image = { version = "0.25", default-features = false, features = ["jpeg"] }
 log = "0.4"
 parking_lot = "0.12"
+png = "0.18"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 unicode-segmentation = "1"
