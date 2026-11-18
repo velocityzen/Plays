@@ -4228,6 +4228,7 @@ name = "plays"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "ashpd 0.11.1",
  "chardetng",
  "core-foundation 0.10.0",
  "core-video",

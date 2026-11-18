@@ -62,6 +62,9 @@ GPU-accelerated UI framework.
 - While a tile plays, its header and controls fade when the mouse leaves
   it, or rests on it for a couple of seconds; the pointer hides then too,
   until the mouse moves. Resting on the header or controls keeps them.
+- While a video plays the screen doesn't sleep, and while only sound plays
+  the computer doesn't (a power assertion on macOS, the desktop portal's
+  Inhibit on Linux). Paused or ended, they sleep as they would.
 - A console on the tile in front, `~` or Video → Console: the file's
   format, each stream playing as the file has it (codec and profile, size,
   pixel format, colors, sample rate, channels, bit rates), the decoder and

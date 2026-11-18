@@ -3,6 +3,7 @@
 //! their keys in `keymap` and the menu bar in `menus`.
 
 mod audio;
+mod awake;
 mod commands;
 mod dispatch;
 mod keymap;
@@ -13,6 +14,7 @@ use futures::channel::mpsc::UnboundedReceiver;
 use gpui::{App, actions};
 
 pub use audio::{AudioEngine, Route};
+pub use awake::Awake;
 
 use crate::media::{Source, picture};
 use crate::settings::Settings;
@@ -58,6 +60,7 @@ pub fn run(cx: &mut App, sources: Vec<Source>, opened: UnboundedReceiver<Vec<Str
     commands::register(cx);
     keymap::bind_keys(cx);
     keymap::watch_hotkeys(cx);
+    awake::watch(cx);
 
     let window = Workspace::open_window(WINDOW_SIZE, cx).expect("opening the first window");
 

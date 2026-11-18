@@ -1,9 +1,10 @@
 //! The tiles: adding and closing them, telling them where they are,
 //! maximizing one, and moving one to a window of its own.
 
-use gpui::{Context, Entity, EntityId, Pixels, Size, px, size};
+use gpui::{App, Context, Entity, EntityId, Pixels, Size, px, size};
 
 use super::{TOOLBAR, Tile, Workspace};
+use crate::app::Awake;
 use crate::ui::player::{PlayerEvent, PlayerView};
 use crate::ui::theme::layout::{
     AUDIO_WINDOW_SIZE, TOOLBAR_HEIGHT, VIDEO_WINDOW_SIZE, WINDOW_MIN_SIZE, WINDOW_SIZE,
@@ -137,6 +138,25 @@ impl Workspace {
             .or_else(|| self.active.and_then(find))
             .or_else(|| self.tiles.first())
             .map(|tile| tile.view.clone())
+    }
+
+    /// What its players keep awake: the screen while a video plays, the
+    /// computer while only sound does.
+    pub fn keeps_awake(&self, cx: &App) -> Awake {
+        self.tiles
+            .iter()
+            .map(|tile| {
+                let player = tile.view.read(cx).player();
+                if !player.is_playing() {
+                    Awake::Nothing
+                } else if player.info().is_some_and(|info| info.has_video) {
+                    Awake::Screen
+                } else {
+                    Awake::Computer
+                }
+            })
+            .max()
+            .unwrap_or_default()
     }
 
     /// Run `f` on the tile shortcuts go to.

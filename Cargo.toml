@@ -44,6 +44,11 @@ core-video = "0.4"
 objc = "0.2"
 raw-window-handle = "0.6"
 
+# The desktop portal's Inhibit, to keep the screen awake while a video
+# plays; the same version and features gpui uses.
+[target.'cfg(target_os = "linux")'.dependencies]
+ashpd = { version = "0.11", default-features = false, features = ["async-std"] }
+
 [profile.dev]
 # Video decoding and pixel conversion are painfully slow without optimizations.
 opt-level = 1
