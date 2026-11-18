@@ -276,9 +276,9 @@ pub mod motion {
     /// controls fade (and the pointer hides), as if it had left the window.
     pub const MOUSE_IDLE: Duration = Duration::from_millis(2500);
     /// How long files just opened get to say how big their videos are
-    /// before their window is sized for them anyway, and how often it
-    /// looks.
-    pub const FIT_WAIT: Duration = Duration::from_secs(3);
+    /// (from a network drive, it can take a while) before their window is
+    /// sized for the ones that have, and how often it looks.
+    pub const FIT_WAIT: Duration = Duration::from_secs(30);
     pub const FIT_POLL: Duration = Duration::from_millis(50);
     /// How much of the audio level meter's reading is kept each frame as
     /// the sound gets quieter; it rises at once.

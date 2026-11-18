@@ -47,6 +47,8 @@ pub struct Workspace {
     focus_handle: FocusHandle,
     /// Its own window, to size for the videos opened in it.
     window: AnyWindowHandle,
+    /// Files just opened, whose sizes the window waits for.
+    fitting: Option<fit::Fitting>,
     tiles: Vec<Tile>,
     /// Gamma for SDR and HDR video, as last applied to the tiles.
     gamma: [f32; 2],
@@ -149,6 +151,7 @@ impl Workspace {
         Self {
             focus_handle,
             window: window.window_handle(),
+            fitting: None,
             tiles: Vec::new(),
             maximized: None,
             active: None,

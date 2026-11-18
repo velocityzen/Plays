@@ -1,11 +1,13 @@
 //! Sizing a window to the videos opened in it: each at its own size, in the
-//! grid's rows, but no bigger than the screen. Only as files open; after
-//! that the window is the user's to size.
+//! grid's rows, but no bigger than the screen. Only as files open, however
+//! long that takes (a network drive can take a while), and not if the
+//! window was resized meanwhile; after that the window is the user's to
+//! size.
 
 use std::time::Instant;
 
 use gpui::prelude::*;
-use gpui::{Context, EntityId, Pixels, Size, Window, px, size};
+use gpui::{App, Context, EntityId, Pixels, Size, Window, px, size};
 
 use super::{TOOLBAR, Workspace};
 use crate::settings::Settings;
@@ -15,36 +17,77 @@ use crate::ui::theme::layout::{
 };
 use crate::ui::theme::motion::{FIT_POLL, FIT_WAIT};
 
+/// Files opened into a window whose sizes it waits for.
+pub(super) struct Fitting {
+    /// Their tiles.
+    opened: Vec<EntityId>,
+    /// When the last of them was opened.
+    started: Instant,
+}
+
 impl Workspace {
     /// Once the tiles just `opened` know how big their videos are (or have
-    /// failed, or `FIT_WAIT` has passed), size the window for every tile.
+    /// failed, or `FIT_WAIT` has passed), size the window for every tile,
+    /// unless it was resized meanwhile. Files opened while it waits are
+    /// waited for too.
     pub(super) fn fit_when_known(&mut self, opened: Vec<EntityId>, cx: &mut Context<Self>) {
+        if let Some(fitting) = &mut self.fitting {
+            fitting.opened.extend(opened);
+            fitting.started = Instant::now();
+            return;
+        }
+        self.fitting = Some(Fitting {
+            opened,
+            started: Instant::now(),
+        });
         let window = self.window;
         cx.spawn(async move |this, cx| {
-            let started = Instant::now();
+            let Ok(size_at_open) = cx.update_window(window, |_, window, _| window.bounds().size)
+            else {
+                return;
+            };
             loop {
-                let known = this.update(cx, |this, cx| {
-                    this.tiles
-                        .iter()
-                        .filter(|tile| opened.contains(&tile.view.entity_id()))
-                        .all(|tile| {
-                            let player = tile.view.read(cx).player();
-                            player.info().is_some() || player.error().is_some()
-                        })
+                cx.background_executor().timer(FIT_POLL).await;
+                let done = cx.update_window(window, |_, window, cx| {
+                    this.update(cx, |this, cx| {
+                        if !this.sizes_known(cx) {
+                            return false;
+                        }
+                        this.fitting = None;
+                        let size = window.bounds().size;
+                        let resized = (size.width - size_at_open.width).abs() > px(1.)
+                            || (size.height - size_at_open.height).abs() > px(1.);
+                        if resized {
+                            log::debug!("not sizing the window for its videos: it was resized");
+                        } else {
+                            this.fit_window(window, cx);
+                        }
+                        true
+                    })
                 });
-                match known {
-                    Err(_) => return,
-                    Ok(true) => break,
-                    Ok(false) if started.elapsed() >= FIT_WAIT => break,
-                    Ok(false) => cx.background_executor().timer(FIT_POLL).await,
+                if !matches!(done, Ok(Ok(false))) {
+                    return;
                 }
             }
-            cx.update_window(window, |_, window, cx| {
-                this.update(cx, |this, cx| this.fit_window(window, cx)).ok();
-            })
-            .ok();
         })
         .detach();
+    }
+
+    /// The files waited for know how big their videos are, or have failed,
+    /// or have had `FIT_WAIT` to.
+    fn sizes_known(&self, cx: &App) -> bool {
+        let Some(fitting) = &self.fitting else {
+            return true;
+        };
+        fitting.started.elapsed() >= FIT_WAIT
+            || self
+                .tiles
+                .iter()
+                .filter(|tile| fitting.opened.contains(&tile.view.entity_id()))
+                .all(|tile| {
+                    let player = tile.view.read(cx).player();
+                    player.info().is_some() || player.error().is_some()
+                })
     }
 
     /// Size the window so every tile shows its video at its own size, or
