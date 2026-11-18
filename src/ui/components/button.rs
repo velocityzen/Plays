@@ -4,13 +4,16 @@ use gpui::{App, ClickEvent, ElementId, SharedString, Window, div, px, white};
 use super::{ClickHandler, Icon};
 use crate::ui::theme::Theme;
 
-/// A regular text button with an optional leading icon.
+/// A regular text button with an optional leading icon, and optionally its
+/// keyboard shortcut after the label.
 #[derive(IntoElement)]
 pub struct Button {
     id: ElementId,
     label: SharedString,
     icon: Option<SharedString>,
+    shortcut: Option<SharedString>,
     primary: bool,
+    wide: bool,
     on_click: Option<ClickHandler>,
 }
 
@@ -20,7 +23,9 @@ impl Button {
             id: id.into(),
             label: label.into(),
             icon: None,
+            shortcut: None,
             primary: false,
+            wide: false,
             on_click: None,
         }
     }
@@ -30,9 +35,21 @@ impl Button {
         self
     }
 
+    /// Shown after the label, dimmer, such as "⌘O".
+    pub fn shortcut(mut self, keys: impl Into<SharedString>) -> Self {
+        self.shortcut = Some(keys.into());
+        self
+    }
+
     /// Filled with the accent color, for the main action of a dialog.
     pub fn primary(mut self) -> Self {
         self.primary = true;
+        self
+    }
+
+    /// More room on the sides, for a button standing on its own.
+    pub fn wide(mut self) -> Self {
+        self.wide = true;
         self
     }
 
@@ -59,10 +76,10 @@ impl RenderOnce for Button {
                 theme.surface_active,
             )
         };
-        let (text, icon) = if self.primary {
-            (white(), white())
+        let (text, icon, shortcut) = if self.primary {
+            (white(), white(), white().opacity(0.7))
         } else {
-            (theme.text, theme.text_muted)
+            (theme.text, theme.text_muted, theme.text_muted)
         };
         div()
             .id(self.id)
@@ -71,7 +88,13 @@ impl RenderOnce for Button {
             .items_center()
             .gap_1p5()
             .h(px(28.))
-            .px_2p5()
+            .map(|this| {
+                if self.wide {
+                    this.px_4()
+                } else {
+                    this.px_2p5()
+                }
+            })
             .rounded(px(6.))
             .border_1()
             .border_color(border)
@@ -86,5 +109,8 @@ impl RenderOnce for Button {
                 this.child(Icon::new(name).size(px(14.)).color(icon))
             })
             .child(self.label)
+            .when_some(self.shortcut, |this, keys| {
+                this.child(div().ml_0p5().text_color(shortcut).child(keys))
+            })
     }
 }

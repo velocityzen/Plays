@@ -1,20 +1,23 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use anyhow::Result;
 use gpui::prelude::*;
 use gpui::{
-    AnyElement, App, ClickEvent, Context, Decorations, Entity, EntityId, ExternalPaths,
-    FocusHandle, MouseButton, PathPromptOptions, Subscription, Window, div, px,
+    AnyElement, App, Bounds, ClickEvent, Context, Decorations, DispatchPhase, Entity, EntityId,
+    ExternalPaths, FocusHandle, FontWeight, MouseButton, MouseExitEvent, MouseMoveEvent,
+    PathPromptOptions, Pixels, Size, Subscription, TitlebarOptions, WeakEntity, Window,
+    WindowBounds, WindowHandle, WindowOptions, black, canvas, div, px, size,
 };
 
-use super::components::{Button, Icon, IconButton};
-use super::open_url::{OpenUrlDialog, OpenUrlEvent};
+use super::components::{Button, IconButton};
+use super::open_url::{OpenUrlDialog, OpenUrlEvent, UrlForm};
 use super::player_view::{Graveyard, PlayerEvent, PlayerView};
-use super::player_window;
-use super::theme::Theme;
+use super::theme::{self, Theme};
+use super::{TRAFFIC_LIGHTS, traffic_lights};
 use crate::app::{self, AudioEngine};
-use crate::media::Source;
-use crate::settings::Settings;
+use crate::media::{Player, Source};
+use crate::settings::{ControlsVisibility, Settings};
 
 /// Extensions picked up when a whole folder is opened.
 const MEDIA_EXTENSIONS: &[&str] = &[
@@ -23,23 +26,75 @@ const MEDIA_EXTENSIONS: &[&str] = &[
     "ogv", "opus", "ts", "vob", "wav", "weba", "webm", "wma", "wmv", "wv",
 ];
 
+const WINDOW_MIN_SIZE: Size<Pixels> = Size {
+    width: px(480.),
+    height: px(320.),
+};
+/// macOS has the menu bar for what the toolbar does, so its windows show
+/// just the video, with the traffic lights over it like other video players.
+/// Linux has no menu bar, and the toolbar is what moves the window there
+/// when it draws its own decorations.
+const TOOLBAR: bool = cfg!(not(target_os = "macos"));
+const TOOLBAR_HEIGHT: Pixels = px(44.);
+/// The empty window's ring: its share of the window's shorter side, and its
+/// smallest and largest sizes. It is drawn 2 points wide.
+const RING_SCALE: f32 = 0.8;
+const RING_MIN_DIAMETER: Pixels = px(300.);
+const RING_MAX_DIAMETER: Pixels = px(480.);
+/// The area under the toolbar, which files are dropped on.
+const CONTENT_GROUP: &str = "content";
+/// Between tiles, which otherwise fill the window.
+const TILE_GAP: Pixels = px(2.);
+/// Around the grid while files are dragged over it.
+const DROP_INSET: Pixels = px(6.);
+
 struct Tile {
     view: Entity<PlayerView>,
     _subscription: Subscription,
 }
 
-/// The main window: a toolbar and a grid with one tile per open file.
+/// A window: a toolbar and a grid with one tile per open file. Every window
+/// is one of these; a tile can move to a new one and keep playing.
 pub struct Workspace {
     focus_handle: FocusHandle,
     tiles: Vec<Tile>,
     maximized: Option<EntityId>,
     graveyard: Graveyard,
     open_url: Option<(Entity<OpenUrlDialog>, Subscription)>,
+    /// The "Open URL" form, which takes the place of the empty window's
+    /// buttons while `url_form_open`.
+    url_form: Entity<UrlForm>,
+    url_form_open: bool,
+    /// The mouse is over the window, so the controls and traffic lights show.
+    mouse_inside: bool,
+    traffic_lights_shown: bool,
     _settings_subscription: Subscription,
+    _activation_subscription: Subscription,
+    _url_form_events: Subscription,
 }
 
 impl Workspace {
-    pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+    /// Open an empty window of the given size, centered on the screen.
+    pub fn open_window(window_size: Size<Pixels>, cx: &mut App) -> Result<WindowHandle<Self>> {
+        let bounds = Bounds::centered(None, window_size, cx);
+        cx.open_window(
+            WindowOptions {
+                window_bounds: Some(WindowBounds::Windowed(bounds)),
+                titlebar: Some(TitlebarOptions {
+                    title: Some("Plays".into()),
+                    appears_transparent: true,
+                    traffic_light_position: Some(TRAFFIC_LIGHTS),
+                }),
+                window_min_size: Some(WINDOW_MIN_SIZE),
+                app_id: Some("plays".into()),
+                focus: true,
+                ..Default::default()
+            },
+            |window, cx| cx.new(|cx| Self::new(window, cx)),
+        )
+    }
+
+    fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let focus_handle = cx.focus_handle();
         window.focus(&focus_handle);
         let settings_subscription = cx.observe_global::<Settings>(|_, cx| {
@@ -49,6 +104,23 @@ impl Workspace {
             }
             cx.notify();
         });
+        // Picks up an accent color changed in System Settings meanwhile.
+        let activation_subscription = cx.observe_window_activation(window, |_, window, cx| {
+            if window.is_window_active() {
+                theme::refresh_system_colors(cx);
+            }
+        });
+        let url_form = cx.new(|cx| UrlForm::new(cx).centered());
+        let url_form_events =
+            cx.subscribe_in(&url_form, window, |this, form, event, window, cx| {
+                if let OpenUrlEvent::Open(source) = event {
+                    this.open_sources(vec![source.clone()], cx);
+                }
+                form.update(cx, |form, cx| form.clear(cx));
+                this.url_form_open = false;
+                window.focus(&this.focus_handle);
+                cx.notify();
+            });
         // Rendering stops while the window is hidden; keep players moving anyway.
         cx.spawn(async move |this, cx| {
             loop {
@@ -72,7 +144,13 @@ impl Workspace {
             maximized: None,
             graveyard: Graveyard::default(),
             open_url: None,
+            url_form,
+            url_form_open: false,
+            mouse_inside: true,
+            traffic_lights_shown: true,
             _settings_subscription: settings_subscription,
+            _activation_subscription: activation_subscription,
+            _url_form_events: url_form_events,
         }
     }
 
@@ -96,17 +174,65 @@ impl Workspace {
             let graveyard = self.graveyard.clone();
             let mixer = mixer.clone();
             let view = cx.new(|_| PlayerView::new(source, mixer, &settings, graveyard));
-            let subscription = cx.subscribe(&view, |this, view, event, cx| match event {
-                PlayerEvent::Close => this.close(view.entity_id(), cx),
-                PlayerEvent::ToggleMaximize => this.toggle_maximize(view.entity_id(), cx),
-                PlayerEvent::PopOut => this.pop_out(view.entity_id(), cx),
-            });
-            self.tiles.push(Tile {
-                view,
-                _subscription: subscription,
+            self.add_tile(view, cx);
+        }
+        self.tiles_changed(cx);
+    }
+
+    fn add_tile(&mut self, view: Entity<PlayerView>, cx: &mut Context<Self>) {
+        let subscription = cx.subscribe(&view, |this, view, event, cx| match event {
+            PlayerEvent::Close => this.close(view.entity_id(), cx),
+            PlayerEvent::ToggleMaximize => this.toggle_maximize(view.entity_id(), cx),
+            PlayerEvent::PopOut => this.pop_out(view.entity_id(), cx),
+        });
+        self.tiles.push(Tile {
+            view,
+            _subscription: subscription,
+        });
+    }
+
+    /// Tell the tiles where they are and whether the mouse is in the window.
+    /// The one in the top-left corner is under the traffic lights.
+    fn tiles_changed(&mut self, cx: &mut Context<Self>) {
+        let alone = self.tiles.len() == 1;
+        let mouse_in_window = self.mouse_inside;
+        let top_left = self
+            .maximized
+            .or_else(|| self.tiles.first().map(|t| t.view.entity_id()));
+        for tile in &self.tiles {
+            let is_top_left = top_left == Some(tile.view.entity_id());
+            tile.view.update(cx, |view, cx| {
+                if view.alone != alone
+                    || view.top_left != is_top_left
+                    || view.mouse_in_window != mouse_in_window
+                {
+                    view.alone = alone;
+                    view.top_left = is_top_left;
+                    view.mouse_in_window = mouse_in_window;
+                    cx.notify();
+                }
             });
         }
         cx.notify();
+    }
+
+    fn set_mouse_inside(&mut self, inside: bool, cx: &mut Context<Self>) {
+        if self.mouse_inside != inside {
+            self.mouse_inside = inside;
+            self.tiles_changed(cx);
+        }
+    }
+
+    /// Like the controls, the traffic lights fade out while something plays
+    /// and the mouse is away from the window.
+    fn update_traffic_lights(&mut self, window: &Window, cx: &Context<Self>) {
+        let show = self.mouse_inside
+            || cx.global::<Settings>().controls == ControlsVisibility::Always
+            || !self.any_playing(cx);
+        if show != self.traffic_lights_shown {
+            self.traffic_lights_shown = show;
+            traffic_lights::set_visible(window, show);
+        }
     }
 
     pub fn prompt_open(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -124,10 +250,17 @@ impl Workspace {
         .detach();
     }
 
-    /// Show the "Open URL" dialog, or focus it if it is already up.
+    /// Show the "Open URL" form: in place of the empty window's buttons, or
+    /// in a sheet over a window that is playing. Focuses it if already up.
     pub fn show_open_url(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.tiles.is_empty() {
+            self.url_form_open = true;
+            self.url_form.update(cx, |form, cx| form.focus(window, cx));
+            cx.notify();
+            return;
+        }
         if let Some((dialog, _)) = &self.open_url {
-            dialog.read(cx).focus(window, cx);
+            dialog.update(cx, |dialog, cx| dialog.focus(window, cx));
             return;
         }
         let dialog = cx.new(|cx| OpenUrlDialog::new(window, cx));
@@ -151,23 +284,39 @@ impl Workspace {
         if self.maximized == Some(id) {
             self.maximized = None;
         }
-        cx.notify();
+        self.tiles_changed(cx);
     }
 
-    /// Move a tile's player into a window of its own, where it keeps playing.
+    /// Move a tile to a new window, sized for it, where it keeps playing.
     fn pop_out(&mut self, id: EntityId, cx: &mut Context<Self>) {
         let Some(index) = self.tiles.iter().position(|t| t.view.entity_id() == id) else {
             return;
         };
-        if let Err(err) = player_window::open(self.tiles[index].view.clone(), cx) {
-            log::error!("could not open a player window: {err:#}");
-            return;
-        }
+        let view = self.tiles[index].view.clone();
+        let window_size = window_size_for(view.read(cx).player());
+        let window = match Self::open_window(window_size, cx) {
+            Ok(window) => window,
+            Err(err) => {
+                log::error!("could not open a window: {err:#}");
+                return;
+            }
+        };
         self.tiles.remove(index);
         if self.maximized == Some(id) {
             self.maximized = None;
         }
-        cx.notify();
+        self.tiles_changed(cx);
+        window
+            .update(cx, |workspace, _, cx| workspace.adopt(view, cx))
+            .ok();
+    }
+
+    /// Take in a tile from another window.
+    fn adopt(&mut self, view: Entity<PlayerView>, cx: &mut Context<Self>) {
+        let graveyard = self.graveyard.clone();
+        view.update(cx, |view, _| view.move_to_window(graveyard));
+        self.add_tile(view, cx);
+        self.tiles_changed(cx);
     }
 
     pub fn close_all(&mut self, cx: &mut Context<Self>) {
@@ -175,7 +324,7 @@ impl Workspace {
             tile.view.update(cx, |view, _| view.release_pictures());
         }
         self.maximized = None;
-        cx.notify();
+        self.tiles_changed(cx);
     }
 
     fn toggle_maximize(&mut self, id: EntityId, cx: &mut Context<Self>) {
@@ -188,7 +337,7 @@ impl Workspace {
             let maximized = self.maximized == Some(tile.view.entity_id());
             tile.view.update(cx, |view, _| view.maximized = maximized);
         }
-        cx.notify();
+        self.tiles_changed(cx);
     }
 
     fn for_each_player(&mut self, cx: &mut Context<Self>, f: impl Fn(&mut crate::media::Player)) {
@@ -274,10 +423,8 @@ impl Workspace {
             .flex_none()
             .items_center()
             .gap_2()
-            .h(px(44.))
+            .h(TOOLBAR_HEIGHT)
             .px_2()
-            // Leave room for the macOS traffic lights.
-            .when(cfg!(target_os = "macos"), |this| this.pl(px(80.)))
             .border_b_1()
             .border_color(theme.border)
             .bg(theme.surface)
@@ -363,47 +510,101 @@ impl Workspace {
             })
     }
 
-    fn render_empty(&self, theme: &Theme, cx: &mut Context<Self>) -> impl IntoElement {
+    /// A ring like the one in the app's icon, as large as the window allows,
+    /// with the open buttons inside.
+    fn render_empty(
+        &self,
+        theme: &Theme,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let (open_shortcut, url_shortcut) = if cfg!(target_os = "macos") {
             ("⌘O", "⇧⌘O")
         } else {
             ("Ctrl+O", "Shift+Ctrl+O")
         };
+        let viewport = window.viewport_size();
+        let height = if TOOLBAR {
+            viewport.height - TOOLBAR_HEIGHT - px(1.)
+        } else {
+            viewport.height
+        };
+        let shorter = viewport.width.min(height);
+        // Small windows get a larger share, so what is inside still fits.
+        let diameter = (shorter * RING_SCALE)
+            .max(RING_MIN_DIAMETER.min(shorter - px(16.)))
+            .min(RING_MAX_DIAMETER);
+        let form_width = (diameter * 0.62).max(px(210.)).min(px(320.));
+        let accent = theme.accent;
+
+        let ring = div()
+            .flex_none()
+            .size(diameter)
+            .rounded_full()
+            .border_2()
+            .border_color(theme.text.opacity(0.1))
+            .group_drag_over::<ExternalPaths>(CONTENT_GROUP, move |style| {
+                style.border_color(accent.opacity(0.6))
+            })
+            .flex()
+            .flex_col()
+            .justify_center()
+            .text_center()
+            // The title sits in the very middle, with the rest below it.
+            .child(
+                div()
+                    .relative()
+                    .w_full()
+                    .flex()
+                    .justify_center()
+                    .child(
+                        div()
+                            .text_xl()
+                            .font_weight(FontWeight::BOLD)
+                            .child("It plays for you"),
+                    )
+                    .child(
+                        div()
+                            .absolute()
+                            .top_full()
+                            .left_0()
+                            .right_0()
+                            .pt_4()
+                            .flex()
+                            .justify_center()
+                            .map(|this| {
+                                if self.url_form_open {
+                                    this.child(div().w(form_width).child(self.url_form.clone()))
+                                } else {
+                                    this.gap_2()
+                                        .child(
+                                            Button::new("open-empty", "Open")
+                                                .primary()
+                                                .wide()
+                                                .shortcut(open_shortcut)
+                                                .on_click(cx.listener(|this, _, window, cx| {
+                                                    this.prompt_open(window, cx)
+                                                })),
+                                        )
+                                        .child(
+                                            Button::new("open-url-empty", "Open URL")
+                                                .wide()
+                                                .shortcut(url_shortcut)
+                                                .on_click(cx.listener(|this, _, window, cx| {
+                                                    this.show_open_url(window, cx)
+                                                })),
+                                        )
+                                }
+                            }),
+                    ),
+            );
+
         div()
             .size_full()
             .flex()
-            .flex_col()
             .items_center()
             .justify_center()
-            .gap_3()
-            .rounded(px(12.))
-            .border_2()
-            .border_color(theme.border)
-            .child(Icon::new("music").size(px(36.)).color(theme.text_muted))
-            .child(div().text_lg().child("Drop videos and audio files here"))
-            .child(div().text_sm().text_color(theme.text_muted).child(format!(
-                "Everything you open plays side by side. Press {open_shortcut} to browse, \
-                 or {url_shortcut} to open a stream."
-            )))
-            .child(
-                div()
-                    .flex()
-                    .gap_2()
-                    .child(
-                        Button::new("open-empty", "Open files…")
-                            .icon("plus")
-                            .on_click(
-                                cx.listener(|this, _, window, cx| this.prompt_open(window, cx)),
-                            ),
-                    )
-                    .child(
-                        Button::new("open-url-empty", "Open URL…")
-                            .icon("link")
-                            .on_click(
-                                cx.listener(|this, _, window, cx| this.show_open_url(window, cx)),
-                            ),
-                    ),
-            )
+            .child(ring)
     }
 
     fn render_grid(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -423,13 +624,13 @@ impl Workspace {
             .size_full()
             .flex()
             .flex_col()
-            .gap_1p5()
+            .gap(TILE_GAP)
             .children(visible.chunks(columns).map(|row| {
                 div()
                     .flex()
                     .flex_1()
                     .min_h_0()
-                    .gap_1p5()
+                    .gap(TILE_GAP)
                     .children(
                         row.iter()
                             .map(|tile| div().flex_1().min_w_0().h_full().child(tile.view.clone())),
@@ -444,33 +645,50 @@ impl Render for Workspace {
         if self.graveyard.collect(window) {
             window.request_animation_frame();
         }
+        self.update_traffic_lights(window, cx);
         let theme = Theme::get(window, cx);
         let drop_highlight = theme.drop_highlight;
+        let empty = self.tiles.is_empty();
+        // Something was opened another way while the empty window's form was
+        // up; it goes away with the ring, and so does its focus.
+        if !empty && self.url_form_open {
+            self.url_form_open = false;
+            window.focus(&self.focus_handle);
+        }
 
         // The dialog sits next to the workspace rather than inside it, so the
         // workspace's single-key shortcuts (space, j, k, l, m) don't fire while
         // typing a URL.
         let workspace = div()
             .id("workspace")
-            .key_context("Workspace")
+            // Its shortcuts are for players, and single keys such as space and
+            // j would otherwise go to them while typing in the ring's field.
+            .when(!empty, |this| this.key_context("Workspace"))
             .track_focus(&self.focus_handle)
             .size_full()
             .flex()
             .flex_col()
-            .child(self.render_toolbar(window, cx, &theme))
+            .when(TOOLBAR, |this| {
+                this.child(self.render_toolbar(window, cx, &theme))
+            })
             .child(
                 div()
                     .id("content")
+                    .group(CONTENT_GROUP)
                     .flex_1()
                     .min_h_0()
-                    .p_1p5()
-                    .drag_over::<ExternalPaths>(move |style, _, _, _| style.bg(drop_highlight))
+                    // Tiles cover the whole window, so a drag over them shows a
+                    // frame around them; an empty window lights up as a whole.
+                    .drag_over::<ExternalPaths>(move |style, _, _, _| {
+                        let style = style.bg(drop_highlight);
+                        if empty { style } else { style.p(DROP_INSET) }
+                    })
                     .on_drop(cx.listener(|this, paths: &ExternalPaths, _, cx| {
                         this.open_paths(paths.paths().to_vec(), cx);
                     }))
                     .map(|this| {
-                        if self.tiles.is_empty() {
-                            this.child(self.render_empty(&theme, cx))
+                        if empty {
+                            this.child(self.render_empty(&theme, window, cx))
                         } else {
                             this.child(self.render_grid(cx))
                         }
@@ -480,14 +698,44 @@ impl Render for Workspace {
         div()
             .relative()
             .size_full()
-            .bg(theme.background)
+            .bg(if empty { theme.background } else { black() })
             .text_color(theme.text)
             .font_family(theme.font.clone())
+            .child(track_mouse(cx.entity().downgrade()))
             .child(workspace)
             .when_some(self.open_url.as_ref(), |this, (dialog, _)| {
                 this.child(dialog.clone())
             })
     }
+}
+
+/// Follows the mouse in and out of the window. gpui keeps the last position
+/// after the mouse leaves, so hovering alone would leave things showing.
+fn track_mouse(workspace: WeakEntity<Workspace>) -> impl IntoElement {
+    canvas(
+        |_, _, _| (),
+        move |_, _, window, _| {
+            window.on_mouse_event({
+                let workspace = workspace.clone();
+                move |_: &MouseMoveEvent, phase, _, cx| {
+                    if phase == DispatchPhase::Bubble {
+                        workspace
+                            .update(cx, |this, cx| this.set_mouse_inside(true, cx))
+                            .ok();
+                    }
+                }
+            });
+            window.on_mouse_event(move |_: &MouseExitEvent, phase, _, cx| {
+                if phase == DispatchPhase::Bubble {
+                    workspace
+                        .update(cx, |this, cx| this.set_mouse_inside(false, cx))
+                        .ok();
+                }
+            });
+        },
+    )
+    .absolute()
+    .size_0()
 }
 
 /// A toolbar button. Narrow windows show just its icon so the toolbar still fits.
@@ -508,6 +756,32 @@ fn tool(
             .on_click(on_click)
             .into_any_element()
     }
+}
+
+/// A window for one file: the video at its own size (scaled down to fit a
+/// typical screen), a square for audio, and 16:9 while the file is still
+/// opening.
+fn window_size_for(player: &Player) -> Size<Pixels> {
+    let info = player.info();
+    let content = match info.as_ref().and_then(|i| i.video_size) {
+        Some((width, height)) if width > 0 && height > 0 => {
+            let (width, height) = (width as f32, height as f32);
+            let scale = (1280. / width).min(800. / height).min(1.);
+            size(px(width * scale), px(height * scale))
+        }
+        _ if info.as_ref().is_some_and(|i| !i.has_video) => size(px(420.), px(420.)),
+        _ => size(px(960.), px(540.)),
+    };
+    // The toolbar has a 1px border under it.
+    let toolbar = if TOOLBAR {
+        TOOLBAR_HEIGHT + px(1.)
+    } else {
+        px(0.)
+    };
+    size(
+        content.width.max(WINDOW_MIN_SIZE.width),
+        (content.height + toolbar).max(WINDOW_MIN_SIZE.height),
+    )
 }
 
 /// Replace folders with the media files directly inside them.

@@ -13,8 +13,14 @@ GPU-accelerated UI framework.
   Linux. Videos the GPU can't decode fall back to software automatically. On
   macOS, hardware-decoded frames never leave the GPU (zero-copy).
 - Every file has its own play/pause, seek bar, loop, mute and volume.
-- Any tile can pop out into a window of its own and keep playing there.
-- Toolbar and shortcuts control all files at once: play/pause, seek, mute, restart, close.
+- Any tile can pop out into a new window, where it keeps playing. Every
+  window works the same: drop more files on it and they play side by side.
+- The menu bar (a toolbar on Linux) and shortcuts control all files in a
+  window at once: play/pause, seek, mute, restart, close.
+- On macOS, windows show just the video, edge to edge, with the traffic
+  lights over it like other video players. While something plays, they fade
+  out with the controls when the mouse leaves the window. Colors are macOS's
+  own, in light and dark, with your accent color.
 - Audio from every file is mixed into one output. A/V sync follows the audio clock.
 - Audio-only files show their cover art (or a note) and a level meter.
 - Settings window: theme, master volume, default volume, autoplay, loop,
@@ -92,11 +98,13 @@ For your file manager's **Open With** menu, put the `plays` binary on your
 | Settings | `⌘,` / `Ctrl+,` |
 
 On a tile: click the picture to play/pause, double-click (or the corner
-button) to maximize it, drag the bar to scrub. The button next to maximize
-moves the file into a window of its own, which keeps playing. There the
-same keys (`Space`, `←` `→`, `Home`, `M`) control just that file,
-double-click or `F` toggles full screen, and `Esc` leaves it. Closing the
-main window quits, closing player windows too.
+button) to maximize it, drag the bar to scrub. For the only tile in a window,
+both toggle full screen instead. When a window has more than
+one tile, the button next to maximize moves a tile to a new window sized for
+it, where it keeps playing. Every window takes drops and works the same
+way; menus and shortcuts act on the window in front, and files opened from
+Finder go to it too. Drag the top edge of a window to move it. Closing the
+last window quits.
 
 ## How it works
 
@@ -134,7 +142,7 @@ main window quits, closing player windows too.
 - `src/media/player.rs`: the UI-side handle: play/pause/seek, frame selection,
   buffering after seeks (and, for streams, until a second is read ahead or
   when the network runs dry), end-of-file and looping.
-- `src/ui/`: gpui views (`workspace`, `player_view`, `player_window`,
+- `src/ui/`: gpui views (`workspace`, one per window, `player_view`,
   `settings_view`, `open_url`) and a text field based on gpui's input example.
 - `src/ui/components/`: the reusable controls (icon, buttons, switch,
   segmented control, slider), one `RenderOnce` component per file.

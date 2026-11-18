@@ -5,16 +5,16 @@ use std::sync::Arc;
 use futures::StreamExt as _;
 use futures::channel::mpsc::UnboundedReceiver;
 use gpui::{
-    App, AppContext as _, Bounds, Global, KeyBinding, Menu, MenuItem, SystemMenuType,
-    TitlebarOptions, WindowBounds, WindowHandle, WindowOptions, actions, point, px, size,
+    AnyWindowHandle, App, AppContext as _, Bounds, Global, KeyBinding, Menu, MenuItem,
+    SystemMenuType, TitlebarOptions, WindowBounds, WindowHandle, WindowOptions, actions, px, size,
 };
 
 use crate::media::{AudioOutput, Mixer, Source};
 use crate::settings::Settings;
 use crate::ui::settings_view::SettingsView;
-use crate::ui::theme::{UiFont, pick_ui_font};
+use crate::ui::theme::{UiFont, pick_ui_font, refresh_system_colors};
 use crate::ui::workspace::Workspace;
-use crate::ui::{open_url, player_window, text_input};
+use crate::ui::{open_url, text_input};
 
 actions!(
     plays,
@@ -69,9 +69,6 @@ impl AudioEngine {
     }
 }
 
-struct MainWindow(WindowHandle<Workspace>);
-impl Global for MainWindow {}
-
 struct SettingsWindow(Option<WindowHandle<SettingsView>>);
 impl Global for SettingsWindow {}
 
@@ -95,31 +92,15 @@ pub fn run(cx: &mut App, sources: Vec<Source>, mut opened: UnboundedReceiver<Vec
     cx.set_global(audio);
     let font = pick_ui_font(cx);
     cx.set_global(UiFont(font));
+    refresh_system_colors(cx);
     cx.set_global(SettingsWindow(None));
 
     register_actions(cx);
     bind_keys(cx);
     set_menus(cx);
 
-    let bounds = Bounds::centered(None, size(px(1280.), px(800.)), cx);
-    let window = cx
-        .open_window(
-            WindowOptions {
-                window_bounds: Some(WindowBounds::Windowed(bounds)),
-                titlebar: Some(TitlebarOptions {
-                    title: Some("Plays".into()),
-                    appears_transparent: true,
-                    traffic_light_position: Some(point(px(14.), px(14.))),
-                }),
-                window_min_size: Some(size(px(480.), px(320.))),
-                app_id: Some("plays".into()),
-                focus: true,
-                ..Default::default()
-            },
-            |window, cx| cx.new(|cx| Workspace::new(window, cx)),
-        )
-        .expect("opening the main window");
-    cx.set_global(MainWindow(window));
+    let window =
+        Workspace::open_window(size(px(1280.), px(800.)), cx).expect("opening the first window");
 
     if !sources.is_empty() {
         window
@@ -153,13 +134,10 @@ pub fn run(cx: &mut App, sources: Vec<Source>, mut opened: UnboundedReceiver<Vec
     })
     .detach();
 
-    // Closing the main window quits, even if the settings window is still open.
-    cx.on_window_closed(move |cx| {
-        let main_open = cx
-            .windows()
-            .iter()
-            .any(|w| w.window_id() == window.window_id());
-        if !main_open {
+    // Closing the last workspace window quits, even if the settings window is
+    // still open.
+    cx.on_window_closed(|cx| {
+        if first_workspace(cx.windows()).is_none() {
             cx.quit();
         }
     })
@@ -167,16 +145,26 @@ pub fn run(cx: &mut App, sources: Vec<Source>, mut opened: UnboundedReceiver<Vec
     cx.activate(true);
 }
 
-/// Run `f` on the main window's workspace.
+/// Run `f` on the workspace window in front, which menus, shortcuts and files
+/// opened from Finder go to.
 fn with_workspace(
     cx: &mut App,
     f: impl FnOnce(&mut Workspace, &mut gpui::Window, &mut gpui::Context<Workspace>),
 ) {
-    if let Some(handle) = cx.try_global::<MainWindow>().map(|w| w.0) {
+    let front = first_workspace(cx.active_window())
+        .or_else(|| first_workspace(cx.window_stack().unwrap_or_default()))
+        .or_else(|| first_workspace(cx.windows()));
+    if let Some(handle) = front {
         handle
             .update(cx, |workspace, window, cx| f(workspace, window, cx))
             .ok();
     }
+}
+
+fn first_workspace(
+    windows: impl IntoIterator<Item = AnyWindowHandle>,
+) -> Option<WindowHandle<Workspace>> {
+    windows.into_iter().find_map(|w| w.downcast::<Workspace>())
 }
 
 fn register_actions(cx: &mut App) {
@@ -214,7 +202,6 @@ fn register_actions(cx: &mut App) {
 fn bind_keys(cx: &mut App) {
     text_input::bind_keys(cx);
     open_url::bind_keys(cx);
-    player_window::bind_keys(cx);
     cx.bind_keys([
         KeyBinding::new("secondary-o", OpenFiles, None),
         KeyBinding::new("secondary-shift-o", OpenUrl, None),

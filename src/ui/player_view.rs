@@ -5,10 +5,11 @@ use std::time::{Duration, Instant};
 
 use gpui::prelude::*;
 use gpui::{
-    AnyElement, ClickEvent, Context, Decorations, EventEmitter, MouseButton, ObjectFit,
-    SharedString, Window, black, div, img, linear_color_stop, linear_gradient, px, relative,
+    AnyElement, ClickEvent, Context, EventEmitter, MouseButton, ObjectFit, SharedString, Window,
+    black, div, img, linear_color_stop, linear_gradient, px, relative,
 };
 
+use super::TRAFFIC_LIGHTS_WIDTH;
 use super::components::{Icon, IconButton, Slide, Slider, SliderEvent};
 use super::theme::{Theme, overlay};
 use crate::media::picture::PictureId;
@@ -49,9 +50,9 @@ impl Graveyard {
 
 pub enum PlayerEvent {
     Close,
-    /// Fill the grid with this tile, or the screen when it has a window of its own.
+    /// Fill the grid with this tile.
     ToggleMaximize,
-    /// Move to a window of its own.
+    /// Move to a new window.
     PopOut,
 }
 
@@ -68,8 +69,14 @@ pub struct PlayerView {
     /// The frame handed to gpui in the last render (and so maybe in use on the GPU).
     drawn: Option<PictureId>,
     pub maximized: bool,
-    /// In a window of its own rather than a tile in the grid.
-    standalone: bool,
+    /// The only tile in its window: there is nowhere to expand it to, and
+    /// popping it out would leave the window empty.
+    pub alone: bool,
+    /// In its window's top-left corner, where the macOS traffic lights are.
+    pub top_left: bool,
+    /// The controls show only while the mouse is over the tile, which needs
+    /// the mouse in the window.
+    pub mouse_in_window: bool,
 }
 
 impl EventEmitter<PlayerEvent> for PlayerView {}
@@ -104,12 +111,10 @@ impl PlayerView {
             level: 0.0,
             drawn: None,
             maximized: false,
-            standalone: false,
+            alone: true,
+            top_left: false,
+            mouse_in_window: true,
         }
-    }
-
-    pub fn title(&self) -> SharedString {
-        self.title.clone()
     }
 
     pub fn player(&self) -> &Player {
@@ -143,8 +148,8 @@ impl PlayerView {
         }
     }
 
-    /// Take this tile out of the grid to draw it in a window of its own, whose
-    /// frames are released through `graveyard`.
+    /// Move this tile to another window, whose frames are released through
+    /// `graveyard`.
     pub fn move_to_window(&mut self, graveyard: Graveyard) {
         // Pictures drawn so far are in the old window's texture atlas, so the
         // old window releases them; the new one uploads its own copies.
@@ -153,7 +158,6 @@ impl PlayerView {
             self.graveyard.bury(picture);
         }
         self.graveyard = graveyard;
-        self.standalone = true;
         self.maximized = false;
     }
 
@@ -164,14 +168,29 @@ impl PlayerView {
         }
     }
 
-    fn on_surface_click(&mut self, event: &ClickEvent, _: &mut Window, cx: &mut Context<Self>) {
+    fn on_surface_click(
+        &mut self,
+        event: &ClickEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         // Single click toggles playback. A double click toggles twice, which
-        // leaves playback as it was, and maximizes the tile.
+        // leaves playback as it was, and expands the tile.
         self.player.toggle();
         if event.click_count() == 2 {
-            cx.emit(PlayerEvent::ToggleMaximize);
+            self.toggle_expanded(window, cx);
         }
         cx.notify();
+    }
+
+    /// Expand the tile to fill its window, or the window to fill the screen
+    /// when the tile is all it shows; or undo that.
+    fn toggle_expanded(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.alone {
+            window.toggle_fullscreen();
+        } else {
+            cx.emit(PlayerEvent::ToggleMaximize);
+        }
     }
 
     fn on_seek(&mut self, event: &SliderEvent, _: &mut Window, cx: &mut Context<Self>) {
@@ -345,15 +364,14 @@ impl Render for PlayerView {
             || !self.player.is_playing()
             || self.player.error().is_some();
 
-        // In a window of its own, the button fills the screen instead of the grid.
-        let maximized = if self.standalone {
+        let expanded = if self.alone {
             window.is_fullscreen()
         } else {
             self.maximized
         };
-        // A player window drawing its own decorations moves by its header.
-        let movable =
-            self.standalone && matches!(window.window_decorations(), Decorations::Client { .. });
+        // Full screen hides the traffic lights.
+        let under_traffic_lights =
+            cfg!(target_os = "macos") && self.top_left && !window.is_fullscreen();
 
         let group: SharedString = format!("tile-{}", cx.entity_id()).into();
         let duration = self.player.duration();
@@ -400,9 +418,12 @@ impl Render for PlayerView {
         };
         let has_audio = info.as_ref().is_some_and(|i| i.has_audio);
         let looping = self.player.is_looping();
+        let mouse_in_window = self.mouse_in_window;
         let reveal = |el: gpui::Div| {
             if pinned {
                 el
+            } else if !mouse_in_window {
+                el.opacity(0.)
             } else {
                 el.opacity(0.)
                     .group_hover(group.clone(), |style| style.opacity(1.))
@@ -420,8 +441,10 @@ impl Render for PlayerView {
                 .gap_1()
                 .pl_3()
                 .pr_1()
-                .pt_1()
+                // Lines the buttons up with the traffic lights.
+                .pt_2()
                 .pb_4()
+                .when(under_traffic_lights, |this| this.pl(TRAFFIC_LIGHTS_WIDTH))
                 .bg(linear_gradient(
                     180.,
                     linear_color_stop(overlay::scrim(), 0.),
@@ -435,9 +458,6 @@ impl Render for PlayerView {
                 .flex()
                 .items_baseline()
                 .gap_2()
-                .when(movable, |this| {
-                    this.on_mouse_down(MouseButton::Left, |_, window, _| window.start_window_move())
-                })
                 .when(show_titles, |this| {
                     this.child(
                         div()
@@ -458,7 +478,7 @@ impl Render for PlayerView {
                     )
                 }),
         )
-        .when(!self.standalone, |this| {
+        .when(!self.alone, |this| {
             this.child(
                 IconButton::new("pop-out", "pop-out")
                     .overlay()
@@ -466,9 +486,9 @@ impl Render for PlayerView {
             )
         })
         .child(
-            IconButton::new("maximize", if maximized { "minimize" } else { "maximize" })
+            IconButton::new("maximize", if expanded { "minimize" } else { "maximize" })
                 .overlay()
-                .on_click(cx.listener(|_, _, _, cx| cx.emit(PlayerEvent::ToggleMaximize))),
+                .on_click(cx.listener(|this, _, window, cx| this.toggle_expanded(window, cx))),
         )
         .child(
             IconButton::new("close", "close")
@@ -591,7 +611,6 @@ impl Render for PlayerView {
             .relative()
             .size_full()
             .overflow_hidden()
-            .when(!self.standalone, |this| this.rounded(px(8.)))
             .bg(if has_video || info.as_ref().is_some_and(|i| i.has_video) {
                 black()
             } else {
