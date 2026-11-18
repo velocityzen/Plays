@@ -9,8 +9,10 @@ mod hwaccel;
 pub mod picture;
 pub mod player;
 pub mod source;
+pub mod subtitles;
 #[cfg(test)]
 mod tests;
+pub mod tracks;
 #[cfg(target_os = "macos")]
 mod videotoolbox;
 

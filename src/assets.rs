@@ -16,6 +16,8 @@ macro_rules! icons {
 
 icons!(
     "appearance",
+    "check",
+    "chevron-up-down",
     "close",
     "display",
     "link",
@@ -31,6 +33,7 @@ icons!(
     "replay",
     "settings",
     "stop",
+    "subtitles",
     "volume",
     "window-max",
     "window-min",

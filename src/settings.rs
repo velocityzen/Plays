@@ -51,6 +51,139 @@ pub enum ControlsVisibility {
     OnHover,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SubtitleWeight {
+    Regular,
+    Medium,
+    Bold,
+}
+
+impl SubtitleWeight {
+    pub fn value(self) -> f32 {
+        match self {
+            Self::Regular => 400.0,
+            Self::Medium => 500.0,
+            Self::Bold => 700.0,
+        }
+    }
+}
+
+/// What sets subtitle text off from the picture behind it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SubtitleEdge {
+    None,
+    Outline,
+    Shadow,
+}
+
+/// What subtitle text is placed in.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SubtitleArea {
+    /// The picture, so text stays on it.
+    Picture,
+    /// The whole tile, so text can go in the bars around a letterboxed picture.
+    Tile,
+}
+
+/// A color, written as `"#rrggbb"` in the settings file.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Rgb(pub u32);
+
+impl Serialize for Rgb {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&format!("#{:06x}", self.0 & 0xff_ffff))
+    }
+}
+
+impl<'de> Deserialize<'de> for Rgb {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let text = String::deserialize(deserializer)?;
+        let hex = text.trim().trim_start_matches('#');
+        match u32::from_str_radix(hex, 16) {
+            Ok(value) if hex.len() == 6 => Ok(Rgb(value)),
+            _ => Err(serde::de::Error::custom(format!(
+                "{text:?} isn't a color like \"#ffcc00\""
+            ))),
+        }
+    }
+}
+
+/// The colors the subtitle settings offer, with their names.
+pub const SUBTITLE_COLORS: [(Rgb, &str); 8] = [
+    (Rgb(0xffffff), "White"),
+    (Rgb(0xffd60a), "Yellow"),
+    (Rgb(0x30d158), "Green"),
+    (Rgb(0x64d2ff), "Cyan"),
+    (Rgb(0x0a84ff), "Blue"),
+    (Rgb(0xbf5af2), "Magenta"),
+    (Rgb(0xff453a), "Red"),
+    (Rgb(0x000000), "Black"),
+];
+
+/// How subtitles look and where they go.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SubtitleStyle {
+    /// A font family; empty for the system's own.
+    pub font: String,
+    pub weight: SubtitleWeight,
+    /// Relative to the standard size, which is 5% of the picture's height.
+    pub size: f32,
+    pub color: Rgb,
+    pub edge: SubtitleEdge,
+    pub edge_color: Rgb,
+    pub background: Rgb,
+    /// 0 for no background.
+    pub background_opacity: f32,
+    pub area: SubtitleArea,
+    /// How far above the bottom of the area text sits, as a fraction of
+    /// the area's height.
+    pub position: f32,
+}
+
+pub const SUBTITLE_SIZE_RANGE: RangeInclusive<f32> = 0.5..=2.0;
+pub const SUBTITLE_POSITION_RANGE: RangeInclusive<f32> = 0.0..=0.4;
+
+impl Default for SubtitleStyle {
+    fn default() -> Self {
+        Self {
+            font: String::new(),
+            weight: SubtitleWeight::Medium,
+            size: 1.0,
+            color: Rgb(0xffffff),
+            edge: SubtitleEdge::Outline,
+            edge_color: Rgb(0x000000),
+            background: Rgb(0x000000),
+            background_opacity: 0.0,
+            area: SubtitleArea::Picture,
+            position: 0.04,
+        }
+    }
+}
+
+impl SubtitleStyle {
+    /// The style with every number in its range, whatever the file says.
+    pub fn clamped(&self) -> Self {
+        let clamp = |value: f32, range: RangeInclusive<f32>, default: f32| {
+            if value.is_finite() {
+                value.clamp(*range.start(), *range.end())
+            } else {
+                default
+            }
+        };
+        let default = Self::default();
+        Self {
+            size: clamp(self.size, SUBTITLE_SIZE_RANGE, default.size),
+            background_opacity: clamp(self.background_opacity, 0.0..=1.0, 0.0),
+            position: clamp(self.position, SUBTITLE_POSITION_RANGE, default.position),
+            ..self.clone()
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
@@ -74,6 +207,7 @@ pub struct Settings {
     pub sdr_gamma: f32,
     /// Gamma for HDR video (Dolby Vision included).
     pub hdr_gamma: f32,
+    pub subtitles: SubtitleStyle,
 }
 
 /// The gamma the settings offer.
@@ -96,6 +230,7 @@ impl Default for Settings {
             show_titles: true,
             sdr_gamma: 1.0,
             hdr_gamma: 1.0,
+            subtitles: SubtitleStyle::default(),
         }
     }
 }
@@ -169,6 +304,24 @@ mod tests {
         assert_eq!(settings.master_volume, 0.5);
         assert_eq!(settings.theme, ThemeMode::Light);
         assert_eq!(settings.max_resolution, Settings::default().max_resolution);
+    }
+
+    #[test]
+    fn reads_and_writes_subtitle_styles() {
+        let settings: Settings = serde_json::from_str(
+            r##"{ "subtitles": { "color": "#FFD60A", "size": 9, "edge": "shadow" } }"##,
+        )
+        .unwrap();
+        let style = settings.subtitles.clamped();
+        assert_eq!(style.color, Rgb(0xffd60a));
+        assert_eq!(style.size, 2.0);
+        assert_eq!(style.edge, SubtitleEdge::Shadow);
+        assert_eq!(style.weight, SubtitleWeight::Medium);
+        let json = serde_json::to_string(&settings).unwrap();
+        assert!(json.contains(r##""color":"#ffd60a""##), "{json}");
+        assert!(
+            serde_json::from_str::<Settings>(r#"{ "subtitles": { "color": "red" } }"#).is_err()
+        );
     }
 
     #[test]

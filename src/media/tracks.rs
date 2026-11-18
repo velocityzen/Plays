@@ -1,0 +1,286 @@
+//! The tracks of a file that can be picked from: its video, audio and
+//! subtitle streams, and how to name them in a menu.
+
+use ffmpeg::format::stream::{Disposition, Stream};
+use ffmpeg::media;
+use ffmpeg_next as ffmpeg;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum TrackKind {
+    Video,
+    Audio,
+    Subtitle,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Track {
+    /// The stream's index in the file.
+    pub index: usize,
+    pub kind: TrackKind,
+    /// As the file has it, usually an ISO 639-2 code such as `eng`.
+    pub language: Option<String>,
+    pub title: Option<String>,
+    /// FFmpeg's name for the codec, such as `eac3` or `subrip`.
+    pub codec: String,
+    /// The video's size, or how many audio channels.
+    pub format: Option<String>,
+    pub default: bool,
+    pub forced: bool,
+    pub hearing_impaired: bool,
+}
+
+impl Track {
+    /// The stream as a track, if it is one that can be played: not cover
+    /// art, and with a decoder for it.
+    pub fn of(stream: &Stream) -> Option<Self> {
+        let parameters = stream.parameters();
+        let disposition = stream.disposition();
+        let kind = match parameters.medium() {
+            media::Type::Video if !disposition.contains(Disposition::ATTACHED_PIC) => {
+                TrackKind::Video
+            }
+            media::Type::Audio => TrackKind::Audio,
+            media::Type::Subtitle => TrackKind::Subtitle,
+            _ => return None,
+        };
+        ffmpeg::decoder::find(parameters.id())?;
+        let metadata = stream.metadata();
+        let tag = |key: &str| {
+            metadata
+                .get(key)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_owned)
+        };
+        // SAFETY: the parameters belong to the stream, which outlives this call.
+        let raw = unsafe { &*parameters.as_ptr() };
+        let format = match kind {
+            TrackKind::Video if raw.width > 0 && raw.height > 0 => {
+                Some(format!("{}×{}", raw.width, raw.height))
+            }
+            TrackKind::Audio => channels_name(raw.ch_layout.nb_channels),
+            _ => None,
+        };
+        Some(Self {
+            index: stream.index(),
+            kind,
+            language: tag("language").filter(|code| !matches!(code.as_str(), "und" | "zxx")),
+            title: tag("title"),
+            codec: parameters.id().name().to_owned(),
+            format,
+            default: disposition.contains(Disposition::DEFAULT),
+            forced: disposition.contains(Disposition::FORCED),
+            hearing_impaired: disposition.contains(Disposition::HEARING_IMPAIRED),
+        })
+    }
+
+    /// What the menu calls the track: its language and title, or its
+    /// `number` among the tracks of its kind (from 1) when it has neither.
+    pub fn label(&self, number: usize) -> String {
+        let language = self.language.as_deref().map(language_name);
+        let mut label = match (&language, &self.title) {
+            (Some(language), Some(title)) if !title.eq_ignore_ascii_case(language) => {
+                format!("{language} – {title}")
+            }
+            (Some(language), _) => language.clone(),
+            (None, Some(title)) => title.clone(),
+            (None, None) => format!("Track {number}"),
+        };
+        let named = label.to_lowercase();
+        if self.forced && !named.contains("forced") {
+            label.push_str(" (Forced)");
+        }
+        if self.hearing_impaired && !named.contains("sdh") && !named.contains("hearing") {
+            label.push_str(" (SDH)");
+        }
+        label
+    }
+
+    /// The codec and format, such as "E-AC-3 · 5.1".
+    pub fn detail(&self) -> String {
+        let codec = codec_display_name(&self.codec);
+        match &self.format {
+            Some(format) => format!("{codec} · {format}"),
+            None => codec,
+        }
+    }
+}
+
+fn channels_name(channels: i32) -> Option<String> {
+    Some(match channels {
+        ..=0 => return None,
+        1 => "Mono".to_owned(),
+        2 => "Stereo".to_owned(),
+        6 => "5.1".to_owned(),
+        8 => "7.1".to_owned(),
+        n => format!("{n} channels"),
+    })
+}
+
+fn codec_display_name(codec: &str) -> String {
+    let name = match codec {
+        "h264" => "H.264",
+        "hevc" => "HEVC",
+        "av1" => "AV1",
+        "vp8" => "VP8",
+        "vp9" => "VP9",
+        "mpeg2video" => "MPEG-2",
+        "mpeg4" => "MPEG-4",
+        "prores" => "ProRes",
+        "aac" => "AAC",
+        "ac3" => "AC-3",
+        "eac3" => "E-AC-3",
+        "truehd" => "TrueHD",
+        "mlp" => "MLP",
+        "dts" => "DTS",
+        "flac" => "FLAC",
+        "alac" => "ALAC",
+        "opus" => "Opus",
+        "vorbis" => "Vorbis",
+        "mp2" => "MP2",
+        "mp3" => "MP3",
+        "subrip" | "srt" => "SRT",
+        "ass" | "ssa" => "ASS",
+        "webvtt" => "WebVTT",
+        "mov_text" => "Timed Text",
+        "text" => "Text",
+        "hdmv_pgs_subtitle" => "PGS",
+        "dvd_subtitle" => "VobSub",
+        "dvb_subtitle" => "DVB",
+        "eia_608" => "CEA-608",
+        other if other.starts_with("pcm_") => "PCM",
+        other => return other.to_uppercase(),
+    };
+    name.to_owned()
+}
+
+/// The English name of a language code (ISO 639-2, either form, or 639-1).
+/// Codes not in the table are shown as they are.
+pub fn language_name(code: &str) -> String {
+    const NAMES: &[(&[&str], &str)] = &[
+        (&["eng", "en"], "English"),
+        (&["fre", "fra", "fr"], "French"),
+        (&["ger", "deu", "de"], "German"),
+        (&["spa", "es"], "Spanish"),
+        (&["ita", "it"], "Italian"),
+        (&["por", "pt"], "Portuguese"),
+        (&["rus", "ru"], "Russian"),
+        (&["jpn", "ja"], "Japanese"),
+        (&["chi", "zho", "zh"], "Chinese"),
+        (&["cmn"], "Mandarin"),
+        (&["yue"], "Cantonese"),
+        (&["kor", "ko"], "Korean"),
+        (&["ara", "ar"], "Arabic"),
+        (&["heb", "he"], "Hebrew"),
+        (&["hin", "hi"], "Hindi"),
+        (&["dut", "nld", "nl"], "Dutch"),
+        (&["swe", "sv"], "Swedish"),
+        (&["nor", "no"], "Norwegian"),
+        (&["nob", "nb"], "Norwegian Bokmål"),
+        (&["nno", "nn"], "Norwegian Nynorsk"),
+        (&["dan", "da"], "Danish"),
+        (&["fin", "fi"], "Finnish"),
+        (&["ice", "isl", "is"], "Icelandic"),
+        (&["pol", "pl"], "Polish"),
+        (&["cze", "ces", "cs"], "Czech"),
+        (&["slo", "slk", "sk"], "Slovak"),
+        (&["hun", "hu"], "Hungarian"),
+        (&["rum", "ron", "ro"], "Romanian"),
+        (&["gre", "ell", "el"], "Greek"),
+        (&["tur", "tr"], "Turkish"),
+        (&["ukr", "uk"], "Ukrainian"),
+        (&["bul", "bg"], "Bulgarian"),
+        (&["hrv", "hr"], "Croatian"),
+        (&["srp", "sr"], "Serbian"),
+        (&["bos", "bs"], "Bosnian"),
+        (&["slv", "sl"], "Slovenian"),
+        (&["mac", "mkd", "mk"], "Macedonian"),
+        (&["alb", "sqi", "sq"], "Albanian"),
+        (&["est", "et"], "Estonian"),
+        (&["lav", "lv"], "Latvian"),
+        (&["lit", "lt"], "Lithuanian"),
+        (&["tha", "th"], "Thai"),
+        (&["vie", "vi"], "Vietnamese"),
+        (&["ind", "id"], "Indonesian"),
+        (&["may", "msa", "ms"], "Malay"),
+        (&["fil"], "Filipino"),
+        (&["tgl", "tl"], "Tagalog"),
+        (&["per", "fas", "fa"], "Persian"),
+        (&["urd", "ur"], "Urdu"),
+        (&["ben", "bn"], "Bengali"),
+        (&["tam", "ta"], "Tamil"),
+        (&["tel", "te"], "Telugu"),
+        (&["mar", "mr"], "Marathi"),
+        (&["kan", "kn"], "Kannada"),
+        (&["mal", "ml"], "Malayalam"),
+        (&["pan", "pa"], "Punjabi"),
+        (&["guj", "gu"], "Gujarati"),
+        (&["cat", "ca"], "Catalan"),
+        (&["baq", "eus", "eu"], "Basque"),
+        (&["glg", "gl"], "Galician"),
+        (&["wel", "cym", "cy"], "Welsh"),
+        (&["gle", "ga"], "Irish"),
+        (&["lat", "la"], "Latin"),
+        (&["afr", "af"], "Afrikaans"),
+        (&["swa", "sw"], "Swahili"),
+        (&["geo", "kat", "ka"], "Georgian"),
+        (&["arm", "hye", "hy"], "Armenian"),
+        (&["aze", "az"], "Azerbaijani"),
+        (&["kaz", "kk"], "Kazakh"),
+        (&["mul"], "Multiple languages"),
+    ];
+    let lower = code.to_ascii_lowercase();
+    NAMES
+        .iter()
+        .find(|(codes, _)| codes.contains(&lower.as_str()))
+        .map_or_else(|| code.to_owned(), |(_, name)| (*name).to_owned())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn subtitle(language: Option<&str>, title: Option<&str>) -> Track {
+        Track {
+            index: 2,
+            kind: TrackKind::Subtitle,
+            language: language.map(str::to_owned),
+            title: title.map(str::to_owned),
+            codec: "subrip".to_owned(),
+            format: None,
+            default: false,
+            forced: false,
+            hearing_impaired: false,
+        }
+    }
+
+    #[test]
+    fn labels_tracks() {
+        assert_eq!(
+            subtitle(Some("eng"), Some("British")).label(1),
+            "English – British"
+        );
+        assert_eq!(subtitle(Some("ger"), None).label(1), "German");
+        assert_eq!(subtitle(Some("fr"), Some("French")).label(1), "French");
+        assert_eq!(subtitle(Some("xyz"), None).label(1), "xyz");
+        assert_eq!(subtitle(None, None).label(3), "Track 3");
+
+        let mut forced = subtitle(Some("eng"), Some("British | Forced"));
+        forced.forced = true;
+        assert_eq!(forced.label(1), "English – British | Forced");
+        let mut forced = subtitle(Some("eng"), None);
+        forced.forced = true;
+        forced.hearing_impaired = true;
+        assert_eq!(forced.label(1), "English (Forced) (SDH)");
+    }
+
+    #[test]
+    fn describes_formats() {
+        let mut audio = subtitle(Some("eng"), None);
+        audio.kind = TrackKind::Audio;
+        audio.codec = "eac3".to_owned();
+        audio.format = channels_name(6);
+        assert_eq!(audio.detail(), "E-AC-3 · 5.1");
+        assert_eq!(subtitle(None, None).detail(), "SRT");
+    }
+}

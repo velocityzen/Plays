@@ -5,14 +5,19 @@ use std::time::{Duration, Instant};
 
 use gpui::prelude::*;
 use gpui::{
-    AnyElement, ClickEvent, Context, EventEmitter, MouseButton, ObjectFit, SharedString, Window,
-    black, div, img, linear_color_stop, linear_gradient, px, relative,
+    AnchoredPositionMode, AnyElement, ClickEvent, Context, Corner, EventEmitter, FontWeight,
+    MouseButton, ObjectFit, SharedString, Window, anchored, black, deferred, div, img,
+    linear_color_stop, linear_gradient, point, px, relative, white,
 };
 
 use super::TRAFFIC_LIGHTS_WIDTH;
 use super::components::{Icon, IconButton, Slide, Slider, SliderEvent};
+use super::subtitles;
 use super::theme::{Theme, overlay};
+use crate::media::decoder::MediaInfo;
 use crate::media::picture::PictureId;
+use crate::media::subtitles::CueContent;
+use crate::media::tracks::TrackKind;
 use crate::media::{Mixer, Picture, Player, PlayerOptions, Source};
 use crate::settings::{ControlsVisibility, Settings, VideoFit};
 
@@ -68,6 +73,10 @@ pub struct PlayerView {
     level: f32,
     /// The frame handed to gpui in the last render (and so maybe in use on the GPU).
     drawn: Option<PictureId>,
+    /// The subtitles handed to gpui in the last render.
+    cues: Vec<Arc<CueContent>>,
+    /// The audio and subtitle track menu is open.
+    tracks_open: bool,
     pub maximized: bool,
     /// The only tile in its window: there is nowhere to expand it to, and
     /// popping it out would leave the window empty.
@@ -110,6 +119,8 @@ impl PlayerView {
             resume_after_scrub: false,
             level: 0.0,
             drawn: None,
+            cues: Vec::new(),
+            tracks_open: false,
             maximized: false,
             alone: true,
             top_left: false,
@@ -125,8 +136,6 @@ impl PlayerView {
         &mut self.player
     }
 
-    /// Release a frame that is no longer current. Only frames that were rendered
-    /// can be in use on the GPU; the rest are simply dropped.
     /// How pictures look changed (gamma). Surfaces take it as they are
     /// drawn and new frames as they are converted, so only a paused video
     /// showing a converted image needs its frame decoded again.
@@ -136,10 +145,28 @@ impl PlayerView {
         }
     }
 
+    /// Release a frame that is no longer current. Only frames that were rendered
+    /// can be in use on the GPU; the rest are simply dropped.
     fn retire(&mut self, picture: Picture) {
         if self.drawn == Some(picture.id()) {
             self.drawn = None;
             self.graveyard.bury(picture);
+        }
+    }
+
+    /// Show `cues` from now on. Bitmap subtitles that go off screen are
+    /// released like frames.
+    fn show_cues(&mut self, cues: Vec<Arc<CueContent>>) {
+        for old in std::mem::replace(&mut self.cues, cues) {
+            if !self.cues.iter().any(|cue| Arc::ptr_eq(cue, &old)) {
+                self.bury_cue(&old);
+            }
+        }
+    }
+
+    fn bury_cue(&self, cue: &CueContent) {
+        for bitmap in &cue.bitmaps {
+            self.graveyard.bury(Picture::Image(bitmap.image.clone()));
         }
     }
 
@@ -166,6 +193,9 @@ impl PlayerView {
         for picture in self.player.frame().into_iter().chain(cover) {
             self.graveyard.bury(picture);
         }
+        for cue in std::mem::take(&mut self.cues) {
+            self.bury_cue(&cue);
+        }
         self.graveyard = graveyard;
         self.maximized = false;
     }
@@ -174,6 +204,9 @@ impl PlayerView {
     pub fn release_pictures(&mut self) {
         for picture in self.player.take_pictures() {
             self.graveyard.bury(picture);
+        }
+        for cue in std::mem::take(&mut self.cues) {
+            self.bury_cue(&cue);
         }
     }
 
@@ -236,6 +269,126 @@ impl PlayerView {
             self.player.set_muted(false);
         }
         cx.notify();
+    }
+
+    /// Whether the file has tracks to pick from: subtitles, or more than one
+    /// video or audio track.
+    fn has_track_choice(info: &MediaInfo) -> bool {
+        info.tracks(TrackKind::Subtitle).next().is_some()
+            || info.tracks(TrackKind::Audio).count() > 1
+            || info.tracks(TrackKind::Video).count() > 1
+    }
+
+    /// The menu of tracks: a column each for audio and subtitles (when the
+    /// file has any) and video (when it has more than one), each scrolling
+    /// on its own, so a long list of subtitles leaves audio in view.
+    fn render_tracks_menu(
+        &self,
+        info: &MediaInfo,
+        theme: &Theme,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let mut menu = div()
+            .id("tracks-menu")
+            .occlude()
+            .flex()
+            .overflow_hidden()
+            .rounded(px(8.))
+            .border_1()
+            .border_color(theme.border)
+            .bg(theme.surface)
+            .shadow_lg()
+            .text_sm()
+            .text_color(theme.text);
+        let mut first = true;
+        for (kind, heading) in [
+            (TrackKind::Video, "Video"),
+            (TrackKind::Audio, "Audio"),
+            (TrackKind::Subtitle, "Subtitles"),
+        ] {
+            let tracks: Vec<_> = info.tracks(kind).collect();
+            let listed = match kind {
+                TrackKind::Video => tracks.len() > 1,
+                _ => !tracks.is_empty(),
+            };
+            if !listed {
+                continue;
+            }
+            let selected = info.selected(kind);
+            let mut rows: Vec<(Option<usize>, String, Option<String>)> = Vec::new();
+            if kind == TrackKind::Subtitle {
+                rows.push((None, "Off".to_owned(), None));
+            }
+            rows.extend(
+                tracks.iter().enumerate().map(|(i, track)| {
+                    (Some(track.index), track.label(i + 1), Some(track.detail()))
+                }),
+            );
+            let mut list = div().id(heading).max_h(px(320.)).overflow_y_scroll().pb_1();
+            for (index, label, detail) in rows {
+                let checked = selected == index;
+                list = list.child(
+                    div()
+                        .id(("track", index.map_or(0, |i| i + 1)))
+                        .group("track-row")
+                        .flex()
+                        .items_center()
+                        .gap_1p5()
+                        .mx_1()
+                        .px_2()
+                        .py(px(3.))
+                        .rounded(px(5.))
+                        .cursor_pointer()
+                        .hover(|style| style.bg(theme.accent).text_color(white()))
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.player.select_track(kind, index);
+                            this.tracks_open = false;
+                            cx.notify();
+                        }))
+                        // A character rather than an icon, so it turns white
+                        // with the rest of the row.
+                        .child(
+                            div()
+                                .flex_none()
+                                .w(px(14.))
+                                .when(checked, |this| this.child("✓")),
+                        )
+                        .child(div().flex_1().min_w_0().truncate().child(label))
+                        .when_some(detail, |this, detail| {
+                            this.child(
+                                div()
+                                    .flex_none()
+                                    .text_xs()
+                                    .text_color(theme.text_muted)
+                                    .group_hover("track-row", |style| {
+                                        style.text_color(white().opacity(0.8))
+                                    })
+                                    .child(detail),
+                            )
+                        }),
+                );
+            }
+            menu = menu.child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .w(px(240.))
+                    .when(!first, |this| this.border_l_1().border_color(theme.border))
+                    .child(
+                        div()
+                            .px_3()
+                            .pt_2()
+                            .pb_1()
+                            .text_xs()
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(theme.text_muted)
+                            .child(heading),
+                    )
+                    .child(list),
+            );
+            first = false;
+        }
+        menu.into_any_element()
     }
 
     fn render_content(&self, theme: &Theme, fit: ObjectFit) -> AnyElement {
@@ -348,6 +501,8 @@ impl Render for PlayerView {
             self.retire(picture);
         }
         self.drawn = self.player.frame().map(|frame| frame.id());
+        let cues = self.player.subtitles();
+        self.show_cues(cues);
         let level = self.player.level();
         self.level = if level > self.level {
             level
@@ -364,12 +519,15 @@ impl Render for PlayerView {
             VideoFit::Contain => ObjectFit::Contain,
             VideoFit::Cover => ObjectFit::Cover,
         };
+        let cover = settings.video_fit == VideoFit::Cover;
+        let subtitle_style = settings.subtitles.clone();
         let show_titles = settings.show_titles;
         let info = self.player.info();
         let has_video = self.player.frame().is_some();
         let dragging = self.seek_drag.get() || self.volume_drag.get();
         let pinned = settings.controls == ControlsVisibility::Always
             || dragging
+            || self.tracks_open
             || !self.player.is_playing()
             || self.player.error().is_some();
 
@@ -426,6 +584,8 @@ impl Render for PlayerView {
             "volume"
         };
         let has_audio = info.as_ref().is_some_and(|i| i.has_audio);
+        let tracks = info.as_ref().filter(|info| Self::has_track_choice(info));
+        let subtitles_on = info.as_ref().is_some_and(|i| i.subtitle_track.is_some());
         let looping = self.player.is_looping();
         let mouse_in_window = self.mouse_in_window;
         let reveal = |el: gpui::Div| {
@@ -572,6 +732,55 @@ impl Render for PlayerView {
                         .child(time_label),
                 )
                 .child(div().flex_1())
+                .when_some(tracks, |this, info| {
+                    let button = IconButton::new("tracks", "subtitles")
+                        .overlay()
+                        .when(subtitles_on, |this| this.color(theme.accent))
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.tracks_open = !this.tracks_open;
+                            cx.notify();
+                        }));
+                    this.child(
+                        div()
+                            .relative()
+                            .child(button)
+                            .when(self.tracks_open, |this| {
+                                this.child(
+                                    deferred(
+                                        anchored()
+                                            .position_mode(AnchoredPositionMode::Local)
+                                            .anchor(Corner::BottomRight)
+                                            .position(point(px(28.), px(-6.)))
+                                            .snap_to_window_with_margin(px(8.))
+                                            .child(self.render_tracks_menu(info, &theme, cx)),
+                                    )
+                                    .with_priority(2),
+                                )
+                                // Clicks anywhere else close the menu, and do
+                                // nothing else.
+                                .child(
+                                    deferred(
+                                        anchored().position(point(px(0.), px(0.))).child(
+                                            div()
+                                                .id("tracks-backdrop")
+                                                .occlude()
+                                                .w(window.viewport_size().width)
+                                                .h(window.viewport_size().height)
+                                                .on_mouse_down(
+                                                    MouseButton::Left,
+                                                    cx.listener(close_tracks),
+                                                )
+                                                .on_mouse_down(
+                                                    MouseButton::Right,
+                                                    cx.listener(close_tracks),
+                                                ),
+                                        ),
+                                    )
+                                    .with_priority(1),
+                                )
+                            }),
+                    )
+                })
                 .when(!live, |this| {
                     this.child(
                         IconButton::new("loop", "loop")
@@ -638,6 +847,21 @@ impl Render for PlayerView {
                     .on_click(cx.listener(Self::on_surface_click))
                     .child(self.render_content(&theme, fit)),
             )
+            .when(!self.cues.is_empty(), |this| {
+                this.child(subtitles::overlay(
+                    self.cues.clone(),
+                    subtitles::Layout {
+                        video: info.as_ref().and_then(|i| i.video_size),
+                        cover,
+                        // The seek bar, the buttons and the padding below them.
+                        controls_height: px(if live { 32. } else { 50. }),
+                        controls_pinned: pinned,
+                        mouse_in_window,
+                        font: theme.font.clone(),
+                        style: subtitle_style,
+                    },
+                ))
+            })
             .when(stalled, |this| {
                 this.child(
                     div()
@@ -667,6 +891,17 @@ impl Render for PlayerView {
             .child(header.on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation()))
             .child(controls.on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation()))
     }
+}
+
+fn close_tracks(
+    view: &mut PlayerView,
+    _: &gpui::MouseDownEvent,
+    _: &mut Window,
+    cx: &mut Context<PlayerView>,
+) {
+    view.tracks_open = false;
+    cx.stop_propagation();
+    cx.notify();
 }
 
 fn format_time(seconds: f64) -> String {

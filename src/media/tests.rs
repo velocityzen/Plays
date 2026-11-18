@@ -12,6 +12,7 @@ use super::audio::Mixer;
 use super::decoder::output_size;
 use super::player::{Player, PlayerOptions};
 use super::source::Source;
+use super::tracks::TrackKind;
 
 fn options(autoplay: bool, looping: bool) -> PlayerOptions {
     PlayerOptions {
@@ -186,6 +187,203 @@ fn loops_when_asked() {
         heard > 36_000,
         "only heard {heard} frames; the file is 12000 long"
     );
+}
+
+/// The words of the subtitles showing now.
+fn subtitle_text(player: &Player) -> Vec<String> {
+    player
+        .subtitles()
+        .iter()
+        .flat_map(|cue| cue.texts.iter().map(|text| text.text.clone()))
+        .collect()
+}
+
+/// Seek, and wait until the picture is there and the subtitles say `expected`.
+fn subtitles_at(player: &mut Player, time: f64, expected: &[&str]) -> Vec<String> {
+    player.seek(time);
+    let landed = wait_until(Duration::from_secs(5), || {
+        player.tick();
+        player
+            .frame_pts()
+            .is_some_and(|pts| (pts - time).abs() < 0.045)
+    });
+    assert!(landed, "seek to {time} landed on {:?}", player.frame_pts());
+    if expected.is_empty() {
+        // Nothing showing is also how it starts, so give a wrong cue time
+        // to turn up.
+        std::thread::sleep(Duration::from_millis(150));
+        player.tick();
+    } else {
+        wait_until(Duration::from_millis(500), || {
+            player.tick();
+            subtitle_text(player) == expected
+        });
+    }
+    subtitle_text(player)
+}
+
+#[test]
+fn switches_audio_and_subtitle_tracks() {
+    let dir = std::env::temp_dir().join("plays-tests");
+    std::fs::create_dir_all(&dir).unwrap();
+    let first = dir.join("first.srt");
+    let second = dir.join("second.srt");
+    std::fs::write(
+        &first,
+        "1\n00:00:01,000 --> 00:00:02,500\n<i>Hello</i> there\n\n\
+         2\n00:00:03,000 --> 00:00:03,800\nSecond line\n",
+    )
+    .unwrap();
+    std::fs::write(&second, "1\n00:00:01,000 --> 00:00:02,500\nBonjour\n").unwrap();
+    let Some(path) = media(
+        "tracks.mkv",
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc=size=160x120:rate=25:duration=4",
+            "-f",
+            "lavfi",
+            "-t",
+            "4",
+            "-i",
+            "anullsrc=r=48000:cl=stereo",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:sample_rate=48000:duration=4",
+            "-i",
+            first.to_str().unwrap(),
+            "-i",
+            second.to_str().unwrap(),
+            "-map",
+            "0",
+            "-map",
+            "1",
+            "-map",
+            "2",
+            "-map",
+            "3",
+            "-map",
+            "4",
+            "-c:v",
+            "libx264",
+            "-g",
+            "25",
+            "-pix_fmt",
+            "yuv420p",
+            // PCM, so the silent track is exactly silent.
+            "-c:a",
+            "pcm_s16le",
+            "-c:s",
+            "srt",
+            "-metadata:s:a:0",
+            "language=eng",
+            "-metadata:s:a:1",
+            "language=ger",
+            "-metadata:s:s:0",
+            "language=eng",
+            "-metadata:s:s:0",
+            "title=Full",
+            "-metadata:s:s:1",
+            "language=fre",
+            "-disposition:s:0",
+            "0",
+            "-disposition:s:1",
+            "0",
+        ],
+    ) else {
+        eprintln!("ffmpeg not found, skipping");
+        return;
+    };
+    let mixer = Mixer::detached(48_000);
+    let mut player = Player::open(
+        Source::File(path),
+        Some(mixer.clone()),
+        options(false, false),
+    );
+    assert!(wait_until(Duration::from_secs(5), || {
+        player.tick();
+        player.frame_pts().is_some()
+    }));
+
+    let info = player.info().unwrap();
+    let audio: Vec<_> = info.tracks(TrackKind::Audio).map(|t| t.index).collect();
+    let subtitles: Vec<_> = info.tracks(TrackKind::Subtitle).collect();
+    assert_eq!(info.tracks(TrackKind::Video).count(), 1);
+    assert_eq!(
+        info.tracks(TrackKind::Audio)
+            .enumerate()
+            .map(|(i, t)| t.label(i + 1))
+            .collect::<Vec<_>>(),
+        ["English", "German"]
+    );
+    assert_eq!(subtitles.len(), 2);
+    assert_eq!(subtitles[0].label(1), "English – Full");
+    assert_eq!(subtitles[0].detail(), "SRT");
+    let subtitles: Vec<_> = subtitles.iter().map(|t| t.index).collect();
+    assert_eq!(info.audio_track, Some(audio[0]));
+    assert_eq!(info.subtitle_track, None, "no subtitle track is a default");
+
+    // The first audio track is silent, the second a tone. Mixing runs
+    // faster than real time, so this counts buffers of 512 frames.
+    let mix = |player: &mut Player, buffers: usize, enough: usize| {
+        let mut heard = 0;
+        let mut buffer = vec![0.0f32; 512 * 2];
+        for _ in 0..buffers {
+            player.tick();
+            mixer.mix(&mut buffer, 0.0, Instant::now());
+            heard += buffer
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .filter(|f| f[0].abs() > 1e-6)
+                .count();
+            if heard >= enough {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        heard
+    };
+    player.play();
+    assert_eq!(
+        mix(&mut player, 40, usize::MAX),
+        0,
+        "the first track is silent"
+    );
+    assert!(player.is_playing() && player.position() < 1.0);
+    player.select_track(TrackKind::Audio, Some(audio[1]));
+    let heard = mix(&mut player, 400, 4800);
+    assert!(
+        heard >= 4800,
+        "heard only {heard} frames of the second track"
+    );
+    assert_eq!(player.info().unwrap().audio_track, Some(audio[1]));
+    player.pause();
+
+    player.select_track(TrackKind::Subtitle, Some(subtitles[0]));
+    assert_eq!(
+        subtitles_at(&mut player, 1.5, &["Hello there"]),
+        ["Hello there"]
+    );
+    let cues = player.subtitles();
+    let spans = &cues[0].texts[0].spans;
+    assert!(spans[0].italic && spans[0].len == "Hello".len() && !spans[1].italic);
+    assert_eq!(subtitles_at(&mut player, 2.7, &[]), Vec::<String>::new());
+    assert_eq!(
+        subtitles_at(&mut player, 3.2, &["Second line"]),
+        ["Second line"]
+    );
+
+    player.select_track(TrackKind::Subtitle, Some(subtitles[1]));
+    assert_eq!(subtitles_at(&mut player, 1.2, &["Bonjour"]), ["Bonjour"]);
+    assert_eq!(player.info().unwrap().subtitle_track, Some(subtitles[1]));
+
+    player.select_track(TrackKind::Subtitle, None);
+    assert!(subtitle_text(&player).is_empty());
+    assert_eq!(subtitles_at(&mut player, 1.5, &[]), Vec::<String>::new());
+    assert_eq!(player.info().unwrap().subtitle_track, None);
 }
 
 #[test]

@@ -19,6 +19,12 @@ GPU-accelerated UI framework.
   Elsewhere, and for video decoded in software, HDR is tone mapped to SDR on
   the CPU.
 - Every file has its own play/pause, seek bar, loop, mute and volume.
+- Files with several tracks get a track menu on their tile: pick the audio
+  track, the subtitles (or none) and, if there are several, the video track,
+  while it plays. Subtitles show over the picture: text ones (SRT, ASS,
+  WebVTT, MP4 timed text) sized to the picture and styled as Settings say,
+  and bitmap ones (PGS, VobSub, DVB) as the disc has them. A file's default
+  subtitles, or failing that its forced ones, show from the start.
 - Any tile can pop out into a new window, where it keeps playing. Every
   window works the same: drop more files on it and they play side by side.
 - The menu bar (a toolbar on Linux) and shortcuts control all files in a
@@ -32,8 +38,10 @@ GPU-accelerated UI framework.
 - Settings window: theme, master volume, default volume, autoplay, loop,
   seek step, fit/fill scaling, gamma for SDR and for HDR video (applied to
   every open video as you drag), decode resolution limit, hardware decoding,
-  grid columns, controls visibility, file names. Saved as JSON in the user
-  config dir.
+  subtitle style (font, weight, size, color, outline or shadow and its color,
+  a background box, on the picture or anywhere in the tile, height), with a
+  live preview, grid columns, controls visibility, file names. Saved as JSON
+  in the user config dir.
 
 ## Building
 
@@ -105,7 +113,10 @@ For your file manager's **Open With** menu, put the `plays` binary on your
 | Settings | `⌘,` / `Ctrl+,` |
 
 On a tile: click the picture to play/pause, double-click (or the corner
-button) to maximize it, drag the bar to scrub. For the only tile in a window,
+button) to maximize it, drag the bar to scrub. The track button (next to
+loop, on files that have subtitles or more than one audio or video track)
+opens the track menu: a column each for audio, subtitles and (when there
+are several) video. For the only tile in a window,
 both toggle full screen instead. When a window has more than
 one tile, the button next to maximize moves a tile to a new window sized for
 it, where it keeps playing. Every window takes drops and works the same
@@ -130,7 +141,16 @@ last window quits.
   streams so a slow connection doesn't stall decoding) and carries out seeks.
   The decode thread decodes only while its output queues have room, converts
   video to BGRA `RenderImage`s (with the right YUV matrix and pixel aspect),
-  resamples audio to the mixer's rate, and handles accurate seeking.
+  resamples audio to the mixer's rate, and handles accurate seeking. It
+  plays one track of each kind; picking another opens a decoder for it and
+  seeks to the playhead, so the new track starts where playback is.
+- `src/media/tracks.rs`: the tracks a file has, and their names for the
+  menu (language, title, forced and SDH, codec, channels).
+- `src/media/subtitles.rs`: subtitle cues. Subtitle packets are decoded as
+  soon as they are read. FFmpeg turns every text format into ASS lines, of
+  which the words, line breaks, italics, bold and top/middle/bottom placement
+  are kept; bitmaps become images placed as fractions of the picture. A
+  cue without an end (as in PGS) lasts until the next one.
 - `src/media/hdr.rs`: PQ and HLG, and the tone curve. HDR reference white
   (203 nits) is shown as SDR white, and brightness above three quarters of
   the screen's headroom eases toward it instead of clipping. On the CPU it
@@ -171,6 +191,9 @@ last window quits.
   when the network runs dry), end-of-file and looping.
 - `src/ui/`: gpui views (`workspace`, one per window, `player_view`,
   `settings_view`, `open_url`) and a text field based on gpui's input example.
+  `subtitles` paints a tile's cues where `object_fit` puts the picture, in
+  the style from Settings; the settings' Subtitles pane draws its preview
+  with the same code.
 - `src/ui/components/`: the reusable controls (icon, buttons, switch,
   segmented control, slider), one `RenderOnce` component per file.
 
@@ -206,6 +229,11 @@ both paths on two of its frames (and saving them as PNGs):
 PLAYS_DOLBY_VISION_SAMPLE=path/to/profile5.mkv cargo test dolby -- --nocapture
 ```
 
+A Matroska file with two audio and two SRT tracks checks that tracks are
+listed and named, that switching audio while playing brings in the other
+track, and that subtitles show, change track and turn off, at the right
+times.
+
 Stream tests serve the clips from a small HTTP server on localhost:
 HTTP files, HLS (normal and live), a connection that stalls mid-way,
 unreachable hosts, and closing while a connection hangs.
@@ -226,6 +254,11 @@ unreachable hosts, and closing while a connection hangs.
 - Resuming a paused live stream continues from where it paused rather than
   jumping to the live edge, and after a long pause the server may have closed
   the connection.
-- No subtitles, playlists, playback speed or audio device selection.
+- Subtitles: ASS styling (fonts, colors, sizes, positions, effects) isn't
+  used, only italics, bold and top/middle/bottom placement. Subtitle files
+  next to the video (`.srt`) aren't loaded. A cue that started before the
+  keyframe a seek lands on is missed. In a live stream, a new track starts
+  with its next packets rather than at the playhead.
+- No playlists, playback speed or audio device selection.
 - On GNOME Wayland (client-side decorations) the window can be moved from the
   toolbar but has no resize handles.

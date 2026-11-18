@@ -1,7 +1,7 @@
 # gpui 0.2.2, patched for Plays
 
-This is gpui 0.2.2 from crates.io, without its examples, with one change:
-HDR video on macOS. Plays uses it through `[patch.crates-io]` in its
+This is gpui 0.2.2 from crates.io, without its examples, with HDR video on
+macOS and a few small fixes. Plays uses it through `[patch.crates-io]` in its
 Cargo.toml. Everything Plays changed is marked "Plays" in the code.
 
 ## What changed
@@ -33,6 +33,11 @@ Cargo.toml. Everything Plays changed is marked "Plays" in the code.
   tone mapping leaves room so highlights still end under the headroom.
 - The layer asks for EDR (`wantsExtendedDynamicRangeContent`) only while HDR
   surfaces are on screen, and for 120 frames after, since EDR costs power.
+
+`src/text_system/line.rs`: a line of text paints in a layer as wide as
+the width it is aligned in, not just as wide as the text. Centered text
+(Plays' subtitles) used to fall outside its layer, so a popover drawn over
+it later could end up beneath it.
 
 `src/taffy.rs`: two float literals are typed as `f32`, which newer Rust
 warns about otherwise.

@@ -8,9 +8,11 @@
 //! topped up with resampled stereo `f32`. Frames are BGRA images, except on
 //! macOS with hardware decoding, where they stay on the GPU (`videotoolbox`).
 //! HDR frames that become images are tone mapped for an SDR screen (`hdr`),
-//! Dolby Vision ones reshaped first (`dovi`).
+//! Dolby Vision ones reshaped first (`dovi`). Subtitles are decoded into
+//! cues as soon as they are read (`subtitles`).
 //! It only decodes while an output queue has room, so memory stays bounded
-//! however much is read ahead.
+//! however much is read ahead. One video, one audio and one subtitle track
+//! play at a time; another can be picked while playing.
 
 use std::collections::VecDeque;
 use std::ffi::c_int;
@@ -36,6 +38,8 @@ use super::hdr;
 use super::hwaccel;
 use super::picture::{self, Picture};
 use super::source::Source;
+use super::subtitles::{CueQueue, SubtitleDecoder};
+use super::tracks::{Track, TrackKind};
 #[cfg(target_os = "macos")]
 use super::videotoolbox;
 
@@ -70,7 +74,17 @@ const AV_TIME_BASE: f64 = 1_000_000.0;
 const NO_PTS: i64 = i64::MIN;
 
 pub enum Command {
-    Seek { time: f64, serial: u64 },
+    Seek {
+        time: f64,
+        serial: u64,
+    },
+    /// Play another track (by stream index), or no subtitles. Its packets
+    /// are read from wherever the demuxer is, so a seek to the playhead
+    /// should follow.
+    Select {
+        kind: TrackKind,
+        index: Option<usize>,
+    },
     Stop,
 }
 
@@ -89,6 +103,34 @@ pub struct MediaInfo {
     /// The hardware decoding API in use, once frames come out of it.
     pub hardware: Option<&'static str>,
     pub title: Option<String>,
+    /// Every track that can be played, in the file's order.
+    pub tracks: Vec<Track>,
+    /// The tracks playing, by stream index.
+    pub video_track: Option<usize>,
+    pub audio_track: Option<usize>,
+    pub subtitle_track: Option<usize>,
+}
+
+impl MediaInfo {
+    pub fn selected(&self, kind: TrackKind) -> Option<usize> {
+        match kind {
+            TrackKind::Video => self.video_track,
+            TrackKind::Audio => self.audio_track,
+            TrackKind::Subtitle => self.subtitle_track,
+        }
+    }
+
+    pub fn select(&mut self, kind: TrackKind, index: Option<usize>) {
+        match kind {
+            TrackKind::Video => self.video_track = index,
+            TrackKind::Audio => self.audio_track = index,
+            TrackKind::Subtitle => self.subtitle_track = index,
+        }
+    }
+
+    pub fn tracks(&self, kind: TrackKind) -> impl Iterator<Item = &Track> {
+        self.tracks.iter().filter(move |track| track.kind == kind)
+    }
 }
 
 pub struct VideoFrame {
@@ -115,6 +157,8 @@ pub struct Shared {
     pub audio: Option<Arc<AudioSource>>,
     /// Embedded cover art (for example in an MP3 or M4A).
     pub cover: Mutex<Option<Arc<RenderImage>>>,
+    /// Subtitle cues decoded ahead of the playhead.
+    pub subtitles: Mutex<CueQueue>,
     /// Set to the current serial once every frame and sample for it has been queued.
     pub eof_serial: AtomicU64,
     /// Seconds of packets read ahead (`f64` bits), infinite once the demuxer
@@ -197,6 +241,158 @@ fn open_input(source: &Source, shared: &Arc<Shared>) -> Result<ffmpeg::format::c
     .with_context(|| format!("could not open {source}"))
 }
 
+/// What the decode thread keeps of each stream once the demux thread has the file.
+struct StreamInfo {
+    index: usize,
+    parameters: codec::Parameters,
+    time_base: Rational,
+    /// For video, when the file gives a plausible one.
+    frame_rate: Option<f64>,
+    /// In seconds, when the file says.
+    start_time: Option<f64>,
+}
+
+impl StreamInfo {
+    fn of(stream: &ffmpeg::format::stream::Stream) -> Self {
+        let time_base = stream.time_base();
+        Self {
+            index: stream.index(),
+            parameters: stream.parameters().clone(),
+            time_base,
+            frame_rate: rational(stream.avg_frame_rate())
+                .or_else(|| rational(stream.rate()))
+                .filter(|fps| (1.0..=480.0).contains(fps)),
+            start_time: (stream.start_time() != NO_PTS)
+                .then(|| stream.start_time() as f64 * f64::from(time_base)),
+        }
+    }
+
+    /// The video's size before scaling or aspect-ratio correction.
+    fn coded_size(&self) -> Option<(u32, u32)> {
+        // SAFETY: the parameters are owned and valid while `self` is.
+        let (width, height) = unsafe {
+            let raw = &*self.parameters.as_ptr();
+            (raw.width, raw.height)
+        };
+        (width > 0 && height > 0).then_some((width as u32, height as u32))
+    }
+}
+
+/// The decoders for the tracks playing.
+struct Decoders {
+    streams: Vec<StreamInfo>,
+    options: DecodeOptions,
+    /// The video's coded size, which bitmap subtitles are placed on when
+    /// they don't say.
+    canvas: Option<(u32, u32)>,
+    video: Option<VideoDecoder>,
+    audio: Option<AudioDecoder>,
+    subtitle: Option<SubtitleDecoder>,
+}
+
+impl Decoders {
+    fn selected(&self, kind: TrackKind) -> Option<usize> {
+        match kind {
+            TrackKind::Video => self.video.as_ref().map(|v| v.index),
+            TrackKind::Audio => self.audio.as_ref().map(|a| a.index),
+            TrackKind::Subtitle => self.subtitle.as_ref().map(|s| s.index),
+        }
+    }
+
+    fn stream(&self, index: usize) -> Result<&StreamInfo> {
+        self.streams
+            .get(index)
+            .ok_or_else(|| anyhow!("there is no stream {index}"))
+    }
+
+    fn open_subtitles(&self, index: usize) -> Result<SubtitleDecoder> {
+        let stream = self.stream(index)?;
+        SubtitleDecoder::new(index, &stream.parameters, stream.time_base, self.canvas)
+    }
+
+    /// Play another track, or no subtitles (video and audio can't be turned
+    /// off). A track that can't be decoded leaves the one playing as it is.
+    fn switch(
+        &mut self,
+        kind: TrackKind,
+        index: Option<usize>,
+        demuxer: &Demuxer,
+        shared: &Shared,
+        name: &str,
+    ) {
+        if self.selected(kind) != index
+            && let Err(err) = self.try_switch(kind, index, demuxer, shared)
+        {
+            log::warn!("{name}: can't play that track: {err:#}");
+        }
+        // Whatever happened, say what plays.
+        if let Some(info) = shared.info.lock().as_mut() {
+            info.select(kind, self.selected(kind));
+        }
+    }
+
+    fn try_switch(
+        &mut self,
+        kind: TrackKind,
+        index: Option<usize>,
+        demuxer: &Demuxer,
+        shared: &Shared,
+    ) -> Result<()> {
+        let Some(index) = index else {
+            if kind == TrackKind::Subtitle {
+                demuxer.select(kind, None);
+                self.subtitle = None;
+                let mut cues = shared.subtitles.lock();
+                let serial = cues.serial;
+                cues.clear(serial);
+            }
+            return Ok(());
+        };
+        let stream = self.stream(index)?;
+        let queue = Some(PacketQueue::new(index, f64::from(stream.time_base)));
+        match kind {
+            TrackKind::Video => {
+                let options = self.options;
+                let decoder = VideoDecoder::new(stream, options.max_short_side, options.hardware)?;
+                if let Some(info) = shared.info.lock().as_mut() {
+                    info.video_size = Some(decoder.display_size());
+                    info.frame_rate = Some(1.0 / decoder.frame_duration);
+                    info.video_codec = Some(decoder.codec_name());
+                    info.hardware = None;
+                }
+                self.video = Some(decoder);
+            }
+            TrackKind::Audio => {
+                let output = shared
+                    .audio
+                    .clone()
+                    .ok_or_else(|| anyhow!("no audio output device is available"))?;
+                let decoder = AudioDecoder::new(stream, output)?;
+                if let Some(info) = shared.info.lock().as_mut() {
+                    info.audio_codec = Some(decoder.codec_name());
+                }
+                self.audio = Some(decoder);
+            }
+            TrackKind::Subtitle => self.subtitle = Some(self.open_subtitles(index)?),
+        }
+        demuxer.select(kind, queue);
+        Ok(())
+    }
+
+    /// After a seek.
+    fn reset(&mut self) {
+        if let Some(v) = &mut self.video {
+            v.reset();
+        }
+        if let Some(a) = &mut self.audio {
+            a.reset();
+        }
+        if let Some(s) = &mut self.subtitle {
+            s.reset();
+        }
+    }
+}
+
 fn run(
     source: &Source,
     shared: &Arc<Shared>,
@@ -205,46 +401,64 @@ fn run(
 ) -> Result<()> {
     let input = open_input(source, shared)?;
     let name = source.name();
+    let tracks: Vec<Track> = input.streams().filter_map(|s| Track::of(&s)).collect();
+    let mut decoders = Decoders {
+        streams: input.streams().map(|s| StreamInfo::of(&s)).collect(),
+        options,
+        canvas: None,
+        video: None,
+        audio: None,
+        subtitle: None,
+    };
 
-    let mut video: Option<VideoDecoder> = None;
     let mut cover: Option<VideoDecoder> = None;
     if let Some(stream) = input.streams().best(media::Type::Video) {
         let is_cover = stream.disposition().contains(Disposition::ATTACHED_PIC);
         let hardware = options.hardware && !is_cover;
-        match VideoDecoder::new(&stream, options.max_short_side, hardware) {
+        let info = &decoders.streams[stream.index()];
+        match VideoDecoder::new(info, options.max_short_side, hardware) {
             Ok(decoder) if is_cover => cover = Some(decoder),
-            Ok(decoder) => video = Some(decoder),
+            Ok(decoder) => {
+                decoders.canvas = info.coded_size();
+                decoders.video = Some(decoder);
+            }
             Err(err) => log::warn!("{source}: skipping video: {err:#}"),
         }
     }
 
-    let mut audio: Option<AudioDecoder> = None;
     if let Some(stream) = input.streams().best(media::Type::Audio) {
         match &shared.audio {
-            Some(output) => match AudioDecoder::new(&stream, output.clone()) {
-                Ok(decoder) => audio = Some(decoder),
-                Err(err) => log::warn!("{source}: skipping audio: {err:#}"),
-            },
-            None if video.is_none() => bail!("no audio output device is available"),
+            Some(output) => {
+                match AudioDecoder::new(&decoders.streams[stream.index()], output.clone()) {
+                    Ok(decoder) => decoders.audio = Some(decoder),
+                    Err(err) => log::warn!("{source}: skipping audio: {err:#}"),
+                }
+            }
+            None if decoders.video.is_none() => bail!("no audio output device is available"),
             None => log::warn!("{source}: no audio device, playing video only"),
         }
     }
-    if video.is_none() && audio.is_none() {
+    if decoders.video.is_none() && decoders.audio.is_none() {
         bail!("no playable audio or video streams");
     }
 
-    let start_times: Vec<Option<f64>> = [
-        video.as_ref().map(|v| v.index),
-        audio.as_ref().map(|a| a.index),
-    ]
-    .into_iter()
-    .flatten()
-    .map(|index| {
-        let stream = input.stream(index)?;
-        (stream.start_time() != NO_PTS)
-            .then(|| stream.start_time() as f64 * f64::from(stream.time_base()))
-    })
-    .collect();
+    // Subtitles the file wants shown: its default track, else a forced one.
+    let subtitles = || tracks.iter().filter(|t| t.kind == TrackKind::Subtitle);
+    let subtitle = subtitles()
+        .find(|t| t.default)
+        .or_else(|| subtitles().find(|t| t.forced));
+    if let Some(track) = subtitle {
+        match decoders.open_subtitles(track.index) {
+            Ok(decoder) => decoders.subtitle = Some(decoder),
+            Err(err) => log::warn!("{source}: skipping subtitles: {err:#}"),
+        }
+    }
+
+    let start_times: Vec<Option<f64>> = [TrackKind::Video, TrackKind::Audio]
+        .into_iter()
+        .filter_map(|kind| decoders.selected(kind))
+        .map(|index| decoders.streams[index].start_time)
+        .collect();
     let start_offset = if start_times.iter().all(Option::is_some) {
         Some(
             start_times
@@ -257,17 +471,23 @@ fn run(
     };
 
     let duration = (input.duration() > 0).then(|| input.duration() as f64 / AV_TIME_BASE);
+    let video = decoders.video.as_ref();
+    let audio = decoders.audio.as_ref();
     let info = MediaInfo {
         duration,
         live: source.is_network() && duration.is_none(),
         has_video: video.is_some(),
         has_audio: audio.is_some(),
-        video_size: video.as_ref().map(|v| v.display_size()),
-        frame_rate: video.as_ref().map(|v| 1.0 / v.frame_duration),
-        video_codec: video.as_ref().map(|v| v.codec_name()),
-        audio_codec: audio.as_ref().map(|a| a.codec_name()),
+        video_size: video.map(|v| v.display_size()),
+        frame_rate: video.map(|v| 1.0 / v.frame_duration),
+        video_codec: video.map(|v| v.codec_name()),
+        audio_codec: audio.map(|a| a.codec_name()),
         hardware: None,
         title: input.metadata().get("title").map(str::to_owned),
+        video_track: decoders.selected(TrackKind::Video),
+        audio_track: decoders.selected(TrackKind::Audio),
+        subtitle_track: decoders.selected(TrackKind::Subtitle),
+        tracks,
     };
     *shared.info.lock() = Some(info);
 
@@ -280,14 +500,16 @@ fn run(
     };
     reset_queues(shared, session.serial);
 
+    let queue = |kind: TrackKind| {
+        decoders
+            .selected(kind)
+            .map(|index| PacketQueue::new(index, f64::from(decoders.streams[index].time_base)))
+    };
     let demuxer = Arc::new(Demuxer {
         packets: Mutex::new(Packets {
-            video: video
-                .as_ref()
-                .map(|v| PacketQueue::new(v.index, v.time_base)),
-            audio: audio
-                .as_ref()
-                .map(|a| PacketQueue::new(a.index, a.time_base)),
+            video: queue(TrackKind::Video),
+            audio: queue(TrackKind::Audio),
+            subtitle: queue(TrackKind::Subtitle),
             cover_index: cover.as_ref().map(|c| c.index),
             cover: None,
             cover_seen: false,
@@ -320,6 +542,7 @@ fn run(
     loop {
         // Commands. Seeks are coalesced so dragging a slider only seeks to the latest spot.
         let mut seek = None;
+        let mut selects = Vec::new();
         let first = match wait {
             Some(timeout) => match commands.recv_timeout(timeout) {
                 Ok(command) => Some(command),
@@ -337,6 +560,7 @@ fn run(
                 match command {
                     Command::Stop => return Ok(()),
                     Command::Seek { time, serial } => seek = Some((time, serial)),
+                    Command::Select { kind, index } => selects.push((kind, index)),
                 }
                 command = match commands.try_recv() {
                     Ok(next) => next,
@@ -346,15 +570,13 @@ fn run(
             }
         }
 
+        for (kind, index) in selects {
+            decoders.switch(kind, index, &demuxer, shared, &name);
+        }
         if let Some((time, serial)) = seek {
             let target = ((time + session.start_offset()).max(0.0) * AV_TIME_BASE) as i64;
             demuxer.seek(target, serial);
-            if let Some(v) = &mut video {
-                v.reset();
-            }
-            if let Some(a) = &mut audio {
-                a.reset();
-            }
+            decoders.reset();
             session.serial = serial;
             session.seek_target = Some(time);
             reset_queues(shared, serial);
@@ -363,11 +585,11 @@ fn run(
         let mut progressed = false;
 
         // Decode a packet for each output queue that has room.
-        let video_room = video.as_ref().is_some_and(|v| {
+        let video_room = decoders.video.as_ref().is_some_and(|v| {
             !v.finished && shared.video.lock().frames.len() < v.max_queued_frames()
         });
-        if video_room && let Some(v) = &mut video {
-            match demuxer.pop(true, session.serial) {
+        if video_room && let Some(v) = &mut decoders.video {
+            match demuxer.pop(TrackKind::Video, session.serial) {
                 Next::Packet(packet) => {
                     session.start_offset = session
                         .start_offset
@@ -382,9 +604,12 @@ fn run(
                 Next::Wait => {}
             }
         }
-        let audio_room = audio.as_ref().is_some_and(|a| !a.finished && a.has_room());
-        if audio_room && let Some(a) = &mut audio {
-            match demuxer.pop(false, session.serial) {
+        let audio_room = decoders
+            .audio
+            .as_ref()
+            .is_some_and(|a| !a.finished && a.has_room());
+        if audio_room && let Some(a) = &mut decoders.audio {
+            match demuxer.pop(TrackKind::Audio, session.serial) {
                 Next::Packet(packet) => {
                     session.start_offset = session
                         .start_offset
@@ -399,6 +624,24 @@ fn run(
                 Next::Wait => {}
             }
         }
+        // Subtitles are few and small, and each has to be ready before its
+        // time, so they are decoded as soon as they are read.
+        if let Some(s) = &mut decoders.subtitle {
+            while let Next::Packet(packet) = demuxer.pop(TrackKind::Subtitle, session.serial) {
+                progressed = true;
+                let Some(cue) = s.decode(&packet, session.start_offset()) else {
+                    continue;
+                };
+                let before_target = session
+                    .seek_target
+                    .is_some_and(|target| cue.end.is_some_and(|end| end <= target));
+                if !before_target {
+                    let mut cues = shared.subtitles.lock();
+                    cues.prune(shared.clock.now());
+                    cues.push(cue);
+                }
+            }
+        }
         if let Some(c) = &mut cover
             && let Some(packet) = demuxer.take_cover()
         {
@@ -408,8 +651,8 @@ fn run(
             }
         }
 
-        let done =
-            video.as_ref().is_none_or(|v| v.finished) && audio.as_ref().is_none_or(|a| a.finished);
+        let done = decoders.video.as_ref().is_none_or(|v| v.finished)
+            && decoders.audio.as_ref().is_none_or(|a| a.finished);
         if done {
             shared.eof_serial.store(session.serial, Ordering::Release);
         }
@@ -471,6 +714,9 @@ impl PacketQueue {
 struct Packets {
     video: Option<PacketQueue>,
     audio: Option<PacketQueue>,
+    /// Decoded as soon as they are read, so they don't count towards
+    /// read-ahead.
+    subtitle: Option<PacketQueue>,
     cover_index: Option<usize>,
     cover: Option<Packet>,
     cover_seen: bool,
@@ -484,6 +730,14 @@ struct Packets {
 }
 
 impl Packets {
+    fn queue(&mut self, kind: TrackKind) -> &mut Option<PacketQueue> {
+        match kind {
+            TrackKind::Video => &mut self.video,
+            TrackKind::Audio => &mut self.audio,
+            TrackKind::Subtitle => &mut self.subtitle,
+        }
+    }
+
     fn queues(&self) -> impl Iterator<Item = &PacketQueue> {
         self.video.iter().chain(self.audio.iter())
     }
@@ -510,7 +764,7 @@ impl Packets {
 
     fn push(&mut self, packet: Packet) {
         let index = packet.stream();
-        let queue = [&mut self.video, &mut self.audio]
+        let queue = [&mut self.video, &mut self.audio, &mut self.subtitle]
             .into_iter()
             .flatten()
             .find(|q| q.index == index);
@@ -524,7 +778,10 @@ impl Packets {
     }
 
     fn clear(&mut self) {
-        for queue in [&mut self.video, &mut self.audio].into_iter().flatten() {
+        for queue in [&mut self.video, &mut self.audio, &mut self.subtitle]
+            .into_iter()
+            .flatten()
+        {
             queue.packets.clear();
         }
         self.bytes = 0;
@@ -556,18 +813,17 @@ impl Demuxer {
             .store(packets.read_ahead().to_bits(), Ordering::Relaxed);
     }
 
-    fn pop(&self, video: bool, serial: u64) -> Next {
+    fn pop(&self, kind: TrackKind, serial: u64) -> Next {
         let mut packets = self.packets.lock();
         if packets.serial != serial {
             // The demux thread hasn't got to the seek yet.
             return Next::Wait;
         }
-        let queue = if video {
-            packets.video.as_mut()
-        } else {
-            packets.audio.as_mut()
-        };
-        match queue.and_then(|q| q.packets.pop_front()) {
+        let next = packets
+            .queue(kind)
+            .as_mut()
+            .and_then(|q| q.packets.pop_front());
+        match next {
             Some(packet) => {
                 packets.bytes -= packet.size();
                 self.publish(&packets);
@@ -577,6 +833,16 @@ impl Demuxer {
             None if packets.eof => Next::End,
             None => Next::Wait,
         }
+    }
+
+    /// Queue packets of another stream for a kind of track, or none.
+    fn select(&self, kind: TrackKind, queue: Option<PacketQueue>) {
+        let mut packets = self.packets.lock();
+        if let Some(old) = std::mem::replace(packets.queue(kind), queue) {
+            packets.bytes -= old.packets.iter().map(Packet::size).sum::<usize>();
+        }
+        self.publish(&packets);
+        self.wake.notify_one();
     }
 
     fn take_cover(&self) -> Option<Packet> {
@@ -674,6 +940,7 @@ fn reset_queues(shared: &Shared, serial: u64) {
     if let Some(audio) = &shared.audio {
         audio.queue.lock().clear(serial);
     }
+    shared.subtitles.lock().clear(serial);
 }
 
 fn rational(r: Rational) -> Option<f64> {
@@ -771,26 +1038,18 @@ fn open_video(
 }
 
 impl VideoDecoder {
-    fn new(
-        stream: &ffmpeg::format::stream::Stream,
-        max_short_side: Option<u32>,
-        hardware: bool,
-    ) -> Result<Self> {
-        let parameters = stream.parameters().clone();
+    fn new(stream: &StreamInfo, max_short_side: Option<u32>, hardware: bool) -> Result<Self> {
+        let parameters = stream.parameters.clone();
         let (decoder, hardware) = open_video(&parameters, hardware)?;
         if decoder.width() == 0 || decoder.height() == 0 {
             bail!("video stream has no dimensions");
         }
-        let frame_duration = rational(stream.avg_frame_rate())
-            .or_else(|| rational(stream.rate()))
-            .filter(|fps| (1.0..=480.0).contains(fps))
-            .map(|fps| 1.0 / fps)
-            .unwrap_or(1.0 / 25.0);
+        let frame_duration = stream.frame_rate.map_or(1.0 / 25.0, |fps| 1.0 / fps);
         Ok(Self {
-            index: stream.index(),
+            index: stream.index,
             decoder,
             parameters,
-            time_base: f64::from(stream.time_base()),
+            time_base: f64::from(stream.time_base),
             frame_duration,
             max_short_side,
             scaler: None,
@@ -1170,17 +1429,17 @@ struct AudioDecoder {
 const OUTPUT_FORMAT: Sample = Sample::F32(ffmpeg::util::format::sample::Type::Packed);
 
 impl AudioDecoder {
-    fn new(stream: &ffmpeg::format::stream::Stream, source: Arc<AudioSource>) -> Result<Self> {
-        let context = codec::context::Context::from_parameters(stream.parameters())?;
+    fn new(stream: &StreamInfo, source: Arc<AudioSource>) -> Result<Self> {
+        let context = codec::context::Context::from_parameters(stream.parameters.clone())?;
         let decoder = context
             .decoder()
             .audio()
             .context("opening the audio decoder")?;
         Ok(Self {
-            index: stream.index(),
+            index: stream.index,
             decoder,
             source,
-            time_base: f64::from(stream.time_base()),
+            time_base: f64::from(stream.time_base),
             resampler: None,
             decoded: frame::Audio::empty(),
             next_pts: None,

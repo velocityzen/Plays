@@ -196,10 +196,13 @@ fn paint_line(
     window: &mut Window,
     cx: &mut App,
 ) -> Result<()> {
+    // Plays: aligned text is drawn anywhere across `align_width`, so the
+    // layer has to cover all of it. Otherwise whatever is drawn later over
+    // centered or right-aligned glyphs can be ordered beneath them.
     let line_bounds = Bounds::new(
         origin,
         size(
-            layout.width,
+            align_width.map_or(layout.width, |width| width.max(layout.width)),
             line_height * (wrap_boundaries.len() as f32 + 1.),
         ),
     );
@@ -433,10 +436,13 @@ fn paint_line_background(
     window: &mut Window,
     cx: &mut App,
 ) -> Result<()> {
+    // Plays: aligned text is drawn anywhere across `align_width`, so the
+    // layer has to cover all of it. Otherwise whatever is drawn later over
+    // centered or right-aligned glyphs can be ordered beneath them.
     let line_bounds = Bounds::new(
         origin,
         size(
-            layout.width,
+            align_width.map_or(layout.width, |width| width.max(layout.width)),
             line_height * (wrap_boundaries.len() as f32 + 1.),
         ),
     );

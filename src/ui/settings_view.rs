@@ -1,17 +1,26 @@
 use std::cell::Cell;
+use std::ops::{Range, RangeInclusive};
 use std::rc::Rc;
+use std::sync::Arc;
 
 use gpui::prelude::*;
 use gpui::{
-    AnyElement, App, Context, FocusHandle, FontWeight, Hsla, SharedString, Window, div, px, rgb,
+    AnchoredPositionMode, AnyElement, App, Bounds, ClickEvent, Context, Corner, FocusHandle,
+    FontWeight, Hsla, MouseButton, MouseDownEvent, Pixels, ScrollStrategy, SharedString,
+    UniformListScrollHandle, Window, anchored, black, canvas, deferred, div, fill,
+    linear_color_stop, linear_gradient, point, px, rgb, size, transparent_black, uniform_list,
     white,
 };
 
 use super::components::{Button, Icon, Segmented, Slide, Slider, Switch};
+use super::subtitles;
 use super::theme::Theme;
 use crate::app::AudioEngine;
+use crate::media::subtitles::{CueContent, parse_ass};
 use crate::settings::{
-    ControlsVisibility, GAMMA_RANGE, MaxResolution, Settings, ThemeMode, VideoFit,
+    ControlsVisibility, GAMMA_RANGE, MaxResolution, Rgb, SUBTITLE_COLORS, SUBTITLE_POSITION_RANGE,
+    SUBTITLE_SIZE_RANGE, Settings, SubtitleArea, SubtitleEdge, SubtitleStyle, SubtitleWeight,
+    ThemeMode, VideoFit,
 };
 
 /// Change the settings, re-render every window and optionally write them to disk.
@@ -31,17 +40,25 @@ enum Section {
     Playback,
     Audio,
     Video,
+    Subtitles,
     Appearance,
 }
 
 impl Section {
-    const ALL: [Self; 4] = [Self::Playback, Self::Audio, Self::Video, Self::Appearance];
+    const ALL: [Self; 5] = [
+        Self::Playback,
+        Self::Audio,
+        Self::Video,
+        Self::Subtitles,
+        Self::Appearance,
+    ];
 
     fn title(self) -> &'static str {
         match self {
             Self::Playback => "Playback",
             Self::Audio => "Audio",
             Self::Video => "Video",
+            Self::Subtitles => "Subtitles",
             Self::Appearance => "Appearance",
         }
     }
@@ -51,6 +68,7 @@ impl Section {
             Self::Playback => "play",
             Self::Audio => "volume",
             Self::Video => "display",
+            Self::Subtitles => "subtitles",
             Self::Appearance => "appearance",
         }
     }
@@ -62,6 +80,7 @@ impl Section {
             Self::Playback => rgb(0x34c759),
             Self::Audio => rgb(0xff375f),
             Self::Video => rgb(0x0a84ff),
+            Self::Subtitles => rgb(0xff9f0a),
             Self::Appearance => rgb(0x8e8e93),
         }
         .into()
@@ -75,6 +94,14 @@ pub struct SettingsView {
     default_drag: Rc<Cell<bool>>,
     sdr_gamma_drag: Rc<Cell<bool>>,
     hdr_gamma_drag: Rc<Cell<bool>>,
+    subtitle_size_drag: Rc<Cell<bool>>,
+    subtitle_background_drag: Rc<Cell<bool>>,
+    subtitle_position_drag: Rc<Cell<bool>>,
+    /// The subtitle font menu is open.
+    fonts_open: bool,
+    /// The installed font families, listed the first time the menu opens.
+    fonts: Rc<[SharedString]>,
+    font_scroll: UniformListScrollHandle,
 }
 
 impl SettingsView {
@@ -88,6 +115,12 @@ impl SettingsView {
             default_drag: Rc::default(),
             sdr_gamma_drag: Rc::default(),
             hdr_gamma_drag: Rc::default(),
+            subtitle_size_drag: Rc::default(),
+            subtitle_background_drag: Rc::default(),
+            subtitle_position_drag: Rc::default(),
+            fonts_open: false,
+            fonts: Rc::new([]),
+            font_scroll: UniformListScrollHandle::new(),
         }
     }
 }
@@ -161,6 +194,21 @@ fn percent_slider(
     theme: &Theme,
     apply: impl Fn(&mut Settings, f32) + Copy + 'static,
 ) -> impl IntoElement {
+    range_slider(id, value, 0.0..=1.0, 100.0, dragging, theme, apply)
+}
+
+/// A slider over `range`, shown as a percentage, that moves in steps of
+/// `1 / steps` so it lands on round numbers.
+fn range_slider(
+    id: &'static str,
+    value: f32,
+    range: RangeInclusive<f32>,
+    steps: f32,
+    dragging: Rc<Cell<bool>>,
+    theme: &Theme,
+    apply: impl Fn(&mut Settings, f32) + Copy + 'static,
+) -> impl IntoElement {
+    let (low, high) = (*range.start(), *range.end());
     div()
         .flex()
         .flex_none()
@@ -168,10 +216,12 @@ fn percent_slider(
         .gap_2()
         .w(px(200.))
         .child(
-            Slider::new(id, value, dragging).on_change(move |event, _, cx| {
-                let value = (event.value * 100.0).round() / 100.0;
-                update_settings(cx, event.slide == Slide::End, |s| apply(s, value));
-            }),
+            Slider::new(id, (value - low) / (high - low), dragging).on_change(
+                move |event, _, cx| {
+                    let value = ((low + event.value * (high - low)) * steps).round() / steps;
+                    update_settings(cx, event.slide == Slide::End, |s| apply(s, value));
+                },
+            ),
         )
         .child(
             div()
@@ -219,9 +269,507 @@ fn gamma_slider(
         )
 }
 
+/// A row of colors to pick one from, for the subtitle style's color that
+/// `apply` sets.
+fn swatches(
+    id: &'static str,
+    selected: Rgb,
+    theme: &Theme,
+    apply: impl Fn(&mut SubtitleStyle, Rgb) + Copy + 'static,
+) -> impl IntoElement {
+    div()
+        .flex()
+        .flex_none()
+        .gap_1()
+        .children(
+            SUBTITLE_COLORS
+                .iter()
+                .enumerate()
+                .map(|(index, &(color, _))| {
+                    div()
+                        .id((id, index))
+                        .flex_none()
+                        .size(px(26.))
+                        .p(px(2.))
+                        .rounded_full()
+                        .border_2()
+                        .border_color(if color == selected {
+                            theme.accent
+                        } else {
+                            transparent_black()
+                        })
+                        .cursor_pointer()
+                        .child(
+                            div()
+                                .size_full()
+                                .rounded_full()
+                                .border_1()
+                                .border_color(theme.border)
+                                .bg(rgb(color.0)),
+                        )
+                        .on_click(move |_, _, cx| {
+                            update_settings(cx, true, |s| apply(&mut s.subtitles, color))
+                        })
+                }),
+        )
+}
+
+/// The width of the subtitle font button, which its menu lines up with.
+const FONT_BUTTON_WIDTH: f32 = 200.0;
+
+/// The shape of the picture in the subtitle preview: a wide film, so it
+/// shows the bars that "Place on: Tile" lets subtitles go in.
+const PREVIEW_PICTURE: (u32, u32) = (2390, 1000);
+
+const PREVIEW_TEXT: &str = r"Subtitles look like this,\N{\i1}and like this in italics.{\i0}";
+
+/// A 16:9 tile with a letterboxed picture and a cue on it, drawn the way a
+/// player draws its subtitles.
+fn subtitle_preview(style: &SubtitleStyle, theme: &Theme) -> AnyElement {
+    let cues = parse_ass(PREVIEW_TEXT)
+        .map(|text| {
+            Arc::new(CueContent {
+                texts: vec![text],
+                bitmaps: Vec::new(),
+            })
+        })
+        .into_iter()
+        .collect();
+    div()
+        .flex()
+        .justify_center()
+        .py_3()
+        .rounded(px(10.))
+        .border_1()
+        .border_color(theme.border)
+        .bg(theme.surface)
+        .child(
+            div()
+                .relative()
+                .flex_none()
+                .w(px(284.))
+                .h(px(160.))
+                .rounded(px(6.))
+                .overflow_hidden()
+                .bg(black())
+                .child(
+                    canvas(
+                        |_, _, _| {},
+                        |bounds, (), window, _| paint_picture(bounds, window),
+                    )
+                    .absolute()
+                    .top_0()
+                    .left_0()
+                    .size_full(),
+                )
+                .child(subtitles::overlay(
+                    cues,
+                    subtitles::Layout {
+                        video: Some(PREVIEW_PICTURE),
+                        cover: false,
+                        controls_height: px(0.),
+                        controls_pinned: false,
+                        mouse_in_window: false,
+                        font: theme.font.clone(),
+                        style: style.clone(),
+                    },
+                )),
+        )
+        .into_any_element()
+}
+
+/// A dusk sky for the preview, bright near the bottom where the subtitles
+/// go, so the edge settings show.
+fn paint_picture(bounds: Bounds<Pixels>, window: &mut Window) {
+    let picture = subtitles::picture_bounds(bounds, Some(PREVIEW_PICTURE), false);
+    window.paint_quad(fill(
+        picture,
+        linear_gradient(
+            180.,
+            linear_color_stop(rgb(0x1b2a4a), 0.),
+            linear_color_stop(rgb(0xf4a261), 1.),
+        ),
+    ));
+    let sun = picture.size.height * 0.32;
+    let center = point(
+        picture.origin.x + picture.size.width * 0.76,
+        picture.origin.y + picture.size.height * 0.36,
+    );
+    window.paint_quad(
+        fill(Bounds::centered_at(center, size(sun, sun)), rgb(0xffd58a)).corner_radii(sun / 2.),
+    );
+}
+
+/// The font families installed, for the subtitle font menu, sorted. It
+/// leaves out the system's hidden fonts, and the fonts gpui falls back to
+/// on other systems, which it lists whether they are installed or not.
+fn installed_fonts(cx: &App) -> Vec<SharedString> {
+    const FALLBACKS: &[&str] = &[
+        "Helvetica",
+        "Segoe UI",
+        "Ubuntu",
+        "Adwaita Sans",
+        "Cantarell",
+        "Noto Sans",
+        "DejaVu Sans",
+        "Arial",
+    ];
+    let text_system = cx.text_system();
+    let mut names: Vec<String> = text_system
+        .all_font_names()
+        .into_iter()
+        .filter(|name| !name.starts_with('.'))
+        .filter(|name| {
+            !FALLBACKS.contains(&name.as_str()) || {
+                // A missing font resolves to a fallback with another name.
+                let id = text_system.resolve_font(&gpui::font(name.clone()));
+                text_system
+                    .get_font_for_id(id)
+                    .is_some_and(|font| font.family.as_ref() == name)
+            }
+        })
+        .collect();
+    names.sort_by_cached_key(|name| name.to_lowercase());
+    names.dedup();
+    names.into_iter().map(SharedString::from).collect()
+}
+
+impl SettingsView {
+    /// The button that shows the subtitle font and opens the menu of them.
+    fn font_picker(
+        &self,
+        current: &str,
+        theme: &Theme,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let name = if current.is_empty() {
+            SharedString::from("System")
+        } else {
+            SharedString::from(current.to_owned())
+        };
+        let viewport = window.viewport_size();
+        div()
+            .relative()
+            .flex_none()
+            .child(
+                div()
+                    .id("subtitle-font")
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .gap_2()
+                    .w(px(FONT_BUTTON_WIDTH))
+                    .h(px(28.))
+                    .pl_2p5()
+                    .pr_1p5()
+                    .rounded(px(6.))
+                    .border_1()
+                    .border_color(theme.border)
+                    .bg(theme.surface)
+                    .text_sm()
+                    .cursor_pointer()
+                    .hover(|style| style.bg(theme.surface_hover))
+                    .on_click(cx.listener(Self::open_fonts))
+                    .child(div().min_w_0().truncate().child(name))
+                    .child(
+                        Icon::new("chevron-up-down")
+                            .size(px(14.))
+                            .color(theme.text_muted),
+                    ),
+            )
+            .when(self.fonts_open, |this| {
+                this.child(
+                    deferred(
+                        anchored()
+                            .position_mode(AnchoredPositionMode::Local)
+                            .anchor(Corner::TopRight)
+                            .position(point(px(FONT_BUTTON_WIDTH), px(32.)))
+                            .snap_to_window_with_margin(px(8.))
+                            .child(self.font_menu(current, theme, cx)),
+                    )
+                    .with_priority(2),
+                )
+                // Clicks anywhere else close the menu, and do nothing else.
+                .child(
+                    deferred(
+                        anchored().position(point(px(0.), px(0.))).child(
+                            div()
+                                .id("fonts-backdrop")
+                                .occlude()
+                                .w(viewport.width)
+                                .h(viewport.height)
+                                .on_mouse_down(MouseButton::Left, cx.listener(Self::close_fonts))
+                                .on_mouse_down(MouseButton::Right, cx.listener(Self::close_fonts)),
+                        ),
+                    )
+                    .with_priority(1),
+                )
+            })
+            .into_any_element()
+    }
+
+    /// "System" and every installed family, each with a sample in its font.
+    fn font_menu(&self, current: &str, theme: &Theme, cx: &mut Context<Self>) -> impl IntoElement {
+        let fonts = self.fonts.clone();
+        let current = current.to_owned();
+        let theme = theme.clone();
+        let list = uniform_list(
+            "fonts",
+            fonts.len() + 1,
+            cx.processor(move |_, range: Range<usize>, _, cx| {
+                range
+                    .map(|ix| {
+                        let family = ix.checked_sub(1).map(|i| fonts[i].clone());
+                        let checked =
+                            family.as_ref().map_or("", |f| f.as_ref()) == current.as_str();
+                        let sample = family.clone().unwrap_or_else(|| theme.font.clone());
+                        div()
+                            .id(ix)
+                            .group("font-row")
+                            .flex()
+                            .items_center()
+                            .gap_1p5()
+                            .h(px(26.))
+                            .mx_1()
+                            .px_2()
+                            .rounded(px(5.))
+                            .cursor_pointer()
+                            .hover(|style| style.bg(theme.accent).text_color(white()))
+                            .child(
+                                div()
+                                    .flex_none()
+                                    .w(px(12.))
+                                    .when(checked, |this| this.child("✓")),
+                            )
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .truncate()
+                                    .child(family.clone().unwrap_or_else(|| "System".into())),
+                            )
+                            .child(
+                                div()
+                                    .flex_none()
+                                    .font_family(sample)
+                                    .text_color(theme.text_muted)
+                                    .group_hover("font-row", |style| style.text_color(white()))
+                                    .child("Aa"),
+                            )
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.fonts_open = false;
+                                let font =
+                                    family.as_ref().map_or_else(String::new, |f| f.to_string());
+                                update_settings(cx, true, |s| s.subtitles.font = font);
+                                cx.notify();
+                            }))
+                    })
+                    .collect::<Vec<_>>()
+            }),
+        )
+        .track_scroll(self.font_scroll.clone())
+        .h(px(280.))
+        .py_1();
+        div()
+            .id("fonts-menu")
+            .occlude()
+            .w(px(260.))
+            .rounded(px(8.))
+            .border_1()
+            .border_color(theme.border)
+            .bg(theme.surface)
+            .shadow_lg()
+            .overflow_hidden()
+            .text_sm()
+            .text_color(theme.text)
+            .child(list)
+    }
+
+    fn open_fonts(&mut self, _: &ClickEvent, _: &mut Window, cx: &mut Context<Self>) {
+        if self.fonts.is_empty() {
+            self.fonts = installed_fonts(cx).into();
+        }
+        let current = &cx.global::<Settings>().subtitles.font;
+        let ix = if current.is_empty() {
+            0
+        } else {
+            self.fonts
+                .iter()
+                .position(|font| font.as_ref() == current.as_str())
+                .map_or(0, |i| i + 1)
+        };
+        self.font_scroll.scroll_to_item(ix, ScrollStrategy::Center);
+        self.fonts_open = true;
+        cx.notify();
+    }
+
+    fn close_fonts(&mut self, _: &MouseDownEvent, _: &mut Window, cx: &mut Context<Self>) {
+        self.fonts_open = false;
+        cx.stop_propagation();
+        cx.notify();
+    }
+
+    fn subtitle_groups(
+        &self,
+        style: &SubtitleStyle,
+        theme: &Theme,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) -> Vec<AnyElement> {
+        vec![
+            group(
+                Some("Text"),
+                theme,
+                vec![
+                    row(
+                        "Font",
+                        None,
+                        theme,
+                        self.font_picker(&style.font, theme, window, cx),
+                    ),
+                    row(
+                        "Weight",
+                        None,
+                        theme,
+                        Segmented::new(
+                            "subtitle-weight",
+                            &[
+                                (SubtitleWeight::Regular, "Regular"),
+                                (SubtitleWeight::Medium, "Medium"),
+                                (SubtitleWeight::Bold, "Bold"),
+                            ],
+                            style.weight,
+                        )
+                        .on_select(|&v, _, cx| {
+                            update_settings(cx, true, |s| s.subtitles.weight = v)
+                        }),
+                    ),
+                    row(
+                        "Size",
+                        Some("Grows with the picture".into()),
+                        theme,
+                        range_slider(
+                            "subtitle-size",
+                            style.size,
+                            SUBTITLE_SIZE_RANGE,
+                            20.0,
+                            self.subtitle_size_drag.clone(),
+                            theme,
+                            |s, v| s.subtitles.size = v,
+                        ),
+                    ),
+                    row(
+                        "Color",
+                        None,
+                        theme,
+                        swatches("subtitle-color", style.color, theme, |s, c| s.color = c),
+                    ),
+                ],
+            ),
+            group(
+                Some("Edges and background"),
+                theme,
+                vec![
+                    row(
+                        "Edge",
+                        None,
+                        theme,
+                        Segmented::new(
+                            "subtitle-edge",
+                            &[
+                                (SubtitleEdge::None, "None"),
+                                (SubtitleEdge::Outline, "Outline"),
+                                (SubtitleEdge::Shadow, "Shadow"),
+                            ],
+                            style.edge,
+                        )
+                        .on_select(|&v, _, cx| update_settings(cx, true, |s| s.subtitles.edge = v)),
+                    ),
+                    row(
+                        "Edge color",
+                        None,
+                        theme,
+                        swatches("subtitle-edge-color", style.edge_color, theme, |s, c| {
+                            s.edge_color = c
+                        }),
+                    ),
+                    row(
+                        "Background",
+                        Some("A box behind each line".into()),
+                        theme,
+                        percent_slider(
+                            "subtitle-background",
+                            style.background_opacity,
+                            self.subtitle_background_drag.clone(),
+                            theme,
+                            |s, v| s.subtitles.background_opacity = v,
+                        ),
+                    ),
+                    row(
+                        "Background color",
+                        None,
+                        theme,
+                        swatches(
+                            "subtitle-background-color",
+                            style.background,
+                            theme,
+                            |s, c| s.background = c,
+                        ),
+                    ),
+                ],
+            ),
+            group(
+                Some("Position"),
+                theme,
+                vec![
+                    row(
+                        "Place on",
+                        Some(
+                            "Tile lets subtitles sit in the black bars around a letterboxed \
+                             picture"
+                                .into(),
+                        ),
+                        theme,
+                        Segmented::new(
+                            "subtitle-area",
+                            &[
+                                (SubtitleArea::Picture, "Picture"),
+                                (SubtitleArea::Tile, "Tile"),
+                            ],
+                            style.area,
+                        )
+                        .on_select(|&v, _, cx| update_settings(cx, true, |s| s.subtitles.area = v)),
+                    ),
+                    row(
+                        "Height",
+                        Some("Above the bottom. Subtitles move up while the controls show.".into()),
+                        theme,
+                        range_slider(
+                            "subtitle-position",
+                            style.position,
+                            SUBTITLE_POSITION_RANGE,
+                            100.0,
+                            self.subtitle_position_drag.clone(),
+                            theme,
+                            |s, v| s.subtitles.position = v,
+                        ),
+                    ),
+                ],
+            ),
+        ]
+    }
+}
+
 impl SettingsView {
     /// A section's pane: its groups of rows.
-    fn groups(&self, section: Section, theme: &Theme, cx: &App) -> Vec<AnyElement> {
+    fn groups(
+        &self,
+        section: Section,
+        theme: &Theme,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) -> Vec<AnyElement> {
         let s = cx.global::<Settings>().clone();
         match section {
             Section::Playback => vec![group(
@@ -399,6 +947,7 @@ impl SettingsView {
                     ),
                 ]
             }
+            Section::Subtitles => self.subtitle_groups(&s.subtitles.clamped(), theme, window, cx),
             Section::Appearance => vec![
                 group(
                     None,
@@ -500,6 +1049,7 @@ impl SettingsView {
                     })
                     .on_click(cx.listener(move |this, _, _, cx| {
                         this.section = section;
+                        this.fonts_open = false;
                         cx.notify();
                     }))
                     .child(
@@ -544,6 +1094,18 @@ impl Render for SettingsView {
                     .font_weight(FontWeight::BOLD)
                     .child(section.title()),
             )
+            // The preview stays in view while the settings under it scroll.
+            .when(section == Section::Subtitles, |this| {
+                let style = cx.global::<Settings>().subtitles.clamped();
+                this.child(
+                    div()
+                        .flex_none()
+                        .px_5()
+                        .pt_2()
+                        .pb_1()
+                        .child(subtitle_preview(&style, &theme)),
+                )
+            })
             .child(
                 div()
                     // Each pane scrolls on its own and opens at the top.
@@ -557,7 +1119,7 @@ impl Render for SettingsView {
                     .px_5()
                     .pt_2()
                     .pb_5()
-                    .children(self.groups(section, &theme, cx)),
+                    .children(self.groups(section, &theme, window, cx)),
             )
             .child(
                 div()

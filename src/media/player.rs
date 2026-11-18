@@ -11,6 +11,8 @@ use super::clock::Clock;
 use super::decoder::{self, Command, DecodeOptions, MediaInfo, Shared, VideoFrame, VideoQueue};
 use super::picture::Picture;
 use super::source::Source;
+use super::subtitles::{CueContent, CueQueue};
+use super::tracks::TrackKind;
 
 /// Network streams start (and resume after running dry) once this many
 /// seconds have been read ahead...
@@ -120,6 +122,7 @@ impl Player {
             video: Mutex::new(VideoQueue::default()),
             audio,
             cover: Mutex::new(None),
+            subtitles: Mutex::new(CueQueue::default()),
             eof_serial: AtomicU64::new(0),
             read_ahead: AtomicU64::new(0.0f64.to_bits()),
             stop: AtomicBool::new(false),
@@ -264,6 +267,39 @@ impl Player {
         if let Some(pts) = self.current.as_ref().map(|frame| frame.pts) {
             self.seek(pts);
         }
+    }
+
+    /// Play another track, or turn subtitles off (`None`). The new track is
+    /// read from the playhead; until it is, the picture on screen stays.
+    pub fn select_track(&mut self, kind: TrackKind, index: Option<usize>) {
+        {
+            let mut info = self.shared.info.lock();
+            let Some(info) = info.as_mut().filter(|info| info.selected(kind) != index) else {
+                return;
+            };
+            // Shown in menus right away; the decoder puts it back if the
+            // track can't be played.
+            info.select(kind, index);
+        }
+        let _ = self.commands.send(Command::Select { kind, index });
+        if index.is_none() {
+            let mut cues = self.shared.subtitles.lock();
+            let serial = cues.serial;
+            cues.clear(serial);
+        } else if !self.is_live() {
+            // Live streams can't seek; theirs starts with the next packet.
+            self.seek(self.position());
+        }
+    }
+
+    /// The subtitles showing now.
+    pub fn subtitles(&self) -> Vec<Arc<CueContent>> {
+        let serial = self.shared.serial.load(Ordering::Acquire);
+        let mut cues = self.shared.subtitles.lock();
+        if cues.serial != serial {
+            return Vec::new();
+        }
+        cues.showing(self.shared.clock.now())
     }
 
     pub fn seek_by(&mut self, delta: f64) {
