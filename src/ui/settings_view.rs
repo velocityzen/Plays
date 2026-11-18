@@ -6,14 +6,15 @@ use std::sync::Arc;
 use gpui::prelude::*;
 use gpui::{
     AnchoredPositionMode, AnyElement, App, Bounds, ClickEvent, Context, Corner, FocusHandle,
-    FontWeight, Hsla, KeyDownEvent, Keystroke, MouseButton, MouseDownEvent, Pixels, ScrollStrategy,
-    SharedString, UniformListScrollHandle, Window, anchored, black, canvas, deferred, div, fill,
-    linear_color_stop, linear_gradient, point, px, rgb, size, transparent_black, uniform_list,
-    white,
+    FontWeight, Global, Hsla, KeyDownEvent, Keystroke, MouseButton, MouseDownEvent, Pixels,
+    ScrollStrategy, SharedString, TitlebarOptions, UniformListScrollHandle, Window, WindowBounds,
+    WindowHandle, WindowOptions, anchored, black, canvas, deferred, div, fill, linear_color_stop,
+    linear_gradient, point, px, rgb, size, transparent_black, uniform_list, white,
 };
 
 use super::components::{Button, Icon, Panel, Segmented, Slide, Slider, Switch};
 use super::subtitles;
+use super::theme::layout::{SETTINGS_WINDOW_MIN_SIZE, SETTINGS_WINDOW_SIZE, TRAFFIC_LIGHTS};
 use super::theme::settings::{
     APPEARANCE_COLOR, AUDIO_COLOR, BADGE, BADGE_ICON, FONT_BUTTON_WIDTH, FONT_CHECK_WIDTH,
     FONT_MENU_HEIGHT, FONT_MENU_TOP, FONT_MENU_WIDTH, HOTKEY_ADD_ICON, HOTKEY_CHIP_HEIGHT,
@@ -115,7 +116,45 @@ pub struct SettingsView {
     hotkey_note: Option<(Command, SharedString)>,
 }
 
+/// The Settings window, once it has been opened.
+struct SettingsWindow(WindowHandle<SettingsView>);
+impl Global for SettingsWindow {}
+
 impl SettingsView {
+    /// Bring the Settings window to the front, opening it if it isn't open.
+    pub fn open_window(cx: &mut App) {
+        if let Some(handle) = cx.try_global::<SettingsWindow>().map(|open| open.0)
+            && handle
+                .update(cx, |_, window, _| window.activate_window())
+                .is_ok()
+        {
+            return;
+        }
+        let bounds = Bounds::centered(None, SETTINGS_WINDOW_SIZE, cx);
+        // On macOS the sidebar runs up under the traffic lights, as in System
+        // Settings.
+        let mac = cfg!(target_os = "macos");
+        let opened = cx.open_window(
+            WindowOptions {
+                window_bounds: Some(WindowBounds::Windowed(bounds)),
+                titlebar: Some(TitlebarOptions {
+                    title: Some("Plays Settings".into()),
+                    appears_transparent: mac,
+                    traffic_light_position: mac.then_some(TRAFFIC_LIGHTS),
+                }),
+                window_min_size: Some(SETTINGS_WINDOW_MIN_SIZE),
+                app_id: Some("plays".into()),
+                focus: true,
+                ..Default::default()
+            },
+            |window, cx| cx.new(|cx| Self::new(window, cx)),
+        );
+        match opened {
+            Ok(handle) => cx.set_global(SettingsWindow(handle)),
+            Err(err) => log::error!("could not open settings: {err:#}"),
+        }
+    }
+
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let focus_handle = cx.focus_handle();
         window.focus(&focus_handle);

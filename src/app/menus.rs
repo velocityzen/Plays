@@ -1,0 +1,81 @@
+//! The menu bar. Its items show the keys bound to their actions, so the
+//! keymap sets the menus again whenever it changes.
+
+use gpui::{App, Menu, MenuItem, SystemMenuType};
+
+use super::{CloseAll, CloseWindow, OpenFiles, OpenSettings, OpenUrl, Quit};
+use crate::hotkeys::*;
+
+pub(super) fn set_menus(cx: &mut App) {
+    cx.set_menus(vec![
+        Menu {
+            name: "Plays".into(),
+            items: vec![
+                MenuItem::action("Settings…", OpenSettings),
+                MenuItem::separator(),
+                MenuItem::os_submenu("Services", SystemMenuType::Services),
+                MenuItem::separator(),
+                MenuItem::action("Quit Plays", Quit),
+            ],
+        },
+        Menu {
+            name: "File".into(),
+            items: vec![
+                MenuItem::action("Open…", OpenFiles),
+                MenuItem::action("Open URL…", OpenUrl),
+                MenuItem::separator(),
+                MenuItem::action("Close All Files", CloseAll),
+                MenuItem::action("Close Window", CloseWindow),
+            ],
+        },
+        Menu {
+            name: "Playback".into(),
+            items: vec![
+                MenuItem::action("Play/Pause", PlayPause),
+                MenuItem::action("Seek Forward", SeekForward),
+                MenuItem::action("Seek Backward", SeekBackward),
+                MenuItem::action("Next Frame", NextFrame),
+                MenuItem::action("Previous Frame", PreviousFrame),
+                MenuItem::action("Restart", Restart),
+                MenuItem::action("Loop", ToggleLoop),
+                MenuItem::separator(),
+                MenuItem::action("Play/Pause All", PlayPauseAll),
+                MenuItem::action("Play All", PlayAll),
+                MenuItem::action("Pause All", PauseAll),
+                MenuItem::action("Restart All", RestartAll),
+                MenuItem::action("Seek All Forward", SeekForwardAll),
+                MenuItem::action("Seek All Backward", SeekBackwardAll),
+            ],
+        },
+        Menu {
+            name: "Video".into(),
+            items: vec![
+                MenuItem::action("Full Screen", ToggleFullScreen),
+                MenuItem::action("Next Video Track", NextVideoTrack),
+            ],
+        },
+        Menu {
+            name: "Audio".into(),
+            items: vec![
+                MenuItem::action("Volume Up", VolumeUp),
+                MenuItem::action("Volume Down", VolumeDown),
+                MenuItem::action("Mute/Unmute", ToggleMute),
+                MenuItem::action("Next Audio Track", NextAudioTrack),
+                MenuItem::separator(),
+                MenuItem::action("Mute/Unmute All", ToggleMuteAll),
+            ],
+        },
+        Menu {
+            name: "Subtitles".into(),
+            items: vec![
+                MenuItem::action("Show/Hide Subtitles", ToggleSubtitles),
+                MenuItem::action("Next Subtitles", NextSubtitleTrack),
+                MenuItem::separator(),
+                MenuItem::action("Bigger", BiggerSubtitles),
+                MenuItem::action("Smaller", SmallerSubtitles),
+                MenuItem::action("Move Up", SubtitlesUp),
+                MenuItem::action("Move Down", SubtitlesDown),
+            ],
+        },
+    ]);
+}
