@@ -25,6 +25,13 @@ GPU-accelerated UI framework.
   WebVTT, MP4 timed text) sized to the picture and styled as Settings say,
   and bitmap ones (PGS, VobSub, DVB) as the disc has them. A file's default
   subtitles, or failing that its forced ones, show from the start.
+- Subtitle files beside a video are tracks too, and show from the start:
+  `Movie.srt`, `Movie.en.srt`, `Movie.English.forced.ass` and so on for
+  `Movie.mkv` (SRT, ASS, WebVTT, PGS `.sup`, VobSub `.idx`, MicroDVD, SAMI),
+  the same in a `Subs` or `Subtitles` folder, and everything in
+  `Subs/Movie/`. Their names give their language and whether they are
+  forced or for the hearing impaired. Text in legacy encodings (Windows-1252,
+  Windows-1251, Shift JIS and the like) is detected and converted.
 - Any tile can pop out into a new window, where it keeps playing. Every
   window works the same: drop more files on it and they play side by side.
 - The menu bar (a toolbar on Linux) and shortcuts control all files in a
@@ -151,6 +158,11 @@ last window quits.
   which the words, line breaks, italics, bold and top/middle/bottom placement
   are kept; bitmaps become images placed as fractions of the picture. A
   cue without an end (as in PGS) lasts until the next one.
+- `src/media/external.rs`: subtitle files beside a video: finding them,
+  reading their names, and telling a text file's encoding (with `chardetng`)
+  for FFmpeg's iconv to convert. A picked file is read whole and its packets
+  decoded two seconds ahead of the playhead; after a seek, from 30 seconds
+  before it, so cues already showing are there.
 - `src/media/hdr.rs`: PQ and HLG, and the tone curve. HDR reference white
   (203 nits) is shown as SDR white, and brightness above three quarters of
   the screen's headroom eases toward it instead of clipping. On the CPU it
@@ -232,7 +244,11 @@ PLAYS_DOLBY_VISION_SAMPLE=path/to/profile5.mkv cargo test dolby -- --nocapture
 A Matroska file with two audio and two SRT tracks checks that tracks are
 listed and named, that switching audio while playing brings in the other
 track, and that subtitles show, change track and turn off, at the right
-times.
+times. A clip with an English SRT and a Windows-1251 Russian one beside it
+checks that they are listed and named, that the first shows from the start,
+that seeking back lands in a cue already showing, and that the Russian one
+reads right. Unit tests cover finding files for a video, reading their
+names and telling encodings.
 
 Stream tests serve the clips from a small HTTP server on localhost:
 HTTP files, HLS (normal and live), a connection that stalls mid-way,
@@ -255,10 +271,12 @@ unreachable hosts, and closing while a connection hangs.
   jumping to the live edge, and after a long pause the server may have closed
   the connection.
 - Subtitles: ASS styling (fonts, colors, sizes, positions, effects) isn't
-  used, only italics, bold and top/middle/bottom placement. Subtitle files
-  next to the video (`.srt`) aren't loaded. A cue that started before the
-  keyframe a seek lands on is missed. In a live stream, a new track starts
-  with its next packets rather than at the playhead.
+  used, only italics, bold and top/middle/bottom placement. A cue in the
+  file that started before the keyframe a seek lands on is missed (one in a
+  subtitle file beside it isn't, unless it started over 30 seconds before).
+  Subtitle files can't be dropped on a tile, and there is no way to shift
+  their timing. In a live stream, a new track starts with its next packets
+  rather than at the playhead.
 - No playlists, playback speed or audio device selection.
 - On GNOME Wayland (client-side decorations) the window can be moved from the
   toolbar but has no resize handles.

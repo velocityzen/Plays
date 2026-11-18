@@ -1,5 +1,6 @@
 //! The tracks of a file that can be picked from: its video, audio and
-//! subtitle streams, and how to name them in a menu.
+//! subtitle streams and the subtitle files beside it, and how to name them
+//! in a menu.
 
 use ffmpeg::format::stream::{Disposition, Stream};
 use ffmpeg::media;
@@ -14,7 +15,8 @@ pub enum TrackKind {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Track {
-    /// The stream's index in the file.
+    /// The stream's index in the file. Subtitle files beside it are
+    /// numbered after the file's streams.
     pub index: usize,
     pub kind: TrackKind,
     /// As the file has it, usually an ISO 639-2 code such as `eng`.
@@ -27,6 +29,8 @@ pub struct Track {
     pub default: bool,
     pub forced: bool,
     pub hearing_impaired: bool,
+    /// A subtitle file beside the video rather than a stream in it.
+    pub external: bool,
 }
 
 impl Track {
@@ -71,6 +75,7 @@ impl Track {
             default: disposition.contains(Disposition::DEFAULT),
             forced: disposition.contains(Disposition::FORCED),
             hearing_impaired: disposition.contains(Disposition::HEARING_IMPAIRED),
+            external: false,
         })
     }
 
@@ -96,13 +101,15 @@ impl Track {
         label
     }
 
-    /// The codec and format, such as "E-AC-3 · 5.1".
+    /// The codec and format, such as "E-AC-3 · 5.1", and "External" for
+    /// a subtitle file.
     pub fn detail(&self) -> String {
-        let codec = codec_display_name(&self.codec);
-        match &self.format {
-            Some(format) => format!("{codec} · {format}"),
-            None => codec,
+        let mut parts = vec![codec_display_name(&self.codec)];
+        parts.extend(self.format.clone());
+        if self.external {
+            parts.push("External".to_owned());
         }
+        parts.join(" · ")
     }
 }
 
@@ -154,86 +161,116 @@ fn codec_display_name(codec: &str) -> String {
     name.to_owned()
 }
 
-/// The English name of a language code (ISO 639-2, either form, or 639-1).
-/// Codes not in the table are shown as they are.
+/// Language codes (ISO 639-2, both forms, and 639-1) and their English names.
+const LANGUAGES: &[(&[&str], &str)] = &[
+    (&["eng", "en"], "English"),
+    (&["fre", "fra", "fr"], "French"),
+    (&["ger", "deu", "de"], "German"),
+    (&["spa", "es"], "Spanish"),
+    (&["ita", "it"], "Italian"),
+    (&["por", "pt"], "Portuguese"),
+    (&["rus", "ru"], "Russian"),
+    (&["jpn", "ja"], "Japanese"),
+    (&["chi", "zho", "zh"], "Chinese"),
+    (&["cmn"], "Mandarin"),
+    (&["yue"], "Cantonese"),
+    (&["kor", "ko"], "Korean"),
+    (&["ara", "ar"], "Arabic"),
+    (&["heb", "he"], "Hebrew"),
+    (&["hin", "hi"], "Hindi"),
+    (&["dut", "nld", "nl"], "Dutch"),
+    (&["swe", "sv"], "Swedish"),
+    (&["nor", "no"], "Norwegian"),
+    (&["nob", "nb"], "Norwegian Bokmål"),
+    (&["nno", "nn"], "Norwegian Nynorsk"),
+    (&["dan", "da"], "Danish"),
+    (&["fin", "fi"], "Finnish"),
+    (&["ice", "isl", "is"], "Icelandic"),
+    (&["pol", "pl"], "Polish"),
+    (&["cze", "ces", "cs"], "Czech"),
+    (&["slo", "slk", "sk"], "Slovak"),
+    (&["hun", "hu"], "Hungarian"),
+    (&["rum", "ron", "ro"], "Romanian"),
+    (&["gre", "ell", "el"], "Greek"),
+    (&["tur", "tr"], "Turkish"),
+    (&["ukr", "uk"], "Ukrainian"),
+    (&["bul", "bg"], "Bulgarian"),
+    (&["hrv", "hr"], "Croatian"),
+    (&["srp", "sr"], "Serbian"),
+    (&["bos", "bs"], "Bosnian"),
+    (&["slv", "sl"], "Slovenian"),
+    (&["mac", "mkd", "mk"], "Macedonian"),
+    (&["alb", "sqi", "sq"], "Albanian"),
+    (&["est", "et"], "Estonian"),
+    (&["lav", "lv"], "Latvian"),
+    (&["lit", "lt"], "Lithuanian"),
+    (&["tha", "th"], "Thai"),
+    (&["vie", "vi"], "Vietnamese"),
+    (&["ind", "id"], "Indonesian"),
+    (&["may", "msa", "ms"], "Malay"),
+    (&["fil"], "Filipino"),
+    (&["tgl", "tl"], "Tagalog"),
+    (&["per", "fas", "fa"], "Persian"),
+    (&["urd", "ur"], "Urdu"),
+    (&["ben", "bn"], "Bengali"),
+    (&["tam", "ta"], "Tamil"),
+    (&["tel", "te"], "Telugu"),
+    (&["mar", "mr"], "Marathi"),
+    (&["kan", "kn"], "Kannada"),
+    (&["mal", "ml"], "Malayalam"),
+    (&["pan", "pa"], "Punjabi"),
+    (&["guj", "gu"], "Gujarati"),
+    (&["cat", "ca"], "Catalan"),
+    (&["baq", "eus", "eu"], "Basque"),
+    (&["glg", "gl"], "Galician"),
+    (&["wel", "cym", "cy"], "Welsh"),
+    (&["gle", "ga"], "Irish"),
+    (&["lat", "la"], "Latin"),
+    (&["afr", "af"], "Afrikaans"),
+    (&["swa", "sw"], "Swahili"),
+    (&["geo", "kat", "ka"], "Georgian"),
+    (&["arm", "hye", "hy"], "Armenian"),
+    (&["aze", "az"], "Azerbaijani"),
+    (&["kaz", "kk"], "Kazakh"),
+    (&["mul"], "Multiple languages"),
+];
+
+/// The English name of a language code (ISO 639-2, either form, or 639-1),
+/// with any region after it, as in "Portuguese (BR)" for `pt-BR`. Codes not
+/// in the table are shown as they are.
 pub fn language_name(code: &str) -> String {
-    const NAMES: &[(&[&str], &str)] = &[
-        (&["eng", "en"], "English"),
-        (&["fre", "fra", "fr"], "French"),
-        (&["ger", "deu", "de"], "German"),
-        (&["spa", "es"], "Spanish"),
-        (&["ita", "it"], "Italian"),
-        (&["por", "pt"], "Portuguese"),
-        (&["rus", "ru"], "Russian"),
-        (&["jpn", "ja"], "Japanese"),
-        (&["chi", "zho", "zh"], "Chinese"),
-        (&["cmn"], "Mandarin"),
-        (&["yue"], "Cantonese"),
-        (&["kor", "ko"], "Korean"),
-        (&["ara", "ar"], "Arabic"),
-        (&["heb", "he"], "Hebrew"),
-        (&["hin", "hi"], "Hindi"),
-        (&["dut", "nld", "nl"], "Dutch"),
-        (&["swe", "sv"], "Swedish"),
-        (&["nor", "no"], "Norwegian"),
-        (&["nob", "nb"], "Norwegian Bokmål"),
-        (&["nno", "nn"], "Norwegian Nynorsk"),
-        (&["dan", "da"], "Danish"),
-        (&["fin", "fi"], "Finnish"),
-        (&["ice", "isl", "is"], "Icelandic"),
-        (&["pol", "pl"], "Polish"),
-        (&["cze", "ces", "cs"], "Czech"),
-        (&["slo", "slk", "sk"], "Slovak"),
-        (&["hun", "hu"], "Hungarian"),
-        (&["rum", "ron", "ro"], "Romanian"),
-        (&["gre", "ell", "el"], "Greek"),
-        (&["tur", "tr"], "Turkish"),
-        (&["ukr", "uk"], "Ukrainian"),
-        (&["bul", "bg"], "Bulgarian"),
-        (&["hrv", "hr"], "Croatian"),
-        (&["srp", "sr"], "Serbian"),
-        (&["bos", "bs"], "Bosnian"),
-        (&["slv", "sl"], "Slovenian"),
-        (&["mac", "mkd", "mk"], "Macedonian"),
-        (&["alb", "sqi", "sq"], "Albanian"),
-        (&["est", "et"], "Estonian"),
-        (&["lav", "lv"], "Latvian"),
-        (&["lit", "lt"], "Lithuanian"),
-        (&["tha", "th"], "Thai"),
-        (&["vie", "vi"], "Vietnamese"),
-        (&["ind", "id"], "Indonesian"),
-        (&["may", "msa", "ms"], "Malay"),
-        (&["fil"], "Filipino"),
-        (&["tgl", "tl"], "Tagalog"),
-        (&["per", "fas", "fa"], "Persian"),
-        (&["urd", "ur"], "Urdu"),
-        (&["ben", "bn"], "Bengali"),
-        (&["tam", "ta"], "Tamil"),
-        (&["tel", "te"], "Telugu"),
-        (&["mar", "mr"], "Marathi"),
-        (&["kan", "kn"], "Kannada"),
-        (&["mal", "ml"], "Malayalam"),
-        (&["pan", "pa"], "Punjabi"),
-        (&["guj", "gu"], "Gujarati"),
-        (&["cat", "ca"], "Catalan"),
-        (&["baq", "eus", "eu"], "Basque"),
-        (&["glg", "gl"], "Galician"),
-        (&["wel", "cym", "cy"], "Welsh"),
-        (&["gle", "ga"], "Irish"),
-        (&["lat", "la"], "Latin"),
-        (&["afr", "af"], "Afrikaans"),
-        (&["swa", "sw"], "Swahili"),
-        (&["geo", "kat", "ka"], "Georgian"),
-        (&["arm", "hye", "hy"], "Armenian"),
-        (&["aze", "az"], "Azerbaijani"),
-        (&["kaz", "kk"], "Kazakh"),
-        (&["mul"], "Multiple languages"),
-    ];
-    let lower = code.to_ascii_lowercase();
-    NAMES
-        .iter()
-        .find(|(codes, _)| codes.contains(&lower.as_str()))
-        .map_or_else(|| code.to_owned(), |(_, name)| (*name).to_owned())
+    let name = |code: &str| {
+        let lower = code.to_ascii_lowercase();
+        LANGUAGES
+            .iter()
+            .find(|(codes, _)| codes.contains(&lower.as_str()))
+            .map(|(_, name)| *name)
+    };
+    if let Some(name) = name(code) {
+        return name.to_owned();
+    }
+    match code.split_once(['-', '_']) {
+        Some((base, region)) if !region.is_empty() => match name(base) {
+            Some(name) => format!("{name} ({region})"),
+            None => code.to_owned(),
+        },
+        _ => code.to_owned(),
+    }
+}
+
+/// The language a word names, as a code: the word itself if it is a code
+/// in the table, or the code for an English name such as "english".
+pub fn language_code(word: &str) -> Option<String> {
+    let lower = word.to_ascii_lowercase();
+    LANGUAGES.iter().find_map(|(codes, name)| {
+        if codes.contains(&lower.as_str()) {
+            Some(lower.clone())
+        } else if name.eq_ignore_ascii_case(word) {
+            Some(codes[0].to_owned())
+        } else {
+            None
+        }
+    })
 }
 
 #[cfg(test)]
@@ -251,6 +288,7 @@ mod tests {
             default: false,
             forced: false,
             hearing_impaired: false,
+            external: false,
         }
     }
 
@@ -282,5 +320,18 @@ mod tests {
         audio.format = channels_name(6);
         assert_eq!(audio.detail(), "E-AC-3 · 5.1");
         assert_eq!(subtitle(None, None).detail(), "SRT");
+        let mut external = subtitle(None, None);
+        external.external = true;
+        assert_eq!(external.detail(), "SRT · External");
+    }
+
+    #[test]
+    fn names_languages() {
+        assert_eq!(language_name("eng"), "English");
+        assert_eq!(language_name("pt-BR"), "Portuguese (BR)");
+        assert_eq!(language_name("xx-YY"), "xx-YY");
+        assert_eq!(language_code("EN").as_deref(), Some("en"));
+        assert_eq!(language_code("English").as_deref(), Some("eng"));
+        assert_eq!(language_code("british"), None);
     }
 }

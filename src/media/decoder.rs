@@ -9,13 +9,15 @@
 //! macOS with hardware decoding, where they stay on the GPU (`videotoolbox`).
 //! HDR frames that become images are tone mapped for an SDR screen (`hdr`),
 //! Dolby Vision ones reshaped first (`dovi`). Subtitles are decoded into
-//! cues as soon as they are read (`subtitles`).
+//! cues as soon as they are read (`subtitles`), or, from a subtitle file
+//! beside the video, a little ahead of the playhead (`external`).
 //! It only decodes while an output queue has room, so memory stays bounded
 //! however much is read ahead. One video, one audio and one subtitle track
 //! play at a time; another can be picked while playing.
 
 use std::collections::VecDeque;
 use std::ffi::c_int;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, TryRecvError};
@@ -34,11 +36,12 @@ use parking_lot::{Condvar, Mutex};
 use super::audio::{AudioChunk, AudioSource, SOURCE_CHANNELS};
 use super::clock::Clock;
 use super::dovi;
+use super::external::{self, SubtitleFile};
 use super::hdr;
 use super::hwaccel;
 use super::picture::{self, Picture};
 use super::source::Source;
-use super::subtitles::{CueQueue, SubtitleDecoder};
+use super::subtitles::{Cue, CueQueue, SubtitleDecoder};
 use super::tracks::{Track, TrackKind};
 #[cfg(target_os = "macos")]
 use super::videotoolbox;
@@ -49,6 +52,8 @@ const VIDEO_QUEUE_MIN_FRAMES: usize = 3;
 const VIDEO_QUEUE_MAX_FRAMES: usize = 16;
 /// Decoded audio kept ahead of the playhead.
 const AUDIO_QUEUE_SECONDS: f64 = 0.75;
+/// How far ahead of the playhead a subtitle file is decoded.
+const SUBTITLE_FILE_AHEAD: f64 = 2.0;
 /// How far the demux thread reads ahead of the decoders.
 const FILE_READ_AHEAD: ReadAhead = ReadAhead {
     seconds: 1.0,
@@ -103,7 +108,8 @@ pub struct MediaInfo {
     /// The hardware decoding API in use, once frames come out of it.
     pub hardware: Option<&'static str>,
     pub title: Option<String>,
-    /// Every track that can be played, in the file's order.
+    /// Every track that can be played, in the file's order, then the
+    /// subtitle files beside it.
     pub tracks: Vec<Track>,
     /// The tracks playing, by stream index.
     pub video_track: Option<usize>,
@@ -285,9 +291,13 @@ struct Decoders {
     /// The video's coded size, which bitmap subtitles are placed on when
     /// they don't say.
     canvas: Option<(u32, u32)>,
+    /// The subtitle files beside the video, numbered after its streams.
+    files: Vec<PathBuf>,
     video: Option<VideoDecoder>,
     audio: Option<AudioDecoder>,
     subtitle: Option<SubtitleDecoder>,
+    /// The packets of the subtitles playing, when they come from a file.
+    subtitle_file: Option<SubtitleFile>,
 }
 
 impl Decoders {
@@ -305,9 +315,24 @@ impl Decoders {
             .ok_or_else(|| anyhow!("there is no stream {index}"))
     }
 
-    fn open_subtitles(&self, index: usize) -> Result<SubtitleDecoder> {
+    fn open_subtitles(&self, index: usize) -> Result<(SubtitleDecoder, Option<SubtitleFile>)> {
+        if let Some(path) = index
+            .checked_sub(self.streams.len())
+            .and_then(|i| self.files.get(i))
+        {
+            let (decoder, file) = SubtitleFile::open(path, index, self.canvas)
+                .with_context(|| format!("reading {}", path.display()))?;
+            return Ok((decoder, Some(file)));
+        }
         let stream = self.stream(index)?;
-        SubtitleDecoder::new(index, &stream.parameters, stream.time_base, self.canvas)
+        let decoder = SubtitleDecoder::new(
+            index,
+            &stream.parameters,
+            stream.time_base,
+            self.canvas,
+            None,
+        )?;
+        Ok((decoder, None))
     }
 
     /// Play another track, or no subtitles (video and audio can't be turned
@@ -342,12 +367,28 @@ impl Decoders {
             if kind == TrackKind::Subtitle {
                 demuxer.select(kind, None);
                 self.subtitle = None;
+                self.subtitle_file = None;
                 let mut cues = shared.subtitles.lock();
                 let serial = cues.serial;
                 cues.clear(serial);
             }
             return Ok(());
         };
+        if kind == TrackKind::Subtitle {
+            let (decoder, file) = self.open_subtitles(index)?;
+            // A file's subtitles don't come from the demuxer.
+            let queue = match file {
+                Some(_) => None,
+                None => Some(PacketQueue::new(
+                    index,
+                    f64::from(self.stream(index)?.time_base),
+                )),
+            };
+            self.subtitle = Some(decoder);
+            self.subtitle_file = file;
+            demuxer.select(kind, queue);
+            return Ok(());
+        }
         let stream = self.stream(index)?;
         let queue = Some(PacketQueue::new(index, f64::from(stream.time_base)));
         match kind {
@@ -373,14 +414,14 @@ impl Decoders {
                 }
                 self.audio = Some(decoder);
             }
-            TrackKind::Subtitle => self.subtitle = Some(self.open_subtitles(index)?),
+            TrackKind::Subtitle => unreachable!("subtitles are switched above"),
         }
         demuxer.select(kind, queue);
         Ok(())
     }
 
-    /// After a seek.
-    fn reset(&mut self) {
+    /// After a seek to `time`.
+    fn reset(&mut self, time: f64) {
         if let Some(v) = &mut self.video {
             v.reset();
         }
@@ -389,6 +430,9 @@ impl Decoders {
         }
         if let Some(s) = &mut self.subtitle {
             s.reset();
+        }
+        if let Some(file) = &mut self.subtitle_file {
+            file.seek(time);
         }
     }
 }
@@ -401,15 +445,29 @@ fn run(
 ) -> Result<()> {
     let input = open_input(source, shared)?;
     let name = source.name();
-    let tracks: Vec<Track> = input.streams().filter_map(|s| Track::of(&s)).collect();
+    let mut tracks: Vec<Track> = input.streams().filter_map(|s| Track::of(&s)).collect();
     let mut decoders = Decoders {
         streams: input.streams().map(|s| StreamInfo::of(&s)).collect(),
         options,
         canvas: None,
+        files: Vec::new(),
         video: None,
         audio: None,
         subtitle: None,
+        subtitle_file: None,
     };
+    if let Source::File(path) = source {
+        for found in external::find(path) {
+            let index = decoders.streams.len() + decoders.files.len();
+            match found.track(index) {
+                Ok(track) => {
+                    tracks.push(track);
+                    decoders.files.push(found.path);
+                }
+                Err(err) => log::warn!("{}: skipping it: {err:#}", found.path.display()),
+            }
+        }
+    }
 
     let mut cover: Option<VideoDecoder> = None;
     if let Some(stream) = input.streams().best(media::Type::Video) {
@@ -442,14 +500,22 @@ fn run(
         bail!("no playable audio or video streams");
     }
 
-    // Subtitles the file wants shown: its default track, else a forced one.
+    // Subtitles to show from the start: a subtitle file beside the video,
+    // which someone put there to be shown, else the ones the file wants
+    // shown, its default track or else a forced one.
     let subtitles = || tracks.iter().filter(|t| t.kind == TrackKind::Subtitle);
-    let subtitle = subtitles()
+    let files = || subtitles().filter(|t| t.external && !t.forced);
+    let subtitle = files()
         .find(|t| t.default)
+        .or_else(|| files().next())
+        .or_else(|| subtitles().find(|t| t.default))
         .or_else(|| subtitles().find(|t| t.forced));
     if let Some(track) = subtitle {
         match decoders.open_subtitles(track.index) {
-            Ok(decoder) => decoders.subtitle = Some(decoder),
+            Ok((decoder, file)) => {
+                decoders.subtitle = Some(decoder);
+                decoders.subtitle_file = file;
+            }
             Err(err) => log::warn!("{source}: skipping subtitles: {err:#}"),
         }
     }
@@ -509,7 +575,10 @@ fn run(
         packets: Mutex::new(Packets {
             video: queue(TrackKind::Video),
             audio: queue(TrackKind::Audio),
-            subtitle: queue(TrackKind::Subtitle),
+            subtitle: match decoders.subtitle_file {
+                Some(_) => None,
+                None => queue(TrackKind::Subtitle),
+            },
             cover_index: cover.as_ref().map(|c| c.index),
             cover: None,
             cover_seen: false,
@@ -576,7 +645,7 @@ fn run(
         if let Some((time, serial)) = seek {
             let target = ((time + session.start_offset()).max(0.0) * AV_TIME_BASE) as i64;
             demuxer.seek(target, serial);
-            decoders.reset();
+            decoders.reset(time);
             session.serial = serial;
             session.seek_target = Some(time);
             reset_queues(shared, serial);
@@ -625,20 +694,25 @@ fn run(
             }
         }
         // Subtitles are few and small, and each has to be ready before its
-        // time, so they are decoded as soon as they are read.
+        // time, so they are decoded as soon as they are read. A subtitle
+        // file is read all at once, so it is decoded as the playhead nears.
         if let Some(s) = &mut decoders.subtitle {
-            while let Next::Packet(packet) = demuxer.pop(TrackKind::Subtitle, session.serial) {
-                progressed = true;
-                let Some(cue) = s.decode(&packet, session.start_offset()) else {
-                    continue;
-                };
-                let before_target = session
-                    .seek_target
-                    .is_some_and(|target| cue.end.is_some_and(|end| end <= target));
-                if !before_target {
-                    let mut cues = shared.subtitles.lock();
-                    cues.prune(shared.clock.now());
-                    cues.push(cue);
+            match &mut decoders.subtitle_file {
+                Some(file) => {
+                    let until = shared.clock.now() + SUBTITLE_FILE_AHEAD;
+                    while let Some(packet) = file.next(until) {
+                        progressed = true;
+                        // Its times start with the video's.
+                        queue_cue(s.decode(packet, 0.0), &session);
+                    }
+                }
+                None => {
+                    while let Next::Packet(packet) =
+                        demuxer.pop(TrackKind::Subtitle, session.serial)
+                    {
+                        progressed = true;
+                        queue_cue(s.decode(&packet, session.start_offset()), &session);
+                    }
                 }
             }
         }
@@ -662,6 +736,21 @@ fn run(
             (false, true) => Some(DONE_WAIT),
             (false, false) => Some(IDLE_WAIT),
         };
+    }
+}
+
+/// Add a decoded cue to those showing or to come, unless a seek went past it.
+fn queue_cue(cue: Option<Cue>, session: &Session) {
+    let Some(cue) = cue else {
+        return;
+    };
+    let before_target = session
+        .seek_target
+        .is_some_and(|target| cue.end.is_some_and(|end| end <= target));
+    if !before_target {
+        let mut cues = session.shared.subtitles.lock();
+        cues.prune(session.shared.clock.now());
+        cues.push(cue);
     }
 }
 

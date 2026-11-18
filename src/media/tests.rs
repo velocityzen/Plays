@@ -387,6 +387,84 @@ fn switches_audio_and_subtitle_tracks() {
 }
 
 #[test]
+fn plays_subtitle_files_beside_the_video() {
+    let dir = std::env::temp_dir().join("plays-tests").join("beside");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("clip.en.srt"),
+        "1\n00:00:01,000 --> 00:00:02,500\nHello from a file\n\n\
+         2\n00:00:03,000 --> 00:00:03,800\nSecond line\n",
+    )
+    .unwrap();
+    // Legacy encodings are common in subtitle files.
+    let (russian, _, _) = encoding_rs::WINDOWS_1251
+        .encode("1\n00:00:01,000 --> 00:00:02,500\nПривет из файла, как дела?\n");
+    std::fs::write(dir.join("clip.ru.srt"), &russian).unwrap();
+    let Some(path) = media(
+        "beside/clip.mkv",
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc=size=160x120:rate=25:duration=4",
+            "-c:v",
+            "libx264",
+            "-g",
+            "25",
+            "-pix_fmt",
+            "yuv420p",
+        ],
+    ) else {
+        eprintln!("ffmpeg not found, skipping");
+        return;
+    };
+    let mut player = Player::open(Source::File(path), None, options(false, false));
+    assert!(wait_until(Duration::from_secs(5), || {
+        player.tick();
+        player.frame_pts().is_some()
+    }));
+
+    let info = player.info().unwrap();
+    let subtitles: Vec<_> = info.tracks(TrackKind::Subtitle).collect();
+    let labels: Vec<_> = subtitles
+        .iter()
+        .enumerate()
+        .map(|(i, t)| (t.label(i + 1), t.detail()))
+        .collect();
+    assert_eq!(
+        labels,
+        [
+            ("English".to_owned(), "SRT · External".to_owned()),
+            ("Russian".to_owned(), "SRT · External".to_owned()),
+        ]
+    );
+    let subtitles: Vec<_> = subtitles.iter().map(|t| t.index).collect();
+    assert_eq!(
+        info.subtitle_track,
+        Some(subtitles[0]),
+        "a file beside the video shows from the start"
+    );
+
+    assert_eq!(
+        subtitles_at(&mut player, 3.2, &["Second line"]),
+        ["Second line"]
+    );
+    // Back, and into a cue that started before the seek.
+    assert_eq!(
+        subtitles_at(&mut player, 2.0, &["Hello from a file"]),
+        ["Hello from a file"]
+    );
+    assert_eq!(subtitles_at(&mut player, 2.7, &[]), Vec::<String>::new());
+
+    player.select_track(TrackKind::Subtitle, Some(subtitles[1]));
+    assert_eq!(
+        subtitles_at(&mut player, 1.5, &["Привет из файла, как дела?"]),
+        ["Привет из файла, как дела?"]
+    );
+    assert_eq!(player.info().unwrap().subtitle_track, Some(subtitles[1]));
+}
+
+#[test]
 fn reports_unplayable_files() {
     let path = std::env::temp_dir().join(format!("plays-not-media-{}.txt", std::process::id()));
     std::fs::write(&path, "definitely not a video").unwrap();

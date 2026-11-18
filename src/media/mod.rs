@@ -4,6 +4,7 @@ pub mod audio;
 pub mod clock;
 pub mod decoder;
 pub mod dovi;
+mod external;
 pub mod hdr;
 mod hwaccel;
 pub mod picture;

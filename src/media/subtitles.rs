@@ -134,17 +134,36 @@ pub struct SubtitleDecoder {
 }
 
 impl SubtitleDecoder {
+    /// A decoder for a subtitle stream. Text in another `encoding` than
+    /// UTF-8 (an iconv name) is converted, where FFmpeg can.
     pub fn new(
         index: usize,
         parameters: &codec::Parameters,
         time_base: Rational,
         canvas: Option<(u32, u32)>,
+        encoding: Option<&str>,
     ) -> Result<Self> {
-        let context = codec::context::Context::from_parameters(parameters.clone())?;
-        let mut decoder = context.decoder();
-        // Lets FFmpeg take a cue's end from its packet's duration.
-        decoder.set_packet_time_base(time_base);
-        let decoder = decoder.subtitle().context("opening the subtitle decoder")?;
+        let open = |encoding: Option<&str>| -> Result<ffmpeg::decoder::Subtitle> {
+            let context = codec::context::Context::from_parameters(parameters.clone())?;
+            let mut decoder = context.decoder();
+            // Lets FFmpeg take a cue's end from its packet's duration.
+            decoder.set_packet_time_base(time_base);
+            let codec = ffmpeg::decoder::find(parameters.id()).context("no decoder")?;
+            let mut options = ffmpeg::Dictionary::new();
+            if let Some(encoding) = encoding {
+                options.set("sub_charenc", encoding);
+            }
+            Ok(decoder.open_as_with(codec, options)?.subtitle()?)
+        };
+        let decoder = match encoding.map(|encoding| (encoding, open(Some(encoding)))) {
+            Some((_, Ok(decoder))) => Ok(decoder),
+            Some((encoding, Err(err))) => {
+                log::warn!("can't convert subtitles from {encoding}: {err:#}");
+                open(None)
+            }
+            None => open(None),
+        }
+        .context("opening the subtitle decoder")?;
         Ok(Self {
             index,
             decoder,
