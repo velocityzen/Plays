@@ -37,6 +37,8 @@ pub(super) fn set_menus(cx: &mut App) {
                 MenuItem::action("Next Frame", NextFrame),
                 MenuItem::action("Previous Frame", PreviousFrame),
                 MenuItem::action("Restart", Restart),
+                MenuItem::action("Previous File", PreviousFile),
+                MenuItem::action("Next File", NextFile),
                 MenuItem::action("Loop", ToggleLoop),
                 MenuItem::separator(),
                 MenuItem::action("Play/Pause All", PlayPauseAll),

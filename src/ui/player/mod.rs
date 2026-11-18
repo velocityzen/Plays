@@ -126,7 +126,8 @@ impl PlayerView {
 
     /// Play the media file before (`-1`) or after (`1`) this one in its
     /// folder instead, at the same volume, muted and looping as this one is,
-    /// and playing if this one is (or files start playing).
+    /// and playing if this one is (or files start playing). Without one,
+    /// say so, as only a shortcut gets here then.
     pub fn open_neighbor(&mut self, direction: i32, cx: &mut Context<Self>) {
         let neighbor = if direction < 0 {
             self.neighbors.previous.clone()
@@ -134,6 +135,8 @@ impl PlayerView {
             self.neighbors.next.clone()
         };
         let Some(path) = neighbor else {
+            let side = if direction < 0 { "previous" } else { "next" };
+            self.note(format!("No {side} file in its folder"), cx);
             return;
         };
         let source = Source::File(path);

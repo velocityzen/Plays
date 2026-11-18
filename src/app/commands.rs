@@ -51,6 +51,8 @@ pub(super) fn register(cx: &mut App) {
     cx.on_action(|_: &NextFrame, cx| with_active(cx, |p, cx| p.step_frame(1.0, cx)));
     cx.on_action(|_: &PreviousFrame, cx| with_active(cx, |p, cx| p.step_frame(-1.0, cx)));
     cx.on_action(|_: &Restart, cx| with_active(cx, |p, cx| p.restart(cx)));
+    cx.on_action(|_: &PreviousFile, cx| with_active(cx, |p, cx| p.open_neighbor(-1, cx)));
+    cx.on_action(|_: &NextFile, cx| with_active(cx, |p, cx| p.open_neighbor(1, cx)));
     cx.on_action(|_: &ToggleLoop, cx| with_active(cx, |p, cx| p.toggle_loop(cx)));
     cx.on_action(|_: &VolumeUp, cx| with_active(cx, |p, cx| p.change_volume(0.05, cx)));
     cx.on_action(|_: &VolumeDown, cx| with_active(cx, |p, cx| p.change_volume(-0.05, cx)));

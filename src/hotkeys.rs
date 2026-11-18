@@ -20,6 +20,8 @@ gpui::actions!(
         NextFrame,
         PreviousFrame,
         Restart,
+        PreviousFile,
+        NextFile,
         ToggleLoop,
         VolumeUp,
         VolumeDown,
@@ -58,6 +60,8 @@ pub enum Command {
     NextFrame,
     PreviousFrame,
     Restart,
+    PreviousFile,
+    NextFile,
     Loop,
     VolumeUp,
     VolumeDown,
@@ -110,13 +114,15 @@ impl Group {
 }
 
 impl Command {
-    pub const ALL: [Self; 25] = [
+    pub const ALL: [Self; 27] = [
         Self::PlayPause,
         Self::SeekForward,
         Self::SeekBackward,
         Self::NextFrame,
         Self::PreviousFrame,
         Self::Restart,
+        Self::PreviousFile,
+        Self::NextFile,
         Self::Loop,
         Self::VolumeUp,
         Self::VolumeDown,
@@ -147,6 +153,8 @@ impl Command {
             Self::NextFrame => "next_frame",
             Self::PreviousFrame => "previous_frame",
             Self::Restart => "restart",
+            Self::PreviousFile => "previous_file",
+            Self::NextFile => "next_file",
             Self::Loop => "loop",
             Self::VolumeUp => "volume_up",
             Self::VolumeDown => "volume_down",
@@ -181,6 +189,8 @@ impl Command {
             Self::NextFrame => "Next frame",
             Self::PreviousFrame => "Previous frame",
             Self::Restart => "Restart",
+            Self::PreviousFile => "Previous file in its folder",
+            Self::NextFile => "Next file in its folder",
             Self::Loop => "Loop",
             Self::VolumeUp => "Volume up",
             Self::VolumeDown => "Volume down",
@@ -211,6 +221,8 @@ impl Command {
             | Self::NextFrame
             | Self::PreviousFrame
             | Self::Restart
+            | Self::PreviousFile
+            | Self::NextFile
             | Self::Loop => Group::Playback,
             Self::VolumeUp | Self::VolumeDown | Self::Mute | Self::NextAudioTrack => Group::Audio,
             Self::NextSubtitleTrack
@@ -236,6 +248,8 @@ impl Command {
             Self::NextFrame => Box::new(NextFrame),
             Self::PreviousFrame => Box::new(PreviousFrame),
             Self::Restart => Box::new(Restart),
+            Self::PreviousFile => Box::new(PreviousFile),
+            Self::NextFile => Box::new(NextFile),
             Self::Loop => Box::new(ToggleLoop),
             Self::VolumeUp => Box::new(VolumeUp),
             Self::VolumeDown => Box::new(VolumeDown),
@@ -269,6 +283,8 @@ impl Command {
             Self::NextFrame => &["alt-right", "."],
             Self::PreviousFrame => &["alt-left", ","],
             Self::Restart => &["home"],
+            Self::PreviousFile => &["secondary-left"],
+            Self::NextFile => &["secondary-right"],
             Self::Loop => &["secondary-shift-l"],
             Self::VolumeUp => &["up"],
             Self::VolumeDown => &["down"],

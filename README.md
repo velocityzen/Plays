@@ -152,6 +152,7 @@ it again when the dependencies change (`script/bundle-macos` runs it).
 | Seek back/forward | `←` `→` (5 seconds at first; the step is in Settings) |
 | Previous/next frame | `⌥←` `⌥→` / `Alt+←` `Alt+→`, or `,` `.` |
 | Restart | `Home` |
+| Previous/next file in its folder | `⌘←` `⌘→` / `Ctrl+←` `Ctrl+→` |
 | Loop | `⌘⇧L` / `Ctrl+Shift+L` |
 | Volume down/up | `↓` `↑` |
 | Mute/unmute | `M`, or `⌘/` / `Ctrl+/` |
