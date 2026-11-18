@@ -261,12 +261,42 @@ impl ScreenshotSettings {
     }
 }
 
+/// An audio output picked in Settings → Audio.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AudioDevice {
+    /// What the system knows it by, from run to run.
+    pub id: String,
+    /// What it is called, to show while it isn't connected.
+    pub name: String,
+}
+
+/// Which audio output everything plays through.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AudioOutputSettings {
+    /// `None` for the system's default output, whichever it is.
+    pub device: Option<AudioDevice>,
+    /// While the device picked isn't connected, play through nothing until
+    /// it is, rather than the system's default.
+    pub wait_for_device: bool,
+}
+
+impl Default for AudioOutputSettings {
+    fn default() -> Self {
+        Self {
+            device: None,
+            wait_for_device: true,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
     pub theme: ThemeMode,
     /// Volume applied on top of every player's own volume.
     pub master_volume: f32,
+    pub audio_output: AudioOutputSettings,
     /// Volume new players start at.
     pub default_volume: f32,
     pub autoplay: bool,
@@ -297,6 +327,7 @@ impl Default for Settings {
         Self {
             theme: ThemeMode::System,
             master_volume: 1.0,
+            audio_output: AudioOutputSettings::default(),
             default_volume: 0.8,
             autoplay: true,
             loop_by_default: false,
@@ -398,6 +429,23 @@ mod tests {
         assert_eq!(settings.master_volume, 0.5);
         assert_eq!(settings.theme, ThemeMode::Light);
         assert_eq!(settings.max_resolution, Settings::default().max_resolution);
+    }
+
+    #[test]
+    fn reads_the_audio_output() {
+        let settings = Settings::default();
+        assert_eq!(settings.audio_output.device, None);
+        assert!(settings.audio_output.wait_for_device);
+        let settings: Settings = serde_json::from_str(
+            r#"{ "audio_output": { "device": { "id": "coreaudio:abc", "name": "DAC" } } }"#,
+        )
+        .unwrap();
+        let device = settings.audio_output.device.as_ref().unwrap();
+        assert_eq!(
+            (device.id.as_str(), device.name.as_str()),
+            ("coreaudio:abc", "DAC")
+        );
+        assert!(settings.audio_output.wait_for_device);
     }
 
     #[test]

@@ -59,9 +59,11 @@ GPU-accelerated UI framework.
   lights over it like other video players. While something plays, they fade
   out with the controls when the mouse leaves the window. Colors are macOS's
   own, in light and dark, with your accent color.
-- Audio from every file is mixed into one output. A/V sync follows the audio clock.
+- Audio from every file is mixed into one output: the system's default, or
+  a device picked in Settings, remembered from run to run. A/V sync follows
+  the audio clock.
 - Audio-only files show their cover art (or a note) and a level meter.
-- Settings window: theme, master volume, default volume, autoplay, loop,
+- Settings window: theme, master volume, the audio output, default volume, autoplay, loop,
   seek step, fit/fill scaling, gamma for SDR and for HDR video (applied to
   every open video as you drag), decode resolution limit, hardware decoding,
   subtitle style (font, weight, size, color, outline or shadow and its color,
@@ -147,7 +149,9 @@ gpui renders with Vulkan on Linux, so a working Vulkan driver is required.
 For hardware decoding, install your GPU's VA-API driver (`intel-media-va-driver`
 or `mesa-va-drivers`), or use NVIDIA's driver for NVDEC. The tile header shows
 the API in use, for example `h264 (VA-API)`.
-Audio goes through ALSA (PipeWire and PulseAudio provide an ALSA device).
+Audio goes through ALSA (PipeWire and PulseAudio provide an ALSA device),
+so Settings → Audio lists ALSA's outputs: `default` and `pipewire` or
+`pulse` go through the sound server, which picks the speakers.
 
 For your file manager's **Open With** menu, put the `plays` binary on your
 `PATH` and copy `resources/linux/plays.desktop` to `~/.local/share/applications/`.
@@ -205,6 +209,12 @@ flipping go by the picture as it shows, and cropping keeps its middle;
 opening another file in the tile starts it as its file has it. The same
 goes for delays, which a note shows as they change ("Audio delay +200 ms").
 The sound can move up to 5 seconds either way, subtitles up to a minute.
+
+Settings → Audio picks the output everything plays through: the system's
+default (which the sound follows as it changes, on macOS) or one device.
+While the device picked isn't connected, players keep playing, silently,
+until it is (or, with Wait for it off, through the system's default), and
+the sound goes back to it as soon as it's there.
 
 A screenshot's note says which folder it went to. Settings → Screenshots
 picks the folder (Pictures at first; Show opens it), PNG or JPEG and the
@@ -304,17 +314,25 @@ last window quits.
   change shows at once, even on paused video.
 - `src/media/source.rs`: files and stream URLs. URLs are logged without
   credentials or query strings.
-- `src/media/audio.rs`: one cpal output stream that mixes all players and
-  applies per-player and master volume. It tells each player's clock what
-  is being heard, moved by the player's audio delay, so the picture runs
-  that far ahead of the sound (or behind it).
+- `src/media/audio.rs`: the mixer, which sums all players and applies
+  per-player and master volume. It tells each player's clock what is being
+  heard, moved by the player's audio delay, so the picture runs that far
+  ahead of the sound (or behind it). It plays at the output's rate; when a
+  new device wants another, what players have queued is converted to it and
+  decoders resample to it from then on.
+- `src/media/output.rs`: where the mixer's sound goes: a cpal stream to a
+  device, in the device's own format, or, with no device, a thread that
+  runs the mixer in time so players keep playing silently. It lists the
+  outputs and finds one by the id the system keeps for it.
 - `src/media/clock.rs`: per-player clock that runs on wall time and is eased
   toward the audio position on every audio callback.
 - `src/media/player.rs`: the UI-side handle: play/pause/seek, frame selection,
   buffering after seeks (and, for streams, until a second is read ahead or
   when the network runs dry), end-of-file and looping.
 - `src/app/`: starting the app and its own actions (`mod.rs`), the shared
-  audio output, what each action does (`commands`), how actions reach the
+  audio output and which device it plays through (`audio`: the one picked,
+  waited for or stood in for while it's away, and watched for to come
+  back), what each action does (`commands`), how actions reach the
   window and tile in front (`dispatch`), the keymap and the menu bar.
 - `src/hotkeys.rs`: the commands shortcuts can run, their default
   keys, how they are saved in Settings and shown (`⌃⌘F`, `Ctrl+Alt+F`).
@@ -411,7 +429,14 @@ turned, reshaped and cropped, with bitmap subtitles landing where the
 picture shows what they cover. With the sound delayed, the playhead and the
 picture must run that far ahead of what the mixer has played; with
 subtitles delayed either way, a cue must show only at its moved time,
-including right after a seek past where it originally ended.
+including right after a seek past where it originally ended. With no audio
+device, a player must still play in real time; unit tests check that what
+is queued follows the mixer to another sample rate, from where it was. One
+ignored test plays through the machine's own outputs, each by its id:
+
+```bash
+cargo test plays_through_the_devices_here -- --ignored --nocapture
+```
 
 Screenshots: a still of a player capped at 180 lines must still be the full
 640x360, and exactly the frame shown (each frame a different grey) though
@@ -459,6 +484,10 @@ unreachable hosts, and closing while a connection hangs.
 - Picture adjustments and delays aren't kept: a file opens as its file
   has it. A display matrix that isn't a quarter turn goes to the nearest
   one, and text subtitles stay upright when the picture turns.
-- No playlists, playback speed or audio device selection.
+- No playlists or playback speed.
+- Outputs aren't watched for coming and going while the one wanted is
+  playing: the device list in Settings → Audio is read again when its menu
+  opens. ALSA's own error messages about plugins with nothing behind them
+  show in the terminal when it does.
 - On GNOME Wayland (client-side decorations) the window can be moved from the
   toolbar but has no resize handles.

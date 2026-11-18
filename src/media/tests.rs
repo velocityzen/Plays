@@ -11,6 +11,7 @@ use ffmpeg_next::Rational;
 use super::audio::Mixer;
 use super::decoder::output_size;
 use super::orientation::Orientation;
+use super::output::AudioOutput;
 use super::player::{Player, PlayerOptions};
 use super::source::Source;
 use super::tracks::TrackKind;
@@ -160,6 +161,42 @@ fn resamples_audio_and_stops_at_the_end() {
     assert!((heard as i64 - 48_000).abs() < 480, "heard {heard} frames");
     drop(player);
     let _ = Arc::strong_count(&mixer);
+}
+
+#[test]
+fn plays_on_in_time_with_no_device() {
+    let Some(path) = media(
+        "half.wav",
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:sample_rate=44100:duration=0.5",
+            "-ac",
+            "2",
+        ],
+    ) else {
+        eprintln!("ffmpeg not found, skipping");
+        return;
+    };
+    // Plays nowhere until told where: nothing asks it for sound.
+    let output = AudioOutput::new(1.0);
+    let mut player = Player::open(
+        Source::File(path),
+        Some(output.mixer().clone()),
+        options(true, false),
+    );
+    let start = Instant::now();
+    while player.is_playing() && start.elapsed() < Duration::from_secs(10) {
+        player.tick();
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let took = start.elapsed().as_secs_f64();
+    assert!(!player.is_playing(), "the player should get to the end");
+    assert!(
+        (0.45..3.0).contains(&took),
+        "half a second of sound took {took}s"
+    );
 }
 
 #[test]

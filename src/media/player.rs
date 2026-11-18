@@ -115,7 +115,7 @@ impl Player {
             let source = Arc::new(AudioSource::new(
                 clock.clone(),
                 serial.clone(),
-                mixer.sample_rate,
+                mixer.sample_rate(),
                 options.volume,
             ));
             mixer.add_source(source.clone());
@@ -451,7 +451,7 @@ impl Player {
             self.shared.audio.as_ref().map_or(0.0, |a| {
                 let queue = a.queue.lock();
                 if queue.serial == serial {
-                    queue.buffered_frames as f64 / a.sample_rate as f64
+                    queue.buffered_seconds()
                 } else {
                     0.0
                 }

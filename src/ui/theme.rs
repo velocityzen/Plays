@@ -459,6 +459,13 @@ pub mod settings {
     pub const SWATCH_PADDING: Pixels = px(2.);
     /// The most the audio output's name is wide.
     pub const OUTPUT_MAX_WIDTH: Pixels = px(260.);
+    /// The audio output button, which its menu lines up with.
+    pub const DEVICE_BUTTON_WIDTH: Pixels = px(220.);
+    /// How far below the audio output button's top its menu goes.
+    pub const DEVICE_MENU_TOP: Pixels = px(32.);
+    pub const DEVICE_MENU_WIDTH: Pixels = px(300.);
+    /// The most the menu of audio outputs is tall before it scrolls.
+    pub const DEVICE_MENU_MAX_HEIGHT: Pixels = px(320.);
     /// The subtitle font button, which its menu lines up with.
     pub const FONT_BUTTON_WIDTH: Pixels = px(200.);
     /// How far below the font button's top its menu goes.

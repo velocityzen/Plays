@@ -8,6 +8,7 @@ mod external;
 pub mod hdr;
 mod hwaccel;
 pub mod orientation;
+pub mod output;
 pub mod picture;
 pub mod player;
 pub mod source;
@@ -19,8 +20,9 @@ pub mod tracks;
 #[cfg(target_os = "macos")]
 mod videotoolbox;
 
-pub use audio::{AudioOutput, Mixer};
+pub use audio::Mixer;
 pub use orientation::Orientation;
+pub use output::AudioOutput;
 pub use picture::Picture;
 pub use player::{Player, PlayerOptions};
 pub use source::{Neighbors, Source};

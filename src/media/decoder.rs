@@ -1583,12 +1583,11 @@ impl AudioDecoder {
     }
 
     fn output_rate(&self) -> u32 {
-        self.source.sample_rate
+        self.source.sample_rate()
     }
 
     fn has_room(&self) -> bool {
-        let buffered = self.source.queue.lock().buffered_frames;
-        (buffered as f64) < AUDIO_QUEUE_SECONDS * self.output_rate() as f64
+        self.source.queue.lock().buffered_seconds() < AUDIO_QUEUE_SECONDS
     }
 
     fn reset(&mut self) {
@@ -1638,7 +1637,13 @@ impl AudioDecoder {
             channel_layout: layout,
             rate: in_rate,
         };
-        if self.resampler.as_ref().is_none_or(|r| *r.input() != input) {
+        // Rebuilt for a new input format, or a new output rate (the mixer's
+        // for another device).
+        if self
+            .resampler
+            .as_ref()
+            .is_none_or(|r| *r.input() != input || r.output().rate != out_rate)
+        {
             self.resampler = Some(resampling::Context::get(
                 input.format,
                 input.channel_layout,
@@ -1690,6 +1695,7 @@ impl AudioDecoder {
                 pts,
                 samples,
                 pos: 0,
+                rate: out_rate,
             });
         }
         Ok(())

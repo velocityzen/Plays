@@ -1,18 +1,17 @@
-//! A single audio output stream that mixes every open player.
+//! The mixer every open player plays into.
 //!
 //! Decoders resample their audio to interleaved stereo `f32` at the mixer's
-//! sample rate and push it into an [`AudioSource`]. The output callback sums all
-//! playing sources, applies per-player and master volume, and reports what it is
-//! playing back to each player's [`Clock`] so video can follow the audio.
+//! sample rate and push it into an [`AudioSource`]. The output (`output.rs`)
+//! has the mixer sum all playing sources, apply per-player and master volume,
+//! and report what it is playing back to each player's [`Clock`] so video can
+//! follow the audio. A new output device may want another sample rate: then
+//! what is queued is converted to it, and decoders resample to it from then on.
 
 use std::collections::VecDeque;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::time::Instant;
 
-use anyhow::{Context as _, Result, anyhow};
-use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use cpal::{FromSample, SampleFormat, SizedSample};
 use parking_lot::Mutex;
 
 use super::clock::Clock;
@@ -44,47 +43,118 @@ pub struct AudioChunk {
     pub samples: Vec<f32>,
     /// Read position, in frames (one frame = one sample per channel).
     pub pos: usize,
+    /// The sample rate the samples were resampled to.
+    pub rate: u32,
 }
 
 impl AudioChunk {
     fn frames(&self) -> usize {
         self.samples.len() / SOURCE_CHANNELS
     }
+
+    /// What is left to play of it, at `rate`.
+    fn resampled(&self, rate: u32) -> Self {
+        let rest = &self.samples[self.pos * SOURCE_CHANNELS..];
+        Self {
+            pts: self.pts + self.pos as f64 / f64::from(self.rate),
+            samples: resample(rest, self.rate, rate),
+            pos: 0,
+            rate,
+        }
+    }
 }
 
-#[derive(Default)]
+/// Interleaved stereo `samples` at `from` Hz, at `to` Hz instead. Linear:
+/// only what was already queued when the output changed goes through it;
+/// decoders resample everything else properly.
+fn resample(samples: &[f32], from: u32, to: u32) -> Vec<f32> {
+    let frames = samples.len() / SOURCE_CHANNELS;
+    if from == to || frames == 0 {
+        return samples.to_vec();
+    }
+    let out_frames = (frames as u64 * u64::from(to) / u64::from(from)) as usize;
+    let step = f64::from(from) / f64::from(to);
+    let (input, _) = samples.as_chunks::<SOURCE_CHANNELS>();
+    let mut out = Vec::with_capacity(out_frames * SOURCE_CHANNELS);
+    for i in 0..out_frames {
+        let x = i as f64 * step;
+        let at = (x as usize).min(frames - 1);
+        let next = (at + 1).min(frames - 1);
+        let t = (x - at as f64) as f32;
+        for (a, b) in input[at].iter().zip(&input[next]) {
+            out.push(a + (b - a) * t);
+        }
+    }
+    out
+}
+
 pub struct AudioQueue {
     pub chunks: VecDeque<AudioChunk>,
     /// Seek generation the queued samples belong to.
     pub serial: u64,
     /// Frames still waiting to be played.
     pub buffered_frames: usize,
+    /// The sample rate the mixer plays at: every chunk is at it.
+    pub rate: u32,
 }
 
 impl AudioQueue {
+    pub fn new(rate: u32) -> Self {
+        Self {
+            chunks: VecDeque::new(),
+            serial: 0,
+            buffered_frames: 0,
+            rate,
+        }
+    }
+
     pub fn clear(&mut self, serial: u64) {
         self.chunks.clear();
         self.buffered_frames = 0;
         self.serial = serial;
     }
 
+    /// Queue `chunk`, converted to the queue's rate if the mixer changed
+    /// rate while it was being decoded.
     pub fn push(&mut self, chunk: AudioChunk) {
+        let chunk = if chunk.rate == self.rate {
+            chunk
+        } else {
+            chunk.resampled(self.rate)
+        };
         self.buffered_frames += chunk.frames() - chunk.pos;
         self.chunks.push_back(chunk);
     }
 
+    /// Convert what is queued to `rate`, which the mixer plays at now.
+    fn set_rate(&mut self, rate: u32) {
+        if rate == self.rate {
+            return;
+        }
+        for chunk in &mut self.chunks {
+            *chunk = chunk.resampled(rate);
+        }
+        self.buffered_frames = self.chunks.iter().map(AudioChunk::frames).sum();
+        self.rate = rate;
+    }
+
+    /// Seconds still waiting to be played.
+    pub fn buffered_seconds(&self) -> f64 {
+        self.buffered_frames as f64 / f64::from(self.rate)
+    }
+
     /// Media time of the next frame that will be read.
-    fn read_pts(&self, sample_rate: u32) -> Option<f64> {
+    fn read_pts(&self) -> Option<f64> {
         self.chunks
             .front()
-            .map(|chunk| chunk.pts + chunk.pos as f64 / sample_rate as f64)
+            .map(|chunk| chunk.pts + chunk.pos as f64 / f64::from(self.rate))
     }
 }
 
 /// One player's connection to the mixer.
 pub struct AudioSource {
-    /// Rate the decoder must resample to (the mixer's output rate).
-    pub sample_rate: u32,
+    /// What the decoder has resampled, at the mixer's rate (which its
+    /// decoder must resample to).
     pub queue: Mutex<AudioQueue>,
     /// The seek generation the player currently wants to hear.
     pub serial: Arc<AtomicU64>,
@@ -103,8 +173,7 @@ pub struct AudioSource {
 impl AudioSource {
     pub fn new(clock: Arc<Clock>, serial: Arc<AtomicU64>, sample_rate: u32, volume: f32) -> Self {
         Self {
-            sample_rate,
-            queue: Mutex::new(AudioQueue::default()),
+            queue: Mutex::new(AudioQueue::new(sample_rate)),
             serial,
             clock,
             playing: AtomicBool::new(false),
@@ -114,18 +183,43 @@ impl AudioSource {
             peak: AtomicF32::new(0.0),
         }
     }
+
+    /// The rate to resample to: the mixer's.
+    pub fn sample_rate(&self) -> u32 {
+        self.queue.lock().rate
+    }
 }
 
 /// State shared between the UI thread, decoder threads and the audio callback.
 pub struct Mixer {
-    pub sample_rate: u32,
-    pub output_channels: usize,
-    pub device_name: String,
+    sample_rate: AtomicU32,
     sources: Mutex<Vec<Arc<AudioSource>>>,
     master_volume: AtomicF32,
 }
 
 impl Mixer {
+    pub fn new(sample_rate: u32, master_volume: f32) -> Arc<Self> {
+        Arc::new(Self {
+            sample_rate: AtomicU32::new(sample_rate),
+            sources: Mutex::new(Vec::new()),
+            master_volume: AtomicF32::new(master_volume),
+        })
+    }
+
+    /// The rate it plays at, and players resample to.
+    pub fn sample_rate(&self) -> u32 {
+        self.sample_rate.load(Ordering::Acquire)
+    }
+
+    /// Play at `rate` from now on, for an output that wants it: what every
+    /// player has queued is converted to it.
+    pub fn set_sample_rate(&self, rate: u32) {
+        self.sample_rate.store(rate, Ordering::Release);
+        for source in self.sources.lock().iter() {
+            source.queue.lock().set_rate(rate);
+        }
+    }
+
     pub fn add_source(&self, source: Arc<AudioSource>) {
         self.sources.lock().push(source);
     }
@@ -141,13 +235,7 @@ impl Mixer {
     /// A mixer with no audio device behind it; tests pull samples with [`Mixer::mix`].
     #[cfg(test)]
     pub fn detached(sample_rate: u32) -> Arc<Self> {
-        Arc::new(Self {
-            sample_rate,
-            output_channels: SOURCE_CHANNELS,
-            device_name: "test".into(),
-            sources: Mutex::new(Vec::new()),
-            master_volume: AtomicF32::new(1.0),
-        })
+        Self::new(sample_rate, 1.0)
     }
 
     /// Fill `mix` (interleaved stereo) with the sum of all playing sources.
@@ -166,7 +254,7 @@ impl Mixer {
             if queue.serial != source.serial.load(Ordering::Acquire) {
                 continue;
             }
-            if let Some(pts) = queue.read_pts(self.sample_rate) {
+            if let Some(pts) = queue.read_pts() {
                 // What we write now is heard `latency` seconds from now,
                 // and goes with the picture `delay` seconds later.
                 let delay = f64::from(source.delay.load());
@@ -207,106 +295,69 @@ impl Mixer {
     }
 }
 
-/// Owns the platform audio stream. Not `Send`, so it lives on the UI thread.
-pub struct AudioOutput {
-    pub mixer: Arc<Mixer>,
-    _stream: cpal::Stream,
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-impl AudioOutput {
-    pub fn new(master_volume: f32) -> Result<Self> {
-        let host = cpal::default_host();
-        let device = host
-            .default_output_device()
-            .ok_or_else(|| anyhow!("no audio output device"))?;
-        let device_name = device
-            .description()
-            .map(|d| d.name().to_string())
-            .unwrap_or_else(|_| "Default output".into());
-        let supported = device
-            .default_output_config()
-            .context("querying the default output config")?;
-        let sample_format = supported.sample_format();
-        let config = supported.config();
-
-        let mixer = Arc::new(Mixer {
-            sample_rate: config.sample_rate,
-            output_channels: config.channels as usize,
-            device_name,
-            sources: Mutex::new(Vec::new()),
-            master_volume: AtomicF32::new(master_volume),
-        });
-
-        let stream = match sample_format {
-            SampleFormat::F32 => build_stream::<f32>(&device, config, mixer.clone()),
-            SampleFormat::F64 => build_stream::<f64>(&device, config, mixer.clone()),
-            SampleFormat::I16 => build_stream::<i16>(&device, config, mixer.clone()),
-            SampleFormat::I32 => build_stream::<i32>(&device, config, mixer.clone()),
-            SampleFormat::U16 => build_stream::<u16>(&device, config, mixer.clone()),
-            SampleFormat::U8 => build_stream::<u8>(&device, config, mixer.clone()),
-            SampleFormat::I8 => build_stream::<i8>(&device, config, mixer.clone()),
-            other => Err(anyhow!("unsupported output sample format {other:?}")),
-        }?;
-        stream.play().context("starting the audio stream")?;
-
-        log::info!(
-            "audio output: {} @ {} Hz, {} channels ({sample_format:?})",
-            mixer.device_name,
-            mixer.sample_rate,
-            mixer.output_channels
-        );
-        Ok(Self {
-            mixer,
-            _stream: stream,
-        })
+    /// `frames` of stereo, each frame's samples its index.
+    fn ramp(frames: usize, pts: f64, rate: u32) -> AudioChunk {
+        AudioChunk {
+            pts,
+            samples: (0..frames).flat_map(|i| [i as f32; 2]).collect(),
+            pos: 0,
+            rate,
+        }
     }
-}
 
-fn build_stream<T>(
-    device: &cpal::Device,
-    config: cpal::StreamConfig,
-    mixer: Arc<Mixer>,
-) -> Result<cpal::Stream>
-where
-    T: SizedSample + FromSample<f32>,
-{
-    let channels = config.channels as usize;
-    let sample_rate = config.sample_rate as f64;
-    let mut mix = Vec::<f32>::new();
+    #[test]
+    fn resamples_linearly() {
+        let ramp: Vec<f32> = (0..8).flat_map(|i| [i as f32, -(i as f32)]).collect();
+        let up = resample(&ramp, 24_000, 48_000);
+        assert_eq!(up.len(), 32);
+        assert_eq!(&up[..6], &[0.0, 0.0, 0.5, -0.5, 1.0, -1.0]);
+        let down = resample(&ramp, 48_000, 24_000);
+        assert_eq!(down, [0.0, 0.0, 2.0, -2.0, 4.0, -4.0, 6.0, -6.0]);
+        assert_eq!(resample(&ramp, 48_000, 48_000), ramp);
+    }
 
-    let stream = device.build_output_stream::<T, _, _>(
-        config,
-        move |out: &mut [T], info: &cpal::OutputCallbackInfo| {
-            let frames = out.len() / channels;
-            mix.resize(frames * SOURCE_CHANNELS, 0.0);
+    #[test]
+    fn what_is_queued_follows_the_mixer_to_another_rate() {
+        let mut queue = AudioQueue::new(48_000);
+        let mut chunk = ramp(4800, 1.0, 48_000);
+        chunk.pos = 2400;
+        queue.push(chunk);
+        assert_eq!(queue.buffered_frames, 2400);
+        assert_eq!(queue.read_pts(), Some(1.05));
 
-            let timestamp = info.timestamp();
-            let latency = timestamp
-                .playback
-                .checked_duration_since(timestamp.callback)
-                .map(|d| d.as_secs_f64())
-                .unwrap_or(frames as f64 / sample_rate);
-            mixer.mix(&mut mix, latency, Instant::now());
+        queue.set_rate(24_000);
+        assert_eq!(queue.rate, 24_000);
+        assert_eq!(queue.buffered_frames, 1200);
+        assert_eq!(queue.read_pts(), Some(1.05));
+        assert!((queue.buffered_seconds() - 0.05).abs() < 1e-9);
+        // It goes on from where it was: frame 2400, then every other one.
+        let chunk = queue.chunks.front().unwrap();
+        assert_eq!(&chunk.samples[..4], &[2400.0, 2400.0, 2402.0, 2402.0]);
 
-            for (frame, lr) in out
-                .chunks_exact_mut(channels)
-                .zip(mix.as_chunks::<SOURCE_CHANNELS>().0)
-            {
-                let l = lr[0].clamp(-1.0, 1.0);
-                let r = lr[1].clamp(-1.0, 1.0);
-                if channels == 1 {
-                    frame[0] = T::from_sample((l + r) * 0.5);
-                } else {
-                    frame[0] = T::from_sample(l);
-                    frame[1] = T::from_sample(r);
-                    for extra in &mut frame[2..] {
-                        *extra = T::from_sample(0.0f32);
-                    }
-                }
-            }
-        },
-        |err| log::error!("audio stream error: {err}"),
-        None,
-    )?;
-    Ok(stream)
+        // Decoded at the old rate while it changed: converted on the way in.
+        queue.push(ramp(480, 1.1, 48_000));
+        assert_eq!(queue.buffered_frames, 1200 + 240);
+        assert_eq!(queue.chunks.back().unwrap().rate, 24_000);
+    }
+
+    #[test]
+    fn a_mixer_changes_every_player_to_its_rate() {
+        let mixer = Mixer::detached(48_000);
+        let source = Arc::new(AudioSource::new(
+            Arc::new(Clock::new()),
+            Arc::new(AtomicU64::new(0)),
+            mixer.sample_rate(),
+            1.0,
+        ));
+        mixer.add_source(source.clone());
+        source.queue.lock().push(ramp(4800, 0.0, 48_000));
+        mixer.set_sample_rate(44_100);
+        assert_eq!(mixer.sample_rate(), 44_100);
+        assert_eq!(source.sample_rate(), 44_100);
+        assert_eq!(source.queue.lock().buffered_frames, 4410);
+    }
 }

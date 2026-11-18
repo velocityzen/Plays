@@ -89,6 +89,8 @@ pub struct SettingsView {
     /// Whether each slider is being dragged, by its id.
     drags: HashMap<&'static str, Rc<Cell<bool>>>,
     font_menu: subtitles::FontMenu,
+    /// Whether the menu of audio outputs is open.
+    device_menu: bool,
     recording: hotkeys::Recording,
     /// The credit in About whose license shows.
     license: Option<SharedString>,
@@ -141,6 +143,7 @@ impl SettingsView {
             pane: 0,
             drags: HashMap::new(),
             font_menu: subtitles::FontMenu::default(),
+            device_menu: false,
             recording: hotkeys::Recording::default(),
             license: None,
         }

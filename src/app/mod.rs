@@ -12,7 +12,7 @@ use futures::StreamExt as _;
 use futures::channel::mpsc::UnboundedReceiver;
 use gpui::{App, actions};
 
-pub use audio::AudioEngine;
+pub use audio::{AudioEngine, Route};
 
 use crate::media::{Source, picture};
 use crate::settings::Settings;
@@ -49,9 +49,8 @@ pub fn run(cx: &mut App, sources: Vec<Source>, opened: UnboundedReceiver<Vec<Str
     let settings = Settings::load();
     let [sdr_gamma, hdr_gamma] = settings.gamma();
     picture::set_gamma(sdr_gamma, hdr_gamma);
-    let audio = AudioEngine::start(settings.master_volume);
     cx.set_global(settings);
-    cx.set_global(audio);
+    AudioEngine::start(cx);
     let font = pick_ui_font(cx);
     cx.set_global(UiFont(font));
     refresh_system_colors(cx);
