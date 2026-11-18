@@ -4,7 +4,6 @@
 use gpui::{Context, Entity, EntityId, Pixels, Size, px, size};
 
 use super::{TOOLBAR, Tile, Workspace};
-use crate::media::Player;
 use crate::ui::player::{PlayerEvent, PlayerView};
 use crate::ui::theme::layout::{
     AUDIO_WINDOW_SIZE, TOOLBAR_HEIGHT, VIDEO_WINDOW_SIZE, WINDOW_MIN_SIZE, WINDOW_SIZE,
@@ -76,7 +75,7 @@ impl Workspace {
             return;
         };
         let view = self.tiles[index].view.clone();
-        let window_size = window_size_for(view.read(cx).player());
+        let window_size = window_size_for(view.read(cx));
         let window = match Self::open_window(window_size, cx) {
             Ok(window) => window,
             Err(err) => {
@@ -150,14 +149,14 @@ impl Workspace {
     }
 }
 
-/// A window for one file: the video at its own size (scaled down to fit a
-/// typical screen), a square for audio, and 16:9 while the file is still
-/// opening.
-fn window_size_for(player: &Player) -> Size<Pixels> {
-    let info = player.info();
-    let content = match info.as_ref().and_then(|i| i.video_size) {
-        Some((width, height)) if width > 0 && height > 0 => {
-            let (width, height) = (width as f32, height as f32);
+/// A window for one file: the video at the size it shows (scaled down to
+/// fit a typical screen), a square for audio, and 16:9 while the file is
+/// still opening.
+fn window_size_for(view: &PlayerView) -> Size<Pixels> {
+    let info = view.player().info();
+    let content = match view.framing() {
+        Some(framing) => {
+            let (width, height) = framing.size;
             let scale = (WINDOW_SIZE.width / px(width))
                 .min(WINDOW_SIZE.height / px(height))
                 .min(1.);

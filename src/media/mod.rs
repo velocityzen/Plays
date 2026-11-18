@@ -7,6 +7,7 @@ pub mod dovi;
 mod external;
 pub mod hdr;
 mod hwaccel;
+pub mod orientation;
 pub mod picture;
 pub mod player;
 pub mod source;
@@ -18,6 +19,7 @@ pub mod tracks;
 mod videotoolbox;
 
 pub use audio::{AudioOutput, Mixer};
+pub use orientation::Orientation;
 pub use picture::Picture;
 pub use player::{Player, PlayerOptions};
 pub use source::{Neighbors, Source};

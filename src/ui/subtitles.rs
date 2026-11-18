@@ -1,16 +1,17 @@
 //! Subtitles drawn over a tile's picture: text centered near its bottom (or
 //! top, or middle, if the cue says), sized to the picture, styled as the
 //! settings say, and lifted above the controls while they show; bitmaps go
-//! where the stream places them on the picture.
+//! where the stream places them on the picture, and turn and crop with it.
 
 use std::sync::Arc;
 
 use gpui::prelude::*;
 use gpui::{
-    App, Bounds, Corners, Font, FontStyle, FontWeight, Hsla, Pixels, SharedString, TextAlign,
-    TextRun, Window, WrappedLine, canvas, fill, point, px, rgb, size,
+    App, Bounds, ContentMask, ContentTransform, Corners, Font, FontStyle, FontWeight, Hsla, Pixels,
+    SharedString, TextAlign, TextRun, Window, WrappedLine, canvas, fill, point, px, rgb, size,
 };
 
+use super::framing::Framing;
 use super::theme::subtitles::{
     ABOVE_CONTROLS, BACKGROUND_PADDING, BACKGROUND_RADIUS, EDGE_OPACITY, EDGE_WIDTH, FONT_SIZE,
     LINE_HEIGHT, MAX_FONT_SIZE, MIN_BOTTOM, MIN_FONT_SIZE, SHADOW_OFFSET, WRAP_WIDTH,
@@ -20,8 +21,8 @@ use crate::settings::{SubtitleArea, SubtitleEdge, SubtitleStyle};
 
 /// How the tile around the subtitles is laid out, and how they look.
 pub struct Layout {
-    /// The video's display size, which the picture is fitted from.
-    pub video: Option<(u32, u32)>,
+    /// How the picture shows, which is fitted to the tile.
+    pub framing: Option<Framing>,
     /// The picture fills the tile (cropped) rather than fitting in it.
     pub cover: bool,
     /// How tall the controls are at the bottom of the tile.
@@ -44,26 +45,6 @@ pub fn overlay(cues: Vec<Arc<CueContent>>, layout: Layout) -> impl IntoElement {
     .top_0()
     .left_0()
     .size_full()
-}
-
-/// Where the picture is in the tile, fitted in it or covering it.
-pub(crate) fn picture_bounds(
-    bounds: Bounds<Pixels>,
-    video: Option<(u32, u32)>,
-    cover: bool,
-) -> Bounds<Pixels> {
-    let Some((width, height)) = video.filter(|(w, h)| *w > 0 && *h > 0) else {
-        return bounds;
-    };
-    let (width, height) = (width as f32, height as f32);
-    let scale_x = f32::from(bounds.size.width) / width;
-    let scale_y = f32::from(bounds.size.height) / height;
-    let scale = if cover {
-        scale_x.max(scale_y)
-    } else {
-        scale_x.min(scale_y)
-    };
-    Bounds::centered_at(bounds.center(), size(px(width * scale), px(height * scale)))
 }
 
 /// An outline is the text drawn in the edge color all around itself first.
@@ -104,18 +85,36 @@ pub(crate) fn paint(
     window: &mut Window,
     cx: &mut App,
 ) {
-    let picture = picture_bounds(bounds, layout.video, layout.cover);
-    for bitmap in cues.iter().flat_map(|cue| &cue.bitmaps) {
-        let [x, y, width, height] = bitmap.rect;
-        let rect = Bounds {
-            origin: point(
-                picture.origin.x + picture.size.width * x,
-                picture.origin.y + picture.size.height * y,
-            ),
-            size: size(picture.size.width * width, picture.size.height * height),
-        };
-        let _ = window.paint_image(rect, Corners::default(), bitmap.image.clone(), 0, false);
-    }
+    let picture = layout
+        .framing
+        .map_or(bounds, |framing| framing.fit(bounds, layout.cover));
+    // Cropped away with the picture.
+    window.with_content_mask(Some(ContentMask { bounds: picture }), |window| {
+        for bitmap in cues.iter().flat_map(|cue| &cue.bitmaps) {
+            let ([x, y, width, height], content) = layout
+                .framing
+                .map_or((bitmap.rect, ContentTransform::IDENTITY), |framing| {
+                    framing.place(bitmap.rect)
+                });
+            let rect = Bounds {
+                origin: point(
+                    picture.origin.x + picture.size.width * x,
+                    picture.origin.y + picture.size.height * y,
+                ),
+                size: size(picture.size.width * width, picture.size.height * height),
+            };
+            let image = bitmap.image.clone();
+            let _ = window.paint_image_with_content(
+                rect,
+                Corners::default(),
+                0.,
+                image,
+                0,
+                false,
+                content,
+            );
+        }
+    });
 
     let style = layout.style.clamped();
     // Text is sized by the part of the picture that is in the tile, and
@@ -325,24 +324,4 @@ fn shape(
         )
         .map(|lines| lines.into_vec())
         .unwrap_or_default()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn fits_the_picture_like_the_video() {
-        let tile = Bounds {
-            origin: point(px(10.), px(20.)),
-            size: size(px(400.), px(400.)),
-        };
-        let contain = picture_bounds(tile, Some((1920, 1080)), false);
-        assert_eq!(contain.size, size(px(400.), px(225.)));
-        assert_eq!(contain.origin, point(px(10.), px(107.5)));
-        let cover = picture_bounds(tile, Some((1920, 1080)), true);
-        assert_eq!(cover.size.height, px(400.));
-        assert!((f32::from(cover.size.width) - 711.11).abs() < 0.01);
-        assert_eq!(picture_bounds(tile, None, false), tile);
-    }
 }

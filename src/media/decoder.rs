@@ -39,6 +39,7 @@ use super::dovi;
 use super::external::{self, SubtitleFile};
 use super::hdr;
 use super::hwaccel;
+use super::orientation::Orientation;
 use super::picture::{self, Picture};
 use super::source::Source;
 use super::subtitles::{Cue, CueQueue, SubtitleDecoder};
@@ -100,8 +101,11 @@ pub struct MediaInfo {
     pub live: bool,
     pub has_video: bool,
     pub has_audio: bool,
-    /// Display size of the video, after aspect-ratio correction and any cap.
+    /// Display size of the video, after aspect-ratio correction and any cap,
+    /// before it's turned to `orientation`.
     pub video_size: Option<(u32, u32)>,
+    /// Which way up the video goes, as the file says.
+    pub orientation: Orientation,
     pub frame_rate: Option<f64>,
     pub video_codec: Option<String>,
     pub audio_codec: Option<String>,
@@ -118,6 +122,16 @@ pub struct MediaInfo {
 }
 
 impl MediaInfo {
+    /// The video's display size, turned as the file says.
+    pub fn upright_size(&self) -> Option<(u32, u32)> {
+        let (width, height) = self.video_size?;
+        Some(if self.orientation.sideways() {
+            (height, width)
+        } else {
+            (width, height)
+        })
+    }
+
     pub fn selected(&self, kind: TrackKind) -> Option<usize> {
         match kind {
             TrackKind::Video => self.video_track,
@@ -397,6 +411,7 @@ impl Decoders {
                 let decoder = VideoDecoder::new(stream, options.max_short_side, options.hardware)?;
                 if let Some(info) = shared.info.lock().as_mut() {
                     info.video_size = Some(decoder.display_size());
+                    info.orientation = decoder.orientation;
                     info.frame_rate = Some(1.0 / decoder.frame_duration);
                     info.video_codec = Some(decoder.codec_name());
                     info.hardware = None;
@@ -545,6 +560,7 @@ fn run(
         has_video: video.is_some(),
         has_audio: audio.is_some(),
         video_size: video.map(|v| v.display_size()),
+        orientation: video.map(|v| v.orientation).unwrap_or_default(),
         frame_rate: video.map(|v| 1.0 / v.frame_duration),
         video_codec: video.map(|v| v.codec_name()),
         audio_codec: audio.map(|a| a.codec_name()),
@@ -1069,6 +1085,8 @@ struct VideoDecoder {
     decoder: ffmpeg::decoder::Video,
     /// Kept to reopen the decoder in software if the hardware one fails.
     parameters: codec::Parameters,
+    /// Which way up the pictures go, from the stream's display matrix.
+    orientation: Orientation,
     time_base: f64,
     frame_duration: f64,
     max_short_side: Option<u32>,
@@ -1137,6 +1155,7 @@ impl VideoDecoder {
         Ok(Self {
             index: stream.index,
             decoder,
+            orientation: Orientation::of(&parameters),
             parameters,
             time_base: f64::from(stream.time_base),
             frame_duration,

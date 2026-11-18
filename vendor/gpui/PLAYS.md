@@ -1,7 +1,7 @@
 # gpui 0.2.2, patched for Plays
 
 This is gpui 0.2.2 from crates.io, without its examples, with HDR video on
-macOS and a few small fixes. Plays uses it through `[patch.crates-io]` in its
+macOS, turned and cropped pictures, and a few small fixes. Plays uses it through `[patch.crates-io]` in its
 Cargo.toml. Everything Plays changed is marked "Plays" in the code.
 
 ## What changed
@@ -57,6 +57,25 @@ Superellipse corners (`src/styled.rs`, `src/style.rs`, `src/window.rs`,
   `quad_sdf` without smoothing.
 - Not smoothed: shadows, the layout of dashes on dashed borders, and
   Windows, whose shaders only have the new fields.
+
+Turned, mirrored and cropped pictures (`src/scene.rs`, `src/window.rs`,
+`build.rs`, the sprite and surface vertex shaders in `shaders.metal`, and
+the sprite ones in `shaders.wgsl` and `shaders.hlsl`):
+
+- `ContentTransform` says how an image or surface is sampled where it's
+  drawn: at the top left corner (`origin`), and what going across and down
+  adds (`across`, `down`), in fractions of the image. `IDENTITY` shows the
+  whole image as it is; others pick a part of it (cropping), or swap and
+  reverse the directions (quarter turns and mirroring).
+- `PolychromeSprite` and `PaintSurface` (and Metal's `SurfaceBounds`) carry
+  one. `Window::paint_image_with_content` and
+  `Window::paint_surface_with_content` take it, and everything else paints
+  with `IDENTITY`. The vertex shaders run each corner of the unit square
+  through it (`content_position`) before finding the atlas tile's or the
+  surface's texture coordinates, so it costs nothing per pixel.
+- cbindgen writes the Metal header's copy (`build.rs` lists the type). WGSL
+  puts its vectors on 8-byte boundaries, so asserts in `scene.rs` keep
+  `PolychromeSprite`'s `content` on one and its size a multiple of 8.
 
 `over()` in the quad shaders (Metal, WGSL and HLSL) returns clear when both
 colors are clear. It divided by their combined alpha, so the corners of a

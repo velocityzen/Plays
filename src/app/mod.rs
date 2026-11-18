@@ -16,6 +16,7 @@ pub use audio::AudioEngine;
 
 use crate::media::{Source, picture};
 use crate::settings::Settings;
+use crate::ui::framing::Ratio;
 use crate::ui::theme::layout::WINDOW_SIZE;
 use crate::ui::theme::{UiFont, pick_ui_font, refresh_system_colors};
 use crate::ui::workspace::Workspace;
@@ -32,6 +33,16 @@ actions!(
         CloseAll
     ]
 );
+
+/// Show the picture in front at this aspect ratio, or its own.
+#[derive(Clone, PartialEq, Debug, gpui::Action)]
+#[action(namespace = plays, no_json)]
+pub struct SetAspectRatio(pub Option<Ratio>);
+
+/// Crop the picture in front to this shape, or not at all.
+#[derive(Clone, PartialEq, Debug, gpui::Action)]
+#[action(namespace = plays, no_json)]
+pub struct SetCrop(pub Option<Ratio>);
 
 /// `opened` brings the URLs the system asks the app to open.
 pub fn run(cx: &mut App, sources: Vec<Source>, opened: UnboundedReceiver<Vec<String>>) {

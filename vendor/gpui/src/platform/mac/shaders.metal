@@ -686,6 +686,14 @@ struct PolychromeSpriteFragmentInput {
   uint sprite_id [[flat]];
 };
 
+// Plays: where a point of a sprite, in fractions of its size, samples its
+// texture (see `ContentTransform`).
+float2 content_position(float2 unit_vertex, ContentTransform content) {
+  return float2(content.origin[0], content.origin[1]) +
+         unit_vertex.x * float2(content.across[0], content.across[1]) +
+         unit_vertex.y * float2(content.down[0], content.down[1]);
+}
+
 vertex PolychromeSpriteVertexOutput polychrome_sprite_vertex(
     uint unit_vertex_id [[vertex_id]], uint sprite_id [[instance_id]],
     constant float2 *unit_vertices [[buffer(SpriteInputIndex_Vertices)]],
@@ -701,7 +709,9 @@ vertex PolychromeSpriteVertexOutput polychrome_sprite_vertex(
       to_device_position(unit_vertex, sprite.bounds, viewport_size);
   float4 clip_distance = distance_from_clip_rect(unit_vertex, sprite.bounds,
                                                  sprite.content_mask.bounds);
-  float2 tile_position = to_tile_position(unit_vertex, sprite.tile, atlas_size);
+  // Plays: the part of the image shown, turned or mirrored.
+  float2 tile_position = to_tile_position(
+      content_position(unit_vertex, sprite.content), sprite.tile, atlas_size);
   return PolychromeSpriteVertexOutput{
       device_position,
       tile_position,
@@ -873,9 +883,9 @@ vertex SurfaceVertexOutput surface_vertex(
       to_device_position(unit_vertex, surface.bounds, viewport_size);
   float4 clip_distance = distance_from_clip_rect(unit_vertex, surface.bounds,
                                                  surface.content_mask.bounds);
-  // We are going to copy the whole texture, so the texture position corresponds
-  // to the current vertex of the unit triangle.
-  float2 texture_position = unit_vertex;
+  // Plays: the part of the surface shown, turned or mirrored, rather than
+  // all of it as it is.
+  float2 texture_position = content_position(unit_vertex, surface.content);
   return SurfaceVertexOutput{
       device_position,
       texture_position,

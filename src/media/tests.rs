@@ -10,6 +10,7 @@ use ffmpeg_next::Rational;
 
 use super::audio::Mixer;
 use super::decoder::output_size;
+use super::orientation::Orientation;
 use super::player::{Player, PlayerOptions};
 use super::source::Source;
 use super::tracks::TrackKind;
@@ -491,6 +492,56 @@ fn sizes_frames_for_display() {
     );
     // Unknown aspect ratio is treated as square.
     assert_eq!(output_size(641, 361, Rational::new(0, 1), None), (640, 360));
+}
+
+/// A file that says to turn its pictures (as phones do) reports which way up
+/// they go, and is sized as decoded.
+#[test]
+fn reports_the_streams_orientation() {
+    let Some(upright) = media(
+        "orientation-source.mp4",
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc=size=320x240:rate=25:duration=1",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+        ],
+    ) else {
+        eprintln!("ffmpeg not found, skipping");
+        return;
+    };
+    let upright = upright.to_str().unwrap();
+    // A quarter turn counterclockwise, then mirrored, with the pictures as
+    // they were.
+    let Some(path) = media(
+        "orientation.mp4",
+        &[
+            "-display_rotation",
+            "90",
+            "-display_hflip",
+            "-i",
+            upright,
+            "-c",
+            "copy",
+        ],
+    ) else {
+        panic!("ffmpeg couldn't remux with a display matrix");
+    };
+    let mut player = Player::open(Source::File(path), None, options(false, false));
+    assert!(wait_until(Duration::from_secs(5), || {
+        player.tick();
+        player.frame_pts().is_some()
+    }));
+    let info = player.info().unwrap();
+    assert_eq!(info.video_size, Some((320, 240)));
+    assert_eq!(
+        info.orientation,
+        Orientation::new(-1, false).flipped_horizontally()
+    );
 }
 
 /// With the window hidden, frames are only consumed a few times a second. Large

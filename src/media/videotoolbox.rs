@@ -100,6 +100,14 @@ impl Surface {
         self.id
     }
 
+    /// Its width and height in pixels.
+    pub fn size(&self) -> (u32, u32) {
+        (
+            self.buffer.get_width() as u32,
+            self.buffer.get_height() as u32,
+        )
+    }
+
     /// The buffer as it is, to read back in tests.
     #[cfg(test)]
     pub fn buffer(&self) -> &CVPixelBuffer {

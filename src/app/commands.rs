@@ -3,7 +3,9 @@
 use gpui::App;
 
 use super::dispatch::{with_active, with_workspace};
-use super::{CloseAll, CloseWindow, OpenFiles, OpenSettings, OpenUrl, Quit};
+use super::{
+    CloseAll, CloseWindow, OpenFiles, OpenSettings, OpenUrl, Quit, SetAspectRatio, SetCrop,
+};
 use crate::hotkeys::*;
 use crate::media::tracks::TrackKind;
 use crate::settings::{SUBTITLE_POSITION_RANGE, SUBTITLE_SIZE_RANGE, Settings, SubtitleStyle};
@@ -71,6 +73,21 @@ pub(super) fn register(cx: &mut App) {
     cx.on_action(|_: &SmallerSubtitles, cx| change_subtitle_size(cx, -0.1));
     cx.on_action(|_: &SubtitlesUp, cx| change_subtitle_height(cx, 0.01));
     cx.on_action(|_: &SubtitlesDown, cx| change_subtitle_height(cx, -0.01));
+    cx.on_action(|_: &RotateRight, cx| with_active(cx, |p, cx| p.rotate(1, cx)));
+    cx.on_action(|_: &RotateLeft, cx| with_active(cx, |p, cx| p.rotate(-1, cx)));
+    cx.on_action(|_: &FlipHorizontally, cx| with_active(cx, |p, cx| p.flip(true, cx)));
+    cx.on_action(|_: &FlipVertically, cx| with_active(cx, |p, cx| p.flip(false, cx)));
+    cx.on_action(|_: &NextAspectRatio, cx| with_active(cx, |p, cx| p.next_aspect_ratio(cx)));
+    cx.on_action(|_: &NextCrop, cx| with_active(cx, |p, cx| p.next_crop(cx)));
+    cx.on_action(|_: &ResetPicture, cx| with_active(cx, |p, cx| p.reset_picture(cx)));
+    cx.on_action(|action: &SetAspectRatio, cx| {
+        let aspect = action.0;
+        with_active(cx, move |p, cx| p.set_aspect_ratio(aspect, cx))
+    });
+    cx.on_action(|action: &SetCrop, cx| {
+        let crop = action.0;
+        with_active(cx, move |p, cx| p.set_crop(crop, cx))
+    });
     cx.on_action(|_: &ToggleFullScreen, cx| {
         with_workspace(cx, |_, window, _| window.toggle_fullscreen())
     });

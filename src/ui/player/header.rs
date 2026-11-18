@@ -101,7 +101,7 @@ impl PlayerView {
 /// What the file is: the picture's size, its frame rate, and the codecs.
 fn details(info: &MediaInfo) -> String {
     let mut parts = Vec::new();
-    if let Some((w, h)) = info.video_size {
+    if let Some((w, h)) = info.upright_size() {
         parts.push(format!("{w}×{h}"));
     }
     if let Some(fps) = info.frame_rate {

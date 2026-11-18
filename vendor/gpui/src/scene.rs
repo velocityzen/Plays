@@ -654,6 +654,44 @@ pub(crate) struct PolychromeSprite {
     pub corner_smoothing: f32,
     /// Plays: keeps the size a multiple of 8, as WGSL lays the struct out.
     pub smoothing_pad: u32,
+    /// Plays: the part of the image shown, and turned or mirrored how.
+    pub content: ContentTransform,
+}
+
+// Plays: WGSL puts `ContentTransform`'s vectors on 8-byte boundaries.
+const _: () = assert!(std::mem::offset_of!(PolychromeSprite, content) % 8 == 0);
+const _: () = assert!(std::mem::size_of::<PolychromeSprite>() % 8 == 0);
+
+/// Plays: the part of an image or surface a sprite shows, and turned or
+/// mirrored how, as where its texture is sampled: at the sprite's top left
+/// corner, and how that moves across the sprite's width and down its height,
+/// in fractions of the image. `IDENTITY` shows the whole image as it is;
+/// another picks a part (cropping) or swaps and reverses the directions
+/// (quarter turns and mirroring).
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[repr(C)]
+pub struct ContentTransform {
+    /// Where the top left corner samples.
+    pub origin: [f32; 2],
+    /// What going from the left edge to the right one adds.
+    pub across: [f32; 2],
+    /// What going from the top edge to the bottom one adds.
+    pub down: [f32; 2],
+}
+
+impl ContentTransform {
+    /// The whole image, as it is.
+    pub const IDENTITY: Self = Self {
+        origin: [0., 0.],
+        across: [1., 0.],
+        down: [0., 1.],
+    };
+}
+
+impl Default for ContentTransform {
+    fn default() -> Self {
+        Self::IDENTITY
+    }
 }
 
 impl From<PolychromeSprite> for Primitive {
@@ -669,6 +707,9 @@ pub(crate) struct PaintSurface {
     pub content_mask: ContentMask<ScaledPixels>,
     #[cfg(target_os = "macos")]
     pub image_buffer: core_video::pixel_buffer::CVPixelBuffer,
+    /// Plays: the part of the surface shown, and turned or mirrored how.
+    #[cfg(target_os = "macos")]
+    pub content: ContentTransform,
 }
 
 impl From<PaintSurface> for Primitive {

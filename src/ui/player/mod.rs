@@ -2,6 +2,7 @@
 //! them a header with the file's name, the controls, and notes on what
 //! shortcuts did. Each part is in its own file; `render` puts them together.
 
+mod adjust;
 mod commands;
 mod content;
 mod controls;
@@ -16,17 +17,16 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use gpui::prelude::*;
-use gpui::{
-    ClickEvent, Context, Div, EventEmitter, MouseButton, ObjectFit, SharedString, Window, black,
-    div,
-};
+use gpui::{ClickEvent, Context, Div, EventEmitter, MouseButton, SharedString, Window, black, div};
 
 pub use graveyard::Graveyard;
 
 use super::components::Panel;
+use super::framing::{Adjustments, Framing};
 use super::subtitles;
 use super::theme::Theme;
 use super::theme::motion::LEVEL_FALLOFF;
+use crate::media::decoder::MediaInfo;
 use crate::media::picture::PictureId;
 use crate::media::subtitles::CueContent;
 use crate::media::{Mixer, Neighbors, Picture, Player, PlayerOptions, Source};
@@ -66,6 +66,8 @@ pub struct PlayerView {
     osd: Option<(Osd, Instant)>,
     /// The subtitles hidden with a shortcut, to show again.
     hidden_subtitles: Option<usize>,
+    /// How the picture is turned, reshaped and cropped.
+    adjustments: Adjustments,
     /// Shortcuts go to this tile: the one last clicked.
     pub active: bool,
     pub maximized: bool,
@@ -116,6 +118,7 @@ impl PlayerView {
             tracks_open: false,
             osd: None,
             hidden_subtitles: None,
+            adjustments: Adjustments::default(),
             active: false,
             maximized: false,
             alone: true,
@@ -160,6 +163,7 @@ impl PlayerView {
         self.level = 0.0;
         self.tracks_open = false;
         self.hidden_subtitles = None;
+        self.adjustments = Adjustments::default();
         self.osd = None;
         cx.notify();
     }
@@ -170,6 +174,20 @@ impl PlayerView {
 
     pub fn player_mut(&mut self) -> &mut Player {
         &mut self.player
+    }
+
+    /// How the video shows, once its size is known: turned as the file
+    /// says, then as adjusted here.
+    pub fn framing(&self) -> Option<Framing> {
+        self.framing_for(self.player.info().as_ref())
+    }
+
+    fn framing_for(&self, info: Option<&MediaInfo>) -> Option<Framing> {
+        let info = info?;
+        let size = info
+            .video_size
+            .or_else(|| self.player.frame().map(|frame| frame.size()))?;
+        Framing::new(size, info.orientation, &self.adjustments)
     }
 
     /// How pictures look changed (gamma). Surfaces take it as they are
@@ -315,14 +333,11 @@ impl Render for PlayerView {
 
         let theme = Theme::get(window, cx);
         let settings = cx.global::<Settings>();
-        let fit = match settings.video_fit {
-            VideoFit::Contain => ObjectFit::Contain,
-            VideoFit::Cover => ObjectFit::Cover,
-        };
         let cover = settings.video_fit == VideoFit::Cover;
         let subtitle_style = settings.subtitles.clone();
         let show_titles = settings.show_titles;
         let info = self.player.info();
+        let framing = self.framing_for(info.as_ref());
         let has_video = self.player.frame().is_some();
         let dragging = self.seek_drag.get() || self.volume_drag.get();
         let pinned = settings.controls == ControlsVisibility::Always
@@ -373,13 +388,13 @@ impl Render for PlayerView {
                     .items_center()
                     .justify_center()
                     .on_click(cx.listener(Self::on_surface_click))
-                    .child(self.render_content(&theme, fit)),
+                    .child(self.render_content(&theme, framing, cover)),
             )
             .when(!self.cues.is_empty(), |this| {
                 this.child(subtitles::overlay(
                     self.cues.clone(),
                     subtitles::Layout {
-                        video: info.as_ref().and_then(|i| i.video_size),
+                        framing,
                         cover,
                         controls_height: controls::height(live),
                         controls_pinned: pinned,

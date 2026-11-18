@@ -32,10 +32,16 @@ GPU-accelerated UI framework.
   `Subs/Movie/`. Their names give their language and whether they are
   forced or for the hearing impaired. Text in legacy encodings (Windows-1252,
   Windows-1251, Shift JIS and the like) is detected and converted.
+- Turn the picture a quarter turn either way, flip it, show it at another
+  aspect ratio (1:1 to 2.35:1) or crop it to another shape (1:1 to 2.39:1),
+  with shortcuts or the Video menu, each tile on its own. Videos whose
+  files say to turn them (as phones do) show upright. It all happens as the
+  picture is drawn, so even a paused video changes at once.
 - Any tile can pop out into a new window, where it keeps playing. Every
   window works the same: drop more files on it and they play side by side.
-- Shortcuts go to the tile last clicked: play/pause,
-  seek, frame step, volume, tracks, subtitle size and height, full screen.
+- Shortcuts go to the tile last clicked: play/pause, seek, frame step,
+  volume, tracks, subtitle size and height, rotation, flips, aspect ratio,
+  crop, full screen.
   With Shift, play/pause, seek, restart and mute go to every file in the
   window, as does the menu bar (a toolbar on Linux).
 - On macOS, windows show just the video, edge to edge, with the traffic
@@ -160,6 +166,10 @@ it again when the dependencies change (`script/bundle-macos` runs it).
 | Show/hide subtitles | `V` |
 | Bigger/smaller subtitles | `⇧G` `⇧F` |
 | Move subtitles up/down | `R` / `⇧R` or `T` |
+| Rotate right/left | `⌘R` `⌘L` / `Ctrl+R` `Ctrl+L` |
+| Flip horizontally/vertically | `⌘⇧H` `⌘⇧V` / `Ctrl+Shift+H` `Ctrl+Shift+V` |
+| Next aspect ratio, next crop | `A`, `C` |
+| Picture as the file has it | `⌘0` / `Ctrl+0` |
 | Full screen | `F`, or `⌃⌘F` / `F11`; `Esc` leaves it |
 | Play/pause, seek, restart, mute all | `⇧Space`, `⇧←` `⇧→`, `⇧Home`, `⇧M` |
 | Close all | `⌘⇧W` / `Ctrl+Shift+W` |
@@ -173,6 +183,11 @@ faded above and below. To change shortcuts, open Settings → Hotkeys,
 click + by a command and press the keys; a key another command had moves to
 it, and Restore brings the defaults back. The app's own shortcuts above (⌘O, ⌘W
 and so on) stay as they are.
+
+On macOS, the Video menu also lists every aspect ratio and crop to pick
+from; `A` and `C` go through them in turn, then back to none. Rotating and
+flipping go by the picture as it shows, and cropping keeps its middle;
+opening another file in the tile starts it as its file has it.
 
 On a tile: click the picture to play/pause, double-click (or the corner
 button) to maximize it, drag the bar to scrub. In the middle under the bar,
@@ -245,7 +260,10 @@ last window quits.
   window draws in half floats and extended sRGB, everything but video as
   before, and a second surface shader decodes PQ and HLG and tone maps them
   under the screen's current EDR headroom, with the same math as `hdr.rs`.
-  A third one reshapes Dolby Vision as `dovi.rs` does.
+  A third one reshapes Dolby Vision as `dovi.rs` does. Images and surfaces
+  can be drawn turned, mirrored and cropped, by where they are sampled.
+- `src/media/orientation.rs`: the eight ways to turn and mirror a picture,
+  and the one a video's display matrix asks for.
 - `vendor/xattr`: xattr 0.2.3, which gpui reaches, building on Linux with
   today's libc (see its `PLAYS.md`).
 - `src/media/picture.rs`: the forms a decoded picture takes, and the gamma
@@ -270,13 +288,17 @@ last window quits.
   them.
 - `src/ui/`: gpui views (`open_url`, the player and Settings below) and a
   text field based on gpui's input example.
-  `subtitles` paints a tile's cues where `object_fit` puts the picture, in
-  the style from Settings; the settings' Subtitles pane draws its preview
-  with the same code.
+  `framing` works out how a tile's picture shows: the file's orientation,
+  then the tile's turns, flips, aspect ratio and crop, as a size to fit and
+  where to sample the frame. `subtitles` paints a tile's cues on the
+  picture it frames, in the style from Settings, turning and cropping
+  bitmap ones with it; the settings' Subtitles pane draws its preview with
+  the same code.
 - `src/ui/player/`: a player's tile, a file per part: what fills it
   (`content`), the header, the controls, the track menu, notes on what
   shortcuts did (`osd`, with the track reel), what shortcuts do to it
-  (`commands`), and the graveyard frames wait in before they are released.
+  (`commands`, and `adjust` for the picture), and the graveyard frames wait
+  in before they are released.
 - `src/ui/settings/`: the Settings window. Each pane (Playback, Audio,
   Video, Subtitles, Hotkeys, Appearance, About) is a file of its own with its
   name and icon for the sidebar; `form` has the cards, rows and sliders they
@@ -304,8 +326,8 @@ last window quits.
   `text_label`).
 
 Software-decoded frames (and, on Linux, hardware-decoded ones) are uploaded to
-gpui's texture atlas through `img()`; on macOS, hardware-decoded frames are
-drawn in place with `surface()`. Replaced frames are kept a few display frames
+gpui's texture atlas as images; on macOS, hardware-decoded frames are drawn
+in place as surfaces. Either way the tile paints them itself, framed. Replaced frames are kept a few display frames
 in case the GPU is still reading them, then released (images with
 `Window::drop_image`), so GPU memory stays flat during playback.
 
@@ -344,7 +366,12 @@ that seeking back lands in a cue already showing, and that the Russian one
 reads right. Unit tests cover finding files for a video, reading their
 names and telling encodings, and the shortcuts: no default key used twice, a
 key moving to the command it is given, reading and writing them in the
-settings file, staying out of text fields, and how they are shown.
+settings file, staying out of text fields, and how they are shown. A clip
+remuxed with a display matrix must report its turn and flip; unit tests
+check that orientations compose like their matrices, read FFmpeg's own
+matrices right, and that framing samples the right part of the picture,
+turned, reshaped and cropped, with bitmap subtitles landing where the
+picture shows what they cover.
 
 Stream tests serve the clips from a small HTTP server on localhost:
 HTTP files, HLS (normal and live), a connection that stalls mid-way,
@@ -373,6 +400,9 @@ unreachable hosts, and closing while a connection hangs.
   Subtitle files can't be dropped on a tile, and there is no way to shift
   their timing. In a live stream, a new track starts with its next packets
   rather than at the playhead.
+- Picture adjustments aren't kept: a file opens as its file has it. A
+  display matrix that isn't a quarter turn goes to the nearest one, and
+  text subtitles stay upright when the picture turns.
 - No playlists, playback speed or audio device selection.
 - On GNOME Wayland (client-side decorations) the window can be moved from the
   toolbar but has no resize handles.

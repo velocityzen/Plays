@@ -2,16 +2,23 @@
 //! a line on what is happening (opening, an error).
 
 use gpui::prelude::*;
-use gpui::{AnyElement, ObjectFit, SharedString, div, img};
+use gpui::{AnyElement, ContentTransform, Corners, ObjectFit, SharedString, canvas, div, img};
 
 use super::PlayerView;
 use crate::media::Picture;
 use crate::ui::components::{ComponentSize, Icon, Meter};
+use crate::ui::framing::Framing;
 use crate::ui::theme::player::{COVER_SIZE, ERROR_MAX_WIDTH, NO_COVER_ICON, NO_COVER_SIZE};
 use crate::ui::theme::{Theme, radius};
 
 impl PlayerView {
-    pub(super) fn render_content(&self, theme: &Theme, fit: ObjectFit) -> AnyElement {
+    /// `framing` is how the video shows, `cover` whether it fills the tile.
+    pub(super) fn render_content(
+        &self,
+        theme: &Theme,
+        framing: Option<Framing>,
+        cover: bool,
+    ) -> AnyElement {
         if let Some(error) = self.player.error() {
             return div()
                 .flex()
@@ -32,14 +39,7 @@ impl PlayerView {
                 .into_any_element();
         }
         if let Some(frame) = self.player.frame() {
-            return match frame {
-                Picture::Image(image) => img(image).size_full().object_fit(fit).into_any_element(),
-                #[cfg(target_os = "macos")]
-                Picture::Surface(surface) => gpui::surface(surface.for_drawing())
-                    .size_full()
-                    .object_fit(fit)
-                    .into_any_element(),
-            };
+            return picture(frame, framing, cover);
         }
         match self.player.info() {
             Some(info) if !info.has_video => self.render_audio(theme),
@@ -99,4 +99,31 @@ impl PlayerView {
             .child(Meter::new(self.level).w(COVER_SIZE))
             .into_any_element()
     }
+}
+
+/// The frame, framed as `framing` says (as it is without), fitted in the
+/// tile or covering it.
+fn picture(frame: Picture, framing: Option<Framing>, cover: bool) -> AnyElement {
+    canvas(
+        |_, _, _| {},
+        move |bounds, (), window, _| {
+            let (shown, content) = match framing {
+                Some(framing) => (framing.fit(bounds, cover), framing.content()),
+                None => (bounds, ContentTransform::IDENTITY),
+            };
+            match frame {
+                Picture::Image(image) => {
+                    let corners = Corners::default();
+                    let _ = window
+                        .paint_image_with_content(shown, corners, 0., image, 0, false, content);
+                }
+                #[cfg(target_os = "macos")]
+                Picture::Surface(surface) => {
+                    window.paint_surface_with_content(shown, surface.for_drawing(), content);
+                }
+            }
+        },
+    )
+    .size_full()
+    .into_any_element()
 }

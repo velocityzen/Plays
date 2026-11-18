@@ -1,6 +1,7 @@
 #[cfg(any(feature = "inspector", debug_assertions))]
 use crate::Inspector;
 use crate::{
+    ContentTransform,
     Action, AnyDrag, AnyElement, AnyImageCache, AnyTooltip, AnyView, App, AppContext, Arena, Asset,
     AsyncWindowContext, AvailableSpace, Background, BorderStyle, Bounds, BoxShadow, Capslock,
     Context, Corners, CursorStyle, Decorations, DevicePixels, DispatchActionListener,
@@ -3058,6 +3059,7 @@ impl Window {
                 opacity,
                 corner_smoothing: 0.,
                 smoothing_pad: 0,
+                content: ContentTransform::IDENTITY,
             });
         }
         Ok(())
@@ -3154,6 +3156,30 @@ impl Window {
         frame_index: usize,
         grayscale: bool,
     ) -> Result<()> {
+        self.paint_image_with_content(
+            bounds,
+            corner_radii,
+            corner_smoothing,
+            data,
+            frame_index,
+            grayscale,
+            ContentTransform::IDENTITY,
+        )
+    }
+
+    /// Plays: like `paint_image_with_smoothing`, showing the part of the
+    /// image `content` picks, turned or mirrored as it says, in `bounds`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn paint_image_with_content(
+        &mut self,
+        bounds: Bounds<Pixels>,
+        corner_radii: Corners<Pixels>,
+        corner_smoothing: f32,
+        data: Arc<RenderImage>,
+        frame_index: usize,
+        grayscale: bool,
+        content: ContentTransform,
+    ) -> Result<()> {
         self.invalidator.debug_assert_paint();
 
         let scale_factor = self.scale_factor();
@@ -3192,6 +3218,7 @@ impl Window {
             opacity,
             corner_smoothing: corner_smoothing.clamp(0., 1.),
             smoothing_pad: 0,
+            content,
         });
         Ok(())
     }
@@ -3201,6 +3228,18 @@ impl Window {
     /// This method should only be called as part of the paint phase of element drawing.
     #[cfg(target_os = "macos")]
     pub fn paint_surface(&mut self, bounds: Bounds<Pixels>, image_buffer: CVPixelBuffer) {
+        self.paint_surface_with_content(bounds, image_buffer, ContentTransform::IDENTITY);
+    }
+
+    /// Plays: like `paint_surface`, showing the part of the surface
+    /// `content` picks, turned or mirrored as it says, in `bounds`.
+    #[cfg(target_os = "macos")]
+    pub fn paint_surface_with_content(
+        &mut self,
+        bounds: Bounds<Pixels>,
+        image_buffer: CVPixelBuffer,
+        content: ContentTransform,
+    ) {
         use crate::PaintSurface;
 
         self.invalidator.debug_assert_paint();
@@ -3213,6 +3252,7 @@ impl Window {
             bounds,
             content_mask,
             image_buffer,
+            content,
         });
     }
 

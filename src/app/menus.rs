@@ -3,8 +3,11 @@
 
 use gpui::{App, Menu, MenuItem, SystemMenuType};
 
-use super::{CloseAll, CloseWindow, OpenFiles, OpenSettings, OpenUrl, Quit};
+use super::{
+    CloseAll, CloseWindow, OpenFiles, OpenSettings, OpenUrl, Quit, SetAspectRatio, SetCrop,
+};
 use crate::hotkeys::*;
+use crate::ui::framing::{ASPECT_RATIOS, CROPS};
 
 pub(super) fn set_menus(cx: &mut App) {
     cx.set_menus(vec![
@@ -54,6 +57,39 @@ pub(super) fn set_menus(cx: &mut App) {
             items: vec![
                 MenuItem::action("Full Screen", ToggleFullScreen),
                 MenuItem::action("Next Video Track", NextVideoTrack),
+                MenuItem::separator(),
+                MenuItem::action("Rotate Right", RotateRight),
+                MenuItem::action("Rotate Left", RotateLeft),
+                MenuItem::action("Flip Horizontally", FlipHorizontally),
+                MenuItem::action("Flip Vertically", FlipVertically),
+                MenuItem::separator(),
+                MenuItem::submenu(Menu {
+                    name: "Aspect Ratio".into(),
+                    items: [MenuItem::action("As the File Is", SetAspectRatio(None))]
+                        .into_iter()
+                        .chain(
+                            ASPECT_RATIOS
+                                .map(|r| MenuItem::action(r.name, SetAspectRatio(Some(r)))),
+                        )
+                        .chain([
+                            MenuItem::separator(),
+                            MenuItem::action("Next Aspect Ratio", NextAspectRatio),
+                        ])
+                        .collect(),
+                }),
+                MenuItem::submenu(Menu {
+                    name: "Crop".into(),
+                    items: [MenuItem::action("None", SetCrop(None))]
+                        .into_iter()
+                        .chain(CROPS.map(|r| MenuItem::action(r.name, SetCrop(Some(r)))))
+                        .chain([
+                            MenuItem::separator(),
+                            MenuItem::action("Next Crop", NextCrop),
+                        ])
+                        .collect(),
+                }),
+                MenuItem::separator(),
+                MenuItem::action("Reset Picture", ResetPicture),
             ],
         },
         Menu {

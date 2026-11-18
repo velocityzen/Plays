@@ -143,6 +143,7 @@ mod macos {
             "PathSprite".into(),
             "SurfaceInputIndex".into(),
             "SurfaceBounds".into(),
+            "ContentTransform".into(),
             "TransformationMatrix".into(),
         ]);
         config.no_includes = true;

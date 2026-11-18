@@ -1282,8 +1282,23 @@ struct PolychromeSprite {
     // Plays: see `PolychromeSprite::corner_smoothing`.
     corner_smoothing: f32,
     smoothing_pad: u32,
+    // Plays: see `PolychromeSprite::content`.
+    content: ContentTransform,
 }
 var<storage, read> b_poly_sprites: array<PolychromeSprite>;
+
+// Plays: see `ContentTransform`.
+struct ContentTransform {
+    origin: vec2<f32>,
+    across: vec2<f32>,
+    down: vec2<f32>,
+}
+
+// Plays: where a point of a sprite, in fractions of its size, samples its
+// texture.
+fn content_position(unit_vertex: vec2<f32>, content: ContentTransform) -> vec2<f32> {
+    return content.origin + unit_vertex.x * content.across + unit_vertex.y * content.down;
+}
 
 struct PolySpriteVarying {
     @builtin(position) position: vec4<f32>,
@@ -1299,7 +1314,8 @@ fn vs_poly_sprite(@builtin(vertex_index) vertex_id: u32, @builtin(instance_index
 
     var out = PolySpriteVarying();
     out.position = to_device_position(unit_vertex, sprite.bounds);
-    out.tile_position = to_tile_position(unit_vertex, sprite.tile);
+    // Plays: the part of the image shown, turned or mirrored.
+    out.tile_position = to_tile_position(content_position(unit_vertex, sprite.content), sprite.tile);
     out.sprite_id = instance_id;
     out.clip_distances = distance_from_clip_rect(unit_vertex, sprite.bounds, sprite.content_mask);
     return out;

@@ -34,6 +34,13 @@ gpui::actions!(
         SmallerSubtitles,
         SubtitlesUp,
         SubtitlesDown,
+        RotateRight,
+        RotateLeft,
+        FlipHorizontally,
+        FlipVertically,
+        NextAspectRatio,
+        NextCrop,
+        ResetPicture,
         ToggleFullScreen,
         ExitFullScreen,
         PlayPauseAll,
@@ -74,6 +81,13 @@ pub enum Command {
     SmallerSubtitles,
     SubtitlesUp,
     SubtitlesDown,
+    RotateRight,
+    RotateLeft,
+    FlipHorizontally,
+    FlipVertically,
+    NextAspectRatio,
+    NextCrop,
+    ResetPicture,
     FullScreen,
     ExitFullScreen,
     PlayPauseAll,
@@ -89,15 +103,17 @@ pub enum Group {
     Playback,
     Audio,
     Subtitles,
+    Video,
     Window,
     AllFiles,
 }
 
 impl Group {
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 6] = [
         Self::Playback,
         Self::Audio,
         Self::Subtitles,
+        Self::Video,
         Self::Window,
         Self::AllFiles,
     ];
@@ -107,6 +123,7 @@ impl Group {
             Self::Playback => "Playback",
             Self::Audio => "Audio",
             Self::Subtitles => "Subtitles",
+            Self::Video => "Video",
             Self::Window => "Window",
             Self::AllFiles => "All files in a window",
         }
@@ -114,7 +131,7 @@ impl Group {
 }
 
 impl Command {
-    pub const ALL: [Self; 27] = [
+    pub const ALL: [Self; 34] = [
         Self::PlayPause,
         Self::SeekForward,
         Self::SeekBackward,
@@ -135,6 +152,13 @@ impl Command {
         Self::SubtitlesUp,
         Self::SubtitlesDown,
         Self::NextVideoTrack,
+        Self::RotateRight,
+        Self::RotateLeft,
+        Self::FlipHorizontally,
+        Self::FlipVertically,
+        Self::NextAspectRatio,
+        Self::NextCrop,
+        Self::ResetPicture,
         Self::FullScreen,
         Self::ExitFullScreen,
         Self::PlayPauseAll,
@@ -167,6 +191,13 @@ impl Command {
             Self::SmallerSubtitles => "smaller_subtitles",
             Self::SubtitlesUp => "subtitles_up",
             Self::SubtitlesDown => "subtitles_down",
+            Self::RotateRight => "rotate_right",
+            Self::RotateLeft => "rotate_left",
+            Self::FlipHorizontally => "flip_horizontally",
+            Self::FlipVertically => "flip_vertically",
+            Self::NextAspectRatio => "next_aspect_ratio",
+            Self::NextCrop => "next_crop",
+            Self::ResetPicture => "reset_picture",
             Self::FullScreen => "full_screen",
             Self::ExitFullScreen => "exit_full_screen",
             Self::PlayPauseAll => "play_pause_all",
@@ -203,6 +234,13 @@ impl Command {
             Self::SmallerSubtitles => "Smaller subtitles",
             Self::SubtitlesUp => "Move subtitles up",
             Self::SubtitlesDown => "Move subtitles down",
+            Self::RotateRight => "Rotate right",
+            Self::RotateLeft => "Rotate left",
+            Self::FlipHorizontally => "Flip horizontally",
+            Self::FlipVertically => "Flip vertically",
+            Self::NextAspectRatio => "Next aspect ratio",
+            Self::NextCrop => "Next crop",
+            Self::ResetPicture => "Reset picture",
             Self::FullScreen => "Full screen",
             Self::ExitFullScreen => "Exit full screen",
             Self::PlayPauseAll => "Play/pause all",
@@ -231,7 +269,15 @@ impl Command {
             | Self::SmallerSubtitles
             | Self::SubtitlesUp
             | Self::SubtitlesDown => Group::Subtitles,
-            Self::NextVideoTrack | Self::FullScreen | Self::ExitFullScreen => Group::Window,
+            Self::NextVideoTrack
+            | Self::RotateRight
+            | Self::RotateLeft
+            | Self::FlipHorizontally
+            | Self::FlipVertically
+            | Self::NextAspectRatio
+            | Self::NextCrop
+            | Self::ResetPicture => Group::Video,
+            Self::FullScreen | Self::ExitFullScreen => Group::Window,
             Self::PlayPauseAll
             | Self::RestartAll
             | Self::SeekForwardAll
@@ -262,6 +308,13 @@ impl Command {
             Self::SmallerSubtitles => Box::new(SmallerSubtitles),
             Self::SubtitlesUp => Box::new(SubtitlesUp),
             Self::SubtitlesDown => Box::new(SubtitlesDown),
+            Self::RotateRight => Box::new(RotateRight),
+            Self::RotateLeft => Box::new(RotateLeft),
+            Self::FlipHorizontally => Box::new(FlipHorizontally),
+            Self::FlipVertically => Box::new(FlipVertically),
+            Self::NextAspectRatio => Box::new(NextAspectRatio),
+            Self::NextCrop => Box::new(NextCrop),
+            Self::ResetPicture => Box::new(ResetPicture),
             Self::FullScreen => Box::new(ToggleFullScreen),
             Self::ExitFullScreen => Box::new(ExitFullScreen),
             Self::PlayPauseAll => Box::new(PlayPauseAll),
@@ -300,6 +353,13 @@ impl Command {
             Self::SmallerSubtitles => &["shift-f"],
             Self::SubtitlesUp => &["r"],
             Self::SubtitlesDown => &["shift-r", "t"],
+            Self::RotateRight => &["secondary-r"],
+            Self::RotateLeft => &["secondary-l"],
+            Self::FlipHorizontally => &["secondary-shift-h"],
+            Self::FlipVertically => &["secondary-shift-v"],
+            Self::NextAspectRatio => &["a"],
+            Self::NextCrop => &["c"],
+            Self::ResetPicture => &["secondary-0"],
             Self::FullScreen if mac => &["ctrl-cmd-f", "f"],
             Self::FullScreen => &["f11", "f"],
             Self::ExitFullScreen => &["escape"],

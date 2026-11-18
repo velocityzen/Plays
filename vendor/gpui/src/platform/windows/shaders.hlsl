@@ -1133,6 +1133,19 @@ float4 monochrome_sprite_fragment(MonochromeSpriteFragmentInput input): SV_Targe
 **
 */
 
+// Plays: see `ContentTransform`.
+struct ContentTransform {
+    float2 origin;
+    float2 across;
+    float2 down;
+};
+
+// Plays: where a point of a sprite, in fractions of its size, samples its
+// texture.
+float2 content_position(float2 unit_vertex, ContentTransform content) {
+    return content.origin + unit_vertex.x * content.across + unit_vertex.y * content.down;
+}
+
 struct PolychromeSprite {
     uint order;
     uint pad;
@@ -1146,6 +1159,8 @@ struct PolychromeSprite {
     // struct the same size as gpui's `PolychromeSprite`.
     float corner_smoothing;
     uint smoothing_pad;
+    // Plays: see `PolychromeSprite::content`.
+    ContentTransform content;
 };
 
 struct PolychromeSpriteVertexOutput {
@@ -1169,7 +1184,8 @@ PolychromeSpriteVertexOutput polychrome_sprite_vertex(uint vertex_id: SV_VertexI
     float4 device_position = to_device_position(unit_vertex, sprite.bounds);
     float4 clip_distance = distance_from_clip_rect(unit_vertex, sprite.bounds,
                                                     sprite.content_mask);
-    float2 tile_position = to_tile_position(unit_vertex, sprite.tile);
+    // Plays: the part of the image shown, turned or mirrored.
+    float2 tile_position = to_tile_position(content_position(unit_vertex, sprite.content), sprite.tile);
 
     PolychromeSpriteVertexOutput output;
     output.position = device_position;

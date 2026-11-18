@@ -14,12 +14,14 @@ use gpui::{
 
 use super::form::{group, percent_slider, range_slider, row, update_settings};
 use super::{Pane, SettingsView};
+use crate::media::Orientation;
 use crate::media::subtitles::{CueContent, parse_ass};
 use crate::settings::{
     Rgb, SUBTITLE_COLORS, SUBTITLE_POSITION_RANGE, SUBTITLE_SIZE_RANGE, Settings, SubtitleArea,
     SubtitleEdge, SubtitleStyle, SubtitleWeight,
 };
 use crate::ui::components::{Button, Card, ComponentSize, MenuRow, Panel, Popover, Segmented};
+use crate::ui::framing::{self, Adjustments, Framing};
 use crate::ui::subtitles;
 use crate::ui::theme::settings::{
     FONT_BUTTON_WIDTH, FONT_MENU_HEIGHT, FONT_MENU_TOP, FONT_MENU_WIDTH, PREVIEW_PICTURE,
@@ -300,7 +302,11 @@ fn preview(style: &SubtitleStyle, theme: &Theme) -> AnyElement {
                 .child(subtitles::overlay(
                     cues,
                     subtitles::Layout {
-                        video: Some(PREVIEW_PICTURE),
+                        framing: Framing::new(
+                            PREVIEW_PICTURE,
+                            Orientation::UPRIGHT,
+                            &Adjustments::default(),
+                        ),
                         cover: false,
                         controls_height: px(0.),
                         controls_pinned: false,
@@ -316,7 +322,8 @@ fn preview(style: &SubtitleStyle, theme: &Theme) -> AnyElement {
 /// A dusk sky for the preview, bright near the bottom where the subtitles
 /// go, so the edge settings show.
 fn paint_picture(bounds: Bounds<Pixels>, window: &mut Window) {
-    let picture = subtitles::picture_bounds(bounds, Some(PREVIEW_PICTURE), false);
+    let (width, height) = PREVIEW_PICTURE;
+    let picture = framing::fit(bounds, (width as f32, height as f32), false);
     window.paint_quad(fill(
         picture,
         linear_gradient(

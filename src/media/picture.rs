@@ -30,6 +30,18 @@ pub enum PictureId {
 }
 
 impl Picture {
+    /// Its width and height in pixels.
+    pub fn size(&self) -> (u32, u32) {
+        match self {
+            Picture::Image(image) => {
+                let size = image.size(0);
+                (size.width.0.max(0) as u32, size.height.0.max(0) as u32)
+            }
+            #[cfg(target_os = "macos")]
+            Picture::Surface(surface) => surface.size(),
+        }
+    }
+
     pub fn id(&self) -> PictureId {
         match self {
             Picture::Image(image) => PictureId::Image(image.id),
