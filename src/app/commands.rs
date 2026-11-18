@@ -7,7 +7,7 @@ use super::{CloseAll, CloseWindow, OpenFiles, OpenSettings, OpenUrl, Quit};
 use crate::hotkeys::*;
 use crate::media::tracks::TrackKind;
 use crate::settings::{SUBTITLE_POSITION_RANGE, SUBTITLE_SIZE_RANGE, Settings, SubtitleStyle};
-use crate::ui::settings_view::SettingsView;
+use crate::ui::settings::SettingsView;
 
 pub(super) fn register(cx: &mut App) {
     cx.on_action(|_: &Quit, cx| cx.quit());

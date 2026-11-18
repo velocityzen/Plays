@@ -1,7 +1,7 @@
 pub mod components;
 pub mod open_url;
 pub mod player_view;
-pub mod settings_view;
+pub mod settings;
 mod subtitles;
 mod system_colors;
 pub mod text_input;

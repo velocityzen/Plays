@@ -221,15 +221,22 @@ last window quits.
 - `src/media/player.rs`: the UI-side handle: play/pause/seek, frame selection,
   buffering after seeks (and, for streams, until a second is read ahead or
   when the network runs dry), end-of-file and looping.
+- `src/app/`: starting the app and its own actions (`mod.rs`), the shared
+  audio output, what each action does (`commands`), how actions reach the
+  window and tile in front (`dispatch`), the keymap and the menu bar.
 - `src/hotkeys.rs`: the commands shortcuts can run, their keys (IINA's to
   start), how they are saved in Settings and shown (`⌃⌘F`, `Ctrl+Alt+F`).
   The keymap is rebuilt from them whenever they change, and the menus show
   them.
 - `src/ui/`: gpui views (`workspace`, one per window, `player_view`,
-  `settings_view`, `open_url`) and a text field based on gpui's input example.
+  `open_url`) and a text field based on gpui's input example.
   `subtitles` paints a tile's cues where `object_fit` puts the picture, in
   the style from Settings; the settings' Subtitles pane draws its preview
   with the same code.
+- `src/ui/settings/`: the Settings window. Each pane (Playback, Audio,
+  Video, Subtitles, Hotkeys, Appearance) is a file of its own with its name
+  and icon for the sidebar; `form` has the cards, rows and sliders they are
+  made of.
 - `src/ui/components/`: the reusable controls (icon, buttons, switch,
   segmented control, slider) and a floating panel to put anything in,
   either a menu's or a note's over the picture, one `RenderOnce` component
