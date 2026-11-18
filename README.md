@@ -59,6 +59,12 @@ GPU-accelerated UI framework.
 - While a tile plays, its header and controls fade when the mouse leaves
   it, or rests on it for a couple of seconds; the pointer hides then too,
   until the mouse moves. Resting on the header or controls keeps them.
+- A console on the tile in front, `~` or Video → Console: the file's
+  format, each stream playing as the file has it (codec and profile, size,
+  pixel format, colors, sample rate, channels, bit rates), the decoder and
+  what its frames become, and, as it plays, frames shown a second, frames
+  dropped, how far the picture is from the clock, what is queued and how
+  far ahead the file or stream is read.
 - Shortcuts go to the tile last clicked: play/pause, seek, frame step,
   volume, tracks, subtitle size and height, audio and subtitle delay,
   rotation, flips, aspect ratio, crop, screenshots, full screen.
@@ -203,6 +209,7 @@ it again when the dependencies change (`script/bundle-macos` runs it).
 | Take a screenshot | `S` |
 | Full screen | `F`, or `⌃⌘F` / `F11`; `Esc` leaves it |
 | Picture in Picture (macOS) | `⌃⌘P` |
+| Console | `~` or `` ` `` |
 | Play/pause, seek, restart, mute all | `⇧Space`, `⇧←` `⇧→`, `⇧Home`, `⇧M` |
 | Close all | `⌘⇧W` / `Ctrl+Shift+W` |
 | Settings | `⌘,` / `Ctrl+,` |
@@ -273,6 +280,8 @@ last window quits.
   resamples audio to the mixer's rate, and handles accurate seeking. It
   plays one track of each kind; picking another opens a decoder for it and
   seeks to the playhead, so the new track starts where playback is.
+- `src/media/details.rs`: what the console shows of the file's format and
+  the streams playing, read from their decoders before they decode.
 - `src/media/tracks.rs`: the tracks a file has, and their names for the
   menu (language, title, forced and SDH, codec, channels).
 - `src/media/subtitles.rs`: subtitle cues. Subtitle packets are decoded as
@@ -354,7 +363,8 @@ last window quits.
   toward the audio position on every audio callback.
 - `src/media/player.rs`: the UI-side handle: play/pause/seek, frame selection,
   buffering after seeks (and, for streams, until a second is read ahead or
-  when the network runs dry), end-of-file and looping.
+  when the network runs dry), end-of-file and looping, and the console's
+  figures: frames shown and dropped, lateness, and what is queued.
 - `src/app/`: starting the app and its own actions (`mod.rs`), the shared
   audio output and which device it plays through (`audio`: the one picked,
   waited for or stood in for while it's away, and watched for to come
@@ -380,7 +390,8 @@ last window quits.
   JPEG.
 - `src/ui/player/`: a player's tile, a file per part: what fills it
   (`content`), the header, the controls, the track menu, notes on what
-  shortcuts did (`osd`, with the track reel), what shortcuts do to it
+  shortcuts did (`osd`, with the track reel), the `console`, what
+  shortcuts do to it
   (`commands`, `adjust` for the picture, `sync` for delays and
   `screenshot`; `pip` runs Picture in Picture for it), and the graveyard
   frames wait in before they are released.

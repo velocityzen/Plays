@@ -51,6 +51,7 @@ gpui::actions!(
         ToggleFullScreen,
         ExitFullScreen,
         TogglePictureInPicture,
+        ToggleConsole,
         PlayPauseAll,
         PlayAll,
         PauseAll,
@@ -106,6 +107,7 @@ pub enum Command {
     FullScreen,
     ExitFullScreen,
     PictureInPicture,
+    Console,
     PlayPauseAll,
     RestartAll,
     SeekForwardAll,
@@ -147,7 +149,7 @@ impl Group {
 }
 
 impl Command {
-    pub const ALL: [Self; 42] = [
+    pub const ALL: [Self; 43] = [
         Self::PlayPause,
         Self::SeekForward,
         Self::SeekBackward,
@@ -185,6 +187,7 @@ impl Command {
         Self::FullScreen,
         Self::ExitFullScreen,
         Self::PictureInPicture,
+        Self::Console,
         Self::PlayPauseAll,
         Self::SeekForwardAll,
         Self::SeekBackwardAll,
@@ -232,6 +235,7 @@ impl Command {
             Self::FullScreen => "full_screen",
             Self::ExitFullScreen => "exit_full_screen",
             Self::PictureInPicture => "picture_in_picture",
+            Self::Console => "console",
             Self::PlayPauseAll => "play_pause_all",
             Self::RestartAll => "restart_all",
             Self::SeekForwardAll => "seek_forward_all",
@@ -283,6 +287,7 @@ impl Command {
             Self::FullScreen => "Full screen",
             Self::ExitFullScreen => "Exit full screen",
             Self::PictureInPicture => "Picture in Picture",
+            Self::Console => "Show/hide console",
             Self::PlayPauseAll => "Play/pause all",
             Self::RestartAll => "Restart all",
             Self::SeekForwardAll => "Seek all forward",
@@ -333,7 +338,9 @@ impl Command {
             | Self::NextCrop
             | Self::ResetPicture
             | Self::TakeScreenshot => Group::Video,
-            Self::FullScreen | Self::ExitFullScreen | Self::PictureInPicture => Group::Window,
+            Self::FullScreen | Self::ExitFullScreen | Self::PictureInPicture | Self::Console => {
+                Group::Window
+            }
             Self::PlayPauseAll
             | Self::RestartAll
             | Self::SeekForwardAll
@@ -381,6 +388,7 @@ impl Command {
             Self::FullScreen => Box::new(ToggleFullScreen),
             Self::ExitFullScreen => Box::new(ExitFullScreen),
             Self::PictureInPicture => Box::new(TogglePictureInPicture),
+            Self::Console => Box::new(ToggleConsole),
             Self::PlayPauseAll => Box::new(PlayPauseAll),
             Self::RestartAll => Box::new(RestartAll),
             Self::SeekForwardAll => Box::new(SeekForwardAll),
@@ -437,6 +445,7 @@ impl Command {
             Self::PictureInPicture if mac => &["ctrl-cmd-p"],
             // Picture in Picture is macOS's.
             Self::PictureInPicture => &[],
+            Self::Console => &["~", "`"],
             // Every file in the window.
             Self::PlayPauseAll => &["shift-space"],
             Self::RestartAll => &["shift-home"],

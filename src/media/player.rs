@@ -1,3 +1,4 @@
+use std::collections::VecDeque;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, Sender};
@@ -22,6 +23,8 @@ const STREAM_START_AUDIO_SECONDS: f64 = 0.3;
 /// Start anyway after this long if there is something to play, in case the
 /// read-ahead estimate is off (timestamps jumping in a live stream, say).
 const STREAM_MAX_WAIT: Duration = Duration::from_secs(3);
+/// How far back the console's frame rate and lateness look.
+const RECENT: Duration = Duration::from_secs(1);
 
 #[derive(Clone, Copy)]
 pub struct PlayerOptions {
@@ -66,6 +69,60 @@ pub struct Player {
     muted: bool,
     volume: f32,
     stats: Stats,
+    recent: Recent,
+}
+
+/// How playback is going, for the console.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct PlaybackStats {
+    /// Frames shown a second, over the last second.
+    pub shown_fps: f64,
+    /// Frames decoded but never shown, since the file opened.
+    pub dropped: u64,
+    /// How late frames have been shown against the clock lately, on
+    /// average, in seconds; early ones count against it.
+    pub lateness: Option<f64>,
+    /// Frames decoded and waiting to be shown.
+    pub queued_frames: usize,
+    /// Seconds of sound decoded and waiting to be heard.
+    pub queued_audio: f64,
+    /// Seconds read ahead of the playhead; infinite once all of it is.
+    pub read_ahead: f64,
+}
+
+/// The frames shown in the last `RECENT`, and how late each was.
+#[derive(Default)]
+struct Recent {
+    shown: VecDeque<(Instant, f64)>,
+    dropped: u64,
+}
+
+impl Recent {
+    fn record(&mut self, lateness: f64, dropped: u32) {
+        let now = Instant::now();
+        while self
+            .shown
+            .front()
+            .is_some_and(|(at, _)| now.duration_since(*at) > RECENT)
+        {
+            self.shown.pop_front();
+        }
+        self.shown.push_back((now, lateness));
+        self.dropped += u64::from(dropped);
+    }
+
+    /// Frames a second and their mean lateness, over the last `RECENT`.
+    fn rate(&self) -> (f64, Option<f64>) {
+        let lately: Vec<f64> = self
+            .shown
+            .iter()
+            .filter(|(at, _)| at.elapsed() <= RECENT)
+            .map(|(_, lateness)| *lateness)
+            .collect();
+        let count = lately.len() as f64;
+        let lateness = (!lately.is_empty()).then(|| lately.iter().sum::<f64>() / count);
+        (count / RECENT.as_secs_f64(), lateness)
+    }
 }
 
 /// Debug-level playback statistics, logged every few seconds while playing.
@@ -149,6 +206,7 @@ impl Player {
         Self {
             source,
             stats: Stats::new(name),
+            recent: Recent::default(),
             network,
             shared,
             commands,
@@ -431,6 +489,7 @@ impl Player {
                     }
                     if let Some(frame) = next.as_ref().filter(|_| popped > 0) {
                         self.stats.record(now - frame.pts, popped - 1);
+                        self.recent.record(now - frame.pts, popped - 1);
                     }
                 }
                 queued_frames = Some(queue.frames.len());
@@ -511,6 +570,36 @@ impl Player {
 
         tick.animate = self.playing || self.buffering;
         tick
+    }
+
+    /// How playback is going, for the console.
+    pub fn stats(&self) -> PlaybackStats {
+        let serial = self.shared.serial.load(Ordering::Acquire);
+        let (shown_fps, lateness) = self.recent.rate();
+        let queued_frames = {
+            let queue = self.shared.video.lock();
+            if queue.serial == serial {
+                queue.frames.len()
+            } else {
+                0
+            }
+        };
+        let queued_audio = self.shared.audio.as_ref().map_or(0.0, |audio| {
+            let queue = audio.queue.lock();
+            if queue.serial == serial {
+                queue.buffered_seconds()
+            } else {
+                0.0
+            }
+        });
+        PlaybackStats {
+            shown_fps,
+            dropped: self.recent.dropped,
+            lateness,
+            queued_frames,
+            queued_audio,
+            read_ahead: self.shared.read_ahead(),
+        }
     }
 
     /// Take every picture this player may have drawn, so they can be released.

@@ -106,6 +106,62 @@ fn opens_and_seeks_video_accurately() {
     }
 }
 
+#[test]
+fn reports_the_streams_as_the_file_has_them() {
+    let Some(path) = media(
+        "details.mp4",
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc=size=320x240:rate=25:duration=1",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:sample_rate=48000:duration=1",
+            "-c:v",
+            "libx264",
+            "-profile:v",
+            "high",
+            "-pix_fmt",
+            "yuv420p",
+            "-colorspace",
+            "bt709",
+            "-c:a",
+            "aac",
+            "-ac",
+            "2",
+        ],
+    ) else {
+        eprintln!("ffmpeg not found, skipping");
+        return;
+    };
+    let mixer = Mixer::detached(48_000);
+    let mut player = Player::open(Source::File(path), Some(mixer), options(false, false));
+    assert!(wait_until(Duration::from_secs(5), || {
+        player.tick();
+        player.frame_pts().is_some()
+    }));
+    let info = player.info().unwrap();
+    assert!(info.container.format.contains("MOV"), "{:?}", info.container);
+    assert!(info.container.bit_rate.is_some());
+    let video = info.video_details.unwrap();
+    assert_eq!(video.profile.as_deref(), Some("High"));
+    assert_eq!(video.coded_size, (320, 240));
+    assert_eq!(video.pixel_format, Some("yuv420p"));
+    // x264 tags the matrix and range, and leaves the rest unspecified.
+    assert_eq!(video.matrix, Some("bt709"));
+    assert_eq!(video.full_range, Some(false));
+    let audio = info.audio_details.unwrap();
+    assert_eq!(audio.profile.as_deref(), Some("LC"));
+    assert_eq!((audio.sample_rate, audio.channels), (48_000, 2));
+    assert_eq!(audio.layout.as_deref(), Some("stereo"));
+    assert_eq!(audio.sample_format, Some("fltp"));
+    let stats = player.stats();
+    assert!(stats.read_ahead > 0.0, "{stats:?}");
+    assert!(stats.queued_frames > 0, "{stats:?}");
+}
+
 /// Pull audio through a mixer until the player stops; returns non-silent frames heard.
 fn drain_audio(
     player: &mut Player,

@@ -4,6 +4,7 @@
 
 mod adjust;
 mod commands;
+mod console;
 mod content;
 mod controls;
 mod graveyard;
@@ -96,6 +97,8 @@ pub struct PlayerView {
     pub mouse_idle: bool,
     over_header: bool,
     over_controls: bool,
+    /// The console, while it shows: what keeps it up to date.
+    console: Option<Task<()>>,
 }
 
 impl EventEmitter<PlayerEvent> for PlayerView {}
@@ -146,6 +149,7 @@ impl PlayerView {
             mouse_idle: false,
             over_header: false,
             over_controls: false,
+            console: None,
         }
     }
 
@@ -414,6 +418,7 @@ impl Render for PlayerView {
         let header = self.render_header(&reveal, info.as_ref(), show_titles, window, cx);
         let controls = self.render_controls(&reveal, info.as_ref(), &theme, cx);
         let osd = self.render_osd(window);
+        let console = self.render_console();
 
         div()
             .id("player")
@@ -476,6 +481,7 @@ impl Render for PlayerView {
                         .child(Panel::note("Buffering…").text_xs()),
                 )
             })
+            .children(console)
             .children(osd)
             // Clicks on the bars mustn't reach the surface underneath (which
             // toggles playback), but they can't `occlude()` either: an occluding

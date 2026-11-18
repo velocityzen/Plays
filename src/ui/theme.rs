@@ -433,6 +433,27 @@ pub mod player {
     pub const PIP_ICON: Pixels = px(40.);
 }
 
+/// The console over a tile (`~`).
+pub mod console {
+    use std::time::Duration;
+
+    use gpui::{Pixels, px};
+
+    /// Where it sits in the tile: under the header, on the left.
+    pub const TOP: Pixels = px(44.);
+    pub const INSET: Pixels = px(12.);
+    /// The labels' column, and the most it is wide.
+    pub const LABEL_WIDTH: Pixels = px(72.);
+    pub const MAX_WIDTH: Pixels = px(560.);
+    /// Monospaced, so the numbers stay put as they change.
+    #[cfg(target_os = "macos")]
+    pub const FONT: &str = "Menlo";
+    #[cfg(not(target_os = "macos"))]
+    pub const FONT: &str = "DejaVu Sans Mono";
+    /// How often it updates while nothing else redraws the tile.
+    pub const REFRESH: Duration = Duration::from_millis(250);
+}
+
 /// The Settings window.
 pub mod settings {
     use gpui::{Pixels, Size, point, px, size};

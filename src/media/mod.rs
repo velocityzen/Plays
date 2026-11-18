@@ -3,6 +3,7 @@
 pub mod audio;
 pub mod clock;
 pub mod decoder;
+pub mod details;
 pub mod dovi;
 mod external;
 pub mod hdr;

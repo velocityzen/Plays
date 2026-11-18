@@ -37,6 +37,7 @@ use parking_lot::{Condvar, Mutex};
 
 use super::audio::{AudioChunk, AudioSource, SOURCE_CHANNELS};
 use super::clock::Clock;
+use super::details::{AudioDetails, ContainerDetails, VideoDetails};
 use super::dovi;
 use super::external::{self, SubtitleFile};
 use super::hdr;
@@ -123,6 +124,10 @@ pub struct MediaInfo {
     pub video_track: Option<usize>,
     pub audio_track: Option<usize>,
     pub subtitle_track: Option<usize>,
+    /// The file's format and the streams playing, as it has them.
+    pub container: ContainerDetails,
+    pub video_details: Option<VideoDetails>,
+    pub audio_details: Option<AudioDetails>,
 }
 
 impl MediaInfo {
@@ -419,6 +424,7 @@ impl Decoders {
                     info.orientation = decoder.orientation;
                     info.frame_rate = Some(1.0 / decoder.frame_duration);
                     info.video_codec = Some(decoder.codec_name());
+                    info.video_details = Some(VideoDetails::of(&decoder.decoder));
                     info.hardware = None;
                 }
                 self.video = Some(decoder);
@@ -431,6 +437,7 @@ impl Decoders {
                 let decoder = AudioDecoder::new(stream, output)?;
                 if let Some(info) = shared.info.lock().as_mut() {
                     info.audio_codec = Some(decoder.codec_name());
+                    info.audio_details = Some(AudioDetails::of(&decoder.decoder));
                 }
                 self.audio = Some(decoder);
             }
@@ -577,6 +584,9 @@ fn run(
         audio_track: decoders.selected(TrackKind::Audio),
         subtitle_track: decoders.selected(TrackKind::Subtitle),
         tracks,
+        container: ContainerDetails::of(&input),
+        video_details: video.map(|v| VideoDetails::of(&v.decoder)),
+        audio_details: audio.map(|a| AudioDetails::of(&a.decoder)),
     };
     *shared.info.lock() = Some(info);
 
