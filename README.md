@@ -246,6 +246,8 @@ last window quits.
   before, and a second surface shader decodes PQ and HLG and tone maps them
   under the screen's current EDR headroom, with the same math as `hdr.rs`.
   A third one reshapes Dolby Vision as `dovi.rs` does.
+- `vendor/xattr`: xattr 0.2.3, which gpui reaches, building on Linux with
+  today's libc (see its `PLAYS.md`).
 - `src/media/picture.rs`: the forms a decoded picture takes, and the gamma
   for SDR and HDR video that every player shares. Converted frames get it on
   the CPU; surfaces carry it to gpui's shaders each time they are drawn, so a
@@ -295,7 +297,8 @@ last window quits.
   a menu's or a note's over the picture.
 - `build.rs`: links the static FFmpeg with what it needs in turn, read
   from its pkg-config files (dav1d, zlib, iconv, and macOS's frameworks or
-  Linux's OpenSSL and hardware decoding libraries).
+  Linux's OpenSSL and hardware decoding libraries), and the C compiler's
+  runtime library they call into.
 - `src/ui/theme.rs`: colors, every size, radius and duration the UI uses,
   and named text styles (`text_display`, `text_title`, `text_heading`,
   `text_label`).

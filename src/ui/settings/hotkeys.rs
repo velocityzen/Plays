@@ -50,9 +50,12 @@ impl Pane for HotkeysPane {
             vec![row(
                 "Default shortcuts",
                 Some(
-                    "Shortcuts go to the tile last clicked. Click + and press keys to add one; \
-                     menu shortcuts such as ⌘O stay as they are."
-                        .into(),
+                    format!(
+                        "Shortcuts go to the tile last clicked. Click + and press keys to add \
+                         one; menu shortcuts such as {} stay as they are.",
+                        hotkeys::display("secondary-o")
+                    )
+                    .into(),
                 ),
                 theme,
                 Button::new("restore-hotkeys", "Restore").on_click(|_, _, cx| {

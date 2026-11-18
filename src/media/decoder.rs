@@ -1294,6 +1294,9 @@ impl VideoDecoder {
         if on_gpu && let Some(surface) = self.surface(session) {
             return Some(Picture::Surface(surface));
         }
+        // Elsewhere, frames decoded on the GPU are copied back to draw.
+        #[cfg(not(target_os = "macos"))]
+        let _ = session;
         let frame = if on_gpu {
             if let Err(err) = hwaccel::download(&self.decoded, &mut self.downloaded) {
                 log::warn!("{err:#}");

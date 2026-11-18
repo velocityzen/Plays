@@ -52,6 +52,8 @@ opt-level = 3
 [profile.release]
 lto = "thin"
 
-# gpui with HDR video on macOS; see vendor/gpui/PLAYS.md for what changed.
+# gpui with HDR video on macOS, and the xattr it reaches building on Linux
+# with today's libc; see PLAYS.md in each for what changed.
 [patch.crates-io]
 gpui = { path = "vendor/gpui" }
+xattr = { path = "vendor/xattr" }

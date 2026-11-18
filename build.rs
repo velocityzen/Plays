@@ -38,7 +38,7 @@ fn main() {
     let apple = env::var("CARGO_CFG_TARGET_VENDOR").as_deref() == Ok("apple");
     let mut args: Vec<Vec<String>> = Vec::new();
     for name in LIBRARIES {
-        args.extend(libs(&lib.join(format!("pkgconfig/lib{name}.pc"))));
+        args.extend(libs(&lib.join(format!("pkgconfig/lib{name}.pc")), &dir));
     }
     // Each argument where it last appears, after everything that needs it.
     let mut seen = Vec::new();
@@ -61,33 +61,40 @@ fn main() {
             }
         }
     }
-    if apple {
-        link_clang_runtime();
-    }
+    link_compiler_runtime();
 }
 
-/// FFmpeg checks the macOS version it runs on with `__builtin_available`,
-/// which calls into clang's runtime library. clang links that itself, but
-/// Rust links with `-nodefaultlibs`, so name it here.
-fn link_clang_runtime() {
+/// The C compiler's runtime library, which FFmpeg and dav1d call into: on
+/// macOS clang's, for `__builtin_available` checking the macOS version, and
+/// on Linux libgcc, for the atomics GCC builds as calls on ARM64. The
+/// compiler links it itself, but Rust links with `-nodefaultlibs`, so name it
+/// here, after the libraries that need it.
+fn link_compiler_runtime() {
     let compiler = env::var("CC").unwrap_or_else(|_| "cc".into());
     let output = Command::new(&compiler)
-        .arg("-print-resource-dir")
+        .arg("-print-libgcc-file-name")
         .output()
         .unwrap_or_else(|err| panic!("running {compiler}: {err}"));
-    let resources = String::from_utf8_lossy(&output.stdout);
-    let runtime = Path::new(resources.trim()).join("lib/darwin/libclang_rt.osx.a");
-    if !runtime.exists() {
-        panic!("clang's runtime library isn't at {}", runtime.display());
+    let runtime = String::from_utf8_lossy(&output.stdout);
+    let runtime = Path::new(runtime.trim());
+    if !runtime.is_file() {
+        panic!(
+            "{compiler}'s runtime library isn't at {}",
+            runtime.display()
+        );
     }
     println!("cargo:rustc-link-arg={}", runtime.display());
 }
 
 /// The linker arguments a pkg-config file gives in `Libs` and `Libs.private`,
 /// its variables filled in, with `-framework` and its name kept together.
-fn libs(path: &Path) -> Vec<Vec<String>> {
+/// The file names the folder FFmpeg was built in, which may have moved since,
+/// so paths in that folder are taken to be in `prefix` instead.
+fn libs(path: &Path, prefix: &Path) -> Vec<Vec<String>> {
     let text =
         fs::read_to_string(path).unwrap_or_else(|err| panic!("reading {}: {err}", path.display()));
+    let prefix = prefix.to_string_lossy();
+    let mut built_in: Option<String> = None;
     let mut variables = HashMap::new();
     let mut args: Vec<Vec<String>> = Vec::new();
     for line in text.lines() {
@@ -95,8 +102,14 @@ fn libs(path: &Path) -> Vec<Vec<String>> {
             continue;
         };
         let (key, value) = (line[..split].trim(), line[split + 1..].trim());
-        let value = expand(value, &variables);
+        let mut value = expand(value, &variables);
+        if let Some(built_in) = &built_in {
+            value = value.replace(built_in.as_str(), &prefix);
+        }
         if line[split..].starts_with('=') {
+            if key == "prefix" {
+                built_in = Some(std::mem::replace(&mut value, prefix.to_string()));
+            }
             variables.insert(key.to_owned(), value);
         } else if key == "Libs" || key == "Libs.private" {
             let mut words = value.split_whitespace();

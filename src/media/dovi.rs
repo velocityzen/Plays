@@ -331,6 +331,7 @@ impl Reshaping {
     }
 
     /// The reshaping and matrices as `surface_dovi_fragment` takes them.
+    #[cfg(target_os = "macos")]
     pub fn shader_params(&self) -> ShaderParams {
         let curves = self.curves.each_ref().map(|curve| {
             let mut pivots = [[2.0; 4]; 2];
@@ -371,6 +372,7 @@ impl Reshaping {
 /// The reshaping and matrices for gpui's `surface_dovi_fragment`, which
 /// gets these bytes as they are. Matches `DoviParams` in vendor/gpui's
 /// shaders.metal: only `float4`s, so there is no padding to agree on.
+#[cfg(target_os = "macos")]
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct ShaderParams {
@@ -381,6 +383,7 @@ pub struct ShaderParams {
     curves: [ShaderCurve; 3],
 }
 
+#[cfg(target_os = "macos")]
 #[repr(C)]
 #[derive(Clone, Copy)]
 struct ShaderCurve {
@@ -391,6 +394,7 @@ struct ShaderCurve {
     pieces: [ShaderPiece; MAX_PIECES],
 }
 
+#[cfg(target_os = "macos")]
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
 struct ShaderPiece {
@@ -402,6 +406,7 @@ struct ShaderPiece {
     mmr: [[f32; 4]; 6],
 }
 
+#[cfg(target_os = "macos")]
 impl ShaderParams {
     pub fn as_bytes(&self) -> &[u8] {
         // SAFETY: the struct is plain f32s with no padding.
@@ -523,6 +528,7 @@ mod tests {
         assert_eq!(offset_of!(sys::ColorMetadata, rgb_to_lms_matrix), 100);
         // `DOVI_PARAMS_SIZE` in vendor/gpui's metal_renderer.rs, which is
         // within Metal's limit of 4 KB for bytes set straight on an encoder.
+        #[cfg(target_os = "macos")]
         assert_eq!(size_of::<ShaderParams>(), 2928);
     }
 
@@ -572,6 +578,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "macos")]
     fn shader_params_compute_the_same_light() {
         let reshaping = reshaping();
         let params = reshaping.shader_params();
