@@ -4,12 +4,13 @@ use gpui::App;
 
 use super::dispatch::{with_active, with_active_in_window, with_workspace};
 use super::{
-    CloseAll, CloseFile, CloseWindow, OpenFiles, OpenSettings, OpenUrl, Quit, SetAspectRatio,
-    SetCrop,
+    About, CloseAll, CloseFile, CloseWindow, OpenFiles, OpenSettings, OpenUrl, Quit,
+    SetAspectRatio, SetCrop,
 };
 use crate::hotkeys::*;
 use crate::media::tracks::TrackKind;
 use crate::settings::{SUBTITLE_POSITION_RANGE, SUBTITLE_SIZE_RANGE, Settings, SubtitleStyle};
+use crate::ui::about::AboutView;
 use crate::ui::settings::SettingsView;
 
 pub(super) fn register(cx: &mut App) {
@@ -17,6 +18,7 @@ pub(super) fn register(cx: &mut App) {
     // Deferred, as in `with_workspace`, so the window in front (Settings,
     // say) can be reached.
     cx.on_action(|_: &OpenSettings, cx| cx.defer(SettingsView::open_window));
+    cx.on_action(|_: &About, cx| cx.defer(AboutView::open_window));
     cx.on_action(|_: &CloseWindow, cx| {
         cx.defer(|cx| {
             if let Some(window) = cx.active_window() {

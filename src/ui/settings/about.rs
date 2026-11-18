@@ -13,6 +13,7 @@ use serde::Deserialize;
 use super::form::group;
 use super::{Pane, SettingsView};
 use crate::settings::Settings;
+use crate::ui::about;
 use crate::ui::components::{Button, ComponentSize, Icon, Sizable};
 use crate::ui::theme::settings::{ABOUT_COLOR, CREDIT_LICENSE_MAX_WIDTH};
 use crate::ui::theme::text::TextStyle;
@@ -284,12 +285,11 @@ impl Pane for AboutPane {
             .px_3()
             .py_3()
             .child(div().text_display().child("Plays"))
-            .child(
-                div()
-                    .text_sm()
-                    .text_color(theme.text_muted)
-                    .child(concat!("Version ", env!("CARGO_PKG_VERSION"))),
-            )
+            .child(div().text_sm().text_color(theme.text_muted).child(format!(
+                "{}, {}",
+                about::version(),
+                about::release_date()
+            )))
             .child(div().pt_1().text_sm().child(env!("CARGO_PKG_DESCRIPTION")))
             .into_any_element();
         let license = row(Entry {

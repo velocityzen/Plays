@@ -27,6 +27,7 @@ use crate::ui::workspace::Workspace;
 actions!(
     plays,
     [
+        About,
         OpenFiles,
         OpenUrl,
         OpenSettings,

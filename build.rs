@@ -1,19 +1,22 @@
 //! Links the static FFmpeg that `script/build-ffmpeg` builds with what it
 //! needs in turn: dav1d, zlib and iconv, and macOS's frameworks or Linux's
 //! OpenSSL and hardware decoding libraries. ffmpeg-sys-next links FFmpeg's
-//! own libraries; the rest is read from FFmpeg's pkg-config files.
+//! own libraries; the rest is read from FFmpeg's pkg-config files. Also
+//! dates the build, for About.
 
 use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 /// FFmpeg's libraries the app uses, each before the ones it uses, the
 /// order GNU ld needs.
 const LIBRARIES: [&str; 5] = ["avformat", "avcodec", "swscale", "swresample", "avutil"];
 
 fn main() {
+    date_the_build();
     println!("cargo:rerun-if-env-changed=FFMPEG_DIR");
     let Some(dir) = env::var_os("FFMPEG_DIR").map(PathBuf::from) else {
         // ffmpeg-sys-next finds FFmpeg with pkg-config, which links it all.
@@ -140,4 +143,42 @@ fn expand(value: &str, variables: &HashMap<String, String>) -> String {
     }
     expanded.push_str(rest);
     expanded
+}
+
+/// `PLAYS_BUILD_DATE` (YYYY-MM-DD, UTC): the day of `SOURCE_DATE_EPOCH` for
+/// a reproducible build, else today. Dated again whenever the source changes.
+fn date_the_build() {
+    println!("cargo:rerun-if-env-changed=SOURCE_DATE_EPOCH");
+    println!("cargo:rerun-if-changed=src");
+    println!("cargo:rerun-if-changed=Cargo.toml");
+    let seconds = env::var("SOURCE_DATE_EPOCH")
+        .ok()
+        .and_then(|epoch| epoch.parse::<i64>().ok())
+        .unwrap_or_else(|| {
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map_or(0, |since| since.as_secs() as i64)
+        });
+    let (year, month, day) = civil_date(seconds.div_euclid(86_400));
+    println!("cargo:rustc-env=PLAYS_BUILD_DATE={year:04}-{month:02}-{day:02}");
+}
+
+/// The date `days` after 1970-01-01, in the proleptic Gregorian calendar
+/// (Howard Hinnant's `civil_from_days`).
+fn civil_date(days: i64) -> (i64, u32, u32) {
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let day_of_era = z.rem_euclid(146_097);
+    let year_of_era =
+        (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let month_index = (5 * day_of_year + 2) / 153;
+    let day = (day_of_year - (153 * month_index + 2) / 5 + 1) as u32;
+    let month = if month_index < 10 {
+        month_index + 3
+    } else {
+        month_index - 9
+    } as u32;
+    let year = year_of_era + era * 400 + i64::from(month <= 2);
+    (year, month, day)
 }

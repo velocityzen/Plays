@@ -1,3 +1,4 @@
+pub mod about;
 pub mod components;
 pub mod framing;
 pub mod open_url;

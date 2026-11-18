@@ -85,6 +85,8 @@ GPU-accelerated UI framework.
   a device picked in Settings, remembered from run to run. A/V sync follows
   the audio clock.
 - Audio-only files show their cover art (or a note) and a level meter.
+- About Plays, in the app menu on macOS: a small window with the app's
+  icon, version and the day it was built (Settings → About says them too).
 - Settings window: theme, master volume, the audio output, default volume, autoplay, loop,
   seek step, fit/fill scaling, gamma for SDR and for HDR video (applied to
   every open video as you drag), decode resolution limit, hardware decoding,

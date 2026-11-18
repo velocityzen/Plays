@@ -462,6 +462,24 @@ pub mod console {
     pub const REFRESH: Duration = Duration::from_millis(250);
 }
 
+/// The About window.
+pub mod about {
+    use gpui::{Pixels, Size, px, size};
+
+    pub const WINDOW_SIZE: Size<Pixels> = size(px(280.), px(320.));
+    /// The app icon, as the system's own About windows show it.
+    pub const ICON: Pixels = px(128.);
+    /// The icon's pixels, taken from the app bundle's, for Retina screens.
+    #[cfg(target_os = "macos")]
+    pub const ICON_PIXELS: f64 = 256.;
+    /// Without the bundle's icon, it is drawn as Icon Composer has it: the
+    /// glyph on a gradient, in a rounded square.
+    pub const ICON_RADIUS: Pixels = px(29.);
+    pub const ICON_GLYPH: f32 = 0.86;
+    pub const ICON_TOP: u32 = 0xfc0a6e;
+    pub const ICON_BOTTOM: u32 = 0xf50060;
+}
+
 /// The Settings window.
 pub mod settings {
     use gpui::{Pixels, Size, point, px, size};

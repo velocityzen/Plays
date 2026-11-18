@@ -49,10 +49,17 @@ icons!(
     "window-min",
 );
 
+/// The app icon's glyph, from the icon itself, for About to draw it with.
+const APP_GLYPH: (&str, &[u8]) = (
+    "icons/app-glyph.svg",
+    include_bytes!("../assets/AppIcon.icon/Assets/play.circle.svg"),
+);
+
 impl AssetSource for Assets {
     fn load(&self, path: &str) -> Result<Option<Cow<'static, [u8]>>> {
         Ok(ICONS
             .iter()
+            .chain([&APP_GLYPH])
             .find(|(name, _)| *name == path)
             .map(|(_, bytes)| Cow::Borrowed(*bytes)))
     }
