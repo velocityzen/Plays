@@ -298,8 +298,11 @@ last window quits.
   which the words, line breaks, italics, bold and top/middle/bottom placement
   are kept; bitmaps become images placed as fractions of the picture. A
   cue without an end (as in PGS) lasts until the next one. Cues show by the
-  playhead less the subtitle delay, and are kept 10 seconds after they end
-  so moving subtitles later brings back the ones just over.
+  playhead less the subtitle delay. Seeks keep them, from a minute before
+  the playhead to a minute after, so stepping or skipping back shows the
+  ones just over at once (even one that started before the keyframe the
+  seek reads from), and moving subtitles later brings them back. A cue read
+  again is kept once.
 - `src/media/external.rs`: subtitle files beside a video: finding them,
   reading their names, and telling a text file's encoding (with `chardetng`)
   for FFmpeg's iconv to convert. A picked file is read whole and its packets

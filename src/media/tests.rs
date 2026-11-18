@@ -570,6 +570,73 @@ fn skips_land_on_keyframes_far_from_the_target() {
     }
 }
 
+/// Going back keeps the subtitles on screen, even one that started before
+/// the keyframe the seek reads from, and one read again shows once.
+#[test]
+fn going_back_keeps_the_subtitles() {
+    let dir = std::env::temp_dir().join("plays-tests");
+    std::fs::create_dir_all(&dir).unwrap();
+    let srt = dir.join("across.srt");
+    std::fs::write(
+        &srt,
+        "1\n00:00:01,000 --> 00:00:02,000\nBefore\n\n\
+         2\n00:00:03,500 --> 00:00:05,000\nAcross\n",
+    )
+    .unwrap();
+    let Some(path) = media(
+        "across.mkv",
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc=size=160x120:rate=25:duration=8",
+            "-i",
+            srt.to_str().unwrap(),
+            "-map",
+            "0",
+            "-map",
+            "1",
+            // Keyframes at 0 and 4 seconds.
+            "-c:v",
+            "libx264",
+            "-x264-params",
+            "keyint=100:min-keyint=100:scenecut=0",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:s",
+            "srt",
+        ],
+    ) else {
+        eprintln!("ffmpeg not found, skipping");
+        return;
+    };
+    let mut player = Player::open(Source::File(path), None, options(false, false));
+    assert!(wait_until(Duration::from_secs(5), || {
+        player.tick();
+        player.frame_pts().is_some()
+    }));
+    let track = player
+        .info()
+        .unwrap()
+        .tracks(TrackKind::Subtitle)
+        .next()
+        .unwrap()
+        .index;
+    player.select_track(TrackKind::Subtitle, Some(track));
+
+    assert_eq!(subtitles_at(&mut player, 3.8, &["Across"]), ["Across"]);
+    // From the keyframe at 4, the cue isn't read again, but it's kept.
+    assert_eq!(subtitles_at(&mut player, 4.6, &["Across"]), ["Across"]);
+    // A frame back, it stays on screen while the seek goes on.
+    player.seek(4.56);
+    assert_eq!(subtitle_text(&player), ["Across"], "blinked");
+    assert_eq!(subtitles_at(&mut player, 4.56, &["Across"]), ["Across"]);
+    // Read again from the keyframe at 0, each shows once.
+    assert_eq!(subtitles_at(&mut player, 3.7, &["Across"]), ["Across"]);
+    assert_eq!(subtitles_at(&mut player, 1.5, &["Before"]), ["Before"]);
+    assert_eq!(subtitles_at(&mut player, 2.5, &[]), Vec::<String>::new());
+}
+
 #[test]
 fn plays_subtitle_files_beside_the_video() {
     let dir = std::env::temp_dir().join("plays-tests").join("beside");

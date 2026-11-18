@@ -346,6 +346,8 @@ impl Player {
         let serial = self.shared.serial.fetch_add(1, Ordering::AcqRel) + 1;
         self.ended = false;
         self.start_buffering();
+        let from = self.shared.clock.now();
+        self.shared.subtitles.lock().seeked(from, time);
         self.shared.clock.set(time);
         let _ = self.commands.send(Command::Seek { time, serial, mode });
     }
@@ -373,9 +375,7 @@ impl Player {
         }
         let _ = self.commands.send(Command::Select { kind, index });
         if index.is_none() {
-            let mut cues = self.shared.subtitles.lock();
-            let serial = cues.serial;
-            cues.clear(serial);
+            self.shared.subtitles.lock().clear();
         } else if kind != TrackKind::Subtitle && !self.is_live() {
             // Subtitles start with the packets kept of them, so the picture
             // plays on; the others start at the playhead. Live streams can't
@@ -391,13 +391,11 @@ impl Player {
     }
 
     /// The subtitles showing now.
+    /// Seeks keep the cues decoded around the playhead, so going back a
+    /// frame keeps them on screen.
     pub fn subtitles(&self) -> Vec<Arc<CueContent>> {
-        let serial = self.shared.serial.load(Ordering::Acquire);
-        let mut cues = self.shared.subtitles.lock();
-        if cues.serial != serial {
-            return Vec::new();
-        }
-        cues.showing(self.shared.clock.now())
+        let now = self.shared.clock.now();
+        self.shared.subtitles.lock().showing(now)
     }
 
     /// Skip some seconds forward or back. Where keyframes are far apart, it

@@ -434,9 +434,7 @@ impl Decoders {
                 demuxer.select(kind, None);
                 self.subtitle = None;
                 self.subtitle_file = None;
-                let mut cues = shared.subtitles.lock();
-                let serial = cues.serial;
-                cues.clear(serial);
+                shared.subtitles.lock().clear();
             }
             return Ok(());
         };
@@ -444,11 +442,7 @@ impl Decoders {
             let (decoder, file) = self.open_subtitles(index)?;
             // The other track's cues go; this one's come from the packets
             // kept of it, or its file, without a seek.
-            {
-                let mut cues = shared.subtitles.lock();
-                let serial = cues.serial;
-                cues.clear(serial);
-            }
+            shared.subtitles.lock().clear();
             // A file's subtitles don't come from the demuxer.
             let queue = match file {
                 Some(_) => None,
@@ -856,22 +850,16 @@ fn run(
     }
 }
 
-/// Add a decoded cue to those showing or to come, unless a seek went past it
-/// (as the subtitle delay puts it).
+/// Add a decoded cue to those around the playhead. Those over before a
+/// seek's target are kept too, for going back.
 fn queue_cue(cue: Option<Cue>, session: &Session) {
     let Some(cue) = cue else {
         return;
     };
     let now = session.shared.clock.now();
     let mut cues = session.shared.subtitles.lock();
-    let before_target = session.seek_target.is_some_and(|target| {
-        let target = cues.cue_time(target);
-        cue.end.is_some_and(|end| end <= target)
-    });
-    if !before_target {
-        cues.prune(now);
-        cues.push(cue);
-    }
+    cues.prune(now);
+    cues.push(cue);
 }
 
 fn packet_time(packet: &Packet, time_base: f64) -> Option<f64> {
@@ -1310,7 +1298,6 @@ fn reset_queues(shared: &Shared, serial: u64) {
     if let Some(audio) = &shared.audio {
         audio.queue.lock().clear(serial);
     }
-    shared.subtitles.lock().clear(serial);
 }
 
 fn rational(r: Rational) -> Option<f64> {

@@ -28,6 +28,18 @@ impl CueContent {
     fn is_empty(&self) -> bool {
         self.texts.is_empty() && self.bitmaps.is_empty()
     }
+
+    /// The same words or pictures in the same places, as when a cue is
+    /// decoded again.
+    fn same_as(&self, other: &Self) -> bool {
+        self.texts == other.texts
+            && self.bitmaps.len() == other.bitmaps.len()
+            && self
+                .bitmaps
+                .iter()
+                .zip(&other.bitmaps)
+                .all(|(a, b)| a.rect == b.rect && a.image.size(0) == b.image.size(0))
+    }
 }
 
 /// Lines of text, with `\n` between them.
@@ -70,37 +82,68 @@ pub struct Cue {
     pub content: Option<Arc<CueContent>>,
 }
 
-/// Cues are kept this long after they end, so moving subtitles later brings
-/// back the ones just over.
-const KEEP_ENDED: f64 = 10.0;
+/// Cues are kept this long after they end, and from this far ahead, so
+/// going back (a frame, or a few seconds) shows the ones just over without
+/// waiting for them to be read again, and moving subtitles later brings them
+/// back. A seek may go back to a keyframe after a cue started, which then
+/// isn't read again at all.
+const KEEP: f64 = 60.0;
+/// Cues starting this close together, with the same content, are one cue
+/// decoded twice, in seconds.
+const SAME_START: f64 = 0.001;
 
-/// Cues decoded ahead of the playhead, for one seek generation.
+/// Cues decoded around the playhead, for the subtitle track playing. Seeks
+/// keep them.
 #[derive(Default)]
 pub struct CueQueue {
-    pub serial: u64,
     /// How much later than their times cues show, in seconds (negative:
-    /// earlier). Kept across seeks.
+    /// earlier).
     pub delay: f64,
     /// In start order.
     cues: Vec<Cue>,
 }
 
 impl CueQueue {
-    pub fn clear(&mut self, serial: u64) {
+    /// Forget every cue, for another track.
+    pub fn clear(&mut self) {
         self.cues.clear();
-        self.serial = serial;
     }
 
-    /// Add a cue. Cues still waiting for an end end where it starts.
+    /// The playhead jumped from `from` to `to`. A cue still waiting for an
+    /// end is only known to go on as far as the playhead has been with it,
+    /// so it ends there if `to` is further.
+    pub fn seeked(&mut self, from: f64, to: f64) {
+        let (from, to) = (self.cue_time(from), self.cue_time(to));
+        for cue in &mut self.cues {
+            let known = cue.start.max(from);
+            if cue.end.is_none() && to > known {
+                cue.end = Some(known);
+            }
+        }
+    }
+
+    /// Add a cue. Cues still waiting for an end end where it starts. One
+    /// decoded again (after a seek back) is kept once, with the end it has
+    /// now.
     pub fn push(&mut self, cue: Cue) {
         for open in &mut self.cues {
-            if open.end.is_none() && open.start <= cue.start {
+            if open.end.is_none() && open.start < cue.start {
                 open.end = Some(cue.start);
             }
         }
-        if cue.content.is_some() {
-            let at = self.cues.partition_point(|c| c.start <= cue.start);
-            self.cues.insert(at, cue);
+        let Some(content) = &cue.content else {
+            return;
+        };
+        let same = self.cues.iter_mut().find(|known| {
+            (known.start - cue.start).abs() < SAME_START
+                && known.content.as_ref().is_some_and(|c| c.same_as(content))
+        });
+        match same {
+            Some(known) => known.end = cue.end,
+            None => {
+                let at = self.cues.partition_point(|c| c.start <= cue.start);
+                self.cues.insert(at, cue);
+            }
         }
     }
 
@@ -110,10 +153,11 @@ impl CueQueue {
     }
 
     /// Forget cues that have been over for a while with the playhead at
-    /// `time`.
+    /// `time`, or that are a long way ahead of it.
     pub fn prune(&mut self, time: f64) {
-        let over = self.cue_time(time) - KEEP_ENDED;
-        self.cues.retain(|cue| cue.end.is_none_or(|end| end > over));
+        let time = self.cue_time(time);
+        self.cues
+            .retain(|cue| cue.end.is_none_or(|end| end > time - KEEP) && cue.start < time + KEEP);
     }
 
     /// The cues showing with the playhead at `time`, oldest first.
@@ -496,8 +540,8 @@ mod tests {
         assert_eq!(queue.showing(2.5).len(), 2);
         assert_eq!(queue.showing(3.5).len(), 1);
         assert_eq!(queue.showing(4.0).len(), 0);
-        assert_eq!(queue.cues.len(), 2, "kept a while, in case of a delay");
-        assert_eq!(queue.showing(4.0 + KEEP_ENDED).len(), 0);
+        assert_eq!(queue.cues.len(), 2, "kept a while, to go back to");
+        assert_eq!(queue.showing(4.0 + KEEP).len(), 0);
         assert!(queue.cues.is_empty());
     }
 
@@ -515,8 +559,8 @@ mod tests {
         assert_eq!(queue.showing(0.4).len(), 0);
         assert_eq!(queue.showing(0.5).len(), 1);
         assert_eq!(queue.showing(2.5).len(), 0);
-        // Clearing for a seek keeps the delay.
-        queue.clear(3);
+        // Clearing for another track keeps the delay.
+        queue.clear();
         assert_eq!(queue.delay, -0.5);
     }
 
@@ -525,7 +569,7 @@ mod tests {
         let mut queue = CueQueue::default();
         queue.push(cue(1.0, None));
         assert_eq!(queue.showing(100.0).len(), 1);
-        queue.clear(2);
+        queue.clear();
         queue.push(cue(1.0, None));
         queue.push(cue(5.0, None));
         let first = queue.showing(2.0);
@@ -541,5 +585,40 @@ mod tests {
         });
         assert_eq!(queue.showing(5.5).len(), 1);
         assert_eq!(queue.showing(6.0).len(), 0);
+    }
+
+    #[test]
+    fn a_cue_decoded_again_is_kept_once() {
+        let mut queue = CueQueue::default();
+        queue.push(cue(1.0, Some(3.0)));
+        queue.push(cue(1.0, Some(3.0)));
+        assert_eq!(queue.showing(2.0).len(), 1);
+        // Something else starting then is another cue.
+        queue.push(Cue {
+            start: 1.0,
+            end: Some(3.0),
+            content: Some(Arc::new(CueContent {
+                texts: parse_plain("y").into_iter().collect(),
+                bitmaps: Vec::new(),
+            })),
+        });
+        assert_eq!(queue.showing(2.0).len(), 2);
+    }
+
+    #[test]
+    fn open_cues_go_on_only_as_far_as_the_playhead_saw() {
+        let mut queue = CueQueue::default();
+        queue.push(cue(5.0, None));
+        // Back a frame from 6: still showing, and from where it started.
+        queue.seeked(6.0, 5.96);
+        assert_eq!(queue.showing(5.96).len(), 1);
+        assert_eq!(queue.showing(5.0).len(), 1);
+        // Read again from before it started, it is still one cue.
+        queue.push(cue(5.0, None));
+        assert_eq!(queue.showing(5.5).len(), 1);
+        // Past where it was seen, it isn't known to show, so it doesn't.
+        queue.seeked(6.0, 20.0);
+        assert_eq!(queue.showing(20.0).len(), 0);
+        assert_eq!(queue.showing(5.5).len(), 1);
     }
 }
