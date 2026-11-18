@@ -16,8 +16,8 @@ GPU-accelerated UI framework.
   profile 5, which has no HDR10 picture to fall back on. On macOS,
   highlights go brighter than SDR white as far as the screen allows (EDR,
   such as on XDR displays), and are tone mapped to fit on other screens.
-  Elsewhere, and for video decoded in software, HDR is tone mapped to SDR on
-  the CPU.
+  Elsewhere, and for video decoded in software, HDR is tone mapped to SDR:
+  on Linux on the GPU (Dolby Vision on the CPU), on macOS on the CPU.
 - Every file has its own play/pause, seek bar, loop, mute and volume.
 - Files with several tracks get a track menu on their tile: pick the audio
   track, the subtitles (or none) and, if there are several, the video track,
@@ -298,8 +298,19 @@ last window quits.
   window draws in half floats and extended sRGB, everything but video as
   before, and a second surface shader decodes PQ and HLG and tone maps them
   under the screen's current EDR headroom, with the same math as `hdr.rs`.
-  A third one reshapes Dolby Vision as `dovi.rs` does. Images and surfaces
+  A third one reshapes Dolby Vision as `dovi.rs` does. On Linux, its Vulkan
+  renderer uploads video frames' planes to textures of their own and a
+  shader converts and tone maps them the same way. Images and surfaces
   can be drawn turned, mirrored and cropped, by where they are sampled.
+- `src/media/yuv.rs` (Linux): frames handed to gpui as their Y'CbCr planes
+  (`yuv420p`, `nv12`, 10-bit `yuv420p10` and `p010`, which hardware decoders
+  give), with the matrix from samples to R'G'B' for their YCbCr matrix,
+  range and bit depth, and where their chroma samples sit. The CPU only
+  copies the planes, or has swscale scale them (still as Y'CbCr) when the
+  picture is over the resolution limit or its pixels aren't square; gpui
+  converts them to RGB, tone maps HDR and applies the gamma on the GPU.
+  Dolby Vision and other formats are converted on the CPU as before, and
+  `PLAYS_GPU_CONVERSION=0` sends every frame that way.
 - `src/media/orientation.rs`: the eight ways to turn and mirror a picture,
   and the one a video's display matrix asks for.
 - `vendor/xattr`: xattr 0.2.3, which gpui reaches, building on Linux with
@@ -380,9 +391,10 @@ last window quits.
   and named text styles (`text_display`, `text_title`, `text_heading`,
   `text_label`).
 
-Software-decoded frames (and, on Linux, hardware-decoded ones) are uploaded to
-gpui's texture atlas as images; on macOS, hardware-decoded frames are drawn
-in place as surfaces. Either way the tile paints them itself, framed. Replaced frames are kept a few display frames
+On macOS, software-decoded frames are uploaded to gpui's texture atlas as
+images, and hardware-decoded ones are drawn in place as surfaces. On Linux,
+frames (hardware-decoded ones copied back first) are uploaded as their
+Y'CbCr planes and converted as they are drawn. Either way the tile paints them itself, framed. Replaced frames are kept a few display frames
 in case the GPU is still reading them, then released (images with
 `Window::drop_image`), so GPU memory stays flat during playback.
 
@@ -426,7 +438,10 @@ remuxed with a display matrix must report its turn and flip; unit tests
 check that orientations compose like their matrices, read FFmpeg's own
 matrices right, and that framing samples the right part of the picture,
 turned, reshaped and cropped, with bitmap subtitles landing where the
-picture shows what they cover. With the sound delayed, the playhead and the
+picture shows what they cover. For the Linux GPU conversion, unit tests
+check the sample matrices (limited and full range, 8 and 10 bits, in the low
+or high bits of 16) against known colors, and which frames are handed over,
+scaled or not, and where their chroma sits. With the sound delayed, the playhead and the
 picture must run that far ahead of what the mixer has played; with
 subtitles delayed either way, a cue must show only at its moved time,
 including right after a seek past where it originally ended. With no audio
@@ -453,11 +468,13 @@ unreachable hosts, and closing while a connection hangs.
 
 ## Limitations
 
-- On Linux, every frame is converted to BGRA on the CPU, including frames
-  decoded on the GPU, which are copied back first (gpui's Linux renderer
-  can't draw GPU surfaces). Lower the decode resolution limit in Settings when
-  playing many high-resolution files. The same applies on macOS to videos
-  VideoToolbox can't decode, such as VP9.
+- On Linux, frames decoded on the GPU are copied back to memory and
+  uploaded again to be drawn (gpui's Linux renderer can't draw GPU surfaces
+  such as DMA-BUFs), though converting them to RGB happens on the GPU. Dolby
+  Vision, and formats other than 8- and 10-bit 4:2:0, are converted to BGRA
+  on the CPU. Lower the decode resolution limit in Settings when playing
+  many high-resolution files. On macOS, videos VideoToolbox can't decode,
+  such as VP9, are converted on the CPU too.
 - HDR goes brighter than SDR white only on macOS, and only for video decoded
   by VideoToolbox; software-decoded HDR is tone mapped to SDR. HDR metadata
   (mastering display, content light level, HDR10+ and Dolby Vision's

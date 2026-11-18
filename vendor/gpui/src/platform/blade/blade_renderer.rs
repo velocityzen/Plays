@@ -1,6 +1,8 @@
 // Doing `if let` gives you nice scoping with passes/encoders
 #![allow(irrefutable_let_patterns)]
 
+#[cfg(any(target_os = "linux", target_os = "freebsd"))]
+use super::blade_yuv::{YuvParams, YuvTextures};
 use super::{BladeAtlas, BladeContext};
 use crate::{
     Background, Bounds, DevicePixels, GpuSpecs, MonochromeSprite, Path, Point, PolychromeSprite,
@@ -27,7 +29,7 @@ struct GlobalParams {
 // it doesn't implement Pod + Zeroable
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
-struct PodBounds {
+pub(super) struct PodBounds {
     origin: [f32; 2],
     size: [f32; 2],
 }
@@ -107,6 +109,18 @@ struct ShaderSurfacesData {
     s_surface: gpu::Sampler,
 }
 
+/// Plays: a video frame's planes and how to convert them.
+#[cfg(any(target_os = "linux", target_os = "freebsd"))]
+#[derive(blade_macros::ShaderData)]
+struct ShaderYuvData {
+    globals: GlobalParams,
+    yuv_params: YuvParams,
+    t_yuv_y: gpu::TextureView,
+    t_yuv_cb: gpu::TextureView,
+    t_yuv_cr: gpu::TextureView,
+    s_yuv: gpu::Sampler,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[repr(C)]
 struct PathSprite {
@@ -131,6 +145,9 @@ struct BladePipelines {
     mono_sprites: gpu::RenderPipeline,
     poly_sprites: gpu::RenderPipeline,
     surfaces: gpu::RenderPipeline,
+    /// Plays: video frames' planes.
+    #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+    yuv: gpu::RenderPipeline,
 }
 
 impl BladePipelines {
@@ -153,6 +170,8 @@ impl BladePipelines {
         shader.check_struct_size::<Underline>();
         shader.check_struct_size::<MonochromeSprite>();
         shader.check_struct_size::<PolychromeSprite>();
+        #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+        shader.check_struct_size::<YuvParams>();
 
         // See https://apoorvaj.io/alpha-compositing-opengl-blending-and-premultiplied-alpha/
         let blend_mode = match surface_info.alpha {
@@ -300,6 +319,21 @@ impl BladePipelines {
                 color_targets,
                 multisample_state: gpu::MultisampleState::default(),
             }),
+            #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+            yuv: gpu.create_render_pipeline(gpu::RenderPipelineDesc {
+                name: "yuv",
+                data_layouts: &[&ShaderYuvData::layout()],
+                vertex: shader.at("vs_yuv"),
+                vertex_fetches: &[],
+                primitive: gpu::PrimitiveState {
+                    topology: gpu::PrimitiveTopology::TriangleStrip,
+                    ..Default::default()
+                },
+                depth_stencil: None,
+                fragment: Some(shader.at("fs_yuv")),
+                color_targets,
+                multisample_state: gpu::MultisampleState::default(),
+            }),
         }
     }
 
@@ -312,6 +346,8 @@ impl BladePipelines {
         gpu.destroy_render_pipeline(&mut self.mono_sprites);
         gpu.destroy_render_pipeline(&mut self.poly_sprites);
         gpu.destroy_render_pipeline(&mut self.surfaces);
+        #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+        gpu.destroy_render_pipeline(&mut self.yuv);
     }
 }
 
@@ -336,6 +372,9 @@ pub struct BladeRenderer {
     atlas_sampler: gpu::Sampler,
     #[cfg(target_os = "macos")]
     core_video_texture_cache: CVMetalTextureCache,
+    /// Plays: video frames' planes on the GPU.
+    #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+    yuv: YuvTextures,
     path_intermediate_texture: gpu::Texture,
     path_intermediate_texture_view: gpu::TextureView,
     path_intermediate_msaa_texture: Option<gpu::Texture>,
@@ -422,6 +461,8 @@ impl BladeRenderer {
             atlas_sampler,
             #[cfg(target_os = "macos")]
             core_video_texture_cache,
+            #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+            yuv: YuvTextures::new(&context.gpu),
             path_intermediate_texture,
             path_intermediate_texture_view,
             path_intermediate_msaa_texture,
@@ -628,6 +669,8 @@ impl BladeRenderer {
         self.instance_belt.destroy(&self.gpu);
         self.gpu.destroy_command_encoder(&mut self.command_encoder);
         self.pipelines.destroy(&self.gpu);
+        #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+        self.yuv.destroy();
         self.gpu.destroy_surface(&mut self.surface);
         self.gpu.destroy_texture(self.path_intermediate_texture);
         self.gpu
@@ -643,6 +686,8 @@ impl BladeRenderer {
     pub fn draw(&mut self, scene: &Scene) {
         self.command_encoder.start();
         self.atlas.before_frame(&mut self.command_encoder);
+        #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+        self.yuv.prepare(&scene.surfaces, &mut self.command_encoder);
 
         let frame = {
             profiling::scope!("acquire frame");
@@ -813,6 +858,31 @@ impl BladeRenderer {
                     );
                     encoder.draw(0, 4, 0, sprites.len() as u32);
                 }
+                // Plays: video frames' planes, converted as they are drawn.
+                #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+                PrimitiveBatch::Surfaces(surfaces) => {
+                    let mut encoder = pass.with(&self.pipelines.yuv);
+                    for surface in surfaces {
+                        let Some([t_yuv_y, t_yuv_cb, t_yuv_cr]) =
+                            self.yuv.views(surface.frame.id())
+                        else {
+                            continue;
+                        };
+                        encoder.bind(
+                            0,
+                            &ShaderYuvData {
+                                globals,
+                                yuv_params: YuvParams::new(surface),
+                                t_yuv_y,
+                                t_yuv_cb,
+                                t_yuv_cr,
+                                s_yuv: self.atlas_sampler,
+                            },
+                        );
+                        encoder.draw(0, 4, 0, 1);
+                    }
+                }
+                #[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
                 PrimitiveBatch::Surfaces(surfaces) => {
                     let mut _encoder = pass.with(&self.pipelines.surfaces);
 
@@ -914,6 +984,9 @@ impl BladeRenderer {
         self.atlas.after_frame(&sync_point);
 
         self.wait_for_gpu();
+        // Plays: after the frame before is done, so frames only it drew are.
+        #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+        self.yuv.after_frame(&sync_point);
         self.last_sync_point = Some(sync_point);
     }
 }

@@ -3,6 +3,9 @@ mod apple_compat;
 mod blade_atlas;
 mod blade_context;
 mod blade_renderer;
+// Plays: video frames converted on the GPU.
+#[cfg(any(target_os = "linux", target_os = "freebsd"))]
+mod blade_yuv;
 
 #[cfg(target_os = "macos")]
 pub(crate) use apple_compat::*;

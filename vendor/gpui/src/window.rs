@@ -3256,6 +3256,34 @@ impl Window {
         });
     }
 
+    /// Plays: paint a video frame's planes, converted to RGB with `gamma`
+    /// as they are drawn (see PLAYS.md), showing the part of it `content`
+    /// picks, turned or mirrored as it says, in `bounds`.
+    #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+    pub fn paint_yuv_frame(
+        &mut self,
+        bounds: Bounds<Pixels>,
+        frame: crate::YuvFrame,
+        gamma: f32,
+        content: ContentTransform,
+    ) {
+        use crate::PaintSurface;
+
+        self.invalidator.debug_assert_paint();
+
+        let scale_factor = self.scale_factor();
+        let bounds = bounds.scale(scale_factor);
+        let content_mask = self.content_mask().scale(scale_factor);
+        self.next_frame.scene.insert_primitive(PaintSurface {
+            order: 0,
+            bounds,
+            content_mask,
+            frame,
+            gamma,
+            content,
+        });
+    }
+
     /// Removes an image from the sprite atlas.
     pub fn drop_image(&mut self, data: Arc<RenderImage>) -> Result<()> {
         for frame_index in 0..data.frame_count() {

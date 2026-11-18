@@ -121,6 +121,11 @@ fn picture(frame: Picture, framing: Option<Framing>, cover: bool) -> AnyElement 
                 Picture::Surface(surface) => {
                     window.paint_surface_with_content(shown, surface.for_drawing(), content);
                 }
+                #[cfg(not(target_os = "macos"))]
+                Picture::Yuv(yuv) => {
+                    let gamma = crate::media::picture::gamma(yuv.hdr);
+                    window.paint_yuv_frame(shown, yuv.frame, gamma, content);
+                }
             }
         },
     )

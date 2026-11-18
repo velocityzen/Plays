@@ -1,7 +1,8 @@
 # gpui 0.2.2, patched for Plays
 
 This is gpui 0.2.2 from crates.io, without its examples, with HDR video on
-macOS, turned and cropped pictures, and a few small fixes. Plays uses it through `[patch.crates-io]` in its
+macOS, video frames converted on the GPU on Linux, turned and cropped
+pictures, and a few small fixes. Plays uses it through `[patch.crates-io]` in its
 Cargo.toml. Everything Plays changed is marked "Plays" in the code.
 
 ## What changed
@@ -95,12 +96,43 @@ them; `TextSystem::rasterize_line_glyph` (`src/text_system.rs`) rasterizes
 one at a scale factor as `Window::paint_glyph` or `paint_emoji` would, into
 a `GlyphRaster` of coverage (or BGRA for emoji) and where it goes.
 
+Video frames as Y'CbCr planes on Linux (`src/yuv_frame.rs`, `src/scene.rs`,
+`src/window.rs`, `src/platform/blade/blade_yuv.rs`, `blade_renderer.rs`
+and `shaders.wgsl`):
+
+- A `YuvFrame` holds a frame's 4:2:0 planes as the decoder left them: Y,
+  then Cb and Cr apart (`yuv420p`) or interleaved (`nv12`, `p010`), 8 or
+  16 bits a sample, tightly packed, with a `YuvColor`: the matrix from
+  samples to R'G'B' (the YCbCr matrix, range and where 10 bits sit in 16),
+  the one from the video's primaries to sRGB's, the transfer (SDR, PQ or
+  HLG), and where its chroma samples sit. Each frame gets an id.
+- `Window::paint_yuv_frame` paints one, with a gamma and a
+  `ContentTransform`; on Linux `PaintSurface` carries the frame and gamma
+  instead of a `CVPixelBuffer`.
+- Before the frame's render pass, the blade renderer copies each frame not
+  yet on the GPU into textures of its own (`YuvTextures`), once per frame
+  id, from an upload belt in a transfer pass. A frame not drawn in a frame
+  gives its textures back once the GPU is done with it, to be reused for
+  the next frames of the same size; spares beyond those in use (or 12) are
+  destroyed.
+- blade has no 16-bit unorm formats, so 16-bit samples go up as their two
+  bytes in `Rg8Unorm` (or `Rgba8Unorm` for interleaved Cb and Cr), and
+  `fs_yuv` filters them bilinearly itself, putting the bytes back together
+  first. 8-bit ones use the sampler.
+- `fs_yuv` samples chroma where the frame says its samples sit (in line
+  with the even columns for most video, rather than between them), applies
+  the matrix, then for HDR decodes PQ or HLG to light, converts BT.2020 to
+  sRGB primaries, tone maps it to SDR with reference white (203 nits) on
+  SDR white, and encodes it as sRGB, with the same math as Plays'
+  `src/media/hdr.rs`. Last comes the gamma, `signal^(1/gamma)`. The
+  swapchain isn't sRGB, so the encoded values are written as they are.
+
 `src/taffy.rs`: two float literals are typed as `f32`, which newer Rust
 warns about otherwise.
 
 The tone mapping matches Plays' `src/media/hdr.rs`, and the Dolby Vision
 reshaping its `src/media/dovi.rs`, which do the same on the CPU for software
-decoding and Linux.
+decoding on macOS, and for Dolby Vision on Linux.
 
 ## Updating gpui
 

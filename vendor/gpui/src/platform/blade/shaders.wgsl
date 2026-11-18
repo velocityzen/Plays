@@ -1391,3 +1391,181 @@ fn fs_surface(input: SurfaceVarying) -> @location(0) vec4<f32> {
 
     return ycbcr_to_RGB * y_cb_cr;
 }
+
+// --- Plays: video frames' planes, converted as they are drawn (see PLAYS.md) --- //
+
+// Matches YuvParams in blade_yuv.rs.
+struct YuvParams {
+    bounds: Bounds,
+    content_mask: Bounds,
+    // ContentTransform's origin and across, then its down.
+    content_origin_across: vec4<f32>,
+    content_down: vec4<f32>,
+    // Columns from samples (y, cb, cr, 1) to nonlinear R'G'B'.
+    ycbcr_to_rgb: mat4x4<f32>,
+    // Columns from the video's linear RGB to sRGB's.
+    to_srgb_primaries: mat4x4<f32>,
+    // 0 for SDR, 1 for PQ, 2 for HLG.
+    transfer: u32,
+    gamma: f32,
+    // Whether Cb and Cr are planes of their own, rather than one.
+    planar: u32,
+    // Whether samples are 16 bits, two bytes of a texel each.
+    wide: u32,
+    // Where the first Cb and Cr samples sit, in luma samples from the
+    // top-left corner (xy).
+    chroma_siting: vec4<f32>,
+}
+
+var<uniform> yuv_params: YuvParams;
+var t_yuv_y: texture_2d<f32>;
+var t_yuv_cb: texture_2d<f32>;
+var t_yuv_cr: texture_2d<f32>;
+var s_yuv: sampler;
+
+struct YuvVarying {
+    @builtin(position) position: vec4<f32>,
+    @location(0) texture_position: vec2<f32>,
+    @location(3) clip_distances: vec4<f32>,
+}
+
+@vertex
+fn vs_yuv(@builtin(vertex_index) vertex_id: u32) -> YuvVarying {
+    let unit_vertex = vec2<f32>(f32(vertex_id & 1u), 0.5 * f32(vertex_id & 2u));
+    let content = ContentTransform(
+        yuv_params.content_origin_across.xy,
+        yuv_params.content_origin_across.zw,
+        yuv_params.content_down.xy,
+    );
+    var out = YuvVarying();
+    out.position = to_device_position(unit_vertex, yuv_params.bounds);
+    out.texture_position = content_position(unit_vertex, content);
+    out.clip_distances = distance_from_clip_rect(unit_vertex, yuv_params.bounds, yuv_params.content_mask);
+    return out;
+}
+
+// A little-endian 16-bit sample from its two bytes, as a fraction of 65535.
+fn yuv_wide_sample(bytes: vec2<f32>) -> f32 {
+    return (bytes.y * 65280.0 + bytes.x * 255.0) / 65535.0;
+}
+
+// The 16-bit samples in a texel: one in red and green, a second in blue and
+// alpha.
+fn yuv_wide_texel(t: texture_2d<f32>, position: vec2<i32>) -> vec2<f32> {
+    let bytes = textureLoad(t, position, 0);
+    return vec2<f32>(yuv_wide_sample(bytes.rg), yuv_wide_sample(bytes.ba));
+}
+
+// Bilinear filtering by hand: filtering the bytes apart would blend high and
+// low bytes.
+fn yuv_sample_wide(t: texture_2d<f32>, position: vec2<f32>) -> vec2<f32> {
+    let size = vec2<i32>(textureDimensions(t, 0));
+    let texel = position * vec2<f32>(size) - 0.5;
+    let base = floor(texel);
+    let f = texel - base;
+    let last = size - vec2<i32>(1);
+    let p0 = clamp(vec2<i32>(base), vec2<i32>(0), last);
+    let p1 = clamp(vec2<i32>(base) + vec2<i32>(1), vec2<i32>(0), last);
+    let top = mix(yuv_wide_texel(t, p0), yuv_wide_texel(t, vec2<i32>(p1.x, p0.y)), f.x);
+    let bottom = mix(yuv_wide_texel(t, vec2<i32>(p0.x, p1.y)), yuv_wide_texel(t, p1), f.x);
+    return mix(top, bottom, f.y);
+}
+
+// A plane's samples at `position`: the first, or Cb and Cr interleaved.
+fn yuv_sample(t: texture_2d<f32>, position: vec2<f32>) -> vec2<f32> {
+    if (yuv_params.wide != 0u) {
+        return yuv_sample_wide(t, position);
+    }
+    return textureSampleLevel(t, s_yuv, position, 0.0).rg;
+}
+
+// Where `position` falls in a chroma plane, whose samples sit at
+// chroma_siting + 2k in luma samples, rather than at the middle of each
+// 2x2 block of them.
+fn yuv_chroma_position(position: vec2<f32>, chroma: texture_2d<f32>) -> vec2<f32> {
+    let luma = position * vec2<f32>(textureDimensions(t_yuv_y, 0));
+    let texel = (luma - yuv_params.chroma_siting.xy) * 0.5 + 0.5;
+    return texel / vec2<f32>(textureDimensions(chroma, 0));
+}
+
+// Gamma, which bends the encoded signal (Plays' apply_gamma).
+fn yuv_apply_gamma(signal: vec3<f32>, gamma: f32) -> vec3<f32> {
+    if (gamma == 1.0) {
+        return signal;
+    }
+    return sign(signal) * pow(abs(signal), vec3<f32>(1.0 / gamma));
+}
+
+// HDR to an SDR screen: the same math as Plays' src/media/hdr.rs.
+
+const YUV_REFERENCE_WHITE_NITS: f32 = 203.0;
+const YUV_HLG_PEAK_NITS: f32 = 1000.0;
+const YUV_HLG_GAMMA: f32 = 1.2;
+const YUV_TONE_KNEE: f32 = 0.75;
+
+fn yuv_pq_to_nits(signal: vec3<f32>) -> vec3<f32> {
+    let m1 = 2610.0 / 16384.0;
+    let m2 = 2523.0 / 4096.0 * 128.0;
+    let c1 = 3424.0 / 4096.0;
+    let c2 = 2413.0 / 4096.0 * 32.0;
+    let c3 = 2392.0 / 4096.0 * 32.0;
+    let p = pow(signal, vec3<f32>(1.0 / m2));
+    return 10000.0 * pow(max(p - c1, vec3<f32>(0.0)) / (c2 - c3 * p), vec3<f32>(1.0 / m1));
+}
+
+fn yuv_hlg_to_nits(signal: vec3<f32>) -> vec3<f32> {
+    let a = 0.17883277;
+    let b = 1.0 - 4.0 * a;
+    let c = 0.5599107;
+    let scene = select((exp((signal - c) / a) + b) / 12.0, signal * signal / 3.0, signal <= vec3<f32>(0.5));
+    let luma = dot(scene, vec3<f32>(0.2627, 0.6780, 0.0593));
+    return YUV_HLG_PEAK_NITS * pow(max(luma, 0.0), YUV_HLG_GAMMA - 1.0) * scene;
+}
+
+// The brightest channel eases toward SDR white past the knee, and the others
+// scale with it.
+fn yuv_tone_map(rgb: vec3<f32>) -> vec3<f32> {
+    let peak = max(rgb.r, max(rgb.g, rgb.b));
+    if (peak <= YUV_TONE_KNEE) {
+        return rgb;
+    }
+    let room = 1.0 - YUV_TONE_KNEE;
+    let curve = YUV_TONE_KNEE + room * (1.0 - exp(-(peak - YUV_TONE_KNEE) / room));
+    return rgb * (curve / peak);
+}
+
+fn yuv_srgb_encode(linear: vec3<f32>) -> vec3<f32> {
+    return select(1.055 * pow(linear, vec3<f32>(1.0 / 2.4)) - 0.055, 12.92 * linear, linear <= vec3<f32>(0.0031308));
+}
+
+@fragment
+fn fs_yuv(input: YuvVarying) -> @location(0) vec4<f32> {
+    if (any(input.clip_distances < vec4<f32>(0.0))) {
+        return vec4<f32>(0.0);
+    }
+    let position = input.texture_position;
+    let y = yuv_sample(t_yuv_y, position).x;
+    let chroma = yuv_chroma_position(position, t_yuv_cb);
+    var cb_cr: vec2<f32>;
+    if (yuv_params.planar != 0u) {
+        cb_cr = vec2<f32>(yuv_sample(t_yuv_cb, chroma).x, yuv_sample(t_yuv_cr, chroma).x);
+    } else {
+        cb_cr = yuv_sample(t_yuv_cb, chroma);
+    }
+    let signal = saturate((yuv_params.ycbcr_to_rgb * vec4<f32>(y, cb_cr, 1.0)).rgb);
+
+    var encoded: vec3<f32>;
+    if (yuv_params.transfer == 0u) {
+        encoded = signal;
+    } else {
+        var light: vec3<f32>;
+        if (yuv_params.transfer == 1u) {
+            light = yuv_pq_to_nits(signal) / YUV_REFERENCE_WHITE_NITS;
+        } else {
+            light = yuv_hlg_to_nits(signal) / YUV_REFERENCE_WHITE_NITS;
+        }
+        let rgb = (yuv_params.to_srgb_primaries * vec4<f32>(light, 0.0)).rgb;
+        encoded = yuv_srgb_encode(saturate(yuv_tone_map(rgb)));
+    }
+    return blend_color(vec4<f32>(yuv_apply_gamma(encoded, yuv_params.gamma), 1.0), 1.0);
+}

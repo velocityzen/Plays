@@ -707,8 +707,14 @@ pub(crate) struct PaintSurface {
     pub content_mask: ContentMask<ScaledPixels>,
     #[cfg(target_os = "macos")]
     pub image_buffer: core_video::pixel_buffer::CVPixelBuffer,
+    /// Plays: a video frame's planes, which the Linux renderer converts.
+    #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+    pub frame: crate::YuvFrame,
+    /// Plays: the gamma the frame is drawn with (see PLAYS.md).
+    #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+    pub gamma: f32,
     /// Plays: the part of the surface shown, and turned or mirrored how.
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "linux", target_os = "freebsd"))]
     pub content: ContentTransform,
 }
 

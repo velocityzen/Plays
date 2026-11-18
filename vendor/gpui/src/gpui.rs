@@ -45,6 +45,8 @@ mod text_system;
 mod util;
 mod view;
 mod window;
+// Plays: video frames the Linux renderer converts itself.
+mod yuv_frame;
 
 #[cfg(doc)]
 pub mod _ownership_and_data_flow;
@@ -106,6 +108,7 @@ pub use util::smol_timeout;
 pub use util::{FutureExt, Timeout, arc_cow::ArcCow};
 pub use view::*;
 pub use window::*;
+pub use yuv_frame::*;
 
 use std::{any::Any, borrow::BorrowMut, future::Future};
 use taffy::TaffyLayoutEngine;

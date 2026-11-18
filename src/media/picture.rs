@@ -9,6 +9,8 @@ use gpui::{ImageId, RenderImage};
 
 #[cfg(target_os = "macos")]
 pub use super::videotoolbox::Surface;
+#[cfg(not(target_os = "macos"))]
+pub use super::yuv::YuvPicture;
 
 /// A decoded picture, ready to draw.
 #[derive(Clone)]
@@ -19,6 +21,10 @@ pub enum Picture {
     /// A hardware-decoded frame that stays in GPU memory and is drawn as is.
     #[cfg(target_os = "macos")]
     Surface(Surface),
+    /// A frame's Y'CbCr planes, which gpui uploads and converts on the GPU
+    /// as it draws them, with the gamma then.
+    #[cfg(not(target_os = "macos"))]
+    Yuv(YuvPicture),
 }
 
 /// Identifies a picture, to tell whether it is the one that was drawn.
@@ -27,6 +33,8 @@ pub enum PictureId {
     Image(ImageId),
     #[cfg(target_os = "macos")]
     Surface(u64),
+    #[cfg(not(target_os = "macos"))]
+    Yuv(u64),
 }
 
 impl Picture {
@@ -39,6 +47,8 @@ impl Picture {
             }
             #[cfg(target_os = "macos")]
             Picture::Surface(surface) => surface.size(),
+            #[cfg(not(target_os = "macos"))]
+            Picture::Yuv(yuv) => yuv.size(),
         }
     }
 
@@ -47,6 +57,8 @@ impl Picture {
             Picture::Image(image) => PictureId::Image(image.id),
             #[cfg(target_os = "macos")]
             Picture::Surface(surface) => PictureId::Surface(surface.id()),
+            #[cfg(not(target_os = "macos"))]
+            Picture::Yuv(yuv) => PictureId::Yuv(yuv.frame.id()),
         }
     }
 }
@@ -59,8 +71,8 @@ static GAMMA: [AtomicU32; 2] = [
 ];
 
 /// Set the gamma of SDR and of HDR video (Dolby Vision included). Decoders
-/// use it for every picture they convert from then on; surfaces carry it
-/// to the GPU when drawn.
+/// use it for every picture they convert from then on; surfaces and planes
+/// carry it to the GPU when drawn.
 pub fn set_gamma(sdr: f32, hdr: f32) {
     GAMMA[0].store(sdr.to_bits(), Ordering::Relaxed);
     GAMMA[1].store(hdr.to_bits(), Ordering::Relaxed);

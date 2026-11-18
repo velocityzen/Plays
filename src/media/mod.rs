@@ -19,6 +19,9 @@ mod tests;
 pub mod tracks;
 #[cfg(target_os = "macos")]
 mod videotoolbox;
+// Its math is tested on macOS too, where frames are surfaces instead.
+#[cfg(any(not(target_os = "macos"), test))]
+pub mod yuv;
 
 pub use audio::Mixer;
 pub use orientation::Orientation;

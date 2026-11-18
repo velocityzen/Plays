@@ -6,11 +6,13 @@
 //! doesn't stall playback. The decode thread turns those packets into a small
 //! queue of display-ready video frames and keeps the player's audio source
 //! topped up with resampled stereo `f32`. Frames are BGRA images, except on
-//! macOS with hardware decoding, where they stay on the GPU (`videotoolbox`).
-//! HDR frames that become images are tone mapped for an SDR screen (`hdr`),
-//! Dolby Vision ones reshaped first (`dovi`). Subtitles are decoded into
-//! cues as soon as they are read (`subtitles`), or, from a subtitle file
-//! beside the video, a little ahead of the playhead (`external`).
+//! macOS with hardware decoding, where they stay on the GPU (`videotoolbox`),
+//! and on Linux, where most are handed over as their Y'CbCr planes for the
+//! GPU to convert (`yuv`). HDR frames that become images are tone mapped for
+//! an SDR screen (`hdr`), Dolby Vision ones reshaped first (`dovi`).
+//! Subtitles are decoded into cues as soon as they are read (`subtitles`),
+//! or, from a subtitle file beside the video, a little ahead of the playhead
+//! (`external`).
 //! It only decodes while an output queue has room, so memory stays bounded
 //! however much is read ahead. One video, one audio and one subtitle track
 //! play at a time; another can be picked while playing.
@@ -46,6 +48,8 @@ use super::subtitles::{Cue, CueQueue, SubtitleDecoder};
 use super::tracks::{Track, TrackKind};
 #[cfg(target_os = "macos")]
 use super::videotoolbox;
+#[cfg(not(target_os = "macos"))]
+use super::yuv::YuvConverter;
 
 /// Decoded video kept ahead of the playhead, by memory.
 const VIDEO_QUEUE_BYTES: usize = 32 * 1024 * 1024;
@@ -1110,6 +1114,9 @@ struct VideoDecoder {
     /// that failed, after which frames are copied to memory instead.
     #[cfg(target_os = "macos")]
     surfaces: Option<Result<videotoolbox::Converter, ()>>,
+    /// Hands frames to gpui as their planes, for the GPU to convert.
+    #[cfg(not(target_os = "macos"))]
+    planes: YuvConverter,
     errors: u32,
     next_pts: f64,
     finished: bool,
@@ -1175,6 +1182,8 @@ impl VideoDecoder {
             reported: None,
             #[cfg(target_os = "macos")]
             surfaces: None,
+            #[cfg(not(target_os = "macos"))]
+            planes: YuvConverter::default(),
             errors: 0,
             next_pts: 0.0,
             finished: false,
@@ -1333,6 +1342,14 @@ impl VideoDecoder {
         } else {
             &self.decoded
         };
+        #[cfg(not(target_os = "macos"))]
+        if gpu_conversion() {
+            match self.planes.convert(frame, self.max_short_side) {
+                Some(Ok(planes)) => return Some(Picture::Yuv(planes)),
+                Some(Err(err)) => log::warn!("handing the frame to the GPU failed: {err:#}"),
+                None => {}
+            }
+        }
         convert(&mut self.scaler, self.max_short_side, frame)
             .inspect_err(|err| log::warn!("video conversion failed: {err:#}"))
             .ok()
@@ -1377,6 +1394,15 @@ impl VideoDecoder {
             .inspect_err(|err| log::warn!("cover art conversion failed: {err:#}"))
             .ok()
     }
+}
+
+/// Whether frames go to gpui as their planes, for the GPU to convert:
+/// unless `PLAYS_GPU_CONVERSION=0`, which converts them on the CPU, as
+/// before, to compare the two.
+#[cfg(not(target_os = "macos"))]
+fn gpu_conversion() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("PLAYS_GPU_CONVERSION").is_none_or(|v| v != "0"))
 }
 
 /// Convert a decoded frame to a BGRA image gpui can draw.
