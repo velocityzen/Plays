@@ -453,6 +453,13 @@ pub mod settings {
     pub const HOTKEYS_COLOR: u32 = 0x5e5ce6;
     pub const APPEARANCE_COLOR: u32 = 0x8e8e93;
     pub const ABOUT_COLOR: u32 = 0x30b0c7;
+    /// The settings file's badge, at the foot of the sidebar.
+    pub const FILE_COLOR: u32 = 0x636366;
+    /// The settings file's menu, and how far above its row it opens.
+    pub const FILE_MENU_WIDTH: Pixels = px(280.);
+    pub const FILE_MENU_GAP: Pixels = px(4.);
+    /// The chevron on the settings file's row.
+    pub const FILE_CHEVRON: Pixels = px(12.);
     /// The pane's title bar, in line with the traffic lights on macOS.
     pub const TITLE_HEIGHT: Pixels = px(42.);
     /// A slider with its value next to it, and the value's width.

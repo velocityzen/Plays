@@ -23,6 +23,7 @@ icons!(
     "chevron-up-down",
     "close",
     "display",
+    "file",
     "info",
     "keyboard",
     "link",

@@ -80,7 +80,9 @@ GPU-accelerated UI framework.
   a background box, on the picture or anywhere in the tile, height), with a
   live preview, where screenshots go and what they are like, the keys for
   every shortcut, grid columns, controls
-  visibility, file names. Saved as JSON in the user config dir.
+  visibility, file names. Saved as JSON in the user config dir; Settings
+  File, at the foot of the sidebar, opens its folder, exports a copy, or
+  imports settings from one.
 
 ## Building
 
@@ -397,7 +399,7 @@ last window quits.
 - `src/ui/settings/`: the Settings window. Each pane (Playback, Audio,
   Video, Subtitles, Screenshots, Hotkeys, Appearance, About) is a file of its own with its
   name and icon for the sidebar; `form` has the cards, rows and sliders they
-  are made of. About shows the version and the credits, each of which opens
+  are made of, and `file` the settings file's menu at the sidebar's foot. About shows the version and the credits, each of which opens
   to its license.
 - `src/ui/workspace/`: a window, one per window, a file per part: opening
   files, folders and streams (`opening`), the tiles and moving one to its

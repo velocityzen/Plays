@@ -4,6 +4,7 @@
 mod about;
 mod appearance;
 mod audio;
+mod file;
 mod form;
 mod hotkeys;
 mod playback;
@@ -91,6 +92,8 @@ pub struct SettingsView {
     font_menu: subtitles::FontMenu,
     /// Whether the menu of audio outputs is open.
     device_menu: bool,
+    /// Whether the settings file's menu is open.
+    file_menu: bool,
     recording: hotkeys::Recording,
     /// The credit in About whose license shows.
     license: Option<SharedString>,
@@ -144,6 +147,7 @@ impl SettingsView {
             drags: HashMap::new(),
             font_menu: subtitles::FontMenu::default(),
             device_menu: false,
+            file_menu: false,
             recording: hotkeys::Recording::default(),
             license: None,
         }
@@ -155,6 +159,7 @@ impl SettingsView {
         self.drags.entry(id).or_default().clone()
     }
 
+    /// The panes, and the settings file at the foot.
     fn render_sidebar(&self, theme: &Theme, cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .flex_none()
@@ -170,6 +175,7 @@ impl SettingsView {
             } else {
                 SIDEBAR_TOP
             })
+            .pb_2p5()
             .bg(theme.tile)
             .border_r_1()
             .border_color(theme.border)
@@ -199,6 +205,8 @@ impl SettingsView {
                     .child(Badge::icon(pane.icon(), rgb(pane.color())))
                     .child(pane.name())
             }))
+            .child(div().flex_1())
+            .child(file::file_menu(self, theme, cx))
     }
 }
 
@@ -206,9 +214,6 @@ impl Render for SettingsView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = Theme::get(window, cx);
         let settings = cx.global::<Settings>().clone();
-        let path_hint = Settings::path()
-            .map(|p| format!("Saved to {}", p.display()))
-            .unwrap_or_else(|| "Settings can't be saved on this system".into());
         let index = self.pane;
         let pane = PANES[index];
         let content = pane.content(self, &settings, &theme, window, cx);
@@ -253,20 +258,11 @@ impl Render for SettingsView {
                     .flex_none()
                     .flex()
                     .items_center()
-                    .justify_between()
-                    .gap_3()
+                    .justify_end()
                     .px_5()
                     .py_3()
                     .border_t_1()
                     .border_color(theme.border)
-                    .child(
-                        div()
-                            .min_w_0()
-                            .truncate()
-                            .text_xs()
-                            .text_color(theme.text_muted)
-                            .child(path_hint),
-                    )
                     .child(
                         Button::new("reset", "Reset to defaults").on_click(|_, _, cx| {
                             update_settings(cx, true, |s| *s = Settings::default())

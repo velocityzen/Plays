@@ -387,15 +387,30 @@ impl Settings {
         let result = path
             .parent()
             .map_or(Ok(()), fs::create_dir_all)
-            .and_then(|()| {
-                fs::write(
-                    &path,
-                    serde_json::to_string_pretty(self).unwrap_or_default(),
-                )
-            });
+            .and_then(|()| fs::write(&path, self.to_json()));
         if let Err(err) = result {
             log::warn!("could not save settings to {}: {err}", path.display());
         }
+    }
+
+    /// The settings as their file holds them.
+    pub fn to_json(&self) -> String {
+        serde_json::to_string_pretty(self).unwrap_or_default()
+    }
+
+    /// Settings from a file someone picked, such as one exported: a JSON
+    /// object with some of the settings in it, and the defaults for the
+    /// rest. One with none of them in it is some other file.
+    pub fn import(text: &str) -> anyhow::Result<Self> {
+        let value: serde_json::Value = serde_json::from_str(text)?;
+        let known = serde_json::to_value(Self::default())?;
+        let (Some(fields), Some(known)) = (value.as_object(), known.as_object()) else {
+            anyhow::bail!("It isn't a Plays settings file.");
+        };
+        if !fields.keys().any(|key| known.contains_key(key)) {
+            anyhow::bail!("It isn't a Plays settings file.");
+        }
+        Ok(serde_json::from_value(value)?)
     }
 
     /// Gamma for SDR and HDR video, within `GAMMA_RANGE` whatever the file
@@ -421,6 +436,31 @@ impl Settings {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn exported_settings_import_as_they_were() {
+        let settings = Settings {
+            master_volume: 0.25,
+            theme: ThemeMode::Dark,
+            ..Settings::default()
+        };
+        let imported = Settings::import(&settings.to_json()).unwrap();
+        assert_eq!(imported, settings);
+    }
+
+    #[test]
+    fn imports_take_the_defaults_for_what_they_leave_out() {
+        let imported = Settings::import(r#"{ "master_volume": 0.5 }"#).unwrap();
+        assert_eq!(imported.master_volume, 0.5);
+        assert_eq!(imported.theme, Settings::default().theme);
+    }
+
+    #[test]
+    fn other_files_dont_import() {
+        assert!(Settings::import("not json").is_err());
+        assert!(Settings::import("[1, 2]").is_err());
+        assert!(Settings::import(r#"{ "name": "package", "version": "1.0" }"#).is_err());
+    }
 
     #[test]
     fn missing_fields_fall_back_to_defaults() {
