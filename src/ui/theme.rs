@@ -272,6 +272,9 @@ pub mod motion {
     pub const OSD_FADE: Duration = Duration::from_millis(200);
     /// How long the track reel takes to roll to the track picked.
     pub const REEL_ROLL: Duration = Duration::from_millis(220);
+    /// How long the mouse can rest before a playing tile's header and
+    /// controls fade (and the pointer hides), as if it had left the window.
+    pub const MOUSE_IDLE: Duration = Duration::from_millis(2500);
     /// How much of the audio level meter's reading is kept each frame as
     /// the sound gets quieter; it rises at once.
     pub const LEVEL_FALLOFF: f32 = 0.88;

@@ -21,8 +21,8 @@ use std::time::Instant;
 
 use gpui::prelude::*;
 use gpui::{
-    Bounds, ClickEvent, Context, Div, EventEmitter, MouseButton, Pixels, SharedString, Task,
-    Window, black, div,
+    Bounds, ClickEvent, Context, CursorStyle, Div, EventEmitter, MouseButton, Pixels, SharedString,
+    Task, Window, black, div,
 };
 
 pub use graveyard::Graveyard;
@@ -90,8 +90,12 @@ pub struct PlayerView {
     /// In its window's top-left corner, where the macOS traffic lights are.
     pub top_left: bool,
     /// The controls show only while the mouse is over the tile, which needs
-    /// the mouse in the window.
+    /// the mouse in the window, and not resting (`mouse_idle`) unless it is
+    /// on the header or controls.
     pub mouse_in_window: bool,
+    pub mouse_idle: bool,
+    over_header: bool,
+    over_controls: bool,
 }
 
 impl EventEmitter<PlayerEvent> for PlayerView {}
@@ -139,6 +143,9 @@ impl PlayerView {
             alone: true,
             top_left: false,
             mouse_in_window: true,
+            mouse_idle: false,
+            over_header: false,
+            over_controls: false,
         }
     }
 
@@ -326,6 +333,12 @@ impl PlayerView {
             cx.emit(PlayerEvent::ToggleMaximize);
         }
     }
+
+    /// Whether the mouse is on the header or the controls, which keeps them
+    /// showing while it rests there.
+    pub fn over_bars(&self) -> bool {
+        self.over_header || self.over_controls
+    }
 }
 
 /// Whether the header and controls show: always while pinned, otherwise
@@ -383,12 +396,15 @@ impl Render for PlayerView {
             || self.tracks_open
             || !self.player.is_playing()
             || self.player.error().is_some();
+        // A resting mouse counts as gone, unless it rests on the bars; and
+        // the pointer hides over the picture until it moves.
+        let mouse_in_window = self.mouse_in_window && (!self.mouse_idle || self.over_bars());
+        let hide_pointer = self.mouse_in_window && self.mouse_idle && !self.over_bars() && !pinned;
         let live = info.as_ref().is_some_and(|i| i.live);
         // A stream that has started and then stalls; opening has its own message.
         let stalled = self.player.is_buffering()
             && self.player.is_network()
             && (has_video || info.as_ref().is_some_and(|i| !i.has_video));
-        let mouse_in_window = self.mouse_in_window;
         let reveal = Reveal {
             pinned,
             mouse_in_window,
@@ -402,6 +418,7 @@ impl Render for PlayerView {
         div()
             .id("player")
             .group(reveal.group.clone())
+            .when(hide_pointer, |this| this.cursor(CursorStyle::None))
             .relative()
             .size_full()
             .overflow_hidden()
@@ -464,7 +481,23 @@ impl Render for PlayerView {
             // toggles playback), but they can't `occlude()` either: an occluding
             // child stops its parent counting as hovered, which would hide the
             // bars as soon as the pointer moved onto them.
-            .child(header.on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation()))
-            .child(controls.on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation()))
+            .child(
+                header
+                    .id("header")
+                    .on_hover(cx.listener(|this, hovered: &bool, _, cx| {
+                        this.over_header = *hovered;
+                        cx.notify();
+                    }))
+                    .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation()),
+            )
+            .child(
+                controls
+                    .id("controls")
+                    .on_hover(cx.listener(|this, hovered: &bool, _, cx| {
+                        this.over_controls = *hovered;
+                        cx.notify();
+                    }))
+                    .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation()),
+            )
     }
 }

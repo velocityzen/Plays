@@ -30,7 +30,7 @@ impl Workspace {
     /// The one in the top-left corner is under the traffic lights.
     pub(super) fn tiles_changed(&mut self, cx: &mut Context<Self>) {
         let alone = self.tiles.len() == 1;
-        let mouse_in_window = self.mouse_inside;
+        let (mouse_in_window, mouse_idle) = (self.mouse_inside, self.mouse_idle);
         let top_left = self
             .maximized
             .or_else(|| self.tiles.first().map(|t| t.view.entity_id()));
@@ -42,11 +42,13 @@ impl Workspace {
                 if view.alone != alone
                     || view.top_left != is_top_left
                     || view.mouse_in_window != mouse_in_window
+                    || view.mouse_idle != mouse_idle
                     || view.active != is_active
                 {
                     view.alone = alone;
                     view.top_left = is_top_left;
                     view.mouse_in_window = mouse_in_window;
+                    view.mouse_idle = mouse_idle;
                     view.active = is_active;
                     cx.notify();
                 }

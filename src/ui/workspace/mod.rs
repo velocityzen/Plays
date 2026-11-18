@@ -9,7 +9,7 @@ mod opening;
 mod tiles;
 mod toolbar;
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use gpui::prelude::*;
@@ -55,8 +55,13 @@ pub struct Workspace {
     /// buttons while `url_form_open`.
     url_form: Entity<UrlForm>,
     url_form_open: bool,
-    /// The mouse is over the window, so the controls and traffic lights show.
+    /// The mouse is over the window, so the controls and traffic lights show,
+    /// unless it has been resting there (`mouse_idle`).
     mouse_inside: bool,
+    mouse_idle: bool,
+    mouse_moved_at: Instant,
+    /// A timer is waiting to see whether the mouse rests.
+    watching_idle: bool,
     traffic_lights_shown: bool,
     _settings_subscription: Subscription,
     _activation_subscription: Subscription,
@@ -147,6 +152,9 @@ impl Workspace {
             url_form,
             url_form_open: false,
             mouse_inside: true,
+            mouse_idle: false,
+            mouse_moved_at: Instant::now(),
+            watching_idle: false,
             traffic_lights_shown: true,
             gamma: cx.global::<Settings>().gamma(),
             _settings_subscription: settings_subscription,

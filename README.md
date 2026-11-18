@@ -56,6 +56,9 @@ GPU-accelerated UI framework.
   keeps coming through Plays, and the subtitles showing are drawn into the
   picture. Closing the window, or its button to go back, brings the video
   back to the tile.
+- While a tile plays, its header and controls fade when the mouse leaves
+  it, or rests on it for a couple of seconds; the pointer hides then too,
+  until the mouse moves. Resting on the header or controls keeps them.
 - Shortcuts go to the tile last clicked: play/pause, seek, frame step,
   volume, tracks, subtitle size and height, audio and subtitle delay,
   rotation, flips, aspect ratio, crop, screenshots, full screen.
@@ -63,7 +66,8 @@ GPU-accelerated UI framework.
   window, as does the menu bar (a toolbar on Linux).
 - On macOS, windows show just the video, edge to edge, with the traffic
   lights over it like other video players. While something plays, they fade
-  out with the controls when the mouse leaves the window. Colors are macOS's
+  out with the controls when the mouse leaves the window or rests in it.
+  Colors are macOS's
   own, in light and dark, with your accent color.
 - Audio from every file is mixed into one output: the system's default, or
   a device picked in Settings, remembered from run to run. A/V sync follows
@@ -398,7 +402,8 @@ last window quits.
 - `src/ui/workspace/`: a window, one per window, a file per part: opening
   files, folders and streams (`opening`), the tiles and moving one to its
   own window (`tiles`), the grid, the empty window's ring (`empty`), the
-  toolbar, the mouse and traffic lights (`mouse`), and what the Playback
+  toolbar, the mouse coming, going and resting, and the traffic lights
+  (`mouse`), and what the Playback
   commands do to every tile (`commands`).
 - `src/ui/components/`: the reusable components, one `RenderOnce`
   component per file, each in three sizes (small, medium, large) with its
