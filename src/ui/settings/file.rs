@@ -1,13 +1,14 @@
-//! The settings file, at the foot of the sidebar: where it is, and a menu
-//! to show it in its folder, save a copy of it somewhere else, or take the
-//! settings from such a copy.
+//! The settings file, at the foot of the sidebar, and its menu: show it in
+//! its folder, save a copy of it somewhere else, take the settings from
+//! such a copy, or put every setting back as Plays came.
 
 use std::fs;
 use std::path::Path;
 
 use gpui::prelude::*;
 use gpui::{
-    AnyElement, App, Context, Corner, PathPromptOptions, PromptLevel, Window, div, point, px, rgb,
+    AnyElement, App, Context, Corner, PathPromptOptions, PromptButton, PromptLevel, Window, div,
+    point, px, rgb,
 };
 
 use super::SettingsView;
@@ -67,26 +68,12 @@ pub(super) fn file_menu(
         .into_any_element()
 }
 
-/// Where the file is, and what can be done with it.
+/// What can be done with the file.
 fn menu(theme: &Theme, cx: &mut Context<SettingsView>) -> impl IntoElement {
-    let path = Settings::path();
-    let location = path.as_ref().map_or_else(
-        || "Settings can't be saved on this system".to_string(),
-        |path| path.display().to_string(),
-    );
     Panel::new().occlude().w(FILE_MENU_WIDTH).child(
         div()
             .py_1()
-            .child(
-                div()
-                    .px_3()
-                    .pt_1()
-                    .pb_1p5()
-                    .text_xs()
-                    .text_color(theme.text_muted)
-                    .child(location),
-            )
-            .when_some(path, |this, path| {
+            .when_some(Settings::path(), |this, path| {
                 this.child(
                     MenuRow::new("settings-file-show", "Open Folder")
                         .mx_1()
@@ -112,6 +99,16 @@ fn menu(theme: &Theme, cx: &mut Context<SettingsView>) -> impl IntoElement {
                     .on_click(cx.listener(|view, _, window, cx| {
                         view.file_menu = false;
                         import(window, cx);
+                        cx.notify();
+                    })),
+            )
+            .child(div().mx_2().my_1().border_t_1().border_color(theme.border))
+            .child(
+                MenuRow::new("settings-file-reset", "Reset to Defaults…")
+                    .mx_1()
+                    .on_click(cx.listener(|view, _, window, cx| {
+                        view.file_menu = false;
+                        reset(window, cx);
                         cx.notify();
                     })),
             ),
@@ -192,6 +189,24 @@ fn import(window: &mut Window, cx: &mut Context<SettingsView>) {
             ),
         })
         .ok();
+    })
+    .detach();
+}
+
+/// Put every setting back as Plays came, once the user says so.
+fn reset(window: &mut Window, cx: &mut Context<SettingsView>) {
+    let answer = window.prompt(
+        PromptLevel::Warning,
+        "Reset all settings to their defaults?",
+        Some("Every setting, shortcuts and folders too, goes back to how Plays came."),
+        &[PromptButton::ok("Reset"), PromptButton::cancel("Cancel")],
+        cx,
+    );
+    cx.spawn(async move |_, cx| {
+        if answer.await == Ok(0) {
+            cx.update(|cx| update_settings(cx, true, |s| *s = Settings::default()))
+                .ok();
+        }
     })
     .detach();
 }

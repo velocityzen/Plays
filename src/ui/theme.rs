@@ -503,7 +503,7 @@ pub mod settings {
     /// The settings file's badge, at the foot of the sidebar.
     pub const FILE_COLOR: u32 = 0x636366;
     /// The settings file's menu, and how far above its row it opens.
-    pub const FILE_MENU_WIDTH: Pixels = px(280.);
+    pub const FILE_MENU_WIDTH: Pixels = px(200.);
     pub const FILE_MENU_GAP: Pixels = px(4.);
     /// The chevron on the settings file's row.
     pub const FILE_CHEVRON: Pixels = px(12.);

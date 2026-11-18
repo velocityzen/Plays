@@ -22,7 +22,7 @@ use gpui::{
     TitlebarOptions, Window, WindowBounds, WindowHandle, WindowOptions, div, rgb, white,
 };
 
-use super::components::{Badge, Button};
+use super::components::Badge;
 use super::theme::layout::{SETTINGS_WINDOW_MIN_SIZE, SETTINGS_WINDOW_SIZE, TRAFFIC_LIGHTS};
 use super::theme::settings::{
     SIDEBAR_ROW_HEIGHT, SIDEBAR_TOP, SIDEBAR_TOP_MAC, SIDEBAR_WIDTH, TITLE_HEIGHT,
@@ -30,7 +30,6 @@ use super::theme::settings::{
 use super::theme::text::TextStyle;
 use super::theme::{Theme, radius};
 use crate::settings::Settings;
-use form::update_settings;
 
 /// A pane of the Settings window, and its entry in the sidebar.
 trait Pane {
@@ -252,22 +251,6 @@ impl Render for SettingsView {
                     .pt_2()
                     .pb_5()
                     .children(content),
-            )
-            .child(
-                div()
-                    .flex_none()
-                    .flex()
-                    .items_center()
-                    .justify_end()
-                    .px_5()
-                    .py_3()
-                    .border_t_1()
-                    .border_color(theme.border)
-                    .child(
-                        Button::new("reset", "Reset to defaults").on_click(|_, _, cx| {
-                            update_settings(cx, true, |s| *s = Settings::default())
-                        }),
-                    ),
             );
 
         div()

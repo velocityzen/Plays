@@ -95,8 +95,9 @@ GPU-accelerated UI framework.
   live preview, where screenshots go and what they are like, the keys for
   every shortcut, grid columns, controls
   visibility, file names. Saved as JSON in the user config dir; Settings
-  File, at the foot of the sidebar, opens its folder, exports a copy, or
-  imports settings from one.
+  File, at the foot of the sidebar, opens its folder, exports a copy,
+  imports settings from one, or resets every setting to its default
+  (after asking).
 
 ## Building
 
