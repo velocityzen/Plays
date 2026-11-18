@@ -228,7 +228,7 @@ last window quits.
   start), how they are saved in Settings and shown (`⌃⌘F`, `Ctrl+Alt+F`).
   The keymap is rebuilt from them whenever they change, and the menus show
   them.
-- `src/ui/`: gpui views (`workspace`, one per window, and `open_url`) and a
+- `src/ui/`: gpui views (`open_url`, the player and Settings below) and a
   text field based on gpui's input example.
   `subtitles` paints a tile's cues where `object_fit` puts the picture, in
   the style from Settings; the settings' Subtitles pane draws its preview
@@ -241,6 +241,11 @@ last window quits.
   Video, Subtitles, Hotkeys, Appearance) is a file of its own with its name
   and icon for the sidebar; `form` has the cards, rows and sliders they are
   made of.
+- `src/ui/workspace/`: a window, one per window, a file per part: opening
+  files, folders and streams (`opening`), the tiles and moving one to its
+  own window (`tiles`), the grid, the empty window's ring (`empty`), the
+  toolbar, the mouse and traffic lights (`mouse`), and what the Playback
+  commands do to every tile (`commands`).
 - `src/ui/components/`: the reusable controls (icon, buttons, switch,
   segmented control, slider) and a floating panel to put anything in,
   either a menu's or a note's over the picture, one `RenderOnce` component
