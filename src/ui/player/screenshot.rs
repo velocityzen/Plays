@@ -7,6 +7,7 @@ use gpui::{AppContext as _, Context, Window};
 
 use super::PlayerView;
 use crate::settings::Settings;
+use crate::ui::overlay;
 use crate::ui::screenshot::{self, Request};
 use crate::ui::theme::Theme;
 
@@ -49,7 +50,7 @@ impl PlayerView {
         let style = settings.subtitles.clone();
         let font = Theme::get(window, cx).font;
         let text = self.framing().map_or_else(Vec::new, |framing| {
-            screenshot::text_overlay(&cues, &style, &font, framing.size, window)
+            overlay::text_overlay(&cues, &style, &font, framing.size, window)
         });
         let request = Request {
             source: self.player.source().clone(),

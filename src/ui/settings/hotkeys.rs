@@ -67,7 +67,7 @@ impl Pane for HotkeysPane {
         for kind in Group::ALL {
             let rows = Command::ALL
                 .into_iter()
-                .filter(|command| command.group() == kind)
+                .filter(|command| command.group() == kind && command.available())
                 .map(|command| {
                     let note = view
                         .recording

@@ -102,6 +102,9 @@ pub(super) fn register(cx: &mut App) {
     cx.on_action(|_: &ToggleFullScreen, cx| {
         with_workspace(cx, |_, window, _| window.toggle_fullscreen())
     });
+    cx.on_action(|_: &TogglePictureInPicture, cx| {
+        with_active_in_window(cx, |p, window, cx| p.toggle_picture_in_picture(window, cx))
+    });
     cx.on_action(|_: &ExitFullScreen, cx| {
         with_workspace(cx, |_, window, _| {
             if window.is_fullscreen() {

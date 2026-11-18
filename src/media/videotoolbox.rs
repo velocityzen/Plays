@@ -86,6 +86,7 @@ pub struct Surface {
     buffer: CVPixelBuffer,
     id: u64,
     hdr: bool,
+    dolby_vision: bool,
 }
 
 // SAFETY: CoreVideo buffers are reference counted thread-safely, and nothing
@@ -108,10 +109,15 @@ impl Surface {
         )
     }
 
-    /// The buffer as it is, to read back in tests.
-    #[cfg(test)]
+    /// The buffer as it is, tagged with its colors: for Picture in
+    /// Picture, and to read back in tests.
     pub fn buffer(&self) -> &CVPixelBuffer {
         &self.buffer
+    }
+
+    /// Dolby Vision, which only gpui's own shader shows right.
+    pub fn is_dolby_vision(&self) -> bool {
+        self.dolby_vision
     }
 
     /// The buffer to draw now, with the current gamma for its kind of video
@@ -216,6 +222,7 @@ impl Converter {
         }
         let reshaping = Reshaping::of(frame);
         let hdr = reshaping.is_some() || Transfer::of(frame).is_some();
+        let dolby_vision = reshaping.is_some();
         let format = if reshaping.is_some() {
             // SAFETY: the frame keeps the buffer alive.
             let format = unsafe { CVPixelBufferGetPixelFormatType(source) };
@@ -254,14 +261,15 @@ impl Converter {
         }
         if let Some(reshaping) = reshaping {
             tag_dolby_vision(&destination, &reshaping);
-        } else if hdr {
-            tag_hdr(source, &destination);
+        } else {
+            tag_converted(source, &destination, hdr);
         }
         static NEXT_ID: AtomicU64 = AtomicU64::new(0);
         Ok(Surface {
             buffer: destination,
             id: NEXT_ID.fetch_add(1, Ordering::Relaxed),
             hdr,
+            dolby_vision,
         })
     }
 
@@ -322,12 +330,16 @@ impl Drop for Converter {
     }
 }
 
-/// Give an HDR surface the source's color tags (primaries, transfer function
-/// and HDR metadata), which gpui's HDR shader reads, with the matrix the
-/// session converted to.
-fn tag_hdr(source: CVPixelBufferRef, destination: &CVPixelBuffer) {
+/// Give a surface the source's color tags (primaries, transfer function and
+/// HDR metadata), with the matrix the session converted to. gpui's HDR
+/// shader reads them; Picture in Picture shows any surface by them.
+fn tag_converted(source: CVPixelBufferRef, destination: &CVPixelBuffer, hdr: bool) {
     let matrix_key = CFString::from(CVImageBufferKeys::YCbCrMatrix);
-    let matrix = CFString::from(CVImageBufferYCbCrMatrix::ITU_R_2020);
+    let matrix = CFString::from(if hdr {
+        CVImageBufferYCbCrMatrix::ITU_R_2020
+    } else {
+        CVImageBufferYCbCrMatrix::ITU_R_601_4
+    });
     // SAFETY: both buffers are valid, and nothing reads the destination yet.
     unsafe {
         CVBufferPropagateAttachments(source, destination.as_concrete_TypeRef());

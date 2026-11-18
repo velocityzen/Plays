@@ -9,6 +9,7 @@ mod controls;
 mod graveyard;
 mod header;
 mod osd;
+mod pip;
 mod screenshot;
 mod sync;
 mod tracks;
@@ -19,7 +20,10 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use gpui::prelude::*;
-use gpui::{ClickEvent, Context, Div, EventEmitter, MouseButton, SharedString, Window, black, div};
+use gpui::{
+    Bounds, ClickEvent, Context, Div, EventEmitter, MouseButton, Pixels, SharedString, Window,
+    black, div,
+};
 
 pub use graveyard::Graveyard;
 
@@ -70,6 +74,11 @@ pub struct PlayerView {
     hidden_subtitles: Option<usize>,
     /// How the picture is turned, reshaped and cropped.
     adjustments: Adjustments,
+    /// Where the picture was last drawn in the window, for Picture in
+    /// Picture to open from.
+    picture_bounds: Rc<Cell<Option<Bounds<Pixels>>>>,
+    /// Picture in Picture, while it is open or opening.
+    pip: Option<pip::PipSession>,
     /// Shortcuts go to this tile: the one last clicked.
     pub active: bool,
     pub maximized: bool,
@@ -121,6 +130,8 @@ impl PlayerView {
             osd: None,
             hidden_subtitles: None,
             adjustments: Adjustments::default(),
+            picture_bounds: Rc::default(),
+            pip: None,
             active: false,
             maximized: false,
             alone: true,
@@ -243,6 +254,8 @@ impl PlayerView {
     /// Move this tile to another window, whose frames are released through
     /// `graveyard`.
     pub fn move_to_window(&mut self, graveyard: Graveyard) {
+        // Picture in Picture's layer is in the old window.
+        self.close_picture_in_picture();
         // Pictures drawn so far are in the old window's texture atlas, so the
         // old window releases them; the new one uploads its own copies.
         let cover = self.player.cover().map(Picture::Image);
@@ -258,6 +271,7 @@ impl PlayerView {
 
     /// Hand every frame this tile drew to the graveyard; call before dropping it.
     pub fn release_pictures(&mut self) {
+        self.close_picture_in_picture();
         for picture in self.player.take_pictures() {
             self.graveyard.bury(picture);
         }
@@ -392,20 +406,24 @@ impl Render for PlayerView {
                     .on_click(cx.listener(Self::on_surface_click))
                     .child(self.render_content(&theme, framing, cover)),
             )
-            .when(!self.cues.is_empty(), |this| {
-                this.child(subtitles::overlay(
-                    self.cues.clone(),
-                    subtitles::Layout {
-                        framing,
-                        cover,
-                        controls_height: controls::height(live),
-                        controls_pinned: pinned,
-                        mouse_in_window,
-                        font: theme.font.clone(),
-                        style: subtitle_style,
-                    },
-                ))
-            })
+            // In Picture in Picture, the subtitles are in its window.
+            .when(
+                !self.cues.is_empty() && !self.in_picture_in_picture(),
+                |this| {
+                    this.child(subtitles::overlay(
+                        self.cues.clone(),
+                        subtitles::Layout {
+                            framing,
+                            cover,
+                            controls_height: controls::height(live),
+                            controls_pinned: pinned,
+                            mouse_in_window,
+                            font: theme.font.clone(),
+                            style: subtitle_style,
+                        },
+                    ))
+                },
+            )
             .when(stalled, |this| {
                 this.child(
                     div()

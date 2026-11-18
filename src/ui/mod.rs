@@ -1,6 +1,8 @@
 pub mod components;
 pub mod framing;
 pub mod open_url;
+mod overlay;
+pub mod pip;
 pub mod player;
 pub mod screenshot;
 pub mod settings;

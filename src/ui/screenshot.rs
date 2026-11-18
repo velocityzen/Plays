@@ -5,33 +5,25 @@
 //! The frame is decoded again on its own (`media::still`), since what the
 //! tile has may be scaled down or on the GPU. Bitmap subtitles go onto it
 //! where the stream places them, before the picture is turned and cropped,
-//! as on screen. Text subtitles are laid out as on a tile showing just the
-//! picture, `TEXT_HEIGHT` pixels tall, then drawn at the picture's size
-//! with the glyphs gpui draws on screen. HDR video is tone mapped, or kept
+//! as on screen; text subtitles after, as `ui::overlay` draws them. HDR video is tone mapped, or kept
 //! in a 16-bit PNG whose cICP chunk says it is BT.2020 PQ or HLG; subtitles
 //! go over it at HDR reference white.
 
-use std::collections::HashMap;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufWriter, Write as _};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::{Context as _, Result};
-use gpui::{
-    Bounds, FontId, GlyphId, GlyphRaster, Hsla, LineGlyph, Pixels, RenderImage, Rgba, SharedString,
-    TextAlign, TextSystem, Window, point, px, size,
-};
+use gpui::{ContentTransform, RenderImage, TextSystem};
 
 use super::framing::{Adjustments, Framing};
-use super::subtitles::{self, TextMark, TextPlace};
-use super::theme::subtitles::TEXT_HEIGHT;
+use super::overlay::{self, Paint, Target, bilinear};
 use crate::media::hdr::{self, Transfer};
 use crate::media::picture::rows;
 use crate::media::still::{self, Still};
-use crate::media::subtitles::CueContent;
 use crate::media::{Orientation, Source};
-use crate::settings::{ScreenshotFormat, ScreenshotSettings, SubtitleStyle};
+use crate::settings::{ScreenshotFormat, ScreenshotSettings};
 
 /// What to save, gathered on the UI thread.
 pub struct Request {
@@ -54,67 +46,6 @@ pub struct Request {
     pub folder: PathBuf,
 }
 
-/// Something text subtitles draw.
-pub enum Paint {
-    /// A rounded box behind a row of text.
-    Box {
-        bounds: Bounds<Pixels>,
-        radius: Pixels,
-        color: Hsla,
-    },
-    Glyph(LineGlyph),
-}
-
-/// Lay out the text of `cues` for a picture shown at `picture` size, as
-/// on a tile showing just that picture, `TEXT_HEIGHT` pixels tall.
-pub fn text_overlay(
-    cues: &[Arc<CueContent>],
-    style: &SubtitleStyle,
-    font: &SharedString,
-    picture: (f32, f32),
-    window: &mut Window,
-) -> Vec<Paint> {
-    let (width, height) = picture;
-    if width <= 0.0 || height <= 0.0 || cues.iter().all(|cue| cue.texts.is_empty()) {
-        return Vec::new();
-    }
-    let bounds = Bounds {
-        origin: point(px(0.), px(0.)),
-        size: size(px(TEXT_HEIGHT * width / height), px(TEXT_HEIGHT)),
-    };
-    let style = style.clamped();
-    let place = TextPlace {
-        visible: bounds,
-        area: bounds,
-        controls_top: None,
-    };
-    let family = subtitles::family(&style, font);
-    let mut paints = Vec::new();
-    for mark in subtitles::text_marks(cues, &style, &family, &place, window) {
-        match mark {
-            TextMark::Background {
-                bounds,
-                radius,
-                color,
-            } => paints.push(Paint::Box {
-                bounds,
-                radius,
-                color,
-            }),
-            TextMark::Line {
-                line,
-                area,
-                line_height,
-            } => paints.extend(
-                line.glyphs(area.origin, line_height, TextAlign::Center, Some(area))
-                    .into_iter()
-                    .map(Paint::Glyph),
-            ),
-        }
-    }
-    paints
-}
-
 /// Decode the frame, draw it as it shows and save it. The file written.
 pub fn take(request: Request) -> Result<PathBuf> {
     let settings = &request.settings;
@@ -126,7 +57,7 @@ pub fn take(request: Request) -> Result<PathBuf> {
     )?;
     let mut canvas = Canvas::from(still);
     for (image, rect) in &request.bitmaps {
-        canvas.draw_image(image, *rect);
+        overlay::draw_image(&mut canvas, image, *rect, ContentTransform::IDENTITY);
     }
     let framing = Framing::new(
         (canvas.width as u32, canvas.height as u32),
@@ -135,7 +66,7 @@ pub fn take(request: Request) -> Result<PathBuf> {
     )
     .context("the picture has no size")?;
     let mut canvas = canvas.framed(&framing);
-    canvas.draw_text(&request.text, &request.text_system);
+    overlay::draw_text(&mut canvas, &request.text, &request.text_system);
 
     let bytes = canvas.encode(settings)?;
     let name = file_name(&request.source.name(), request.position);
@@ -223,66 +154,6 @@ impl From<Still> for Canvas {
 }
 
 impl Canvas {
-    /// An sRGB color in this canvas's signal.
-    fn signal(&self, srgb: [f32; 3]) -> [f32; 3] {
-        match self.hdr {
-            None => srgb,
-            Some(transfer) => hdr::sdr_to_hdr(srgb, transfer),
-        }
-    }
-
-    /// Lay `signal` over the pixel at `x`, `y` with `alpha`.
-    fn blend(&mut self, x: usize, y: usize, signal: [f32; 3], alpha: f32) {
-        if alpha <= 0.0 {
-            return;
-        }
-        let alpha = alpha.min(1.0);
-        let pixel = &mut self.pixels[y * self.width + x];
-        for (sample, signal) in pixel.iter_mut().zip(signal) {
-            let base = f32::from(*sample) / 65535.0;
-            let mixed = signal * alpha + base * (1.0 - alpha);
-            *sample = (mixed.clamp(0.0, 1.0) * 65535.0).round() as u16;
-        }
-    }
-
-    /// Draw a BGRA image (straight alpha) stretched over `rect`, in
-    /// fractions of the canvas.
-    fn draw_image(&mut self, image: &RenderImage, rect: [f32; 4]) {
-        let (Some(bytes), image_size) = (image.as_bytes(0), image.size(0)) else {
-            return;
-        };
-        let (image_width, image_height) =
-            (image_size.width.0 as usize, image_size.height.0 as usize);
-        if image_width == 0 || image_height == 0 || bytes.len() < image_width * image_height * 4 {
-            return;
-        }
-        let [x, y, width, height] = rect;
-        let (left, top) = (x * self.width as f32, y * self.height as f32);
-        let (width, height) = (width * self.width as f32, height * self.height as f32);
-        if width <= 0.0 || height <= 0.0 {
-            return;
-        }
-        let columns = span(left, width, self.width);
-        for row in span(top, height, self.height) {
-            let v = (row as f32 + 0.5 - top) / height * image_height as f32 - 0.5;
-            for column in columns.clone() {
-                let u = (column as f32 + 0.5 - left) / width * image_width as f32 - 0.5;
-                let [b, g, r, a] = bilinear(u, v, image_width, image_height, |x, y| {
-                    // Premultiplied while blending neighbours, so clear
-                    // pixels' colors don't bleed in.
-                    let pixel = &bytes[(y * image_width + x) * 4..][..4];
-                    let a = f32::from(pixel[3]) / 255.0;
-                    let c = |i: usize| f32::from(pixel[i]) / 255.0 * a;
-                    [c(0), c(1), c(2), a]
-                });
-                if a > 0.0 {
-                    let signal = self.signal([r / a, g / a, b / a]);
-                    self.blend(column, row, signal, a);
-                }
-            }
-        }
-    }
-
     /// The picture as it shows: turned, reshaped and cropped.
     fn framed(self, framing: &Framing) -> Self {
         let content = framing.content();
@@ -319,84 +190,6 @@ impl Canvas {
             height,
             pixels,
             hdr: self.hdr,
-        }
-    }
-
-    /// Draw text subtitles laid out `TEXT_HEIGHT` tall, scaled to the canvas.
-    fn draw_text(&mut self, paints: &[Paint], text_system: &TextSystem) {
-        let scale = self.height as f32 / TEXT_HEIGHT;
-        let mut glyphs = GlyphCache::default();
-        for paint in paints {
-            match paint {
-                Paint::Box {
-                    bounds,
-                    radius,
-                    color,
-                } => self.fill_rounded(*bounds, f32::from(*radius), *color, scale),
-                Paint::Glyph(glyph) => {
-                    if let Some(raster) = glyphs.get(glyph, scale, text_system) {
-                        self.draw_glyph(&raster, glyph);
-                    }
-                }
-            }
-        }
-    }
-
-    /// A rounded box, given at `1 / scale` of the canvas's size.
-    fn fill_rounded(&mut self, bounds: Bounds<Pixels>, radius: f32, color: Hsla, scale: f32) {
-        let Rgba { r, g, b, a } = color.into();
-        let signal = self.signal([r, g, b]);
-        let (left, top) = (
-            f32::from(bounds.left()) * scale,
-            f32::from(bounds.top()) * scale,
-        );
-        let (width, height) = (
-            f32::from(bounds.size.width) * scale,
-            f32::from(bounds.size.height) * scale,
-        );
-        let (half_width, half_height) = (width / 2.0, height / 2.0);
-        let radius = (radius * scale).min(half_width).min(half_height);
-        let (center_x, center_y) = (left + half_width, top + half_height);
-        let columns = span(left, width, self.width);
-        for y in span(top, height, self.height) {
-            for x in columns.clone() {
-                // How far the pixel's center is outside the box's edge.
-                let qx = (x as f32 + 0.5 - center_x).abs() - (half_width - radius);
-                let qy = (y as f32 + 0.5 - center_y).abs() - (half_height - radius);
-                let outside = qx.max(0.0).hypot(qy.max(0.0)) + qx.max(qy).min(0.0) - radius;
-                let coverage = (0.5 - outside).clamp(0.0, 1.0);
-                self.blend(x, y, signal, a * coverage);
-            }
-        }
-    }
-
-    fn draw_glyph(&mut self, raster: &GlyphRaster, glyph: &LineGlyph) {
-        let (width, height) = (raster.size.width.0 as usize, raster.size.height.0 as usize);
-        let Rgba { r, g, b, a } = glyph.color.into();
-        let color = self.signal([r, g, b]);
-        let bytes_per_pixel = if glyph.is_emoji { 4 } else { 1 };
-        if raster.bytes.len() < width * height * bytes_per_pixel {
-            return;
-        }
-        for row in 0..height {
-            let Some(y) = offset(raster.origin.y.0, row, self.height) else {
-                continue;
-            };
-            for column in 0..width {
-                let Some(x) = offset(raster.origin.x.0, column, self.width) else {
-                    continue;
-                };
-                let i = (row * width + column) * bytes_per_pixel;
-                if glyph.is_emoji {
-                    let [blue, green, red, alpha] =
-                        [0, 1, 2, 3].map(|c| f32::from(raster.bytes[i + c]) / 255.0);
-                    let signal = self.signal([red, green, blue]);
-                    self.blend(x, y, signal, alpha);
-                } else {
-                    let coverage = f32::from(raster.bytes[i]) / 255.0;
-                    self.blend(x, y, color, a * coverage);
-                }
-            }
         }
     }
 
@@ -457,99 +250,38 @@ impl Canvas {
     }
 }
 
-/// The pixels from `start` for `length` that are on a canvas side of
-/// `limit` pixels.
-fn span(start: f32, length: f32, limit: usize) -> std::ops::Range<usize> {
-    let first = start.floor().max(0.0) as usize;
-    let end = ((start + length).ceil().max(0.0) as usize).min(limit);
-    first.min(end)..end
-}
+impl Target for Canvas {
+    fn size(&self) -> (usize, usize) {
+        (self.width, self.height)
+    }
 
-/// `origin + step`, if it is on a canvas side of `limit` pixels.
-fn offset(origin: i32, step: usize, limit: usize) -> Option<usize> {
-    let at = i64::from(origin) + step as i64;
-    usize::try_from(at).ok().filter(|&at| at < limit)
-}
+    /// An sRGB color in this canvas's signal.
+    fn signal(&self, srgb: [f32; 3]) -> [f32; 3] {
+        match self.hdr {
+            None => srgb,
+            Some(transfer) => hdr::sdr_to_hdr(srgb, transfer),
+        }
+    }
 
-/// A picture `width` x `height` read at a point between pixels, `pixel`
-/// giving each pixel; the edges extend outwards.
-fn bilinear<const N: usize>(
-    x: f32,
-    y: f32,
-    width: usize,
-    height: usize,
-    pixel: impl Fn(usize, usize) -> [f32; N],
-) -> [f32; N] {
-    let x = x.clamp(0.0, (width - 1) as f32);
-    let y = y.clamp(0.0, (height - 1) as f32);
-    let (x0, y0) = (x.floor() as usize, y.floor() as usize);
-    let (x1, y1) = ((x0 + 1).min(width - 1), (y0 + 1).min(height - 1));
-    let (fx, fy) = (x - x0 as f32, y - y0 as f32);
-    let [a, b, c, d] = [(x0, y0), (x1, y0), (x0, y1), (x1, y1)].map(|(x, y)| pixel(x, y));
-    std::array::from_fn(|i| {
-        let top = a[i] + (b[i] - a[i]) * fx;
-        let bottom = c[i] + (d[i] - c[i]) * fx;
-        top + (bottom - top) * fy
-    })
-}
-
-/// A glyph at a size, and where it falls within a pixel, in quarters.
-type GlyphKey = (FontId, GlyphId, u32, bool, u8, u8);
-
-/// A glyph's raster, and its offset from the pixel its origin is in.
-type Offset = (i32, i32, GlyphRaster);
-
-/// Glyphs rasterized so far: outlines draw each one several times over.
-#[derive(Default)]
-struct GlyphCache {
-    rasters: HashMap<GlyphKey, Option<Offset>>,
-}
-
-impl GlyphCache {
-    fn get(
-        &mut self,
-        glyph: &LineGlyph,
-        scale: f32,
-        text_system: &TextSystem,
-    ) -> Option<GlyphRaster> {
-        let (x, y) = (
-            f32::from(glyph.origin.x) * scale,
-            f32::from(glyph.origin.y) * scale,
-        );
-        let quarter = |v: f32| (v.fract().abs() * 4.0).floor() as u8;
-        let key = (
-            glyph.font_id,
-            glyph.glyph_id,
-            f32::from(glyph.font_size).to_bits(),
-            glyph.is_emoji,
-            quarter(x),
-            quarter(y),
-        );
-        let (floor_x, floor_y) = (x.floor() as i32, y.floor() as i32);
-        let cached = self.rasters.entry(key).or_insert_with(|| {
-            text_system
-                .rasterize_line_glyph(glyph, scale)
-                .inspect_err(|err| log::debug!("can't rasterize a subtitle glyph: {err:#}"))
-                .ok()
-                .flatten()
-                .map(|raster| {
-                    (
-                        raster.origin.x.0 - floor_x,
-                        raster.origin.y.0 - floor_y,
-                        raster,
-                    )
-                })
-        });
-        let (dx, dy, raster) = cached.as_ref()?;
-        let mut raster = raster.clone();
-        raster.origin.x.0 = floor_x + dx;
-        raster.origin.y.0 = floor_y + dy;
-        Some(raster)
+    /// Lay `signal` over the pixel at `x`, `y` with `alpha`.
+    fn blend(&mut self, x: usize, y: usize, signal: [f32; 3], alpha: f32) {
+        if alpha <= 0.0 {
+            return;
+        }
+        let alpha = alpha.min(1.0);
+        let pixel = &mut self.pixels[y * self.width + x];
+        for (sample, signal) in pixel.iter_mut().zip(signal) {
+            let base = f32::from(*sample) / 65535.0;
+            let mixed = signal * alpha + base * (1.0 - alpha);
+            *sample = (mixed.clamp(0.0, 1.0) * 65535.0).round() as u16;
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use gpui::{Bounds, Hsla, Rgba, point, px, size};
+
     use super::*;
 
     fn canvas(width: usize, height: usize, pixel: impl Fn(usize, usize) -> [u16; 3]) -> Canvas {
@@ -636,7 +368,12 @@ mod tests {
         let image = RenderImage::new(vec![image::Frame::new(
             image::RgbaImage::from_raw(2, 2, pixels.to_vec()).unwrap(),
         )]);
-        picture.draw_image(&image, [0.5, 0.5, 0.5, 0.5]);
+        overlay::draw_image(
+            &mut picture,
+            &image,
+            [0.5, 0.5, 0.5, 0.5],
+            ContentTransform::IDENTITY,
+        );
         let at = |canvas: &Canvas, x: usize, y: usize| canvas.pixels[y * canvas.width + x];
         assert_eq!(at(&picture, 4, 4), [65535; 3]);
         assert_eq!(at(&picture, 7, 7), [0; 3]);
@@ -653,7 +390,7 @@ mod tests {
             b: 0.0,
             a: 0.5,
         });
-        picture.fill_rounded(bounds, 0.0, red, 2.0);
+        overlay::fill_rounded(&mut picture, bounds, 0.0, red, 2.0);
         assert_eq!(at(&picture, 2, 2), [32768, 0, 0]);
         assert_eq!(at(&picture, 5, 5), [32768, 0, 0]);
         assert_eq!(at(&picture, 1, 1), [0; 3]);

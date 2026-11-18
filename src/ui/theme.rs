@@ -426,6 +426,8 @@ pub mod player {
     /// The circle standing in for missing cover art, and its icon.
     pub const NO_COVER_SIZE: Pixels = px(96.);
     pub const NO_COVER_ICON: Pixels = px(40.);
+    /// The icon in a tile whose video is in Picture in Picture.
+    pub const PIP_ICON: Pixels = px(40.);
 }
 
 /// The Settings window.

@@ -1,5 +1,6 @@
 //! The bar over the top of a tile: the file's name and what it is, and
-//! buttons to pop the tile out, expand it and close it.
+//! buttons for Picture in Picture, to pop the tile out, expand it and close
+//! it.
 
 use gpui::prelude::*;
 use gpui::{Context, Div, Window, div, linear_color_stop, linear_gradient};
@@ -7,6 +8,7 @@ use gpui::{Context, Div, Window, div, linear_color_stop, linear_gradient};
 use super::{PlayerEvent, PlayerView, Reveal};
 use crate::media::decoder::MediaInfo;
 use crate::ui::components::Button;
+use crate::ui::pip;
 use crate::ui::theme::layout::TRAFFIC_LIGHTS_WIDTH;
 use crate::ui::theme::overlay;
 
@@ -78,6 +80,16 @@ impl PlayerView {
                         )
                     }),
             )
+            .when(pip::supported() && self.player.frame().is_some(), |this| {
+                this.child(
+                    Button::icon("pip", "pip")
+                        .overlay()
+                        .selected(self.pip.is_some())
+                        .on_click(cx.listener(|this, _, window, cx| {
+                            this.toggle_picture_in_picture(window, cx)
+                        })),
+                )
+            })
             .when(!self.alone, |this| {
                 this.child(
                     Button::icon("pop-out", "pop-out")

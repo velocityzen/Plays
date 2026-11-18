@@ -56,6 +56,7 @@ pub(super) fn set_menus(cx: &mut App) {
             name: "Video".into(),
             items: vec![
                 MenuItem::action("Full Screen", ToggleFullScreen),
+                MenuItem::action("Picture in Picture", TogglePictureInPicture),
                 MenuItem::action("Next Video Track", NextVideoTrack),
                 MenuItem::separator(),
                 MenuItem::action("Rotate Right", RotateRight),

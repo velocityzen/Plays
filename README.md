@@ -50,6 +50,12 @@ GPU-accelerated UI framework.
   and never replace another.
 - Any tile can pop out into a new window, where it keeps playing. Every
   window works the same: drop more files on it and they play side by side.
+- On macOS 12 and later, a tile can play in macOS's own Picture in Picture
+  window, over every app and Space, with its play/pause and skip buttons:
+  `⌃⌘P`, Video → Picture in Picture, or the button on the tile. The sound
+  keeps coming through Plays, and the subtitles showing are drawn into the
+  picture. Closing the window, or its button to go back, brings the video
+  back to the tile.
 - Shortcuts go to the tile last clicked: play/pause, seek, frame step,
   volume, tracks, subtitle size and height, audio and subtitle delay,
   rotation, flips, aspect ratio, crop, screenshots, full screen.
@@ -190,6 +196,7 @@ it again when the dependencies change (`script/bundle-macos` runs it).
 | Picture as the file has it | `⌘0` / `Ctrl+0` |
 | Take a screenshot | `S` |
 | Full screen | `F`, or `⌃⌘F` / `F11`; `Esc` leaves it |
+| Picture in Picture (macOS) | `⌃⌘P` |
 | Play/pause, seek, restart, mute all | `⇧Space`, `⇧←` `⇧→`, `⇧Home`, `⇧M` |
 | Close all | `⌘⇧W` / `Ctrl+Shift+W` |
 | Settings | `⌘,` / `Ctrl+,` |
@@ -356,15 +363,31 @@ last window quits.
   where to sample the frame. `subtitles` paints a tile's cues on the
   picture it frames, in the style from Settings, turning and cropping
   bitmap ones with it; the settings' Subtitles pane draws its preview with
-  the same code. `screenshot` saves a tile's frame: bitmap subtitles laid
-  on it, then turned and cropped on the CPU as `framing` says, then text
-  subtitles laid out by `subtitles` and drawn with the glyphs gpui
-  rasterizes, and written as PNG (with `png`, which can tag HDR) or JPEG.
+  the same code. `overlay` draws subtitles into pixels rather than with
+  gpui: text laid out by `subtitles` as on a tile showing just the picture,
+  drawn with the glyphs gpui rasterizes, and bitmaps stretched where the
+  stream places them. `screenshot` saves a tile's frame: bitmap subtitles
+  laid on it, then turned and cropped on the CPU as `framing` says, then
+  text subtitles, and written as PNG (with `png`, which can tag HDR) or
+  JPEG.
 - `src/ui/player/`: a player's tile, a file per part: what fills it
   (`content`), the header, the controls, the track menu, notes on what
   shortcuts did (`osd`, with the track reel), what shortcuts do to it
   (`commands`, `adjust` for the picture, `sync` for delays and
-  `screenshot`), and the graveyard frames wait in before they are released.
+  `screenshot`; `pip` runs Picture in Picture for it), and the graveyard
+  frames wait in before they are released.
+- `src/ui/pip/` (macOS): Picture in Picture. The tile's frames go, as they
+  are due, to an `AVSampleBufferDisplayLayer` hidden over the tile, which
+  AVKit's `AVPictureInPictureController` shows in the system's window; a
+  delegate of Plays' own answers its buttons. The tile pumps its player on
+  a timer of its own, since gpui stops drawing a covered window. VideoToolbox
+  surfaces go as they are, tagged with their colors (HDR included); other
+  frames are copied into BGRA buffers, and turned or mirrored videos are
+  turned on the GPU. AVKit moves the layer's video into its window at a size
+  and scale of its own rather than fitted to it, so Plays keeps it filling
+  the window. Subtitles can't go over the video there, so while any show,
+  frames are scaled to the window's pixels on the GPU and the subtitles
+  drawn into them (`burn_in`), in the frame's own signal and samples.
 - `src/ui/settings/`: the Settings window. Each pane (Playback, Audio,
   Video, Subtitles, Screenshots, Hotkeys, Appearance, About) is a file of its own with its
   name and icon for the sidebar; `form` has the cards, rows and sliders they
@@ -460,7 +483,14 @@ picture as one saved for SDR. Unit tests check screenshot file names,
 never replacing a file, turning and cropping on the CPU, bitmap subtitles
 and boxes landing where they should, subtitles over HDR at reference
 white, PNGs (8-bit sRGB, or 16-bit with cICP) and JPEGs, and the math
-that turns light back into PQ and HLG signals.
+that turns light back into PQ and HLG signals. Bitmap subtitles on a turned
+picture are sampled turned with it.
+
+Picture in Picture's subtitles: drawn one over another they add up as
+drawn straight onto the picture; over Y'CbCr, luma takes each pixel and
+chroma the average of the four it covers, in 8-bit full range and 10-bit
+video range samples (high in their 16 bits), and over BGRA; over HDR they
+are at reference white.
 
 Stream tests serve the clips from a small HTTP server on localhost:
 HTTP files, HLS (normal and live), a connection that stalls mid-way,
@@ -492,6 +522,11 @@ unreachable hosts, and closing while a connection hangs.
   itself are read about a second ahead with it, so moved earlier than that
   they show late. In a live stream, a new track starts with its next packets
   rather than at the playhead.
+- Picture in Picture is macOS only, from macOS 12. Its window shows the
+  video turned (from macOS 13; before, as decoded) but not reshaped,
+  cropped or with the gamma from Settings, and can't show Dolby Vision
+  profile 5. AVKit doesn't fit the video to its window by itself, so Plays
+  lays out AVKit's own layers there, which a later macOS may change.
 - Screenshots of live streams can't be taken (the frame can't be found
   again). Text subtitles in a screenshot are laid out for the picture
   rather than the tile, so in a small tile, whose text is held to a least

@@ -50,6 +50,7 @@ gpui::actions!(
         TakeScreenshot,
         ToggleFullScreen,
         ExitFullScreen,
+        TogglePictureInPicture,
         PlayPauseAll,
         PlayAll,
         PauseAll,
@@ -104,6 +105,7 @@ pub enum Command {
     TakeScreenshot,
     FullScreen,
     ExitFullScreen,
+    PictureInPicture,
     PlayPauseAll,
     RestartAll,
     SeekForwardAll,
@@ -145,7 +147,7 @@ impl Group {
 }
 
 impl Command {
-    pub const ALL: [Self; 41] = [
+    pub const ALL: [Self; 42] = [
         Self::PlayPause,
         Self::SeekForward,
         Self::SeekBackward,
@@ -182,6 +184,7 @@ impl Command {
         Self::TakeScreenshot,
         Self::FullScreen,
         Self::ExitFullScreen,
+        Self::PictureInPicture,
         Self::PlayPauseAll,
         Self::SeekForwardAll,
         Self::SeekBackwardAll,
@@ -228,6 +231,7 @@ impl Command {
             Self::TakeScreenshot => "take_screenshot",
             Self::FullScreen => "full_screen",
             Self::ExitFullScreen => "exit_full_screen",
+            Self::PictureInPicture => "picture_in_picture",
             Self::PlayPauseAll => "play_pause_all",
             Self::RestartAll => "restart_all",
             Self::SeekForwardAll => "seek_forward_all",
@@ -278,12 +282,19 @@ impl Command {
             Self::TakeScreenshot => "Take screenshot",
             Self::FullScreen => "Full screen",
             Self::ExitFullScreen => "Exit full screen",
+            Self::PictureInPicture => "Picture in Picture",
             Self::PlayPauseAll => "Play/pause all",
             Self::RestartAll => "Restart all",
             Self::SeekForwardAll => "Seek all forward",
             Self::SeekBackwardAll => "Seek all backward",
             Self::MuteAll => "Mute/unmute all",
         }
+    }
+
+    /// Whether this system has what it does: Picture in Picture is
+    /// macOS's.
+    pub fn available(self) -> bool {
+        self != Self::PictureInPicture || cfg!(target_os = "macos")
     }
 
     pub fn group(self) -> Group {
@@ -322,7 +333,7 @@ impl Command {
             | Self::NextCrop
             | Self::ResetPicture
             | Self::TakeScreenshot => Group::Video,
-            Self::FullScreen | Self::ExitFullScreen => Group::Window,
+            Self::FullScreen | Self::ExitFullScreen | Self::PictureInPicture => Group::Window,
             Self::PlayPauseAll
             | Self::RestartAll
             | Self::SeekForwardAll
@@ -369,6 +380,7 @@ impl Command {
             Self::TakeScreenshot => Box::new(TakeScreenshot),
             Self::FullScreen => Box::new(ToggleFullScreen),
             Self::ExitFullScreen => Box::new(ExitFullScreen),
+            Self::PictureInPicture => Box::new(TogglePictureInPicture),
             Self::PlayPauseAll => Box::new(PlayPauseAll),
             Self::RestartAll => Box::new(RestartAll),
             Self::SeekForwardAll => Box::new(SeekForwardAll),
@@ -422,6 +434,9 @@ impl Command {
             Self::FullScreen if mac => &["ctrl-cmd-f", "f"],
             Self::FullScreen => &["f11", "f"],
             Self::ExitFullScreen => &["escape"],
+            Self::PictureInPicture if mac => &["ctrl-cmd-p"],
+            // Picture in Picture is macOS's.
+            Self::PictureInPicture => &[],
             // Every file in the window.
             Self::PlayPauseAll => &["shift-space"],
             Self::RestartAll => &["shift-home"],

@@ -105,6 +105,11 @@ impl Framing {
         fit(bounds, self.size, cover)
     }
 
+    /// How the decoded picture is turned: the file's way, then the viewer's.
+    pub fn orientation(&self) -> Orientation {
+        self.orientation
+    }
+
     /// How to sample the decoded picture to draw it in its place.
     pub fn content(&self) -> ContentTransform {
         sampling(self.orientation, self.kept)

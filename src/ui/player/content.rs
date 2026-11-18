@@ -2,13 +2,21 @@
 //! a line on what is happening (opening, an error).
 
 use gpui::prelude::*;
-use gpui::{AnyElement, ContentTransform, Corners, ObjectFit, SharedString, canvas, div, img};
+use std::cell::Cell;
+use std::rc::Rc;
+
+use gpui::{
+    AnyElement, Bounds, ContentTransform, Corners, ObjectFit, Pixels, SharedString, canvas, div,
+    img,
+};
 
 use super::PlayerView;
 use crate::media::Picture;
 use crate::ui::components::{ComponentSize, Icon, Meter};
 use crate::ui::framing::Framing;
-use crate::ui::theme::player::{COVER_SIZE, ERROR_MAX_WIDTH, NO_COVER_ICON, NO_COVER_SIZE};
+use crate::ui::theme::player::{
+    COVER_SIZE, ERROR_MAX_WIDTH, NO_COVER_ICON, NO_COVER_SIZE, PIP_ICON,
+};
 use crate::ui::theme::{Theme, radius};
 
 impl PlayerView {
@@ -38,8 +46,23 @@ impl PlayerView {
                 .child(div().text_xs().text_color(theme.text_muted).child(error))
                 .into_any_element();
         }
+        if self.in_picture_in_picture() {
+            return div()
+                .flex()
+                .flex_col()
+                .items_center()
+                .gap_2()
+                .child(Icon::new("pip").size(PIP_ICON).color(theme.text_muted))
+                .child(
+                    div()
+                        .text_sm()
+                        .text_color(theme.text_muted)
+                        .child("Playing in Picture in Picture"),
+                )
+                .into_any_element();
+        }
         if let Some(frame) = self.player.frame() {
-            return picture(frame, framing, cover);
+            return picture(frame, framing, cover, self.picture_bounds.clone());
         }
         match self.player.info() {
             Some(info) if !info.has_video => self.render_audio(theme),
@@ -102,8 +125,13 @@ impl PlayerView {
 }
 
 /// The frame, framed as `framing` says (as it is without), fitted in the
-/// tile or covering it.
-fn picture(frame: Picture, framing: Option<Framing>, cover: bool) -> AnyElement {
+/// tile or covering it. Where it goes is kept in `drawn_at`.
+fn picture(
+    frame: Picture,
+    framing: Option<Framing>,
+    cover: bool,
+    drawn_at: Rc<Cell<Option<Bounds<Pixels>>>>,
+) -> AnyElement {
     canvas(
         |_, _, _| {},
         move |bounds, (), window, _| {
@@ -111,6 +139,7 @@ fn picture(frame: Picture, framing: Option<Framing>, cover: bool) -> AnyElement 
                 Some(framing) => (framing.fit(bounds, cover), framing.content()),
                 None => (bounds, ContentTransform::IDENTITY),
             };
+            drawn_at.set(Some(bounds.intersect(&shown)));
             match frame {
                 Picture::Image(image) => {
                     let corners = Corners::default();
