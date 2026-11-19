@@ -640,6 +640,38 @@ own, and what a session says as it goes comes over a channel.
 the network; `pair`, `play` and `tone` pair with a TV, have it play a URL,
 and play a quiet tone on a speaker.
 
+### The Chromecast crate
+
+`crates/chromecast` finds Google Cast devices (Chromecasts, Google TVs,
+Nest speakers and speaker groups) and has one play a URL, then drives it.
+Like the AirPlay crate it knows nothing of Plays, gpui or FFmpeg, blocks on
+the caller's thread or a session's own, and says what happens over a
+channel.
+
+- `browser.rs`, `device.rs`: mDNS for `_googlecast._tcp`; a record's TXT
+  gives the id, name (`fn`), model (`md`), what it does (`ca`: video out,
+  sound out, a group) and what it's showing (`rs`).
+- `channel.rs`, `proto.rs`: TLS to the device (rustls; each device signs
+  its own certificate, so any is taken, though the handshake is checked
+  against it), and on it Chromium's `CastMessage` protobufs, each after its
+  length, carrying JSON.
+- `session.rs`: a cast. It connects to the device, launches the Default
+  Media Receiver (or joins it) and connects to that; requests wait for the
+  answer with their request id. A thread reads everything the device says:
+  it answers pings and pings every five seconds, and passes on media
+  status and volume as events. The cast ends when the device goes away or
+  says nothing for 15 seconds, when the app closes or another one
+  launches, or when another sender plays something else.
+- `media.rs`: what LOAD takes (the URL, its type, buffered or live, a
+  title and duration, WebVTT subtitle tracks, which to show and how they
+  look) and the status read back: idle and why, buffering, playing or
+  paused, with the position and duration.
+- `fake.rs`, with the `fake` feature: a pretend device on this computer,
+  TLS with a certificate made for it.
+
+`cargo run -p chromecast --example chromecast -- list` lists the devices
+on the network; `play` casts a URL to one and says what it does with it.
+
 ## Tests
 
 ```bash
@@ -802,6 +834,20 @@ check SRP against RFC 5054's vectors, both sides of pairing, the encrypted
 frames, TLV8, records and their features, RTP packets and playback info.
 Each has been checked to fail when what it covers is broken.
 
+The Chromecast crate's tests cast to the fake device over TLS: connecting
+launches the Default Media Receiver and connects to it, the heartbeat goes
+both ways and keeps the cast past the silence that would end it; LOAD
+carries the URL, where to start, the subtitle track and its style; play,
+pause, seek, subtitles and volume reach it; its status and volume come as
+events, the end of what plays too; a refused LOAD says so; loading again
+isn't taken for another sender; stopping closes the app without telling of
+it; a speaker takes a cast; and the cast ends when the device goes away or
+stops answering, when the app closes or another launches, and when another
+sender plays something else. Unit tests check the protobuf framing, the
+JSON LOAD sends and the status read back, and records from a Google TV, a
+Nest speaker and a group. Each has been checked to fail when what it
+covers is broken.
+
 ### Smoke runs
 
 Headless windows have no native window behind them, so a bug between
@@ -898,6 +944,9 @@ size, makes `first-open` fail.
   break it. It doesn't take receivers with a password, or AirPlay 1
   speakers that take only encrypted sound. Sound goes uncompressed, which
   a busy Wi-Fi network may not keep up with.
+- The Chromecast crate takes whatever certificate a device offers, not
+  checking it against Google's device certificates, so it can't tell a
+  genuine device from something on the network pretending to be one.
 - Casting: no protocol is wired in yet, so no device is found. While a
   tile casts, delays don't apply, as the device plays the picture and the
   sound; gamma, crop, rotation, flips, aspect ratio and picture subtitles
