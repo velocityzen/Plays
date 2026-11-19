@@ -63,7 +63,7 @@ pub struct Workspace {
     /// Gamma for SDR and HDR video, as last applied to the tiles.
     gamma: [f32; 2],
     maximized: Option<EntityId>,
-    /// The tile last clicked, which shortcuts go to.
+    /// The tile the mouse was last over, or clicked, which shortcuts go to.
     active: Option<EntityId>,
     graveyard: Graveyard,
     open_url: Option<(Entity<OpenUrlDialog>, Subscription)>,

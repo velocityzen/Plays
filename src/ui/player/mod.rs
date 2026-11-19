@@ -23,8 +23,8 @@ use std::time::Instant;
 
 use gpui::prelude::*;
 use gpui::{
-    Bounds, ClickEvent, Context, CursorStyle, Div, EventEmitter, MouseButton, Pixels, SharedString,
-    Task, Window, black, div,
+    Bounds, ClickEvent, Context, CursorStyle, Div, EventEmitter, MouseButton, MouseMoveEvent,
+    Pixels, SharedString, Task, Window, black, div,
 };
 
 pub use graveyard::Graveyard;
@@ -43,7 +43,8 @@ use osd::Osd;
 
 pub enum PlayerEvent {
     Close,
-    /// Clicked: shortcuts go to this tile now.
+    /// The mouse came over it, or it was clicked: shortcuts go to this
+    /// tile now.
     Activate,
     /// Fill the grid with this tile.
     ToggleMaximize,
@@ -83,7 +84,8 @@ pub struct PlayerView {
     picture_bounds: Rc<Cell<Option<Bounds<Pixels>>>>,
     /// Picture in Picture, while it is open or opening.
     pip: Option<pip::PipSession>,
-    /// Shortcuts go to this tile: the one last clicked.
+    /// Shortcuts go to this tile: the one the mouse was last over, or
+    /// clicked.
     pub active: bool,
     pub maximized: bool,
     /// The only tile in its window: there is nowhere to expand it to, and
@@ -442,6 +444,13 @@ impl Render for PlayerView {
             .overflow_hidden()
             .capture_any_mouse_down(cx.listener(|this, _, _, cx| {
                 if !this.active {
+                    cx.emit(PlayerEvent::Activate);
+                }
+            }))
+            // Shortcuts go to the tile the mouse is over, as its controls
+            // show there; not while it drags something of another tile's.
+            .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, _, cx| {
+                if !this.active && event.pressed_button.is_none() {
                     cx.emit(PlayerEvent::Activate);
                 }
             }))

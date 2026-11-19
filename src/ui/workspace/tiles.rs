@@ -138,8 +138,8 @@ impl Workspace {
         self.tiles_changed(cx);
     }
 
-    /// The tile shortcuts go to: the maximized one, else the one last
-    /// clicked, else the first.
+    /// The tile shortcuts go to: the maximized one, else the one the mouse
+    /// was last over (or clicked), else the first.
     pub(super) fn active_view(&self) -> Option<Entity<PlayerView>> {
         let find = |id: EntityId| self.tiles.iter().find(|t| t.view.entity_id() == id);
         self.maximized

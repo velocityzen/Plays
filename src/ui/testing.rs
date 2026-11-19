@@ -79,12 +79,18 @@ pub fn shows(cx: &mut VisualTestContext, selector: &'static str) -> bool {
     cx.debug_bounds(selector).is_some()
 }
 
-/// Click the middle of the element tagged `selector`, the mouse moving
-/// there first, as it does.
-pub fn click(cx: &mut VisualTestContext, selector: &'static str) {
+/// Move the mouse to the middle of the element tagged `selector`.
+pub fn hover(cx: &mut VisualTestContext, selector: &'static str) {
     let at = find(cx, selector).center();
     cx.simulate_mouse_move(at, None, Modifiers::none());
     cx.run_until_parked();
+}
+
+/// Click the middle of the element tagged `selector`, the mouse moving
+/// there first, as it does.
+pub fn click(cx: &mut VisualTestContext, selector: &'static str) {
+    hover(cx, selector);
+    let at = find(cx, selector).center();
     cx.simulate_click(at, Modifiers::none());
 }
 

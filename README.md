@@ -104,11 +104,13 @@ GPU-accelerated UI framework.
   what its frames become, and, as it plays, frames shown a second, frames
   dropped, how far the picture is from the clock, what is queued and how
   far ahead the file or stream is read.
-- Shortcuts go to the tile last clicked: play/pause, seek, frame step,
+- Shortcuts go to the tile the mouse is over, as its controls show there
+  (or the one it was last over, or clicked): play/pause, seek, frame step,
   volume, tracks, subtitle size and height, audio and subtitle delay,
   rotation, flips, aspect ratio, crop, screenshots, full screen.
-  With Shift, play/pause, seek, restart and mute go to every file in the
-  window, as does the menu bar (a toolbar on Linux).
+  With Shift, play/pause, seek, frame step, restart and mute go to every
+  file in the window, and Shift-S syncs them all to that tile; the menu
+  bar (a toolbar on Linux) has them too.
 - On macOS, windows show just the video, edge to edge, with the traffic
   lights over it like other video players. While something plays, they fade
   out with the controls when the mouse leaves the window or rests in it.
@@ -273,8 +275,8 @@ it again when the dependencies change (`script/bundle-macos` runs it).
 | Close the window | `⌥⌘W` / `Ctrl+Alt+W` |
 | Settings | `⌘,` / `Ctrl+,` |
 
-Shortcuts act on the active tile: the one last clicked, or the maximized
-one; those with `⇧` act on every tile in the window. Sync all puts every
+Shortcuts act on the active tile: the one the mouse is over (or was last
+over, or clicked), or the maximized one; those with `⇧` act on every tile in the window. Sync all puts every
 tile where the active one is, playing or paused as it is, so files side
 by side go on together (the active one seeks there too); the frame keys
 with `⇧` then step them all, each by its own frame rate. A short
@@ -927,7 +929,8 @@ would, finding what to click by its debug selector (`tile-0`, a menu row's
 or a button's id), set only in test builds. It draws the window before it
 looks, as what a file says once it opens doesn't draw it again by itself,
 and moves the mouse to what it clicks first. A click picks a tile without pausing it, and
-shortcuts then go to it; a double-click fills the window with a tile, the
+shortcuts then go to it; so does the mouse moving over one, but not while
+it drags (a slider of the tile it came from); a double-click fills the window with a tile, the
 whole area under the toolbar, and another puts the grid back; ⌘W closes the
 tile in front, then the empty window; four tiles sit in two even rows.
 `⇧S` puts every tile where the one clicked is, paused as it is, and

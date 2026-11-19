@@ -5,7 +5,10 @@ mod casting;
 mod casting_to_chromecast;
 mod casting_to_dlna;
 
-use gpui::{AppContext, EntityId, TestAppContext, VisualTestContext, WindowHandle, px, size};
+use gpui::{
+    AppContext, EntityId, Modifiers, MouseButton, TestAppContext, VisualTestContext, WindowHandle,
+    px, size,
+};
 
 use super::{TOOLBAR_SPACE, Workspace};
 use crate::app::ShowOnDisplay;
@@ -14,7 +17,7 @@ use crate::settings::{FloatOnTop, Settings};
 use crate::ui::displays;
 use crate::ui::settings::SettingsView;
 use crate::ui::testing::{
-    self, OPEN_WAIT, click, double_click, find, fixture, press, shows, wait_until,
+    self, OPEN_WAIT, click, double_click, find, fixture, hover, press, shows, wait_until,
 };
 use crate::ui::theme::layout::WINDOW_MIN_SIZE;
 use crate::ui::theme::motion::FIT_POLL;
@@ -226,6 +229,33 @@ fn sync_all_puts_every_tile_where_the_one_in_front_is_and_steps_them_together(
         first < 1.0 && (first - second).abs() < 0.1,
         "together, where it was: {first} and {second}"
     );
+}
+
+#[gpui::test]
+fn shortcuts_go_to_the_tile_the_mouse_is_over(cx: &mut TestAppContext) {
+    let (window, mut cx) = testing::start(cx);
+    open(window, &mut cx, &["clip.mp4", "clip-ip.mkv"], false);
+    let muted = |cx: &VisualTestContext| {
+        players(window, cx)
+            .iter()
+            .map(|&(_, _, muted)| muted)
+            .collect::<Vec<_>>()
+    };
+
+    hover(&mut cx, "tile-1");
+    press(&mut cx, "m");
+    assert_eq!(muted(&cx), [false, true]);
+
+    hover(&mut cx, "tile-0");
+    press(&mut cx, "m");
+    assert_eq!(muted(&cx), [true, true]);
+
+    // Dragging, as a slider of the tile in front is, doesn't move them.
+    let over = find(&mut cx, "tile-1").center();
+    cx.simulate_mouse_move(over, Some(MouseButton::Left), Modifiers::none());
+    cx.run_until_parked();
+    press(&mut cx, "m");
+    assert_eq!(muted(&cx), [false, true], "still the tile it came from");
 }
 
 #[gpui::test]
