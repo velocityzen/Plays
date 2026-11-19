@@ -53,6 +53,23 @@ pub enum ControlsVisibility {
     OnHover,
 }
 
+/// Whether player windows stay above other apps' windows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FloatOnTop {
+    Off,
+    Always,
+    /// Only a window with something playing in it.
+    WhilePlaying,
+}
+
+impl FloatOnTop {
+    /// `mode` turned on, or off if it already is, as its menu item does.
+    pub fn toggled(self, mode: Self) -> Self {
+        if self == mode { Self::Off } else { mode }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SubtitleWeight {
@@ -310,6 +327,7 @@ pub struct Settings {
     pub columns: u32,
     pub controls: ControlsVisibility,
     pub show_titles: bool,
+    pub float_on_top: FloatOnTop,
     /// Gamma for SDR video, for every open video at once; 1 leaves it be.
     pub sdr_gamma: f32,
     /// Gamma for HDR video (Dolby Vision included).
@@ -339,6 +357,7 @@ impl Default for Settings {
             columns: 0,
             controls: ControlsVisibility::OnHover,
             show_titles: true,
+            float_on_top: FloatOnTop::Off,
             sdr_gamma: 1.0,
             hdr_gamma: 1.0,
             subtitles: SubtitleStyle::default(),

@@ -59,6 +59,12 @@ GPU-accelerated UI framework.
   keeps coming through Plays, and the subtitles showing are drawn into the
   picture. Closing the window, or its button to go back, brings the video
   back to the tile.
+- Player windows can float above other apps' windows, always or only while
+  something in them plays: Video → Float on Top or Float on Top While
+  Playing, or Settings → Appearance (they have no keys until given some in
+  Settings → Hotkeys). Settings and About float with them, so they don't
+  open underneath. On macOS a window comes down while it is full screen
+  and floats again after.
 - While a tile plays, its header and controls fade when the mouse leaves
   it, or rests on it for a couple of seconds; the pointer hides then too,
   until the mouse moves. Resting on the header or controls keeps them.
@@ -575,7 +581,9 @@ shortcuts then go to it; a double-click fills the window with a tile, the
 whole area under the toolbar, and another puts the grid back; ⌘W closes the
 tile in front, then the empty window; four tiles sit in two even rows.
 Settings' Reset to Defaults asks first and changes nothing on Cancel, and
-picking an output in the Audio menu sets it. Each test has been checked to
+picking an output in the Audio menu sets it. Floating on top while playing
+lifts the window, and Settings with it, only while its file plays, and
+the menu items turn their mode on and off. Each test has been checked to
 fail when the behavior it covers is broken.
 
 ### Smoke runs
@@ -597,7 +605,10 @@ names): `first-open` opens a video into the empty window, which must fit
 it; `several` opens two videos and a sound into one window; `close` closes
 the tiles and then the window with ⌘W, and the app must quit; `subtitles`
 turns the subtitles beside a video off and on again; `step-back` steps a
-frame forward and two back through B-frames. Throughout, a window that has
+frame forward and two back through B-frames; `float-on-top` floats the
+window while it plays, as the system has it (the window's level on macOS,
+`_NET_WM_STATE_ABOVE` on X11), brings it down when paused, and floats
+Settings with it. Throughout, a window that has
 fitted its files must be laid out at the size it really is, every playing
 video must show at least 15 of its 25 frames a second, the sound must go
 to a device, and nothing may log an error, whatever `RUST_LOG` lets
@@ -656,3 +667,6 @@ size, makes `first-open` fail.
   show in the terminal when it does.
 - On GNOME Wayland (client-side decorations) the window can be moved from the
   toolbar but has no resize handles.
+- Windows can't float on top under Wayland, which has no way for an app to
+  ask for it; on X11 it takes a window manager that keeps windows above
+  (`_NET_WM_STATE_ABOVE`), as most do.

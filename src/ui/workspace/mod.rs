@@ -6,6 +6,7 @@ mod empty;
 mod fit;
 mod grid;
 mod mouse;
+mod on_top;
 mod opening;
 #[cfg(test)]
 mod tests;
@@ -29,6 +30,8 @@ use super::theme::{self, Theme};
 use crate::app::AudioEngine;
 use crate::media::picture;
 use crate::settings::Settings;
+
+pub use on_top::float_with_players;
 
 /// macOS has the menu bar for what the toolbar does, so its windows show
 /// just the video, with the traffic lights over it like other video players.
@@ -74,6 +77,8 @@ pub struct Workspace {
     /// A timer is waiting to see whether the mouse rests.
     watching_idle: bool,
     traffic_lights_shown: bool,
+    /// Floating above other apps' windows, as last set.
+    on_top: bool,
     _settings_subscription: Subscription,
     _activation_subscription: Subscription,
     _url_form_events: Subscription,
@@ -136,16 +141,18 @@ impl Workspace {
                 window.focus(&this.focus_handle);
                 cx.notify();
             });
-        // Rendering stops while the window is hidden; keep players moving anyway.
-        cx.spawn(async move |this, cx| {
+        // Rendering stops while the window is hidden; keep players moving
+        // anyway, and the window floating while they play.
+        cx.spawn_in(window, async move |this, cx| {
             loop {
                 cx.background_executor()
                     .timer(Duration::from_millis(200))
                     .await;
-                let alive = this.update(cx, |this, cx| {
+                let alive = this.update_in(cx, |this, window, cx| {
                     for tile in &this.tiles {
                         tile.view.update(cx, |view, cx| view.background_tick(cx));
                     }
+                    this.update_on_top(window, cx);
                 });
                 if alive.is_err() {
                     break;
@@ -169,6 +176,7 @@ impl Workspace {
             mouse_moved_at: Instant::now(),
             watching_idle: false,
             traffic_lights_shown: true,
+            on_top: false,
             gamma: cx.global::<Settings>().gamma(),
             _settings_subscription: settings_subscription,
             _activation_subscription: activation_subscription,
@@ -197,6 +205,7 @@ impl Render for Workspace {
             window.request_animation_frame();
         }
         self.update_traffic_lights(window, cx);
+        self.update_on_top(window, cx);
         let theme = Theme::get(window, cx);
         let drop_highlight = theme.drop_highlight;
         let empty = self.tiles.is_empty();

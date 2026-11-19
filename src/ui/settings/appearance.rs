@@ -4,7 +4,7 @@ use gpui::{AnyElement, Context, Window};
 
 use super::form::{group, row, update_settings};
 use super::{Pane, SettingsView};
-use crate::settings::{ControlsVisibility, Settings, ThemeMode};
+use crate::settings::{ControlsVisibility, FloatOnTop, Settings, ThemeMode};
 use crate::ui::components::{Segmented, Switch};
 use crate::ui::theme::Theme;
 use crate::ui::theme::settings::APPEARANCE_COLOR;
@@ -88,6 +88,21 @@ impl Pane for AppearancePane {
                         Switch::new("titles", s.show_titles).on_toggle(|&on, _, cx| {
                             update_settings(cx, true, |s| s.show_titles = on)
                         }),
+                    ),
+                    row(
+                        "Float on top",
+                        None,
+                        theme,
+                        Segmented::new(
+                            "float-on-top",
+                            &[
+                                (FloatOnTop::Off, "Off"),
+                                (FloatOnTop::Always, "Always"),
+                                (FloatOnTop::WhilePlaying, "While playing"),
+                            ],
+                            s.float_on_top,
+                        )
+                        .on_select(|&v, _, cx| update_settings(cx, true, |s| s.float_on_top = v)),
                     ),
                 ],
             ),

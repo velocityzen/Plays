@@ -4217,6 +4217,18 @@ impl Window {
         self.platform_window.toggle_fullscreen();
     }
 
+    /// Plays: keep the window above other apps' windows, or put it back
+    /// among them. On macOS it drops back while it is full screen, and
+    /// comes up again after; Wayland has no way to do it.
+    pub fn set_on_top(&self, on_top: bool) {
+        self.platform_window.set_on_top(on_top);
+    }
+
+    /// Plays: whether the window is above other apps' windows now.
+    pub fn is_on_top(&self) -> bool {
+        self.platform_window.is_on_top()
+    }
+
     /// Updates the IME panel position suggestions for languages like japanese, chinese.
     pub fn invalidate_character_coordinates(&self) {
         self.on_next_frame(|window, cx| {

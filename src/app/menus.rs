@@ -1,6 +1,7 @@
 //! The menu bar. Its items show the keys bound to their actions, so the
 //! keymap sets the menus again whenever it changes, and so does the audio
-//! engine as outputs come and go or another is picked.
+//! engine as outputs come and go or another is picked, and Settings when
+//! floating on top changes.
 
 use gpui::{App, Menu, MenuItem, SystemMenuType};
 
@@ -10,7 +11,7 @@ use super::{
 };
 use crate::hotkeys::*;
 use crate::media::output::DeviceInfo;
-use crate::settings::{AudioDevice, Settings};
+use crate::settings::{AudioDevice, FloatOnTop, Settings};
 use crate::ui::framing::{ASPECT_RATIOS, CROPS};
 
 pub(super) fn set_menus(cx: &mut App) {
@@ -18,6 +19,7 @@ pub(super) fn set_menus(cx: &mut App) {
         AudioEngine::devices(cx),
         cx.global::<Settings>().audio_output.device.as_ref(),
     );
+    let float_on_top = cx.global::<Settings>().float_on_top;
     cx.set_menus(vec![
         Menu {
             name: "Plays".into(),
@@ -68,6 +70,10 @@ pub(super) fn set_menus(cx: &mut App) {
             items: vec![
                 MenuItem::action("Full Screen", ToggleFullScreen),
                 MenuItem::action("Picture in Picture", TogglePictureInPicture),
+                MenuItem::action("Float on Top", ToggleFloatOnTop)
+                    .checked(float_on_top == FloatOnTop::Always),
+                MenuItem::action("Float on Top While Playing", ToggleFloatOnTopWhilePlaying)
+                    .checked(float_on_top == FloatOnTop::WhilePlaying),
                 MenuItem::action("Next Video Track", NextVideoTrack),
                 MenuItem::separator(),
                 MenuItem::action("Rotate Right", RotateRight),
@@ -141,6 +147,19 @@ pub(super) fn set_menus(cx: &mut App) {
             ],
         },
     ]);
+}
+
+/// Set the menus again when floating on top, which they check, changes.
+pub(super) fn watch_settings(cx: &mut App) {
+    let mut shown = cx.global::<Settings>().float_on_top;
+    cx.observe_global::<Settings>(move |cx| {
+        let float_on_top = cx.global::<Settings>().float_on_top;
+        if float_on_top != shown {
+            shown = float_on_top;
+            set_menus(cx);
+        }
+    })
+    .detach();
 }
 
 /// The system's default and every output connected, with the one picked

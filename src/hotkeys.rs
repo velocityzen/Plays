@@ -51,6 +51,8 @@ gpui::actions!(
         ToggleFullScreen,
         ExitFullScreen,
         TogglePictureInPicture,
+        ToggleFloatOnTop,
+        ToggleFloatOnTopWhilePlaying,
         ToggleConsole,
         PlayPauseAll,
         PlayAll,
@@ -107,6 +109,8 @@ pub enum Command {
     FullScreen,
     ExitFullScreen,
     PictureInPicture,
+    FloatOnTop,
+    FloatOnTopWhilePlaying,
     Console,
     PlayPauseAll,
     RestartAll,
@@ -149,7 +153,7 @@ impl Group {
 }
 
 impl Command {
-    pub const ALL: [Self; 43] = [
+    pub const ALL: [Self; 45] = [
         Self::PlayPause,
         Self::SeekForward,
         Self::SeekBackward,
@@ -187,6 +191,8 @@ impl Command {
         Self::FullScreen,
         Self::ExitFullScreen,
         Self::PictureInPicture,
+        Self::FloatOnTop,
+        Self::FloatOnTopWhilePlaying,
         Self::Console,
         Self::PlayPauseAll,
         Self::SeekForwardAll,
@@ -235,6 +241,8 @@ impl Command {
             Self::FullScreen => "full_screen",
             Self::ExitFullScreen => "exit_full_screen",
             Self::PictureInPicture => "picture_in_picture",
+            Self::FloatOnTop => "float_on_top",
+            Self::FloatOnTopWhilePlaying => "float_on_top_while_playing",
             Self::Console => "console",
             Self::PlayPauseAll => "play_pause_all",
             Self::RestartAll => "restart_all",
@@ -287,6 +295,8 @@ impl Command {
             Self::FullScreen => "Full screen",
             Self::ExitFullScreen => "Exit full screen",
             Self::PictureInPicture => "Picture in Picture",
+            Self::FloatOnTop => "Float on top",
+            Self::FloatOnTopWhilePlaying => "Float on top while playing",
             Self::Console => "Show/hide console",
             Self::PlayPauseAll => "Play/pause all",
             Self::RestartAll => "Restart all",
@@ -338,9 +348,12 @@ impl Command {
             | Self::NextCrop
             | Self::ResetPicture
             | Self::TakeScreenshot => Group::Video,
-            Self::FullScreen | Self::ExitFullScreen | Self::PictureInPicture | Self::Console => {
-                Group::Window
-            }
+            Self::FullScreen
+            | Self::ExitFullScreen
+            | Self::PictureInPicture
+            | Self::FloatOnTop
+            | Self::FloatOnTopWhilePlaying
+            | Self::Console => Group::Window,
             Self::PlayPauseAll
             | Self::RestartAll
             | Self::SeekForwardAll
@@ -388,6 +401,8 @@ impl Command {
             Self::FullScreen => Box::new(ToggleFullScreen),
             Self::ExitFullScreen => Box::new(ExitFullScreen),
             Self::PictureInPicture => Box::new(TogglePictureInPicture),
+            Self::FloatOnTop => Box::new(ToggleFloatOnTop),
+            Self::FloatOnTopWhilePlaying => Box::new(ToggleFloatOnTopWhilePlaying),
             Self::Console => Box::new(ToggleConsole),
             Self::PlayPauseAll => Box::new(PlayPauseAll),
             Self::RestartAll => Box::new(RestartAll),
@@ -445,6 +460,8 @@ impl Command {
             Self::PictureInPicture if mac => &["ctrl-cmd-p"],
             // Picture in Picture is macOS's.
             Self::PictureInPicture => &[],
+            // Set in Settings or the Video menu, or given keys there.
+            Self::FloatOnTop | Self::FloatOnTopWhilePlaying => &[],
             Self::Console => &["~", "`"],
             // Every file in the window.
             Self::PlayPauseAll => &["shift-space"],

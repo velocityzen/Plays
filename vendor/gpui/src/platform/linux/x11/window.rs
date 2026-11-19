@@ -66,6 +66,8 @@ x11rb::atom_manager! {
         _NET_WM_STATE_FULLSCREEN,
         _NET_WM_STATE_HIDDEN,
         _NET_WM_STATE_FOCUSED,
+        // Plays: windows kept on top.
+        _NET_WM_STATE_ABOVE,
         _NET_ACTIVE_WINDOW,
         _NET_WM_SYNC_REQUEST,
         _NET_WM_SYNC_REQUEST_COUNTER,
@@ -265,6 +267,8 @@ pub struct X11WindowState {
     maximized_vertical: bool,
     maximized_horizontal: bool,
     hidden: bool,
+    // Plays: the window manager keeps it on top.
+    above: bool,
     active: bool,
     hovered: bool,
     fullscreen: bool,
@@ -682,6 +686,7 @@ impl X11WindowState {
                 maximized_vertical: false,
                 maximized_horizontal: false,
                 hidden: false,
+                above: false,
                 appearance,
                 handle,
                 background_appearance: WindowBackgroundAppearance::Opaque,
@@ -754,8 +759,9 @@ impl Drop for X11Window {
 }
 
 enum WmHintPropertyState {
-    // Remove = 0,
-    // Add = 1,
+    // Plays: for windows kept on top.
+    Remove = 0,
+    Add = 1,
     Toggle = 2,
 }
 
@@ -961,6 +967,7 @@ impl X11WindowStatePtr {
         state.maximized_vertical = false;
         state.maximized_horizontal = false;
         state.hidden = false;
+        state.above = false;
 
         for atom in atoms {
             if atom == state.atoms._NET_WM_STATE_FOCUSED {
@@ -973,6 +980,8 @@ impl X11WindowStatePtr {
                 state.maximized_horizontal = true;
             } else if atom == state.atoms._NET_WM_STATE_HIDDEN {
                 state.hidden = true;
+            } else if atom == state.atoms._NET_WM_STATE_ABOVE {
+                state.above = true;
             }
         }
 
@@ -1429,6 +1438,27 @@ impl PlatformWindow for X11Window {
 
     fn is_fullscreen(&self) -> bool {
         self.0.state.borrow().fullscreen
+    }
+
+    // Plays.
+    fn set_on_top(&self, on_top: bool) {
+        let state = self.0.state.borrow();
+        self.set_wm_hints(
+            || "X11 SendEvent to keep a window on top failed.",
+            if on_top {
+                WmHintPropertyState::Add
+            } else {
+                WmHintPropertyState::Remove
+            },
+            state.atoms._NET_WM_STATE_ABOVE,
+            xproto::AtomEnum::NONE.into(),
+        )
+        .log_err();
+    }
+
+    // Plays.
+    fn is_on_top(&self) -> bool {
+        self.0.state.borrow().above
     }
 
     fn on_request_frame(&self, callback: Box<dyn FnMut(RequestFrameOptions)>) {

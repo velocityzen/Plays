@@ -4,6 +4,9 @@
 use gpui::{EntityId, TestAppContext, VisualTestContext, WindowHandle, px, size};
 
 use super::{TOOLBAR_SPACE, Workspace};
+use crate::hotkeys::{ToggleFloatOnTop, ToggleFloatOnTopWhilePlaying};
+use crate::settings::{FloatOnTop, Settings};
+use crate::ui::settings::SettingsView;
 use crate::ui::testing::{
     self, OPEN_WAIT, click, double_click, find, fixture, press, shows, wait_until,
 };
@@ -191,4 +194,60 @@ fn tiles_sit_in_the_grid(cx: &mut TestAppContext) {
         [b, c, d].iter().all(|tile| tile.size == a.size),
         "every tile gets the same room"
     );
+}
+
+/// Whether the player window, and the Settings window, float above other
+/// apps' windows.
+fn on_top(cx: &mut VisualTestContext) -> (bool, bool) {
+    cx.run_until_parked();
+    let player = cx.update(|window, _| window.is_on_top());
+    let settings = cx
+        .windows()
+        .into_iter()
+        .find_map(|window| window.downcast::<SettingsView>())
+        .expect("a Settings window");
+    let settings = settings
+        .update(cx, |_, window, _| window.is_on_top())
+        .unwrap();
+    (player, settings)
+}
+
+#[gpui::test]
+fn floats_on_top_always_or_while_playing(cx: &mut TestAppContext) {
+    let (window, mut cx) = testing::start(cx);
+    open(window, &mut cx, &["clip.mp4"], true);
+    cx.update(|_, cx| SettingsView::open_window(cx));
+    assert_eq!(on_top(&mut cx), (false, false), "not unless asked to");
+
+    // From the Video menu, with Settings floating along so they don't
+    // open under the player.
+    cx.dispatch_action(ToggleFloatOnTopWhilePlaying);
+    assert_eq!(
+        cx.update(|_, cx| cx.global::<Settings>().float_on_top),
+        FloatOnTop::WhilePlaying
+    );
+    assert_eq!(on_top(&mut cx), (true, true), "playing");
+
+    click(&mut cx, "tile-0");
+    press(&mut cx, "space");
+    let paused = wait_until(&mut cx, |cx| {
+        window
+            .read_with(cx, |workspace, cx| {
+                !workspace.tiles[0].view.read(cx).player().is_playing()
+            })
+            .unwrap()
+    });
+    assert!(paused);
+    assert_eq!(on_top(&mut cx), (false, false), "paused");
+
+    cx.dispatch_action(ToggleFloatOnTop);
+    assert_eq!(on_top(&mut cx), (true, true), "always, though paused");
+
+    cx.dispatch_action(ToggleFloatOnTop);
+    assert_eq!(
+        cx.update(|_, cx| cx.global::<Settings>().float_on_top),
+        FloatOnTop::Off,
+        "the same item again turns it off"
+    );
+    assert_eq!(on_top(&mut cx), (false, false));
 }

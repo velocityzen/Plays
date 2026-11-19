@@ -146,6 +146,15 @@ subtitles as they are drawn into screenshots. `TestPlatform::with_text_system`
 takes the text system, and `TestPlatform::new` passes the no-op one as
 before.
 
+`src/platform.rs`, `src/window.rs`, and the macOS, X11 and test windows:
+`Window::set_on_top` keeps a window above other apps' windows, or puts it
+back among them, and `Window::is_on_top` says whether it is there now. On
+macOS it sets the window's level to floating, and the window delegate
+drops it to normal while the window is full screen and raises it again
+after. On X11 it asks the window manager for `_NET_WM_STATE_ABOVE` and
+reads it back from `_NET_WM_STATE`. The test window keeps the flag;
+Wayland has no protocol for it, so there it does nothing.
+
 `src/taffy.rs`: two float literals are typed as `f32`, which newer Rust
 warns about otherwise.
 

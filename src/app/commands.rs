@@ -9,7 +9,9 @@ use super::{
 };
 use crate::hotkeys::*;
 use crate::media::tracks::TrackKind;
-use crate::settings::{SUBTITLE_POSITION_RANGE, SUBTITLE_SIZE_RANGE, Settings, SubtitleStyle};
+use crate::settings::{
+    FloatOnTop, SUBTITLE_POSITION_RANGE, SUBTITLE_SIZE_RANGE, Settings, SubtitleStyle,
+};
 use crate::ui::about::AboutView;
 use crate::ui::settings::SettingsView;
 
@@ -113,6 +115,10 @@ pub(super) fn register(cx: &mut App) {
     cx.on_action(|_: &TogglePictureInPicture, cx| {
         with_active_in_window(cx, |p, window, cx| p.toggle_picture_in_picture(window, cx))
     });
+    cx.on_action(|_: &ToggleFloatOnTop, cx| toggle_float_on_top(FloatOnTop::Always, cx));
+    cx.on_action(|_: &ToggleFloatOnTopWhilePlaying, cx| {
+        toggle_float_on_top(FloatOnTop::WhilePlaying, cx)
+    });
     cx.on_action(|_: &ToggleConsole, cx| with_active(cx, |p, cx| p.toggle_console(cx)));
     cx.on_action(|_: &ExitFullScreen, cx| {
         with_workspace(cx, |_, window, _| {
@@ -130,6 +136,10 @@ pub(super) fn register(cx: &mut App) {
     cx.on_action(|_: &SeekForwardAll, cx| with_workspace(cx, |w, _, cx| w.seek_all(1.0, cx)));
     cx.on_action(|_: &SeekBackwardAll, cx| with_workspace(cx, |w, _, cx| w.seek_all(-1.0, cx)));
     cx.on_action(|_: &ToggleMuteAll, cx| with_workspace(cx, |w, _, cx| w.toggle_mute_all(cx)));
+}
+
+fn toggle_float_on_top(mode: FloatOnTop, cx: &mut App) {
+    Settings::update(cx, true, |s| s.float_on_top = s.float_on_top.toggled(mode));
 }
 
 fn seek_step(cx: &App) -> f64 {

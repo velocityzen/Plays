@@ -24,8 +24,9 @@ use super::{AudioEngine, Route};
 use crate::hotkeys::Command;
 use crate::media::Source;
 use crate::media::tracks::TrackKind;
-use crate::settings::Settings;
+use crate::settings::{FloatOnTop, Settings};
 use crate::ui::player::PlayerView;
+use crate::ui::settings::SettingsView;
 use crate::ui::theme::layout::{WINDOW_MIN_SIZE, WINDOW_SIZE};
 use crate::ui::workspace::{TOOLBAR_SPACE, Workspace};
 
@@ -72,15 +73,18 @@ pub enum Scenario {
     Subtitles,
     /// Stepping a frame forward and back, through B-frames.
     StepBack,
+    /// Floating on top while playing, as the system sees the windows.
+    FloatOnTop,
 }
 
 impl Scenario {
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 6] = [
         Self::FirstOpen,
         Self::Several,
         Self::Close,
         Self::Subtitles,
         Self::StepBack,
+        Self::FloatOnTop,
     ];
 
     pub fn name(self) -> &'static str {
@@ -90,6 +94,7 @@ impl Scenario {
             Self::Close => "close",
             Self::Subtitles => "subtitles",
             Self::StepBack => "step-back",
+            Self::FloatOnTop => "float-on-top",
         }
     }
 }
@@ -196,6 +201,7 @@ pub fn start(scenario: Scenario, cx: &mut App) {
             Scenario::Close => close(cx).await,
             Scenario::Subtitles => subtitles(cx).await,
             Scenario::StepBack => step_back(cx).await,
+            Scenario::FloatOnTop => float_on_top(cx).await,
         };
         finish(scenario, started, result)
     })
@@ -343,6 +349,71 @@ async fn step_back(cx: &mut AsyncApp) -> Result<(), String> {
         at = wait_for_frame(cx, at + step * FRAME).await?;
     }
     check_route(cx)
+}
+
+async fn float_on_top(cx: &mut AsyncApp) -> Result<(), String> {
+    open(cx, &["clip.mp4"]).await?;
+    settle(cx).await?;
+    check_playing(cx).await?;
+    if on_top(cx, false)? {
+        return Err("the window floats before it is asked to".into());
+    }
+    set_float_on_top(cx, FloatOnTop::WhilePlaying)?;
+    wait_for(cx, "the window to float while it plays", |cx| {
+        is_on_top(cx, false)
+    })
+    .await?;
+    press_for(cx, Command::PlayPause)?;
+    wait_for(cx, "the window to come down when paused", |cx| {
+        !is_on_top(cx, false)
+    })
+    .await?;
+    press_for(cx, Command::PlayPause)?;
+    wait_for(cx, "the window to float again when playing", |cx| {
+        is_on_top(cx, false)
+    })
+    .await?;
+
+    // Settings open over the window, floating with it.
+    cx.update(SettingsView::open_window)
+        .map_err(|_| "the app went away")?;
+    wait_for(cx, "Settings to float with the window", |cx| {
+        is_on_top(cx, true)
+    })
+    .await?;
+    set_float_on_top(cx, FloatOnTop::Off)?;
+    wait_for(cx, "both windows to come down", |cx| {
+        !is_on_top(cx, false) && !is_on_top(cx, true)
+    })
+    .await?;
+    check_route(cx)
+}
+
+fn set_float_on_top(cx: &mut AsyncApp, mode: FloatOnTop) -> Result<(), String> {
+    cx.update(|cx| Settings::update(cx, false, |s| s.float_on_top = mode))
+        .map_err(|_| "the app went away".into())
+}
+
+/// Whether the player window, or with `settings` the Settings window,
+/// floats above other apps' windows, as the system has it.
+fn on_top(cx: &mut AsyncApp, settings: bool) -> Result<bool, String> {
+    cx.update(|cx| is_on_top(cx, settings))
+        .map_err(|_| "the app went away".into())
+}
+
+fn is_on_top(cx: &mut App, settings: bool) -> bool {
+    let window = if settings {
+        cx.windows()
+            .into_iter()
+            .find(|window| window.downcast::<SettingsView>().is_some())
+    } else {
+        workspace(cx).ok().map(AnyWindowHandle::from)
+    };
+    window.is_some_and(|window| {
+        window
+            .update(cx, |_, window, _| window.is_on_top())
+            .unwrap_or(false)
+    })
 }
 
 /// Open the fixtures `files` into the window, as Finder does, and wait

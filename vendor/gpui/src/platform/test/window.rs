@@ -29,6 +29,8 @@ pub(crate) struct TestWindowState {
     moved_callback: Option<Box<dyn FnMut()>>,
     input_handler: Option<PlatformInputHandler>,
     is_fullscreen: bool,
+    // Plays.
+    on_top: bool,
 }
 
 #[derive(Clone)]
@@ -75,6 +77,7 @@ impl TestWindow {
             moved_callback: None,
             input_handler: None,
             is_fullscreen: false,
+            on_top: false,
         })))
     }
 
@@ -231,6 +234,16 @@ impl PlatformWindow for TestWindow {
 
     fn is_fullscreen(&self) -> bool {
         self.0.lock().is_fullscreen
+    }
+
+    // Plays.
+    fn set_on_top(&self, on_top: bool) {
+        self.0.lock().on_top = on_top;
+    }
+
+    // Plays.
+    fn is_on_top(&self) -> bool {
+        self.0.lock().on_top
     }
 
     fn on_request_frame(&self, _callback: Box<dyn FnMut(RequestFrameOptions)>) {}

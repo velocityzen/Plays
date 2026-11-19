@@ -31,6 +31,7 @@ use super::theme::settings::{
 };
 use super::theme::text::TextStyle;
 use super::theme::{Theme, radius};
+use super::workspace::float_with_players;
 use crate::settings::Settings;
 
 /// A pane of the Settings window, and its entry in the sidebar.
@@ -134,7 +135,10 @@ impl SettingsView {
             |window, cx| cx.new(|cx| Self::new(window, cx)),
         );
         match opened {
-            Ok(handle) => cx.set_global(SettingsWindow(handle)),
+            Ok(handle) => {
+                cx.set_global(SettingsWindow(handle));
+                float_with_players(cx);
+            }
             Err(err) => log::error!("could not open settings: {err:#}"),
         }
     }

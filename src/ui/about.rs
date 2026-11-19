@@ -13,6 +13,7 @@ use super::theme::Theme;
 use super::theme::about::{ICON, ICON_BOTTOM, ICON_GLYPH, ICON_RADIUS, ICON_TOP, WINDOW_SIZE};
 use super::theme::layout::TRAFFIC_LIGHTS;
 use super::theme::text::TextStyle;
+use super::workspace::float_with_players;
 
 const MONTHS: [&str; 12] = [
     "January",
@@ -95,7 +96,10 @@ impl AboutView {
             },
         );
         match opened {
-            Ok(handle) => cx.set_global(AboutWindow(handle)),
+            Ok(handle) => {
+                cx.set_global(AboutWindow(handle));
+                float_with_players(cx);
+            }
             Err(err) => log::error!("could not open About: {err:#}"),
         }
     }

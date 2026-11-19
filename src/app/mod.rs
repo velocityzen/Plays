@@ -94,6 +94,7 @@ fn set_up(cx: &mut App, settings: Settings, audio: fn(&mut App)) {
     commands::register(cx);
     keymap::bind_keys(cx);
     keymap::watch_hotkeys(cx);
+    menus::watch_settings(cx);
 }
 
 /// For `#[gpui::test]`s: the app as it starts, with default settings

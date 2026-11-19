@@ -64,6 +64,9 @@ const NSWindowStyleMaskNonactivatingPanel: NSWindowStyleMask =
     NSWindowStyleMask::from_bits_retain(1 << 7);
 #[allow(non_upper_case_globals)]
 const NSNormalWindowLevel: NSInteger = 0;
+// Plays: windows kept on top.
+#[allow(non_upper_case_globals)]
+const NSFloatingWindowLevel: NSInteger = 3;
 #[allow(non_upper_case_globals)]
 const NSPopUpWindowLevel: NSInteger = 101;
 #[allow(non_upper_case_globals)]
@@ -413,6 +416,8 @@ struct MacWindowState {
     // Whether the next left-mouse click is also the focusing click.
     first_mouse: bool,
     fullscreen_restore_bounds: Bounds<Pixels>,
+    // Plays: the window is to stay on top, other than while full screen.
+    on_top: bool,
     move_tab_to_new_window_callback: Option<Box<dyn FnMut()>>,
     merge_all_windows_callback: Option<Box<dyn FnMut()>>,
     select_next_tab_callback: Option<Box<dyn FnMut()>>,
@@ -719,6 +724,7 @@ impl MacWindow {
                 external_files_dragged: false,
                 first_mouse: false,
                 fullscreen_restore_bounds: Bounds::default(),
+                on_top: false,
                 move_tab_to_new_window_callback: None,
                 merge_all_windows_callback: None,
                 select_next_tab_callback: None,
@@ -1365,6 +1371,35 @@ impl PlatformWindow for MacWindow {
             .detach();
     }
 
+    // Plays: a window full screen stays at the normal level, so it can go
+    // full screen and come back; the delegate puts it on top again after.
+    fn set_on_top(&self, on_top: bool) {
+        let mut this = self.0.lock();
+        this.on_top = on_top;
+        let window = this.native_window;
+        this.executor
+            .spawn(async move {
+                unsafe {
+                    let full_screen = window
+                        .styleMask()
+                        .contains(NSWindowStyleMask::NSFullScreenWindowMask);
+                    window.setLevel_(if on_top && !full_screen {
+                        NSFloatingWindowLevel
+                    } else {
+                        NSNormalWindowLevel
+                    });
+                }
+            })
+            .detach();
+    }
+
+    // Plays.
+    fn is_on_top(&self) -> bool {
+        let window = self.0.lock().native_window;
+        let level: NSInteger = unsafe { msg_send![window, level] };
+        level > NSNormalWindowLevel
+    }
+
     fn is_fullscreen(&self) -> bool {
         let this = self.0.lock();
         let window = this.native_window;
@@ -1938,6 +1973,11 @@ extern "C" fn window_will_enter_fullscreen(this: &Object, _: Sel, _: id) {
             lock.native_window.setTitlebarAppearsTransparent_(NO);
         }
     }
+
+    // Plays: full screen at the normal level, outside the lock.
+    let window = lock.native_window;
+    drop(lock);
+    unsafe { window.setLevel_(NSNormalWindowLevel) };
 }
 
 extern "C" fn window_will_exit_fullscreen(this: &Object, _: Sel, _: id) {
@@ -1950,6 +1990,13 @@ extern "C" fn window_will_exit_fullscreen(this: &Object, _: Sel, _: id) {
         unsafe {
             lock.native_window.setTitlebarAppearsTransparent_(YES);
         }
+    }
+
+    // Plays: back on top, if it was, outside the lock.
+    let (window, on_top) = (lock.native_window, lock.on_top);
+    drop(lock);
+    if on_top {
+        unsafe { window.setLevel_(NSFloatingWindowLevel) };
     }
 }
 

@@ -487,6 +487,13 @@ pub(crate) trait PlatformWindow: HasWindowHandle + HasDisplayHandle {
     fn zoom(&self);
     fn toggle_fullscreen(&self);
     fn is_fullscreen(&self) -> bool;
+    /// Plays: keep the window above other apps' windows, or put it back
+    /// among them.
+    fn set_on_top(&self, _on_top: bool) {}
+    /// Plays: whether the window is above other apps' windows now.
+    fn is_on_top(&self) -> bool {
+        false
+    }
     fn on_request_frame(&self, callback: Box<dyn FnMut(RequestFrameOptions)>);
     fn on_input(&self, callback: Box<dyn FnMut(PlatformInput) -> DispatchEventResult>);
     fn on_active_status_change(&self, callback: Box<dyn FnMut(bool)>);
