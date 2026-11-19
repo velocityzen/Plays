@@ -283,3 +283,25 @@ fn output_device_shows_the_window_full_screen_on_a_display(cx: &mut TestAppConte
         .unwrap();
     assert_eq!(moving, None, "the move is done");
 }
+
+#[gpui::test]
+fn a_tile_alone_expands_to_full_screen_while_it_floats(cx: &mut TestAppContext) {
+    let (window, mut cx) = testing::start(cx);
+    open(window, &mut cx, &["clip.mp4"], true);
+    cx.dispatch_action(ToggleFloatOnTopWhilePlaying);
+    let full_screen = |cx: &mut VisualTestContext| {
+        cx.run_until_parked();
+        cx.update(|window, _| window.is_fullscreen())
+    };
+    assert!(cx.update(|window, _| window.is_on_top()), "floating");
+
+    double_click(&mut cx, "tile-0");
+    assert!(full_screen(&mut cx), "a double click goes full screen");
+    double_click(&mut cx, "tile-0");
+    assert!(!full_screen(&mut cx), "and another comes back");
+
+    click(&mut cx, "maximize");
+    assert!(full_screen(&mut cx), "so does the button");
+    click(&mut cx, "maximize");
+    assert!(!full_screen(&mut cx));
+}

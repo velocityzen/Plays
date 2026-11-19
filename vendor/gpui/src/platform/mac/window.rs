@@ -1380,9 +1380,17 @@ impl PlatformWindow for MacWindow {
         this.executor
             .spawn(async move {
                 unsafe {
-                    let full_screen = window
-                        .styleMask()
-                        .contains(NSWindowStyleMask::NSFullScreenWindowMask);
+                    let style = window.styleMask();
+                    // macOS lets a window go full screen by its level unless
+                    // it says otherwise, and one above the normal level
+                    // can't: a window that can at the normal level says so.
+                    if on_top && style.contains(NSWindowStyleMask::NSResizableWindowMask) {
+                        window.setCollectionBehavior_(
+                            window.collectionBehavior()
+                                | NSWindowCollectionBehavior::NSWindowCollectionBehaviorFullScreenPrimary,
+                        );
+                    }
+                    let full_screen = style.contains(NSWindowStyleMask::NSFullScreenWindowMask);
                     window.setLevel_(if on_top && !full_screen {
                         NSFloatingWindowLevel
                     } else {
