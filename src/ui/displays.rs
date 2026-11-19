@@ -56,7 +56,7 @@ mod mac {
     use std::ffi::{CStr, c_char};
 
     use gpui::Window;
-    use objc::runtime::{Object, YES};
+    use objc::runtime::{BOOL, Object, YES};
     use objc::{class, msg_send, sel, sel_impl};
     use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
@@ -69,11 +69,19 @@ mod mac {
         height: f64,
     }
 
-    /// Each screen's `CGDirectDisplayID` and its name.
+    /// Each screen's `CGDirectDisplayID` and its name, asked on the main
+    /// thread only, where gpui runs the app. Tests run on threads of their
+    /// own, many at once, and AppKit asked from them at once breaks its
+    /// heap; their displays aren't the screens anyway.
     pub fn names() -> Vec<(u32, String)> {
-        // SAFETY: AppKit on the main thread, where gpui runs the app; the
-        // screens and strings are autoreleased objects read right away.
+        // SAFETY: NSThread says which thread this is from any; the rest is
+        // AppKit on the main thread, and the screens and strings are
+        // autoreleased objects read right away.
         unsafe {
+            let main: BOOL = msg_send![class!(NSThread), isMainThread];
+            if main != YES {
+                return Vec::new();
+            }
             let screens: *mut Object = msg_send![class!(NSScreen), screens];
             let count: usize = msg_send![screens, count];
             (0..count)
@@ -148,5 +156,14 @@ mod mac {
             };
             let _: () = msg_send![ns_window, setFrame: moved display: YES];
         }
+    }
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod tests {
+    #[test]
+    fn appkit_is_asked_the_screens_names_on_the_main_thread_only() {
+        // Tests run off it, as this one does.
+        assert!(super::mac::names().is_empty());
     }
 }
