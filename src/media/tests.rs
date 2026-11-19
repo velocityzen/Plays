@@ -161,9 +161,14 @@ fn reports_the_streams_as_the_file_has_them() {
     assert_eq!((audio.sample_rate, audio.channels), (48_000, 2));
     assert_eq!(audio.layout.as_deref(), Some("stereo"));
     assert_eq!(audio.sample_format, Some("fltp"));
-    let stats = player.stats();
-    assert!(stats.read_ahead > 0.0, "{stats:?}");
-    assert!(stats.queued_frames > 0, "{stats:?}");
+    // The decoder reads on past the frame shown, though not always by the
+    // time the first one shows.
+    let read_on = wait_until(Duration::from_secs(5), || {
+        player.tick();
+        let stats = player.stats();
+        stats.read_ahead > 0.0 && stats.queued_frames > 0
+    });
+    assert!(read_on, "{:?}", player.stats());
 }
 
 /// Pull audio through a mixer until the player stops; returns non-silent frames heard.
