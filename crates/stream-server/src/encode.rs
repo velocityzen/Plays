@@ -223,9 +223,9 @@ impl VideoEncoder {
         self.encoder.time_base()
     }
 
-    /// Encode a decoded frame at `pts` (in the encoder's time base); `key`
-    /// asks for a keyframe, where a segment starts.
-    pub fn send(&mut self, decoded: &frame::Video, pts: i64, key: bool) -> Result<(), Error> {
+    /// A decoded frame at the encoder's size and in its format, NV12 or
+    /// P010, to draw on before it is encoded.
+    pub fn scale(&mut self, decoded: &frame::Video) -> Result<frame::Video, Error> {
         let source = (decoded.format(), decoded.width(), decoded.height());
         if self
             .scaler
@@ -249,6 +249,13 @@ impl VideoEncoder {
         scaler
             .run(decoded, &mut frame)
             .map_err(|err| Error::Encode(format!("scaling: {err}")))?;
+        Ok(frame)
+    }
+
+    /// Encode a frame [`scale`](Self::scale) gave at `pts` (in the
+    /// encoder's time base); `key` asks for a keyframe, where a segment
+    /// starts.
+    pub fn encode(&mut self, mut frame: frame::Video, pts: i64, key: bool) -> Result<(), Error> {
         frame.set_pts(Some(pts));
         frame.set_kind(if key {
             picture::Type::I

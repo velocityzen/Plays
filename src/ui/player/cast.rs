@@ -289,35 +289,55 @@ impl PlayerView {
         }
     }
 
-    /// What fills the tile while it casts: where it plays, how the media
-    /// gets there, what stays here, and a button to play it here again.
-    pub(super) fn render_cast(&self, theme: &Theme, cx: &mut Context<Self>) -> Option<AnyElement> {
-        let cast = self.cast.as_ref()?;
-        let device = cast.link.device();
-        let (line, detail) = match cast.link.phase() {
-            Phase::On { serves } => (
-                format!("Playing on {}", device.name),
-                Some(format!("{} · {serves}", device.kind)),
-            ),
-            _ => (format!("Connecting to {}…", device.name), None),
-        };
+    /// What of the tile the device doesn't get, while it casts.
+    #[cfg(test)]
+    pub fn cast_stays_here(&self, cx: &App) -> Vec<&'static str> {
+        self.cast
+            .as_ref()
+            .map_or_else(Vec::new, |cast| self.stays_here(&cast.link.phase(), cx))
+    }
+
+    fn stays_here(&self, phase: &Phase, cx: &App) -> Vec<&'static str> {
         let settings = cx.global::<Settings>();
         let adjusted = self.adjustments != Adjustments::default() || settings.gamma() != [1.0; 2];
-        let info = self.player.info();
-        let picture_subtitles = info.as_ref().is_some_and(|info| {
-            info.subtitle_track.is_some_and(|index| {
-                info.tracks(TrackKind::Subtitle)
-                    .any(|track| track.index == index && !track.is_text())
-            })
-        });
-        let stays: Vec<&str> = [
+        let drawn = matches!(
+            phase,
+            Phase::On {
+                draws_subtitles: true,
+                ..
+            }
+        );
+        let picture_subtitles = !drawn
+            && self.player.info().is_some_and(|info| {
+                info.subtitle_track.is_some_and(|index| {
+                    info.tracks(TrackKind::Subtitle)
+                        .any(|track| track.index == index && !track.is_text())
+                })
+            });
+        [
             adjusted
                 .then_some("Gamma, crop, rotation, flips and aspect ratio stay on this computer"),
             picture_subtitles.then_some("Picture subtitles stay on this computer"),
         ]
         .into_iter()
         .flatten()
-        .collect();
+        .collect()
+    }
+
+    /// What fills the tile while it casts: where it plays, how the media
+    /// gets there, what stays here, and a button to play it here again.
+    pub(super) fn render_cast(&self, theme: &Theme, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let cast = self.cast.as_ref()?;
+        let device = cast.link.device();
+        let phase = cast.link.phase();
+        let (line, detail) = match &phase {
+            Phase::On { serves, .. } => (
+                format!("Playing on {}", device.name),
+                Some(format!("{} · {serves}", device.kind)),
+            ),
+            _ => (format!("Connecting to {}…", device.name), None),
+        };
+        let stays = self.stays_here(&phase, cx);
         Some(
             div()
                 .flex()
@@ -423,15 +443,16 @@ fn pick(info: Option<&MediaInfo>, kind: TrackKind) -> Pick {
         .map_or(Pick::Best, Pick::Stream)
 }
 
-/// The subtitles showing, to send along: text ones, as devices don't show
-/// pictures.
+/// The subtitles showing, to send along: text ones, and picture ones in
+/// the media, which the stream server draws into video it re-encodes.
+/// Picture subtitles from a file of their own stay here.
 fn subtitle_choice(info: &MediaInfo, cx: &App) -> Option<SubtitleChoice> {
     let index = info.subtitle_track?;
     let (number, track) = info
         .tracks(TrackKind::Subtitle)
         .enumerate()
         .find(|(_, track)| track.index == index)?;
-    if !track.is_text() {
+    if !track.is_text() && track.file.is_some() {
         return None;
     }
     let source = match &track.file {

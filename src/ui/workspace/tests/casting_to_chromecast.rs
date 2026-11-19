@@ -87,7 +87,13 @@ fn picking_a_tv_casts_the_front_tile_there_from_where_it_is_with_styled_subtitle
 
     cast(&mut cx, &tv);
     let load = last(&tv, "LOAD");
-    assert_eq!(load["currentTime"], 1.0, "from where the tile was");
+    // It played on a little before it was cast.
+    let here = view.read_with(&cx, |view, _| view.player().position());
+    let start = load["currentTime"].as_f64().unwrap();
+    assert!(
+        start >= 1.0 && (start - here).abs() < 0.01,
+        "from where the tile was: {start} against {here}"
+    );
     assert_eq!(load["autoplay"], true);
     assert_eq!(
         view.read_with(&cx, |view, _| view

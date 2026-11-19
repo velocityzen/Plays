@@ -314,6 +314,105 @@ fn subtitles_picked_on_the_tile_change_on_the_device(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn another_track_loads_it_again_with_the_subtitles(cx: &mut TestAppContext) {
+    let (window, mut cx, fake, tv) = start(cx, "clip-subs.mkv", false);
+    let view = tile(window, &cx);
+    view.update(&mut cx, |view, cx| {
+        view.select_track(TrackKind::Subtitle, Some(2), cx)
+    });
+    let first = cast(window, &mut cx, &fake, &tv);
+    let subtitles = first.subtitles.clone().expect("the subtitles go along");
+
+    view.update(&mut cx, |view, cx| {
+        view.select_track(TrackKind::Audio, Some(1), cx)
+    });
+    wait(&mut cx, "it to load again", |_| {
+        loads(&fake, &tv).len() == 2
+    });
+    let again = loads(&fake, &tv).remove(1);
+    assert_ne!(again.url, first.url);
+    let kept = again.subtitles.expect("the subtitles still go along");
+    assert_eq!(kept.name, subtitles.name);
+    assert_ne!(kept.webvtt_url, subtitles.webvtt_url, "served with it");
+}
+
+const PICTURES_STAY: &str = "Picture subtitles stay on this computer";
+
+fn stays_here(window: WindowHandle<Workspace>, cx: &mut VisualTestContext) -> Vec<&'static str> {
+    tile(window, cx).read_with(cx, |view, cx| view.cast_stays_here(cx))
+}
+
+#[gpui::test]
+fn picture_subtitles_stay_here_when_the_video_goes_as_it_is(cx: &mut TestAppContext) {
+    let (window, mut cx, fake, tv) = start(cx, "clip-dvdsub.mkv", false);
+    let view = tile(window, &cx);
+    view.update(&mut cx, |view, cx| {
+        view.select_track(TrackKind::Subtitle, None, cx)
+    });
+    let load = cast(window, &mut cx, &fake, &tv);
+    assert_eq!(load.subtitles, None);
+    assert!(stays_here(window, &mut cx).is_empty());
+
+    view.update(&mut cx, |view, cx| {
+        view.select_track(TrackKind::Subtitle, Some(2), cx)
+    });
+    wait(&mut cx, "the device to be told", |_| {
+        calls(&fake, &tv).last() == Some(&Call::Subtitles(None))
+    });
+    assert_eq!(loads(&fake, &tv).len(), 1, "the video goes as it is");
+    assert_eq!(stays_here(window, &mut cx), [PICTURES_STAY]);
+}
+
+#[cfg(target_os = "macos")]
+#[gpui::test]
+fn picture_subtitles_are_drawn_into_video_it_re_encodes(cx: &mut TestAppContext) {
+    let (window, mut cx, fake, tv) = start(cx, "clip-dvdsub.mkv", false);
+    // Too big for the TV, so it is re-encoded.
+    fake.screen(&tv).lock().profile = stream_server::Profile {
+        max_size: Some((80, 60)),
+        ..stream_server::Profile::default()
+    };
+    let view = tile(window, &cx);
+    view.update(&mut cx, |view, cx| {
+        view.select_track(TrackKind::Subtitle, None, cx)
+    });
+    let first = cast(window, &mut cx, &fake, &tv);
+    assert!(first.start < 0.01);
+    say(&fake, &tv, State::Paused, 1.25);
+    wait(&mut cx, "the bar to follow the TV", |cx| {
+        view.read_with(cx, |view, _| (view.position() - 1.25).abs() < 1e-9)
+    });
+
+    // Picked, they go drawn in: served again, at a URL of its own.
+    view.update(&mut cx, |view, cx| {
+        view.select_track(TrackKind::Subtitle, Some(2), cx)
+    });
+    wait(&mut cx, "it to load again", |_| {
+        loads(&fake, &tv).len() == 2
+    });
+    let drawn = loads(&fake, &tv).remove(1);
+    assert_ne!(drawn.url, first.url);
+    assert_eq!(drawn.subtitles, None, "nothing for the TV to show itself");
+    assert!((drawn.start - 1.25).abs() < 0.01, "from where it was");
+    assert_eq!(get(&first.url).0, 404, "the first is no longer served");
+    assert_eq!(get(&drawn.url).0, 200);
+    wait(&mut cx, "the tile to say they go", |cx| {
+        !stays_here(window, cx).contains(&PICTURES_STAY)
+    });
+
+    // Turned off, it is served again without them.
+    view.update(&mut cx, |view, cx| {
+        view.select_track(TrackKind::Subtitle, None, cx)
+    });
+    wait(&mut cx, "it to load again", |_| {
+        loads(&fake, &tv).len() == 3
+    });
+    let plain = loads(&fake, &tv).remove(2);
+    assert_ne!(plain.url, drawn.url);
+    assert_eq!(get(&drawn.url).0, 404);
+}
+
+#[gpui::test]
 fn speakers_are_offered_for_sound_only(cx: &mut TestAppContext) {
     let (window, mut cx, fake, tv) = start(cx, "tone.m4a", false);
     let speaker = fake.add("Kitchen", Shows::Sound);

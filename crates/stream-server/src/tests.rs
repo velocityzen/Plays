@@ -138,8 +138,8 @@ impl Probed {
     }
 }
 
-/// The video and sound streams of `bytes`, read as a file.
-fn probe(bytes: &[u8], extension: &str) -> (Option<Probed>, Option<Probed>) {
+/// `bytes` in a file of their own, to read back.
+fn written(bytes: &[u8], extension: &str) -> PathBuf {
     static COUNT: AtomicUsize = AtomicUsize::new(0);
     let path = std::env::temp_dir().join(format!(
         "stream-server-{}-{}.{extension}",
@@ -147,6 +147,12 @@ fn probe(bytes: &[u8], extension: &str) -> (Option<Probed>, Option<Probed>) {
         COUNT.fetch_add(1, Ordering::Relaxed)
     ));
     fs::write(&path, bytes).unwrap();
+    path
+}
+
+/// The video and sound streams of `bytes`, read as a file.
+fn probe(bytes: &[u8], extension: &str) -> (Option<Probed>, Option<Probed>) {
+    let path = written(bytes, extension);
     let mut input = ffmpeg::format::input(&path).expect("the output opens");
     let mut streams: Vec<(usize, Type, Probed)> = input
         .streams()
@@ -810,4 +816,166 @@ fn serves_subtitles_from_a_track_with_hls() {
     wrong.subtitles = Some(SubtitleSource::Track(0));
     let cast = server.add(wrong, LOCALHOST).unwrap();
     assert_eq!(get(&cast.webvtt_url().unwrap()).status, 500);
+}
+
+/// A cast of the fixture with DVD subtitles, with its subtitles or none.
+fn dvd_cast(server: &Server, profile: Profile, subtitles: bool) -> crate::Cast {
+    let mut request = CastRequest::new(Source::File(fixture("clip-dvdsub.mkv")), profile);
+    request.subtitles = subtitles.then_some(SubtitleSource::Track(2));
+    server.add(request, LOCALHOST).expect("the fixture casts")
+}
+
+#[test]
+fn leaves_picture_subtitles_out_of_video_it_copies() {
+    let server = server();
+    for profile in [Profile::default(), hls(Segments::Ts)] {
+        let cast = dvd_cast(&server, profile, true);
+        assert!(matches!(cast.plan().video, Some(VideoPlan::Copy { .. })));
+        assert_eq!(cast.plan().subtitles, None);
+        assert!(!cast.plan().describe().contains("subtitles"));
+        assert_eq!(cast.draws(Some(&SubtitleSource::Track(2))), None);
+        // Pictures have no text to serve beside it.
+        assert_eq!(cast.webvtt_url(), None);
+        assert_eq!(get(&sibling(&cast.url(), "subs.vtt")).status, 404);
+    }
+}
+
+/// The video frames of `bytes`, read as a file, decoded: each one's time
+/// and its planes, luma then chroma, row after row.
+#[cfg(target_os = "macos")]
+fn decode(bytes: &[u8], extension: &str) -> Vec<(f64, Vec<Vec<u8>>)> {
+    let path = written(bytes, extension);
+    let mut input = ffmpeg::format::input(&path).expect("the output opens");
+    let stream = input.streams().best(Type::Video).expect("video");
+    let (index, time_base) = (stream.index(), f64::from(stream.time_base()));
+    let mut decoder = ffmpeg::codec::context::Context::from_parameters(stream.parameters())
+        .and_then(|context| context.decoder().video())
+        .expect("a decoder");
+    let mut frames = Vec::new();
+    let mut take = |decoder: &mut ffmpeg::decoder::Video| {
+        let mut frame = ffmpeg::frame::Video::empty();
+        while decoder.receive_frame(&mut frame).is_ok() {
+            assert_eq!(frame.format(), ffmpeg::format::Pixel::YUV420P);
+            let planes = (0..3)
+                .map(|plane| {
+                    let width = frame.plane_width(plane) as usize;
+                    frame
+                        .data(plane)
+                        .chunks(frame.stride(plane))
+                        .take(frame.plane_height(plane) as usize)
+                        .flat_map(|row| row[..width].to_vec())
+                        .collect()
+                })
+                .collect();
+            let time = frame.timestamp().expect("a time") as f64 * time_base;
+            frames.push((time, planes));
+        }
+    };
+    for (stream, packet) in input.packets() {
+        if stream.index() == index {
+            decoder.send_packet(&packet).unwrap();
+            take(&mut decoder);
+        }
+    }
+    decoder.send_eof().unwrap();
+    take(&mut decoder);
+    drop(input);
+    let _ = fs::remove_file(&path);
+    frames
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn draws_picture_subtitles_into_video_it_re_encodes() {
+    // Too big for the device, so it is re-encoded.
+    let profile = Profile {
+        max_size: Some((80, 60)),
+        ..hls(Segments::Ts)
+    };
+    let server = server();
+    let drawn = dvd_cast(&server, profile.clone(), true);
+    let plain = dvd_cast(&server, profile.clone(), false);
+    assert_eq!(drawn.plan().subtitles, Some(2));
+    assert_eq!(
+        drawn.plan().describe(),
+        "re-encoded to H.264, subtitles drawn in"
+    );
+    assert_eq!(plain.plan().subtitles, None);
+    assert_eq!(drawn.webvtt_url(), None);
+    assert_eq!(drawn.draws(Some(&SubtitleSource::Track(2))), Some(2));
+    assert_eq!(plain.draws(Some(&SubtitleSource::Track(2))), Some(2));
+    assert_eq!(drawn.draws(None), None);
+
+    // Text subtitles go beside it, not drawn in.
+    let mut text = CastRequest::new(Source::File(fixture("clip-subs.mkv")), profile);
+    text.subtitles = Some(SubtitleSource::Track(2));
+    let text = server.add(text, LOCALHOST).unwrap();
+    assert!(matches!(text.plan().video, Some(VideoPlan::Encode { .. })));
+    assert_eq!(text.plan().subtitles, None);
+    assert_eq!(text.draws(Some(&SubtitleSource::Track(2))), None);
+    assert!(text.webvtt_url().is_some());
+
+    let frames = |cast: &crate::Cast| -> Vec<(f64, Vec<Vec<u8>>)> {
+        (0..2)
+            .flat_map(|number| {
+                let segment = get(&sibling(&cast.url(), &format!("{number}.ts")));
+                assert_eq!(segment.status, 200);
+                decode(&segment.body, "ts")
+            })
+            .collect()
+    };
+    let (drawn, plain) = (frames(&drawn), frames(&plain));
+    assert_eq!((drawn.len(), plain.len()), (50, 50));
+    // Each cue's bar at 80x60: the first low in the picture, the second
+    // high. White and black, it takes the color out of what is under it.
+    let low = (20..60, 48..56);
+    let high = (20..60, 4..12);
+    let mut shown = 0;
+    for ((time, with), (_, without)) in drawn.iter().zip(&plain) {
+        let at = time - 10.0;
+        let cue = if (0.19..0.99).contains(&at) {
+            Some(&low)
+        } else if (1.19..1.89).contains(&at) {
+            Some(&high)
+        } else {
+            None
+        };
+        // How much each plane differs inside the bar, and away from it:
+        // luma, then chroma at half the size.
+        for (plane, shrink) in [(0, 1), (1, 2), (2, 2)] {
+            let width = 80 / shrink;
+            let (mut inside, mut outside) = (Vec::new(), Vec::new());
+            for (index, (with, without)) in with[plane].iter().zip(&without[plane]).enumerate() {
+                let (x, y) = (index % width, index / width);
+                let difference = (f64::from(*with) - f64::from(*without)).abs();
+                let near = |margin: usize| {
+                    cue.is_some_and(|(across, down)| {
+                        (across.start / shrink - margin..across.end / shrink + margin).contains(&x)
+                            && (down.start / shrink - margin..down.end / shrink + margin)
+                                .contains(&y)
+                    })
+                };
+                if near(0) {
+                    inside.push(difference);
+                } else if !near(2) {
+                    outside.push(difference);
+                }
+            }
+            let mean = |values: &[f64]| values.iter().sum::<f64>() / values.len().max(1) as f64;
+            assert!(
+                mean(&outside) < 1.5,
+                "at {at:.2}, plane {plane} away from any bar: {}",
+                mean(&outside)
+            );
+            if cue.is_some() {
+                assert!(
+                    mean(&inside) > if plane == 0 { 30.0 } else { 10.0 },
+                    "at {at:.2}, plane {plane} in the bar: {}",
+                    mean(&inside)
+                );
+            }
+        }
+        shown += usize::from(cue.is_some());
+    }
+    assert_eq!(shown, 20 + 18);
 }

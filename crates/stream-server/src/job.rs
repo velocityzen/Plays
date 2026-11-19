@@ -24,6 +24,7 @@ use crate::Error;
 use crate::encode::{AudioEncoder, AudioSettings, Colors, VideoEncoder, VideoSettings};
 use crate::media::{self, MediaInfo, Source};
 use crate::mux::{Muxer, OutStream};
+use crate::overlay::{Coding, Overlay};
 use crate::plan::{AudioPlan, Plan, VideoPlan};
 use crate::profile::Segments;
 use crate::segments::{Domain, Timeline, set_discard_all_but};
@@ -137,6 +138,8 @@ enum Work {
         from: f64,
         first: bool,
         last: Option<i64>,
+        /// Picture subtitles drawn in.
+        overlay: Option<Box<Overlay>>,
     },
     Audio {
         decoder: ffmpeg::decoder::Audio,
@@ -236,7 +239,11 @@ impl Pipeline {
         let mut input = media::open(&media.source, stop)?;
         let video = media.plan.video_stream();
         let audio = media.plan.audio_stream();
-        let keep: Vec<usize> = video.into_iter().chain(audio).collect();
+        let keep: Vec<usize> = video
+            .into_iter()
+            .chain(audio)
+            .chain(media.plan.subtitles)
+            .collect();
         set_discard_all_but(&mut input, &keep, false);
         seek(&mut input, &start, video)?;
 
@@ -264,6 +271,7 @@ impl Pipeline {
                     },
                 ),
                 VideoPlan::Encode {
+                    stream,
                     to,
                     encoder,
                     width,
@@ -273,6 +281,16 @@ impl Pipeline {
                     ..
                 } => {
                     let decoder = open_video_decoder(&parameters, time_base)?;
+                    let colors = Colors::of(&parameters);
+                    let size = media
+                        .info
+                        .video(*stream)
+                        .map_or((*width, *height), |video| (video.width, video.height));
+                    let overlay = media.plan.subtitles.and_then(|subtitles| {
+                        Overlay::open(&input, subtitles, size, Coding::of(&colors, *ten_bit))
+                            .inspect_err(|err| log::warn!("the subtitles can't be drawn in: {err}"))
+                            .ok()
+                    });
                     let encoder = VideoEncoder::open(&VideoSettings {
                         encoder,
                         codec: *to,
@@ -282,7 +300,7 @@ impl Pipeline {
                         bit_rate: *bit_rate,
                         time_base,
                         frame_rate,
-                        colors: Colors::of(&parameters),
+                        colors,
                         global_header,
                     })?;
                     let out = OutStream {
@@ -297,6 +315,7 @@ impl Pipeline {
                             from: from_time,
                             first: true,
                             last: None,
+                            overlay: overlay.map(Box::new),
                         },
                         out,
                     )
@@ -404,6 +423,16 @@ impl Pipeline {
             }
         }
         let index = packet.stream();
+        for track in &mut self.tracks {
+            if let Work::Video {
+                overlay: Some(overlay),
+                ..
+            } = &mut track.work
+                && overlay.stream() == index
+            {
+                overlay.take(&packet);
+            }
+        }
         if let Some(track) = self.tracks.iter().position(|track| track.input == index) {
             self.process(track, Some(packet), outs)?;
         }
@@ -491,6 +520,7 @@ impl Pipeline {
                 from,
                 first,
                 last,
+                overlay,
             } => {
                 let end = packet.is_none();
                 match &packet {
@@ -518,7 +548,11 @@ impl Pipeline {
                         _ => ts,
                     };
                     *last = Some(pts);
-                    encoder.send(&decoded, pts, *first || due)?;
+                    let mut frame = encoder.scale(&decoded)?;
+                    if let Some(overlay) = overlay {
+                        overlay.draw(&mut frame, time);
+                    }
+                    encoder.encode(frame, pts, *first || due)?;
                     *first = false;
                     drain_video(encoder, &mut made);
                 }
@@ -1365,7 +1399,7 @@ mod tests {
             audio: vec![AudioCodec::Ac3],
             ..Profile::default()
         };
-        let plan = plan(&info, &source, Pick::Best, Pick::Best, &profile).unwrap();
+        let plan = plan(&info, &source, Pick::Best, Pick::Best, None, &profile).unwrap();
         let timeline = crate::segments::timeline(&mut input, &info, &plan, 0.1);
         assert_eq!(timeline.len(), 10);
         let media = Media {

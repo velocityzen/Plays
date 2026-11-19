@@ -50,9 +50,11 @@ pub struct SubtitleChoice {
 pub enum Phase {
     Connecting,
     /// Playing there, the media served as `serves` says: "as is",
-    /// "repackaged", "re-encoded to H.264".
+    /// "repackaged", "re-encoded to H.264, subtitles drawn in".
     On {
         serves: String,
+        /// Whether picture subtitles are drawn into its video.
+        draws_subtitles: bool,
     },
     /// Over: the device went away, or wouldn't play it.
     Over(Error),
@@ -67,7 +69,13 @@ enum Command {
         muted: bool,
     },
     Looping(bool),
-    Subtitles(Option<SubtitleChoice>),
+    /// Other subtitles; where the video has picture subtitles drawn in,
+    /// or is to, the media is loaded again with them, from `start`.
+    Subtitles {
+        subtitles: Option<SubtitleChoice>,
+        start: f64,
+        autoplay: bool,
+    },
     /// Load the media again with other tracks, from `start`.
     Reload {
         video: Pick,
@@ -277,7 +285,14 @@ impl Link {
 
     pub fn set_subtitles(&mut self, subtitles: Option<SubtitleChoice>) {
         let (position, playing) = self.shown();
-        self.send(Command::Subtitles(subtitles), Asked { position, playing });
+        self.send(
+            Command::Subtitles {
+                subtitles,
+                start: position,
+                autoplay: playing,
+            },
+            Asked { position, playing },
+        );
     }
 
     /// Play other video or sound: the media loaded again from where it is.
@@ -375,9 +390,7 @@ impl Worker {
         }
         {
             let mut shared = worker.shared.lock();
-            shared.phase = Phase::On {
-                serves: worker.cast.plan().describe(),
-            };
+            shared.phase = on(&worker.cast);
             shared.duration = worker.cast.duration();
         }
         log::info!(
@@ -450,9 +463,24 @@ impl Worker {
                 self.looping = looping;
                 Ok(())
             }
-            Command::Subtitles(subtitles) => {
-                self.subtitles = subtitles.map(with_encoding);
-                self.request.subtitles = self.subtitles.as_ref().map(|s| s.source.clone());
+            Command::Subtitles {
+                subtitles,
+                start,
+                autoplay,
+            } => {
+                let subtitles = subtitles.map(with_encoding);
+                let source = subtitles.as_ref().map(|choice| choice.source.clone());
+                if self.cast.draws(source.as_ref()) != self.cast.plan().subtitles {
+                    // In the picture: served again, at URLs of its own, so
+                    // nothing made with the old ones is fetched.
+                    let request = CastRequest {
+                        subtitles: source,
+                        ..self.request.clone()
+                    };
+                    return self.serve_again(request, subtitles, start, autoplay);
+                }
+                self.subtitles = subtitles;
+                self.request.subtitles = source;
                 self.server
                     .set_subtitles(&self.cast, self.request.subtitles.clone());
                 self.load.subtitles = self.served_subtitles();
@@ -464,33 +492,46 @@ impl Worker {
                 start,
                 autoplay,
             } => {
-                let mut request = self.request.clone();
-                request.video = video;
-                request.audio = audio;
-                let cast = self
-                    .server
-                    .add(request.clone(), self.address)
-                    .map_err(|err| Error::Failed(err.to_string()))?;
-                let old = std::mem::replace(&mut self.cast, cast);
-                self.request = request;
-                self.load = Load {
-                    title: std::mem::take(&mut self.load.title),
-                    start,
-                    autoplay,
-                    volume: self.load.volume,
-                    muted: self.load.muted,
-                    ..load_for(&self.cast)
+                let request = CastRequest {
+                    video,
+                    audio,
+                    ..self.request.clone()
                 };
-                self.load.subtitles = self.served_subtitles();
-                let loaded = self.session.load(&self.load);
-                // The device leaves the old URL once it has the new one.
-                self.server.remove(&old);
-                self.shared.lock().phase = Phase::On {
-                    serves: self.cast.plan().describe(),
-                };
-                loaded
+                self.serve_again(request, self.subtitles.clone(), start, autoplay)
             }
         }
+    }
+
+    /// Serve the media again as `request` says, with `subtitles`, and
+    /// load it there from `start`.
+    fn serve_again(
+        &mut self,
+        request: CastRequest,
+        subtitles: Option<SubtitleChoice>,
+        start: f64,
+        autoplay: bool,
+    ) -> Result<(), Error> {
+        let cast = self
+            .server
+            .add(request.clone(), self.address)
+            .map_err(|err| Error::Failed(err.to_string()))?;
+        let old = std::mem::replace(&mut self.cast, cast);
+        self.request = request;
+        self.subtitles = subtitles;
+        self.load = Load {
+            title: std::mem::take(&mut self.load.title),
+            start,
+            autoplay,
+            volume: self.load.volume,
+            muted: self.load.muted,
+            ..load_for(&self.cast)
+        };
+        self.load.subtitles = self.served_subtitles();
+        let loaded = self.session.load(&self.load);
+        // The device leaves the old URL once it has the new one.
+        self.server.remove(&old);
+        self.shared.lock().phase = on(&self.cast);
+        loaded
     }
 
     /// Play again from the start.
@@ -524,6 +565,14 @@ impl Worker {
         log::info!("casting: over: {why}");
         self.server.remove(&self.cast);
         self.shared.lock().phase = Phase::Over(why);
+    }
+}
+
+/// Playing `cast`.
+fn on(cast: &Cast) -> Phase {
+    Phase::On {
+        serves: cast.plan().describe(),
+        draws_subtitles: cast.plan().subtitles.is_some(),
     }
 }
 

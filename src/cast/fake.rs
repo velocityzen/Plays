@@ -33,6 +33,8 @@ pub struct Screen {
     pub status: Status,
     /// Gone: its session says so.
     pub gone: bool,
+    /// What it plays, as the stream server is to serve it.
+    pub profile: Profile,
 }
 
 /// Each device, and its side.
@@ -62,6 +64,7 @@ impl FakeTarget {
                 duration: None,
             },
             gone: false,
+            profile: Profile::default(),
         };
         devices.push((device.clone(), Arc::new(Mutex::new(screen))));
         device
@@ -135,7 +138,7 @@ impl FakeSession {
 
 impl Session for FakeSession {
     fn profile(&self) -> Profile {
-        Profile::default()
+        self.screen.lock().profile.clone()
     }
 
     fn load(&mut self, load: &Load) -> Result<(), Error> {

@@ -1,7 +1,8 @@
 //! Subtitles for a cast: every cue of a text track in the media, or of a
 //! subtitle file, read once and written as WebVTT (for HLS and Chromecast)
-//! or SRT (for DLNA TVs). Italic and bold are kept; placement isn't, and
-//! picture subtitles (PGS, DVD) are left out.
+//! or SRT (for DLNA TVs). Italic and bold are kept; placement isn't.
+//! Picture subtitles (PGS, DVD) have no text: they go drawn into the
+//! video, where it is re-encoded (see `overlay`).
 
 use std::fmt::Write;
 use std::path::PathBuf;
@@ -23,7 +24,9 @@ const UNKNOWN_LENGTH: f64 = 4.0;
 /// Where a cast's subtitles come from.
 #[derive(Clone, PartialEq, Debug)]
 pub enum SubtitleSource {
-    /// A text subtitle track of the cast's own media, by stream index.
+    /// A subtitle track of the cast's own media, by stream index: text
+    /// ones are served beside the media, picture ones drawn into its video
+    /// where that is re-encoded.
     Track(usize),
     /// A subtitle file (SRT, ASS, WebVTT and the like), with its text's
     /// encoding by iconv name when it is neither UTF-8 nor UTF-16.
@@ -167,7 +170,7 @@ pub(crate) fn read(
 }
 
 /// A decoded `AVSubtitle`, freed when dropped.
-struct Decoded(ffmpeg::Subtitle);
+pub(crate) struct Decoded(pub ffmpeg::Subtitle);
 
 impl Drop for Decoded {
     fn drop(&mut self) {

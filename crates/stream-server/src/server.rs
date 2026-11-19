@@ -18,7 +18,7 @@ use ffmpeg_next as ffmpeg;
 use crate::encode::{Colors, VideoEncoder, VideoSettings};
 use crate::http::{self, Body, Request, Response};
 use crate::job::{self, Live, Media, Vod};
-use crate::media::{self, MediaInfo, Source};
+use crate::media::{self, MediaInfo, Source, StreamKind};
 use crate::mux::OFFSET;
 use crate::plan::{self, AudioPlan, Delivery, Pick, Plan, VideoPlan};
 use crate::playlist::{self, SubtitlesRendition, Variant};
@@ -129,6 +129,7 @@ impl Server {
             &request.source,
             request.video,
             request.audio,
+            request.subtitles.as_ref(),
             &request.profile,
         )?;
         log::info!("casting {}: {}", request.source.location(), plan.describe());
@@ -198,7 +199,10 @@ impl Server {
             .collect()
     }
 
-    /// Serve other subtitles with a cast, or none.
+    /// Serve other subtitles with a cast, or none. Picture subtitles go
+    /// only drawn into the video, as the cast was planned: for others drawn
+    /// in, or to stop drawing them, the media is served again with them
+    /// (see [`Cast::draws`]).
     pub fn set_subtitles(&self, cast: &Cast, subtitles: Option<SubtitleSource>) {
         cast.state.set_subtitles(subtitles);
     }
@@ -263,6 +267,15 @@ impl Cast {
     /// What is in the source.
     pub fn media(&self) -> &MediaInfo {
         &self.state.media.info
+    }
+
+    /// The stream of `subtitles` this cast's video would have drawn in: picture
+    /// subtitles in the media, where the video is re-encoded. While it
+    /// differs from what the plan draws, other subtitles need the media
+    /// served again.
+    pub fn draws(&self, subtitles: Option<&SubtitleSource>) -> Option<usize> {
+        let media = &self.state.media;
+        plan::drawn(&media.info, media.plan.video.as_ref(), subtitles)
     }
 
     /// Seconds, when the media has an end.
@@ -382,7 +395,15 @@ impl CastState {
 
     fn set_subtitles(&self, source: Option<SubtitleSource>) {
         let mut slot = lock(&self.subtitles);
-        let Some(source) = source else {
+        // Pictures have no text to serve; the video has them, if anything.
+        let pictures = |source: &SubtitleSource| match source {
+            SubtitleSource::Track(index) => matches!(
+                self.media.info.stream(*index).map(|stream| &stream.kind),
+                Some(StreamKind::Subtitle { text: false })
+            ),
+            SubtitleSource::File { .. } => false,
+        };
+        let Some(source) = source.filter(|source| !pictures(source)) else {
             *slot = None;
             return;
         };

@@ -78,8 +78,10 @@ GPU-accelerated UI framework.
   While it casts, the tile says where it plays and how the file gets there
   (as it is, repackaged, or re-encoded), and its bar, buttons and shortcuts
   drive the device, whose position moves the bar. The subtitles picked go
-  along and change there as they change on the tile; another audio or
-  video track loads the file there again from where it is. Playing it here
+  along and change there as they change on the tile; picture ones (PGS,
+  DVD) in the file go drawn into the picture where it is re-encoded, and
+  stay here where it isn't. Another audio or video track, or subtitles
+  drawn in changing, loads the file there again from where it is. Playing it here
   again (This Computer, Play Here, or the display in the menu), closing the
   tile, or the device going away ends the cast, and the tile goes on from
   where the device was. Quitting stops the devices cast to. Chromecasts,
@@ -606,7 +608,9 @@ URL. It knows nothing of Plays or gpui, so it is tested on its own.
   for a DLNA TV without it an MPEG-TS stream, each track copied when the
   device decodes it and re-encoded when it doesn't. Video is re-encoded to
   H.264 or HEVC (10-bit and HDR kept in HEVC where the device shows them),
-  no bigger than the device shows; sound to AAC, AC-3 or E-AC-3.
+  no bigger than the device shows; sound to AAC, AC-3 or E-AC-3. Picture
+  subtitles picked from the media are drawn into video re-encoded; video
+  copied goes without them.
 - `encode.rs`: the hardware video encoders only, VideoToolbox on macOS and
   NVENC or VA-API on Linux, each tried once and remembered; FFmpeg's own
   sound encoders, through a resampler and a FIFO of whole frames.
@@ -626,6 +630,13 @@ URL. It knows nothing of Plays or gpui, so it is tested on its own.
   one from the next. A live stream has one job, keeping the last ten
   segments and listing six; a progressive stream is made for each request,
   from the time it asks for.
+- `overlay.rs`: picture subtitles drawn into video as it is re-encoded.
+  The track's packets are decoded as the media is read; a display set
+  shows until the next or its own end, and one with nothing in it clears
+  the screen. Its pictures, their canvas stretched over the frame
+  (interpolated larger, averaged smaller), are blended into each NV12 or
+  P010 frame in the frame's colors, their white at graphics white in PQ
+  and HLG.
 - `subtitles.rs`: a text track of the media, or a subtitle file (from the
   encoding it is said to be in), read once and written as WebVTT (whole, or for each HLS
   segment, mapped to the media's timestamps) or SRT, keeping italics and
@@ -853,7 +864,8 @@ keeping the computer awake. Files open on real decoding threads, so tests
 wait for them in real time. A file opened into a window must open in a
 tile, and the window must then fit it. These tests open the small files in
 `tests/fixtures`, committed so they run without the `ffmpeg` tool;
-`script/make-fixtures` makes them again.
+`script/make-fixtures` makes them again (writing the DVD subtitles'
+pictures itself, as FFmpeg makes picture subtitles only from pictures).
 
 `ui::testing` clicks, double-clicks and types as someone at the screen
 would, finding what to click by its debug selector (`tile-0`, a menu row's
@@ -881,7 +893,12 @@ it was, the device stops and the file is no longer served. A device going
 away ends the cast the same way, and the cast button goes with the last
 device; quitting stops the device. Subtitles picked on a Matroska file
 cast as HLS reach the device as WebVTT with the file's cues, and turning
-them off hides them, without loading it again. Speakers are offered only
+them off hides them, without loading it again; another sound track loads
+it again with them still going along. DVD subtitles picked stay
+on this computer, the tile says, where the file goes as it is; where it is
+re-encoded they are drawn in, the file loaded again from where it was at
+a URL of its own, the first no longer served, and turning them off loads
+it again without them (macOS). Speakers are offered only
 for sound, and a video doesn't go to one. Video → Output Device lists the
 devices that show video after the displays, checking the one the tile in
 front casts to instead of the display. Each test has been checked to fail
@@ -940,12 +957,17 @@ re-encoded smaller on VideoToolbox, in both kinds of segments, each
 holding only the sound that plays during it though the encoder hands
 frames back late (macOS; with no hardware encoder, as in the Linux test
 container, planning it must fail); a progressive stream from a DLNA time
-seek; a live stream; and subtitles from a file and from a track in
+seek; a live stream; subtitles from a file and from a track in
 `clip-subs.mkv`, as WebVTT, SRT and an HLS rendition, which a device
-given them beside it doesn't find in the playlist. Unit tests check how
-far ahead a job runs, where it restarts and what it forgets, packets given
-their lengths, byte ranges, codec names from parameter sets, playlists and
-subtitle text. Each has been checked to fail when what it covers is
+given them beside it doesn't find in the playlist; and the DVD subtitles
+in `clip-dvdsub.mkv`, left out of video copied and not served as text,
+and drawn into video re-encoded, each frame at a cue's time differing
+from the same frame without them where its cue's bar is and nowhere else
+(macOS). Unit tests check how far ahead a job runs, where it restarts and
+what it forgets, packets given their lengths, byte ranges, codec names
+from parameter sets, playlists, subtitle text, and picture subtitles'
+timing, colors (PQ and HLG at graphics white), scaling and blending into
+NV12 and P010. Each has been checked to fail when what it covers is
 broken.
 
 The AirPlay crate's tests talk to the fake receiver as to a real one: a TV
@@ -1081,8 +1103,11 @@ size, makes `first-open` fail.
   device doesn't play as it is. Video decodes in software for it. HDR
   re-encoded for a device without HDR isn't tone mapped, and re-encoded
   HDR keeps no mastering or light level metadata. Picture subtitles (PGS,
-  DVD) aren't served, and text ones lose their placement; a track in the
-  media is read through the whole file first.
+  DVD) go only drawn into video re-encoded: where the video goes as it is
+  they stay out, as do those in a file of their own, and one already
+  showing where a job starts (a seek) shows only from the next. Text
+  subtitles lose their placement, and a track in the media is read
+  through the whole file first.
 - AirPlay is Apple's own protocol, unpublished; the AirPlay crate speaks
   it as others have worked it out, so an update to a TV or speaker can
   break it. It doesn't take receivers with a password, or AirPlay 1
@@ -1113,8 +1138,9 @@ size, makes `first-open` fail.
   what it plays gets H.264 and AAC in MPEG-TS, which it may still not
   play, and one that won't seek while stopped starts from the beginning a
   moment first. While a tile casts, delays don't apply, as the device plays the picture and the
-  sound; gamma, crop, rotation, flips, aspect ratio and picture subtitles
-  stay on this computer (the tile says so), and frames can't be stepped.
+  sound; gamma, crop, rotation, flips, aspect ratio, and picture subtitles
+  where the video isn't re-encoded, stay on this computer (the tile says
+  so), and frames can't be stepped.
   The stream server listens on every interface, so the firewall may ask to
   let Plays take incoming connections, and on macOS 15 and later looking
   for devices asks to use the local network.

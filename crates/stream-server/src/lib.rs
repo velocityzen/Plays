@@ -22,6 +22,7 @@ mod http;
 mod job;
 mod media;
 mod mux;
+mod overlay;
 mod plan;
 mod playlist;
 mod profile;
