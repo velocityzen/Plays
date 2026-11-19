@@ -24,7 +24,7 @@ use gpui::{
     TitlebarOptions, Window, WindowBounds, WindowHandle, WindowOptions, div, rgb, white,
 };
 
-use super::components::Badge;
+use super::components::Icon;
 use super::theme::layout::{SETTINGS_WINDOW_MIN_SIZE, SETTINGS_WINDOW_SIZE, TRAFFIC_LIGHTS};
 use super::theme::settings::{
     SIDEBAR_ROW_HEIGHT, SIDEBAR_TOP, SIDEBAR_TOP_MAC, SIDEBAR_WIDTH, TITLE_HEIGHT,
@@ -39,10 +39,10 @@ trait Pane {
     /// Its name, in the sidebar and as the pane's title.
     fn name(&self) -> &'static str;
 
-    /// Its icon, on a badge in the sidebar.
+    /// Its icon, in its color in the sidebar.
     fn icon(&self) -> &'static str;
 
-    /// The badge's color, from `theme::settings`.
+    /// The icon's color, from `theme::settings`.
     fn color(&self) -> u32;
 
     /// Its groups of rows, which scroll.
@@ -207,7 +207,13 @@ impl SettingsView {
                         this.pane = index;
                         cx.notify();
                     }))
-                    .child(Badge::icon(pane.icon(), rgb(pane.color())))
+                    // White on the selected row, where the pane's color
+                    // would sink into the accent.
+                    .child(Icon::new(pane.icon()).color(if selected {
+                        white()
+                    } else {
+                        rgb(pane.color()).into()
+                    }))
                     .child(pane.name())
             }))
             .child(div().flex_1())
