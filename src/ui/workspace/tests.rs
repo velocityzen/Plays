@@ -4,8 +4,10 @@
 use gpui::{EntityId, TestAppContext, VisualTestContext, WindowHandle, px, size};
 
 use super::{TOOLBAR_SPACE, Workspace};
+use crate::app::ShowOnDisplay;
 use crate::hotkeys::{ToggleFloatOnTop, ToggleFloatOnTopWhilePlaying};
 use crate::settings::{FloatOnTop, Settings};
+use crate::ui::displays;
 use crate::ui::settings::SettingsView;
 use crate::ui::testing::{
     self, OPEN_WAIT, click, double_click, find, fixture, press, shows, wait_until,
@@ -250,4 +252,30 @@ fn floats_on_top_always_or_while_playing(cx: &mut TestAppContext) {
         "the same item again turns it off"
     );
     assert_eq!(on_top(&mut cx), (false, false));
+}
+
+#[gpui::test]
+fn output_device_shows_the_window_full_screen_on_a_display(cx: &mut TestAppContext) {
+    let (window, mut cx) = testing::start(cx);
+    open(window, &mut cx, &["clip.mp4"], false);
+    let here = cx
+        .update(|window, cx| displays::of(window, cx))
+        .expect("a display");
+    let full_screen = |cx: &mut VisualTestContext| {
+        cx.run_until_parked();
+        cx.update(|window, _| window.is_fullscreen())
+    };
+
+    cx.dispatch_action(ShowOnDisplay(here));
+    assert!(full_screen(&mut cx), "full screen on the display it is on");
+    cx.dispatch_action(ShowOnDisplay(here));
+    assert!(full_screen(&mut cx), "and still, picked again");
+
+    // Another display: out of full screen here, then in again there.
+    cx.dispatch_action(ShowOnDisplay(here + 1));
+    assert!(full_screen(&mut cx), "full screen again after the move");
+    let moving = window
+        .read_with(&cx, |workspace, _| workspace.moving_to)
+        .unwrap();
+    assert_eq!(moving, None, "the move is done");
 }

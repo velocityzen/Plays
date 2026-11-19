@@ -65,6 +65,12 @@ GPU-accelerated UI framework.
   Settings → Hotkeys). Settings and About float with them, so they don't
   open underneath. On macOS a window comes down while it is full screen
   and floats again after.
+- On macOS, Video → Output Device lists the displays by name and puts the
+  player window full screen on the one picked, picture, subtitles and all.
+  An AirPlay TV or projector is one of them once it's connected as a
+  separate display, and macOS sends the sound there with it. AirPlay
+  speakers play the sound alone once macOS has them, and the picture is
+  held back as long as AirPlay delays the sound, so the two stay in step.
 - While a tile plays, its header and controls fade when the mouse leaves
   it, or rests on it for a couple of seconds; the pointer hides then too,
   until the mouse moves. Resting on the header or controls keeps them.
@@ -254,6 +260,16 @@ While the device picked isn't connected, players keep playing, silently,
 until it is (or, with Wait for it off, through the system's default), and
 the sound goes back to it as soon as it's there.
 
+On macOS, Video → Output Device takes the window in front full screen onto
+the display picked, and checks the one it's on; picking that one just puts
+it full screen. To play on an AirPlay TV or projector, connect it first
+from Control Center → Screen Mirroring and use it as a separate display:
+it then shows in the menu (by the name macOS gives it), and its sound goes
+with it. For sound alone, pick AirPlay speakers in Control Center → Sound:
+they become the system's default, which Plays follows, and show in Audio →
+Output Device and Settings → Audio like any other output. AirPlay sound
+comes out late, by up to a couple of seconds; the picture waits for it.
+
 A screenshot's note says which folder it went to. Settings → Screenshots
 picks the folder (Pictures at first; Show opens it), PNG or JPEG and the
 JPEG's quality, whether subtitles go in, and how HDR video is saved: as
@@ -387,7 +403,9 @@ last window quits.
 - `src/media/output.rs`: where the mixer's sound goes: a cpal stream to a
   device, in the device's own format, or, with no device, a thread that
   runs the mixer in time so players keep playing silently. It lists the
-  outputs and finds one by the id the system keeps for it.
+  outputs and finds one by the id the system keeps for it. On macOS it
+  adds the latency CoreAudio gives the device's stream, which cpal leaves
+  out and AirPlay makes long, to how late what is mixed will be heard.
 - `src/media/clock.rs`: per-player clock that runs on wall time and is eased
   toward the audio position on every audio callback.
 - `src/media/player.rs`: the UI-side handle: play/pause/seek, frame selection,
@@ -399,14 +417,16 @@ last window quits.
   waited for or stood in for while it's away, and watched for to come
   back; on macOS, CoreAudio says when outputs come and go), what each
   action does (`commands`), how actions reach the window and tile in front
-  (`dispatch`), the keymap and the menu bar (set again as outputs come and
-  go or another is picked).
+  (`dispatch`), the keymap and the menu bar (set again as outputs or
+  displays come and go, or another is picked).
 - `src/hotkeys.rs`: the commands shortcuts can run, their default
   keys, how they are saved in Settings and shown (`⌃⌘F`, `Ctrl+Alt+F`).
   The keymap is rebuilt from them whenever they change, and the menus show
   them.
 - `src/ui/`: gpui views (`open_url`, the player and Settings below) and a
-  text field based on gpui's input example.
+  text field based on gpui's input example. `displays` lists the displays
+  by the names macOS gives them and moves a window onto one, which gpui
+  can't.
   `framing` works out how a tile's picture shows: the file's orientation,
   then the tile's turns, flips, aspect ratio and crop, as a size to fit and
   where to sample the frame. `subtitles` paints a tile's cues on the
@@ -448,8 +468,9 @@ last window quits.
   own window (`tiles`), sizing the window for the videos opened in it
   (`fit`), the grid, the empty window's ring (`empty`), the
   toolbar, the mouse coming, going and resting, and the traffic lights
-  (`mouse`), and what the Playback
-  commands do to every tile (`commands`).
+  (`mouse`), floating on top (`on_top`), going full screen on another
+  display (`display`: out of full screen, across, and in again), and what
+  the Playback commands do to every tile (`commands`).
 - `src/ui/components/`: the reusable components, one `RenderOnce`
   component per file, each in three sizes (small, medium, large) with its
   numbers for each in `theme`. An icon; a button in seven variants
@@ -583,8 +604,10 @@ tile in front, then the empty window; four tiles sit in two even rows.
 Settings' Reset to Defaults asks first and changes nothing on Cancel, and
 picking an output in the Audio menu sets it. Floating on top while playing
 lifts the window, and Settings with it, only while its file plays, and
-the menu items turn their mode on and off. Each test has been checked to
-fail when the behavior it covers is broken.
+the menu items turn their mode on and off. Video → Output Device checks
+the display the window in front is on, and picking a display puts the
+window full screen, leaving full screen first when it goes to another.
+Each test has been checked to fail when the behavior it covers is broken.
 
 ### Smoke runs
 
@@ -670,3 +693,8 @@ size, makes `first-open` fail.
 - Windows can't float on top under Wayland, which has no way for an app to
   ask for it; on X11 it takes a window manager that keeps windows above
   (`_NET_WM_STATE_ABOVE`), as most do.
+- Plays can't find or connect to AirPlay receivers itself: macOS keeps
+  that to its own picker and to AVPlayer, which Plays doesn't play
+  through. Connect one from Control Center first. Mirrored, an AirPlay
+  display shows the whole screen; as a separate display, just the window.
+  Video → Output Device is macOS only.

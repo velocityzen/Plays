@@ -15,10 +15,7 @@ impl Workspace {
         let on_top = match cx.global::<Settings>().float_on_top {
             FloatOnTop::Off => false,
             FloatOnTop::Always => true,
-            FloatOnTop::WhilePlaying => self
-                .tiles
-                .iter()
-                .any(|tile| tile.view.read(cx).player().is_playing()),
+            FloatOnTop::WhilePlaying => self.any_playing(cx),
         };
         if on_top != self.on_top {
             self.on_top = on_top;

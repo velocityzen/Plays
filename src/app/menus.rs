@@ -1,18 +1,27 @@
 //! The menu bar. Its items show the keys bound to their actions, so the
 //! keymap sets the menus again whenever it changes, and so does the audio
-//! engine as outputs come and go or another is picked, and Settings when
-//! floating on top changes.
+//! engine as outputs come and go or another is picked, Settings when
+//! floating on top changes, and the displays as they come and go or the
+//! window in front moves to another.
 
-use gpui::{App, Menu, MenuItem, SystemMenuType};
+use std::time::Duration;
 
+use gpui::{App, Global, Menu, MenuItem, SystemMenuType};
+
+use super::dispatch::first_workspace;
 use super::{
     About, AudioEngine, CloseAll, CloseFile, CloseWindow, OpenFiles, OpenSettings, OpenUrl, Quit,
-    SetAspectRatio, SetAudioDevice, SetCrop,
+    SetAspectRatio, SetAudioDevice, SetCrop, ShowOnDisplay,
 };
 use crate::hotkeys::*;
 use crate::media::output::DeviceInfo;
 use crate::settings::{AudioDevice, FloatOnTop, Settings};
+use crate::ui::displays::{self, DisplayInfo};
 use crate::ui::framing::{ASPECT_RATIOS, CROPS};
+
+/// How often the displays are looked at: nothing tells when one connects,
+/// as an AirPlay display does.
+const DISPLAYS_POLL: Duration = Duration::from_secs(1);
 
 pub(super) fn set_menus(cx: &mut App) {
     let outputs = output_menu(
@@ -20,6 +29,10 @@ pub(super) fn set_menus(cx: &mut App) {
         cx.global::<Settings>().audio_output.device.as_ref(),
     );
     let float_on_top = cx.global::<Settings>().float_on_top;
+    let displays = cx
+        .try_global::<Displays>()
+        .cloned()
+        .unwrap_or_else(|| Displays::now(cx));
     cx.set_menus(vec![
         Menu {
             name: "Plays".into(),
@@ -75,6 +88,7 @@ pub(super) fn set_menus(cx: &mut App) {
                     .checked(float_on_top == FloatOnTop::Always),
                 MenuItem::action("Float on Top While Playing", ToggleFloatOnTopWhilePlaying)
                     .checked(float_on_top == FloatOnTop::WhilePlaying),
+                MenuItem::submenu(display_menu(&displays)),
                 MenuItem::separator(),
                 MenuItem::action("Next Video Track", NextVideoTrack),
                 MenuItem::separator(),
@@ -166,6 +180,71 @@ pub(super) fn watch_settings(cx: &mut App) {
     .detach();
 }
 
+/// What Video → Output Device shows: the displays, and the one the window
+/// in front is on.
+#[derive(Clone, Default, PartialEq, Debug)]
+struct Displays {
+    list: Vec<DisplayInfo>,
+    front: Option<u32>,
+}
+
+impl Global for Displays {}
+
+impl Displays {
+    fn now(cx: &mut App) -> Self {
+        let front = first_workspace(cx.active_window())
+            .or_else(|| first_workspace(cx.window_stack().unwrap_or_default()))
+            .or_else(|| first_workspace(cx.windows()))
+            .and_then(|handle| {
+                handle
+                    .update(cx, |_, window, cx| displays::of(window, cx))
+                    .ok()
+                    .flatten()
+            });
+        Self {
+            list: displays::list(cx),
+            front,
+        }
+    }
+}
+
+/// Set the menus again when a display comes or goes, or the window in front
+/// is on another.
+pub(super) fn watch_displays(cx: &mut App) {
+    cx.spawn(async move |cx| {
+        loop {
+            cx.background_executor().timer(DISPLAYS_POLL).await;
+            let alive = cx.update(|cx| {
+                let now = Displays::now(cx);
+                if cx.try_global::<Displays>() != Some(&now) {
+                    cx.set_global(now);
+                    set_menus(cx);
+                }
+            });
+            if alive.is_err() {
+                break;
+            }
+        }
+    })
+    .detach();
+}
+
+/// Every display, the one the window in front is on checked: picking one
+/// shows the window there, full screen.
+fn display_menu(displays: &Displays) -> Menu {
+    Menu {
+        name: "Output Device".into(),
+        items: displays
+            .list
+            .iter()
+            .map(|display| {
+                MenuItem::action(display.name.clone(), ShowOnDisplay(display.id))
+                    .checked(displays.front == Some(display.id))
+            })
+            .collect(),
+    }
+}
+
 /// The system's default and every output connected, with the one picked
 /// checked; one picked that isn't connected is listed too, as it is still
 /// what the sound waits for.
@@ -243,6 +322,22 @@ mod tests {
                 ("Speakers".into(), false),
                 ("Headphones".into(), true),
             ]
+        );
+    }
+
+    #[test]
+    fn checks_the_display_the_window_in_front_is_on() {
+        let display = |id, name: &str| DisplayInfo {
+            id,
+            name: name.into(),
+        };
+        let displays = Displays {
+            list: vec![display(1, "Built-in Display"), display(7, "Beamer")],
+            front: Some(7),
+        };
+        assert_eq!(
+            listed(&display_menu(&displays)),
+            [("Built-in Display".into(), false), ("Beamer".into(), true),]
         );
     }
 

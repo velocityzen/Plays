@@ -4,7 +4,7 @@
 //! silently, and pick up where they are once a device is back.
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
@@ -82,6 +82,26 @@ fn name(device: &cpal::Device) -> String {
         .unwrap_or_else(|_| device.to_string())
 }
 
+/// Frames of latency in `device`'s output streams: how long after the
+/// device takes a sample it is heard, beyond its own latency and safety
+/// offset, which cpal counts already when it says when a buffer plays.
+/// Bluetooth and AirPlay outputs report most of their delay here, AirPlay
+/// about two seconds of it. Only on macOS; 0 elsewhere.
+fn stream_latency(device: &cpal::Device) -> u32 {
+    #[cfg(target_os = "macos")]
+    {
+        device
+            .id()
+            .ok()
+            .map_or(0, |id| core_audio::stream_latency(id.id()))
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = device;
+        0
+    }
+}
+
 /// Call `changed` whenever an output device is connected or disconnected,
 /// from a thread of the system's, for as long as the app runs. Only on
 /// macOS, where nothing else tells; elsewhere the list is read again when
@@ -105,6 +125,14 @@ mod core_audio {
     const SCOPE_GLOBAL: u32 = u32::from_be_bytes(*b"glob");
     /// `kAudioObjectPropertyElementMain`.
     const ELEMENT_MAIN: u32 = 0;
+    /// `kAudioObjectPropertyScopeOutput`, 'outp'.
+    const SCOPE_OUTPUT: u32 = u32::from_be_bytes(*b"outp");
+    /// `kAudioHardwarePropertyTranslateUIDToDevice`, 'uidd'.
+    const UID_TO_DEVICE: u32 = u32::from_be_bytes(*b"uidd");
+    /// `kAudioDevicePropertyStreams`, 'stm#'.
+    const STREAMS: u32 = u32::from_be_bytes(*b"stm#");
+    /// `kAudioStreamPropertyLatency`, 'ltnc'.
+    const LATENCY: u32 = u32::from_be_bytes(*b"ltnc");
 
     #[repr(C)]
     struct PropertyAddress {
@@ -123,6 +151,109 @@ mod core_audio {
             listener: Listener,
             client_data: *mut c_void,
         ) -> i32;
+        fn AudioObjectGetPropertyDataSize(
+            object: u32,
+            address: *const PropertyAddress,
+            qualifier_size: u32,
+            qualifier: *const c_void,
+            size: *mut u32,
+        ) -> i32;
+        fn AudioObjectGetPropertyData(
+            object: u32,
+            address: *const PropertyAddress,
+            qualifier_size: u32,
+            qualifier: *const c_void,
+            size: *mut u32,
+            data: *mut c_void,
+        ) -> i32;
+    }
+
+    /// The most latency, in frames, of the output streams of the device
+    /// whose UID is `uid`; 0 if it can't be read.
+    pub fn stream_latency(uid: &str) -> u32 {
+        use core_foundation::base::TCFType;
+        use core_foundation::string::CFString;
+
+        let uid = CFString::new(uid);
+        let uid_ref = uid.as_concrete_TypeRef();
+        let mut device = 0u32;
+        let mut size = size_of::<u32>() as u32;
+        let address = PropertyAddress {
+            selector: UID_TO_DEVICE,
+            scope: SCOPE_GLOBAL,
+            element: ELEMENT_MAIN,
+        };
+        // SAFETY: the qualifier is a CFStringRef, alive while `uid` is, and
+        // the answer an AudioObjectID, which `device` holds.
+        let status = unsafe {
+            AudioObjectGetPropertyData(
+                SYSTEM_OBJECT,
+                &address,
+                size_of_val(&uid_ref) as u32,
+                (&raw const uid_ref).cast(),
+                &mut size,
+                (&raw mut device).cast(),
+            )
+        };
+        if status != 0 || device == 0 {
+            return 0;
+        }
+
+        let address = PropertyAddress {
+            selector: STREAMS,
+            scope: SCOPE_OUTPUT,
+            element: ELEMENT_MAIN,
+        };
+        let mut size = 0u32;
+        // SAFETY: only the size is written.
+        let status = unsafe {
+            AudioObjectGetPropertyDataSize(device, &address, 0, std::ptr::null(), &mut size)
+        };
+        if status != 0 {
+            return 0;
+        }
+        let mut streams = vec![0u32; size as usize / size_of::<u32>()];
+        // SAFETY: `streams` has room for `size` bytes of AudioStreamIDs.
+        let status = unsafe {
+            AudioObjectGetPropertyData(
+                device,
+                &address,
+                0,
+                std::ptr::null(),
+                &mut size,
+                streams.as_mut_ptr().cast(),
+            )
+        };
+        if status != 0 {
+            return 0;
+        }
+        streams.truncate(size as usize / size_of::<u32>());
+
+        let address = PropertyAddress {
+            selector: LATENCY,
+            scope: SCOPE_GLOBAL,
+            element: ELEMENT_MAIN,
+        };
+        streams
+            .into_iter()
+            .filter_map(|stream| {
+                let mut latency = 0u32;
+                let mut size = size_of::<u32>() as u32;
+                // SAFETY: the answer is a UInt32, which `latency` holds.
+                let status = unsafe {
+                    AudioObjectGetPropertyData(
+                        stream,
+                        &address,
+                        0,
+                        std::ptr::null(),
+                        &mut size,
+                        (&raw mut latency).cast(),
+                    )
+                };
+                (status == 0).then_some(latency)
+            })
+            .max()
+            .unwrap_or(0)
     }
 
     type Changed = Box<dyn Fn() + Send + Sync>;
@@ -210,6 +341,9 @@ enum Sink {
         /// Plays while it is kept.
         _stream: cpal::Stream,
         playing: Playing,
+        /// The device's stream latency, in frames, read when the stream
+        /// works out when what it mixes is heard.
+        stream_latency: Arc<AtomicU32>,
     },
     Silent(Silent),
 }
@@ -246,13 +380,15 @@ impl AudioOutput {
         // Let go of the old device first: some can only be opened once.
         self.play_nowhere();
         let device = find(id).ok_or(OpenError::Missing)?;
-        let (stream, playing) =
-            open(&device, id, &self.mixer, on_event).map_err(OpenError::Failed)?;
+        let stream_latency = Arc::new(AtomicU32::new(stream_latency(&device)));
+        let (stream, playing) = open(&device, id, &self.mixer, stream_latency.clone(), on_event)
+            .map_err(OpenError::Failed)?;
         log::info!(
-            "audio output: {} @ {} Hz, {} channels",
+            "audio output: {} @ {} Hz, {} channels, {} frames of stream latency",
             playing.name,
             playing.rate,
-            playing.channels
+            playing.channels,
+            stream_latency.load(Ordering::Relaxed)
         );
         // Two can't mix at once: each would take sound from the other.
         if let Sink::Silent(silent) = &mut self.sink {
@@ -267,6 +403,7 @@ impl AudioOutput {
         self.sink = Sink::Device {
             _stream: stream,
             playing,
+            stream_latency,
         };
         Ok(self.playing().expect("it was just set"))
     }
@@ -279,22 +416,35 @@ impl AudioOutput {
     }
 
     /// The system's default output changed and the stream followed it:
-    /// what it plays through is called something else now.
+    /// what it plays through is called something else now, and is heard
+    /// that much later.
     pub fn followed_default(&mut self) {
-        if let Sink::Device { playing, .. } = &mut self.sink
+        if let Sink::Device {
+            playing,
+            stream_latency: latency,
+            ..
+        } = &mut self.sink
             && playing.id.is_none()
             && let Some(device) = find(None)
         {
             playing.name = name(&device);
+            latency.store(stream_latency(&device), Ordering::Relaxed);
+            log::info!(
+                "audio output followed the default to {}, {} frames of stream latency",
+                playing.name,
+                latency.load(Ordering::Relaxed)
+            );
         }
     }
 }
 
-/// A stream from `mixer` to `device` (asked for as `id`), not started yet.
+/// A stream from `mixer` to `device` (asked for as `id`), not started yet,
+/// heard `stream_latency` frames after cpal says it plays.
 fn open(
     device: &cpal::Device,
     id: Option<&str>,
     mixer: &Arc<Mixer>,
+    stream_latency: Arc<AtomicU32>,
     on_event: impl Fn(DeviceEvent) + Send + 'static,
 ) -> Result<(cpal::Stream, Playing)> {
     let supported = device
@@ -321,13 +471,13 @@ fn open(
     };
     let mixer = mixer.clone();
     let stream = match sample_format {
-        SampleFormat::F32 => build::<f32>(device, config, mixer, on_error),
-        SampleFormat::F64 => build::<f64>(device, config, mixer, on_error),
-        SampleFormat::I16 => build::<i16>(device, config, mixer, on_error),
-        SampleFormat::I32 => build::<i32>(device, config, mixer, on_error),
-        SampleFormat::U16 => build::<u16>(device, config, mixer, on_error),
-        SampleFormat::U8 => build::<u8>(device, config, mixer, on_error),
-        SampleFormat::I8 => build::<i8>(device, config, mixer, on_error),
+        SampleFormat::F32 => build::<f32>(device, config, mixer, stream_latency, on_error),
+        SampleFormat::F64 => build::<f64>(device, config, mixer, stream_latency, on_error),
+        SampleFormat::I16 => build::<i16>(device, config, mixer, stream_latency, on_error),
+        SampleFormat::I32 => build::<i32>(device, config, mixer, stream_latency, on_error),
+        SampleFormat::U16 => build::<u16>(device, config, mixer, stream_latency, on_error),
+        SampleFormat::U8 => build::<u8>(device, config, mixer, stream_latency, on_error),
+        SampleFormat::I8 => build::<i8>(device, config, mixer, stream_latency, on_error),
         other => Err(anyhow!("unsupported output sample format {other:?}")),
     }?;
     Ok((stream, playing))
@@ -337,6 +487,7 @@ fn build<T>(
     device: &cpal::Device,
     config: cpal::StreamConfig,
     mixer: Arc<Mixer>,
+    stream_latency: Arc<AtomicU32>,
     on_error: impl FnMut(cpal::Error) + Send + 'static,
 ) -> Result<cpal::Stream>
 where
@@ -357,7 +508,8 @@ where
                 .playback
                 .checked_duration_since(timestamp.callback)
                 .map(|d| d.as_secs_f64())
-                .unwrap_or(frames as f64 / sample_rate);
+                .unwrap_or(frames as f64 / sample_rate)
+                + f64::from(stream_latency.load(Ordering::Relaxed)) / sample_rate;
             mixer.mix(&mut mix, latency, Instant::now());
 
             for (frame, lr) in out
@@ -441,6 +593,12 @@ impl Drop for Silent {
 mod tests {
     use super::*;
 
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn no_stream_latency_for_a_device_not_there() {
+        assert_eq!(core_audio::stream_latency("no-such-device"), 0);
+    }
+
     /// Needs the machine's own audio outputs: `cargo test -- --ignored`.
     #[test]
     #[ignore = "plays through this machine's audio outputs"]
@@ -456,6 +614,8 @@ mod tests {
         assert_eq!(output.mixer().sample_rate(), playing.rate);
         for device in &devices {
             assert!(is_connected(Some(&device.id)), "{device:?} by its id");
+            let latency = find(Some(&device.id)).map(|device| stream_latency(&device));
+            eprintln!("{}: {latency:?} frames of stream latency", device.name);
             match output.play_through(Some(&device.id), |_| {}).cloned() {
                 Ok(playing) => {
                     assert_eq!(playing.id.as_deref(), Some(device.id.as_str()));

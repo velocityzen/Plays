@@ -2,6 +2,7 @@
 //! empty window's ring. Each part is in its own file.
 
 mod commands;
+mod display;
 mod empty;
 mod fit;
 mod grid;
@@ -79,6 +80,9 @@ pub struct Workspace {
     traffic_lights_shown: bool,
     /// Floating above other apps' windows, as last set.
     on_top: bool,
+    /// The display it is moving to, full screen, once out of full screen
+    /// where it is.
+    moving_to: Option<u32>,
     _settings_subscription: Subscription,
     _activation_subscription: Subscription,
     _url_form_events: Subscription,
@@ -153,6 +157,7 @@ impl Workspace {
                         tile.view.update(cx, |view, cx| view.background_tick(cx));
                     }
                     this.update_on_top(window, cx);
+                    this.finish_moving(window);
                 });
                 if alive.is_err() {
                     break;
@@ -177,6 +182,7 @@ impl Workspace {
             watching_idle: false,
             traffic_lights_shown: true,
             on_top: false,
+            moving_to: None,
             gamma: cx.global::<Settings>().gamma(),
             _settings_subscription: settings_subscription,
             _activation_subscription: activation_subscription,
@@ -206,6 +212,7 @@ impl Render for Workspace {
         }
         self.update_traffic_lights(window, cx);
         self.update_on_top(window, cx);
+        self.finish_moving(window);
         let theme = Theme::get(window, cx);
         let drop_highlight = theme.drop_highlight;
         let empty = self.tiles.is_empty();

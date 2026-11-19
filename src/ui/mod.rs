@@ -1,5 +1,6 @@
 pub mod about;
 pub mod components;
+pub mod displays;
 pub mod framing;
 pub mod open_url;
 mod overlay;

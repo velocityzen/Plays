@@ -1,0 +1,41 @@
+//! Video → Output Device: putting the window full screen on a display, such
+//! as an AirPlay one.
+
+use gpui::{Context, Window};
+
+use super::Workspace;
+use crate::ui::displays;
+
+impl Workspace {
+    /// Put the window full screen on display `id`. One full screen
+    /// elsewhere leaves full screen first, as macOS can't move it, and goes
+    /// on once it has (`finish_moving`).
+    pub fn show_on_display(&mut self, id: u32, window: &mut Window, cx: &mut Context<Self>) {
+        if displays::of(window, cx) == Some(id) {
+            self.moving_to = None;
+            if !window.is_fullscreen() {
+                window.toggle_fullscreen();
+            }
+            return;
+        }
+        self.moving_to = Some(id);
+        if window.is_fullscreen() {
+            window.toggle_fullscreen();
+            cx.notify();
+        } else {
+            self.finish_moving(window);
+        }
+    }
+
+    /// Move to the display picked and go full screen there, once the window
+    /// is out of full screen. Runs on every render and tick.
+    pub(super) fn finish_moving(&mut self, window: &mut Window) {
+        if window.is_fullscreen() {
+            return;
+        }
+        if let Some(id) = self.moving_to.take() {
+            displays::move_to(window, id);
+            window.toggle_fullscreen();
+        }
+    }
+}

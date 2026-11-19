@@ -55,6 +55,11 @@ pub struct SetCrop(pub Option<Ratio>);
 #[action(namespace = plays, no_json)]
 pub struct SetAudioDevice(pub Option<AudioDevice>);
 
+/// Show the window in front full screen on this display (its id).
+#[derive(Clone, PartialEq, Debug, gpui::Action)]
+#[action(namespace = plays, no_json)]
+pub struct ShowOnDisplay(pub u32);
+
 /// `opened` brings the URLs the system asks the app to open.
 pub fn run(cx: &mut App, sources: Vec<Source>, opened: UnboundedReceiver<Vec<String>>) {
     set_up(cx, Settings::load(), AudioEngine::start);
@@ -95,6 +100,7 @@ fn set_up(cx: &mut App, settings: Settings, audio: fn(&mut App)) {
     keymap::bind_keys(cx);
     keymap::watch_hotkeys(cx);
     menus::watch_settings(cx);
+    menus::watch_displays(cx);
 }
 
 /// For `#[gpui::test]`s: the app as it starts, with default settings
