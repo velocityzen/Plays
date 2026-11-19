@@ -76,16 +76,20 @@ impl RenderOnce for Popover {
             .flex_none()
             .child(self.trigger)
             .when_some(self.menu, |this, menu| {
+                // Placed from the trigger's top left: left in the flow, the
+                // menu's origin would be under the trigger instead.
                 this.child(
-                    deferred(
-                        anchored()
-                            .position_mode(AnchoredPositionMode::Local)
-                            .anchor(self.anchor)
-                            .position(self.position)
-                            .snap_to_window_with_margin(menu::WINDOW_MARGIN)
-                            .child(menu),
-                    )
-                    .with_priority(2),
+                    div().absolute().top_0().left_0().child(
+                        deferred(
+                            anchored()
+                                .position_mode(AnchoredPositionMode::Local)
+                                .anchor(self.anchor)
+                                .position(self.position)
+                                .snap_to_window_with_margin(menu::WINDOW_MARGIN)
+                                .child(menu),
+                        )
+                        .with_priority(2),
+                    ),
                 )
                 .child(
                     deferred(
