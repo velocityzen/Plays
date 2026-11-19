@@ -127,6 +127,8 @@ pub(super) fn set_menus(cx: &mut App) {
                 MenuItem::action("Audio Later", AudioLater),
                 MenuItem::action("Reset Audio Delay", ResetAudioDelay),
                 MenuItem::separator(),
+                MenuItem::action("Volume Up on All", VolumeUpAll),
+                MenuItem::action("Volume Down on All", VolumeDownAll),
                 MenuItem::action("Mute/Unmute All", ToggleMuteAll),
                 MenuItem::separator(),
                 MenuItem::submenu(outputs),

@@ -259,6 +259,33 @@ fn shortcuts_go_to_the_tile_the_mouse_is_over(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn shift_up_and_down_change_every_tiles_volume_from_its_own(cx: &mut TestAppContext) {
+    let (window, mut cx) = testing::start(cx);
+    open(window, &mut cx, &["clip.mp4", "clip-ip.mkv"], false);
+    let volumes = |cx: &VisualTestContext| {
+        window
+            .read_with(cx, |workspace, cx| {
+                workspace
+                    .tiles
+                    .iter()
+                    .map(|tile| (tile.view.read(cx).player().volume() * 100.0).round())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap()
+    };
+    let quieter = window
+        .read_with(&cx, |workspace, _| workspace.tiles[1].view.clone())
+        .unwrap();
+    quieter.update(&mut cx, |view, _| view.set_volume(0.5));
+
+    hover(&mut cx, "tile-0");
+    press(&mut cx, "shift-up");
+    assert_eq!(volumes(&cx), [85.0, 55.0]);
+    press(&mut cx, "shift-down shift-down");
+    assert_eq!(volumes(&cx), [75.0, 45.0]);
+}
+
+#[gpui::test]
 fn command_w_closes_the_tile_in_front_then_the_window(cx: &mut TestAppContext) {
     let (window, mut cx) = testing::start(cx);
     open(window, &mut cx, &["clip.mp4", "clip-ip.mkv"], false);

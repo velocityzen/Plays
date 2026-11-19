@@ -63,6 +63,8 @@ gpui::actions!(
         NextFrameAll,
         PreviousFrameAll,
         SyncAll,
+        VolumeUpAll,
+        VolumeDownAll,
         ToggleMuteAll,
     ]
 );
@@ -122,6 +124,8 @@ pub enum Command {
     NextFrameAll,
     PreviousFrameAll,
     SyncAll,
+    VolumeUpAll,
+    VolumeDownAll,
     MuteAll,
 }
 
@@ -159,7 +163,7 @@ impl Group {
 }
 
 impl Command {
-    pub const ALL: [Self; 48] = [
+    pub const ALL: [Self; 50] = [
         Self::PlayPause,
         Self::SeekForward,
         Self::SeekBackward,
@@ -207,6 +211,8 @@ impl Command {
         Self::PreviousFrameAll,
         Self::RestartAll,
         Self::SyncAll,
+        Self::VolumeUpAll,
+        Self::VolumeDownAll,
         Self::MuteAll,
     ];
 
@@ -260,6 +266,8 @@ impl Command {
             Self::NextFrameAll => "next_frame_all",
             Self::PreviousFrameAll => "previous_frame_all",
             Self::SyncAll => "sync_all",
+            Self::VolumeUpAll => "volume_up_all",
+            Self::VolumeDownAll => "volume_down_all",
             Self::MuteAll => "mute_all",
         }
     }
@@ -317,6 +325,8 @@ impl Command {
             Self::NextFrameAll => "Next frame on all",
             Self::PreviousFrameAll => "Previous frame on all",
             Self::SyncAll => "Sync all to the tile in front",
+            Self::VolumeUpAll => "Volume up on all",
+            Self::VolumeDownAll => "Volume down on all",
             Self::MuteAll => "Mute/unmute all",
         }
     }
@@ -376,6 +386,8 @@ impl Command {
             | Self::NextFrameAll
             | Self::PreviousFrameAll
             | Self::SyncAll
+            | Self::VolumeUpAll
+            | Self::VolumeDownAll
             | Self::MuteAll => Group::AllFiles,
         }
     }
@@ -429,6 +441,8 @@ impl Command {
             Self::NextFrameAll => Box::new(NextFrameAll),
             Self::PreviousFrameAll => Box::new(PreviousFrameAll),
             Self::SyncAll => Box::new(SyncAll),
+            Self::VolumeUpAll => Box::new(VolumeUpAll),
+            Self::VolumeDownAll => Box::new(VolumeDownAll),
             Self::MuteAll => Box::new(ToggleMuteAll),
         }
     }
@@ -492,6 +506,8 @@ impl Command {
             Self::NextFrameAll => &["alt-shift-right"],
             Self::PreviousFrameAll => &["alt-shift-left"],
             Self::SyncAll => &["shift-s"],
+            Self::VolumeUpAll => &["shift-up"],
+            Self::VolumeDownAll => &["shift-down"],
             Self::MuteAll => &["shift-m"],
         }
     }

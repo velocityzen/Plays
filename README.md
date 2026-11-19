@@ -108,8 +108,8 @@ GPU-accelerated UI framework.
   (or the one it was last over, or clicked): play/pause, seek, frame step,
   volume, tracks, subtitle size and height, audio and subtitle delay,
   rotation, flips, aspect ratio, crop, screenshots, full screen.
-  With Shift, play/pause, seek, frame step, restart and mute go to every
-  file in the window, and Shift-S syncs them all to that tile; the menu
+  With Shift, play/pause, seek, frame step, restart, volume and mute go to
+  every file in the window (each tile's volume from its own), and Shift-S syncs them all to that tile; the menu
   bar (a toolbar on Linux) has them too.
 - On macOS, windows show just the video, edge to edge, with the traffic
   lights over it like other video players. While something plays, they fade
@@ -268,6 +268,7 @@ it again when the dependencies change (`script/bundle-macos` runs it).
 | Picture in Picture (macOS) | `⌃⌘P` |
 | Console | `~` or `` ` `` |
 | Play/pause, seek, restart, mute all | `⇧Space`, `⇧←` `⇧→`, `⇧Home`, `⇧M` |
+| Volume down/up on all | `⇧↓` `⇧↑` |
 | Previous/next frame on all | `⌥⇧←` `⌥⇧→` / `Alt+Shift+←` `Alt+Shift+→` |
 | Sync all to the active tile | `⇧S` |
 | Close the file in front | `⌘W` / `Ctrl+W` (in an empty window, it closes the window) |
@@ -937,7 +938,8 @@ whole area under the toolbar, and another puts the grid back; ⌘W closes the
 tile in front, then the empty window; four tiles sit in two even rows.
 `⇧S` puts every tile where the one clicked is, paused as it is, and
 `⌥⇧→` and `⌥⇧←` step them all a frame at a time; with the one clicked
-playing, the others go back to where it is and play. Settings' Reset to
+playing, the others go back to where it is and play. `⇧↑` and `⇧↓` turn
+every tile up or down from its own volume. Settings' Reset to
 Defaults asks first and changes nothing on Cancel, and
 picking an output in the Audio menu sets it. Floating on top while playing
 lifts the window, and Settings with it, only while its file plays, and

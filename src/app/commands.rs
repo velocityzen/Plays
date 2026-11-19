@@ -15,6 +15,9 @@ use crate::settings::{
 use crate::ui::about::AboutView;
 use crate::ui::settings::SettingsView;
 
+/// How far the volume shortcuts change a tile's volume.
+const VOLUME_STEP: f32 = 0.05;
+
 pub(super) fn register(cx: &mut App) {
     cx.on_action(|_: &Quit, cx| cx.quit());
     // Deferred, as in `with_workspace`, so the window in front (Settings,
@@ -62,8 +65,8 @@ pub(super) fn register(cx: &mut App) {
     cx.on_action(|_: &PreviousFile, cx| with_active(cx, |p, cx| p.open_neighbor(-1, cx)));
     cx.on_action(|_: &NextFile, cx| with_active(cx, |p, cx| p.open_neighbor(1, cx)));
     cx.on_action(|_: &ToggleLoop, cx| with_active(cx, |p, cx| p.toggle_loop(cx)));
-    cx.on_action(|_: &VolumeUp, cx| with_active(cx, |p, cx| p.change_volume(0.05, cx)));
-    cx.on_action(|_: &VolumeDown, cx| with_active(cx, |p, cx| p.change_volume(-0.05, cx)));
+    cx.on_action(|_: &VolumeUp, cx| with_active(cx, |p, cx| p.change_volume(VOLUME_STEP, cx)));
+    cx.on_action(|_: &VolumeDown, cx| with_active(cx, |p, cx| p.change_volume(-VOLUME_STEP, cx)));
     cx.on_action(|_: &ToggleMute, cx| with_active(cx, |p, cx| p.toggle_mute(cx)));
     cx.on_action(|_: &NextAudioTrack, cx| {
         with_active(cx, |p, cx| p.next_track(TrackKind::Audio, cx))
@@ -148,6 +151,12 @@ pub(super) fn register(cx: &mut App) {
         with_workspace(cx, |w, _, cx| w.step_frame_all(-1.0, cx))
     });
     cx.on_action(|_: &SyncAll, cx| with_workspace(cx, |w, _, cx| w.sync_all(cx)));
+    cx.on_action(|_: &VolumeUpAll, cx| {
+        with_workspace(cx, |w, _, cx| w.change_volume_all(VOLUME_STEP, cx))
+    });
+    cx.on_action(|_: &VolumeDownAll, cx| {
+        with_workspace(cx, |w, _, cx| w.change_volume_all(-VOLUME_STEP, cx))
+    });
     cx.on_action(|_: &ToggleMuteAll, cx| with_workspace(cx, |w, _, cx| w.toggle_mute_all(cx)));
 }
 

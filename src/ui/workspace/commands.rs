@@ -77,6 +77,15 @@ impl Workspace {
         });
     }
 
+    /// Every tile's volume up (or down, `delta` below 0), each from its
+    /// own.
+    pub fn change_volume_all(&mut self, delta: f32, cx: &mut Context<Self>) {
+        for tile in &self.tiles {
+            tile.view
+                .update(cx, |view, cx| view.change_volume(delta, cx));
+        }
+    }
+
     pub fn toggle_mute_all(&mut self, cx: &mut Context<Self>) {
         let mute = self
             .tiles
