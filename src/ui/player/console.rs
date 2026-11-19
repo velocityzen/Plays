@@ -363,6 +363,7 @@ mod tests {
             info: Some(info),
             stats: PlaybackStats {
                 shown_fps: 30.0,
+                shown: 300,
                 dropped: 2,
                 lateness: Some(0.004),
                 queued_frames: 8,

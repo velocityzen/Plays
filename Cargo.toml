@@ -49,6 +49,11 @@ raw-window-handle = "0.6"
 [target.'cfg(target_os = "linux")'.dependencies]
 ashpd = { version = "0.11", default-features = false, features = ["async-std"] }
 
+[features]
+# Scripted runs of the real app, for what headless tests can't reach:
+# `script/smoke` (see README). Its settings are the defaults, never saved.
+smoke = []
+
 # gpui's test platform, for `#[gpui::test]`s: headless windows, simulated
 # input and a deterministic executor. Only in test builds.
 [dev-dependencies]
@@ -63,6 +68,11 @@ opt-level = 3
 
 [profile.release]
 lto = "thin"
+
+# Smoke runs' builds, with the `smoke` feature: `target/smoke/plays`, apart
+# from the release one, whose settings are the real ones.
+[profile.smoke]
+inherits = "release"
 
 # gpui with HDR video on macOS, and the xattr it reaches building on Linux
 # with today's libc; see PLAYS.md in each for what changed.

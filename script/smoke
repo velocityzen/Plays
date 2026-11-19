@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# Smoke runs: build Plays with the `smoke` feature (target/smoke/plays) and
+# run each scenario, or those named, in the real app, one process each
+# (see src/app/smoke.rs). Exits non-zero if any failed.
+#
+#   script/smoke                   all of them
+#   script/smoke close subtitles   just these
+#
+# Each opens a window and plays, at no volume, for a few seconds. Leave the
+# window uncovered: one that doesn't draw fails. On Linux with no display,
+# it runs on a virtual one: Xvfb, with openbox (gpui only draws under a
+# window manager) and PulseAudio, whose null sink plays in real time.
+set -uo pipefail
+cd "$(dirname "$0")/.."
+
+cargo build --profile smoke --features smoke || exit 1
+plays=target/smoke/plays
+
+if [ "$(uname)" = Linux ] && [ -z "${DISPLAY:-}" ] && [ -z "${WAYLAND_DISPLAY:-}" ]; then
+    export DISPLAY=:99
+    Xvfb :99 -screen 0 1600x1000x24 -nolisten tcp >/dev/null 2>&1 &
+    xvfb=$!
+    for _ in $(seq 50); do xdpyinfo >/dev/null 2>&1 && break; sleep 0.1; done
+    openbox >/dev/null 2>&1 &
+    wm=$!
+    trap 'kill $wm $xvfb 2>/dev/null' EXIT
+    for _ in $(seq 50); do
+        xprop -root _NET_SUPPORTING_WM_CHECK 2>/dev/null | grep -q window && break
+        sleep 0.1
+    done
+    pactl info >/dev/null 2>&1 || pulseaudio -D --exit-idle-time=-1
+fi
+
+if [ $# -gt 0 ]; then
+    scenarios=("$@")
+else
+    # shellcheck disable=SC2207 # names have no spaces
+    scenarios=($("$plays" --smoke list))
+fi
+failed=()
+for scenario in "${scenarios[@]}"; do
+    RUST_LOG=${RUST_LOG:-warn} "$plays" --smoke "$scenario" || failed+=("$scenario")
+done
+if [ ${#failed[@]} -gt 0 ]; then
+    echo "failed: ${failed[*]}"
+    exit 1
+fi
+echo "all ${#scenarios[@]} passed"

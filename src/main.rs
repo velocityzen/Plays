@@ -7,6 +7,7 @@ mod media;
 mod settings;
 mod ui;
 
+use std::ffi::OsString;
 use std::path::PathBuf;
 
 use ffmpeg_next as ffmpeg;
@@ -15,6 +16,13 @@ use gpui::Application;
 use crate::media::Source;
 
 fn main() {
+    let args: Vec<OsString> = std::env::args_os().skip(1).collect();
+    #[cfg(feature = "smoke")]
+    let (smoke, args) = app::smoke::from_args(args);
+    // Logs the same, keeping the errors for the smoke run to report.
+    #[cfg(feature = "smoke")]
+    app::smoke::init_logging();
+    #[cfg(not(feature = "smoke"))]
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("plays=info"))
         .init();
 
@@ -27,8 +35,8 @@ fn main() {
     }
 
     // Files, folders and stream URLs can be given on the command line.
-    let sources: Vec<Source> = std::env::args_os()
-        .skip(1)
+    let sources: Vec<Source> = args
+        .into_iter()
         .map(|arg| Source::from_arg(PathBuf::from(arg)))
         .collect();
 
@@ -39,5 +47,11 @@ fn main() {
     app.on_open_urls(move |urls| {
         opened.unbounded_send(urls).ok();
     });
-    app.run(move |cx| app::run(cx, sources, opened_rx));
+    app.run(move |cx| {
+        app::run(cx, sources, opened_rx);
+        #[cfg(feature = "smoke")]
+        if let Some(scenario) = smoke {
+            app::smoke::start(scenario, cx);
+        }
+    });
 }

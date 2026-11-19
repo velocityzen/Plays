@@ -363,10 +363,10 @@ impl Settings {
         cx.refresh_windows();
     }
 
-    /// Where the settings are saved; nowhere in tests, which must never
-    /// read or write the real ones.
+    /// Where the settings are saved; nowhere in tests and smoke runs,
+    /// which must never read or write the real ones.
     pub fn path() -> Option<PathBuf> {
-        if cfg!(test) {
+        if cfg!(any(test, feature = "smoke")) {
             return None;
         }
         dirs::config_dir().map(|dir| dir.join("plays").join("settings.json"))

@@ -565,6 +565,37 @@ Settings' Reset to Defaults asks first and changes nothing on Cancel, and
 picking an output in the Audio menu sets it. Each test has been checked to
 fail when the behavior it covers is broken.
 
+### Smoke runs
+
+Headless windows have no native window behind them, so a bug between
+gpui and the system, such as a window laid out at its old size after it
+fits a video, can't show up there. Smoke runs drive the real app instead:
+
+```bash
+script/smoke                    # every scenario
+script/smoke close subtitles    # just these
+```
+
+It builds Plays with the `smoke` feature, into `target/smoke` with its own
+cargo profile so the release build stays as it is. That build's settings
+are the defaults, never read or saved. Each scenario runs in its own
+process (`target/smoke/plays --smoke <name>`, `--smoke list` for the
+names): `first-open` opens a video into the empty window, which must fit
+it; `several` opens two videos and a sound into one window; `close` closes
+the tiles and then the window with ⌘W, and the app must quit; `subtitles`
+turns the subtitles beside a video off and on again; `step-back` steps a
+frame forward and two back through B-frames. Throughout, a window that has
+fitted its files must be laid out at the size it really is, every playing
+video must show at least 15 of its 25 frames a second, the sound must go
+to a device, and nothing may log an error, whatever `RUST_LOG` lets
+through. The clips loop and play at no volume. A window must stay
+uncovered while it runs, since one that isn't drawing fails. On Linux with
+no display, the script starts Xvfb with openbox, as gpui only draws under
+a window manager, and PulseAudio, whose null sink plays in real time;
+Vulkan can be software (lavapipe). Resizing the window on macOS from
+inside its own update again, which leaves gpui laying it out at its old
+size, makes `first-open` fail.
+
 ## Limitations
 
 - On Linux, frames decoded on the GPU are copied back to memory and

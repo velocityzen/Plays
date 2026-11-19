@@ -79,6 +79,8 @@ pub struct Player {
 pub struct PlaybackStats {
     /// Frames shown a second, over the last second.
     pub shown_fps: f64,
+    /// Frames shown since the file opened.
+    pub shown: u64,
     /// Frames decoded but never shown, since the file opened.
     pub dropped: u64,
     /// How late frames have been shown against the clock lately, on
@@ -96,6 +98,7 @@ pub struct PlaybackStats {
 #[derive(Default)]
 struct Recent {
     shown: VecDeque<(Instant, f64)>,
+    total: u64,
     dropped: u64,
 }
 
@@ -110,6 +113,7 @@ impl Recent {
             self.shown.pop_front();
         }
         self.shown.push_back((now, lateness));
+        self.total += 1;
         self.dropped += u64::from(dropped);
     }
 
@@ -619,6 +623,7 @@ impl Player {
         });
         PlaybackStats {
             shown_fps,
+            shown: self.recent.total,
             dropped: self.recent.dropped,
             lateness,
             queued_frames,

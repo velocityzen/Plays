@@ -37,7 +37,7 @@ use crate::settings::Settings;
 const TOOLBAR: bool = cfg!(not(target_os = "macos"));
 /// The height the toolbar takes over the tiles. The line under it is
 /// inside its height, as gpui sizes boxes with their borders.
-const TOOLBAR_SPACE: Pixels = if TOOLBAR { TOOLBAR_HEIGHT } else { px(0.) };
+pub const TOOLBAR_SPACE: Pixels = if TOOLBAR { TOOLBAR_HEIGHT } else { px(0.) };
 /// The area under the toolbar, which files are dropped on.
 const CONTENT_GROUP: &str = "content";
 
@@ -174,6 +174,20 @@ impl Workspace {
             _activation_subscription: activation_subscription,
             _url_form_events: url_form_events,
         }
+    }
+}
+
+/// What smoke runs check.
+#[cfg(feature = "smoke")]
+impl Workspace {
+    /// The tiles' players, in order.
+    pub fn players(&self) -> Vec<Entity<PlayerView>> {
+        self.tiles.iter().map(|tile| tile.view.clone()).collect()
+    }
+
+    /// Whether the window waits for its files' sizes, to fit them.
+    pub fn is_fitting(&self) -> bool {
+        self.fitting.is_some()
     }
 }
 

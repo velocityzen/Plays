@@ -8,6 +8,8 @@ mod commands;
 mod dispatch;
 mod keymap;
 mod menus;
+#[cfg(feature = "smoke")]
+pub mod smoke;
 
 use futures::StreamExt as _;
 use futures::channel::mpsc::UnboundedReceiver;
