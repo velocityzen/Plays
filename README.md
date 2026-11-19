@@ -661,7 +661,8 @@ own, and what a session says as it goes comes over a channel.
 - `browser.rs`, `device.rs`: mDNS for `_airplay._tcp` and `_raop._tcp`, a
   receiver's two records put together by its id, and read for whether it
   shows video, plays sound and speaks AirPlay 2, and how it pairs: once
-  with a PIN it shows, for each session only, or not at all.
+  with a PIN it shows, for each session only, or not at all. An AirPlay 1
+  speaker that doesn't say its features, as older ones don't, plays sound.
 - `tlv8.rs`, `srp.rs`, `pairing.rs`: HomeKit pairing. With the PIN (SRP-6a
   with SHA-512 and the 3072-bit group, then long-term Ed25519 keys swapped
   under ChaCha20-Poly1305), which leaves credentials to keep; transient,
@@ -681,12 +682,18 @@ own, and what a session says as it goes comes over a channel.
   ended.
 - `audio.rs`, `rtp.rs`: 16-bit stereo PCM at 44.1 kHz in RTP packets of
   352 frames, each sent as it is due: to AirPlay 2 speakers as realtime
-  audio, sealed with a key sent in SETUP, and to AirPlay 1 ones
-  unencrypted. A sync packet every second ties RTP time to the clock, and
-  the last thousand packets are kept to send again. A frame is heard 1.5
-  seconds after it's sent, plus what an AirPlay 1 speaker says it adds.
+  audio, sealed with a key sent in SETUP, and to AirPlay 1 ones plain. An
+  AirPlay 1 speaker that takes sound only encrypted gets each packet in
+  AES-128 CBC, from the same IV each time, with the key and IV in the
+  ANNOUNCE, the key wrapped (`rsa.rs`: RSA-OAEP with SHA-1) with the
+  public key every AirPort Express holds the private half of. A sync
+  packet every second ties RTP time to the clock, and the last thousand
+  packets are kept to send again. A frame is heard 1.5 seconds after it's
+  sent, plus what an AirPlay 1 speaker says it adds.
 - `fake.rs`, with the `fake` feature: a pretend receiver on this computer,
-  for tests here and in Plays.
+  for tests here and in Plays. An encrypted AirPlay 1 fake holds a key
+  of its own, made for it, rather than the AirPort's, and senders here
+  wrap the sound's key for it with that.
 
 `cargo run -p airplay --example airplay -- list` lists the receivers on
 the network; `pair`, `play` and `tone` pair with a TV, have it play a URL,
@@ -978,10 +985,14 @@ encrypted, and what the TV says read as playing, paused and ended; sound
 to an AirPlay 2 speaker, sealed and sent as it is due, with its sync
 packets, our clock's answer and the latency; packets sent again when asked
 for; volume and a flush; sound to an AirPlay 1 speaker, plain, with the
-delay it adds, and one that takes only encrypted sound refused; and a
-receiver that goes away or refuses feedback ending the session. Unit tests
-check SRP against RFC 5054's vectors, both sides of pairing, the encrypted
-frames, TLV8, records and their features, RTP packets and playback info.
+delay it adds; sound to one that takes it only encrypted, which it
+decrypts with the key it unwraps from the ANNOUNCE back to what was sent,
+and one that takes only FairPlay refused; and a receiver that goes away or
+refuses feedback ending the session. Unit tests check SRP against RFC
+5054's vectors, both sides of pairing, the encrypted frames, AES-128 CBC
+against NIST's vectors, RSA-OAEP both ways, base64, TLV8, records and
+their features, RTP packets and playback info. The key wrapped with the
+AirPort's public key has been checked to unwrap with its private one.
 Each has been checked to fail when what it covers is broken.
 
 The Chromecast crate's tests cast to the fake device over TLS: connecting
@@ -1111,8 +1122,8 @@ size, makes `first-open` fail.
 - AirPlay is Apple's own protocol, unpublished; the AirPlay crate speaks
   it as others have worked it out, so an update to a TV or speaker can
   break it. It doesn't take receivers with a password, or AirPlay 1
-  speakers that take only encrypted sound. Sound goes uncompressed, which
-  a busy Wi-Fi network may not keep up with.
+  speakers that take sound only in FairPlay or MFi encryption. Sound goes
+  uncompressed, which a busy Wi-Fi network may not keep up with.
 - The Chromecast crate takes whatever certificate a device offers, not
   checking it against Google's device certificates, so it can't tell a
   genuine device from something on the network pretending to be one.

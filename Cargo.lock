@@ -65,6 +65,7 @@ dependencies = [
 name = "airplay"
 version = "0.1.0"
 dependencies = [
+ "aes",
  "chacha20poly1305",
  "ed25519-dalek",
  "futures-channel",

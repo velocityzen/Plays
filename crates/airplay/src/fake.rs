@@ -1,7 +1,7 @@
 //! A pretend receiver on this computer, for tests: a TV that pairs with a
-//! PIN, an AirPlay 2 speaker open to everyone, or an AirPlay 1 speaker. It
-//! pairs, encrypts, answers as a receiver does, keeps every request, and
-//! turns the sound it's sent back into samples.
+//! PIN, an AirPlay 2 speaker open to everyone, or an AirPlay 1 speaker,
+//! plain or encrypted. It pairs, encrypts, answers as a receiver does,
+//! keeps every request, and turns the sound it's sent back into samples.
 
 use std::collections::{BTreeMap, HashMap};
 use std::io::{Read, Write};
@@ -19,6 +19,7 @@ use crate::crypto;
 use crate::device::{Device, Record};
 use crate::message::{Message, Reader};
 use crate::pairing::receiver::{Accessory, Outcome};
+use crate::rsa::PrivateKey;
 use crate::rtp::{self, receiver};
 
 /// How often its threads look up to see if it's gone.
@@ -33,6 +34,39 @@ pub enum Kind {
     Speaker,
     /// An AirPlay 1 speaker: no pairing, unencrypted sound.
     OldSpeaker,
+    /// An AirPlay 1 speaker that takes sound only encrypted, and doesn't say
+    /// its features, as the first AirPort Express: the key comes wrapped
+    /// with the fakes' own RSA key, which senders here know them by, rather
+    /// than the AirPort's.
+    EncryptedSpeaker,
+}
+
+impl Kind {
+    fn airplay2(self) -> bool {
+        !matches!(self, Self::OldSpeaker | Self::EncryptedSpeaker)
+    }
+}
+
+/// Where the fakes listen, so a sender here wraps keys for them with their
+/// key.
+static LISTENING: Mutex<Vec<SocketAddr>> = Mutex::new(Vec::new());
+
+/// Whether a fake listens at `address`.
+pub(crate) fn listens_at(address: SocketAddr) -> bool {
+    lock(&LISTENING).contains(&address)
+}
+
+/// How sound comes to it.
+#[derive(Clone, Copy, Debug)]
+enum Encryption {
+    None,
+    /// AirPlay 2's: sealed with this key.
+    Sealed([u8; 32]),
+    /// AirPlay 1's: AES-128 CBC, each packet from the IV.
+    Aes {
+        key: [u8; crypto::BLOCK],
+        iv: [u8; crypto::BLOCK],
+    },
 }
 
 /// A request the fake was sent.
@@ -113,6 +147,8 @@ pub struct State {
     pub refuse_feedback: bool,
     /// Where the sender takes resend requests, and the socket to ask from.
     resends: Option<(SocketAddr, Arc<UdpSocket>)>,
+    /// How AirPlay 1's ANNOUNCE said sound comes.
+    announced: Encryption,
 }
 
 impl State {
@@ -183,7 +219,7 @@ impl FakeReceiver {
         let address = listener.local_addr().expect("the fake's address");
         let pin = match kind {
             Kind::Tv { pin } => pin,
-            Kind::Speaker | Kind::OldSpeaker => "",
+            Kind::Speaker | Kind::OldSpeaker | Kind::EncryptedSpeaker => "",
         };
         let shared = Arc::new(Shared {
             kind,
@@ -201,6 +237,7 @@ impl FakeReceiver {
                 event_reply: None,
                 refuse_feedback: false,
                 resends: None,
+                announced: Encryption::None,
             }),
             accessory: Mutex::new(Accessory::new(id(kind), pin)),
             gone: AtomicBool::new(false),
@@ -219,6 +256,7 @@ impl FakeReceiver {
                 thread::spawn(move || serve(stream, &shared));
             }
         });
+        lock(&LISTENING).push(address);
         Self { address, shared }
     }
 
@@ -261,6 +299,13 @@ impl FakeReceiver {
                 Some(&record(
                     raop_name("Fake Old Speaker"),
                     "ft=0x200 sf=0x0 am=AirPort10,115 cn=0,1 et=0,4",
+                )),
+            ),
+            Kind::EncryptedSpeaker => Device::from_records(
+                None,
+                Some(&record(
+                    raop_name("Fake AirPort"),
+                    "txtvers=1 ch=2 cn=0,1 et=1 sr=44100 ss=16 tp=UDP am=AirPort4,107",
                 )),
             ),
         };
@@ -308,6 +353,7 @@ impl FakeReceiver {
 impl Drop for FakeReceiver {
     fn drop(&mut self) {
         self.go_away();
+        lock(&LISTENING).retain(|address| *address != self.address);
     }
 }
 
@@ -317,6 +363,7 @@ fn id(kind: Kind) -> &'static str {
         Kind::Tv { .. } => "02:00:00:00:00:01",
         Kind::Speaker => "02:00:00:00:00:02",
         Kind::OldSpeaker => "02:00:00:00:00:03",
+        Kind::EncryptedSpeaker => "02:00:00:00:00:04",
     }
 }
 
@@ -433,7 +480,8 @@ fn answer(shared: &Arc<Shared>, request: &Received, secret: Option<&[u8]>) -> Re
         }
         ("POST", "/pair-verify") => pairing(lock(&shared.accessory).verify(&request.body)),
         // An AirPlay 2 receiver takes nothing else until paired.
-        _ if !request.sealed && kind != Kind::OldSpeaker => Reply::status(403),
+        _ if !request.sealed && kind.airplay2() => Reply::status(403),
+        ("ANNOUNCE", _) => announce(shared, request),
         ("SETUP", _) if request.header("Transport").is_some() => setup_v1(shared, request),
         ("SETUP", _) => setup(shared, request, secret),
         ("SET_PARAMETER", _) => {
@@ -485,11 +533,39 @@ fn answer(shared: &Arc<Shared>, request: &Received, secret: Option<&[u8]>) -> Re
         }
         ("GET", "/playback-info") => Reply::ok().plist(shared.state().playback.clone()),
         ("POST", "/feedback") if shared.state().refuse_feedback => Reply::status(500),
-        ("ANNOUNCE" | "RECORD" | "FLUSH" | "TEARDOWN" | "OPTIONS", _)
+        ("RECORD" | "FLUSH" | "TEARDOWN" | "OPTIONS", _)
         | ("PUT", "/setProperty")
         | ("POST", "/feedback") => Reply::ok(),
         _ => Reply::status(404),
     }
+}
+
+/// AirPlay 1's ANNOUNCE: the stream, and the key its sound is encrypted
+/// with if it is, wrapped with the fakes' key. One that takes sound only
+/// encrypted refuses a stream without the key.
+fn announce(shared: &Shared, request: &Received) -> Reply {
+    let sdp = String::from_utf8_lossy(&request.body);
+    let attribute = |name: &str| {
+        sdp.lines().find_map(|line| {
+            let value = line.strip_prefix("a=")?.strip_prefix(name)?;
+            Some(value.strip_prefix(':')?.trim().to_owned())
+        })
+    };
+    let block = |bytes: Vec<u8>| <[u8; crypto::BLOCK]>::try_from(bytes).ok();
+    let key = attribute("rsaaeskey")
+        .and_then(|text| crypto::unbase64(&text))
+        .and_then(|wrapped| PrivateKey::fake().decrypt(&wrapped))
+        .and_then(block);
+    let iv = attribute("aesiv")
+        .and_then(|text| crypto::unbase64(&text))
+        .and_then(block);
+    let announced = match (key, iv) {
+        (Some(key), Some(iv)) => Encryption::Aes { key, iv },
+        _ if shared.kind == Kind::EncryptedSpeaker => return Reply::status(400),
+        _ => Encryption::None,
+    };
+    shared.state().announced = announced;
+    Reply::ok()
 }
 
 /// AirPlay 1's SETUP: the sender's ports in the Transport header, ours in
@@ -501,7 +577,8 @@ fn setup_v1(shared: &Arc<Shared>, request: &Received) -> Reply {
         .filter_map(|part| part.split_once('='))
         .find(|(name, _)| *name == "control_port")
         .and_then(|(_, port)| port.parse::<u16>().ok());
-    let (data, control) = take_sound(shared, None, resends);
+    let announced = shared.state().announced;
+    let (data, control) = take_sound(shared, announced, resends);
     let latency = shared.state().audio_latency;
     Reply::ok()
         .header(
@@ -535,7 +612,8 @@ fn setup(shared: &Arc<Shared>, request: &Received, secret: Option<&[u8]>) -> Rep
             .get("shk")
             .and_then(Value::as_data)
             .and_then(|key| <[u8; 32]>::try_from(key).ok());
-        let (data, control) = take_sound(shared, key, port(stream, "controlPort"));
+        let encryption = key.map_or(Encryption::None, Encryption::Sealed);
+        let (data, control) = take_sound(shared, encryption, port(stream, "controlPort"));
         let mut answer = Dictionary::new();
         answer.insert("type".into(), int(0x60));
         answer.insert("dataPort".into(), int(data.into()));
@@ -617,25 +695,29 @@ fn talk_back(shared: &Arc<Shared>, keys: Keys) -> u16 {
     port
 }
 
-/// An audio packet's sequence number, RTP time and samples; `key` opens
-/// AirPlay 2's.
-fn open(packet: &[u8], key: Option<&[u8; 32]>) -> Option<(u16, u32, Vec<i16>)> {
+/// An audio packet's sequence number, RTP time and samples.
+fn open(packet: &[u8], encryption: &Encryption) -> Option<(u16, u32, Vec<i16>)> {
     let (seq, timestamp) = receiver::audio(packet)?;
-    let payload = match key {
-        Some(key) => {
+    let payload = match encryption {
+        Encryption::Sealed(key) => {
             // The header, the sealed samples, and the nonce's eight bytes.
             let sealed = packet.len().checked_sub(12 + 8)?;
             let (sealed, nonce) = packet[12..].split_at(sealed);
             crypto::open(key, nonce.try_into().ok()?, &packet[4..12], sealed).ok()?
         }
-        None => packet[12..].to_vec(),
+        Encryption::Aes { key, iv } => {
+            let mut payload = packet[12..].to_vec();
+            crypto::cbc_decrypt(key, iv, &mut payload);
+            payload
+        }
+        Encryption::None => packet[12..].to_vec(),
     };
     Some((seq, timestamp, receiver::samples(&payload)))
 }
 
 /// Take sound on a data port and a control port, which it gives; `resends`
 /// is where the sender takes requests to send packets again.
-fn take_sound(shared: &Arc<Shared>, key: Option<[u8; 32]>, resends: Option<u16>) -> (u16, u16) {
+fn take_sound(shared: &Arc<Shared>, encryption: Encryption, resends: Option<u16>) -> (u16, u16) {
     let bind = || UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).expect("a port for sound");
     let data = bind();
     let control = Arc::new(bind());
@@ -655,7 +737,7 @@ fn take_sound(shared: &Arc<Shared>, key: Option<[u8; 32]>, resends: Option<u16>)
         let mut buffer = [0; 2048];
         while !on_data.gone() {
             if let Ok(n) = data.recv(&mut buffer)
-                && let Some((seq, timestamp, samples)) = open(&buffer[..n], key.as_ref())
+                && let Some((seq, timestamp, samples)) = open(&buffer[..n], &encryption)
             {
                 on_data
                     .state()
@@ -676,7 +758,7 @@ fn take_sound(shared: &Arc<Shared>, key: Option<[u8; 32]>, resends: Option<u16>)
             if let Some(sync) = receiver::sync(packet) {
                 on_control.state().syncs.push(sync);
             } else if let Some(original) = receiver::resent(packet)
-                && let Some((seq, _, _)) = open(original, key.as_ref())
+                && let Some((seq, _, _)) = open(original, &encryption)
             {
                 on_control.state().resent.push(seq);
             }

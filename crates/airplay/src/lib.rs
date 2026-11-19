@@ -14,6 +14,7 @@ mod error;
 pub mod fake;
 mod message;
 mod pairing;
+mod rsa;
 mod rtp;
 mod session;
 mod srp;

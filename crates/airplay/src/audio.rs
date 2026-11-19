@@ -1,7 +1,8 @@
 //! Live sound to a speaker: 16-bit stereo PCM at 44.1 kHz, sent as it is
 //! due, so the writer keeps time with the speaker. AirPlay 2 speakers take
 //! it as realtime audio, each packet sealed with a key sent in SETUP;
-//! AirPlay 1 ones as RAOP, unencrypted.
+//! AirPlay 1 ones as RAOP: plain, or, to a speaker that takes it only
+//! encrypted, in AES under a key the ANNOUNCE gives wrapped for it.
 
 use std::collections::VecDeque;
 use std::net::{SocketAddr, UdpSocket};
@@ -18,6 +19,7 @@ use crate::crypto;
 use crate::device::Device;
 use crate::error::{Error, Result};
 use crate::pairing::Credentials;
+use crate::rsa::PublicKey;
 use crate::rtp::{self, CHANNELS, FRAMES_PER_PACKET, SAMPLE_RATE};
 use crate::session::{Control, Event, Sender, unsigned};
 
@@ -33,6 +35,21 @@ const MIN_DB: f32 = -30.0;
 const MUTED_DB: f32 = -144.0;
 
 type Backlog = Arc<Mutex<VecDeque<(u16, Vec<u8>)>>>;
+
+/// How the packets go.
+enum Encryption {
+    /// Plain, to an AirPlay 1 speaker that takes it so.
+    None,
+    /// AirPlay 2: each packet sealed with the key sent in SETUP.
+    Sealed([u8; 32]),
+    /// AirPlay 1: each packet's whole blocks in AES-128 CBC, each packet
+    /// from the IV; the ANNOUNCE gives both, the key wrapped for the
+    /// speaker.
+    Aes {
+        key: [u8; crypto::BLOCK],
+        iv: [u8; crypto::BLOCK],
+    },
+}
 
 /// The volume as AirPlay says it: dB from -30 to 0, or -144 for silence.
 pub fn volume_db(volume: f32, muted: bool) -> f32 {
@@ -59,8 +76,7 @@ pub struct AudioStream {
     /// Ours, for sync packets out and resend requests in.
     control_socket: Arc<UdpSocket>,
     receiver_control: SocketAddr,
-    /// AirPlay 2: the key packets are sealed with.
-    key: Option<[u8; 32]>,
+    encryption: Encryption,
     ssrc: u32,
     seq: u16,
     /// RTP time of the next frame.
@@ -89,23 +105,32 @@ impl AudioStream {
         if !device.plays_audio() {
             return Err(Error::protocol("it doesn't play sound"));
         }
-        let unencrypted = device.encryptions.is_empty() || device.encryptions.contains(&0);
-        if !device.airplay2() && !unencrypted {
+        // AirPlay 1's encryptions (`et`): 0 none, 1 RSA; the rest are
+        // FairPlay's and MFi's, which this doesn't do.
+        let encryption = if device.airplay2() {
+            Encryption::Sealed(rand::random())
+        } else if device.encryptions.is_empty() || device.encryptions.contains(&0) {
+            Encryption::None
+        } else if device.encryptions.contains(&1) {
+            Encryption::Aes {
+                key: rand::random(),
+                iv: rand::random(),
+            }
+        } else {
             return Err(Error::protocol(
-                "it takes only encrypted AirPlay 1 sound, which isn't supported",
+                "it takes AirPlay 1 sound only in FairPlay or MFi encryption, which isn't supported",
             ));
-        }
+        };
         let (mut control, events) = Control::connect(device, credentials)?;
         let local = control.connection().local;
         let control_socket = Arc::new(UdpSocket::bind((local, 0))?);
         let control_port = control_socket.local_addr()?.port();
-        let key = device.airplay2().then(rand::random::<[u8; 32]>);
-        let (data_port, receiver_control_port, output_latency) = match key {
-            Some(key) => {
+        let (data_port, receiver_control_port, output_latency) = match &encryption {
+            Encryption::Sealed(key) => {
                 control.setup(sender)?;
-                setup_stream(&control, control_port, key)?
+                setup_stream(&control, control_port, *key)?
             }
-            None => announce_and_setup(&mut control, control_port)?,
+            _ => announce_and_setup(&mut control, control_port, &encryption)?,
         };
         let remote = control.remote.ip();
         let data = UdpSocket::bind((local, 0))?;
@@ -141,7 +166,7 @@ impl AudioStream {
             data,
             control_socket,
             receiver_control: SocketAddr::new(remote, receiver_control_port),
-            key,
+            encryption,
             ssrc: rand::random(),
             seq,
             timestamp: LATENCY,
@@ -220,16 +245,20 @@ impl AudioStream {
             self.since_sync = 0;
         }
         let header = rtp::audio_header(first, self.seq, self.timestamp, self.ssrc);
-        let payload = rtp::payload(samples);
+        let mut payload = rtp::payload(samples);
         let mut packet = header.to_vec();
-        match &self.key {
-            Some(key) => {
+        match &self.encryption {
+            Encryption::Sealed(key) => {
                 let nonce = self.sealed.to_le_bytes();
                 self.sealed += 1;
                 packet.extend(crypto::seal(key, nonce, &header[4..12], &payload));
                 packet.extend_from_slice(&nonce);
             }
-            None => packet.extend(payload),
+            Encryption::Aes { key, iv } => {
+                crypto::cbc_encrypt(key, iv, &mut payload);
+                packet.extend(payload);
+            }
+            Encryption::None => packet.extend(payload),
         }
         self.data.send(&packet)?;
         let mut backlog = self
@@ -342,19 +371,44 @@ fn setup_stream(control: &Control, control_port: u16, key: [u8; 32]) -> Result<(
     Ok((port("dataPort")?, port("controlPort")?, 0))
 }
 
-/// AirPlay 1: ANNOUNCE the stream as PCM, then SETUP with our ports. Gives
-/// the receiver's data and control ports, and its own latency.
-fn announce_and_setup(control: &mut Control, control_port: u16) -> Result<(u16, u16, u32)> {
+/// The key a speaker at `address` unwraps the sound's key with: the
+/// AirPort's, which they all hold, or, for a fake one here, its own.
+fn speaker_key(address: SocketAddr) -> PublicKey {
+    #[cfg(any(test, feature = "fake"))]
+    if crate::fake::listens_at(address) {
+        return crate::rsa::PrivateKey::fake().public().clone();
+    }
+    #[cfg(not(any(test, feature = "fake")))]
+    let _ = address;
+    PublicKey::airport()
+}
+
+/// AirPlay 1: ANNOUNCE the stream as PCM, with the key it's encrypted with
+/// if it is, then SETUP with our ports. Gives the receiver's data and
+/// control ports, and its own latency.
+fn announce_and_setup(
+    control: &mut Control,
+    control_port: u16,
+    encryption: &Encryption,
+) -> Result<(u16, u16, u32)> {
     let (local, remote, session) = {
         let connection = control.connection();
         (connection.local, connection.remote.ip(), connection.session)
     };
     let family = if local.is_ipv4() { "IP4" } else { "IP6" };
-    let sdp = format!(
+    let mut sdp = format!(
         "v=0\r\no=iTunes {session} 0 IN {family} {local}\r\ns=iTunes\r\nc=IN {family} {remote}\r\n\
          t=0 0\r\nm=audio 0 RTP/AVP 96\r\na=rtpmap:96 L16/44100/2\r\n\
          a=fmtp:96 {FRAMES_PER_PACKET} 0 16 40 10 14 2 255 0 0 44100\r\n"
     );
+    if let Encryption::Aes { key, iv } = encryption {
+        let wrapped = speaker_key(control.remote).encrypt(key);
+        sdp += &format!(
+            "a=rsaaeskey:{}\r\na=aesiv:{}\r\n",
+            crypto::base64(&wrapped),
+            crypto::base64(iv)
+        );
+    }
     let uri = control.uri();
     control.exchange(
         Request::rtsp("ANNOUNCE", uri.clone()).body("application/sdp", sdp.into_bytes()),
@@ -397,5 +451,19 @@ mod tests {
         assert_eq!(volume_db(0.8, true), -144.0);
         assert_eq!(volume_from_db(-15.0), 0.5);
         assert_eq!(volume_from_db(-144.0), 0.0);
+    }
+
+    #[test]
+    fn the_sounds_key_is_wrapped_for_the_airport_or_for_a_fake_here() {
+        let real = "192.168.1.20:5000".parse().unwrap();
+        assert_eq!(speaker_key(real), PublicKey::airport());
+        let fake = crate::fake::FakeReceiver::start(crate::fake::Kind::EncryptedSpeaker);
+        let address = fake.device().addresses[0];
+        assert_eq!(
+            speaker_key(address),
+            *crate::rsa::PrivateKey::fake().public()
+        );
+        drop(fake);
+        assert_eq!(speaker_key(address), PublicKey::airport());
     }
 }

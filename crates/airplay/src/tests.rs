@@ -1,5 +1,5 @@
 //! Sessions against the fake receiver: pairing, a TV playing a URL, and
-//! sound to both kinds of speaker.
+//! sound to every kind of speaker.
 
 use std::thread;
 use std::time::{Duration, Instant};
@@ -303,10 +303,47 @@ fn an_airplay_1_speaker_gets_plain_sound_and_says_its_delay() {
 }
 
 #[test]
-fn an_airplay_1_speaker_that_takes_only_encrypted_sound_is_refused() {
-    let fake = FakeReceiver::start(Kind::OldSpeaker);
+fn an_airplay_1_speaker_that_takes_only_encrypted_sound_gets_it_so() {
+    let fake = FakeReceiver::start(Kind::EncryptedSpeaker);
+    let device = fake.device();
+    assert!(!device.airplay2());
+    assert_eq!(device.encryptions, [1]);
+    let (mut stream, _events) = AudioStream::connect(&device, None, &sender()).unwrap();
+
+    // Taken apart with the key the ANNOUNCE gave, the packets are the
+    // sound: sent plain, or under another key, they wouldn't be.
+    let sound = sound(4 * FRAMES_PER_PACKET);
+    stream.write(&sound).unwrap();
+    assert!(fake.wait_for(|state| state.packets.len() == 4));
+    assert_eq!(fake.state().samples(), sound);
+    let seqs: Vec<u16> = fake
+        .state()
+        .packets
+        .values()
+        .map(|packet| packet.seq)
+        .collect();
+    fake.ask_again(seqs[1], 2);
+    assert!(fake.wait_for(|state| state.resent == seqs[1..3]));
+
+    let state = fake.state();
+    let announce = String::from_utf8_lossy(&state.requests[0].body).into_owned();
+    let attribute = |name: &str| {
+        announce
+            .lines()
+            .find_map(|line| line.strip_prefix(&format!("a={name}:")))
+            .map(str::to_owned)
+    };
+    // 256 bytes and 16, in base64 with no padding.
+    assert_eq!(attribute("rsaaeskey").map(|key| key.len()), Some(342));
+    assert_eq!(attribute("aesiv").map(|iv| iv.len()), Some(22));
+}
+
+#[test]
+fn an_airplay_1_speaker_that_takes_only_fairplay_sound_is_refused() {
+    let fake = FakeReceiver::start(Kind::EncryptedSpeaker);
     let mut device = fake.device();
-    device.encryptions = vec![1];
+    // FairPlay.
+    device.encryptions = vec![3];
     assert!(matches!(
         AudioStream::connect(&device, None, &sender()),
         Err(Error::Protocol(_))

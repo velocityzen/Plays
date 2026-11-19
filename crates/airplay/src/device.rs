@@ -164,7 +164,13 @@ impl Device {
             Some(record) => record.instance.clone(),
             None => raop_name.map_or(main.instance.clone(), |(_, name)| name.to_owned()),
         };
-        let features = Features::parse(get("features", "ft")?)?;
+        let features = match get("features", "ft") {
+            Some(text) => Features::parse(text)?,
+            // Older AirPlay 1 speakers, the first AirPort Express among
+            // them, don't say: what they do is take sound.
+            None if airplay.is_none() => Features(1 << Features::AUDIO),
+            None => return None,
+        };
         Some(Self {
             id,
             name,
@@ -319,5 +325,23 @@ pub(crate) mod tests {
         assert_eq!(old.addresses[0].port(), 5000);
         assert!(!old.airplay2());
         assert_eq!(old.pairing(), Pairing::None);
+    }
+
+    #[test]
+    fn an_airplay_1_speaker_that_doesnt_say_its_features_plays_sound() {
+        let raop = record(
+            "0A0B0C0D0E10@Hall",
+            5000,
+            "txtvers=1 ch=2 cn=0,1 et=1 sr=44100 ss=16 tp=UDP vs=105.1 am=AirPort4,107",
+        );
+        let old = Device::from_records(None, Some(&raop)).unwrap();
+        assert!(old.plays_audio());
+        assert!(!old.shows_video());
+        assert!(!old.airplay2());
+        assert_eq!(old.encryptions, [1]);
+        // An AirPlay record says what it does, or isn't a receiver.
+        let (mut airplay, _) = apple_tv();
+        airplay.txt.remove("features");
+        assert_eq!(Device::from_records(Some(&airplay), None), None);
     }
 }
