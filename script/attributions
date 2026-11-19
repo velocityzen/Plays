@@ -31,8 +31,32 @@ TARGETS = {
 LICENSE_FILE = re.compile(r"^(licen[cs]e|copying|notice|unlicense|copyright)([-._ ].*)?$", re.I)
 
 
+def built_packages(target):
+    """The name and version of each package a build of the app for `target`
+    compiles. `cargo metadata` resolves features as if the tests were built
+    too, so a feature only a dev-dependency asks for (gpui's `test-support`)
+    would bring in packages the app doesn't have; `cargo tree` resolves
+    them for the app alone.
+    """
+    output = subprocess.run(
+        ["cargo", "tree", "--edges", "normal", "--target", target, "--prefix", "none",
+         "--format", "{p}", "--locked"],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    built = set()
+    for line in output.splitlines():
+        parts = line.split()
+        if len(parts) >= 2 and parts[1].startswith("v"):
+            built.add((parts[0], parts[1][1:]))
+    return built
+
+
 def linked_packages(target):
     """The packages built into the app for `target`, by id."""
+    built = built_packages(target)
     metadata = json.loads(
         subprocess.run(
             ["cargo", "metadata", "--format-version", "1", "--locked", "--filter-platform", target],
@@ -57,7 +81,7 @@ def linked_packages(target):
             # compiler, so neither it nor what it uses ends up in the app.
             normal = any(kind["kind"] is None for kind in dependency["dep_kinds"])
             macro = any("proc-macro" in t["kind"] for t in package["targets"])
-            if normal and not macro:
+            if normal and not macro and (package["name"], package["version"]) in built:
                 stack.append(dependency["pkg"])
     del linked[root]
     return linked
