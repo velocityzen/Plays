@@ -43,7 +43,7 @@ pub struct PinPairing {
 
 impl PinPairing {
     pub fn start(device: &Device) -> Result<Self> {
-        let mut connection = Connection::open(device.address)?;
+        let mut connection = Connection::open(&device.addresses)?;
         connection.start_pin()?;
         Ok(Self { connection })
     }

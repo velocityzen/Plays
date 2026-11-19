@@ -54,10 +54,10 @@ fn list() -> Result<()> {
     thread::sleep(Duration::from_secs(4));
     for device in browser.devices() {
         println!(
-            "{:?} ({}) at {}: video {}, sound {}, AirPlay 2 {}, pairing {:?}",
+            "{:?} ({}) at {:?}: video {}, sound {}, AirPlay 2 {}, pairing {:?}",
             device.name,
             device.model,
-            device.address,
+            device.addresses,
             device.shows_video(),
             device.plays_audio(),
             device.airplay2(),

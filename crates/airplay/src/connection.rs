@@ -10,7 +10,8 @@ use crate::error::{Error, Result};
 use crate::message::{Message, Reader};
 use crate::pairing::{Credentials, Setup, Verify};
 
-const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+/// How long each address has to take the connection.
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
 /// How long a receiver has to answer a request.
 const REPLY_TIMEOUT: Duration = Duration::from_secs(10);
 const USER_AGENT: &str = "AirPlay/550.10";
@@ -143,8 +144,24 @@ pub(crate) struct Connection {
 }
 
 impl Connection {
-    pub fn open(remote: SocketAddr) -> Result<Self> {
-        let stream = TcpStream::connect_timeout(&remote, CONNECT_TIMEOUT)?;
+    /// Connect at the first of `addresses` that takes it.
+    pub fn open(addresses: &[SocketAddr]) -> Result<Self> {
+        let mut refused = None;
+        for remote in addresses {
+            match TcpStream::connect_timeout(remote, CONNECT_TIMEOUT) {
+                Ok(stream) => return Self::on(stream, *remote),
+                Err(err) => {
+                    log::debug!("airplay: {remote}: {err}");
+                    refused = Some(err);
+                }
+            }
+        }
+        Err(refused
+            .unwrap_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "no address"))
+            .into())
+    }
+
+    fn on(stream: TcpStream, remote: SocketAddr) -> Result<Self> {
         stream.set_read_timeout(Some(REPLY_TIMEOUT))?;
         stream.set_nodelay(true)?;
         Ok(Self {
@@ -270,5 +287,26 @@ impl Connection {
         setup.m4(&m4)?;
         let m6 = self.pairing("/pair-setup", 3, setup.m5()?)?;
         setup.m6(&m6)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::net::{Ipv4Addr, TcpListener};
+
+    use super::*;
+
+    #[test]
+    fn connects_at_the_first_address_that_takes_it() {
+        let closed = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+            .unwrap()
+            .local_addr()
+            .unwrap();
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let open = listener.local_addr().unwrap();
+        let connection = Connection::open(&[closed, open]).unwrap();
+        assert_eq!(connection.remote, open);
+        assert!(Connection::open(&[closed]).is_err());
+        assert!(Connection::open(&[]).is_err());
     }
 }

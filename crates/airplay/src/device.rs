@@ -71,8 +71,9 @@ pub struct Device {
     pub name: String,
     pub model: String,
     pub manufacturer: Option<String>,
-    /// Where it takes AirPlay.
-    pub address: SocketAddr,
+    /// Where it takes AirPlay, in the order to try: on more than one
+    /// network, it has an address on each, and not all reach it from here.
+    pub addresses: Vec<SocketAddr>,
     pub features: Features,
     flags: u32,
     /// The audio codecs it takes (`cn`): 0 PCM, 1 ALAC, 2 AAC, 3 AAC-ELD.
@@ -99,13 +100,17 @@ impl Record {
         self.txt.get(key).map(String::as_str)
     }
 
-    /// The address to reach it at: IPv4 first, as receivers listen there.
-    fn address(&self) -> Option<IpAddr> {
-        self.addresses
+    /// The addresses to try it at: IPv4 first, as receivers listen there,
+    /// each kind in order.
+    fn socket_addresses(&self) -> Vec<SocketAddr> {
+        let mut addresses: Vec<SocketAddr> = self
+            .addresses
             .iter()
-            .find(|ip| ip.is_ipv4())
-            .or(self.addresses.first())
-            .copied()
+            .map(|ip| SocketAddr::new(*ip, self.port))
+            .collect();
+        addresses.sort_by_key(|address| (address.is_ipv6(), *address));
+        addresses.dedup();
+        addresses
     }
 }
 
@@ -165,7 +170,7 @@ impl Device {
             name,
             model: get("model", "am").unwrap_or_default().to_owned(),
             manufacturer: get("manufacturer", "manufacturer").map(str::to_owned),
-            address: SocketAddr::new(main.address()?, main.port),
+            addresses: Some(main.socket_addresses()).filter(|addresses| !addresses.is_empty())?,
             features,
             flags: flags(get("flags", "sf")),
             codecs: numbers(raop.and_then(|record| record.get("cn"))),
@@ -276,7 +281,11 @@ pub(crate) mod tests {
         assert_eq!(tv.id, "021122334455");
         assert_eq!(tv.name, "Living Room");
         assert_eq!(tv.model, "AppleTV11,1");
-        assert_eq!(tv.address, "192.168.1.20:7000".parse().unwrap());
+        let addresses: Vec<SocketAddr> = ["192.168.1.20:7000", "[fe80::1]:7000"]
+            .iter()
+            .map(|address| address.parse().unwrap())
+            .collect();
+        assert_eq!(tv.addresses, addresses);
         assert!(tv.shows_video());
         assert!(tv.plays_audio());
         assert!(tv.airplay2());
@@ -307,7 +316,7 @@ pub(crate) mod tests {
         let old = Device::from_records(None, Some(&raop)).unwrap();
         assert_eq!(old.id, "0A0B0C0D0E0F");
         assert_eq!(old.name, "Study");
-        assert_eq!(old.address.port(), 5000);
+        assert_eq!(old.addresses[0].port(), 5000);
         assert!(!old.airplay2());
         assert_eq!(old.pairing(), Pairing::None);
     }

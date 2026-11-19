@@ -78,7 +78,7 @@ impl Control {
         device: &Device,
         credentials: Option<&Credentials>,
     ) -> Result<(Self, UnboundedReceiver<Event>)> {
-        let mut connection = Connection::open(device.address)?;
+        let mut connection = Connection::open(&device.addresses)?;
         let secret = match (credentials, device.pairing()) {
             (Some(credentials), _) => Some(connection.verify(credentials)?),
             (None, Pairing::Pin) => return Err(Error::NeedsPin),

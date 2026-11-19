@@ -617,7 +617,9 @@ own, and what a session says as it goes comes over a channel.
   for each session after.
 - `channel.rs`, `message.rs`, `connection.rs`: the control connection,
   RTSP and HTTP requests on one TCP connection, encrypted once paired in
-  frames of up to 1024 bytes.
+  frames of up to 1024 bytes. A receiver on more than one network has an
+  address on each, and not all reach it from here, so each is tried in
+  turn.
 - `session.rs`: AirPlay 2's session. SETUP says where our clock is, which
   the receiver asks the time; the receiver talks back on an event
   connection; feedback goes every two seconds. Feedback refused or the
