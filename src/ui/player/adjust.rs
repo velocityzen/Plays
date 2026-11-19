@@ -4,6 +4,7 @@
 use gpui::Context;
 
 use super::PlayerView;
+use crate::app::refresh_menus;
 use crate::ui::framing::{ASPECT_RATIOS, Adjustments, CROPS, Ratio, next_ratio};
 
 impl PlayerView {
@@ -74,5 +75,12 @@ impl PlayerView {
         }
         change(&mut self.adjustments);
         self.note(note, cx);
+        // Video → Aspect Ratio and Crop check what it is now.
+        refresh_menus(cx);
+    }
+
+    /// How it is turned, shaped and cropped.
+    pub fn adjustments(&self) -> Adjustments {
+        self.adjustments
     }
 }

@@ -4,8 +4,9 @@
 use gpui::{App, Context, Entity, EntityId, Pixels, Size, px, size};
 
 use super::{TOOLBAR_SPACE, Tile, Workspace};
-use crate::app::Awake;
+use crate::app::{Awake, refresh_menus};
 use crate::cast::Device;
+use crate::ui::framing::Adjustments;
 use crate::ui::player::{PlayerEvent, PlayerView};
 use crate::ui::theme::layout::{
     AUDIO_WINDOW_SIZE, VIDEO_WINDOW_SIZE, WINDOW_MIN_SIZE, WINDOW_SIZE,
@@ -18,6 +19,8 @@ impl Workspace {
             PlayerEvent::Activate => {
                 this.active = Some(view.entity_id());
                 this.tiles_changed(cx);
+                // Video → Aspect Ratio and Crop check this one's now.
+                refresh_menus(cx);
             }
             PlayerEvent::ToggleMaximize => this.toggle_maximize(view.entity_id(), cx),
             PlayerEvent::PopOut => this.pop_out(view.entity_id(), cx),
@@ -169,6 +172,13 @@ impl Workspace {
                 }
             })
             .max()
+            .unwrap_or_default()
+    }
+
+    /// How the tile shortcuts go to is turned, shaped and cropped.
+    pub fn active_adjustments(&self, cx: &App) -> Adjustments {
+        self.active_view()
+            .map(|view| view.read(cx).adjustments())
             .unwrap_or_default()
     }
 

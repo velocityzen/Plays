@@ -288,7 +288,8 @@ it, and Restore brings the defaults back. The app's own shortcuts above (⌘O, �
 and so on) stay as they are.
 
 On macOS, the Video menu also lists every aspect ratio and crop to pick
-from; `A` and `C` go through them in turn, then back to none. Rotating and
+from, checking the active tile's; `A` and `C` go through them in turn,
+then back to none. Rotating and
 flipping go by the picture as it shows, and cropping keeps its middle;
 opening another file in the tile starts it as its file has it. The same
 goes for delays, which a note shows as they change ("Audio delay +200 ms").
@@ -492,7 +493,8 @@ the TV's own: where it was when cast, the TV stays where it was.
   action does (`commands`), how actions reach the window and tile in front
   (`dispatch`), the keymap and the menu bar (set again as outputs,
   displays or devices to cast to come and go, another is picked, or the
-  tile in front casts or turns out to have no sound).
+  tile in front casts, turns out to have no sound, or is shaped or
+  cropped, or another tile is in front).
 - `src/hotkeys.rs`: the commands shortcuts can run, their default
   keys, how they are saved in Settings and shown (`⌃⌘F`, `Ctrl+Alt+F`).
   The keymap is rebuilt from them whenever they change, and the menus show
@@ -942,6 +944,9 @@ lifts the window, and Settings with it, only while its file plays, and
 the menu items turn their mode on and off. Video → Output Device checks
 the display the window in front is on, and picking a display puts the
 window full screen, leaving full screen first when it goes to another.
+Video → Aspect Ratio and Crop check what the tile in front has (as the
+file is, and none, at first), as soon as it changes and as soon as the
+mouse is over another tile.
 
 Casting is tested with a fake protocol whose devices keep what they are
 told and say what the test has them say, and the real stream server,

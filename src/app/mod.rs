@@ -19,6 +19,7 @@ use gpui::{App, actions};
 
 pub use audio::{AudioEngine, Route};
 pub use awake::Awake;
+pub use menus::refresh as refresh_menus;
 
 use crate::cast::{self, Casting, Device, Protocol};
 use crate::media::{Source, picture};

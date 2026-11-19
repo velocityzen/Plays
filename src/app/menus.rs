@@ -2,8 +2,9 @@
 //! keymap sets the menus again whenever it changes, and so does the audio
 //! engine as outputs come and go or another is picked, Settings when
 //! floating on top changes, the displays as they come and go or the window
-//! in front moves to another, and the devices to cast to as they come and
-//! go or the tile in front casts to one.
+//! in front moves to another, the devices to cast to as they come and go
+//! or the tile in front casts to one, and the tile in front's aspect ratio
+//! and crop as they change or another tile is in front.
 
 use std::time::Duration;
 
@@ -19,7 +20,7 @@ use crate::hotkeys::*;
 use crate::media::output::DeviceInfo;
 use crate::settings::{AudioDevice, FloatOnTop, Settings};
 use crate::ui::displays::{self, DisplayInfo};
-use crate::ui::framing::{ASPECT_RATIOS, CROPS};
+use crate::ui::framing::{ASPECT_RATIOS, CROPS, Ratio};
 
 /// How often the displays, and the tile in front's cast, are looked at:
 /// nothing tells when a display connects, as an AirPlay display does.
@@ -27,14 +28,14 @@ const DISPLAYS_POLL: Duration = Duration::from_secs(1);
 
 pub(super) fn set_menus(cx: &mut App) {
     let float_on_top = cx.global::<Settings>().float_on_top;
-    let video_outputs = cx
-        .try_global::<Outputs>()
+    let state = cx
+        .try_global::<MenuState>()
         .cloned()
-        .unwrap_or_else(|| Outputs::now(cx));
+        .unwrap_or_else(|| MenuState::now(cx));
     let outputs = output_menu(
         AudioEngine::devices(cx),
         cx.global::<Settings>().audio_output.device.as_ref(),
-        &video_outputs,
+        &state,
     );
     cx.set_menus(vec![
         Menu {
@@ -94,7 +95,7 @@ pub(super) fn set_menus(cx: &mut App) {
                     .checked(float_on_top == FloatOnTop::Always),
                 MenuItem::action("Float on Top While Playing", ToggleFloatOnTopWhilePlaying)
                     .checked(float_on_top == FloatOnTop::WhilePlaying),
-                MenuItem::submenu(display_menu(&video_outputs)),
+                MenuItem::submenu(display_menu(&state)),
                 MenuItem::separator(),
                 MenuItem::action("Next Video Track", NextVideoTrack),
                 MenuItem::separator(),
@@ -103,31 +104,8 @@ pub(super) fn set_menus(cx: &mut App) {
                 MenuItem::action("Flip Horizontally", FlipHorizontally),
                 MenuItem::action("Flip Vertically", FlipVertically),
                 MenuItem::separator(),
-                MenuItem::submenu(Menu {
-                    name: "Aspect Ratio".into(),
-                    items: [MenuItem::action("As the File Is", SetAspectRatio(None))]
-                        .into_iter()
-                        .chain(
-                            ASPECT_RATIOS
-                                .map(|r| MenuItem::action(r.name, SetAspectRatio(Some(r)))),
-                        )
-                        .chain([
-                            MenuItem::separator(),
-                            MenuItem::action("Next Aspect Ratio", NextAspectRatio),
-                        ])
-                        .collect(),
-                }),
-                MenuItem::submenu(Menu {
-                    name: "Crop".into(),
-                    items: [MenuItem::action("None", SetCrop(None))]
-                        .into_iter()
-                        .chain(CROPS.map(|r| MenuItem::action(r.name, SetCrop(Some(r)))))
-                        .chain([
-                            MenuItem::separator(),
-                            MenuItem::action("Next Crop", NextCrop),
-                        ])
-                        .collect(),
-                }),
+                MenuItem::submenu(aspect_menu(state.aspect)),
+                MenuItem::submenu(crop_menu(state.crop)),
                 MenuItem::separator(),
                 MenuItem::action("Reset Picture", ResetPicture),
                 MenuItem::separator(),
@@ -186,28 +164,31 @@ pub(super) fn watch_settings(cx: &mut App) {
     .detach();
 }
 
-/// What Video → Output Device and Audio → Output Device show besides this
-/// computer's outputs: the displays, the one the window in front is on, the
-/// devices that show video, the speakers, and the one the tile in front
-/// casts to.
+/// What the menus show that changes without them hearing of it: besides
+/// this computer's outputs, Video → Output Device and Audio → Output Device
+/// show the displays, the one the window in front is on, the devices that
+/// show video, the speakers, and the one the tile in front casts to; Video
+/// → Aspect Ratio and Crop check the tile in front's.
 #[derive(Clone, Default, PartialEq, Debug)]
-struct Outputs {
+struct MenuState {
     displays: Vec<DisplayInfo>,
     front: Option<u32>,
     devices: Vec<Device>,
     /// Those for the tile in front: none when it has no sound.
     speakers: Vec<Device>,
     casting: Option<Device>,
+    aspect: Option<Ratio>,
+    crop: Option<Ratio>,
 }
 
-impl Global for Outputs {}
+impl Global for MenuState {}
 
-impl Outputs {
+impl MenuState {
     fn now(cx: &mut App) -> Self {
         let window = first_workspace(cx.active_window())
             .or_else(|| first_workspace(cx.window_stack().unwrap_or_default()))
             .or_else(|| first_workspace(cx.windows()));
-        let (front, casting, has_audio) = window
+        let (front, casting, has_audio, picture) = window
             .and_then(|handle| {
                 handle
                     .update(cx, |workspace, window, cx| {
@@ -215,11 +196,12 @@ impl Outputs {
                             displays::of(window, cx),
                             workspace.active_casting(cx),
                             workspace.active_has_audio(cx),
+                            workspace.active_adjustments(cx),
                         )
                     })
                     .ok()
             })
-            .unwrap_or((None, None, true));
+            .unwrap_or((None, None, true, Default::default()));
         let (devices, speakers) = Casting::devices_for(cx, has_audio)
             .into_iter()
             .partition(|device| device.shows == Shows::Video);
@@ -229,6 +211,8 @@ impl Outputs {
             devices,
             speakers,
             casting,
+            aspect: picture.aspect,
+            crop: picture.crop,
         }
     }
 }
@@ -247,11 +231,53 @@ pub(super) fn watch_outputs(cx: &mut App) {
     .detach();
 }
 
+/// Set the menus again once the current event is handled, if what they
+/// show has changed: from a window or tile, which can't be read while
+/// they're being changed.
+pub fn refresh(cx: &mut App) {
+    cx.defer(refresh_outputs);
+}
+
 fn refresh_outputs(cx: &mut App) {
-    let now = Outputs::now(cx);
-    if cx.try_global::<Outputs>() != Some(&now) {
+    let now = MenuState::now(cx);
+    if cx.try_global::<MenuState>() != Some(&now) {
         cx.set_global(now);
         set_menus(cx);
+    }
+}
+
+/// The aspect ratios, the tile in front's checked (as the file is, if it
+/// has none of its own).
+fn aspect_menu(aspect: Option<Ratio>) -> Menu {
+    Menu {
+        name: "Aspect Ratio".into(),
+        items: [(None, "As the File Is")]
+            .into_iter()
+            .chain(ASPECT_RATIOS.map(|r| (Some(r), r.name)))
+            .map(|(ratio, name)| {
+                MenuItem::action(name, SetAspectRatio(ratio)).checked(ratio == aspect)
+            })
+            .chain([
+                MenuItem::separator(),
+                MenuItem::action("Next Aspect Ratio", NextAspectRatio),
+            ])
+            .collect(),
+    }
+}
+
+/// The crops, the tile in front's checked (none, if it isn't cropped).
+fn crop_menu(crop: Option<Ratio>) -> Menu {
+    Menu {
+        name: "Crop".into(),
+        items: [(None, "None")]
+            .into_iter()
+            .chain(CROPS.map(|r| (Some(r), r.name)))
+            .map(|(ratio, name)| MenuItem::action(name, SetCrop(ratio)).checked(ratio == crop))
+            .chain([
+                MenuItem::separator(),
+                MenuItem::action("Next Crop", NextCrop),
+            ])
+            .collect(),
     }
 }
 
@@ -260,7 +286,7 @@ fn refresh_outputs(cx: &mut App) {
 /// instead (a speaker it casts to leaves its picture here). Picking a
 /// display shows the window there, full screen; picking a device casts the
 /// tile in front to it.
-fn display_menu(outputs: &Outputs) -> Menu {
+fn display_menu(outputs: &MenuState) -> Menu {
     let casting = outputs
         .casting
         .as_ref()
@@ -298,7 +324,7 @@ fn display_menu(outputs: &Outputs) -> Menu {
 /// what the sound waits for. Then the speakers, and the device the tile in
 /// front casts to, checked instead: picking one casts the tile in front to
 /// it.
-fn output_menu(devices: &[DeviceInfo], picked: Option<&AudioDevice>, outputs: &Outputs) -> Menu {
+fn output_menu(devices: &[DeviceInfo], picked: Option<&AudioDevice>, outputs: &MenuState) -> Menu {
     let casting = outputs.casting.as_ref();
     let here = casting.is_none();
     let mut items = vec![
@@ -374,11 +400,77 @@ mod tests {
         }
     }
 
+    /// The items checked in `menu`.
+    fn checked(menu: &Menu) -> Vec<String> {
+        listed(menu)
+            .into_iter()
+            .filter(|(_, checked)| *checked)
+            .map(|(name, _)| name)
+            .collect()
+    }
+
+    #[test]
+    fn checks_the_aspect_ratio_and_crop_of_the_tile_in_front() {
+        assert_eq!(checked(&aspect_menu(None)), ["As the File Is"]);
+        assert_eq!(checked(&aspect_menu(Some(ASPECT_RATIOS[1]))), ["4:3"]);
+        assert_eq!(checked(&crop_menu(None)), ["None"]);
+        let crop = CROPS[CROPS.len() - 1];
+        assert_eq!(checked(&crop_menu(Some(crop))), [crop.name]);
+    }
+
+    #[gpui::test]
+    fn the_menus_follow_the_picture_of_the_tile_in_front_at_once(cx: &mut TestAppContext) {
+        let (window, mut cx) = testing::start(cx);
+        window
+            .update(&mut cx, |workspace, _, cx| {
+                let files = ["clip.mp4", "clip-ip.mkv"].map(testing::fixture);
+                workspace.open_paths(files.into(), cx)
+            })
+            .unwrap();
+        let start = Instant::now();
+        while !testing::shows(&mut cx, "tile-1") {
+            assert!(start.elapsed() < OPEN_WAIT, "the files didn't open");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        // Each tile's media known, the mouse over it.
+        for tile in ["tile-1", "tile-0"] {
+            testing::hover(&mut cx, tile);
+            let known = testing::wait_until(&mut cx, |cx| {
+                let mut known = false;
+                window
+                    .update(cx, |workspace, _, cx| {
+                        workspace.with_active(cx, |view, _| known = view.player().info().is_some())
+                    })
+                    .unwrap();
+                known
+            });
+            assert!(known, "{tile}'s media is known");
+        }
+        let shown = |cx: &mut VisualTestContext| {
+            let state = cx.update(|_, cx| cx.try_global::<MenuState>().cloned());
+            state.map(|state| (state.aspect, state.crop))
+        };
+        let crop = CROPS[0];
+
+        cx.dispatch_action(SetCrop(Some(crop)));
+        cx.run_until_parked();
+        assert_eq!(shown(&mut cx), Some((None, Some(crop))));
+
+        testing::hover(&mut cx, "tile-1");
+        assert_eq!(shown(&mut cx), Some((None, None)), "the other tile's");
+        cx.dispatch_action(NextAspectRatio);
+        cx.run_until_parked();
+        assert_eq!(shown(&mut cx), Some((Some(ASPECT_RATIOS[0]), None)));
+
+        testing::hover(&mut cx, "tile-0");
+        assert_eq!(shown(&mut cx), Some((None, Some(crop))));
+    }
+
     #[test]
     fn checks_the_output_picked() {
         let devices = [device("a", "Speakers"), device("b", "Headphones")];
         assert_eq!(
-            listed(&output_menu(&devices, None, &Outputs::default())),
+            listed(&output_menu(&devices, None, &MenuState::default())),
             [
                 ("System Default".into(), true),
                 ("Speakers".into(), false),
@@ -390,7 +482,7 @@ mod tests {
             name: "Headphones".into(),
         };
         assert_eq!(
-            listed(&output_menu(&devices, Some(&picked), &Outputs::default())),
+            listed(&output_menu(&devices, Some(&picked), &MenuState::default())),
             [
                 ("System Default".into(), false),
                 ("Speakers".into(), false),
@@ -426,9 +518,9 @@ mod tests {
     #[test]
     fn lists_the_speakers_after_the_outputs_and_checks_the_one_cast_to_instead() {
         let devices = [device("a", "Headphones")];
-        let mut outputs = Outputs {
+        let mut outputs = MenuState {
             speakers: vec![speaker("k", "Kitchen"), speaker("p", "Phantom")],
-            ..Outputs::default()
+            ..MenuState::default()
         };
         assert_eq!(
             listed(&output_menu(&devices, None, &outputs)),
@@ -461,12 +553,13 @@ mod tests {
 
     #[test]
     fn a_speaker_cast_to_leaves_the_picture_on_its_display() {
-        let outputs = Outputs {
+        let outputs = MenuState {
             displays: vec![display(1, "Built-in Display")],
             front: Some(1),
             devices: vec![tv("t", "Living Room")],
             speakers: vec![speaker("k", "Kitchen")],
             casting: Some(speaker("k", "Kitchen")),
+            ..MenuState::default()
         };
         assert_eq!(
             listed(&display_menu(&outputs)),
@@ -479,10 +572,10 @@ mod tests {
 
     #[test]
     fn checks_the_display_the_window_in_front_is_on() {
-        let outputs = Outputs {
+        let outputs = MenuState {
             displays: vec![display(1, "Built-in Display"), display(7, "Beamer")],
             front: Some(7),
-            ..Outputs::default()
+            ..MenuState::default()
         };
         assert_eq!(
             listed(&display_menu(&outputs)),
@@ -492,11 +585,11 @@ mod tests {
 
     #[test]
     fn checks_the_device_the_tile_in_front_casts_to_instead() {
-        let mut outputs = Outputs {
+        let mut outputs = MenuState {
             displays: vec![display(1, "Built-in Display")],
             front: Some(1),
             devices: vec![tv("a", "Bedroom"), tv("b", "Living Room")],
-            ..Outputs::default()
+            ..MenuState::default()
         };
         assert_eq!(
             listed(&display_menu(&outputs)),
@@ -533,7 +626,7 @@ mod tests {
             listed(&output_menu(
                 &[device("a", "Speakers")],
                 Some(&picked),
-                &Outputs::default()
+                &MenuState::default()
             )),
             [
                 ("System Default".into(), false),
@@ -562,7 +655,7 @@ mod tests {
         }
         // The devices, after the displays.
         let menu = |cx: &mut VisualTestContext| {
-            let outputs = TestAppContext::update(cx, Outputs::now);
+            let outputs = TestAppContext::update(cx, MenuState::now);
             listed(&display_menu(&outputs))
                 .into_iter()
                 .skip(outputs.displays.len())
@@ -612,7 +705,7 @@ mod tests {
     #[gpui::test]
     fn lists_the_speakers_for_a_tile_with_sound(cx: &mut TestAppContext) {
         let cx = open_with_devices(cx, "clip.mp4");
-        let outputs = TestAppContext::update(&cx, Outputs::now);
+        let outputs = TestAppContext::update(&cx, MenuState::now);
         let names = |devices: &[Device]| {
             devices
                 .iter()
@@ -626,7 +719,7 @@ mod tests {
     #[gpui::test]
     fn lists_no_speakers_for_a_tile_without_sound(cx: &mut TestAppContext) {
         let cx = open_with_devices(cx, "clip-ip.mkv");
-        let outputs = TestAppContext::update(&cx, Outputs::now);
+        let outputs = TestAppContext::update(&cx, MenuState::now);
         assert!(outputs.speakers.is_empty(), "{:?}", outputs.speakers);
         assert_eq!(outputs.devices.len(), 1, "the TV still");
     }
