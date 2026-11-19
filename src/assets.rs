@@ -16,7 +16,6 @@ macro_rules! icons {
 
 icons!(
     "appearance",
-    "screenshot",
     "cast",
     "check",
     "chevron-down",
@@ -35,11 +34,13 @@ icons!(
     "mute",
     "next",
     "pause",
+    "pip",
     "play",
     "plus",
     "pop-out",
     "previous",
     "replay",
+    "screenshot",
     "settings",
     "skip-back",
     "skip-forward",
