@@ -17,6 +17,7 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::thread;
+use std::time::Instant;
 
 use ::dlna::{
     Browser, Capability, Ended, Event, Fault, Found, Kind, Media, TransportState, Volume,
@@ -192,6 +193,8 @@ impl Target for DlnaTarget {
             events,
             capabilities,
             media: None,
+            starts_at_url: false,
+            given: (0.0, Instant::now()),
             playing: false,
             played: false,
             finished: false,
@@ -200,6 +203,19 @@ impl Target for DlnaTarget {
             ended: None,
             loudness: None,
         }))
+    }
+}
+
+/// `media` from `start`, by its URL, as the stream server makes it.
+fn starting_at(media: &Media, start: f64) -> Media {
+    if start <= 0.0 {
+        return media.clone();
+    }
+    let separator = if media.url.contains('?') { '&' } else { '?' };
+    Media {
+        url: format!("{}{separator}start={start:.3}", media.url),
+        duration: media.duration.map(|duration| (duration - start).max(0.0)),
+        ..media.clone()
     }
 }
 
@@ -434,8 +450,14 @@ struct DlnaSession {
     session: Option<::dlna::Session>,
     events: UnboundedReceiver<Event>,
     capabilities: Option<Vec<Capability>>,
-    /// What it was last given, to give it again with other subtitles.
+    /// What it was last given, to give it again with other subtitles, or
+    /// from elsewhere where it starts at its URL.
     media: Option<Media>,
+    /// It's given what starts at its URL (`Load::starts_at_url`).
+    starts_at_url: bool,
+    /// Where in the media what it was last given starts, and when it was
+    /// given: what it said before then is of what it played before.
+    given: (f64, Instant),
     /// Whether it was told to play.
     playing: bool,
     /// Whether it has played what it was given, so that stopping is the
@@ -497,11 +519,17 @@ impl DlnaSession {
         self.played = false;
         self.finished = false;
         self.pending_seek = None;
-        let loaded = self.session()?.load(&media);
+        let given = if self.starts_at_url {
+            starting_at(&media, start)
+        } else {
+            media.clone()
+        };
+        let loaded = self.session()?.load(&given);
         loaded.map_err(|err| self.failed(err))?;
+        self.given = (if self.starts_at_url { start } else { 0.0 }, Instant::now());
         self.media = Some(media);
         self.playing = false;
-        if start > 0.0 {
+        if start > 0.0 && !self.starts_at_url {
             self.seek(start)?;
         }
         if play {
@@ -571,6 +599,7 @@ impl Session for DlnaSession {
                 ..loudness
             }));
         }
+        self.starts_at_url = load.starts_at_url;
         self.give(media, load.autoplay, load.start)?;
         // Asked often while a picture follows it, once it has the media:
         // asked before, it would say what it played before.
@@ -601,6 +630,13 @@ impl Session for DlnaSession {
     }
 
     fn seek(&mut self, time: f64) -> Result<(), Error> {
+        if self.starts_at_url {
+            let Some(media) = self.media.clone() else {
+                return Ok(());
+            };
+            let play = self.playing && !self.finished;
+            return self.give(media, play, time);
+        }
         self.hear();
         let waiting = !self.played
             || self.finished
@@ -686,10 +722,22 @@ impl Session for DlnaSession {
         ) {
             self.catch_up()?;
         }
-        let duration = status
-            .duration
-            .filter(|duration| *duration > 0.0)
-            .or_else(|| self.media.as_ref().and_then(|media| media.duration));
+        let media_duration = self.media.as_ref().and_then(|media| media.duration);
+        // A speaker says how long a stream is as how much it has played.
+        let duration = match self.starts_at_url {
+            true => media_duration,
+            false => status
+                .duration
+                .filter(|duration| *duration > 0.0)
+                .or(media_duration),
+        };
+        let (start, given_at) = self.given;
+        let since_given = status.position_at.is_some_and(|at| at >= given_at);
+        let said = match self.starts_at_url {
+            // Till it says otherwise, it's where it was given it from.
+            true => Some(start + status.position.filter(|_| since_given).unwrap_or(0.0)),
+            false => status.position,
+        };
         let state = if self.finished {
             State::Ended
         } else {
@@ -702,8 +750,8 @@ impl Session for DlnaSession {
             }
         };
         let position = match state {
-            State::Ended => duration.or(status.position),
-            _ => self.pending_seek.or(status.position),
+            State::Ended => duration.or(said),
+            _ => self.pending_seek.or(said),
         };
         // Where it was heard to be, not where it's to go or has ended.
         let heard = state != State::Ended && self.pending_seek.is_none();
@@ -719,6 +767,32 @@ impl Session for DlnaSession {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn media_starts_at_its_url_from_where_it_is_to_start() {
+        let media = Media {
+            url: "http://plays/1/sound.aac".into(),
+            kind: Kind::Audio,
+            mime: "audio/aac".into(),
+            features: None,
+            title: None,
+            duration: Some(10.0),
+            size: None,
+            subtitles: None,
+        };
+        let from = starting_at(&media, 2.5);
+        assert_eq!(from.url, "http://plays/1/sound.aac?start=2.500");
+        assert_eq!(from.duration, Some(7.5), "what's left of it");
+        assert_eq!(starting_at(&media, 0.0), media);
+        let queried = Media {
+            url: "http://plays/1/sound.aac?token=1".into(),
+            ..media
+        };
+        assert_eq!(
+            starting_at(&queried, 1.0).url,
+            "http://plays/1/sound.aac?token=1&start=1.000"
+        );
+    }
 
     fn listed(name: &str) -> Option<Vec<Capability>> {
         let list = match name {

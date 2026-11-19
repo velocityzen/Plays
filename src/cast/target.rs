@@ -110,6 +110,12 @@ pub struct Load {
     /// The picture plays here, following the device's sound: it's asked
     /// where it is every `FOLLOW_POLL`.
     pub picture_here: bool,
+    /// A stream of the sound alone this computer makes, which starts where
+    /// `start=` in its URL says. Speakers can't seek in it (they say it's
+    /// an illegal seek target) and say how long it is as how much they have
+    /// played, so a device is given it from where it's to start, again to
+    /// go elsewhere, and says where it is from there.
+    pub starts_at_url: bool,
 }
 
 /// Subtitles served beside the media.

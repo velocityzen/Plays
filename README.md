@@ -348,7 +348,8 @@ sound, for anything with sound. A file goes to it as it is where it
 lists that kind of file, else as a stream of MPEG-TS, re-encoded where it
 needs to be; a video's sound goes to a speaker as a stream of AAC or
 FLAC, as internet radio does, while the picture plays on here, following
-it. Picking other subtitles gives it the file again from where it
+it. A speaker can't seek in such a stream, so it's given the stream from
+where the tile is, and again from elsewhere to seek. Picking other subtitles gives it the file again from where it
 is, as DLNA takes subtitles only with the file. The tile's volume scales
 the TV's own: where it was when cast, the TV stays where it was.
 
@@ -537,7 +538,11 @@ the TV's own: where it was when cast, the TV stays where it was.
   in MPEG-TS for one that doesn't say; for a speaker given a video's
   sound, a stream of AAC or FLAC, by what it lists), and names the MIME
   type as the renderer lists it. While the picture follows the sound it
-  asks the renderer where it is ten times a second. Subtitles go as SRT, both ways the crate writes them;
+  asks the renderer where it is ten times a second. A stream of the sound
+  starts where its URL says: a speaker refuses to seek in one and says
+  how long it is as how much it has played, so it's given the stream from
+  where it's to start, again to seek, and where it says it is counts from
+  there, against the file's duration. Subtitles go as SRT, both ways the crate writes them;
   other subtitles load the file again from where it is. The renderer
   stopping after it played is the end; a seek it refuses while stopped is
   made once it plays; something else playing there ends the cast.
@@ -799,8 +804,9 @@ over a channel.
   plays something it wasn't given here: what it's set to play, asked
   afresh, isn't ours.
 - `fake.rs`, with the `fake` feature: a pretend renderer on this computer,
-  a TV with events or a speaker without, saying where it is to the
-  millisecond and, when told to, slow to answer.
+  a TV with events or a speaker without, saying where it is and how
+  long what it plays is to the millisecond and, when told to, slow to
+  answer.
 
 `cargo run -p dlna --example dlna -- list` lists the renderers on the
 network and what they play; `play` has one play a URL, with subtitles
@@ -963,7 +969,13 @@ with sound and gets the M4A as it is, and a paused tile leaves it paused.
 A video's sound goes to it as a stream of FLAC (it lists FLAC, not AAC),
 re-encoded, the picture staying here; it's asked where it is several
 times a second from the start, and seen moving, it plays on from when it
-was first heard where it is, not from when it was last asked. Space, the
+was first heard where it is, not from when it was last asked. From a
+tile partway through, the speaker gets the stream at a URL that starts
+there, with what's left as its duration, and is never told to seek;
+where it says it is counts from there, the bar's length is the file's
+however long the speaker says it is, and seeking gives it the stream
+again from there, playing as it was, what it said of the last one not
+taken for this one. Space, the
 arrows, `M` and the volume keys play, seek, mute, turn down and pause the
 TV (its volume scaled from where it was); the bar follows where it says it
 is, and its playing to the end shows the end. Other subtitles give it the

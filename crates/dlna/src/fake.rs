@@ -639,7 +639,7 @@ fn control(service: &'static str, shared: &Shared, message: &Message) -> Reply {
         }
         (AV_TRANSPORT, "GetPositionInfo") => vec![
             ("Track", "1".into()),
-            ("TrackDuration", media::clock(state.duration)),
+            ("TrackDuration", media::clock_exact(state.duration)),
             ("TrackMetaData", state.metadata.clone()),
             (
                 "TrackURI",

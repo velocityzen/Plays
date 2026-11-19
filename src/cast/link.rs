@@ -640,6 +640,7 @@ fn load_for(cast: &Cast) -> Load {
         muted: false,
         subtitles: None,
         picture_here: false,
+        starts_at_url: matches!(cast.plan().delivery, Delivery::Sound(_)),
     }
 }
 

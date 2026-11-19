@@ -258,6 +258,70 @@ fn a_videos_sound_goes_to_a_speaker_as_a_stream_asked_where_it_is_often(cx: &mut
 }
 
 #[gpui::test]
+fn a_speaker_is_given_the_stream_from_where_the_tile_is_and_again_to_seek(cx: &mut TestAppContext) {
+    let speaker = FakeRenderer::start(Kind::Speaker);
+    let (window, mut cx) = start(cx, &speaker, "clip.mp4", false);
+    let view = tile(window, &cx);
+    view.update(&mut cx, |view, _| view.seek(1.0));
+    cast(&mut cx, &speaker);
+    let (uri, metadata) = {
+        let state = speaker.state();
+        (state.uri.clone(), state.metadata.clone())
+    };
+    assert!(uri.ends_with("sound.flac?start=1.000"), "{uri}");
+    assert!(
+        metadata.contains("duration=\"0:00:01.000\""),
+        "as long as what's left: {metadata}"
+    );
+    assert_eq!(asked(&speaker, "Seek"), 0, "it can't seek in a stream");
+    let (status, body) = get(&uri);
+    assert_eq!(status, 200);
+    assert!(body.starts_with(b"fLaC"));
+
+    // Played, it says where it is from where it started, and how long it
+    // is as how much it has played.
+    press(&mut cx, "space");
+    wait(&mut cx, "it to play", |_| asked(&speaker, "Play") == 1);
+    {
+        let mut state = speaker.state();
+        state.position = 0.25;
+        state.duration = 0.25;
+    }
+    wait(&mut cx, "the bar to be where it is", |cx| {
+        view.read_with(cx, |view, _| (view.position() - 1.25).abs() < 1e-9)
+    });
+    assert_eq!(
+        view.read_with(&cx, |view, _| view.duration()),
+        Some(2.0),
+        "the file's"
+    );
+
+    // Sought, it's given it again from there, playing as it was. Slow to
+    // answer, it says where it was in what it played before for a while,
+    // which isn't taken to be from where it starts now.
+    speaker.state().answer_after = Duration::from_millis(150);
+    view.update(&mut cx, |view, _| view.seek(0.5));
+    let mut seen = Vec::new();
+    wait(&mut cx, "it to play it from there", |cx| {
+        seen.push(view.read_with(cx, |view, _| view.position()));
+        asked(&speaker, "Play") == 2
+    });
+    let polls = asked(&speaker, "GetPositionInfo");
+    wait(&mut cx, "it to say where it is since", |cx| {
+        seen.push(view.read_with(cx, |view, _| view.position()));
+        asked(&speaker, "GetPositionInfo") >= polls + 2
+    });
+    speaker.state().answer_after = Duration::ZERO;
+    assert!(
+        seen.iter().all(|position| (position - 0.5).abs() < 0.1),
+        "at {seen:?}, from 0.5"
+    );
+    let uri = speaker.state().uri.clone();
+    assert!(uri.ends_with("sound.flac?start=0.500"), "{uri}");
+    assert_eq!(asked(&speaker, "Seek"), 0);
+}
+
+#[gpui::test]
 fn the_tiles_controls_reach_the_tv_and_its_status_moves_the_bar(cx: &mut TestAppContext) {
     let tv = FakeRenderer::start(Kind::Tv);
     let (window, mut cx) = start(cx, &tv, "clip.mp4", false);
