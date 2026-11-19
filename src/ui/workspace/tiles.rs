@@ -3,11 +3,11 @@
 
 use gpui::{App, Context, Entity, EntityId, Pixels, Size, px, size};
 
-use super::{TOOLBAR, Tile, Workspace};
+use super::{TOOLBAR_SPACE, Tile, Workspace};
 use crate::app::Awake;
 use crate::ui::player::{PlayerEvent, PlayerView};
 use crate::ui::theme::layout::{
-    AUDIO_WINDOW_SIZE, TOOLBAR_HEIGHT, VIDEO_WINDOW_SIZE, WINDOW_MIN_SIZE, WINDOW_SIZE,
+    AUDIO_WINDOW_SIZE, VIDEO_WINDOW_SIZE, WINDOW_MIN_SIZE, WINDOW_SIZE,
 };
 
 impl Workspace {
@@ -195,14 +195,8 @@ fn window_size_for(view: &PlayerView) -> Size<Pixels> {
         _ if info.as_ref().is_some_and(|i| !i.has_video) => AUDIO_WINDOW_SIZE,
         _ => VIDEO_WINDOW_SIZE,
     };
-    // The toolbar has a 1px border under it.
-    let toolbar = if TOOLBAR {
-        TOOLBAR_HEIGHT + px(1.)
-    } else {
-        px(0.)
-    };
     size(
         content.width.max(WINDOW_MIN_SIZE.width),
-        (content.height + toolbar).max(WINDOW_MIN_SIZE.height),
+        (content.height + TOOLBAR_SPACE).max(WINDOW_MIN_SIZE.height),
     )
 }

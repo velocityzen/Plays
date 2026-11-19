@@ -9,12 +9,10 @@ use std::time::Instant;
 use gpui::prelude::*;
 use gpui::{App, Context, EntityId, Pixels, Size, Window, px, size};
 
-use super::{TOOLBAR, Workspace};
+use super::{TOOLBAR_SPACE, Workspace};
 use crate::settings::Settings;
 use crate::ui::player::PlayerView;
-use crate::ui::theme::layout::{
-    AUDIO_WINDOW_SIZE, SCREEN_MARGIN, TILE_GAP, TOOLBAR_HEIGHT, WINDOW_MIN_SIZE,
-};
+use crate::ui::theme::layout::{AUDIO_WINDOW_SIZE, SCREEN_MARGIN, TILE_GAP, WINDOW_MIN_SIZE};
 use crate::ui::theme::motion::{FIT_POLL, FIT_WAIT};
 
 /// Files opened into a window whose sizes it waits for.
@@ -103,20 +101,14 @@ impl Workspace {
             .iter()
             .filter_map(|tile| shown_size(tile.view.read(cx)))
             .collect();
-        // The toolbar has a 1px border under it.
-        let toolbar = if TOOLBAR {
-            TOOLBAR_HEIGHT + px(1.)
-        } else {
-            px(0.)
-        };
         let room = screen::room(window, cx);
-        let room = size(room.width, room.height - toolbar);
+        let room = size(room.width, room.height - TOOLBAR_SPACE);
         let Some(grid) = grid_size(&cells, count, columns, room) else {
             return;
         };
         let content = size(
             grid.width.max(WINDOW_MIN_SIZE.width),
-            (grid.height + toolbar).max(WINDOW_MIN_SIZE.height),
+            (grid.height + TOOLBAR_SPACE).max(WINDOW_MIN_SIZE.height),
         );
         log::debug!("sizing the window for its videos: {content:?}");
         screen::set_content_size(window, content, cx);

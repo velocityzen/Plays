@@ -1,0 +1,105 @@
+//! Driving the app's windows in `#[gpui::test]`s, as someone at the
+//! screen would: find what's shown by its `debug_selector`, click it,
+//! press keys, and wait for files to open. gpui's test platform draws
+//! nothing, so tests check what happens and where things are, not pixels.
+//! Files decode on threads of their own, outside gpui's test executor, so
+//! waiting for them takes real time.
+
+use std::path::PathBuf;
+use std::time::{Duration, Instant};
+
+use gpui::{
+    Bounds, Modifiers, MouseButton, MouseDownEvent, MouseUpEvent, Pixels, TestAppContext,
+    VisualTestContext, WindowHandle,
+};
+
+use crate::app;
+use crate::ui::theme::layout::WINDOW_SIZE;
+use crate::ui::workspace::Workspace;
+
+/// How long a file in `tests/fixtures` may take to open, or to start
+/// playing.
+pub const OPEN_WAIT: Duration = Duration::from_secs(10);
+
+/// A file in `tests/fixtures`.
+pub fn fixture(name: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures")
+        .join(name)
+}
+
+/// The app as it starts (default settings, silent audio), and its first
+/// window, empty and in front.
+pub fn start(cx: &mut TestAppContext) -> (WindowHandle<Workspace>, VisualTestContext) {
+    cx.update(app::set_up_for_tests);
+    let window = cx
+        .update(|cx| Workspace::open_window(WINDOW_SIZE, cx))
+        .expect("opening a window");
+    let mut visual = VisualTestContext::from_window(window.into(), cx);
+    // The test platform doesn't bring new windows to the front.
+    visual.update(|window, _| window.activate_window());
+    visual.run_until_parked();
+    (window, visual)
+}
+
+/// Run what's ready until `done`, giving decoding threads real time, for
+/// at most `OPEN_WAIT`.
+pub fn wait_until(
+    cx: &mut TestAppContext,
+    mut done: impl FnMut(&mut TestAppContext) -> bool,
+) -> bool {
+    let start = Instant::now();
+    while start.elapsed() < OPEN_WAIT {
+        cx.run_until_parked();
+        if done(cx) {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    false
+}
+
+/// Where the element tagged `selector` was last drawn.
+pub fn find(cx: &mut VisualTestContext, selector: &'static str) -> Bounds<Pixels> {
+    cx.run_until_parked();
+    cx.debug_bounds(selector)
+        .unwrap_or_else(|| panic!("nothing on screen is tagged {selector:?}"))
+}
+
+/// Whether anything tagged `selector` was last drawn.
+pub fn shows(cx: &mut VisualTestContext, selector: &'static str) -> bool {
+    cx.run_until_parked();
+    cx.debug_bounds(selector).is_some()
+}
+
+/// Click the middle of the element tagged `selector`.
+pub fn click(cx: &mut VisualTestContext, selector: &'static str) {
+    let at = find(cx, selector).center();
+    cx.simulate_click(at, Modifiers::none());
+}
+
+/// Double-click the middle of the element tagged `selector`: a click, then
+/// one the system counts as the second.
+pub fn double_click(cx: &mut VisualTestContext, selector: &'static str) {
+    let at = find(cx, selector).center();
+    cx.simulate_click(at, Modifiers::none());
+    cx.simulate_event(MouseDownEvent {
+        position: at,
+        modifiers: Modifiers::none(),
+        button: MouseButton::Left,
+        click_count: 2,
+        first_mouse: false,
+    });
+    cx.simulate_event(MouseUpEvent {
+        position: at,
+        modifiers: Modifiers::none(),
+        button: MouseButton::Left,
+        click_count: 2,
+    });
+}
+
+/// Press keys, as gpui writes them: "secondary-w" is ⌘W on macOS and
+/// Ctrl+W elsewhere; "m", then "space", is "m space".
+pub fn press(cx: &mut VisualTestContext, keys: &str) {
+    cx.simulate_keystrokes(keys);
+}

@@ -1,70 +1,67 @@
-//! A workspace window on gpui's test platform: no screen, simulated input,
-//! and a clock that moves only when told. Files still decode on threads of
-//! their own, so waiting for them takes real time.
+//! A workspace window driven as someone at the screen would, on gpui's
+//! test platform (see `ui::testing`).
 
-use std::path::PathBuf;
-use std::time::{Duration, Instant};
+use gpui::{EntityId, TestAppContext, VisualTestContext, WindowHandle, px, size};
 
-use gpui::{TestAppContext, WindowHandle, px, size};
-
-use super::{TOOLBAR, Workspace};
-use crate::app;
-use crate::ui::theme::layout::{TOOLBAR_HEIGHT, WINDOW_MIN_SIZE, WINDOW_SIZE};
+use super::{TOOLBAR_SPACE, Workspace};
+use crate::ui::testing::{
+    self, OPEN_WAIT, click, double_click, find, fixture, press, shows, wait_until,
+};
+use crate::ui::theme::layout::WINDOW_MIN_SIZE;
 use crate::ui::theme::motion::FIT_POLL;
 
-/// How long a file in `tests/fixtures` may take to open.
-const OPEN_WAIT: Duration = Duration::from_secs(10);
-
-fn fixture(name: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures")
-        .join(name)
+/// Open `files` into `window`, and wait until every one of them has
+/// opened, and, with `playing`, is playing.
+fn open(
+    window: WindowHandle<Workspace>,
+    cx: &mut VisualTestContext,
+    files: &[&str],
+    playing: bool,
+) {
+    let paths = files.iter().map(|file| fixture(file)).collect();
+    window
+        .update(cx, |workspace, _, cx| workspace.open_paths(paths, cx))
+        .unwrap();
+    let ready = wait_until(cx, |cx| {
+        window
+            .read_with(cx, |workspace, cx| {
+                workspace.tiles.len() == files.len()
+                    && workspace.tiles.iter().all(|tile| {
+                        let player = tile.view.read(cx).player();
+                        player.info().is_some() && (!playing || player.is_playing())
+                    })
+            })
+            .unwrap()
+    });
+    assert!(ready, "{files:?} didn't open (and play) in {OPEN_WAIT:?}");
 }
 
-/// The app as it starts, and an empty window.
-fn open_window(cx: &mut TestAppContext) -> WindowHandle<Workspace> {
-    cx.update(app::set_up_for_tests);
-    cx.update(|cx| Workspace::open_window(WINDOW_SIZE, cx))
-        .expect("opening a window")
-}
-
-/// Run what's ready until `done`, giving decoding threads real time, for
-/// at most `OPEN_WAIT`.
-fn wait_until(cx: &mut TestAppContext, mut done: impl FnMut(&mut TestAppContext) -> bool) -> bool {
-    let start = Instant::now();
-    while start.elapsed() < OPEN_WAIT {
-        cx.run_until_parked();
-        if done(cx) {
-            return true;
-        }
-        std::thread::sleep(Duration::from_millis(5));
-    }
-    false
+/// The tiles' players, in order: (tile, playing, muted).
+fn players(window: WindowHandle<Workspace>, cx: &VisualTestContext) -> Vec<(EntityId, bool, bool)> {
+    window
+        .read_with(cx, |workspace, cx| {
+            workspace
+                .tiles
+                .iter()
+                .map(|tile| {
+                    let player = tile.view.read(cx).player();
+                    (
+                        tile.view.entity_id(),
+                        player.is_playing(),
+                        player.is_muted(),
+                    )
+                })
+                .collect()
+        })
+        .unwrap()
 }
 
 #[gpui::test]
 fn opens_a_file_in_a_tile_and_fits_the_window_to_it(cx: &mut TestAppContext) {
-    let window = open_window(cx);
-    window
-        .update(cx, |workspace, _, cx| {
-            workspace.open_paths(vec![fixture("clip.mp4")], cx)
-        })
-        .unwrap();
-
-    let opened = wait_until(cx, |cx| {
-        window
-            .read_with(cx, |workspace, cx| {
-                workspace
-                    .tiles
-                    .iter()
-                    .any(|tile| tile.view.read(cx).player().info().is_some())
-            })
-            .unwrap()
-    });
-    assert!(opened, "clip.mp4 didn't open in {OPEN_WAIT:?}");
+    let (window, mut cx) = testing::start(cx);
+    open(window, &mut cx, &["clip.mp4"], false);
     let info = window
-        .read_with(cx, |workspace, cx| {
-            assert_eq!(workspace.tiles.len(), 1);
+        .read_with(&cx, |workspace, cx| {
             workspace.tiles[0].view.read(cx).player().info()
         })
         .unwrap()
@@ -76,19 +73,122 @@ fn opens_a_file_in_a_tile_and_fits_the_window_to_it(cx: &mut TestAppContext) {
     // smallest here, as the video is smaller still.
     cx.executor().advance_clock(FIT_POLL);
     cx.run_until_parked();
-    let toolbar = if TOOLBAR {
-        TOOLBAR_HEIGHT + px(1.)
-    } else {
-        px(0.)
-    };
-    let fitted = window
-        .update(cx, |_, window, _| window.bounds().size)
-        .unwrap();
+    let fitted = cx.update(|window, _| window.bounds().size);
     assert_eq!(
         fitted,
         size(
             px(160.).max(WINDOW_MIN_SIZE.width),
-            (px(120.) + toolbar).max(WINDOW_MIN_SIZE.height)
+            (px(120.) + TOOLBAR_SPACE).max(WINDOW_MIN_SIZE.height)
         )
+    );
+}
+
+#[gpui::test]
+fn a_click_picks_a_tile_without_pausing_it(cx: &mut TestAppContext) {
+    let (window, mut cx) = testing::start(cx);
+    open(window, &mut cx, &["clip.mp4", "clip-ip.mkv"], true);
+
+    click(&mut cx, "tile-1");
+    let [_, (second, playing, _)] = players(window, &cx)[..] else {
+        panic!("two tiles");
+    };
+    assert!(playing, "a single click mustn't pause the tile");
+    let active = window
+        .read_with(&cx, |workspace, _| workspace.active)
+        .unwrap();
+    assert_eq!(
+        active,
+        Some(second),
+        "the tile clicked is the one shortcuts go to"
+    );
+}
+
+#[gpui::test]
+fn a_double_click_fills_the_window_with_a_tile_and_another_puts_it_back(cx: &mut TestAppContext) {
+    let (window, mut cx) = testing::start(cx);
+    open(window, &mut cx, &["clip.mp4", "clip-ip.mkv"], true);
+    let viewport = cx.update(|window, _| window.viewport_size());
+    let content = size(viewport.width, viewport.height - TOOLBAR_SPACE);
+
+    double_click(&mut cx, "tile-1");
+    assert!(!shows(&mut cx, "tile-0"), "the other tile is hidden");
+    assert_eq!(find(&mut cx, "tile-1").size, content);
+    assert!(
+        players(window, &cx).iter().all(|&(_, playing, _)| playing),
+        "double-clicking mustn't pause"
+    );
+
+    double_click(&mut cx, "tile-1");
+    assert!(shows(&mut cx, "tile-0"));
+    assert!(find(&mut cx, "tile-1").size.width < content.width / 2.);
+}
+
+#[gpui::test]
+fn shortcuts_go_to_the_tile_last_clicked(cx: &mut TestAppContext) {
+    let (window, mut cx) = testing::start(cx);
+    open(window, &mut cx, &["clip.mp4", "clip-ip.mkv"], false);
+    let muted = |cx: &VisualTestContext| {
+        players(window, cx)
+            .iter()
+            .map(|&(_, _, muted)| muted)
+            .collect::<Vec<_>>()
+    };
+
+    click(&mut cx, "tile-1");
+    press(&mut cx, "m");
+    assert_eq!(muted(&cx), [false, true]);
+
+    click(&mut cx, "tile-0");
+    press(&mut cx, "m");
+    assert_eq!(muted(&cx), [true, true]);
+}
+
+#[gpui::test]
+fn command_w_closes_the_tile_in_front_then_the_window(cx: &mut TestAppContext) {
+    let (window, mut cx) = testing::start(cx);
+    open(window, &mut cx, &["clip.mp4", "clip-ip.mkv"], false);
+    let second = players(window, &cx)[1].0;
+
+    click(&mut cx, "tile-0");
+    press(&mut cx, "secondary-w");
+    let left: Vec<_> = players(window, &cx).iter().map(|&(id, ..)| id).collect();
+    assert_eq!(left, [second], "only the tile in front closes");
+
+    press(&mut cx, "secondary-w");
+    assert!(players(window, &cx).is_empty());
+    assert!(
+        cx.windows().contains(&window.into()),
+        "the window stays, empty"
+    );
+
+    press(&mut cx, "secondary-w");
+    assert!(
+        !cx.windows().contains(&window.into()),
+        "an empty window closes"
+    );
+}
+
+#[gpui::test]
+fn tiles_sit_in_the_grid(cx: &mut TestAppContext) {
+    let (window, mut cx) = testing::start(cx);
+    // Four tiles make two rows of two.
+    open(
+        window,
+        &mut cx,
+        &["clip.mp4", "clip-ip.mkv", "clip.mp4", "tone.m4a"],
+        false,
+    );
+    let [a, b, c, d] = ["tile-0", "tile-1", "tile-2", "tile-3"].map(|tile| find(&mut cx, tile));
+
+    assert_eq!((a.top(), c.top()), (b.top(), d.top()), "rows line up");
+    assert_eq!(
+        (a.left(), b.left()),
+        (c.left(), d.left()),
+        "columns line up"
+    );
+    assert!(b.left() > a.right() && c.top() > a.bottom());
+    assert!(
+        [b, c, d].iter().all(|tile| tile.size == a.size),
+        "every tile gets the same room"
     );
 }

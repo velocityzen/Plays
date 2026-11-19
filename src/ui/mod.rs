@@ -9,6 +9,8 @@ pub mod screenshot;
 pub mod settings;
 mod subtitles;
 mod system_colors;
+#[cfg(test)]
+pub mod testing;
 pub mod text_input;
 pub mod theme;
 mod traffic_lights;

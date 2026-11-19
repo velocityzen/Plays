@@ -2,14 +2,14 @@
 //! buttons inside, or the "Open URL" form while it is open.
 
 use gpui::prelude::*;
-use gpui::{Context, ExternalPaths, Window, div, px};
+use gpui::{Context, ExternalPaths, Window, div};
 
-use super::{CONTENT_GROUP, TOOLBAR, Workspace};
+use super::{CONTENT_GROUP, TOOLBAR_SPACE, Workspace};
 use crate::ui::components::Button;
 use crate::ui::theme::Theme;
 use crate::ui::theme::layout::{
     RING_BORDER, RING_BORDER_DROP, RING_FORM_MAX_WIDTH, RING_FORM_MIN_WIDTH, RING_FORM_SCALE,
-    RING_MARGIN, RING_MAX_DIAMETER, RING_MIN_DIAMETER, RING_SCALE, TOOLBAR_HEIGHT,
+    RING_MARGIN, RING_MAX_DIAMETER, RING_MIN_DIAMETER, RING_SCALE,
 };
 use crate::ui::theme::text::TextStyle;
 
@@ -28,12 +28,7 @@ impl Workspace {
             ("Ctrl+O", "Shift+Ctrl+O")
         };
         let viewport = window.viewport_size();
-        let height = if TOOLBAR {
-            viewport.height - TOOLBAR_HEIGHT - px(1.)
-        } else {
-            viewport.height
-        };
-        let shorter = viewport.width.min(height);
+        let shorter = viewport.width.min(viewport.height - TOOLBAR_SPACE);
         // Small windows get a larger share, so what is inside still fits.
         let diameter = (shorter * RING_SCALE)
             .max(RING_MIN_DIAMETER.min(shorter - RING_MARGIN))

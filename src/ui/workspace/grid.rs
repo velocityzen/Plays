@@ -32,10 +32,20 @@ impl Workspace {
                     .flex_1()
                     .min_h_0()
                     .gap(TILE_GAP)
-                    .children(
-                        row.iter()
-                            .map(|tile| div().flex_1().min_w_0().h_full().child(tile.view.clone())),
-                    )
+                    .children(row.iter().map(|tile| {
+                        // Tests find a tile by where it is in the window's
+                        // list: "tile-0" first.
+                        let index = self
+                            .tiles
+                            .iter()
+                            .position(|t| t.view.entity_id() == tile.view.entity_id());
+                        div()
+                            .debug_selector(move || format!("tile-{}", index.unwrap_or_default()))
+                            .flex_1()
+                            .min_w_0()
+                            .h_full()
+                            .child(tile.view.clone())
+                    }))
                     .children((row.len()..columns).map(|_| div().flex_1().min_w_0()))
             }))
     }

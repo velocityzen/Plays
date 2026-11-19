@@ -752,6 +752,10 @@ impl Frame {
         self.deferred_draws.clear();
         self.tab_stops.clear();
         self.focus = None;
+        // Plays: only what this frame drew, so a test can tell something
+        // is gone.
+        #[cfg(any(test, feature = "test-support"))]
+        self.debug_bounds.clear();
 
         #[cfg(any(feature = "inspector", debug_assertions))]
         {

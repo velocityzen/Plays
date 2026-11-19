@@ -93,9 +93,12 @@ impl RenderOnce for MenuRow {
         let accent = theme.accent;
         let size = self.size;
         let clickable = self.on_click.is_some();
+        // Tests find a row by its id.
+        let selector = self.id.clone();
         let mut row = size
             .text(div())
             .id(self.id)
+            .debug_selector(move || selector.to_string())
             .flex()
             .items_center()
             .gap_1p5()

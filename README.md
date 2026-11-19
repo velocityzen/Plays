@@ -555,6 +555,16 @@ tile, and the window must then fit it. These tests open the small files in
 `tests/fixtures`, committed so they run without the `ffmpeg` tool;
 `script/make-fixtures` makes them again.
 
+`ui::testing` clicks, double-clicks and types as someone at the screen
+would, finding what to click by its debug selector (`tile-0`, a menu row's
+id), set only in test builds. A click picks a tile without pausing it, and
+shortcuts then go to it; a double-click fills the window with a tile, the
+whole area under the toolbar, and another puts the grid back; ⌘W closes the
+tile in front, then the empty window; four tiles sit in two even rows.
+Settings' Reset to Defaults asks first and changes nothing on Cancel, and
+picking an output in the Audio menu sets it. Each test has been checked to
+fail when the behavior it covers is broken.
+
 ## Limitations
 
 - On Linux, frames decoded on the GPU are copied back to memory and

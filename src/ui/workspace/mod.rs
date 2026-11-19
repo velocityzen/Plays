@@ -19,12 +19,12 @@ use gpui::prelude::*;
 use gpui::{
     AnyWindowHandle, App, Bounds, Context, Entity, EntityId, ExternalPaths, FocusHandle, Pixels,
     Size, Subscription, TitlebarOptions, Window, WindowBounds, WindowHandle, WindowOptions, black,
-    div,
+    div, px,
 };
 
 use super::open_url::{OpenUrlDialog, OpenUrlEvent, UrlForm};
 use super::player::{Graveyard, PlayerView};
-use super::theme::layout::{DROP_INSET, TRAFFIC_LIGHTS, WINDOW_MIN_SIZE};
+use super::theme::layout::{DROP_INSET, TOOLBAR_HEIGHT, TRAFFIC_LIGHTS, WINDOW_MIN_SIZE};
 use super::theme::{self, Theme};
 use crate::app::AudioEngine;
 use crate::media::picture;
@@ -35,6 +35,9 @@ use crate::settings::Settings;
 /// Linux has no menu bar, and the toolbar is what moves the window there
 /// when it draws its own decorations.
 const TOOLBAR: bool = cfg!(not(target_os = "macos"));
+/// The height the toolbar takes over the tiles. The line under it is
+/// inside its height, as gpui sizes boxes with their borders.
+const TOOLBAR_SPACE: Pixels = if TOOLBAR { TOOLBAR_HEIGHT } else { px(0.) };
 /// The area under the toolbar, which files are dropped on.
 const CONTENT_GROUP: &str = "content";
 

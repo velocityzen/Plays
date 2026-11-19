@@ -32,6 +32,7 @@ pub(super) fn file_menu(
     let open = view.file_menu;
     let row = div()
         .id("settings-file")
+        .debug_selector(|| "settings-file".into())
         .w_full()
         .flex()
         .items_center()

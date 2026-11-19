@@ -10,6 +10,8 @@ mod hotkeys;
 mod playback;
 mod screenshots;
 mod subtitles;
+#[cfg(test)]
+mod tests;
 mod video;
 
 use std::cell::Cell;
