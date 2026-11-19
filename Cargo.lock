@@ -1782,6 +1782,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "dlna"
+version = "0.1.0"
+dependencies = [
+ "futures-channel",
+ "if-addrs",
+ "log",
+ "quick-xml 0.42.0",
+ "socket2",
+]
+
+[[package]]
 name = "downcast-rs"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

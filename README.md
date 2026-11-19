@@ -672,6 +672,51 @@ channel.
 `cargo run -p chromecast --example chromecast -- list` lists the devices
 on the network; `play` casts a URL to one and says what it does with it.
 
+### The DLNA crate
+
+`crates/dlna` finds UPnP media renderers (smart TVs from Samsung, LG, Sony
+and others, and speakers such as Sonos or Devialet), has one play a URL and
+drives it. Like the other two it knows nothing of Plays, gpui or FFmpeg,
+blocks on the caller's thread or a session's own, and says what happens
+over a channel.
+
+- `ssdp.rs`, `browser.rs`: SSDP. A search for media renderers goes to
+  `239.255.255.250:1900` on every interface, again a second later as
+  datagrams get lost, and every two minutes after; renderers' NOTIFYs are
+  heard on SSDP's port, shared with whatever else listens there. A
+  renderer is dropped when it says byebye or isn't heard from within the
+  max-age it gave.
+- `device.rs`, `xml.rs`: the device description, read for the name,
+  maker, model, icons and where AVTransport, RenderingControl and
+  ConnectionManager are, of any version. The renderer may be a device
+  inside another, as a Sonos speaker's is. ConnectionManager's protocol
+  info is read into capabilities: the protocol, MIME type and DLNA profile
+  of each.
+- `http.rs`, `soap.rs`: just enough HTTP/1.1, and SOAP actions on it. A
+  refusal's `UPnPError` becomes a typed fault, as each service numbers
+  them.
+- `media.rs`: the DIDL-Lite that goes with a URL (title, class, `res`
+  with its protocol info, duration and size), with subtitles both as a
+  second `res` and as Samsung's `sec:CaptionInfoEx`. What serves the media
+  matters as much: TVs look for `transferMode.dlna.org`,
+  `contentFeatures.dlna.org`, time seeks and `CaptionInfo.sec`, which the
+  stream server sends, and a speaker seeks in a file by byte ranges.
+- `session.rs`: SetAVTransportURI (after Stop, for a renderer that won't
+  take another while it plays), Play, Pause, Seek (by absolute time when
+  it won't by relative), Stop, the volume and mute. GENA subscriptions to
+  AVTransport and RenderingControl send their events to a listener of the
+  session's own, renewed halfway through; GetPositionInfo is asked every
+  second, with the transport state, and the volume every five seconds,
+  when there are no events for them. The session ends when the renderer stops answering, or when it
+  plays something it wasn't given here: what it's set to play, asked
+  afresh, isn't ours.
+- `fake.rs`, with the `fake` feature: a pretend renderer on this computer,
+  a TV with events or a speaker without.
+
+`cargo run -p dlna --example dlna -- list` lists the renderers on the
+network and what they play; `play` has one play a URL, with subtitles
+when given, and says what it does.
+
 ## Tests
 
 ```bash
@@ -848,6 +893,21 @@ JSON LOAD sends and the status read back, and records from a Google TV, a
 Nest speaker and a group. Each has been checked to fail when what it
 covers is broken.
 
+The DLNA crate's tests use the fake renderer over HTTP and SSDP on this
+computer: it's found by searching and by its advert, and dropped on byebye
+and when its max-age runs out; its capabilities come from its protocol
+info; SetAVTransportURI carries the URL and the DIDL-Lite with subtitles
+both ways; play, pause, seek (by absolute time for a speaker that takes
+only that) and volume reach it; refusals come back as typed faults;
+loading while it plays stops it first when it must; events tell what a TV
+does and asking tells what a speaker does; subscriptions are renewed, made
+again when the renderer forgot them, and ended; and the session ends when
+the renderer goes away or plays something else, but not for what played
+before or a track that lags. Unit tests read descriptions and protocol
+info in the forms Samsung, LG and Sonos give them and as a Devialet
+speaker gave them (ids changed), SSDP's messages, DIDL-Lite, times, URLs
+and HTTP. Each has been checked to fail when what it covers is broken.
+
 ### Smoke runs
 
 Headless windows have no native window behind them, so a bug between
@@ -947,6 +1007,10 @@ size, makes `first-open` fail.
 - The Chromecast crate takes whatever certificate a device offers, not
   checking it against Google's device certificates, so it can't tell a
   genuine device from something on the network pretending to be one.
+- The DLNA crate finds renderers over IPv4 only, and gives subtitles in the
+  forms most TVs take, as DLNA has none of its own; a TV may take neither.
+  A renderer that neither sends events nor answers GetPositionInfo can't
+  be followed.
 - Casting: no protocol is wired in yet, so no device is found. While a
   tile casts, delays don't apply, as the device plays the picture and the
   sound; gamma, crop, rotation, flips, aspect ratio and picture subtitles

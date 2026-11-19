@@ -1,0 +1,1 @@
+http-get:*:audio/mp3:*,http-get:*:audio/mpeg:*,http-get:*:audio/mp4:*,http-get:*:audio/flac:*,http-get:*:audio/x-flac:*,http-get:*:audio/wav:*,http-get:*:audio/x-ms-wma:*,x-file-cifs:*:audio/mpeg:*,x-rincon:*:*:*,x-rincon-mp3radio:*:*:*,x-rincon-playlist:*:*:*,x-sonos-http:*:*:*,sonos.com-http:*:audio/mpeg:*

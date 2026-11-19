@@ -1,0 +1,20 @@
+[package]
+name = "dlna"
+version = "0.1.0"
+edition = "2024"
+description = "Finds and controls UPnP media renderers: has a smart TV or a speaker play a URL over DLNA, and drives it while it does"
+license = "MIT"
+publish = false
+
+[features]
+# A pretend renderer on this computer, for tests here and in what uses the
+# crate.
+fake = []
+
+[dependencies]
+futures-channel = "0.3.34"
+if-addrs = "0.15"
+log = "0.4"
+quick-xml = "0.42"
+# Multicast on a chosen interface, and sharing SSDP's port.
+socket2 = { version = "0.6", features = ["all"] }
