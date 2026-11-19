@@ -53,12 +53,6 @@ impl PlayerView {
                 .items_center()
                 .gap_2()
                 .child(Icon::new("pip").size(PIP_ICON).color(theme.text_muted))
-                .child(
-                    div()
-                        .text_sm()
-                        .text_color(theme.text_muted)
-                        .child("Playing in Picture in Picture"),
-                )
                 .into_any_element();
         }
         if let Some(frame) = self.player.frame() {

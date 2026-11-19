@@ -14,7 +14,7 @@ use gpui::{
 use super::SettingsView;
 use super::form::update_settings;
 use crate::settings::Settings;
-use crate::ui::components::{Badge, Icon, MenuRow, Panel, Popover};
+use crate::ui::components::{Icon, MenuRow, Panel, Popover};
 use crate::ui::theme::settings::{
     FILE_CHEVRON, FILE_COLOR, FILE_MENU_GAP, FILE_MENU_WIDTH, SIDEBAR_ROW_HEIGHT,
 };
@@ -52,7 +52,7 @@ pub(super) fn file_menu(
             view.file_menu = true;
             cx.notify();
         }))
-        .child(Badge::icon("file", rgb(FILE_COLOR)))
+        .child(Icon::new("file").color(rgb(FILE_COLOR).into()))
         .child(div().flex_1().min_w_0().truncate().child("Settings File"))
         .child(
             Icon::new("chevron-up-down")
