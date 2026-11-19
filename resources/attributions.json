@@ -2976,6 +2976,20 @@
    ]
   },
   {
+   "name": "if-addrs",
+   "version": "0.15.0",
+   "license": "MIT OR BSD-3-Clause",
+   "url": "https://github.com/messense/if-addrs",
+   "platforms": [
+    "linux",
+    "macos"
+   ],
+   "texts": [
+    139,
+    140
+   ]
+  },
+  {
    "name": "image",
    "version": "0.25.10",
    "license": "MIT OR Apache-2.0",
@@ -3013,7 +3027,7 @@
     "macos"
    ],
    "texts": [
-    139
+    141
    ]
   },
   {
@@ -3041,7 +3055,7 @@
    ],
    "texts": [
     8,
-    140
+    142
    ]
   },
   {
@@ -3054,7 +3068,7 @@
    ],
    "texts": [
     6,
-    141
+    143
    ]
   },
   {
@@ -3095,8 +3109,8 @@
     "macos"
    ],
    "texts": [
-    142,
-    143
+    144,
+    145
    ]
   },
   {
@@ -3108,7 +3122,7 @@
     "linux"
    ],
    "texts": [
-    144
+    146
    ]
   },
   {
@@ -3120,7 +3134,7 @@
     "linux"
    ],
    "texts": [
-    144
+    146
    ]
   },
   {
@@ -3206,7 +3220,7 @@
    ],
    "texts": [
     23,
-    145
+    147
    ]
   },
   {
@@ -3219,8 +3233,8 @@
     "macos"
    ],
    "texts": [
-    146,
-    147
+    148,
+    149
    ]
   },
   {
@@ -3277,7 +3291,7 @@
     "macos"
    ],
    "texts": [
-    148
+    150
    ]
   },
   {
@@ -3291,7 +3305,7 @@
    ],
    "texts": [
     20,
-    149
+    151
    ]
   },
   {
@@ -3303,7 +3317,7 @@
     "linux"
    ],
    "texts": [
-    150
+    152
    ]
   },
   {
@@ -3316,7 +3330,7 @@
     "macos"
    ],
    "texts": [
-    151
+    153
    ]
   },
   {
@@ -3328,9 +3342,9 @@
     "linux"
    ],
    "texts": [
-    152,
+    154,
     8,
-    153,
+    155,
     5
    ]
   },
@@ -3343,9 +3357,9 @@
     "linux"
    ],
    "texts": [
-    152,
+    154,
     8,
-    153,
+    155,
     5
    ]
   },
@@ -3400,7 +3414,7 @@
     "macos"
    ],
    "texts": [
-    154
+    156
    ]
   },
   {
@@ -3493,8 +3507,8 @@
    ],
    "texts": [
     20,
-    155,
-    156
+    157,
+    158
    ]
   },
   {
@@ -3522,7 +3536,7 @@
     "macos"
    ],
    "texts": [
-    157
+    159
    ]
   },
   {
@@ -3535,7 +3549,7 @@
    ],
    "texts": [
     6,
-    158
+    160
    ]
   },
   {
@@ -3563,8 +3577,8 @@
     "macos"
    ],
    "texts": [
-    159,
-    160
+    161,
+    162
    ]
   },
   {
@@ -3577,7 +3591,7 @@
    ],
    "texts": [
     8,
-    161
+    163
    ]
   },
   {
@@ -3591,7 +3605,7 @@
    ],
    "texts": [
     8,
-    162
+    164
    ]
   },
   {
@@ -3604,7 +3618,7 @@
     "macos"
    ],
    "texts": [
-    163
+    165
    ]
   },
   {
@@ -3617,10 +3631,10 @@
     "macos"
    ],
    "texts": [
-    164,
+    166,
     15,
-    165,
-    166
+    167,
+    168
    ]
   },
   {
@@ -3633,10 +3647,10 @@
     "macos"
    ],
    "texts": [
-    164,
+    166,
     15,
-    165,
-    166
+    167,
+    168
    ]
   },
   {
@@ -3649,7 +3663,7 @@
     "macos"
    ],
    "texts": [
-    167
+    169
    ]
   },
   {
@@ -3662,7 +3676,7 @@
     "macos"
    ],
    "texts": [
-    168
+    170
    ]
   },
   {
@@ -3675,8 +3689,8 @@
     "macos"
    ],
    "texts": [
-    169,
-    170
+    171,
+    172
    ]
   },
   {
@@ -3690,7 +3704,7 @@
    ],
    "texts": [
     23,
-    171
+    173
    ]
   },
   {
@@ -3718,7 +3732,7 @@
     "linux"
    ],
    "texts": [
-    172
+    174
    ]
   },
   {
@@ -3731,7 +3745,7 @@
     "macos"
    ],
    "texts": [
-    173
+    175
    ]
   },
   {
@@ -3744,7 +3758,7 @@
     "macos"
    ],
    "texts": [
-    174
+    176
    ]
   },
   {
@@ -3757,7 +3771,7 @@
     "macos"
    ],
    "texts": [
-    174
+    176
    ]
   },
   {
@@ -3771,7 +3785,7 @@
    ],
    "texts": [
     18,
-    175
+    177
    ]
   },
   {
@@ -3784,7 +3798,7 @@
     "macos"
    ],
    "texts": [
-    176
+    178
    ]
   },
   {
@@ -3918,7 +3932,7 @@
     "macos"
    ],
    "texts": [
-    177
+    179
    ]
   },
   {
@@ -4078,7 +4092,7 @@
     "linux"
    ],
    "texts": [
-    178
+    180
    ]
   },
   {
@@ -4090,7 +4104,7 @@
     "linux"
    ],
    "texts": [
-    179
+    181
    ]
   },
   {
@@ -4116,7 +4130,7 @@
     "macos"
    ],
    "texts": [
-    180
+    182
    ]
   },
   {
@@ -4144,7 +4158,7 @@
    "texts": [
     8,
     5,
-    181
+    183
    ]
   },
   {
@@ -4217,7 +4231,7 @@
    ],
    "texts": [
     6,
-    182
+    184
    ]
   },
   {
@@ -4244,7 +4258,7 @@
     "macos"
    ],
    "texts": [
-    183
+    185
    ]
   },
   {
@@ -4285,8 +4299,8 @@
     "macos"
    ],
    "texts": [
-    184,
-    185
+    186,
+    187
    ]
   },
   {
@@ -4314,7 +4328,7 @@
    ],
    "texts": [
     8,
-    186
+    188
    ]
   },
   {
@@ -4328,7 +4342,7 @@
    ],
    "texts": [
     8,
-    186
+    188
    ]
   },
   {
@@ -4356,7 +4370,7 @@
    ],
    "texts": [
     8,
-    187
+    189
    ]
   },
   {
@@ -4369,7 +4383,7 @@
     "macos"
    ],
    "texts": [
-    188
+    190
    ]
   },
   {
@@ -4394,8 +4408,8 @@
     "linux"
    ],
    "texts": [
-    189,
-    190
+    191,
+    192
    ]
   },
   {
@@ -4437,8 +4451,8 @@
     "macos"
    ],
    "texts": [
-    191,
-    192
+    193,
+    194
    ]
   },
   {
@@ -4451,8 +4465,8 @@
     "macos"
    ],
    "texts": [
-    169,
-    170
+    171,
+    172
    ]
   },
   {
@@ -4466,7 +4480,7 @@
    ],
    "texts": [
     39,
-    193
+    195
    ]
   },
   {
@@ -4480,7 +4494,20 @@
    ],
    "texts": [
     18,
-    194
+    196
+   ]
+  },
+  {
+   "name": "quick-xml",
+   "version": "0.42.0",
+   "license": "MIT",
+   "url": "https://github.com/tafia/quick-xml",
+   "platforms": [
+    "linux",
+    "macos"
+   ],
+   "texts": [
+    197
    ]
   },
   {
@@ -4505,9 +4532,9 @@
     "linux"
    ],
    "texts": [
-    195,
-    196,
-    197
+    198,
+    199,
+    200
    ]
   },
   {
@@ -4519,9 +4546,9 @@
     "linux"
    ],
    "texts": [
-    195,
-    196,
-    197
+    198,
+    199,
+    200
    ]
   },
   {
@@ -4533,9 +4560,9 @@
     "linux"
    ],
    "texts": [
-    195,
+    198,
     117,
-    197
+    200
    ]
   },
   {
@@ -4547,9 +4574,9 @@
     "linux"
    ],
    "texts": [
-    195,
-    196,
-    197
+    198,
+    199,
+    200
    ]
   },
   {
@@ -4561,9 +4588,9 @@
     "linux"
    ],
    "texts": [
-    195,
     198,
-    197
+    201,
+    200
    ]
   },
   {
@@ -4575,9 +4602,9 @@
     "linux"
    ],
    "texts": [
-    195,
     198,
-    197
+    201,
+    200
    ]
   },
   {
@@ -4589,8 +4616,8 @@
     "linux"
    ],
    "texts": [
-    199,
-    200
+    202,
+    203
    ]
   },
   {
@@ -4603,7 +4630,7 @@
     "macos"
    ],
    "texts": [
-    201
+    204
    ]
   },
   {
@@ -4616,7 +4643,7 @@
     "macos"
    ],
    "texts": [
-    202
+    205
    ]
   },
   {
@@ -4630,8 +4657,8 @@
    ],
    "texts": [
     15,
-    203,
-    204
+    206,
+    207
    ]
   },
   {
@@ -4645,7 +4672,7 @@
    ],
    "texts": [
     8,
-    161
+    163
    ]
   },
   {
@@ -4659,7 +4686,7 @@
    ],
    "texts": [
     8,
-    161
+    163
    ]
   },
   {
@@ -4742,7 +4769,7 @@
    ],
    "texts": [
     15,
-    205
+    208
    ]
   },
   {
@@ -4755,7 +4782,7 @@
     "macos"
    ],
    "texts": [
-    206
+    209
    ]
   },
   {
@@ -4768,9 +4795,9 @@
     "macos"
    ],
    "texts": [
-    207,
-    208,
-    209
+    210,
+    211,
+    212
    ]
   },
   {
@@ -4784,7 +4811,7 @@
    ],
    "texts": [
     8,
-    210
+    213
    ]
   },
   {
@@ -4797,7 +4824,7 @@
     "macos"
    ],
    "texts": [
-    211
+    214
    ]
   },
   {
@@ -4810,7 +4837,7 @@
     "macos"
    ],
    "texts": [
-    211
+    214
    ]
   },
   {
@@ -4851,9 +4878,9 @@
     "macos"
    ],
    "texts": [
-    212,
+    215,
     8,
-    153,
+    155,
     5
    ]
   },
@@ -4867,9 +4894,9 @@
     "macos"
    ],
    "texts": [
-    212,
+    215,
     8,
-    153,
+    155,
     5
    ]
   },
@@ -4898,7 +4925,7 @@
     "macos"
    ],
    "texts": [
-    213,
+    216,
     8,
     134,
     135
@@ -4914,7 +4941,7 @@
     "macos"
    ],
    "texts": [
-    214,
+    217,
     8,
     134,
     135
@@ -4930,8 +4957,8 @@
     "macos"
    ],
    "texts": [
-    215,
-    216
+    218,
+    219
    ]
   },
   {
@@ -4944,7 +4971,7 @@
     "macos"
    ],
    "texts": [
-    217
+    220
    ]
   },
   {
@@ -4956,7 +4983,7 @@
     "linux"
    ],
    "texts": [
-    218
+    221
    ]
   },
   {
@@ -4969,7 +4996,7 @@
     "macos"
    ],
    "texts": [
-    219
+    222
    ]
   },
   {
@@ -4983,7 +5010,7 @@
    ],
    "texts": [
     20,
-    220
+    223
    ]
   },
   {
@@ -4997,7 +5024,7 @@
    ],
    "texts": [
     10,
-    221,
+    224,
     12
    ]
   },
@@ -5011,7 +5038,7 @@
     "macos"
    ],
    "texts": [
-    222
+    225
    ]
   },
   {
@@ -5038,7 +5065,7 @@
    ],
    "texts": [
     8,
-    223
+    226
    ]
   },
   {
@@ -5068,7 +5095,7 @@
    ],
    "texts": [
     8,
-    224
+    227
    ]
   },
   {
@@ -5081,7 +5108,7 @@
    ],
    "texts": [
     8,
-    224
+    227
    ]
   },
   {
@@ -5094,7 +5121,7 @@
    ],
    "texts": [
     23,
-    225
+    228
    ]
   },
   {
@@ -5136,7 +5163,7 @@
    ],
    "texts": [
     8,
-    226
+    229
    ]
   },
   {
@@ -5178,7 +5205,7 @@
    ],
    "texts": [
     20,
-    227
+    230
    ]
   },
   {
@@ -5191,7 +5218,7 @@
     "macos"
    ],
    "texts": [
-    228
+    231
    ]
   },
   {
@@ -5205,7 +5232,7 @@
    ],
    "texts": [
     6,
-    158
+    160
    ]
   },
   {
@@ -5219,7 +5246,7 @@
    ],
    "texts": [
     6,
-    229
+    232
    ]
   },
   {
@@ -5232,8 +5259,8 @@
     "macos"
    ],
    "texts": [
-    230,
-    231
+    233,
+    234
    ]
   },
   {
@@ -5247,7 +5274,7 @@
    ],
    "texts": [
     8,
-    232
+    235
    ]
   },
   {
@@ -5260,7 +5287,7 @@
     "macos"
    ],
    "texts": [
-    233
+    236
    ]
   },
   {
@@ -5288,7 +5315,7 @@
    ],
    "texts": [
     8,
-    234
+    237
    ]
   },
   {
@@ -5301,9 +5328,9 @@
     "macos"
    ],
    "texts": [
-    235,
+    238,
     23,
-    236
+    239
    ]
   },
   {
@@ -5329,7 +5356,7 @@
     "macos"
    ],
    "texts": [
-    237
+    240
    ]
   },
   {
@@ -5342,7 +5369,7 @@
     "macos"
    ],
    "texts": [
-    238
+    241
    ]
   },
   {
@@ -5356,7 +5383,7 @@
    ],
    "texts": [
     8,
-    239
+    242
    ]
   },
   {
@@ -5409,7 +5436,7 @@
     "linux"
    ],
    "texts": [
-    240
+    243
    ]
   },
   {
@@ -5424,7 +5451,7 @@
     "Lei Zhang"
    ],
    "texts": [
-    241
+    244
    ]
   },
   {
@@ -5438,7 +5465,7 @@
    ],
    "texts": [
     8,
-    242
+    245
    ]
   },
   {
@@ -5466,7 +5493,7 @@
    ],
    "authors": [],
    "texts": [
-    241
+    244
    ]
   },
   {
@@ -5480,7 +5507,7 @@
    ],
    "texts": [
     23,
-    243
+    246
    ]
   },
   {
@@ -5493,7 +5520,7 @@
     "macos"
    ],
    "texts": [
-    244
+    247
    ]
   },
   {
@@ -5506,7 +5533,7 @@
     "macos"
    ],
    "texts": [
-    245
+    248
    ]
   },
   {
@@ -5519,7 +5546,7 @@
     "macos"
    ],
    "texts": [
-    245
+    248
    ]
   },
   {
@@ -5532,7 +5559,7 @@
     "macos"
    ],
    "texts": [
-    246
+    249
    ]
   },
   {
@@ -5562,7 +5589,7 @@
    ],
    "texts": [
     8,
-    247
+    250
    ]
   },
   {
@@ -5575,7 +5602,7 @@
    ],
    "texts": [
     8,
-    248
+    251
    ]
   },
   {
@@ -5614,7 +5641,7 @@
    ],
    "texts": [
     23,
-    249
+    252
    ]
   },
   {
@@ -5627,7 +5654,7 @@
    ],
    "texts": [
     8,
-    250
+    253
    ]
   },
   {
@@ -5640,7 +5667,7 @@
    ],
    "texts": [
     8,
-    250
+    253
    ]
   },
   {
@@ -5671,7 +5698,7 @@
     "macos"
    ],
    "texts": [
-    251
+    254
    ]
   },
   {
@@ -5685,7 +5712,7 @@
    ],
    "texts": [
     23,
-    252
+    255
    ]
   },
   {
@@ -5699,7 +5726,7 @@
    ],
    "texts": [
     8,
-    253
+    256
    ]
   },
   {
@@ -5755,7 +5782,7 @@
     "macos"
    ],
    "texts": [
-    254
+    257
    ]
   },
   {
@@ -5768,7 +5795,7 @@
     "macos"
    ],
    "texts": [
-    255
+    258
    ]
   },
   {
@@ -5781,7 +5808,7 @@
     "macos"
    ],
    "texts": [
-    255
+    258
    ]
   },
   {
@@ -5822,7 +5849,7 @@
     "macos"
    ],
    "texts": [
-    256
+    259
    ]
   },
   {
@@ -5835,8 +5862,8 @@
     "macos"
    ],
    "texts": [
-    257,
-    258
+    260,
+    261
    ]
   },
   {
@@ -5849,7 +5876,7 @@
     "macos"
    ],
    "texts": [
-    259
+    262
    ]
   },
   {
@@ -5862,7 +5889,7 @@
     "macos"
    ],
    "texts": [
-    256
+    259
    ]
   },
   {
@@ -5875,7 +5902,7 @@
     "macos"
    ],
    "texts": [
-    260
+    263
    ]
   },
   {
@@ -5888,7 +5915,7 @@
     "macos"
    ],
    "texts": [
-    260
+    263
    ]
   },
   {
@@ -5901,7 +5928,7 @@
     "macos"
    ],
    "texts": [
-    260
+    263
    ]
   },
   {
@@ -5914,7 +5941,7 @@
     "macos"
    ],
    "texts": [
-    261
+    264
    ]
   },
   {
@@ -5927,7 +5954,7 @@
     "macos"
    ],
    "texts": [
-    261
+    264
    ]
   },
   {
@@ -5940,7 +5967,7 @@
     "macos"
    ],
    "texts": [
-    262
+    265
    ]
   },
   {
@@ -5953,7 +5980,7 @@
    ],
    "texts": [
     8,
-    247
+    250
    ]
   },
   {
@@ -5966,7 +5993,7 @@
    ],
    "texts": [
     8,
-    247
+    250
    ]
   },
   {
@@ -5980,7 +6007,7 @@
    ],
    "texts": [
     8,
-    247
+    250
    ]
   },
   {
@@ -6007,9 +6034,9 @@
     "macos"
    ],
    "texts": [
-    263,
-    264,
-    265
+    266,
+    267,
+    268
    ]
   },
   {
@@ -6036,9 +6063,9 @@
     "macos"
    ],
    "texts": [
-    266,
+    269,
     8,
-    267
+    270
    ]
   },
   {
@@ -6107,7 +6134,7 @@
    "texts": [
     20,
     5,
-    268
+    271
    ]
   },
   {
@@ -6132,10 +6159,10 @@
     "macos"
    ],
    "texts": [
-    269,
+    272,
     8,
-    267,
-    270
+    270,
+    273
    ]
   },
   {
@@ -6148,8 +6175,8 @@
     "macos"
    ],
    "texts": [
-    271,
-    272
+    274,
+    275
    ]
   },
   {
@@ -6162,9 +6189,9 @@
     "macos"
    ],
    "texts": [
-    269,
+    272,
     8,
-    267
+    270
    ]
   },
   {
@@ -6178,7 +6205,7 @@
    ],
    "texts": [
     8,
-    234
+    237
    ]
   },
   {
@@ -6191,9 +6218,9 @@
     "macos"
    ],
    "texts": [
-    269,
+    272,
     8,
-    267
+    270
    ]
   },
   {
@@ -6206,7 +6233,7 @@
     "macos"
    ],
    "texts": [
-    273
+    276
    ]
   },
   {
@@ -6234,7 +6261,7 @@
    ],
    "texts": [
     15,
-    205
+    208
    ]
   },
   {
@@ -6247,7 +6274,7 @@
     "macos"
    ],
    "texts": [
-    274,
+    277,
     23,
     60
    ]
@@ -6263,7 +6290,7 @@
    ],
    "texts": [
     20,
-    275
+    278
    ]
   },
   {
@@ -6276,7 +6303,7 @@
     "macos"
    ],
    "texts": [
-    276,
+    279,
     23,
     60
    ]
@@ -6292,7 +6319,7 @@
    ],
    "texts": [
     8,
-    277
+    280
    ]
   },
   {
@@ -6305,7 +6332,7 @@
     "macos"
    ],
    "texts": [
-    278
+    281
    ]
   },
   {
@@ -6319,7 +6346,7 @@
    ],
    "texts": [
     8,
-    279
+    282
    ]
   },
   {
@@ -6333,7 +6360,7 @@
    ],
    "texts": [
     8,
-    279
+    282
    ]
   },
   {
@@ -6375,7 +6402,7 @@
     "macos"
    ],
    "texts": [
-    280
+    283
    ]
   },
   {
@@ -6387,7 +6414,7 @@
     "linux"
    ],
    "texts": [
-    281
+    284
    ]
   },
   {
@@ -6399,7 +6426,7 @@
     "linux"
    ],
    "texts": [
-    281
+    284
    ]
   },
   {
@@ -6411,7 +6438,7 @@
     "linux"
    ],
    "texts": [
-    281
+    284
    ]
   },
   {
@@ -6423,7 +6450,7 @@
     "linux"
    ],
    "texts": [
-    281
+    284
    ]
   },
   {
@@ -6435,7 +6462,7 @@
     "linux"
    ],
    "texts": [
-    281
+    284
    ]
   },
   {
@@ -6462,7 +6489,7 @@
     "linux"
    ],
    "texts": [
-    281
+    284
    ]
   },
   {
@@ -6476,7 +6503,7 @@
    ],
    "texts": [
     8,
-    282
+    285
    ]
   },
   {
@@ -6489,7 +6516,7 @@
     "macos"
    ],
    "texts": [
-    283
+    286
    ]
   },
   {
@@ -6501,7 +6528,7 @@
     "linux"
    ],
    "texts": [
-    284
+    287
    ]
   },
   {
@@ -6526,7 +6553,7 @@
     "linux"
    ],
    "texts": [
-    285
+    288
    ]
   },
   {
@@ -6539,7 +6566,7 @@
    ],
    "texts": [
     23,
-    286
+    289
    ]
   },
   {
@@ -6552,7 +6579,7 @@
    ],
    "texts": [
     23,
-    286
+    289
    ]
   },
   {
@@ -6566,7 +6593,7 @@
    ],
    "texts": [
     8,
-    253
+    256
    ]
   },
   {
@@ -6578,7 +6605,7 @@
     "linux"
    ],
    "texts": [
-    287
+    290
    ]
   },
   {
@@ -6620,7 +6647,7 @@
     "linux"
    ],
    "texts": [
-    288
+    291
    ]
   },
   {
@@ -6632,9 +6659,9 @@
     "linux"
    ],
    "texts": [
-    289,
-    290,
-    291
+    292,
+    293,
+    294
    ]
   },
   {
@@ -6647,7 +6674,7 @@
     "macos"
    ],
    "texts": [
-    292
+    295
    ]
   },
   {
@@ -6660,7 +6687,7 @@
     "macos"
    ],
    "texts": [
-    293
+    296
    ]
   },
   {
@@ -6673,7 +6700,7 @@
    ],
    "texts": [
     8,
-    294
+    297
    ]
   },
   {
@@ -6685,7 +6712,7 @@
     "linux"
    ],
    "texts": [
-    295
+    298
    ]
   },
   {
@@ -6710,7 +6737,7 @@
     "linux"
    ],
    "texts": [
-    296
+    299
    ]
   },
   {
@@ -6722,7 +6749,7 @@
     "linux"
    ],
    "texts": [
-    296
+    299
    ]
   },
   {
@@ -6734,7 +6761,7 @@
     "linux"
    ],
    "texts": [
-    297
+    300
    ]
   },
   {
@@ -6775,8 +6802,8 @@
     "macos"
    ],
    "texts": [
-    298,
-    299
+    301,
+    302
    ]
   },
   {
@@ -6788,7 +6815,7 @@
     "linux"
    ],
    "texts": [
-    300
+    303
    ]
   },
   {
@@ -6801,7 +6828,7 @@
    ],
    "texts": [
     8,
-    248
+    251
    ]
   },
   {
@@ -6814,9 +6841,9 @@
     "macos"
    ],
    "texts": [
-    301,
-    302,
-    303
+    304,
+    305,
+    306
    ]
   },
   {
@@ -6843,7 +6870,7 @@
    ],
    "texts": [
     23,
-    304
+    307
    ]
   },
   {
@@ -6896,8 +6923,8 @@
    ],
    "texts": [
     23,
-    305,
-    306
+    308,
+    309
    ]
   },
   {
@@ -6925,8 +6952,8 @@
    ],
    "texts": [
     23,
-    305,
-    306
+    308,
+    309
    ]
   },
   {
@@ -6938,7 +6965,7 @@
     "linux"
    ],
    "texts": [
-    296
+    299
    ]
   },
   {
@@ -7094,6 +7121,8 @@
   "Copyright (c) 2023-2025 Sean McArthur\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the \"Software\"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in\nall copies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN\nTHE SOFTWARE.\n",
   "UNICODE LICENSE V3\n\nCOPYRIGHT AND PERMISSION NOTICE\n\nCopyright © 2020-2024 Unicode, Inc.\n\nNOTICE TO USER: Carefully read the following legal agreement. BY\nDOWNLOADING, INSTALLING, COPYING OR OTHERWISE USING DATA FILES, AND/OR\nSOFTWARE, YOU UNEQUIVOCALLY ACCEPT, AND AGREE TO BE BOUND BY, ALL OF THE\nTERMS AND CONDITIONS OF THIS AGREEMENT. IF YOU DO NOT AGREE, DO NOT\nDOWNLOAD, INSTALL, COPY, DISTRIBUTE OR USE THE DATA FILES OR SOFTWARE.\n\nPermission is hereby granted, free of charge, to any person obtaining a\ncopy of data files and any associated documentation (the \"Data Files\") or\nsoftware and any associated documentation (the \"Software\") to deal in the\nData Files or Software without restriction, including without limitation\nthe rights to use, copy, modify, merge, publish, distribute, and/or sell\ncopies of the Data Files or Software, and to permit persons to whom the\nData Files or Software are furnished to do so, provided that either (a)\nthis copyright and permission notice appear with all copies of the Data\nFiles or Software, or (b) this copyright and permission notice appear in\nassociated Documentation.\n\nTHE DATA FILES AND SOFTWARE ARE PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY\nKIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF\nMERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT OF\nTHIRD PARTY RIGHTS.\n\nIN NO EVENT SHALL THE COPYRIGHT HOLDER OR HOLDERS INCLUDED IN THIS NOTICE\nBE LIABLE FOR ANY CLAIM, OR ANY SPECIAL INDIRECT OR CONSEQUENTIAL DAMAGES,\nOR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS,\nWHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION,\nARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THE DATA\nFILES OR SOFTWARE.\n\nExcept as contained in this notice, the name of a copyright holder shall\nnot be used in advertising or otherwise to promote the sale, use or other\ndealings in these Data Files or Software without prior written\nauthorization of the copyright holder.\n\nSPDX-License-Identifier: Unicode-3.0\n\n—\n\nPortions of ICU4X may have been adapted from ICU4C and/or ICU4J.\nICU 1.8.1 to ICU 57.1 © 1995-2016 International Business Machines Corporation and others.\n",
   "Copyright (c) The rust-url developers\n\nPermission is hereby granted, free of charge, to any\nperson obtaining a copy of this software and associated\ndocumentation files (the \"Software\"), to deal in the\nSoftware without restriction, including without\nlimitation the rights to use, copy, modify, merge,\npublish, distribute, sublicense, and/or sell copies of\nthe Software, and to permit persons to whom the Software\nis furnished to do so, subject to the following\nconditions:\n\nThe above copyright notice and this permission notice\nshall be included in all copies or substantial portions\nof the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF\nANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED\nTO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A\nPARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT\nSHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY\nCLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION\nOF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR\nIN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER\nDEALINGS IN THE SOFTWARE.\n",
+  "Copyright 2018 MaidSafe.net limited.\nCopyright 2020 messense\n\nRedistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:\n\n1. Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.\n\n2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.\n\n3. Neither the name of the copyright holder nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.\n\nTHIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS \"AS IS\" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.\n",
+  "Copyright 2018 MaidSafe.net limited.\nCopyright 2020 messense\n\nPermission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the \"Software\"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.\n",
   "MIT License\n\nCopyright (c) 2017 Maiddog\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the \"Software\"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all\ncopies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\nSOFTWARE.\n",
   "Copyright (c) 2016--2017\n\nPermission is hereby granted, free of charge, to any\nperson obtaining a copy of this software and associated\ndocumentation files (the \"Software\"), to deal in the\nSoftware without restriction, including without\nlimitation the rights to use, copy, modify, merge,\npublish, distribute, sublicense, and/or sell copies of\nthe Software, and to permit persons to whom the Software\nis furnished to do so, subject to the following\nconditions:\n\nThe above copyright notice and this permission notice\nshall be included in all copies or substantial portions\nof the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF\nANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED\nTO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A\nPARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT\nSHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY\nCLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION\nOF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR\nIN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER\nDEALINGS IN THE SOFTWARE.\n",
   "Copyright (c) 2022 The RustCrypto Project Developers\nCopyright (c) 2022 Artyom Pavlov\n\nPermission is hereby granted, free of charge, to any\nperson obtaining a copy of this software and associated\ndocumentation files (the \"Software\"), to deal in the\nSoftware without restriction, including without\nlimitation the rights to use, copy, modify, merge,\npublish, distribute, sublicense, and/or sell copies of\nthe Software, and to permit persons to whom the Software\nis furnished to do so, subject to the following\nconditions:\n\nThe above copyright notice and this permission notice\nshall be included in all copies or substantial portions\nof the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF\nANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED\nTO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A\nPARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT\nSHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY\nCLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION\nOF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR\nIN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER\nDEALINGS IN THE SOFTWARE.\n",
@@ -7150,6 +7179,7 @@
   "Copyright © 2018, Simonas Kazlauskas\n\nPermission is hereby granted, free of charge, to any person obtaining a copy of this software and\nassociated documentation files (the \"Software\"), to deal in the Software without restriction,\nincluding without limitation the rights to use, copy, modify, merge, publish, distribute,\nsublicense, and/or sell copies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all copies or\nsubstantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT\nNOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND\nNONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,\nDAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT\nOF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.\n",
   "Copyright (c) 2022 Ivan Smirnov\n\nPermission is hereby granted, free of charge, to any\nperson obtaining a copy of this software and associated\ndocumentation files (the \"Software\"), to deal in the\nSoftware without restriction, including without\nlimitation the rights to use, copy, modify, merge,\npublish, distribute, sublicense, and/or sell copies of\nthe Software, and to permit persons to whom the Software\nis furnished to do so, subject to the following\nconditions:\n\nThe above copyright notice and this permission notice\nshall be included in all copies or substantial portions\nof the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF\nANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED\nTO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A\nPARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT\nSHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY\nCLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION\nOF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR\nIN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER\nDEALINGS IN THE SOFTWARE.\n",
   "Copyright (c) 2015 The quick-error Developers\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the \"Software\"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all\ncopies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\nSOFTWARE.\n",
+  "The MIT License (MIT)\n\nCopyright (c) 2016 Johann Tuffe\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the \"Software\"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\n\nThe above copyright notice and this permission notice shall be included in\nall copies or substantial portions of the Software.\n\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN\nTHE SOFTWARE.\n",
   "Copyrights in the Rand project are retained by their contributors. No\ncopyright assignment is required to contribute to the Rand project.\n\nFor full authorship information, see the version control history.\n\nExcept as otherwise noted (below and/or in individual files), Rand is\nlicensed under the Apache License, Version 2.0 <LICENSE-APACHE> or\n<http://www.apache.org/licenses/LICENSE-2.0> or the MIT license\n<LICENSE-MIT> or <http://opensource.org/licenses/MIT>, at your option.\n\nThe Rand project includes code from the Rust project\npublished under these same licenses.\n",
   "Apache License\n                        Version 2.0, January 2004\n                     https://www.apache.org/licenses/\n\nTERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION\n\n1. Definitions.\n\n   \"License\" shall mean the terms and conditions for use, reproduction,\n   and distribution as defined by Sections 1 through 9 of this document.\n\n   \"Licensor\" shall mean the copyright owner or entity authorized by\n   the copyright owner that is granting the License.\n\n   \"Legal Entity\" shall mean the union of the acting entity and all\n   other entities that control, are controlled by, or are under common\n   control with that entity. For the purposes of this definition,\n   \"control\" means (i) the power, direct or indirect, to cause the\n   direction or management of such entity, whether by contract or\n   otherwise, or (ii) ownership of fifty percent (50%) or more of the\n   outstanding shares, or (iii) beneficial ownership of such entity.\n\n   \"You\" (or \"Your\") shall mean an individual or Legal Entity\n   exercising permissions granted by this License.\n\n   \"Source\" form shall mean the preferred form for making modifications,\n   including but not limited to software source code, documentation\n   source, and configuration files.\n\n   \"Object\" form shall mean any form resulting from mechanical\n   transformation or translation of a Source form, including but\n   not limited to compiled object code, generated documentation,\n   and conversions to other media types.\n\n   \"Work\" shall mean the work of authorship, whether in Source or\n   Object form, made available under the License, as indicated by a\n   copyright notice that is included in or attached to the work\n   (an example is provided in the Appendix below).\n\n   \"Derivative Works\" shall mean any work, whether in Source or Object\n   form, that is based on (or derived from) the Work and for which the\n   editorial revisions, annotations, elaborations, or other modifications\n   represent, as a whole, an original work of authorship. For the purposes\n   of this License, Derivative Works shall not include works that remain\n   separable from, or merely link (or bind by name) to the interfaces of,\n   the Work and Derivative Works thereof.\n\n   \"Contribution\" shall mean any work of authorship, including\n   the original version of the Work and any modifications or additions\n   to that Work or Derivative Works thereof, that is intentionally\n   submitted to Licensor for inclusion in the Work by the copyright owner\n   or by an individual or Legal Entity authorized to submit on behalf of\n   the copyright owner. For the purposes of this definition, \"submitted\"\n   means any form of electronic, verbal, or written communication sent\n   to the Licensor or its representatives, including but not limited to\n   communication on electronic mailing lists, source code control systems,\n   and issue tracking systems that are managed by, or on behalf of, the\n   Licensor for the purpose of discussing and improving the Work, but\n   excluding communication that is conspicuously marked or otherwise\n   designated in writing by the copyright owner as \"Not a Contribution.\"\n\n   \"Contributor\" shall mean Licensor and any individual or Legal Entity\n   on behalf of whom a Contribution has been received by Licensor and\n   subsequently incorporated within the Work.\n\n2. Grant of Copyright License. Subject to the terms and conditions of\n   this License, each Contributor hereby grants to You a perpetual,\n   worldwide, non-exclusive, no-charge, royalty-free, irrevocable\n   copyright license to reproduce, prepare Derivative Works of,\n   publicly display, publicly perform, sublicense, and distribute the\n   Work and such Derivative Works in Source or Object form.\n\n3. Grant of Patent License. Subject to the terms and conditions of\n   this License, each Contributor hereby grants to You a perpetual,\n   worldwide, non-exclusive, no-charge, royalty-free, irrevocable\n   (except as stated in this section) patent license to make, have made,\n   use, offer to sell, sell, import, and otherwise transfer the Work,\n   where such license applies only to those patent claims licensable\n   by such Contributor that are necessarily infringed by their\n   Contribution(s) alone or by combination of their Contribution(s)\n   with the Work to which such Contribution(s) was submitted. If You\n   institute patent litigation against any entity (including a\n   cross-claim or counterclaim in a lawsuit) alleging that the Work\n   or a Contribution incorporated within the Work constitutes direct\n   or contributory patent infringement, then any patent licenses\n   granted to You under this License for that Work shall terminate\n   as of the date such litigation is filed.\n\n4. Redistribution. You may reproduce and distribute copies of the\n   Work or Derivative Works thereof in any medium, with or without\n   modifications, and in Source or Object form, provided that You\n   meet the following conditions:\n\n   (a) You must give any other recipients of the Work or\n       Derivative Works a copy of this License; and\n\n   (b) You must cause any modified files to carry prominent notices\n       stating that You changed the files; and\n\n   (c) You must retain, in the Source form of any Derivative Works\n       that You distribute, all copyright, patent, trademark, and\n       attribution notices from the Source form of the Work,\n       excluding those notices that do not pertain to any part of\n       the Derivative Works; and\n\n   (d) If the Work includes a \"NOTICE\" text file as part of its\n       distribution, then any Derivative Works that You distribute must\n       include a readable copy of the attribution notices contained\n       within such NOTICE file, excluding those notices that do not\n       pertain to any part of the Derivative Works, in at least one\n       of the following places: within a NOTICE text file distributed\n       as part of the Derivative Works; within the Source form or\n       documentation, if provided along with the Derivative Works; or,\n       within a display generated by the Derivative Works, if and\n       wherever such third-party notices normally appear. The contents\n       of the NOTICE file are for informational purposes only and\n       do not modify the License. You may add Your own attribution\n       notices within Derivative Works that You distribute, alongside\n       or as an addendum to the NOTICE text from the Work, provided\n       that such additional attribution notices cannot be construed\n       as modifying the License.\n\n   You may add Your own copyright statement to Your modifications and\n   may provide additional or different license terms and conditions\n   for use, reproduction, or distribution of Your modifications, or\n   for any such Derivative Works as a whole, provided Your use,\n   reproduction, and distribution of the Work otherwise complies with\n   the conditions stated in this License.\n\n5. Submission of Contributions. Unless You explicitly state otherwise,\n   any Contribution intentionally submitted for inclusion in the Work\n   by You to the Licensor shall be under the terms and conditions of\n   this License, without any additional terms or conditions.\n   Notwithstanding the above, nothing herein shall supersede or modify\n   the terms of any separate license agreement you may have executed\n   with Licensor regarding such Contributions.\n\n6. Trademarks. This License does not grant permission to use the trade\n   names, trademarks, service marks, or product names of the Licensor,\n   except as required for reasonable and customary use in describing the\n   origin of the Work and reproducing the content of the NOTICE file.\n\n7. Disclaimer of Warranty. Unless required by applicable law or\n   agreed to in writing, Licensor provides the Work (and each\n   Contributor provides its Contributions) on an \"AS IS\" BASIS,\n   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or\n   implied, including, without limitation, any warranties or conditions\n   of TITLE, NON-INFRINGEMENT, MERCHANTABILITY, or FITNESS FOR A\n   PARTICULAR PURPOSE. You are solely responsible for determining the\n   appropriateness of using or redistributing the Work and assume any\n   risks associated with Your exercise of permissions under this License.\n\n8. Limitation of Liability. In no event and under no legal theory,\n   whether in tort (including negligence), contract, or otherwise,\n   unless required by applicable law (such as deliberate and grossly\n   negligent acts) or agreed to in writing, shall any Contributor be\n   liable to You for damages, including any direct, indirect, special,\n   incidental, or consequential damages of any character arising as a\n   result of this License or out of the use or inability to use the\n   Work (including but not limited to damages for loss of goodwill,\n   work stoppage, computer failure or malfunction, or any and all\n   other commercial damages or losses), even if such Contributor\n   has been advised of the possibility of such damages.\n\n9. Accepting Warranty or Additional Liability. While redistributing\n   the Work or Derivative Works thereof, You may choose to offer,\n   and charge a fee for, acceptance of support, warranty, indemnity,\n   or other liability obligations and/or rights consistent with this\n   License. However, in accepting such obligations, You may act only\n   on Your own behalf and on Your sole responsibility, not on behalf\n   of any other Contributor, and only if You agree to indemnify,\n   defend, and hold each Contributor harmless for any liability\n   incurred by, or claims asserted against, such Contributor by reason\n   of your accepting any such warranty or additional liability.\n\nEND OF TERMS AND CONDITIONS\n",
   "Copyright 2018 Developers of the Rand project\nCopyright (c) 2014 The Rust Project Developers\n\nPermission is hereby granted, free of charge, to any\nperson obtaining a copy of this software and associated\ndocumentation files (the \"Software\"), to deal in the\nSoftware without restriction, including without\nlimitation the rights to use, copy, modify, merge,\npublish, distribute, sublicense, and/or sell copies of\nthe Software, and to permit persons to whom the Software\nis furnished to do so, subject to the following\nconditions:\n\nThe above copyright notice and this permission notice\nshall be included in all copies or substantial portions\nof the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF\nANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED\nTO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A\nPARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT\nSHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY\nCLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION\nOF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR\nIN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER\nDEALINGS IN THE SOFTWARE.\n",

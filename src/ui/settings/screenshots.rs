@@ -22,7 +22,7 @@ impl Pane for ScreenshotsPane {
     }
 
     fn icon(&self) -> &'static str {
-        "camera"
+        "screenshot"
     }
 
     fn color(&self) -> u32 {
