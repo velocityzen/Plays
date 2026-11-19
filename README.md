@@ -74,7 +74,8 @@ GPU-accelerated UI framework.
 - A tile can play on a TV or a speaker instead (casting), from where it
   is, with its tracks: the cast button on the tile lists the devices
   found, and on macOS Video → Output Device lists those that show video
-  under the displays. Speakers are offered for anything with sound; a
+  under the displays, and Audio → Output Device the speakers under this
+  computer's outputs. Speakers are offered for anything with sound; a
   video's sound goes to one while its picture plays on in the tile, in
   step with what the speaker plays, and the tile's buttons and shortcuts
   drive both. While it casts, the tile says where it plays and how the file gets there
@@ -113,8 +114,9 @@ GPU-accelerated UI framework.
   own, in light and dark, with your accent color.
 - Audio from every file is mixed into one output: the system's default, or
   a device picked in Settings or, on macOS, Audio → Output Device (which
-  lists outputs as they are plugged in and checks the one picked),
-  remembered from run to run. A/V sync follows the audio clock.
+  lists outputs as they are plugged in and checks the one picked, then
+  the speakers to cast the tile in front to, checking the one it casts
+  to instead), remembered from run to run. A/V sync follows the audio clock.
 - Audio-only files show their cover art (or a note) and a level meter.
 - About Plays, in the app menu on macOS: a small window with the app's
   icon, version and the day it was built (Settings → About says them too).
@@ -477,8 +479,9 @@ the TV's own: where it was when cast, the TV stays where it was.
   waited for or stood in for while it's away, and watched for to come
   back; on macOS, CoreAudio says when outputs come and go), what each
   action does (`commands`), how actions reach the window and tile in front
-  (`dispatch`), the keymap and the menu bar (set again as outputs or
-  displays come and go, or another is picked).
+  (`dispatch`), the keymap and the menu bar (set again as outputs,
+  displays or devices to cast to come and go, another is picked, or the
+  tile in front casts or turns out to have no sound).
 - `src/hotkeys.rs`: the commands shortcuts can run, their default
   keys, how they are saved in Settings and shown (`⌃⌘F`, `Ctrl+Alt+F`).
   The keymap is rebuilt from them whenever they change, and the menus show
@@ -943,7 +946,10 @@ shows the picture where it's dragged, however often the speaker says
 where it is, and the speaker seeks there once it's let go; a video
 without sound isn't sent to one. Video → Output Device lists the
 devices that show video after the displays, checking the one the tile in
-front casts to instead of the display. Each test has been checked to fail
+front casts to instead of the display; a speaker it casts to leaves the
+display checked. Audio → Output Device lists the speakers after this
+computer's outputs for a tile with sound and none for one without,
+checking the one cast to (or a TV) instead of the output. Each test has been checked to fail
 when the behavior it covers is broken.
 
 Casting to DLNA is tested with the DLNA crate's fake renderer, found as it
@@ -1204,4 +1210,4 @@ size, makes `first-open` fail.
   that to its own picker and to AVPlayer, which Plays doesn't play
   through. Connect one from Control Center first. Mirrored, an AirPlay
   display shows the whole screen; as a separate display, just the window.
-  Video → Output Device is macOS only.
+  The Output Device menus are macOS only.

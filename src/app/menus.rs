@@ -26,15 +26,16 @@ use crate::ui::framing::{ASPECT_RATIOS, CROPS};
 const DISPLAYS_POLL: Duration = Duration::from_secs(1);
 
 pub(super) fn set_menus(cx: &mut App) {
-    let outputs = output_menu(
-        AudioEngine::devices(cx),
-        cx.global::<Settings>().audio_output.device.as_ref(),
-    );
     let float_on_top = cx.global::<Settings>().float_on_top;
     let video_outputs = cx
         .try_global::<Outputs>()
         .cloned()
         .unwrap_or_else(|| Outputs::now(cx));
+    let outputs = output_menu(
+        AudioEngine::devices(cx),
+        cx.global::<Settings>().audio_output.device.as_ref(),
+        &video_outputs,
+    );
     cx.set_menus(vec![
         Menu {
             name: "Plays".into(),
@@ -182,14 +183,17 @@ pub(super) fn watch_settings(cx: &mut App) {
     .detach();
 }
 
-/// What Video → Output Device shows: the displays, the one the window in
-/// front is on, the devices that show video, and the one the tile in front
+/// What Video → Output Device and Audio → Output Device show besides this
+/// computer's outputs: the displays, the one the window in front is on, the
+/// devices that show video, the speakers, and the one the tile in front
 /// casts to.
 #[derive(Clone, Default, PartialEq, Debug)]
 struct Outputs {
     displays: Vec<DisplayInfo>,
     front: Option<u32>,
     devices: Vec<Device>,
+    /// Those for the tile in front: none when it has no sound.
+    speakers: Vec<Device>,
     casting: Option<Device>,
 }
 
@@ -200,23 +204,27 @@ impl Outputs {
         let window = first_workspace(cx.active_window())
             .or_else(|| first_workspace(cx.window_stack().unwrap_or_default()))
             .or_else(|| first_workspace(cx.windows()));
-        let (front, casting) = window
+        let (front, casting, has_audio) = window
             .and_then(|handle| {
                 handle
                     .update(cx, |workspace, window, cx| {
-                        (displays::of(window, cx), workspace.active_casting(cx))
+                        (
+                            displays::of(window, cx),
+                            workspace.active_casting(cx),
+                            workspace.active_has_audio(cx),
+                        )
                     })
                     .ok()
             })
-            .unwrap_or_default();
+            .unwrap_or((None, None, true));
+        let (devices, speakers) = Casting::devices_for(cx, has_audio)
+            .into_iter()
+            .partition(|device| device.shows == Shows::Video);
         Self {
             displays: displays::list(cx),
             front,
-            devices: Casting::devices(cx)
-                .iter()
-                .filter(|device| device.shows == Shows::Video)
-                .cloned()
-                .collect(),
+            devices,
+            speakers,
             casting,
         }
     }
@@ -246,10 +254,14 @@ fn refresh_outputs(cx: &mut App) {
 
 /// Every display, the one the window in front is on checked, then the
 /// devices that show video, the one the tile in front casts to checked
-/// instead. Picking a display shows the window there, full screen; picking
-/// a device casts the tile in front to it.
+/// instead (a speaker it casts to leaves its picture here). Picking a
+/// display shows the window there, full screen; picking a device casts the
+/// tile in front to it.
 fn display_menu(outputs: &Outputs) -> Menu {
-    let casting = outputs.casting.as_ref();
+    let casting = outputs
+        .casting
+        .as_ref()
+        .filter(|device| device.shows == Shows::Video);
     let mut items: Vec<MenuItem> = outputs
         .displays
         .iter()
@@ -280,14 +292,18 @@ fn display_menu(outputs: &Outputs) -> Menu {
 
 /// The system's default and every output connected, with the one picked
 /// checked; one picked that isn't connected is listed too, as it is still
-/// what the sound waits for.
-fn output_menu(devices: &[DeviceInfo], picked: Option<&AudioDevice>) -> Menu {
+/// what the sound waits for. Then the speakers, and the device the tile in
+/// front casts to, checked instead: picking one casts the tile in front to
+/// it.
+fn output_menu(devices: &[DeviceInfo], picked: Option<&AudioDevice>, outputs: &Outputs) -> Menu {
+    let casting = outputs.casting.as_ref();
+    let here = casting.is_none();
     let mut items = vec![
-        MenuItem::action("System Default", SetAudioDevice(None)).checked(picked.is_none()),
+        MenuItem::action("System Default", SetAudioDevice(None)).checked(here && picked.is_none()),
         MenuItem::separator(),
     ];
     items.extend(devices.iter().map(|device| {
-        let checked = picked.is_some_and(|picked| picked.id == device.id);
+        let checked = here && picked.is_some_and(|picked| picked.id == device.id);
         let device = AudioDevice {
             id: device.id.clone(),
             name: device.name.clone(),
@@ -302,9 +318,24 @@ fn output_menu(devices: &[DeviceInfo], picked: Option<&AudioDevice>) -> Menu {
                 format!("{} (Not Connected)", picked.name),
                 SetAudioDevice(Some(picked.clone())),
             )
-            .checked(true),
+            .checked(here),
         );
     }
+    let mut speakers = outputs.speakers.clone();
+    // What it casts to plays its sound, and stays listed while it isn't
+    // found.
+    if let Some(casting) = casting
+        && !speakers.iter().any(|device| device.is(casting))
+    {
+        speakers.push(casting.clone());
+    }
+    if !speakers.is_empty() {
+        items.push(MenuItem::separator());
+    }
+    items.extend(speakers.into_iter().map(|device| {
+        let checked = casting.is_some_and(|casting| casting.is(&device));
+        MenuItem::action(device.name.clone(), CastTo(Some(device))).checked(checked)
+    }));
     Menu {
         name: "Output Device".into(),
         items,
@@ -344,7 +375,7 @@ mod tests {
     fn checks_the_output_picked() {
         let devices = [device("a", "Speakers"), device("b", "Headphones")];
         assert_eq!(
-            listed(&output_menu(&devices, None)),
+            listed(&output_menu(&devices, None, &Outputs::default())),
             [
                 ("System Default".into(), true),
                 ("Speakers".into(), false),
@@ -356,7 +387,7 @@ mod tests {
             name: "Headphones".into(),
         };
         assert_eq!(
-            listed(&output_menu(&devices, Some(&picked))),
+            listed(&output_menu(&devices, Some(&picked), &Outputs::default())),
             [
                 ("System Default".into(), false),
                 ("Speakers".into(), false),
@@ -382,6 +413,67 @@ mod tests {
         }
     }
 
+    fn speaker(id: &str, name: &str) -> Device {
+        Device {
+            shows: Shows::Sound,
+            ..tv(id, name)
+        }
+    }
+
+    #[test]
+    fn lists_the_speakers_after_the_outputs_and_checks_the_one_cast_to_instead() {
+        let devices = [device("a", "Headphones")];
+        let mut outputs = Outputs {
+            speakers: vec![speaker("k", "Kitchen"), speaker("p", "Phantom")],
+            ..Outputs::default()
+        };
+        assert_eq!(
+            listed(&output_menu(&devices, None, &outputs)),
+            [
+                ("System Default".into(), true),
+                ("Headphones".into(), false),
+                ("Kitchen".into(), false),
+                ("Phantom".into(), false),
+            ]
+        );
+        outputs.casting = Some(speaker("p", "Phantom"));
+        assert_eq!(
+            listed(&output_menu(&devices, None, &outputs)),
+            [
+                ("System Default".into(), false),
+                ("Headphones".into(), false),
+                ("Kitchen".into(), false),
+                ("Phantom".into(), true),
+            ]
+        );
+        // A TV it casts to plays its sound too.
+        outputs.casting = Some(tv("t", "Living Room"));
+        assert_eq!(
+            listed(&output_menu(&devices, None, &outputs))
+                .last()
+                .cloned(),
+            Some(("Living Room".into(), true))
+        );
+    }
+
+    #[test]
+    fn a_speaker_cast_to_leaves_the_picture_on_its_display() {
+        let outputs = Outputs {
+            displays: vec![display(1, "Built-in Display")],
+            front: Some(1),
+            devices: vec![tv("t", "Living Room")],
+            speakers: vec![speaker("k", "Kitchen")],
+            casting: Some(speaker("k", "Kitchen")),
+        };
+        assert_eq!(
+            listed(&display_menu(&outputs)),
+            [
+                ("Built-in Display".into(), true),
+                ("Living Room".into(), false),
+            ]
+        );
+    }
+
     #[test]
     fn checks_the_display_the_window_in_front_is_on() {
         let outputs = Outputs {
@@ -401,7 +493,7 @@ mod tests {
             displays: vec![display(1, "Built-in Display")],
             front: Some(1),
             devices: vec![tv("a", "Bedroom"), tv("b", "Living Room")],
-            casting: None,
+            ..Outputs::default()
         };
         assert_eq!(
             listed(&display_menu(&outputs)),
@@ -435,7 +527,11 @@ mod tests {
             name: "TV".into(),
         };
         assert_eq!(
-            listed(&output_menu(&[device("a", "Speakers")], Some(&picked))),
+            listed(&output_menu(
+                &[device("a", "Speakers")],
+                Some(&picked),
+                &Outputs::default()
+            )),
             [
                 ("System Default".into(), false),
                 ("Speakers".into(), false),
@@ -477,5 +573,58 @@ mod tests {
             })
             .unwrap();
         assert_eq!(menu(&mut cx), [("Living Room".into(), true)]);
+    }
+
+    /// The window with `file` open in it, its media known, and casting
+    /// that has found a TV and a speaker.
+    fn open_with_devices(cx: &mut TestAppContext, file: &str) -> VisualTestContext {
+        let (window, mut cx) = testing::start(cx);
+        let fake = FakeTarget::default();
+        fake.add("Living Room", Shows::Video);
+        fake.add("Kitchen", Shows::Sound);
+        cx.update(|_, cx| cx.set_global(Casting::local(vec![Arc::new(fake.clone())])));
+        window
+            .update(&mut cx, |workspace, _, cx| {
+                workspace.open_paths(vec![testing::fixture(file)], cx)
+            })
+            .unwrap();
+        let start = Instant::now();
+        let known = |cx: &mut VisualTestContext| {
+            let mut known = false;
+            window
+                .update(cx, |workspace, _, cx| {
+                    workspace.with_active(cx, |view, _| known = view.player().info().is_some())
+                })
+                .unwrap();
+            known
+        };
+        while !known(&mut cx) {
+            assert!(start.elapsed() < OPEN_WAIT, "{file} didn't open");
+            std::thread::sleep(Duration::from_millis(5));
+            cx.run_until_parked();
+        }
+        cx
+    }
+
+    #[gpui::test]
+    fn lists_the_speakers_for_a_tile_with_sound(cx: &mut TestAppContext) {
+        let cx = open_with_devices(cx, "clip.mp4");
+        let outputs = TestAppContext::update(&cx, Outputs::now);
+        let names = |devices: &[Device]| {
+            devices
+                .iter()
+                .map(|device| device.name.clone())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(names(&outputs.speakers), ["Kitchen"]);
+        assert_eq!(names(&outputs.devices), ["Living Room"]);
+    }
+
+    #[gpui::test]
+    fn lists_no_speakers_for_a_tile_without_sound(cx: &mut TestAppContext) {
+        let cx = open_with_devices(cx, "clip-ip.mkv");
+        let outputs = TestAppContext::update(&cx, Outputs::now);
+        assert!(outputs.speakers.is_empty(), "{:?}", outputs.speakers);
+        assert_eq!(outputs.devices.len(), 1, "the TV still");
     }
 }

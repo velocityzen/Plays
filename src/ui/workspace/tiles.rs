@@ -177,6 +177,17 @@ impl Workspace {
         self.active_view()?.read(cx).casting().cloned()
     }
 
+    /// Whether the tile shortcuts go to has sound, or isn't yet known to
+    /// have none; with no tile, whether one would.
+    pub fn active_has_audio(&self, cx: &App) -> bool {
+        self.active_view().is_none_or(|view| {
+            view.read(cx)
+                .player()
+                .info()
+                .is_none_or(|info| info.has_audio)
+        })
+    }
+
     /// Play the tile shortcuts go to here again, if it casts; whether it
     /// did.
     pub fn end_active_cast(&mut self, cx: &mut Context<Self>) -> bool {
