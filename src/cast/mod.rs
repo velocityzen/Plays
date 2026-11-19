@@ -4,6 +4,7 @@
 //! have found, and the stream server, started for the first cast; a
 //! tile's `Link` drives its device on a thread of its own.
 
+pub mod dlna;
 #[cfg(test)]
 pub mod fake;
 mod link;
@@ -22,6 +23,17 @@ pub use target::{Device, Error, Shows, Target};
 
 /// How often the targets are asked what they have found.
 const DEVICES_POLL: Duration = Duration::from_secs(1);
+
+/// The protocols Plays casts with, each looking for its devices from now
+/// on. One that can't look is left out.
+pub fn protocols() -> Vec<Arc<dyn Target>> {
+    let mut targets: Vec<Arc<dyn Target>> = Vec::new();
+    match dlna::DlnaTarget::start() {
+        Ok(target) => targets.push(Arc::new(target)),
+        Err(err) => log::warn!("can't look for DLNA renderers: {err}"),
+    }
+    targets
+}
 
 pub struct Casting {
     targets: Vec<Arc<dyn Target>>,

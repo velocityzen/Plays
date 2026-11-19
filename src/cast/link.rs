@@ -405,25 +405,27 @@ impl Worker {
             for command in coalesce(batch) {
                 match self.apply(command) {
                     Ok(()) => {}
-                    Err(Error::Gone) => return self.gone(),
                     Err(Error::Failed(why)) => {
                         log::warn!("casting: {why}");
                         self.shared.lock().failure = Some(why);
                     }
+                    Err(over) => return self.over(over),
                 }
             }
             let status = match self.session.status() {
                 Ok(status) => status,
-                Err(Error::Gone) => return self.gone(),
                 Err(Error::Failed(why)) => {
                     log::debug!("casting: no status: {why}");
                     continue;
                 }
+                Err(over) => return self.over(over),
             };
             self.state = status.state;
             if status.state == State::Ended && self.looping && !self.load.live {
-                if let Err(Error::Gone) = self.restart() {
-                    return self.gone();
+                match self.restart() {
+                    Err(Error::Failed(why)) => log::debug!("casting: looping: {why}"),
+                    Err(over) => return self.over(over),
+                    Ok(()) => {}
                 }
                 continue;
             }
@@ -516,10 +518,11 @@ impl Worker {
         self.server.remove(&self.cast);
     }
 
-    fn gone(self) {
-        log::info!("casting: the device went away");
+    /// The device went away, or plays something else now.
+    fn over(self, why: Error) {
+        log::info!("casting: over: {why}");
         self.server.remove(&self.cast);
-        self.shared.lock().phase = Phase::Over(Error::Gone);
+        self.shared.lock().phase = Phase::Over(why);
     }
 }
 

@@ -4622,6 +4622,7 @@ dependencies = [
  "core-video",
  "cpal",
  "dirs 6.0.0",
+ "dlna",
  "encoding_rs",
  "env_logger",
  "ffmpeg-link",

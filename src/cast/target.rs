@@ -59,6 +59,8 @@ pub trait Target: Send + Sync {
 pub enum Error {
     /// It's gone: turned off, or off the network.
     Gone,
+    /// It plays something else now, as from its remote or another app.
+    Replaced,
     /// It refused, or said something unexpected.
     Failed(String),
 }
@@ -67,6 +69,7 @@ impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Gone => f.write_str("it can't be reached"),
+            Self::Replaced => f.write_str("it plays something else now"),
             Self::Failed(why) => f.write_str(why),
         }
     }
@@ -121,13 +124,6 @@ pub enum State {
     /// Getting the media, or waiting for more of it.
     Buffering,
     Playing,
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "only the fake device says it, until a protocol is wired in"
-        )
-    )]
     Paused,
     /// Played to the end.
     Ended,

@@ -91,6 +91,9 @@ pub struct State {
     /// Whether it answers searches.
     pub answers: bool,
     pub searches: u32,
+    /// What it says it plays: ConnectionManager's sink protocol info, a
+    /// Samsung TV's or a Sonos speaker's to start with.
+    pub sink: String,
     next_sid: u32,
 }
 
@@ -223,6 +226,7 @@ impl FakeRenderer {
             max_age: 1800,
             answers: true,
             searches: 0,
+            sink: sink(kind).to_owned(),
             next_sid: 1,
         }));
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
@@ -481,7 +485,7 @@ fn serve(kind: Kind, udn: &str, state: &Shared, stream: &TcpStream) {
     };
     let reply = match (method, path.rsplit('/').next().unwrap_or_default()) {
         ("GET", "description.xml") => Reply::xml(description(kind, udn)),
-        ("POST", "control") => control(kind, service, state, &message),
+        ("POST", "control") => control(service, state, &message),
         ("SUBSCRIBE", "event") if kind == Kind::Tv => subscribe(service, state, &message),
         ("UNSUBSCRIBE", "event") => {
             let mut state = lock(state);
@@ -551,7 +555,7 @@ fn subscribe(service: &'static str, state: &Shared, message: &Message) -> Reply 
     }
 }
 
-fn control(kind: Kind, service: &'static str, shared: &Shared, message: &Message) -> Reply {
+fn control(service: &'static str, shared: &Shared, message: &Message) -> Reply {
     let Some(call) = soap::read_call(message) else {
         return Reply::status(400);
     };
@@ -675,7 +679,7 @@ fn control(kind: Kind, service: &'static str, shared: &Shared, message: &Message
             Vec::new()
         }
         (CONNECTION_MANAGER, "GetProtocolInfo") => {
-            let sink: Vec<String> = Capability::parse_list(sink(kind))
+            let sink: Vec<String> = Capability::parse_list(&state.sink)
                 .iter()
                 .map(ToString::to_string)
                 .collect();

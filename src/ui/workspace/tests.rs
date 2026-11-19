@@ -2,6 +2,7 @@
 //! test platform (see `ui::testing`).
 
 mod casting;
+mod casting_to_dlna;
 
 use gpui::{EntityId, TestAppContext, VisualTestContext, WindowHandle, px, size};
 

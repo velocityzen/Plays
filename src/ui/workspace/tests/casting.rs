@@ -45,7 +45,7 @@ fn start(
     (window, cx, fake, tv)
 }
 
-fn tile(window: WindowHandle<Workspace>, cx: &VisualTestContext) -> Entity<PlayerView> {
+pub(super) fn tile(window: WindowHandle<Workspace>, cx: &VisualTestContext) -> Entity<PlayerView> {
     window
         .read_with(cx, |workspace, _| workspace.tiles[0].view.clone())
         .unwrap()
@@ -75,7 +75,7 @@ fn say(fake: &FakeTarget, device: &Device, state: State, position: f64) {
 
 /// Run until `done`, moving the clock on so the tile follows its device,
 /// and giving the link's thread real time, for at most `OPEN_WAIT`.
-fn wait(
+pub(super) fn wait(
     cx: &mut VisualTestContext,
     what: &str,
     mut done: impl FnMut(&mut VisualTestContext) -> bool,
@@ -109,7 +109,7 @@ fn cast(
 }
 
 /// What `url` serves: its status and body.
-fn get(url: &str) -> (u16, Vec<u8>) {
+pub(super) fn get(url: &str) -> (u16, Vec<u8>) {
     let rest = url.strip_prefix("http://").expect("an http:// URL");
     let (host, path) = rest.split_once('/').expect("a path");
     let mut stream = TcpStream::connect(host).expect("the stream server");

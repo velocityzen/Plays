@@ -1,6 +1,7 @@
 //! A renderer, as its device description says: its name and model, its
 //! icons, and where its services are.
 
+use std::net::IpAddr;
 use std::time::Duration;
 
 use crate::error::{Error, Result};
@@ -173,6 +174,13 @@ impl Device {
         ))
     }
 
+    /// Where it is: the address its AVTransport is reached at, where the
+    /// description gives one rather than a host name, which this doesn't
+    /// look up.
+    pub fn address(&self) -> Option<IpAddr> {
+        Url::parse(&self.av_transport.control)?.host.parse().ok()
+    }
+
     /// Its biggest icon.
     pub fn icon(&self) -> Option<&Icon> {
         self.icons
@@ -311,6 +319,29 @@ mod tests {
         );
         assert_eq!(tv.av_transport.events, None, "an empty eventSubURL is none");
         assert_eq!(tv.rendering_control, None);
+        assert_eq!(tv.address(), Some([192, 0, 2, 12].into()));
+    }
+
+    #[test]
+    fn an_address_is_where_its_transport_is_and_never_looked_up() {
+        let at = |control: &str| {
+            let description = format!(
+                "<root><device>\
+                 <deviceType>urn:schemas-upnp-org:device:MediaRenderer:1</deviceType>\
+                 <friendlyName>TV</friendlyName><UDN>uuid:tv</UDN><serviceList><service>\
+                 <serviceType>urn:schemas-upnp-org:service:AVTransport:1</serviceType>\
+                 <controlURL>{control}</controlURL></service></serviceList></device></root>"
+            );
+            Device::from_description(&description, "http://192.0.2.13/dd.xml")
+                .unwrap()
+                .address()
+        };
+        assert_eq!(at("/control"), Some([192, 0, 2, 13].into()));
+        assert_eq!(
+            at("http://[2001:db8::1]:8080/control"),
+            Some("2001:db8::1".parse().unwrap())
+        );
+        assert_eq!(at("http://tv.local:8080/control"), None);
     }
 
     #[test]

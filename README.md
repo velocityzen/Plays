@@ -82,8 +82,8 @@ GPU-accelerated UI framework.
   video track loads the file there again from where it is. Playing it here
   again (This Computer, Play Here, or the display in the menu), closing the
   tile, or the device going away ends the cast, and the tile goes on from
-  where the device was. Quitting stops the devices cast to. The protocols (Chromecast, AirPlay, DLNA) aren't
-  wired in yet, so for now no devices are found.
+  where the device was. Quitting stops the devices cast to. DLNA TVs and
+  speakers are found so far; Chromecast and AirPlay aren't wired in yet.
 - While a tile plays, its header and controls fade when the mouse leaves
   it, or rests on it for a couple of seconds; the pointer hides then too,
   until the mouse moves. Resting on the header or controls keeps them.
@@ -311,7 +311,14 @@ loop, on files that have subtitles or more than one audio or video track)
 opens the track menu: a column each for audio, subtitles and (when there
 are several) video. While there are devices to cast to, the cast button
 before it opens the menu of them: This Computer, then each device and its
-kind, the one playing checked. For the only tile in a window,
+kind, the one playing checked. A DLNA TV or speaker on the same network is
+found by itself, in a second or two; one that lists only sound is offered
+for files that are only sound. A file goes to it as it is where it lists
+that kind of file, else as a stream of MPEG-TS, re-encoded where it needs
+to be. Picking other subtitles gives it the file again from where it is,
+as DLNA takes subtitles only with the file. The tile's volume scales the
+TV's own: where it was when cast, the TV stays where it was. For the only
+tile in a window,
 both toggle full screen instead. When a window has more than
 one tile, the button next to maximize moves a tile to a new window sized for
 it, where it keeps playing. Every window takes drops and works the same
@@ -486,7 +493,16 @@ last window quits.
   is doing twice a second, and shows the tile what it asked for until the
   device has done it. Dropping the link stops the device and the stream
   server lets the file go; as the app quits, it waits a moment for the
-  devices to stop. `fake` is a protocol for tests.
+  devices to stop. `dlna` adapts the DLNA crate: it asks each renderer
+  found what it plays (its protocol info), which decides whether it shows
+  video and how the stream server serves it (the files it lists, else a
+  stream of MPEG-TS rather than HLS, which fewer TVs take; H.264 and AAC
+  in MPEG-TS for one that doesn't say), and names the MIME type as the
+  renderer lists it. Subtitles go as SRT, both ways the crate writes them;
+  other subtitles load the file again from where it is. The renderer
+  stopping after it played is the end; a seek it refuses while stopped is
+  made once it plays; something else playing there ends the cast. `fake`
+  is a protocol for tests.
 - `src/ui/pip/` (macOS): Picture in Picture. The tile's frames go, as they
   are due, to an `AVSampleBufferDisplayLayer` hidden over the tile, which
   AVKit's `AVPictureInPictureController` shows in the system's window; a
@@ -846,6 +862,26 @@ devices that show video after the displays, checking the one the tile in
 front casts to instead of the display. Each test has been checked to fail
 when the behavior it covers is broken.
 
+Casting to DLNA is tested with the DLNA crate's fake renderer, found as it
+would be on the network. Picking the TV gives it the tile's Matroska file
+as it is (the TV lists Matroska), seeks it to where the tile was, then
+plays it, with the subtitles picked as SRT both ways the crate writes them;
+both URLs serve what they should. A TV that lists MP4 and MPEG-TS (as
+`video/mpeg`) only gets that file as a stream of MPEG-TS, by its own name
+for it; the speaker, from its protocol info, is offered only for sound and
+gets the M4A as it is, and a paused tile leaves it paused. Space, the
+arrows, `M` and the volume keys play, seek, mute, turn down and pause the
+TV (its volume scaled from where it was); the bar follows where it says it
+is, and its playing to the end shows the end. Other subtitles give it the
+file again, from where it was, with them or without. A TV that refuses to
+seek before it plays, as Rygel's renderers do, goes there once it plays,
+the bar staying where the tile was meanwhile. Something else playing
+there, or the TV going away, ends the cast. What the renderer
+plays decides what it shows and its profile, from Samsung's, LG's, Sonos's
+and Devialet's protocol info, and the tile's volume scales the
+renderer's. Each test has been checked to fail when the behavior it covers
+is broken.
+
 `cargo test --workspace` tests the crates in `crates/` too. The stream
 server's tests serve the fixtures over HTTP, as a device fetches them, and
 read what comes back with FFmpeg: the plan for each fixture; a file as it
@@ -1011,8 +1047,13 @@ size, makes `first-open` fail.
   forms most TVs take, as DLNA has none of its own; a TV may take neither.
   A renderer that neither sends events nor answers GetPositionInfo can't
   be followed.
-- Casting: no protocol is wired in yet, so no device is found. While a
-  tile casts, delays don't apply, as the device plays the picture and the
+- Casting: only DLNA is wired in so far. Subtitles on a DLNA TV depend
+  on the TV, as DLNA has none of its own: most take SRT one way or the
+  other, some neither, and changing them loads the file again. A DLNA TV
+  has only its own volume, which the tile's scales. One that doesn't say
+  what it plays gets H.264 and AAC in MPEG-TS, which it may still not
+  play, and one that won't seek while stopped starts from the beginning a
+  moment first. While a tile casts, delays don't apply, as the device plays the picture and the
   sound; gamma, crop, rotation, flips, aspect ratio and picture subtitles
   stay on this computer (the tile says so), and frames can't be stepped.
   The stream server listens on every interface, so the firewall may ask to

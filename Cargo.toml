@@ -40,6 +40,7 @@ unicode-segmentation = "1"
 url = "2"
 chardetng = "0.1"
 encoding_rs = "0.8"
+dlna = { path = "crates/dlna" }
 
 # The same CoreFoundation and CoreVideo bindings gpui uses, to hand it
 # hardware-decoded frames to draw (`gpui::surface`).
@@ -67,6 +68,8 @@ ffmpeg-link = { path = "crates/ffmpeg-link" }
 # input and a deterministic executor. Only in test builds.
 [dev-dependencies]
 gpui = { version = "0.2.2", features = ["test-support"] }
+# Its fake renderer, for casting to it headless.
+dlna = { path = "crates/dlna", features = ["fake"] }
 
 [profile.dev]
 # Video decoding and pixel conversion are painfully slow without optimizations.

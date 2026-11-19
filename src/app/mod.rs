@@ -11,6 +11,7 @@ mod menus;
 #[cfg(feature = "smoke")]
 pub mod smoke;
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use futures::StreamExt as _;
@@ -20,7 +21,7 @@ use gpui::{App, actions};
 pub use audio::{AudioEngine, Route};
 pub use awake::Awake;
 
-use crate::cast::{Casting, Device};
+use crate::cast::{self, Casting, Device, Target};
 use crate::media::{Source, picture};
 use crate::settings::{AudioDevice, Settings};
 use crate::ui::framing::Ratio;
@@ -73,7 +74,7 @@ pub struct CastTo(pub Option<Device>);
 
 /// `opened` brings the URLs the system asks the app to open.
 pub fn run(cx: &mut App, sources: Vec<Source>, opened: UnboundedReceiver<Vec<String>>) {
-    set_up(cx, Settings::load(), AudioEngine::start);
+    set_up(cx, Settings::load(), AudioEngine::start, cast::protocols);
     awake::watch(cx);
 
     let window = Workspace::open_window(WINDOW_SIZE, cx).expect("opening the first window");
@@ -99,14 +100,19 @@ pub fn run(cx: &mut App, sources: Vec<Source>, opened: UnboundedReceiver<Vec<Str
 }
 
 /// What every window needs: `settings`, the audio engine, which `audio`
-/// starts, the UI font and colors, and the actions and their keys.
-fn set_up(cx: &mut App, settings: Settings, audio: fn(&mut App)) {
+/// starts, casting to the devices of the protocols `targets` start, the UI
+/// font and colors, and the actions and their keys.
+fn set_up(
+    cx: &mut App,
+    settings: Settings,
+    audio: fn(&mut App),
+    targets: fn() -> Vec<Arc<dyn Target>>,
+) {
     let [sdr_gamma, hdr_gamma] = settings.gamma();
     picture::set_gamma(sdr_gamma, hdr_gamma);
     cx.set_global(settings);
     audio(cx);
-    // No protocol is wired in yet.
-    cx.set_global(Casting::new(Vec::new()));
+    cx.set_global(Casting::new(targets()));
     Casting::watch(cx);
     let font = pick_ui_font(cx);
     cx.set_global(UiFont(font));
@@ -120,10 +126,11 @@ fn set_up(cx: &mut App, settings: Settings, audio: fn(&mut App)) {
 }
 
 /// For `#[gpui::test]`s: the app as it starts, with default settings
-/// (never saved), silent audio, and without keeping the computer awake.
+/// (never saved), silent audio, no devices to cast to, and without keeping
+/// the computer awake.
 #[cfg(test)]
 pub fn set_up_for_tests(cx: &mut App) {
-    set_up(cx, Settings::default(), AudioEngine::start_silent);
+    set_up(cx, Settings::default(), AudioEngine::start_silent, Vec::new);
 }
 
 /// Devices cast to stop as the app quits, rather than wait on a stream

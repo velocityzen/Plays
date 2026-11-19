@@ -168,10 +168,10 @@ impl PlayerView {
             Phase::Connecting => {}
             Phase::On { .. } => cast.on = true,
             Phase::Over(err) => {
-                let note = if cast.on && err == Error::Gone {
-                    format!("{name} went away")
-                } else {
-                    format!("Can't play on {name}: {err}")
+                let note = match err {
+                    Error::Gone if cast.on => format!("{name} went away"),
+                    Error::Replaced if cast.on => format!("{name} plays something else now"),
+                    err => format!("Can't play on {name}: {err}"),
                 };
                 self.end_cast(cx);
                 self.note(note, cx);
