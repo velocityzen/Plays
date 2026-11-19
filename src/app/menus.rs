@@ -80,6 +80,9 @@ pub(super) fn set_menus(cx: &mut App) {
                 MenuItem::action("Restart All", RestartAll),
                 MenuItem::action("Seek All Forward", SeekForwardAll),
                 MenuItem::action("Seek All Backward", SeekBackwardAll),
+                MenuItem::action("Next Frame on All", NextFrameAll),
+                MenuItem::action("Previous Frame on All", PreviousFrameAll),
+                MenuItem::action("Sync All to This Tile", SyncAll),
             ],
         },
         Menu {

@@ -60,6 +60,9 @@ gpui::actions!(
         RestartAll,
         SeekForwardAll,
         SeekBackwardAll,
+        NextFrameAll,
+        PreviousFrameAll,
+        SyncAll,
         ToggleMuteAll,
     ]
 );
@@ -116,6 +119,9 @@ pub enum Command {
     RestartAll,
     SeekForwardAll,
     SeekBackwardAll,
+    NextFrameAll,
+    PreviousFrameAll,
+    SyncAll,
     MuteAll,
 }
 
@@ -153,7 +159,7 @@ impl Group {
 }
 
 impl Command {
-    pub const ALL: [Self; 45] = [
+    pub const ALL: [Self; 48] = [
         Self::PlayPause,
         Self::SeekForward,
         Self::SeekBackward,
@@ -197,7 +203,10 @@ impl Command {
         Self::PlayPauseAll,
         Self::SeekForwardAll,
         Self::SeekBackwardAll,
+        Self::NextFrameAll,
+        Self::PreviousFrameAll,
         Self::RestartAll,
+        Self::SyncAll,
         Self::MuteAll,
     ];
 
@@ -248,6 +257,9 @@ impl Command {
             Self::RestartAll => "restart_all",
             Self::SeekForwardAll => "seek_forward_all",
             Self::SeekBackwardAll => "seek_backward_all",
+            Self::NextFrameAll => "next_frame_all",
+            Self::PreviousFrameAll => "previous_frame_all",
+            Self::SyncAll => "sync_all",
             Self::MuteAll => "mute_all",
         }
     }
@@ -302,6 +314,9 @@ impl Command {
             Self::RestartAll => "Restart all",
             Self::SeekForwardAll => "Seek all forward",
             Self::SeekBackwardAll => "Seek all backward",
+            Self::NextFrameAll => "Next frame on all",
+            Self::PreviousFrameAll => "Previous frame on all",
+            Self::SyncAll => "Sync all to the tile in front",
             Self::MuteAll => "Mute/unmute all",
         }
     }
@@ -358,6 +373,9 @@ impl Command {
             | Self::RestartAll
             | Self::SeekForwardAll
             | Self::SeekBackwardAll
+            | Self::NextFrameAll
+            | Self::PreviousFrameAll
+            | Self::SyncAll
             | Self::MuteAll => Group::AllFiles,
         }
     }
@@ -408,6 +426,9 @@ impl Command {
             Self::RestartAll => Box::new(RestartAll),
             Self::SeekForwardAll => Box::new(SeekForwardAll),
             Self::SeekBackwardAll => Box::new(SeekBackwardAll),
+            Self::NextFrameAll => Box::new(NextFrameAll),
+            Self::PreviousFrameAll => Box::new(PreviousFrameAll),
+            Self::SyncAll => Box::new(SyncAll),
             Self::MuteAll => Box::new(ToggleMuteAll),
         }
     }
@@ -468,6 +489,9 @@ impl Command {
             Self::RestartAll => &["shift-home"],
             Self::SeekForwardAll => &["shift-right"],
             Self::SeekBackwardAll => &["shift-left"],
+            Self::NextFrameAll => &["alt-shift-right"],
+            Self::PreviousFrameAll => &["alt-shift-left"],
+            Self::SyncAll => &["shift-s"],
             Self::MuteAll => &["shift-m"],
         }
     }

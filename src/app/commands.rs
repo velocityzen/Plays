@@ -143,6 +143,11 @@ pub(super) fn register(cx: &mut App) {
     cx.on_action(|_: &RestartAll, cx| with_workspace(cx, |w, _, cx| w.restart_all(cx)));
     cx.on_action(|_: &SeekForwardAll, cx| with_workspace(cx, |w, _, cx| w.seek_all(1.0, cx)));
     cx.on_action(|_: &SeekBackwardAll, cx| with_workspace(cx, |w, _, cx| w.seek_all(-1.0, cx)));
+    cx.on_action(|_: &NextFrameAll, cx| with_workspace(cx, |w, _, cx| w.step_frame_all(1.0, cx)));
+    cx.on_action(|_: &PreviousFrameAll, cx| {
+        with_workspace(cx, |w, _, cx| w.step_frame_all(-1.0, cx))
+    });
+    cx.on_action(|_: &SyncAll, cx| with_workspace(cx, |w, _, cx| w.sync_all(cx)));
     cx.on_action(|_: &ToggleMuteAll, cx| with_workspace(cx, |w, _, cx| w.toggle_mute_all(cx)));
 }
 

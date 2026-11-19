@@ -266,13 +266,18 @@ it again when the dependencies change (`script/bundle-macos` runs it).
 | Picture in Picture (macOS) | `⌃⌘P` |
 | Console | `~` or `` ` `` |
 | Play/pause, seek, restart, mute all | `⇧Space`, `⇧←` `⇧→`, `⇧Home`, `⇧M` |
+| Previous/next frame on all | `⌥⇧←` `⌥⇧→` / `Alt+Shift+←` `Alt+Shift+→` |
+| Sync all to the active tile | `⇧S` |
 | Close the file in front | `⌘W` / `Ctrl+W` (in an empty window, it closes the window) |
 | Close all | `⌘⇧W` / `Ctrl+Shift+W` |
 | Close the window | `⌥⌘W` / `Ctrl+Alt+W` |
 | Settings | `⌘,` / `Ctrl+,` |
 
 Shortcuts act on the active tile: the one last clicked, or the maximized
-one. A short
+one; those with `⇧` act on every tile in the window. Sync all puts every
+tile where the active one is, playing or paused as it is, so files side
+by side go on together (the active one seeks there too); the frame keys
+with `⇧` then step them all, each by its own frame rate. A short
 note on the tile says what changed; switching tracks rolls a reel, like a
 slot machine's, to the track picked, with the ones before and after it
 faded above and below. To change shortcuts, open Settings → Hotkeys,
@@ -925,7 +930,10 @@ and moves the mouse to what it clicks first. A click picks a tile without pausin
 shortcuts then go to it; a double-click fills the window with a tile, the
 whole area under the toolbar, and another puts the grid back; ⌘W closes the
 tile in front, then the empty window; four tiles sit in two even rows.
-Settings' Reset to Defaults asks first and changes nothing on Cancel, and
+`⇧S` puts every tile where the one clicked is, paused as it is, and
+`⌥⇧→` and `⌥⇧←` step them all a frame at a time; with the one clicked
+playing, the others go back to where it is and play. Settings' Reset to
+Defaults asks first and changes nothing on Cancel, and
 picking an output in the Audio menu sets it. Floating on top while playing
 lifts the window, and Settings with it, only while its file plays, and
 the menu items turn their mode on and off. Video → Output Device checks

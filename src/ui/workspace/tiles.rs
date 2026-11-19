@@ -140,7 +140,7 @@ impl Workspace {
 
     /// The tile shortcuts go to: the maximized one, else the one last
     /// clicked, else the first.
-    fn active_view(&self) -> Option<Entity<PlayerView>> {
+    pub(super) fn active_view(&self) -> Option<Entity<PlayerView>> {
         let find = |id: EntityId| self.tiles.iter().find(|t| t.view.entity_id() == id);
         self.maximized
             .and_then(find)

@@ -5,7 +5,7 @@ mod casting;
 mod casting_to_chromecast;
 mod casting_to_dlna;
 
-use gpui::{EntityId, TestAppContext, VisualTestContext, WindowHandle, px, size};
+use gpui::{AppContext, EntityId, TestAppContext, VisualTestContext, WindowHandle, px, size};
 
 use super::{TOOLBAR_SPACE, Workspace};
 use crate::app::ShowOnDisplay;
@@ -150,6 +150,82 @@ fn shortcuts_go_to_the_tile_last_clicked(cx: &mut TestAppContext) {
     click(&mut cx, "tile-0");
     press(&mut cx, "m");
     assert_eq!(muted(&cx), [true, true]);
+}
+
+/// The tiles' players, in order: (where each is, the frame it shows,
+/// playing).
+fn times(window: WindowHandle<Workspace>, cx: &impl AppContext) -> Vec<(f64, Option<f64>, bool)> {
+    window
+        .read_with(cx, |workspace, cx| {
+            workspace
+                .tiles
+                .iter()
+                .map(|tile| {
+                    let player = tile.view.read(cx).player();
+                    (player.position(), player.frame_pts(), player.is_playing())
+                })
+                .collect()
+        })
+        .unwrap()
+}
+
+/// Wait until every tile shows the frame at `pts`, paused.
+fn wait_for_frames(window: WindowHandle<Workspace>, cx: &mut VisualTestContext, pts: f64) {
+    let shown = wait_until(cx, |cx| {
+        // Frames show as the window draws.
+        window.update(cx, |_, window, _| window.refresh()).unwrap();
+        times(window, cx).iter().all(|&(_, frame, playing)| {
+            !playing && frame.is_some_and(|frame| (frame - pts).abs() < 1e-3)
+        })
+    });
+    assert!(shown, "every tile at {pts}: {:?}", times(window, cx));
+}
+
+#[gpui::test]
+fn sync_all_puts_every_tile_where_the_one_in_front_is_and_steps_them_together(
+    cx: &mut TestAppContext,
+) {
+    let (window, mut cx) = testing::start(cx);
+    // Two seconds at 25 frames a second each.
+    open(window, &mut cx, &["clip.mp4", "clip-ip.mkv"], false);
+    let tile = |index: usize, cx: &VisualTestContext| {
+        window
+            .read_with(cx, |workspace, _| workspace.tiles[index].view.clone())
+            .unwrap()
+    };
+    for (index, time) in [(0, 1.2), (1, 0.4)] {
+        tile(index, &cx).update(&mut cx, |view, _| {
+            view.pause();
+            view.seek(time);
+        });
+    }
+
+    click(&mut cx, "tile-0");
+    press(&mut cx, "shift-s");
+    wait_for_frames(window, &mut cx, 1.2);
+
+    press(&mut cx, "alt-shift-right");
+    wait_for_frames(window, &mut cx, 1.24);
+    for pts in [1.2, 1.16] {
+        press(&mut cx, "alt-shift-left");
+        wait_for_frames(window, &mut cx, pts);
+    }
+
+    // The one in front playing: the others go back to it, and play.
+    tile(1, &cx).update(&mut cx, |view, _| {
+        view.seek(0.2);
+        view.play();
+    });
+    click(&mut cx, "tile-1");
+    press(&mut cx, "shift-s");
+    let [(first, _, first_playing), (second, _, second_playing)] = times(window, &cx)[..] else {
+        panic!("two tiles");
+    };
+    assert!(first_playing && second_playing, "both play, as it does");
+    assert!(
+        first < 1.0 && (first - second).abs() < 0.1,
+        "together, where it was: {first} and {second}"
+    );
 }
 
 #[gpui::test]

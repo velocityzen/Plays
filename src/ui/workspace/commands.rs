@@ -48,6 +48,35 @@ impl Workspace {
         }
     }
 
+    /// Pause every tile and show its next frame (`1`) or the one before
+    /// (`-1`), each by its own frame rate.
+    pub fn step_frame_all(&mut self, direction: f64, cx: &mut Context<Self>) {
+        for tile in &self.tiles {
+            tile.view
+                .update(cx, |view, cx| view.step_frame(direction, cx));
+        }
+    }
+
+    /// Every tile to where the tile in front is, playing or paused as it
+    /// is. It seeks there too, so they all go on from the same time.
+    pub fn sync_all(&mut self, cx: &mut Context<Self>) {
+        let Some(front) = self.active_view() else {
+            return;
+        };
+        let (time, playing) = {
+            let front = front.read(cx);
+            (front.position(), front.is_playing())
+        };
+        self.for_each_view(cx, |view| {
+            view.seek(time);
+            if playing {
+                view.play();
+            } else {
+                view.pause();
+            }
+        });
+    }
+
     pub fn toggle_mute_all(&mut self, cx: &mut Context<Self>) {
         let mute = self
             .tiles
