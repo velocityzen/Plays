@@ -42,8 +42,9 @@ impl PlayerView {
                     .items_center()
                     .gap_1()
                     .pl_3()
-                    .pr_1()
-                    // Lines the buttons up with the traffic lights.
+                    // As far from the right edge as from the top, which
+                    // lines the buttons up with the traffic lights.
+                    .pr_2()
                     .pt_2()
                     .pb_4()
                     .when(under_traffic_lights, |this| this.pl(TRAFFIC_LIGHTS_WIDTH))
