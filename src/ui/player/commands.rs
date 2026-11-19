@@ -7,7 +7,10 @@ use gpui::Context;
 use super::PlayerView;
 use super::osd::{Osd, TrackReel};
 use super::tracks::track_choices;
+use crate::app::refresh_menus;
+use crate::media::chapters::{self, Chapter};
 use crate::media::tracks::TrackKind;
+use crate::ui::theme::motion::CHAPTER_RESTART;
 
 impl PlayerView {
     pub fn play_pause(&mut self, cx: &mut Context<Self>) {
@@ -31,6 +34,55 @@ impl PlayerView {
     pub fn restart(&mut self, cx: &mut Context<Self>) {
         self.seek(0.0);
         cx.notify();
+    }
+
+    /// The file's chapters, once it's open.
+    pub fn chapters(&self) -> Vec<Chapter> {
+        self.player
+            .info()
+            .map(|info| info.chapters)
+            .unwrap_or_default()
+    }
+
+    /// The chapter it's in.
+    pub fn chapter(&self) -> Option<usize> {
+        chapters::at(&self.chapters(), self.position())
+    }
+
+    /// Go to the start of the next chapter.
+    pub fn next_chapter(&mut self, cx: &mut Context<Self>) {
+        let chapters = self.chapters();
+        match chapters::next(&chapters, self.position()) {
+            Some(index) => self.go_to_chapter(index, cx),
+            None if chapters.is_empty() => self.note("No chapters", cx),
+            None => self.note("The last chapter", cx),
+        }
+    }
+
+    /// Back to the start of this chapter, or of the one before near its
+    /// start.
+    pub fn previous_chapter(&mut self, cx: &mut Context<Self>) {
+        let chapters = self.chapters();
+        match chapters::previous(&chapters, self.position(), CHAPTER_RESTART) {
+            Some(index) => self.go_to_chapter(index, cx),
+            None if chapters.is_empty() => self.note("No chapters", cx),
+            None => {
+                self.seek(0.0);
+                cx.notify();
+            }
+        }
+    }
+
+    /// Play from the start of chapter `index`, saying which it is.
+    pub fn go_to_chapter(&mut self, index: usize, cx: &mut Context<Self>) {
+        let chapters = self.chapters();
+        let Some(chapter) = chapters.get(index) else {
+            return;
+        };
+        self.seek(chapter.start);
+        self.note(chapter.name(index), cx);
+        // Playback → Chapters checks this one now.
+        refresh_menus(cx);
     }
 
     /// Pause and show the next frame (`1`) or the one before (`-1`).

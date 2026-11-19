@@ -7,6 +7,7 @@ use gpui::{ClickEvent, Context, Corner, Div, Pixels, Window, div, px};
 
 use super::tracks::{close_tracks, has_track_choice};
 use super::{PlayerView, Reveal};
+use crate::media::chapters::{self, Chapter};
 use crate::media::decoder::MediaInfo;
 use crate::settings::Settings;
 use crate::ui::components::{
@@ -45,9 +46,11 @@ impl PlayerView {
         let progress = duration
             .filter(|d| *d > 0.0)
             .map_or(0.0, |d| (position / d) as f32);
-        let time_label = match duration {
-            Some(d) => format!("{} / {}", format_time(position), format_time(d)),
-            None => format_time(position),
+        let chapters = info.map_or(&[][..], |info| info.chapters.as_slice());
+        let time_label = time_label(position, duration, chapters);
+        let notches = match duration {
+            Some(d) if cx.global::<Settings>().chapter_marks => chapters::marks(chapters, d),
+            _ => Vec::new(),
         };
         let play_icon = if self.is_playing() {
             "pause"
@@ -92,6 +95,7 @@ impl PlayerView {
                                 Slider::new("seek", progress, self.seek_drag.clone())
                                     .overlay()
                                     .fill(theme.accent)
+                                    .notches(notches)
                                     .on_change(cx.listener(Self::on_seek)),
                             ),
                         )
@@ -303,6 +307,19 @@ fn skip(
     }
 }
 
+/// Where it is, of how long it is, and the chapter it's in for a file of
+/// several.
+fn time_label(position: f64, duration: Option<f64>, chapters: &[Chapter]) -> String {
+    let time = match duration {
+        Some(d) => format!("{} / {}", format_time(position), format_time(d)),
+        None => format_time(position),
+    };
+    match chapters::at(chapters, position).filter(|_| chapters.len() > 1) {
+        Some(index) => format!("{time} · {}", chapters[index].name(index)),
+        None => time,
+    }
+}
+
 fn format_time(seconds: f64) -> String {
     let total = seconds.max(0.0).floor() as u64;
     let (h, m, s) = (total / 3600, (total / 60) % 60, total % 60);
@@ -315,7 +332,27 @@ fn format_time(seconds: f64) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::format_time;
+    use super::{Chapter, format_time, time_label};
+
+    #[test]
+    fn the_time_says_which_chapter_it_is_in() {
+        let chapter = |start: f64, title: &str| Chapter {
+            start,
+            end: start + 60.0,
+            title: Some(title.to_owned()),
+        };
+        let chapters = [chapter(0.0, "Opening"), chapter(60.0, "Middle")];
+        assert_eq!(
+            time_label(75.0, Some(120.0), &chapters),
+            "1:15 / 2:00 · Middle"
+        );
+        assert_eq!(
+            time_label(75.0, Some(120.0), &chapters[..1]),
+            "1:15 / 2:00",
+            "not for a file of one part"
+        );
+        assert_eq!(time_label(5.0, None, &[]), "0:05");
+    }
 
     #[test]
     fn formats_times() {

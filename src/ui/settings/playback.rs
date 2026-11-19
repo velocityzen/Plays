@@ -52,6 +52,14 @@ impl Pane for PlaybackPane {
                     }),
                 ),
                 row(
+                    "Show chapters on the seek bar",
+                    Some("Where each part of a file with chapters starts".into()),
+                    theme,
+                    Switch::new("chapter-marks", s.chapter_marks).on_toggle(|&on, _, cx| {
+                        update_settings(cx, true, |s| s.chapter_marks = on)
+                    }),
+                ),
+                row(
                     "Volume for new files",
                     None,
                     theme,

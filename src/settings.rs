@@ -336,6 +336,8 @@ pub struct Settings {
     pub autoplay: bool,
     pub loop_by_default: bool,
     pub seek_step_seconds: u32,
+    /// Mark where a file's chapters start on its seek bar.
+    pub chapter_marks: bool,
     pub video_fit: VideoFit,
     pub max_resolution: MaxResolution,
     /// Decode video on the GPU when the hardware supports it.
@@ -369,6 +371,7 @@ impl Default for Settings {
             loop_by_default: false,
             // How far the arrow keys seek.
             seek_step_seconds: 5,
+            chapter_marks: true,
             video_fit: VideoFit::Contain,
             max_resolution: MaxResolution::P1080,
             hardware_decoding: true,

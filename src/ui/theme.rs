@@ -197,6 +197,10 @@ pub mod overlay {
     pub fn scrim_clear() -> Hsla {
         hsla(0.0, 0.0, 0.0, 0.0)
     }
+    /// A notch cut in a slider's track, as where a chapter starts.
+    pub fn notch() -> Hsla {
+        hsla(0.0, 0.0, 0.0, 0.55)
+    }
 }
 
 /// Text styles, by what the text is: its size and weight. Its color is up
@@ -289,6 +293,9 @@ pub mod motion {
     /// A picture that followed the sound on a device is taken to be where
     /// the device was when the cast ends, this near, in seconds.
     pub const END_FOLLOW_SEEK: f64 = 0.25;
+    /// How far into a chapter going to the one before goes back to its
+    /// start instead.
+    pub const CHAPTER_RESTART: f64 = 2.0;
 }
 
 /// Windows and how tiles fill them.
@@ -388,6 +395,8 @@ pub mod controls {
     pub const SLIDER_KNOB_DRAGGED: [Pixels; 3] = [px(10.), px(12.), px(16.)];
     /// A meter's bar, which is also a slider's track.
     pub const METER_HEIGHT: [Pixels; 3] = [px(3.), px(4.), px(6.)];
+    /// A notch cut across a slider's track, as where a chapter starts.
+    pub const SLIDER_NOTCH: Pixels = px(2.);
     /// A switch, and the room around its knob, which fills the rest of its
     /// height.
     pub const SWITCH: [Size<Pixels>; 3] = [

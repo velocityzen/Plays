@@ -1,6 +1,7 @@
 //! Media playback engine: FFmpeg decoding, a shared audio mixer and clocks.
 
 pub mod audio;
+pub mod chapters;
 pub mod clock;
 pub mod decoder;
 pub mod details;

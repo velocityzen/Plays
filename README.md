@@ -37,6 +37,11 @@ GPU-accelerated UI framework.
   with shortcuts or the Video menu, each tile on its own. Videos whose
   files say to turn them (as phones do) show upright. It all happens as the
   picture is drawn, so even a paused video changes at once.
+- Files with chapters (Matroska, MP4 and the like) go from one to the
+  next with `Page Down` and back with `Page Up`, or straight to one from
+  Playback → Chapters, which checks the one the tile is in. The bar has a
+  notch where each starts (Settings → Playback turns them off), and the
+  time under it says which one it's in.
 - Move a file's sound or subtitles earlier or later against the picture,
   for files that are out of step: the sound in 50 ms steps, subtitles
   (embedded or in a file beside the video) in 100 ms steps. The sound
@@ -125,7 +130,7 @@ GPU-accelerated UI framework.
 - About Plays, in the app menu on macOS: a small window with the app's
   icon, version and the day it was built (Settings → About says them too).
 - Settings window: theme, master volume, the audio output, default volume, autoplay, loop,
-  seek step, fit/fill scaling, gamma for SDR and for HDR video (applied to
+  seek step, chapter notches on the bar, fit/fill scaling, gamma for SDR and for HDR video (applied to
   every open video as you drag), decode resolution limit, hardware decoding,
   subtitle style (font, weight, size, color, outline or shadow and its color,
   a background box, on the picture or anywhere in the tile, height), with a
@@ -249,6 +254,7 @@ it again when the dependencies change (`script/bundle-macos` runs it).
 | Seek back/forward | `←` `→` (5 seconds at first; the step is in Settings). Where keyframes are far apart, a skip lands on the nearest one its way, so it shows at once |
 | Previous/next frame | `⌥←` `⌥→` / `Alt+←` `Alt+→`, or `,` `.`, or `<` `>` |
 | Restart | `Home` |
+| Previous/next chapter | `Page Up` `Page Down` |
 | Previous/next file in its folder | `⌘←` `⌘→` / `Ctrl+←` `Ctrl+→` |
 | Loop | `⌘⇧L` / `Ctrl+Shift+L` |
 | Volume down/up | `↓` `↑` |
@@ -400,6 +406,11 @@ the TV's own: where it was when cast, the TV stays where it was.
   the streams playing, read from their decoders before they decode.
 - `src/media/tracks.rs`: the tracks a file has, and their names for the
   menu (language, title, forced and SDH, codec, channels).
+- `src/media/chapters.rs`: a file's chapters, read with its info (their
+  times from the start of the file, in order), and which one a time is
+  in, the next and the previous. Going back within the first couple of
+  seconds of one goes to the one before, as on a disc player; later, to
+  its start.
 - `src/media/subtitles.rs`: subtitle cues. Subtitle packets are decoded as
   soon as they are read. FFmpeg turns every text format into ASS lines, of
   which the words, line breaks, italics, bold and top/middle/bottom placement
@@ -602,7 +613,7 @@ the TV's own: where it was when cast, the TV stays where it was.
   numbers for each in `theme`. An icon; a button in seven variants
   (normal, primary, secondary, danger, ghost, link, icon) with its icon
   on either side, and selected or disabled; a switch, a segmented control,
-  a slider and a meter; menu rows, and a popover that opens a menu from a
+  a slider (with notches, which the seek bar puts at chapters) and a meter; menu rows, and a popover that opens a menu from a
   button; a badge; a flat card; and a floating panel to put anything in,
   a menu's or a note's over the picture.
 - `build.rs`, with `crates/ffmpeg-link`: links the static FFmpeg with what
@@ -939,7 +950,12 @@ tile in front, then the empty window; four tiles sit in two even rows.
 `⇧S` puts every tile where the one clicked is, paused as it is, and
 `⌥⇧→` and `⌥⇧←` step them all a frame at a time; with the one clicked
 playing, the others go back to where it is and play. `⇧↑` and `⇧↓` turn
-every tile up or down from its own volume. Settings' Reset to
+every tile up or down from its own volume. In a file with three chapters,
+`Page Down` goes to the second and then the third, and no further;
+`Page Up` goes back to the second, then the first; the
+bar has a notch at the second and third, none with Settings' notches off.
+Playback → Chapters lists them, checking the one the tile in front is in,
+and follows the tile the mouse is over. Settings' Reset to
 Defaults asks first and changes nothing on Cancel, and
 picking an output in the Audio menu sets it. Floating on top while playing
 lifts the window, and Settings with it, only while its file plays, and

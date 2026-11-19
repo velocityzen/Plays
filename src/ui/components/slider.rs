@@ -9,7 +9,7 @@ use gpui::{
 
 use super::{ComponentSize, Meter, Sizable};
 use crate::ui::theme::controls::{
-    SLIDER_HEIGHT, SLIDER_KNOB, SLIDER_KNOB_DRAGGED, SLIDER_MIN_WIDTH,
+    METER_HEIGHT, SLIDER_HEIGHT, SLIDER_KNOB, SLIDER_KNOB_DRAGGED, SLIDER_MIN_WIDTH, SLIDER_NOTCH,
 };
 use crate::ui::theme::{Theme, overlay};
 
@@ -41,6 +41,8 @@ pub struct Slider {
     dragging: Rc<Cell<bool>>,
     overlay: bool,
     fill: Option<Hsla>,
+    /// Where notches are cut across the track, from 0 to 1.
+    notches: Vec<f32>,
     size: ComponentSize,
     on_change: Option<ChangeHandler>,
 }
@@ -55,6 +57,7 @@ impl Slider {
             dragging,
             overlay: false,
             fill: None,
+            notches: Vec::new(),
             size: ComponentSize::Medium,
             on_change: None,
         }
@@ -69,6 +72,13 @@ impl Slider {
     /// The color of the part of the track up to the knob.
     pub fn fill(mut self, color: Hsla) -> Self {
         self.fill = Some(color);
+        self
+    }
+
+    /// Notches cut across the track at these points, from 0 to 1, as where
+    /// a chapter starts; they line up with the knob there.
+    pub fn notches(mut self, notches: Vec<f32>) -> Self {
+        self.notches = notches;
         self
     }
 
@@ -92,10 +102,15 @@ impl Sizable for Slider {
 impl RenderOnce for Slider {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = Theme::get(window, cx);
-        let (track, fill, knob_color) = if self.overlay {
-            (overlay::track(), overlay::text(), overlay::text())
+        let (track, fill, knob_color, notch) = if self.overlay {
+            (
+                overlay::track(),
+                overlay::text(),
+                overlay::text(),
+                overlay::notch(),
+            )
         } else {
-            (theme.track, theme.accent, theme.accent)
+            (theme.track, theme.accent, theme.accent, theme.background)
         };
         let fill = self.fill.unwrap_or(fill);
         let value = self.value.clamp(0.0, 1.0);
@@ -103,6 +118,7 @@ impl RenderOnce for Slider {
         let on_change = self.on_change.unwrap_or_else(|| Rc::new(|_, _, _| {}));
         let size = self.size;
         let height = size.pick(SLIDER_HEIGHT);
+        let bar = size.pick(METER_HEIGHT);
         // The knob's center travels between half its resting size from
         // either end; dragged, it grows about that center.
         let inset = size.pick(SLIDER_KNOB) / 2.;
@@ -128,6 +144,17 @@ impl RenderOnce for Slider {
                     .bottom_0()
                     .left(inset)
                     .right(inset)
+                    .children(self.notches.iter().enumerate().map(|(index, &at)| {
+                        div()
+                            .debug_selector(move || format!("notch-{index}"))
+                            .absolute()
+                            .top((height - bar) / 2.)
+                            .left(relative(at.clamp(0.0, 1.0)))
+                            .ml(-SLIDER_NOTCH / 2.)
+                            .w(SLIDER_NOTCH)
+                            .h(bar)
+                            .bg(notch)
+                    }))
                     .child(
                         div()
                             .absolute()

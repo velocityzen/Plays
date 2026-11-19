@@ -286,6 +286,53 @@ fn shift_up_and_down_change_every_tiles_volume_from_its_own(cx: &mut TestAppCont
 }
 
 #[gpui::test]
+fn a_file_with_chapters_goes_from_one_to_the_next_and_marks_them(cx: &mut TestAppContext) {
+    let (window, mut cx) = testing::start(cx);
+    open(window, &mut cx, &["clip-chapters.mkv"], false);
+    let view = window
+        .read_with(&cx, |workspace, _| workspace.tiles[0].view.clone())
+        .unwrap();
+    view.update(&mut cx, |view, _| view.pause());
+    let chapters = view.read_with(&cx, |view, _| view.chapters());
+    let parts: Vec<_> = chapters
+        .iter()
+        .map(|chapter| (chapter.start, chapter.title.as_deref()))
+        .collect();
+    assert_eq!(
+        parts,
+        [
+            (0.0, Some("Opening")),
+            (0.8, Some("Middle")),
+            (1.4, Some("End"))
+        ]
+    );
+    let position = |cx: &VisualTestContext| view.read_with(cx, |view, _| view.position());
+
+    hover(&mut cx, "tile-0");
+    for (key, expected) in [
+        ("pagedown", 0.8),
+        ("pagedown", 1.4),
+        ("pagedown", 1.4),
+        ("pageup", 0.8),
+        ("pageup", 0.0),
+    ] {
+        press(&mut cx, key);
+        cx.run_until_parked();
+        let at = position(&cx);
+        assert!(
+            (at - expected).abs() < 1e-6,
+            "{key} went to {at}, not {expected}"
+        );
+    }
+
+    // Paused, its controls show, with the chapters after the first marked.
+    assert!(shows(&mut cx, "notch-0") && shows(&mut cx, "notch-1"));
+    assert!(!shows(&mut cx, "notch-2"));
+    cx.update(|_, cx| Settings::update(cx, false, |s| s.chapter_marks = false));
+    assert!(!shows(&mut cx, "notch-0"), "unless Settings say not to");
+}
+
+#[gpui::test]
 fn command_w_closes_the_tile_in_front_then_the_window(cx: &mut TestAppContext) {
     let (window, mut cx) = testing::start(cx);
     open(window, &mut cx, &["clip.mp4", "clip-ip.mkv"], false);

@@ -182,6 +182,21 @@ impl Workspace {
             .unwrap_or_default()
     }
 
+    /// The names of the chapters of the tile shortcuts go to, and the one
+    /// it's in.
+    pub fn active_chapters(&self, cx: &App) -> (Vec<String>, Option<usize>) {
+        self.active_view().map_or((Vec::new(), None), |view| {
+            let view = view.read(cx);
+            let names = view
+                .chapters()
+                .iter()
+                .enumerate()
+                .map(|(index, chapter)| chapter.name(index))
+                .collect();
+            (names, view.chapter())
+        })
+    }
+
     /// The device the tile shortcuts go to casts to.
     pub fn active_casting(&self, cx: &App) -> Option<Device> {
         self.active_view()?.read(cx).casting().cloned()

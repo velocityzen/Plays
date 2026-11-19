@@ -39,6 +39,7 @@ use gpui::RenderImage;
 use parking_lot::{Condvar, Mutex};
 
 use super::audio::{AudioChunk, AudioSource, SOURCE_CHANNELS};
+use super::chapters::Chapter;
 use super::clock::Clock;
 use super::details::{AudioDetails, ContainerDetails, VideoDetails};
 use super::dovi;
@@ -150,6 +151,8 @@ pub struct MediaInfo {
     pub container: ContainerDetails,
     pub video_details: Option<VideoDetails>,
     pub audio_details: Option<AudioDetails>,
+    /// The file's parts, in order, as its chapters say.
+    pub chapters: Vec<Chapter>,
 }
 
 impl MediaInfo {
@@ -621,6 +624,27 @@ fn run(
     };
 
     let duration = (input.duration() > 0).then(|| input.duration() as f64 / AV_TIME_BASE);
+    // On the playback timeline, which starts where the streams do.
+    let offset = start_offset.unwrap_or(0.0);
+    let mut chapters: Vec<Chapter> = input
+        .chapters()
+        .map(|chapter| {
+            let base = chapter.time_base();
+            let seconds =
+                |at: i64| at as f64 * f64::from(base.numerator()) / f64::from(base.denominator());
+            Chapter {
+                start: (seconds(chapter.start()) - offset).max(0.0),
+                end: seconds(chapter.end()) - offset,
+                title: chapter
+                    .metadata()
+                    .get("title")
+                    .map(str::trim)
+                    .filter(|title| !title.is_empty())
+                    .map(str::to_owned),
+            }
+        })
+        .collect();
+    chapters.sort_by(|a, b| a.start.total_cmp(&b.start));
     let video = decoders.video.as_ref();
     let audio = decoders.audio.as_ref();
     let info = MediaInfo {
@@ -642,6 +666,7 @@ fn run(
         container: ContainerDetails::of(&input),
         video_details: video.map(|v| VideoDetails::of(&v.decoder)),
         audio_details: audio.map(|a| AudioDetails::of(&a.decoder)),
+        chapters,
     };
     *shared.info.lock() = Some(info);
 

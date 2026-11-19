@@ -4,8 +4,8 @@ use gpui::App;
 
 use super::dispatch::{with_active, with_active_in_window, with_workspace};
 use super::{
-    About, CastTo, CloseAll, CloseFile, CloseWindow, OpenFiles, OpenSettings, OpenUrl, Quit,
-    SetAspectRatio, SetAudioDevice, SetCrop, ShowOnDisplay,
+    About, CastTo, CloseAll, CloseFile, CloseWindow, GoToChapter, OpenFiles, OpenSettings, OpenUrl,
+    Quit, SetAspectRatio, SetAudioDevice, SetCrop, ShowOnDisplay,
 };
 use crate::hotkeys::*;
 use crate::media::tracks::TrackKind;
@@ -61,6 +61,12 @@ pub(super) fn register(cx: &mut App) {
     });
     cx.on_action(|_: &NextFrame, cx| with_active(cx, |p, cx| p.step_frame(1.0, cx)));
     cx.on_action(|_: &PreviousFrame, cx| with_active(cx, |p, cx| p.step_frame(-1.0, cx)));
+    cx.on_action(|_: &NextChapter, cx| with_active(cx, |p, cx| p.next_chapter(cx)));
+    cx.on_action(|_: &PreviousChapter, cx| with_active(cx, |p, cx| p.previous_chapter(cx)));
+    cx.on_action(|action: &GoToChapter, cx| {
+        let index = action.0;
+        with_active(cx, move |p, cx| p.go_to_chapter(index, cx))
+    });
     cx.on_action(|_: &Restart, cx| with_active(cx, |p, cx| p.restart(cx)));
     cx.on_action(|_: &PreviousFile, cx| with_active(cx, |p, cx| p.open_neighbor(-1, cx)));
     cx.on_action(|_: &NextFile, cx| with_active(cx, |p, cx| p.open_neighbor(1, cx)));

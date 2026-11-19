@@ -67,6 +67,11 @@ pub struct SetAudioDevice(pub Option<AudioDevice>);
 #[action(namespace = plays, no_json)]
 pub struct ShowOnDisplay(pub u32);
 
+/// Play the tile in front from the start of its chapter of this index.
+#[derive(Clone, PartialEq, Debug, gpui::Action)]
+#[action(namespace = plays, no_json)]
+pub struct GoToChapter(pub usize);
+
 /// Cast the tile in front to this device, or play it on this computer.
 #[derive(Clone, PartialEq, Debug, gpui::Action)]
 #[action(namespace = plays, no_json)]

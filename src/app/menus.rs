@@ -3,8 +3,8 @@
 //! engine as outputs come and go or another is picked, Settings when
 //! floating on top changes, the displays as they come and go or the window
 //! in front moves to another, the devices to cast to as they come and go
-//! or the tile in front casts to one, and the tile in front's aspect ratio
-//! and crop as they change or another tile is in front.
+//! or the tile in front casts to one, and the tile in front's aspect ratio,
+//! crop and chapter as they change or another tile is in front.
 
 use std::time::Duration;
 
@@ -12,8 +12,8 @@ use gpui::{App, Global, Menu, MenuItem, SystemMenuType};
 
 use super::dispatch::first_workspace;
 use super::{
-    About, AudioEngine, CastTo, CloseAll, CloseFile, CloseWindow, OpenFiles, OpenSettings, OpenUrl,
-    Quit, SetAspectRatio, SetAudioDevice, SetCrop, ShowOnDisplay,
+    About, AudioEngine, CastTo, CloseAll, CloseFile, CloseWindow, GoToChapter, OpenFiles,
+    OpenSettings, OpenUrl, Quit, SetAspectRatio, SetAudioDevice, SetCrop, ShowOnDisplay,
 };
 use crate::cast::{Casting, Device, Shows};
 use crate::hotkeys::*;
@@ -70,10 +70,16 @@ pub(super) fn set_menus(cx: &mut App) {
                 MenuItem::separator(),
                 MenuItem::action("Next Frame", NextFrame),
                 MenuItem::action("Previous Frame", PreviousFrame),
+                MenuItem::action("Next Chapter", NextChapter),
+                MenuItem::action("Previous Chapter", PreviousChapter),
                 MenuItem::action("Seek Forward", SeekForward),
                 MenuItem::action("Seek Backward", SeekBackward),
                 MenuItem::action("Previous File", PreviousFile),
                 MenuItem::action("Next File", NextFile),
+            ]
+            .into_iter()
+            .chain(chapter_menu(&state.chapters, state.chapter).map(MenuItem::submenu))
+            .chain([
                 MenuItem::separator(),
                 MenuItem::action("Play/Pause All", PlayPauseAll),
                 MenuItem::action("Play All", PlayAll),
@@ -84,7 +90,8 @@ pub(super) fn set_menus(cx: &mut App) {
                 MenuItem::action("Next Frame on All", NextFrameAll),
                 MenuItem::action("Previous Frame on All", PreviousFrameAll),
                 MenuItem::action("Sync All to This Tile", SyncAll),
-            ],
+            ])
+            .collect(),
         },
         Menu {
             name: "Video".into(),
@@ -170,7 +177,8 @@ pub(super) fn watch_settings(cx: &mut App) {
 /// this computer's outputs, Video → Output Device and Audio → Output Device
 /// show the displays, the one the window in front is on, the devices that
 /// show video, the speakers, and the one the tile in front casts to; Video
-/// → Aspect Ratio and Crop check the tile in front's.
+/// → Aspect Ratio and Crop check the tile in front's, and Playback →
+/// Chapters lists its chapters, checking the one it's in.
 #[derive(Clone, Default, PartialEq, Debug)]
 struct MenuState {
     displays: Vec<DisplayInfo>,
@@ -181,6 +189,9 @@ struct MenuState {
     casting: Option<Device>,
     aspect: Option<Ratio>,
     crop: Option<Ratio>,
+    /// The tile in front's chapters, by name, and the one it's in.
+    chapters: Vec<String>,
+    chapter: Option<usize>,
 }
 
 impl Global for MenuState {}
@@ -190,7 +201,7 @@ impl MenuState {
         let window = first_workspace(cx.active_window())
             .or_else(|| first_workspace(cx.window_stack().unwrap_or_default()))
             .or_else(|| first_workspace(cx.windows()));
-        let (front, casting, has_audio, picture) = window
+        let (front, casting, has_audio, picture, (chapters, chapter)) = window
             .and_then(|handle| {
                 handle
                     .update(cx, |workspace, window, cx| {
@@ -199,11 +210,12 @@ impl MenuState {
                             workspace.active_casting(cx),
                             workspace.active_has_audio(cx),
                             workspace.active_adjustments(cx),
+                            workspace.active_chapters(cx),
                         )
                     })
                     .ok()
             })
-            .unwrap_or((None, None, true, Default::default()));
+            .unwrap_or((None, None, true, Default::default(), Default::default()));
         let (devices, speakers) = Casting::devices_for(cx, has_audio)
             .into_iter()
             .partition(|device| device.shows == Shows::Video);
@@ -215,6 +227,8 @@ impl MenuState {
             casting,
             aspect: picture.aspect,
             crop: picture.crop,
+            chapters,
+            chapter,
         }
     }
 }
@@ -246,6 +260,21 @@ fn refresh_outputs(cx: &mut App) {
         cx.set_global(now);
         set_menus(cx);
     }
+}
+
+/// The tile in front's chapters, the one it's in checked; none for a file
+/// without.
+fn chapter_menu(chapters: &[String], chapter: Option<usize>) -> Option<Menu> {
+    (!chapters.is_empty()).then(|| Menu {
+        name: "Chapters".into(),
+        items: chapters
+            .iter()
+            .enumerate()
+            .map(|(index, name)| {
+                MenuItem::action(name.clone(), GoToChapter(index)).checked(chapter == Some(index))
+            })
+            .collect(),
+    })
 }
 
 /// The aspect ratios, the tile in front's checked (as the file is, if it
@@ -409,6 +438,40 @@ mod tests {
             .filter(|(_, checked)| *checked)
             .map(|(name, _)| name)
             .collect()
+    }
+
+    #[test]
+    fn lists_the_chapters_checking_the_one_the_tile_is_in() {
+        assert!(chapter_menu(&[], None).is_none(), "none for a file without");
+        let names = ["Opening".to_owned(), "Middle".to_owned()];
+        let menu = chapter_menu(&names, Some(1)).unwrap();
+        assert_eq!(
+            listed(&menu),
+            [("Opening".into(), false), ("Middle".into(), true)]
+        );
+    }
+
+    #[gpui::test]
+    fn the_chapters_menu_follows_the_tile_in_front(cx: &mut TestAppContext) {
+        let (window, mut cx) = testing::start(cx);
+        window
+            .update(&mut cx, |workspace, _, cx| {
+                workspace.open_paths(vec![testing::fixture("clip-chapters.mkv")], cx)
+            })
+            .unwrap();
+        let known = testing::wait_until(&mut cx, |cx| {
+            let state = TestAppContext::update(cx, MenuState::now);
+            !state.chapters.is_empty()
+        });
+        assert!(known, "its chapters are known");
+        let state = TestAppContext::update(&cx, MenuState::now);
+        assert_eq!(state.chapters, ["Opening", "Middle", "End"]);
+        assert_eq!(state.chapter, Some(0));
+
+        cx.dispatch_action(GoToChapter(2));
+        cx.run_until_parked();
+        let shown = cx.update(|_, cx| cx.try_global::<MenuState>().and_then(|state| state.chapter));
+        assert_eq!(shown, Some(2), "at once");
     }
 
     #[test]

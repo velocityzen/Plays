@@ -19,6 +19,8 @@ gpui::actions!(
         SeekBackward,
         NextFrame,
         PreviousFrame,
+        NextChapter,
+        PreviousChapter,
         Restart,
         PreviousFile,
         NextFile,
@@ -82,6 +84,8 @@ pub enum Command {
     SeekBackward,
     NextFrame,
     PreviousFrame,
+    NextChapter,
+    PreviousChapter,
     Restart,
     PreviousFile,
     NextFile,
@@ -163,12 +167,14 @@ impl Group {
 }
 
 impl Command {
-    pub const ALL: [Self; 50] = [
+    pub const ALL: [Self; 52] = [
         Self::PlayPause,
         Self::SeekForward,
         Self::SeekBackward,
         Self::NextFrame,
         Self::PreviousFrame,
+        Self::NextChapter,
+        Self::PreviousChapter,
         Self::Restart,
         Self::PreviousFile,
         Self::NextFile,
@@ -224,6 +230,8 @@ impl Command {
             Self::SeekBackward => "seek_backward",
             Self::NextFrame => "next_frame",
             Self::PreviousFrame => "previous_frame",
+            Self::NextChapter => "next_chapter",
+            Self::PreviousChapter => "previous_chapter",
             Self::Restart => "restart",
             Self::PreviousFile => "previous_file",
             Self::NextFile => "next_file",
@@ -283,6 +291,8 @@ impl Command {
             Self::SeekBackward => "Seek backward",
             Self::NextFrame => "Next frame",
             Self::PreviousFrame => "Previous frame",
+            Self::NextChapter => "Next chapter",
+            Self::PreviousChapter => "Previous chapter",
             Self::Restart => "Restart",
             Self::PreviousFile => "Previous file in its folder",
             Self::NextFile => "Next file in its folder",
@@ -344,6 +354,8 @@ impl Command {
             | Self::SeekBackward
             | Self::NextFrame
             | Self::PreviousFrame
+            | Self::NextChapter
+            | Self::PreviousChapter
             | Self::Restart
             | Self::PreviousFile
             | Self::NextFile
@@ -399,6 +411,8 @@ impl Command {
             Self::SeekBackward => Box::new(SeekBackward),
             Self::NextFrame => Box::new(NextFrame),
             Self::PreviousFrame => Box::new(PreviousFrame),
+            Self::NextChapter => Box::new(NextChapter),
+            Self::PreviousChapter => Box::new(PreviousChapter),
             Self::Restart => Box::new(Restart),
             Self::PreviousFile => Box::new(PreviousFile),
             Self::NextFile => Box::new(NextFile),
@@ -457,6 +471,8 @@ impl Command {
             Self::SeekBackward => &["left"],
             Self::NextFrame => &["alt-right", ".", ">"],
             Self::PreviousFrame => &["alt-left", ",", "<"],
+            Self::NextChapter => &["pagedown"],
+            Self::PreviousChapter => &["pageup"],
             Self::Restart => &["home"],
             Self::PreviousFile => &["secondary-left"],
             Self::NextFile => &["secondary-right"],
