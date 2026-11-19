@@ -1,0 +1,20 @@
+[package]
+name = "stream-server"
+version = "0.1.0"
+edition = "2024"
+description = "Serves media on the network in a form a TV or speaker plays: as is, repackaged or re-encoded, as HLS or an MPEG-TS stream"
+license = "MIT"
+publish = false
+
+[dependencies]
+# The same FFmpeg bindings Plays uses, linked to the same static FFmpeg.
+ffmpeg-next = { version = "9.1", default-features = false, features = [
+    "codec",
+    "format",
+    "software-resampling",
+    "software-scaling",
+] }
+log = "0.4"
+
+[build-dependencies]
+ffmpeg-link = { path = "../ffmpeg-link" }

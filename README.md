@@ -119,11 +119,17 @@ bindings are generated with bindgen).
 
 FFmpeg is built into the app. `script/build-ffmpeg` builds it once from
 source, which takes a few minutes: FFmpeg 9.0.2 with dav1d for AV1, as
-static libraries that only decode, under the LGPL. It installs them in
-`build/ffmpeg`, where `.cargo/config.toml` points the build, and builds them
-again only when the script changes. It needs `pkg-config`, `ninja` and
-`python3` (meson, which builds dav1d, is downloaded with the sources), and
-`nasm` on x86_64.
+static libraries under the LGPL. They decode, and have what the stream
+server needs besides: the MP4 and MPEG-TS muxers, the AAC, AC-3 and E-AC-3
+encoders, and the hardware video encoders (no software one). It installs
+them in `build/ffmpeg`, where `.cargo/config.toml` points the build, and
+builds them again only when the script changes. It needs `pkg-config`,
+`ninja` and `python3` (meson, which builds dav1d, is downloaded with the
+sources), and `nasm` on x86_64.
+
+The repository is a Cargo workspace: Plays, and beside it in `crates/` the
+crates it is built from, each built and tested on its own. Cargo commands
+run at the top act on Plays alone; `--workspace` takes in the crates too.
 
 ### macOS
 
@@ -183,7 +189,10 @@ cargo run --release -- path/to/video.mp4 path/to/song.mp3 https://example.com/li
 FFmpeg is linked in, but uses the system's OpenSSL for https, and for
 hardware decoding libva (VA-API) and libvdpau, which the script builds it
 with when their development packages are installed (it says which it
-leaves out). NVDEC needs only NVIDIA's driver, at run time.
+leaves out). NVDEC needs only NVIDIA's driver, at run time. The stream
+server's video encoders are VA-API's, with libva, and NVENC, with NVIDIA's
+codec headers (`libffmpeg-nvenc-dev`) at build time and its driver at run
+time.
 
 gpui renders with Vulkan on Linux, so a working Vulkan driver is required.
 For hardware decoding, install your GPU's VA-API driver (`intel-media-va-driver`
@@ -479,10 +488,12 @@ last window quits.
   a slider and a meter; menu rows, and a popover that opens a menu from a
   button; a badge; a flat card; and a floating panel to put anything in,
   a menu's or a note's over the picture.
-- `build.rs`: links the static FFmpeg with what it needs in turn, read
-  from its pkg-config files (dav1d, zlib, iconv, and macOS's frameworks or
-  Linux's OpenSSL and hardware decoding libraries), and the C compiler's
-  runtime library they call into.
+- `build.rs`, with `crates/ffmpeg-link`: links the static FFmpeg with what
+  it needs in turn, read from its pkg-config files (dav1d, zlib, iconv, and
+  macOS's frameworks or Linux's OpenSSL and hardware decoding libraries),
+  and the C compiler's runtime library they call into. Linking is a crate
+  of its own because a build script's link arguments reach only its own
+  package, and the stream server links FFmpeg too.
 - `src/ui/theme.rs`: colors, every size, radius and duration the UI uses,
   and named text styles (`text_display`, `text_title`, `text_heading`,
   `text_label`).
@@ -497,6 +508,63 @@ in case the GPU is still reading them, then released (images with
 Playing four 4K H.264 files at once on an Apple silicon Mac takes about 20% of
 one core with zero-copy, against about 100% when hardware frames are copied
 back and converted on the CPU.
+
+### The stream server
+
+`crates/stream-server` serves media to TVs and speakers over HTTP: a
+protocol's crate tells a device to play a URL, and this crate makes that
+URL. It knows nothing of Plays or gpui, so it is tested on its own.
+
+```
+ file/URL + what the device plays
+        │
+      plan ──▶ plays as is ───────────────▶ the file by byte ranges, or the stream's own URL
+        └────▶ else: each track copied ───▶ HLS segments (MPEG-TS or fragmented MP4),
+               or re-encoded                or an MPEG-TS stream, made as they are asked for
+```
+
+- `profile.rs`: what a device plays, as its protocol's crate knows it: the
+  containers it takes as files, HLS (with MPEG-TS or fragmented MP4
+  segments) or a progressive MPEG-TS stream, and the codecs, size, bit
+  depth, HDR kinds and channels it decodes.
+- `media.rs`: opening a file or stream and reading what is in it.
+- `plan.rs`: the least work that plays. The file as it is, or a stream's
+  own URL, when the device plays it with the default tracks; else HLS, or
+  for a DLNA TV without it an MPEG-TS stream, each track copied when the
+  device decodes it and re-encoded when it doesn't. Video is re-encoded to
+  H.264 or HEVC (10-bit and HDR kept in HEVC where the device shows them),
+  no bigger than the device shows; sound to AAC, AC-3 or E-AC-3.
+- `encode.rs`: the hardware video encoders only, VideoToolbox on macOS and
+  NVENC or VA-API on Linux, each tried once and remembered; FFmpeg's own
+  sound encoders, through a resampler and a FIFO of whole frames.
+- `segments.rs`: where a file's segments start. Copied video can be cut
+  only at its own keyframes, read from the file's index (or, with none, by
+  reading the file); re-encoded video and sound alone are cut every six
+  seconds, with a keyframe made there.
+- `mux.rs`: fragmented MP4 or MPEG-TS written in memory, cut into segments
+  where told. Every timestamp is moved ten seconds later, so none is
+  negative and segments made by different jobs line up.
+- `job.rs`: making them. A job reads from where a segment starts, copies or
+  re-encodes, and cuts where the leading stream (video, else sound) reaches
+  the next segment's start, holding the other stream's packets past it
+  until then. Jobs run three segments ahead of the device and wait; asking
+  for one far from the job (a seek) starts another there, and a segment is
+  cut the same way whichever job makes it. Packets without a length get
+  one from the next. A live stream has one job, keeping the last ten
+  segments and listing six; a progressive stream is made for each request,
+  from the time it asks for.
+- `subtitles.rs`: a text track of the media, or a subtitle file (from the
+  encoding it is said to be in), read once and written as WebVTT (whole, or for each HLS
+  segment, mapped to the media's timestamps) or SRT, keeping italics and
+  bold.
+- `playlist.rs`: the master playlist (bandwidth, size, frame rate,
+  subtitles, and codec names read from each stream's parameter sets) and
+  the media and subtitle playlists.
+- `http.rs`, `server.rs`: a small HTTP/1.1 server with a thread for each
+  connection, kept open between requests: GET, HEAD and OPTIONS, byte
+  ranges, CORS for Chromecast, and DLNA's headers (content features, time
+  seeks, Samsung's subtitles header). Each cast is served under a random
+  token, at the address the device reaches this computer at.
 
 ## Tests
 
@@ -609,6 +677,25 @@ the display the window in front is on, and picking a display puts the
 window full screen, leaving full screen first when it goes to another.
 Each test has been checked to fail when the behavior it covers is broken.
 
+`cargo test --workspace` tests the crates in `crates/` too. The stream
+server's tests serve the fixtures over HTTP, as a device fetches them, and
+read what comes back with FFmpeg: the plan for each fixture; a file as it
+is, with byte ranges, HEAD, CORS, DLNA's headers and nothing served but
+what was cast; HLS in both kinds of segments, each starting with a keyframe
+(and MPEG-TS ones with their tables) at its time, with every frame and all
+the sound once; a segment asked for first, made by a job starting there,
+the same as one made from the start; sound re-encoded to AC-3; video
+re-encoded smaller on VideoToolbox, in both kinds of segments, each
+holding only the sound that plays during it though the encoder hands
+frames back late (macOS; with no hardware encoder, as in the Linux test
+container, planning it must fail); a progressive stream from a DLNA time
+seek; a live stream; and subtitles from a file and from a track in
+`clip-subs.mkv`, as WebVTT, SRT and an HLS rendition. Unit tests check how
+far ahead a job runs, where it restarts and what it forgets, packets given
+their lengths, byte ranges, codec names from parameter sets, playlists and
+subtitle text. Each has been checked to fail when what it covers is
+broken.
+
 ### Smoke runs
 
 Headless windows have no native window behind them, so a bug between
@@ -693,6 +780,13 @@ size, makes `first-open` fail.
 - Windows can't float on top under Wayland, which has no way for an app to
   ask for it; on X11 it takes a window manager that keeps windows above
   (`_NET_WM_STATE_ABOVE`), as most do.
+- The stream server re-encodes video only on a hardware encoder, so a
+  computer without one (Linux without NVENC or VA-API) can't cast video a
+  device doesn't play as it is. Video decodes in software for it. HDR
+  re-encoded for a device without HDR isn't tone mapped, and re-encoded
+  HDR keeps no mastering or light level metadata. Picture subtitles (PGS,
+  DVD) aren't served, and text ones lose their placement; a track in the
+  media is read through the whole file first. Plays doesn't cast yet.
 - Plays can't find or connect to AirPlay receivers itself: macOS keeps
   that to its own picker and to AVPlayer, which Plays doesn't play
   through. Connect one from Control Center first. Mirrored, an AirPlay

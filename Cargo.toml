@@ -10,6 +10,11 @@ publish = false
 name = "plays"
 path = "src/main.rs"
 
+# Plays and the crates beside it (`crates/`). Commands run here act on
+# Plays alone; `--workspace` takes in the crates too.
+[workspace]
+members = [".", "crates/*"]
+
 [dependencies]
 anyhow = "1"
 cpal = "0.18"
@@ -53,6 +58,9 @@ ashpd = { version = "0.11", default-features = false, features = ["async-std"] }
 # Scripted runs of the real app, for what headless tests can't reach:
 # `script/smoke` (see README). Its settings are the defaults, never saved.
 smoke = []
+
+[build-dependencies]
+ffmpeg-link = { path = "crates/ffmpeg-link" }
 
 # gpui's test platform, for `#[gpui::test]`s: headless windows, simulated
 # input and a deterministic executor. Only in test builds.

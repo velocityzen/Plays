@@ -7,6 +7,7 @@
 # clip-ip.mkv    the same picture with no B-frames, no sound
 # tone.m4a       1 s of 440 Hz, AAC, no picture
 # clip.srt       two cues, found beside clip.mp4
+# clip-subs.mkv  clip.mp4 with clip.srt in it, as an English track
 set -euo pipefail
 
 cd "$(dirname "$0")/../tests/fixtures"
@@ -31,5 +32,8 @@ First
 00:00:01,200 --> 00:00:01,900
 Second
 SRT
+"${ffmpeg[@]}" -i clip.mp4 -i clip.srt -map 0 -map 1 -c copy -c:s srt \
+    -metadata:s:s:0 language=eng -metadata:s:s:0 title=English \
+    -map_metadata -1 clip-subs.mkv
 
 ls -l

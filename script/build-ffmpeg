@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # Build the FFmpeg that Plays links into itself, so the app needs no FFmpeg
-# installed: static libraries, decoding only, under the LGPL (no
-# --enable-gpl), with dav1d for AV1. They go in build/ffmpeg, where
+# installed: static libraries under the LGPL (no --enable-gpl), with dav1d
+# for AV1. Decoding, plus what the stream server (crates/stream-server)
+# needs to repackage and re-encode for TVs: the MP4 and MPEG-TS muxers, the
+# AAC, AC-3 and E-AC-3 encoders, and the hardware video encoders (no
+# software one). They go in build/ffmpeg, where
 # .cargo/config.toml points the Rust build, and are built again only when
 # this script changes (or with --force). Sources are checked against the
 # checksums below.
@@ -93,7 +96,8 @@ Darwin)
     # For the oldest macOS the app runs on, as the rest of it is.
     MACOSX_DEPLOYMENT_TARGET=$(plutil -extract LSMinimumSystemVersion raw resources/macos/Info.plist)
     export MACOSX_DEPLOYMENT_TARGET
-    platform=(--enable-videotoolbox --enable-audiotoolbox --enable-securetransport --enable-bzlib)
+    platform=(--enable-videotoolbox --enable-audiotoolbox --enable-securetransport --enable-bzlib
+        --enable-encoder=h264_videotoolbox,hevc_videotoolbox)
     ;;
 *)
     if ! pkg-config --exists openssl; then
@@ -103,12 +107,12 @@ Darwin)
     platform=(--enable-openssl)
     # Asking for one whose library is missing is an error, so look first.
     if pkg-config --exists libva libva-drm; then
-        platform+=(--enable-vaapi)
+        platform+=(--enable-vaapi --enable-encoder=h264_vaapi,hevc_vaapi)
     else
         echo "No VA-API: libva's development files aren't installed."
     fi
     if pkg-config --exists ffnvcodec; then
-        platform+=(--enable-ffnvcodec --enable-nvdec)
+        platform+=(--enable-ffnvcodec --enable-nvdec --enable-nvenc --enable-encoder=h264_nvenc,hevc_nvenc)
     else
         echo "No NVDEC: nv-codec-headers aren't installed."
     fi
@@ -151,7 +155,9 @@ PKG_CONFIG_PATH="$prefix/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" ./c
     --disable-avdevice \
     --disable-avfilter \
     --disable-encoders \
+    --enable-encoder=aac,ac3,eac3 \
     --disable-muxers \
+    --enable-muxer=mp4,mpegts \
     --enable-libdav1d \
     --pkg-config-flags=--static \
     "${platform[@]}"
