@@ -11,7 +11,6 @@ mod menus;
 #[cfg(feature = "smoke")]
 pub mod smoke;
 
-use std::sync::Arc;
 use std::time::Duration;
 
 use futures::StreamExt as _;
@@ -21,7 +20,7 @@ use gpui::{App, actions};
 pub use audio::{AudioEngine, Route};
 pub use awake::Awake;
 
-use crate::cast::{self, Casting, Device, Target};
+use crate::cast::{self, Casting, Device, Protocol};
 use crate::media::{Source, picture};
 use crate::settings::{AudioDevice, Settings};
 use crate::ui::framing::Ratio;
@@ -100,19 +99,14 @@ pub fn run(cx: &mut App, sources: Vec<Source>, opened: UnboundedReceiver<Vec<Str
 }
 
 /// What every window needs: `settings`, the audio engine, which `audio`
-/// starts, casting to the devices of the protocols `targets` start, the UI
-/// font and colors, and the actions and their keys.
-fn set_up(
-    cx: &mut App,
-    settings: Settings,
-    audio: fn(&mut App),
-    targets: fn() -> Vec<Arc<dyn Target>>,
-) {
+/// starts, casting with `protocols` (those Settings have on), the UI font
+/// and colors, and the actions and their keys.
+fn set_up(cx: &mut App, settings: Settings, audio: fn(&mut App), protocols: fn() -> Vec<Protocol>) {
     let [sdr_gamma, hdr_gamma] = settings.gamma();
     picture::set_gamma(sdr_gamma, hdr_gamma);
     cx.set_global(settings);
     audio(cx);
-    cx.set_global(Casting::new(targets()));
+    cx.set_global(Casting::new(protocols()));
     Casting::watch(cx);
     let font = pick_ui_font(cx);
     cx.set_global(UiFont(font));

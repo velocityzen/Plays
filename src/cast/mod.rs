@@ -1,8 +1,9 @@
 //! Casting a tile to a TV or a speaker. Each protocol is a `Target`, which
 //! finds devices and connects to one for a `Session` that plays what the
-//! stream server serves. `Casting` keeps the targets, the devices they
-//! have found, and the stream server, started for the first cast; a
-//! tile's `Link` drives its device on a thread of its own.
+//! stream server serves. `Casting` keeps the protocols, looking with those
+//! Settings have on, the devices they have found, and the stream server,
+//! started for the first cast; a tile's `Link` drives its device on a
+//! thread of its own.
 
 pub mod chromecast;
 pub mod dlna;
@@ -15,33 +16,98 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
 
-use gpui::{App, Global};
+use gpui::{App, BorrowAppContext, Global};
 use parking_lot::Mutex;
 use stream_server::Server;
 
 pub use link::{Link, Phase, Request, SubtitleChoice};
 pub use target::{Device, Error, Shows, Target};
 
+use crate::settings::Settings;
+
 /// How often the targets are asked what they have found.
 const DEVICES_POLL: Duration = Duration::from_secs(1);
 
-/// The protocols Plays casts with, each looking for its devices from now
-/// on. One that can't look is left out.
-pub fn protocols() -> Vec<Arc<dyn Target>> {
-    let mut targets: Vec<Arc<dyn Target>> = Vec::new();
-    match chromecast::ChromecastTarget::start() {
-        Ok(target) => targets.push(Arc::new(target)),
-        Err(err) => log::warn!("can't look for Cast devices: {err}"),
+/// A protocol Plays casts with: its name, what it finds, and how it starts
+/// looking for them.
+pub struct Protocol {
+    /// Its devices' `kind`, and what Settings call it.
+    pub kind: &'static str,
+    /// What it finds, as Settings say.
+    pub finds: &'static str,
+    start: Box<dyn Fn() -> Result<Arc<dyn Target>, String>>,
+}
+
+impl Protocol {
+    pub fn new(
+        kind: &'static str,
+        finds: &'static str,
+        start: impl Fn() -> Result<Arc<dyn Target>, String> + 'static,
+    ) -> Self {
+        Self {
+            kind,
+            finds,
+            start: Box::new(start),
+        }
     }
-    match dlna::DlnaTarget::start() {
-        Ok(target) => targets.push(Arc::new(target)),
-        Err(err) => log::warn!("can't look for DLNA renderers: {err}"),
+}
+
+/// The protocols Plays casts with.
+pub fn protocols() -> Vec<Protocol> {
+    vec![
+        Protocol::new(
+            chromecast::KIND,
+            "Chromecasts, Google TVs and Nest speakers",
+            || {
+                let target = chromecast::ChromecastTarget::start()
+                    .map_err(|err| format!("can't look for Cast devices: {err}"))?;
+                Ok(Arc::new(target))
+            },
+        ),
+        Protocol::new(
+            dlna::KIND,
+            "TVs and speakers that play from the network",
+            || {
+                let target = dlna::DlnaTarget::start()
+                    .map_err(|err| format!("can't look for DLNA renderers: {err}"))?;
+                Ok(Arc::new(target))
+            },
+        ),
+    ]
+}
+
+/// Whether a protocol is looking for devices.
+#[derive(Clone, PartialEq, Debug)]
+pub enum Looking {
+    /// Turned off in Settings.
+    Off,
+    On,
+    /// On, but it couldn't start, for this reason.
+    Failed(String),
+}
+
+/// A protocol, and its target while it's on: looking, or why it can't.
+struct Kept {
+    protocol: Protocol,
+    target: Option<Result<Arc<dyn Target>, String>>,
+}
+
+impl Kept {
+    fn looking(&self) -> Looking {
+        match &self.target {
+            None => Looking::Off,
+            Some(Ok(_)) => Looking::On,
+            Some(Err(why)) => Looking::Failed(why.clone()),
+        }
     }
-    targets
+
+    fn target(&self) -> Option<&Arc<dyn Target>> {
+        self.target.as_ref()?.as_ref().ok()
+    }
 }
 
 pub struct Casting {
-    targets: Vec<Arc<dyn Target>>,
+    protocols: Vec<Kept>,
     /// What the targets had found when last asked, by name.
     devices: Vec<Device>,
     /// Where the stream server listens.
@@ -52,31 +118,93 @@ pub struct Casting {
 impl Global for Casting {}
 
 impl Casting {
-    /// The stream server listens on every interface, as devices are
-    /// elsewhere on the network.
-    pub fn new(targets: Vec<Arc<dyn Target>>) -> Self {
-        Self::serving_on(
-            targets,
-            SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0),
-        )
+    /// None of `protocols` looking yet, until `look_as_set`. The stream
+    /// server listens on every interface, as devices are elsewhere on the
+    /// network.
+    pub fn new(protocols: Vec<Protocol>) -> Self {
+        let kept = protocols
+            .into_iter()
+            .map(|protocol| Kept {
+                protocol,
+                target: None,
+            })
+            .collect();
+        Self::serving_on(kept, SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0))
     }
 
-    /// For tests: serving this computer only, where fake devices are, so
-    /// no firewall asks about it.
+    /// For tests: these targets, looking already, each a protocol of its
+    /// own which starts it again when turned on; serving this computer
+    /// only, where fake devices are, so no firewall asks about it.
     #[cfg(test)]
     pub fn local(targets: Vec<Arc<dyn Target>>) -> Self {
-        Self::serving_on(targets, SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0))
+        let kept = targets
+            .into_iter()
+            .map(|target| {
+                let again = Arc::clone(&target);
+                Kept {
+                    protocol: Protocol::new(target.kind(), "fake devices", move || {
+                        Ok(Arc::clone(&again))
+                    }),
+                    target: Some(Ok(target)),
+                }
+            })
+            .collect();
+        Self::serving_on(kept, SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0))
     }
 
-    fn serving_on(targets: Vec<Arc<dyn Target>>, address: SocketAddr) -> Self {
+    fn serving_on(protocols: Vec<Kept>, address: SocketAddr) -> Self {
         let mut casting = Self {
-            targets,
+            protocols,
             devices: Vec::new(),
             address,
             server: Mutex::default(),
         };
         casting.devices = casting.found();
         casting
+    }
+
+    /// Start the protocols Settings have on looking, and stop those off,
+    /// their devices no longer found. A cast to one goes on; one that
+    /// couldn't start tries again when turned off and on.
+    pub fn look_as_set(cx: &mut App) {
+        let set = &cx.global::<Settings>().casting;
+        let Some(casting) = cx.try_global::<Self>() else {
+            return;
+        };
+        if casting
+            .protocols
+            .iter()
+            .all(|kept| kept.target.is_some() == set.looks_with(kept.protocol.kind))
+        {
+            return;
+        }
+        let set = set.clone();
+        cx.update_global::<Self, _>(|casting, _| {
+            for kept in &mut casting.protocols {
+                let on = set.looks_with(kept.protocol.kind);
+                if !on {
+                    kept.target = None;
+                } else if kept.target.is_none() {
+                    let started = (kept.protocol.start)();
+                    if let Err(why) = &started {
+                        log::warn!("{why}");
+                    }
+                    kept.target = Some(started);
+                }
+            }
+            casting.devices = casting.found();
+        });
+    }
+
+    /// Each protocol, and whether it's looking.
+    pub fn protocols(cx: &App) -> Vec<(&'static str, &'static str, Looking)> {
+        cx.try_global::<Self>().map_or_else(Vec::new, |casting| {
+            casting
+                .protocols
+                .iter()
+                .map(|kept| (kept.protocol.kind, kept.protocol.finds, kept.looking()))
+                .collect()
+        })
     }
 
     /// The devices found, by name.
@@ -97,8 +225,9 @@ impl Casting {
 
     fn found(&self) -> Vec<Device> {
         let mut devices: Vec<Device> = self
-            .targets
+            .protocols
             .iter()
+            .filter_map(Kept::target)
             .flat_map(|target| target.devices())
             .collect();
         devices.sort_by_cached_key(|device| (device.name.to_lowercase(), device.kind));
@@ -117,8 +246,11 @@ impl Casting {
         }
     }
 
-    /// Keep the devices found up to date.
+    /// Look with the protocols Settings have on, as they change, and keep
+    /// the devices found up to date.
     pub fn watch(cx: &mut App) {
+        Self::look_as_set(cx);
+        cx.observe_global::<Settings>(Self::look_as_set).detach();
         cx.spawn(async move |cx| {
             loop {
                 cx.background_executor().timer(DEVICES_POLL).await;
@@ -137,8 +269,9 @@ impl Casting {
             .try_global::<Self>()
             .ok_or_else(|| "casting isn't set up".to_owned())?;
         let target = casting
-            .targets
+            .protocols
             .iter()
+            .filter_map(Kept::target)
             .find(|target| target.kind() == device.kind)
             .cloned()
             .ok_or_else(|| format!("{} devices can't be reached", device.kind))?;

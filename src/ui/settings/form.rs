@@ -46,7 +46,7 @@ pub(super) fn group(
 }
 
 pub(super) fn row(
-    label: &'static str,
+    label: impl Into<SharedString>,
     hint: Option<SharedString>,
     theme: &Theme,
     control: impl IntoElement,
@@ -64,7 +64,7 @@ pub(super) fn row(
                 .flex_col()
                 .gap_0p5()
                 .min_w_0()
-                .child(div().text_sm().child(label))
+                .child(div().text_sm().child(label.into()))
                 .when_some(hint, |this, hint| {
                     this.child(div().text_xs().text_color(theme.text_muted).child(hint))
                 }),

@@ -505,6 +505,7 @@ pub mod settings {
     pub const AUDIO_COLOR: u32 = 0xff375f;
     pub const VIDEO_COLOR: u32 = 0x0a84ff;
     pub const SUBTITLES_COLOR: u32 = 0xff9f0a;
+    pub const CASTING_COLOR: u32 = 0x00c7be;
     pub const SCREENSHOTS_COLOR: u32 = 0xbf5af2;
     pub const HOTKEYS_COLOR: u32 = 0x5e5ce6;
     pub const APPEARANCE_COLOR: u32 = 0x8e8e93;

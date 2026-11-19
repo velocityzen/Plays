@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fs;
 use std::ops::RangeInclusive;
 use std::path::PathBuf;
@@ -307,6 +308,21 @@ impl Default for AudioOutputSettings {
     }
 }
 
+/// Which protocols look for devices to cast to.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct CastingSettings {
+    /// Each protocol turned on or off, by its name ("Chromecast", "DLNA").
+    /// One left out is on.
+    pub look_with: BTreeMap<String, bool>,
+}
+
+impl CastingSettings {
+    pub fn looks_with(&self, protocol: &str) -> bool {
+        self.look_with.get(protocol).copied().unwrap_or(true)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
@@ -314,6 +330,7 @@ pub struct Settings {
     /// Volume applied on top of every player's own volume.
     pub master_volume: f32,
     pub audio_output: AudioOutputSettings,
+    pub casting: CastingSettings,
     /// Volume new players start at.
     pub default_volume: f32,
     pub autoplay: bool,
@@ -346,6 +363,7 @@ impl Default for Settings {
             theme: ThemeMode::System,
             master_volume: 1.0,
             audio_output: AudioOutputSettings::default(),
+            casting: CastingSettings::default(),
             default_volume: 0.8,
             autoplay: true,
             loop_by_default: false,
@@ -510,6 +528,16 @@ mod tests {
             ("coreaudio:abc", "DAC")
         );
         assert!(settings.audio_output.wait_for_device);
+    }
+
+    #[test]
+    fn every_protocol_looks_but_those_turned_off() {
+        let settings = Settings::default();
+        assert!(settings.casting.looks_with("DLNA"));
+        let settings: Settings =
+            serde_json::from_str(r#"{ "casting": { "look_with": { "DLNA": false } } }"#).unwrap();
+        assert!(!settings.casting.looks_with("DLNA"));
+        assert!(settings.casting.looks_with("Chromecast"));
     }
 
     #[test]

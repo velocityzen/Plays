@@ -4,6 +4,7 @@
 mod about;
 mod appearance;
 mod audio;
+mod casting;
 mod file;
 mod form;
 mod hotkeys;
@@ -21,7 +22,8 @@ use std::rc::Rc;
 use gpui::prelude::*;
 use gpui::{
     AnyElement, App, Bounds, Context, FocusHandle, Global, KeyDownEvent, SharedString,
-    TitlebarOptions, Window, WindowBounds, WindowHandle, WindowOptions, div, rgb, white,
+    Subscription, TitlebarOptions, Window, WindowBounds, WindowHandle, WindowOptions, div, rgb,
+    white,
 };
 
 use super::components::Icon;
@@ -32,6 +34,7 @@ use super::theme::settings::{
 use super::theme::text::TextStyle;
 use super::theme::{Theme, radius};
 use super::workspace::float_with_players;
+use crate::cast::Casting;
 use crate::settings::Settings;
 
 /// A pane of the Settings window, and its entry in the sidebar.
@@ -74,11 +77,12 @@ trait Pane {
 }
 
 /// The panes, in the sidebar's order.
-const PANES: [&dyn Pane; 8] = [
+const PANES: [&dyn Pane; 9] = [
     &playback::PlaybackPane,
     &audio::AudioPane,
     &video::VideoPane,
     &subtitles::SubtitlesPane,
+    &casting::CastingPane,
     &screenshots::ScreenshotsPane,
     &hotkeys::HotkeysPane,
     &appearance::AppearancePane,
@@ -99,6 +103,8 @@ pub struct SettingsView {
     recording: hotkeys::Recording,
     /// The credit in About whose license shows.
     license: Option<SharedString>,
+    /// Shows the protocols and devices in Casting as they change.
+    _casting: Subscription,
 }
 
 /// The Settings window, once it has been opened.
@@ -155,6 +161,7 @@ impl SettingsView {
             file_menu: false,
             recording: hotkeys::Recording::default(),
             license: None,
+            _casting: cx.observe_global::<Casting>(|_, cx| cx.notify()),
         }
     }
 
@@ -186,8 +193,10 @@ impl SettingsView {
             .border_color(theme.border)
             .children(PANES.iter().enumerate().map(|(index, pane)| {
                 let selected = index == self.pane;
+                let name = pane.name();
                 div()
-                    .id(pane.name())
+                    .id(name)
+                    .debug_selector(move || format!("pane-{name}"))
                     .flex()
                     .items_center()
                     .gap_2()

@@ -12,10 +12,11 @@ use gpui::{
 };
 
 use super::open;
-use crate::cast::fake::{Call, FakeTarget};
+use crate::cast::fake::{Call, FakeTarget, KIND};
 use crate::cast::target::{Load, State};
 use crate::cast::{Casting, Device, Shows};
 use crate::media::tracks::TrackKind;
+use crate::settings::Settings;
 use crate::ui::player::PlayerView;
 use crate::ui::testing::{self, OPEN_WAIT, click, find, press, shows};
 use crate::ui::theme::motion::CAST_POLL;
@@ -266,6 +267,32 @@ fn a_device_going_away_ends_the_cast(cx: &mut TestAppContext) {
     assert!(
         !shows(&mut cx, "cast"),
         "with no devices left, there is nothing to cast to"
+    );
+}
+
+#[gpui::test]
+fn turning_its_protocol_off_leaves_a_cast_going(cx: &mut TestAppContext) {
+    let (window, mut cx, fake, tv) = start(cx, "clip.mp4", false);
+    let view = tile(window, &cx);
+    cast(window, &mut cx, &fake, &tv);
+
+    cx.update(|_, cx| {
+        Settings::update(cx, false, |s| {
+            s.casting.look_with.insert(KIND.to_owned(), false);
+        })
+    });
+    cx.run_until_parked();
+    assert!(
+        cx.update(|_, cx| Casting::devices(cx).is_empty()),
+        "nothing more is found"
+    );
+    press(&mut cx, "space");
+    wait(&mut cx, "the device to play", |_| {
+        calls(&fake, &tv).contains(&Call::Play)
+    });
+    assert_eq!(
+        view.read_with(&cx, |view, _| view.casting().cloned()),
+        Some(tv)
     );
 }
 

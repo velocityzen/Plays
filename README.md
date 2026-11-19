@@ -89,7 +89,9 @@ GPU-accelerated UI framework.
   tile, or the device going away ends the cast, and the tile goes on from
   where the device was. Quitting stops the devices cast to. Chromecasts,
   Google TVs and Nest speakers, and DLNA TVs and speakers, are found;
-  AirPlay isn't wired in yet.
+  AirPlay isn't wired in yet. Settings → Casting turns each protocol on
+  or off and lists the devices found, with what each shows: video, or
+  sound only.
 - While a tile plays, its header and controls fade when the mouse leaves
   it, or rests on it for a couple of seconds; the pointer hides then too,
   until the mouse moves. Resting on the header or controls keeps them.
@@ -125,7 +127,8 @@ GPU-accelerated UI framework.
   every open video as you drag), decode resolution limit, hardware decoding,
   subtitle style (font, weight, size, color, outline or shadow and its color,
   a background box, on the picture or anywhere in the tile, height), with a
-  live preview, where screenshots go and what they are like, the keys for
+  live preview, the protocols that look for devices to cast to and what
+  they found, where screenshots go and what they are like, the keys for
   every shortcut, grid columns, controls
   visibility, file names. Saved as JSON in the user config dir; Settings
   File, at the foot of the sidebar, opens its folder, exports a copy,
@@ -516,9 +519,12 @@ the TV's own: where it was when cast, the TV stays where it was.
   name, what they show, video or sound only, and an address) and connects
   to one for a `Session`: what it plays, for the stream server, then load,
   play, pause, seek, volume, subtitles, stop and status. Each protocol's
-  crate is adapted to these. `Casting`, a global, keeps the targets, asks
-  them every second what they have found, and starts the stream server
-  for the first cast, on every interface. A tile's `Link` runs its
+  crate is adapted to these. `Casting`, a global, keeps the protocols,
+  starting each one Settings have on looking (its target) and dropping
+  it when turned off, which stops it looking; a cast to one of its
+  devices goes on, its link holding the target. It asks the targets every
+  second what they have found, and starts the stream server for the first
+  cast, on every interface. A tile's `Link` runs its
   session on a thread of its own, as every call may wait on the network:
   it connects, has the stream server serve the file with the tracks the
   tile plays, and loads it at the tile's position; then it does what the
@@ -569,7 +575,7 @@ the TV's own: where it was when cast, the TV stays where it was.
   frames are scaled to the window's pixels on the GPU and the subtitles
   drawn into them (`burn_in`), in the frame's own signal and samples.
 - `src/ui/settings/`: the Settings window. Each pane (Playback, Audio,
-  Video, Subtitles, Screenshots, Hotkeys, Appearance, About) is a file of its own with its
+  Video, Subtitles, Casting, Screenshots, Hotkeys, Appearance, About) is a file of its own with its
   name and icon for the sidebar; `form` has the cards, rows and sliders they
   are made of, and `file` the settings file's menu at the sidebar's foot. About shows the version and the credits, each of which opens
   to its license.
@@ -955,7 +961,13 @@ devices that show video after the displays, checking the one the tile in
 front casts to instead of the display; a speaker it casts to leaves the
 display checked. Audio → Output Device lists the speakers after this
 computer's outputs for a tile with sound and none for one without,
-checking the one cast to (or a TV) instead of the output. Each test has been checked to fail
+checking the one cast to (or a TV) instead of the output. Settings →
+Casting lists the devices found, a new one as it's found, and turning a
+protocol off there saves it off, stops it looking (its target dropped),
+takes its devices away and leaves a cast to one going; turned on, it
+looks again and finds them. One off from the start never looks, and
+other settings or protocols changing leave it as it is; one that can't
+start says why and tries again when turned off and on. Each test has been checked to fail
 when the behavior it covers is broken.
 
 Casting to DLNA is tested with the DLNA crate's fake renderer, found as it
