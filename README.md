@@ -306,7 +306,8 @@ where the stream puts them.
 
 On a tile: click the picture to make it the tile shortcuts go to,
 double-click it (or the corner button) to maximize it, drag the bar to
-scrub. In the middle under the bar,
+scrub: the picture follows as you drag, and lands on the exact frame where
+you let go. In the middle under the bar,
 the previous and next buttons open the media file before or after this one
 in its folder, by name, in the same tile; between them, skip back and
 forward go by the seek step, around play/pause. The track button (next to
@@ -364,7 +365,12 @@ the TV's own: where it was when cast, the TV stays where it was.
   no other frame refers to aren't decoded on the way to a seek's target. A
   skip (the arrow keys, the skip buttons) is accurate when a keyframe is
   within a second before its target, and otherwise lands on the nearest
-  keyframe its way, which shows at once. It plays one track of each kind;
+  keyframe its way, which shows at once. Dragging the seek bar scrubs:
+  each move shows the first frame decoded on its way at once, then one
+  every 40 ms or so, then the frame asked for, decoding nothing past it and
+  no sound, so nothing waits on buffering. A move up to two seconds past
+  the frame decoded last decodes on from there rather than going back to a
+  keyframe. Letting go seeks exactly. It plays one track of each kind;
   picking an audio or video track opens a decoder for it and seeks to the
   playhead, so the new track starts where playback is. The other subtitle
   tracks' packets are kept for a few seconds, so a subtitle track picked
@@ -784,7 +790,8 @@ cargo test
 
 The engine tests generate short clips with the `ffmpeg` command line tool
 (skipped if it isn't installed) and check opening, accurate seeking, where
-skips land, audio
+skips land, scrubbing (the frames it queues and nothing past them, no
+sound, decoding on or going back to a keyframe), audio
 resampling through the mixer, end of file, looping, keeping up when frames
 are consumed rarely, and hardware decoding (VideoToolbox is required on
 macOS). On macOS, zero-copy frames are read back and run through the surface

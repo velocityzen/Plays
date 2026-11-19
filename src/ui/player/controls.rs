@@ -264,11 +264,11 @@ impl PlayerView {
                 self.resume_after_scrub = self.player.is_playing();
                 self.player.pause();
                 self.scrub = Some(time);
-                self.player.seek(time);
+                self.player.scrub(time);
             }
             Slide::Move => {
                 self.scrub = Some(time);
-                self.player.seek(time);
+                self.player.scrub(time);
             }
             Slide::End => {
                 self.scrub = None;

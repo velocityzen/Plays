@@ -64,6 +64,8 @@ pub struct Player {
     playing: bool,
     /// Waiting for data after opening, seeking or a network stall; the clock is held.
     buffering: bool,
+    /// The last seek is a scrub: whatever it has decoded shows.
+    scrubbing: bool,
     buffering_since: Instant,
     network: bool,
     ended: bool,
@@ -221,6 +223,7 @@ impl Player {
             current: None,
             playing: options.autoplay,
             buffering: true,
+            scrubbing: false,
             buffering_since: Instant::now(),
             ended: false,
             looping: options.looping,
@@ -331,6 +334,13 @@ impl Player {
         self.seek_to(time, SeekMode::Exact);
     }
 
+    /// Show `time` while the slider is dragged: frames on the way show as
+    /// they are decoded, then the one asked for, with nothing read ahead and
+    /// no sound. A `seek` once it's let go plays on from there.
+    pub fn scrub(&mut self, time: f64) {
+        self.seek_to(time, SeekMode::Scrub);
+    }
+
     fn seek_to(&mut self, time: f64, mode: SeekMode) {
         if self.is_live() {
             return;
@@ -341,7 +351,15 @@ impl Player {
         };
         let serial = self.shared.serial.fetch_add(1, Ordering::AcqRel) + 1;
         self.ended = false;
-        self.start_buffering();
+        // A scrub waits for nothing: it has no sound, and plays on only
+        // after a seek.
+        self.scrubbing = mode == SeekMode::Scrub;
+        if self.scrubbing {
+            self.buffering = false;
+            self.apply_running();
+        } else {
+            self.start_buffering();
+        }
         let from = self.shared.clock.now();
         self.shared.subtitles.lock().seeked(from, time);
         self.shared.clock.set(time);
@@ -384,6 +402,16 @@ impl Player {
     #[cfg(test)]
     pub(super) fn serial(&self) -> u64 {
         self.shared.serial.load(Ordering::Acquire)
+    }
+
+    /// The times of the frames decoded for the last seek and not yet shown.
+    #[cfg(test)]
+    pub(super) fn queued(&self) -> Vec<f64> {
+        let queue = self.shared.video.lock();
+        if queue.serial != self.serial() {
+            return Vec::new();
+        }
+        queue.frames.iter().map(|frame| frame.pts).collect()
     }
 
     /// The subtitles showing now.
@@ -497,8 +525,12 @@ impl Player {
         {
             let mut queue = self.shared.video.lock();
             if queue.serial == serial {
-                // After opening or seeking, show the first frame right away.
-                if stale {
+                if self.scrubbing {
+                    // A scrub queues only what is to be seen: the latest.
+                    next = queue.frames.drain(..).next_back();
+                } else if stale {
+                    // After opening or seeking, show the first frame right
+                    // away.
                     next = queue.frames.pop_front();
                 }
                 if running {
@@ -589,7 +621,7 @@ impl Player {
             }
         }
 
-        tick.animate = self.playing || self.buffering;
+        tick.animate = self.playing || self.buffering || self.scrubbing;
         tick
     }
 

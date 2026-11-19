@@ -26,7 +26,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, TryRecvError};
 use std::thread::{self, JoinHandle};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::{Context as _, Result, anyhow, bail};
 use ffmpeg::Discard;
@@ -85,6 +85,12 @@ const MAX_QUEUED_BYTES: usize = 64 * 1024 * 1024;
 /// landed on exactly; further, it lands on the nearest keyframe its way
 /// instead of decoding everything in between, in seconds.
 const EXACT_SKIP: f64 = 1.0;
+/// A scrub this far ahead of the frame decoded last, in seconds, decodes on
+/// from there rather than seeking again.
+const SCRUB_AHEAD: f64 = 2.0;
+/// While a scrub decodes its way to the frame asked for, one on the way
+/// shows this often, so the picture follows the slider.
+const SCRUB_SHOWS_EVERY: Duration = Duration::from_millis(40);
 /// Packets read after a seek to find the video's first, at most.
 const PEEK_PACKETS: usize = 512;
 /// Network reads and connections give up after this long without data.
@@ -262,6 +268,10 @@ pub enum SeekMode {
     /// a keyframe is near before it, else on the nearest keyframe its way,
     /// which shows at once.
     Skip { forward: bool },
+    /// The slider being dragged: on the frame asked for, showing frames on
+    /// the way as they are decoded, and nothing after it, with no sound.
+    /// One a little ahead of the frame decoded last decodes on from there.
+    Scrub,
 }
 
 /// A seek for the demux thread.
@@ -283,6 +293,8 @@ struct Session<'a> {
     /// The demux thread has said where the last seek landed, so its packets
     /// can be decoded.
     settled: bool,
+    /// The last seek is a scrub (`SeekMode::Scrub`).
+    scrub: bool,
     /// Timestamp of the start of the media, subtracted from every frame.
     /// Taken from the first packet when the container doesn't say.
     start_offset: Option<f64>,
@@ -639,6 +651,7 @@ fn run(
         serial: shared.serial.load(Ordering::Acquire),
         seek_target: None,
         settled: true,
+        scrub: false,
         start_offset,
     };
     reset_queues(shared, session.serial);
@@ -727,17 +740,34 @@ fn run(
             decoders.switch(kind, index, &demuxer, shared, &name);
         }
         if let Some((time, serial, mode)) = seek {
-            let target = ((time + session.start_offset()).max(0.0) * AV_TIME_BASE) as i64;
-            demuxer.seek(Seek {
-                target,
-                serial,
-                mode,
-            });
-            let cue_time = shared.subtitles.lock().cue_time(time);
-            decoders.reset(cue_time);
+            let scrub = mode == SeekMode::Scrub;
+            // A scrub a little ahead of where decoding is gets there sooner
+            // decoding on than from a keyframe.
+            let decode_on = scrub
+                && session.scrub
+                && session.settled
+                && decoders
+                    .video
+                    .as_ref()
+                    .is_some_and(|v| v.reaches(time, session.seek_target));
+            if decode_on && demuxer.renumber(serial) {
+                if let Some(v) = &mut decoders.video {
+                    v.retarget();
+                }
+            } else {
+                let target = ((time + session.start_offset()).max(0.0) * AV_TIME_BASE) as i64;
+                demuxer.seek(Seek {
+                    target,
+                    serial,
+                    mode,
+                });
+                let cue_time = shared.subtitles.lock().cue_time(time);
+                decoders.reset(cue_time);
+                session.settled = false;
+            }
             session.serial = serial;
             session.seek_target = Some(time);
-            session.settled = false;
+            session.scrub = scrub;
             reset_queues(shared, serial);
         }
         // A skip may land on a keyframe away from where it was asked to; its
@@ -760,9 +790,12 @@ fn run(
         let mut progressed = false;
 
         // Decode a packet for each output queue that has room.
+        // A scrub stops at the frame asked for.
         let video_room = session.settled
             && decoders.video.as_ref().is_some_and(|v| {
-                !v.finished && shared.video.lock().frames.len() < v.max_queued_frames()
+                !v.finished
+                    && !(session.scrub && v.reached)
+                    && shared.video.lock().frames.len() < v.max_queued_frames()
             });
         if video_room && let Some(v) = &mut decoders.video {
             match demuxer.pop(TrackKind::Video, session.serial) {
@@ -780,7 +813,9 @@ fn run(
                 Next::Wait => {}
             }
         }
+        // A scrub is silent.
         let audio_room = session.settled
+            && !session.scrub
             && decoders
                 .audio
                 .as_ref()
@@ -1100,6 +1135,17 @@ impl Demuxer {
         self.packets.lock().cover.take()
     }
 
+    /// Give what is queued, and read next, the serial of a scrub that
+    /// decodes on rather than seeking. Not while a seek is under way.
+    fn renumber(&self, serial: u64) -> bool {
+        let mut packets = self.packets.lock();
+        if packets.seek.is_some() {
+            return false;
+        }
+        packets.serial = serial;
+        true
+    }
+
     fn seek(&self, seek: Seek) {
         let mut packets = self.packets.lock();
         packets.clear();
@@ -1359,6 +1405,12 @@ struct VideoDecoder {
     planes: YuvConverter,
     errors: u32,
     next_pts: f64,
+    /// The time of the frame out of the decoder last since it was flushed.
+    position: Option<f64>,
+    /// In a scrub: when a frame on the way last went to the queue, and
+    /// whether the frame asked for has.
+    shown: Option<Instant>,
+    reached: bool,
     finished: bool,
 }
 
@@ -1426,6 +1478,9 @@ impl VideoDecoder {
             planes: YuvConverter::default(),
             errors: 0,
             next_pts: 0.0,
+            position: None,
+            shown: None,
+            reached: false,
             finished: false,
         })
     }
@@ -1453,6 +1508,23 @@ impl VideoDecoder {
     fn reset(&mut self) {
         self.decoder.flush();
         self.finished = false;
+        self.position = None;
+        self.retarget();
+    }
+
+    /// Whether a scrub to `time` decodes on to it: it is ahead of the frame
+    /// decoded last (or, before any, of where the last seek was going), and
+    /// not far.
+    fn reaches(&self, time: f64, target: Option<f64>) -> bool {
+        self.position
+            .or(target)
+            .is_some_and(|from| time >= from && time - from <= SCRUB_AHEAD)
+    }
+
+    /// Head for another frame of a scrub without seeking.
+    fn retarget(&mut self) {
+        self.shown = None;
+        self.reached = false;
     }
 
     fn decode(&mut self, packet: &Packet, session: &Session) {
@@ -1549,21 +1621,42 @@ impl VideoDecoder {
                 .map(|ts| ts as f64 * self.time_base - session.start_offset())
                 .unwrap_or(self.next_pts);
             self.next_pts = pts + self.frame_duration;
+            self.position = Some(pts);
 
-            // Skip conversion for frames that end before the seek target.
-            if session
+            let before_target = session
                 .seek_target
-                .is_some_and(|target| pts + self.frame_duration <= target)
-            {
-                continue;
-            }
-            // Skip frames whose time has already passed while something else is
-            // still waiting to be shown (the UI isn't keeping up, e.g. the window
-            // is hidden). With nothing queued, show it anyway so a decoder that
-            // is slower than real time still puts pictures on screen.
-            let late = pts + self.frame_duration < session.shared.clock.now();
-            if late && !session.shared.video.lock().frames.is_empty() {
-                continue;
+                .is_some_and(|target| pts + self.frame_duration <= target);
+            if session.scrub {
+                // The first frame on the way shows at once, then one now and
+                // then; the one asked for ends it.
+                if self.reached {
+                    continue;
+                }
+                if before_target {
+                    if self
+                        .shown
+                        .is_some_and(|shown| shown.elapsed() < SCRUB_SHOWS_EVERY)
+                    {
+                        continue;
+                    }
+                    self.shown = Some(Instant::now());
+                } else {
+                    self.reached = true;
+                }
+            } else {
+                // Skip conversion for frames that end before the seek target.
+                if before_target {
+                    continue;
+                }
+                // Skip frames whose time has already passed while something
+                // else is still waiting to be shown (the UI isn't keeping up,
+                // e.g. the window is hidden). With nothing queued, show it
+                // anyway so a decoder that is slower than real time still puts
+                // pictures on screen.
+                let late = pts + self.frame_duration < session.shared.clock.now();
+                if late && !session.shared.video.lock().frames.is_empty() {
+                    continue;
+                }
             }
             if let Some(picture) = self.picture(on_gpu, session) {
                 session.shared.video.lock().frames.push_back(VideoFrame {

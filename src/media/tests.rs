@@ -575,6 +575,97 @@ fn skips_land_on_keyframes_far_from_the_target() {
     }
 }
 
+/// Dragging the slider: a scrub queues the first frame it decodes on its
+/// way (a keyframe), then the one asked for, and nothing after it, with no
+/// sound; one a little ahead decodes on rather than going back to a
+/// keyframe. Letting go plays on as before.
+#[test]
+fn scrubbing_shows_frames_on_the_way_and_nothing_past_them() {
+    let Some(path) = media(
+        "scrub.mp4",
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc=size=160x120:rate=25:duration=12",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:sample_rate=48000:duration=12",
+            "-c:v",
+            "libx264",
+            "-x264-params",
+            "keyint=100:min-keyint=100:scenecut=0",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "aac",
+        ],
+    ) else {
+        eprintln!("ffmpeg not found, skipping");
+        return;
+    };
+    let mixer = Mixer::detached(48_000);
+    let mut player = Player::open(Source::File(path), Some(mixer), options(false, false));
+    assert!(wait_until(Duration::from_secs(5), || {
+        player.tick();
+        player.frame_pts().is_some() && !player.is_buffering()
+    }));
+    assert!(player.stats().queued_audio > 0.0, "sound is decoded ahead");
+    let near = |time: f64, expected: f64| (time - expected).abs() < 0.045;
+    // Not ticked meanwhile, so all it queued is there to see.
+    let scrub = |player: &mut Player, time: f64| {
+        player.scrub(time);
+        assert!(
+            wait_until(Duration::from_secs(5), || player
+                .queued()
+                .last()
+                .is_some_and(|&last| near(last, time))),
+            "a scrub to {time} queued {:?}",
+            player.queued()
+        );
+        // Nothing more comes.
+        std::thread::sleep(Duration::from_millis(100));
+        player.queued()
+    };
+
+    // Keyframes are at 0, 4 and 8 seconds.
+    // Of the frames between, a few at most.
+    let queued = scrub(&mut player, 7.0);
+    assert!(
+        (2..=10).contains(&queued.len()) && near(queued[0], 4.0),
+        "{queued:?}"
+    );
+    assert!(queued.iter().rev().skip(1).all(|&time| time < 7.0));
+    player.tick();
+    assert!(player.frame_pts().is_some_and(|pts| near(pts, 7.0)));
+    assert!(player.queued().is_empty(), "the latest shows");
+    assert!(!player.is_buffering());
+    assert_eq!(player.stats().queued_audio, 0.0, "a scrub is silent");
+
+    // Past the keyframe at 8, but near: decoded on from 7.
+    let queued = scrub(&mut player, 8.6);
+    assert!(queued[0] > 7.0 && queued[0] < 8.0, "{queued:?}");
+    player.tick();
+    // Back: from the keyframe before.
+    let queued = scrub(&mut player, 5.0);
+    assert!(near(queued[0], 4.0), "{queued:?}");
+    player.tick();
+    assert!(player.frame_pts().is_some_and(|pts| near(pts, 5.0)));
+    // Far ahead: from the keyframe before.
+    let queued = scrub(&mut player, 11.5);
+    assert!(near(queued[0], 8.0), "{queued:?}");
+    player.tick();
+
+    // Let go: it reads ahead again, sound and all.
+    let landed = lands_at(&mut player, |p| p.seek(5.0), 5.0);
+    assert!(near(landed.0, 5.0) && near(landed.1, 5.0), "{landed:?}");
+    assert!(wait_until(Duration::from_secs(5), || {
+        player.tick();
+        player.stats().queued_audio > 0.0 && !player.queued().is_empty()
+    }));
+}
+
 /// Going back keeps the subtitles on screen, even one that started before
 /// the keyframe the seek reads from, and one read again shows once.
 #[test]
