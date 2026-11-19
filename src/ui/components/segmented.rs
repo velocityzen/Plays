@@ -62,6 +62,8 @@ impl<T: Copy + PartialEq + 'static> RenderOnce for Segmented<T> {
         let enabled = !self.disabled;
         let on_select = self.on_select.filter(|_| enabled);
         let corner = size.pick(radius::ITEM);
+        // Tests find a choice as the row's id and its label: "panels-Glass".
+        let group = self.id.to_string();
         div()
             .id(self.id)
             .flex()
@@ -79,8 +81,10 @@ impl<T: Copy + PartialEq + 'static> RenderOnce for Segmented<T> {
                     .enumerate()
                     .map(|(index, (value, label))| {
                         let active = value == selected;
+                        let group = group.clone();
                         size.text(div())
                             .id(index)
+                            .debug_selector(move || format!("{group}-{label}"))
                             .flex()
                             .items_center()
                             .h(size.pick(HEIGHT) - SEGMENTED_PADDING * 2.)

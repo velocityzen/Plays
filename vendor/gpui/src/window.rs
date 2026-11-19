@@ -1,19 +1,19 @@
 #[cfg(any(feature = "inspector", debug_assertions))]
 use crate::Inspector;
 use crate::{
-    ContentTransform,
     Action, AnyDrag, AnyElement, AnyImageCache, AnyTooltip, AnyView, App, AppContext, Arena, Asset,
-    AsyncWindowContext, AvailableSpace, Background, BorderStyle, Bounds, BoxShadow, Capslock,
-    Context, Corners, CursorStyle, Decorations, DevicePixels, DispatchActionListener,
-    DispatchNodeId, DispatchTree, DisplayId, Edges, Effect, Entity, EntityId, EventEmitter,
-    FileDropEvent, FontId, Global, GlobalElementId, GlyphId, GpuSpecs, Hsla, InputHandler, IsZero,
-    KeyBinding, KeyContext, KeyDownEvent, KeyEvent, Keystroke, KeystrokeEvent, LayoutId,
-    LineLayoutIndex, Modifiers, ModifiersChangedEvent, MonochromeSprite, MouseButton, MouseEvent,
-    MouseMoveEvent, MouseUpEvent, Path, Pixels, PlatformAtlas, PlatformDisplay, PlatformInput,
-    PlatformInputHandler, PlatformWindow, Point, PolychromeSprite, PromptButton, PromptLevel, Quad,
-    Render, RenderGlyphParams, RenderImage, RenderImageParams, RenderSvgParams, Replay, ResizeEdge,
-    SMOOTH_SVG_SCALE_FACTOR, SUBPIXEL_VARIANTS_X, SUBPIXEL_VARIANTS_Y, ScaledPixels, Scene, Shadow,
-    SharedString, Size, StrikethroughStyle, Style, SubscriberSet, Subscription, SystemWindowTab,
+    AsyncWindowContext, AvailableSpace, Backdrop, BackdropStyle, Background, BorderStyle, Bounds,
+    BoxShadow, Capslock, ContentTransform, Context, Corners, CursorStyle, Decorations,
+    DevicePixels, DispatchActionListener, DispatchNodeId, DispatchTree, DisplayId, Edges, Effect,
+    Entity, EntityId, EventEmitter, FileDropEvent, FontId, Global, GlobalElementId, GlyphId,
+    GpuSpecs, Hsla, InputHandler, IsZero, KeyBinding, KeyContext, KeyDownEvent, KeyEvent,
+    Keystroke, KeystrokeEvent, LayoutId, LineLayoutIndex, Modifiers, ModifiersChangedEvent,
+    MonochromeSprite, MouseButton, MouseEvent, MouseMoveEvent, MouseUpEvent, Path, Pixels,
+    PlatformAtlas, PlatformDisplay, PlatformInput, PlatformInputHandler, PlatformWindow, Point,
+    PolychromeSprite, PromptButton, PromptLevel, Quad, Render, RenderGlyphParams, RenderImage,
+    RenderImageParams, RenderSvgParams, Replay, ResizeEdge, SMOOTH_SVG_SCALE_FACTOR,
+    SUBPIXEL_VARIANTS_X, SUBPIXEL_VARIANTS_Y, ScaledPixels, Scene, Shadow, SharedString, Size,
+    StrikethroughStyle, Style, SubscriberSet, Subscription, SystemWindowTab,
     SystemWindowTabController, TabStopMap, TaffyLayoutEngine, Task, TextStyle, TextStyleRefinement,
     TransformationMatrix, Underline, UnderlineStyle, WindowAppearance, WindowBackgroundAppearance,
     WindowBounds, WindowControls, WindowDecorations, WindowOptions, WindowParams, WindowTextSystem,
@@ -2859,6 +2859,67 @@ impl Window {
             corner_smoothing: quad.corner_smoothing,
             pad: 0,
         });
+    }
+
+    /// Plays: paint a backdrop for an element of `bounds` and `corner_radii`
+    /// (and `corner_smoothing`, see `Quad::corner_smoothing`), showing what
+    /// is drawn under it as `style` says. See `BackdropStyle`.
+    ///
+    /// This method should only be called as part of the paint phase of element drawing.
+    pub fn paint_backdrop(
+        &mut self,
+        bounds: Bounds<Pixels>,
+        corner_radii: Corners<Pixels>,
+        corner_smoothing: f32,
+        style: BackdropStyle,
+    ) {
+        self.invalidator.debug_assert_paint();
+
+        let backdrop = Backdrop::new(
+            bounds,
+            corner_radii,
+            corner_smoothing,
+            style,
+            self.content_mask(),
+            self.element_opacity(),
+            self.scale_factor(),
+        );
+        self.next_frame.scene.insert_primitive(backdrop);
+    }
+
+    /// Plays: the backdrops the window drew last, for tests: each one's
+    /// element bounds and style, its opacity the element's times the
+    /// style's.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn painted_backdrops(&self) -> Vec<(Bounds<Pixels>, BackdropStyle)> {
+        let scale_factor = self.scale_factor();
+        let unscale = |value: ScaledPixels| px(value.0 / scale_factor);
+        self.rendered_frame
+            .scene
+            .backdrops
+            .iter()
+            .map(|backdrop| {
+                let shape = backdrop.shape;
+                let bounds = Bounds::new(
+                    point(unscale(shape.origin.x), unscale(shape.origin.y)),
+                    size(unscale(shape.size.width), unscale(shape.size.height)),
+                );
+                let style = BackdropStyle {
+                    blur: unscale(backdrop.blur),
+                    saturation: backdrop.saturation,
+                    brightness: backdrop.brightness,
+                    tint: backdrop.tint,
+                    average: backdrop.average,
+                    refraction: unscale(backdrop.refraction),
+                    edge: unscale(backdrop.edge),
+                    rim: backdrop.rim,
+                    glow: backdrop.glow,
+                    halo: unscale(backdrop.halo),
+                    opacity: backdrop.opacity,
+                };
+                (bounds, style)
+            })
+            .collect()
     }
 
     /// Paint the given `Path` into the scene for the next frame at the current z-index.

@@ -5,8 +5,9 @@
 use super::blade_yuv::{YuvParams, YuvTextures};
 use super::{BladeAtlas, BladeContext};
 use crate::{
-    Background, Bounds, DevicePixels, GpuSpecs, MonochromeSprite, Path, Point, PolychromeSprite,
-    PrimitiveBatch, Quad, ScaledPixels, Scene, Shadow, Size, Underline,
+    BACKDROP_LEVELS, Backdrop, Background, Bounds, DevicePixels, GpuSpecs, MonochromeSprite, Path,
+    Point, PolychromeSprite, PrimitiveBatch, Quad, ScaledPixels, Scene, Shadow, Size, Underline,
+    backdrop_level_region, backdrop_level_size,
 };
 use blade_graphics as gpu;
 use blade_util::{BufferBelt, BufferBeltDescriptor};
@@ -16,6 +17,8 @@ use media::core_video::CVMetalTextureCache;
 use std::sync::Arc;
 
 const MAX_FRAME_TIME_MS: u32 = 10000;
+/// Plays: what's under backdrops is halved into half floats.
+const BACKDROP_LEVEL_FORMAT: gpu::TextureFormat = gpu::TextureFormat::Rgba16Float;
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
@@ -121,6 +124,112 @@ struct ShaderYuvData {
     s_yuv: gpu::Sampler,
 }
 
+/// Plays: what a pass halving what's under backdrops makes, as in
+/// shaders.wgsl: its region of the viewport, and a texel of its source, a
+/// texel of its own, and its size in texels.
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct BackdropPassParams {
+    region: [f32; 4],
+    texels: [f32; 4],
+}
+
+#[derive(blade_macros::ShaderData)]
+struct ShaderBackdropPassData {
+    backdrop_pass: BackdropPassParams,
+    t_backdrop_source: gpu::TextureView,
+    s_backdrop: gpu::Sampler,
+}
+
+#[derive(blade_macros::ShaderData)]
+struct ShaderBackdropsData {
+    globals: GlobalParams,
+    t_backdrop0: gpu::TextureView,
+    t_backdrop1: gpu::TextureView,
+    t_backdrop2: gpu::TextureView,
+    t_backdrop3: gpu::TextureView,
+    t_backdrop4: gpu::TextureView,
+    t_backdrop5: gpu::TextureView,
+    t_backdrop_frame: gpu::TextureView,
+    s_backdrop: gpu::Sampler,
+    b_backdrops: gpu::BufferPiece,
+}
+
+/// Plays: what's under backdrops: a copy of what the frame had (as the frame
+/// can't be read while it's drawn to), and the levels halved from it.
+struct BackdropTextures {
+    size: gpu::Extent,
+    snapshot: gpu::Texture,
+    snapshot_view: gpu::TextureView,
+    levels: Vec<(gpu::Texture, gpu::TextureView)>,
+}
+
+impl BackdropTextures {
+    fn new(gpu: &gpu::Context, format: gpu::TextureFormat, size: gpu::Extent) -> Self {
+        let texture = |name: &str, format, width, height, usage| {
+            let texture = gpu.create_texture(gpu::TextureDesc {
+                name,
+                format,
+                size: gpu::Extent {
+                    width,
+                    height,
+                    depth: 1,
+                },
+                array_layer_count: 1,
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: gpu::TextureDimension::D2,
+                usage,
+                external: None,
+            });
+            let view = gpu.create_texture_view(
+                texture,
+                gpu::TextureViewDesc {
+                    name,
+                    format,
+                    dimension: gpu::ViewDimension::D2,
+                    subresources: &Default::default(),
+                },
+            );
+            (texture, view)
+        };
+        let (snapshot, snapshot_view) = texture(
+            "backdrop snapshot",
+            format,
+            size.width,
+            size.height,
+            gpu::TextureUsage::COPY | gpu::TextureUsage::RESOURCE,
+        );
+        let levels = (0..BACKDROP_LEVELS)
+            .map(|level| {
+                let (width, height) = backdrop_level_size(size.width, size.height, level);
+                texture(
+                    "backdrop level",
+                    BACKDROP_LEVEL_FORMAT,
+                    width,
+                    height,
+                    gpu::TextureUsage::RESOURCE | gpu::TextureUsage::TARGET,
+                )
+            })
+            .collect();
+        Self {
+            size,
+            snapshot,
+            snapshot_view,
+            levels,
+        }
+    }
+
+    fn destroy(&self, gpu: &gpu::Context) {
+        gpu.destroy_texture_view(self.snapshot_view);
+        gpu.destroy_texture(self.snapshot);
+        for &(texture, view) in &self.levels {
+            gpu.destroy_texture_view(view);
+            gpu.destroy_texture(texture);
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[repr(C)]
 struct PathSprite {
@@ -148,6 +257,10 @@ struct BladePipelines {
     /// Plays: video frames' planes.
     #[cfg(any(target_os = "linux", target_os = "freebsd"))]
     yuv: gpu::RenderPipeline,
+    /// Plays: halves what's under backdrops, a level at a time.
+    backdrop_pass: gpu::RenderPipeline,
+    /// Plays: draws backdrops from those levels.
+    backdrops: gpu::RenderPipeline,
 }
 
 impl BladePipelines {
@@ -172,6 +285,8 @@ impl BladePipelines {
         shader.check_struct_size::<PolychromeSprite>();
         #[cfg(any(target_os = "linux", target_os = "freebsd"))]
         shader.check_struct_size::<YuvParams>();
+        shader.check_struct_size::<BackdropPassParams>();
+        shader.check_struct_size::<Backdrop>();
 
         // See https://apoorvaj.io/alpha-compositing-opengl-blending-and-premultiplied-alpha/
         let blend_mode = match surface_info.alpha {
@@ -334,6 +449,38 @@ impl BladePipelines {
                 color_targets,
                 multisample_state: gpu::MultisampleState::default(),
             }),
+            backdrop_pass: gpu.create_render_pipeline(gpu::RenderPipelineDesc {
+                name: "backdrop-pass",
+                data_layouts: &[&ShaderBackdropPassData::layout()],
+                vertex: shader.at("vs_backdrop_pass"),
+                vertex_fetches: &[],
+                primitive: gpu::PrimitiveState {
+                    topology: gpu::PrimitiveTopology::TriangleStrip,
+                    ..Default::default()
+                },
+                depth_stencil: None,
+                fragment: Some(shader.at("fs_backdrop_pass")),
+                color_targets: &[gpu::ColorTargetState {
+                    format: BACKDROP_LEVEL_FORMAT,
+                    blend: None,
+                    write_mask: gpu::ColorWrites::default(),
+                }],
+                multisample_state: gpu::MultisampleState::default(),
+            }),
+            backdrops: gpu.create_render_pipeline(gpu::RenderPipelineDesc {
+                name: "backdrops",
+                data_layouts: &[&ShaderBackdropsData::layout()],
+                vertex: shader.at("vs_backdrop"),
+                vertex_fetches: &[],
+                primitive: gpu::PrimitiveState {
+                    topology: gpu::PrimitiveTopology::TriangleStrip,
+                    ..Default::default()
+                },
+                depth_stencil: None,
+                fragment: Some(shader.at("fs_backdrop")),
+                color_targets,
+                multisample_state: gpu::MultisampleState::default(),
+            }),
         }
     }
 
@@ -348,6 +495,8 @@ impl BladePipelines {
         gpu.destroy_render_pipeline(&mut self.surfaces);
         #[cfg(any(target_os = "linux", target_os = "freebsd"))]
         gpu.destroy_render_pipeline(&mut self.yuv);
+        gpu.destroy_render_pipeline(&mut self.backdrop_pass);
+        gpu.destroy_render_pipeline(&mut self.backdrops);
     }
 }
 
@@ -380,6 +529,8 @@ pub struct BladeRenderer {
     path_intermediate_msaa_texture: Option<gpu::Texture>,
     path_intermediate_msaa_texture_view: Option<gpu::TextureView>,
     rendering_parameters: RenderingParameters,
+    /// Plays: made when a frame first has backdrops, for its size.
+    backdrop_textures: Option<BackdropTextures>,
 }
 
 impl BladeRenderer {
@@ -390,7 +541,8 @@ impl BladeRenderer {
     ) -> anyhow::Result<Self> {
         let surface_config = gpu::SurfaceConfig {
             size: config.size,
-            usage: gpu::TextureUsage::TARGET,
+            // Plays: backdrops copy what's drawn under them.
+            usage: gpu::TextureUsage::TARGET | gpu::TextureUsage::COPY,
             display_sync: gpu::DisplaySync::Recent,
             color_space: gpu::ColorSpace::Srgb,
             allow_exclusive_full_screen: false,
@@ -468,6 +620,7 @@ impl BladeRenderer {
             path_intermediate_msaa_texture,
             path_intermediate_msaa_texture_view,
             rendering_parameters,
+            backdrop_textures: None,
         })
     }
 
@@ -549,6 +702,9 @@ impl BladeRenderer {
                 .unzip();
             self.path_intermediate_msaa_texture = path_intermediate_msaa_texture;
             self.path_intermediate_msaa_texture_view = path_intermediate_msaa_texture_view;
+            if let Some(textures) = self.backdrop_textures.take() {
+                textures.destroy(&self.gpu);
+            }
         }
     }
 
@@ -681,6 +837,123 @@ impl BladeRenderer {
         if let Some(msaa_view) = self.path_intermediate_msaa_texture_view {
             self.gpu.destroy_texture_view(msaa_view);
         }
+        if let Some(textures) = self.backdrop_textures.take() {
+            textures.destroy(&self.gpu);
+        }
+    }
+
+    /// Plays: copy what `frame` has under `region` (see
+    /// `Backdrop::region`), and halve it into the levels, each from the one
+    /// before; hand them back, and the copy.
+    #[profiling::function]
+    fn halve_under_backdrops(
+        &mut self,
+        region: Bounds<ScaledPixels>,
+        frame: gpu::Texture,
+    ) -> Option<([gpu::TextureView; BACKDROP_LEVELS], gpu::TextureView)> {
+        let size = self.surface_config.size;
+        if size.width == 0 || size.height == 0 {
+            return None;
+        }
+        if self
+            .backdrop_textures
+            .as_ref()
+            .is_some_and(|textures| textures.size != size)
+            && let Some(textures) = self.backdrop_textures.take()
+        {
+            textures.destroy(&self.gpu);
+        }
+        if self.backdrop_textures.is_none() {
+            let textures = BackdropTextures::new(&self.gpu, self.surface.info().format, size);
+            self.command_encoder.init_texture(textures.snapshot);
+            for &(texture, _) in &textures.levels {
+                self.command_encoder.init_texture(texture);
+            }
+            self.backdrop_textures = Some(textures);
+        }
+        let textures = self.backdrop_textures.as_ref()?;
+        let snapshot = textures.snapshot;
+        let snapshot_view = textures.snapshot_view;
+        let levels: [(gpu::Texture, gpu::TextureView); BACKDROP_LEVELS] =
+            textures.levels.clone().try_into().ok()?;
+        let (width, height) = (size.width as f32, size.height as f32);
+
+        // The first level reads the frame up to two of its texels around
+        // what it makes, and a pixel more where it samples between them;
+        // backdrops read the copy only where they draw.
+        let [left, top, region_width, region_height] =
+            backdrop_level_region(region, 0, width, height);
+        let read = 4.;
+        let (x0, y0) = ((left - read).max(0.) as u32, (top - read).max(0.) as u32);
+        let (x1, y1) = (
+            ((left + region_width + read).ceil() as u32).min(size.width),
+            ((top + region_height + read).ceil() as u32).min(size.height),
+        );
+        if x1 <= x0 || y1 <= y0 {
+            return None;
+        }
+        {
+            let mut transfer = self.command_encoder.transfer("backdrop snapshot");
+            transfer.copy_texture_to_texture(
+                gpu::TexturePiece {
+                    texture: frame,
+                    mip_level: 0,
+                    array_layer: 0,
+                    origin: [x0, y0, 0],
+                },
+                gpu::TexturePiece {
+                    texture: snapshot,
+                    mip_level: 0,
+                    array_layer: 0,
+                    origin: [x0, y0, 0],
+                },
+                gpu::Extent {
+                    width: x1 - x0,
+                    height: y1 - y0,
+                    depth: 1,
+                },
+            );
+        }
+
+        for level in 0..BACKDROP_LEVELS {
+            let (source, source_texel) = match level {
+                0 => (snapshot_view, 1.),
+                _ => (levels[level - 1].1, (1u32 << level) as f32),
+            };
+            let (level_width, level_height) = backdrop_level_size(size.width, size.height, level);
+            let params = BackdropPassParams {
+                region: backdrop_level_region(region, level, width, height),
+                texels: [
+                    source_texel,
+                    (2u32 << level) as f32,
+                    level_width as f32,
+                    level_height as f32,
+                ],
+            };
+            if let mut pass = self.command_encoder.render(
+                "backdrop level",
+                gpu::RenderTargetSet {
+                    colors: &[gpu::RenderTarget {
+                        view: levels[level].1,
+                        init_op: gpu::InitOp::Load,
+                        finish_op: gpu::FinishOp::Store,
+                    }],
+                    depth_stencil: None,
+                },
+            ) {
+                let mut encoder = pass.with(&self.pipelines.backdrop_pass);
+                encoder.bind(
+                    0,
+                    &ShaderBackdropPassData {
+                        backdrop_pass: params,
+                        t_backdrop_source: source,
+                        s_backdrop: self.atlas_sampler,
+                    },
+                );
+                encoder.draw(0, 4, 0, 1);
+            }
+        }
+        Some((levels.map(|(_, view)| view), snapshot_view))
     }
 
     pub fn draw(&mut self, scene: &Scene) {
@@ -881,6 +1154,59 @@ impl BladeRenderer {
                         );
                         encoder.draw(0, 4, 0, 1);
                     }
+                }
+                // Plays: what's drawn so far is copied and halved, then the
+                // backdrops drawn from it.
+                PrimitiveBatch::Backdrops(backdrops) => {
+                    let Some(region) = Backdrop::region(backdrops) else {
+                        continue;
+                    };
+                    drop(pass);
+                    let levels = self.halve_under_backdrops(region, frame.texture());
+                    pass = self.command_encoder.render(
+                        "main",
+                        gpu::RenderTargetSet {
+                            colors: &[gpu::RenderTarget {
+                                view: frame.texture_view(),
+                                init_op: gpu::InitOp::Load,
+                                finish_op: gpu::FinishOp::Store,
+                            }],
+                            depth_stencil: None,
+                        },
+                    );
+                    let Some((
+                        [
+                            t_backdrop0,
+                            t_backdrop1,
+                            t_backdrop2,
+                            t_backdrop3,
+                            t_backdrop4,
+                            t_backdrop5,
+                        ],
+                        t_backdrop_frame,
+                    )) = levels
+                    else {
+                        continue;
+                    };
+                    let instance_buf =
+                        unsafe { self.instance_belt.alloc_typed(backdrops, &self.gpu) };
+                    let mut encoder = pass.with(&self.pipelines.backdrops);
+                    encoder.bind(
+                        0,
+                        &ShaderBackdropsData {
+                            globals,
+                            t_backdrop0,
+                            t_backdrop1,
+                            t_backdrop2,
+                            t_backdrop3,
+                            t_backdrop4,
+                            t_backdrop5,
+                            t_backdrop_frame,
+                            s_backdrop: self.atlas_sampler,
+                            b_backdrops: instance_buf,
+                        },
+                    );
+                    encoder.draw(0, 4, 0, backdrops.len() as u32);
                 }
                 #[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
                 PrimitiveBatch::Surfaces(surfaces) => {

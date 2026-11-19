@@ -1526,3 +1526,259 @@ float4 fill_color(Background background,
 
   return color;
 }
+
+// Plays: backdrops (see `Backdrop` in scene.rs). What is drawn under a
+// batch of them is halved six times (`BACKDROP_LEVELS`), each level from
+// the one before, by `backdrop_pass_*`; `backdrop_*` then draws each one
+// from those levels.
+
+// The last level, a 64th of the viewport: `BACKDROP_LEVELS` - 1.
+constant uint BACKDROP_LAST_LEVEL = 5;
+constant float3 BACKDROP_LUMA = float3(0.2126, 0.7152, 0.0722);
+// How strongly the colors around glow inside the edge, and outside it.
+constant float BACKDROP_GLOW_INSIDE = 0.6;
+constant float BACKDROP_GLOW_OUTSIDE = 0.6;
+// Glass's index of refraction, and how far its bevel bends light at most,
+// a part of the bevel's width (see `backdrop_bend`).
+constant float BACKDROP_IOR = 1.5;
+constant float BACKDROP_BEND_PEAK = 0.23126;
+
+// What a pass makes, in the viewport's pixels: `region` (origin, size),
+// and `texels`: a texel of the source, a texel of the level it makes, and
+// that level's size in texels. As `BackdropPassParams` in Rust.
+struct BackdropPassParams {
+  float4 region;
+  float4 texels;
+};
+
+struct BackdropPassVertexOutput {
+  float4 position [[position]];
+};
+
+vertex BackdropPassVertexOutput backdrop_pass_vertex(
+    uint unit_vertex_id [[vertex_id]],
+    constant float2 *unit_vertices [[buffer(BackdropPassInputIndex_Vertices)]],
+    constant BackdropPassParams *params [[buffer(BackdropPassInputIndex_Params)]]) {
+  float2 unit_vertex = unit_vertices[unit_vertex_id];
+  float texel = params->texels.y;
+  float2 size = params->texels.zw;
+  // The region in the level's texels.
+  float2 low = clamp(floor(params->region.xy / texel), float2(0.0), size);
+  float2 high = clamp(ceil((params->region.xy + params->region.zw) / texel),
+                      float2(0.0), size);
+  float2 position = mix(low, high, unit_vertex);
+  float2 clip = position / size * float2(2.0, -2.0) + float2(-1.0, 1.0);
+  return BackdropPassVertexOutput{float4(clip, 0.0, 1.0)};
+}
+
+float4 backdrop_tap(texture2d<float> source, float2 point, float2 to_uv) {
+  constexpr sampler linear_clamp(filter::linear, address::clamp_to_edge);
+  return source.sample(linear_clamp, point * to_uv);
+}
+
+// Halves the source with the 13 taps of Jimenez's "Next generation post
+// processing in Call of Duty: Advanced Warfare" (2014): each tap the
+// average of four of its texels, weighted toward the middle, so what's
+// small and bright doesn't flicker as it moves.
+fragment float4 backdrop_pass_fragment(
+    BackdropPassVertexOutput input [[stage_in]],
+    constant BackdropPassParams *params [[buffer(BackdropPassInputIndex_Params)]],
+    texture2d<float> source [[texture(BackdropPassInputIndex_Source)]]) {
+  float o = params->texels.x;
+  // The middle of this texel, in the viewport's pixels.
+  float2 center = input.position.xy * params->texels.y;
+  float2 to_uv = 1.0 / (float2(source.get_width(), source.get_height()) * o);
+  float4 color = backdrop_tap(source, center, to_uv) * 0.125;
+  color += (backdrop_tap(source, center + float2(-2.0, -2.0) * o, to_uv) +
+            backdrop_tap(source, center + float2(2.0, -2.0) * o, to_uv) +
+            backdrop_tap(source, center + float2(-2.0, 2.0) * o, to_uv) +
+            backdrop_tap(source, center + float2(2.0, 2.0) * o, to_uv)) * 0.03125;
+  color += (backdrop_tap(source, center + float2(0.0, -2.0) * o, to_uv) +
+            backdrop_tap(source, center + float2(-2.0, 0.0) * o, to_uv) +
+            backdrop_tap(source, center + float2(2.0, 0.0) * o, to_uv) +
+            backdrop_tap(source, center + float2(0.0, 2.0) * o, to_uv)) * 0.0625;
+  color += (backdrop_tap(source, center + float2(-1.0, -1.0) * o, to_uv) +
+            backdrop_tap(source, center + float2(1.0, -1.0) * o, to_uv) +
+            backdrop_tap(source, center + float2(-1.0, 1.0) * o, to_uv) +
+            backdrop_tap(source, center + float2(1.0, 1.0) * o, to_uv)) * 0.125;
+  return color;
+}
+
+struct BackdropVertexOutput {
+  uint backdrop_id [[flat]];
+  float4 position [[position]];
+  float clip_distance [[clip_distance]][4];
+};
+
+struct BackdropFragmentInput {
+  uint backdrop_id [[flat]];
+  float4 position [[position]];
+};
+
+vertex BackdropVertexOutput backdrop_vertex(
+    uint unit_vertex_id [[vertex_id]], uint backdrop_id [[instance_id]],
+    constant float2 *unit_vertices [[buffer(BackdropInputIndex_Vertices)]],
+    constant Backdrop *backdrops [[buffer(BackdropInputIndex_Backdrops)]],
+    constant Size_DevicePixels *viewport_size [[buffer(BackdropInputIndex_ViewportSize)]]) {
+  float2 unit_vertex = unit_vertices[unit_vertex_id];
+  Backdrop backdrop = backdrops[backdrop_id];
+  float4 device_position = to_device_position(unit_vertex, backdrop.bounds, viewport_size);
+  float4 clip_distance = distance_from_clip_rect(unit_vertex, backdrop.bounds,
+                                                 backdrop.content_mask.bounds);
+  return BackdropVertexOutput{
+      backdrop_id,
+      device_position,
+      {clip_distance.x, clip_distance.y, clip_distance.z, clip_distance.w}};
+}
+
+// A level at `point` (in the viewport's pixels), through a tent over the
+// texels around it so they don't show.
+float4 backdrop_level_sample(texture2d<float> texture, uint index, float2 point) {
+  constexpr sampler linear_clamp(filter::linear, address::clamp_to_edge);
+  float texel = float(2u << index);
+  float2 to_uv = 1.0 / (float2(texture.get_width(), texture.get_height()) * texel);
+  float4 color = texture.sample(linear_clamp, point * to_uv) * 4.0;
+  color += (texture.sample(linear_clamp, (point + float2(texel, 0.0)) * to_uv) +
+            texture.sample(linear_clamp, (point - float2(texel, 0.0)) * to_uv) +
+            texture.sample(linear_clamp, (point + float2(0.0, texel)) * to_uv) +
+            texture.sample(linear_clamp, (point - float2(0.0, texel)) * to_uv)) * 2.0;
+  color += texture.sample(linear_clamp, (point + float2(texel, texel)) * to_uv) +
+           texture.sample(linear_clamp, (point + float2(-texel, texel)) * to_uv) +
+           texture.sample(linear_clamp, (point + float2(texel, -texel)) * to_uv) +
+           texture.sample(linear_clamp, (point + float2(-texel, -texel)) * to_uv);
+  return color / 16.0;
+}
+
+// The frame as it was before the backdrops, at `point`, sharp.
+float4 backdrop_frame(texture2d<float> frame, float2 point) {
+  constexpr sampler linear_clamp(filter::linear, address::clamp_to_edge);
+  return frame.sample(linear_clamp, point / float2(frame.get_width(), frame.get_height()));
+}
+
+float4 backdrop_level(uint index, float2 point, texture2d<float> level0,
+                      texture2d<float> level1, texture2d<float> level2,
+                      texture2d<float> level3, texture2d<float> level4,
+                      texture2d<float> level5) {
+  switch (index) {
+    case 0: return backdrop_level_sample(level0, 0, point);
+    case 1: return backdrop_level_sample(level1, 1, point);
+    case 2: return backdrop_level_sample(level2, 2, point);
+    case 3: return backdrop_level_sample(level3, 3, point);
+    case 4: return backdrop_level_sample(level4, 4, point);
+    default: return backdrop_level_sample(level5, 5, point);
+  }
+}
+
+// The colors around, as bright and colorful as they can be: what glows.
+// Dark ones stay dim.
+float3 backdrop_vivid(float3 color) {
+  color = clamp(color, float3(0.0), float3(1.0));
+  float luma = dot(color, BACKDROP_LUMA);
+  float3 vivid = max(mix(float3(luma), color, 1.8), float3(0.0));
+  float peak = max(max(vivid.r, vivid.g), vivid.b);
+  return vivid / max(peak, 0.35) * 0.95;
+}
+
+// How far light bends through a bevel of a quarter circle, by Snell's law,
+// looking straight down at it: where `slope` of it (1 at the edge, where it
+// is steepest, down to 0 where it meets the flat top) shows what's under it
+// from, inward, as a part of the farthest it does (`BACKDROP_BEND_PEAK`).
+float backdrop_bend(float slope) {
+  float height = sqrt(max(1.0 - slope * slope, 0.0));
+  float bent = asin(slope) - asin(slope / BACKDROP_IOR);
+  return height * tan(bent) / BACKDROP_BEND_PEAK;
+}
+
+float backdrop_sdf(float2 point, Backdrop backdrop) {
+  return quad_sdf_smoothed(point, backdrop.shape, backdrop.corner_radii,
+                           backdrop.corner_smoothing);
+}
+
+fragment float4 backdrop_fragment(
+    BackdropFragmentInput input [[stage_in]],
+    constant Backdrop *backdrops [[buffer(BackdropInputIndex_Backdrops)]],
+    texture2d<float> level0 [[texture(0)]], texture2d<float> level1 [[texture(1)]],
+    texture2d<float> level2 [[texture(2)]], texture2d<float> level3 [[texture(3)]],
+    texture2d<float> level4 [[texture(4)]], texture2d<float> level5 [[texture(5)]],
+    texture2d<float> frame [[texture(6)]]) {
+  Backdrop backdrop = backdrops[input.backdrop_id];
+  float2 point = input.position.xy;
+  float sdf = backdrop_sdf(point, backdrop);
+  float coverage = saturate(0.5 - sdf);
+  float3 around = backdrop_level(BACKDROP_LAST_LEVEL, point, level0, level1, level2,
+                                 level3, level4, level5).rgb;
+  float3 vivid = backdrop_vivid(around);
+
+  float halo = 0.0;
+  if (backdrop.halo > 0.0 && sdf > 0.0) {
+    float t = sdf / backdrop.halo;
+    halo = backdrop.glow * BACKDROP_GLOW_OUTSIDE * exp(-4.0 * t * t) * (1.0 - coverage);
+  }
+  if (coverage <= 0.0 && halo <= 0.0) {
+    return float4(0.0);
+  }
+
+  float3 color = float3(0.0);
+  if (coverage > 0.0) {
+    // The band along the edge: 1 at the edge, down to 0 `edge` inside.
+    float band = backdrop.edge > 0.0 ? saturate(1.0 + sdf / backdrop.edge) : 0.0;
+    // Out of the shape, square to its edge.
+    float2 normal = float2(0.0);
+    if (band > 0.0) {
+      float2 gradient = float2(
+          backdrop_sdf(point + float2(1.0, 0.0), backdrop) -
+              backdrop_sdf(point - float2(1.0, 0.0), backdrop),
+          backdrop_sdf(point + float2(0.0, 1.0), backdrop) -
+              backdrop_sdf(point - float2(0.0, 1.0), backdrop));
+      float length_ = length(gradient);
+      normal = length_ > 0.0001 ? gradient / length_ : float2(0.0);
+    }
+    // Light bends through the bevel as through a rounded glass edge seen
+    // from above, showing what's just inside it magnified across it.
+    float2 seen = point - normal * backdrop.refraction * backdrop_bend(band);
+    // Which level to read, -1 being the frame itself: the first level's
+    // texels are 2 pixels.
+    float lod = clamp(log2(max(backdrop.blur, 1.0)) - 1.0, -1.0,
+                      float(BACKDROP_LAST_LEVEL));
+    // A bevel that bends light is polished, clear however frosted the top.
+    if (backdrop.refraction > 0.0) {
+      lod = mix(lod, -1.0, band);
+    }
+    float3 under;
+    if (lod < 0.0) {
+      under = mix(backdrop_frame(frame, seen).rgb,
+                  backdrop_level(0, seen, level0, level1, level2, level3, level4, level5).rgb,
+                  lod + 1.0);
+    } else {
+      uint below = uint(floor(lod));
+      uint above = min(below + 1, BACKDROP_LAST_LEVEL);
+      under = mix(
+          backdrop_level(below, seen, level0, level1, level2, level3, level4, level5).rgb,
+          backdrop_level(above, seen, level0, level1, level2, level3, level4, level5).rgb,
+          lod - floor(lod));
+    }
+    color = mix(under, around, backdrop.average);
+    // Brighter than SDR white (HDR video) shows as white.
+    color = min(color, float3(1.0));
+    float luma = dot(color, BACKDROP_LUMA);
+    color = max(mix(float3(luma), color, backdrop.saturation), float3(0.0));
+    color *= backdrop.brightness;
+    float4 tint = hsla_to_rgba(backdrop.tint);
+    color = mix(color, tint.rgb, tint.a);
+    float band2 = band * band;
+    color += vivid * backdrop.glow * band2 * BACKDROP_GLOW_INSIDE;
+    // The rim of light, brightest where the edge faces the top left or the
+    // bottom right.
+    float facing = abs(dot(normal, float2(-0.70710678, -0.70710678)));
+    float rim = backdrop.rim * band2 * band2 * band2 * (0.3 + 0.7 * facing * facing);
+    color += mix(float3(1.0), vivid, saturate(backdrop.glow)) * rim;
+    color = saturate(color);
+  }
+  float inside = coverage * backdrop.opacity;
+  float outside = halo * backdrop.opacity * (1.0 - inside);
+  float alpha = inside + outside;
+  if (alpha <= 0.0) {
+    return float4(0.0);
+  }
+  return float4((color * inside + vivid * outside) / alpha, alpha);
+}

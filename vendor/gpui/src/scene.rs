@@ -32,6 +32,8 @@ pub(crate) struct Scene {
     pub(crate) monochrome_sprites: Vec<MonochromeSprite>,
     pub(crate) polychrome_sprites: Vec<PolychromeSprite>,
     pub(crate) surfaces: Vec<PaintSurface>,
+    /// Plays: see `Backdrop`.
+    pub(crate) backdrops: Vec<Backdrop>,
 }
 
 impl Scene {
@@ -46,6 +48,7 @@ impl Scene {
         self.monochrome_sprites.clear();
         self.polychrome_sprites.clear();
         self.surfaces.clear();
+        self.backdrops.clear();
     }
 
     pub fn len(&self) -> usize {
@@ -74,11 +77,17 @@ impl Scene {
             return;
         }
 
+        // Plays: a backdrop goes over what's drawn before it as far around
+        // as it reads, not just where it draws, so that's all drawn first.
+        let claimed = match &primitive {
+            Primitive::Backdrop(backdrop) => clipped_bounds.dilate(backdrop.reach()),
+            _ => clipped_bounds,
+        };
         let order = self
             .layer_stack
             .last()
             .copied()
-            .unwrap_or_else(|| self.primitive_bounds.insert(clipped_bounds));
+            .unwrap_or_else(|| self.primitive_bounds.insert(claimed));
         match &mut primitive {
             Primitive::Shadow(shadow) => {
                 shadow.order = order;
@@ -109,6 +118,10 @@ impl Scene {
                 surface.order = order;
                 self.surfaces.push(surface.clone());
             }
+            Primitive::Backdrop(backdrop) => {
+                backdrop.order = order;
+                self.backdrops.push(backdrop.clone());
+            }
         }
         self.paint_operations
             .push(PaintOperation::Primitive(primitive));
@@ -134,6 +147,7 @@ impl Scene {
         self.polychrome_sprites
             .sort_by_key(|sprite| (sprite.order, sprite.tile.tile_id));
         self.surfaces.sort_by_key(|surface| surface.order);
+        self.backdrops.sort_by_key(|backdrop| backdrop.order);
     }
 
     #[cfg_attr(
@@ -166,6 +180,9 @@ impl Scene {
             surfaces: &self.surfaces,
             surfaces_start: 0,
             surfaces_iter: self.surfaces.iter().peekable(),
+            backdrops: &self.backdrops,
+            backdrops_start: 0,
+            backdrops_iter: self.backdrops.iter().peekable(),
         }
     }
 }
@@ -179,6 +196,9 @@ impl Scene {
     allow(dead_code)
 )]
 pub(crate) enum PrimitiveKind {
+    /// Plays: first, so a backdrop sharing its draw order with what is
+    /// drawn on it (in one layer) goes under it.
+    Backdrop,
     Shadow,
     #[default]
     Quad,
@@ -204,6 +224,7 @@ pub(crate) enum Primitive {
     MonochromeSprite(MonochromeSprite),
     PolychromeSprite(PolychromeSprite),
     Surface(PaintSurface),
+    Backdrop(Backdrop),
 }
 
 impl Primitive {
@@ -216,6 +237,7 @@ impl Primitive {
             Primitive::MonochromeSprite(sprite) => &sprite.bounds,
             Primitive::PolychromeSprite(sprite) => &sprite.bounds,
             Primitive::Surface(surface) => &surface.bounds,
+            Primitive::Backdrop(backdrop) => &backdrop.bounds,
         }
     }
 
@@ -228,6 +250,7 @@ impl Primitive {
             Primitive::MonochromeSprite(sprite) => &sprite.content_mask,
             Primitive::PolychromeSprite(sprite) => &sprite.content_mask,
             Primitive::Surface(surface) => &surface.content_mask,
+            Primitive::Backdrop(backdrop) => &backdrop.content_mask,
         }
     }
 }
@@ -261,6 +284,9 @@ struct BatchIterator<'a> {
     surfaces: &'a [PaintSurface],
     surfaces_start: usize,
     surfaces_iter: Peekable<slice::Iter<'a, PaintSurface>>,
+    backdrops: &'a [Backdrop],
+    backdrops_start: usize,
+    backdrops_iter: Peekable<slice::Iter<'a, Backdrop>>,
 }
 
 impl<'a> Iterator for BatchIterator<'a> {
@@ -289,6 +315,10 @@ impl<'a> Iterator for BatchIterator<'a> {
             (
                 self.surfaces_iter.peek().map(|s| s.order),
                 PrimitiveKind::Surface,
+            ),
+            (
+                self.backdrops_iter.peek().map(|b| b.order),
+                PrimitiveKind::Backdrop,
             ),
         ];
         orders_and_kinds.sort_by_key(|(order, kind)| (order.unwrap_or(u32::MAX), *kind));
@@ -420,6 +450,22 @@ impl<'a> Iterator for BatchIterator<'a> {
                     &self.surfaces[surfaces_start..surfaces_end],
                 ))
             }
+            PrimitiveKind::Backdrop => {
+                let backdrops_start = self.backdrops_start;
+                let mut backdrops_end = backdrops_start + 1;
+                self.backdrops_iter.next();
+                while self
+                    .backdrops_iter
+                    .next_if(|backdrop| (backdrop.order, batch_kind) < max_order_and_kind)
+                    .is_some()
+                {
+                    backdrops_end += 1;
+                }
+                self.backdrops_start = backdrops_end;
+                Some(PrimitiveBatch::Backdrops(
+                    &self.backdrops[backdrops_start..backdrops_end],
+                ))
+            }
         }
     }
 }
@@ -446,6 +492,230 @@ pub(crate) enum PrimitiveBatch<'a> {
         sprites: &'a [PolychromeSprite],
     },
     Surfaces(&'a [PaintSurface]),
+    /// Plays: see `Backdrop`.
+    Backdrops(&'a [Backdrop]),
+}
+
+/// Plays: how an element's backdrop shows what is drawn under it, behind
+/// its own background and children: blurred, its colors and brightness
+/// changed, bent along the edge like glass, with a rim of light and a glow
+/// of the colors around it (see `Styled::backdrop`). Renderers that can't
+/// read back what they drew (Windows) leave it out.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct BackdropStyle {
+    /// How far what's under it is blurred, about the blur's radius. Even 0
+    /// blurs it a little, as it is read at half the window's resolution.
+    pub blur: Pixels,
+    /// How colorful it is: 1 as it is, 0 gray, more to brighten colors.
+    pub saturation: f32,
+    /// What its brightness is multiplied by.
+    pub brightness: f32,
+    /// A color laid over it, as far as the color's alpha says.
+    pub tint: Hsla,
+    /// How far it is the average color around each point (from about the
+    /// window's 1/64th) rather than what is right under it: 1 shows only
+    /// that, a tint of the colors around.
+    pub average: f32,
+    /// How far, at the most, the edge bends what shows through it toward
+    /// the outside, as the rim of a lens does.
+    pub refraction: Pixels,
+    /// How wide the band along the edge is that bends, catches the light
+    /// and glows.
+    pub edge: Pixels,
+    /// How bright the rim of light along the edge is, brightest where it
+    /// faces the top left or the bottom right.
+    pub rim: f32,
+    /// How strongly the colors around it glow inside its edge and color
+    /// the rim.
+    pub glow: f32,
+    /// How far the glow spills outside the element.
+    pub halo: Pixels,
+    /// How far it covers what's under it.
+    pub opacity: f32,
+}
+
+impl Default for BackdropStyle {
+    fn default() -> Self {
+        Self {
+            blur: Pixels::ZERO,
+            saturation: 1.,
+            brightness: 1.,
+            tint: Hsla::transparent_black(),
+            average: 0.,
+            refraction: Pixels::ZERO,
+            edge: Pixels::ZERO,
+            rim: 0.,
+            glow: 0.,
+            halo: Pixels::ZERO,
+            opacity: 1.,
+        }
+    }
+}
+
+/// Plays: how many times what's under backdrops is halved, to 1/64th.
+pub(crate) const BACKDROP_LEVELS: usize = 6;
+
+/// Plays: an element's backdrop (see `BackdropStyle`). Renderers copy what
+/// they drew so far around a batch of them, halve it again and again
+/// (`BACKDROP_LEVELS`), and draw each from those.
+#[derive(Debug, Clone)]
+#[repr(C)]
+pub(crate) struct Backdrop {
+    pub order: DrawOrder,
+    pub pad: u32,
+    /// Where it draws: its shape, and the halo around it.
+    pub bounds: Bounds<ScaledPixels>,
+    pub content_mask: ContentMask<ScaledPixels>,
+    /// The element's shape.
+    pub shape: Bounds<ScaledPixels>,
+    pub corner_radii: Corners<ScaledPixels>,
+    pub tint: Hsla,
+    pub corner_smoothing: f32,
+    pub blur: ScaledPixels,
+    pub saturation: f32,
+    pub brightness: f32,
+    pub average: f32,
+    pub refraction: ScaledPixels,
+    pub edge: ScaledPixels,
+    pub rim: f32,
+    pub glow: f32,
+    pub halo: ScaledPixels,
+    pub opacity: f32,
+    /// Keeps the size a multiple of 8, as WGSL lays the struct out.
+    pub pad2: u32,
+}
+
+impl From<Backdrop> for Primitive {
+    fn from(backdrop: Backdrop) -> Self {
+        Primitive::Backdrop(backdrop)
+    }
+}
+
+impl Backdrop {
+    /// A backdrop for an element of `bounds` and `corner_radii`, inside
+    /// `content_mask`, as `style` says and `opacity` (the element's) fades
+    /// it, at `scale_factor`.
+    pub(crate) fn new(
+        bounds: Bounds<Pixels>,
+        corner_radii: Corners<Pixels>,
+        corner_smoothing: f32,
+        style: BackdropStyle,
+        content_mask: ContentMask<Pixels>,
+        opacity: f32,
+        scale_factor: f32,
+    ) -> Self {
+        let halo = style.halo.max(Pixels::ZERO);
+        Self {
+            order: 0,
+            pad: 0,
+            bounds: bounds.dilate(halo).scale(scale_factor),
+            content_mask: content_mask.scale(scale_factor),
+            shape: bounds.scale(scale_factor),
+            corner_radii: corner_radii.scale(scale_factor),
+            tint: style.tint,
+            corner_smoothing,
+            blur: style.blur.scale(scale_factor),
+            saturation: style.saturation,
+            brightness: style.brightness,
+            average: style.average,
+            refraction: style.refraction.scale(scale_factor),
+            edge: style.edge.scale(scale_factor),
+            rim: style.rim,
+            glow: style.glow,
+            halo: halo.scale(scale_factor),
+            opacity: style.opacity * opacity,
+            pad2: 0,
+        }
+    }
+
+    /// How far around where it draws a backdrop reads what's under it: as
+    /// far as its edge bends, and as far as the coarsest level it reads
+    /// does. It blends that level's texels a texel and a half around, each
+    /// made from the level before up to three of its texels around, and so
+    /// on down to the frame (see `backdrop_level_region`).
+    pub(crate) fn reach(&self) -> ScaledPixels {
+        let last = BACKDROP_LEVELS - 1;
+        let level = if self.average > 0. || self.glow > 0. {
+            // The colors around.
+            last
+        } else {
+            let lod = (self.blur.0.max(2.).log2() - 1.).clamp(0., last as f32);
+            lod.ceil() as usize
+        };
+        let texel = (2u32 << level) as f32;
+        ScaledPixels(self.refraction.0.max(0.) + 5.5 * texel)
+    }
+
+    /// Where a batch of backdrops draws, in device pixels, with room for
+    /// how far their edges bend what shows through them. None if empty.
+    #[cfg_attr(
+        all(
+            any(target_os = "linux", target_os = "freebsd"),
+            not(any(feature = "x11", feature = "wayland"))
+        ),
+        allow(dead_code)
+    )]
+    pub(crate) fn region(backdrops: &[Backdrop]) -> Option<Bounds<ScaledPixels>> {
+        backdrops
+            .iter()
+            .map(|backdrop| {
+                backdrop
+                    .bounds
+                    .intersect(&backdrop.content_mask.bounds)
+                    .dilate(ScaledPixels(backdrop.refraction.0.max(0.)))
+            })
+            .reduce(|region, bounds| region.union(&bounds))
+            .filter(|region| !region.is_empty())
+    }
+}
+
+/// Plays: the part of a `level` of what's under backdrops to make for a
+/// batch drawing in `region` (see `Backdrop::region`), in the viewport's
+/// pixels, inside the viewport of `width` by `height`. Backdrops read a
+/// level a texel and a half around where they draw, and each level reads
+/// the one before up to three of its texels around it, so a level reaches
+/// as far out as the levels after it need, and a texel more.
+#[cfg_attr(
+    all(
+        any(target_os = "linux", target_os = "freebsd"),
+        not(any(feature = "x11", feature = "wayland"))
+    ),
+    allow(dead_code)
+)]
+pub(crate) fn backdrop_level_region(
+    region: Bounds<ScaledPixels>,
+    level: usize,
+    width: f32,
+    height: f32,
+) -> [f32; 4] {
+    let texel = (2u32 << level) as f32;
+    let last_texel = (2u32 << (BACKDROP_LEVELS - 1)) as f32;
+    // Three texels of each level from this one to the last, from 2^(level
+    // + 1) to 2^BACKDROP_LEVELS, and one of this level.
+    let margin = 3. * (2. * last_texel - texel) + texel;
+    let left = (region.origin.x.0 - margin).floor().clamp(0., width);
+    let top = (region.origin.y.0 - margin).floor().clamp(0., height);
+    let right = (region.origin.x.0 + region.size.width.0 + margin)
+        .ceil()
+        .clamp(0., width);
+    let bottom = (region.origin.y.0 + region.size.height.0 + margin)
+        .ceil()
+        .clamp(0., height);
+    [left, top, right - left, bottom - top]
+}
+
+/// Plays: the size of a level of what's under backdrops, `level` from 0
+/// (half the viewport) to `BACKDROP_LEVELS` - 1.
+#[cfg_attr(
+    all(
+        any(target_os = "linux", target_os = "freebsd"),
+        not(any(feature = "x11", feature = "wayland"))
+    ),
+    allow(dead_code)
+)]
+pub(crate) fn backdrop_level_size(width: u32, height: u32, level: usize) -> (u32, u32) {
+    let texel = 2u32 << level;
+    (width.div_ceil(texel).max(1), height.div_ceil(texel).max(1))
 }
 
 #[derive(Default, Debug, Clone)]

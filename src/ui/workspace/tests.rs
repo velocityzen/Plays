@@ -13,12 +13,13 @@ use gpui::{
 use super::{TOOLBAR_SPACE, Workspace};
 use crate::app::ShowOnDisplay;
 use crate::hotkeys::{ToggleFloatOnTop, ToggleFloatOnTopWhilePlaying};
-use crate::settings::{FloatOnTop, Settings};
+use crate::settings::{FloatOnTop, PanelLook, Settings};
 use crate::ui::displays;
 use crate::ui::settings::SettingsView;
 use crate::ui::testing::{
     self, OPEN_WAIT, click, double_click, find, fixture, hover, press, shows, wait_until,
 };
+use crate::ui::theme::backdrop;
 use crate::ui::theme::layout::WINDOW_MIN_SIZE;
 use crate::ui::theme::motion::FIT_POLL;
 
@@ -330,6 +331,55 @@ fn a_file_with_chapters_goes_from_one_to_the_next_and_marks_them(cx: &mut TestAp
     assert!(!shows(&mut cx, "notch-2"));
     cx.update(|_, cx| Settings::update(cx, false, |s| s.chapter_marks = false));
     assert!(!shows(&mut cx, "notch-0"), "unless Settings say not to");
+}
+
+/// The backdrops the window draws now: where, and how they look.
+fn backdrops(cx: &mut VisualTestContext) -> Vec<(gpui::Bounds<gpui::Pixels>, gpui::BackdropStyle)> {
+    cx.update(|window, _| window.refresh());
+    cx.run_until_parked();
+    cx.update(|window, _| window.painted_backdrops())
+}
+
+#[gpui::test]
+fn panels_over_the_video_show_it_through_them_as_settings_say(cx: &mut TestAppContext) {
+    let (window, mut cx) = testing::start(cx);
+    open(window, &mut cx, &["clip.mp4"], false);
+    let view = window
+        .read_with(&cx, |workspace, _| workspace.tiles[0].view.clone())
+        .unwrap();
+    // Paused, its controls show.
+    view.update(&mut cx, |view, _| view.pause());
+    let seek = find(&mut cx, "seek");
+
+    for look in [
+        PanelLook::Frosted,
+        PanelLook::Glass,
+        PanelLook::Glow,
+        PanelLook::Tint,
+    ] {
+        cx.update(|_, cx| Settings::update(cx, false, |s| s.panels = look));
+        let backdrops = backdrops(&mut cx);
+        assert!(
+            backdrops
+                .iter()
+                .any(|(bounds, _)| bounds.contains(&seek.center())),
+            "{look:?}: the controls show the video through them"
+        );
+        assert!(
+            backdrops
+                .iter()
+                .all(|(_, style)| Some(*style) == backdrop::for_look(look)),
+            "{look:?}: {backdrops:?}"
+        );
+    }
+
+    cx.update(|_, cx| Settings::update(cx, false, |s| s.panels = PanelLook::Plain));
+    assert_eq!(
+        backdrops(&mut cx),
+        [],
+        "plain panels hide what's under them"
+    );
+    assert!(shows(&mut cx, "seek"), "and still show");
 }
 
 #[gpui::test]

@@ -2,7 +2,7 @@
 
 This is gpui 0.2.2 from crates.io, without its examples, with HDR video on
 macOS, video frames converted on the GPU on Linux, turned and cropped
-pictures, and a few small fixes. Plays uses it through `[patch.crates-io]` in its
+pictures, backdrops, and a few small fixes. Plays uses it through `[patch.crates-io]` in its
 Cargo.toml. Everything Plays changed is marked "Plays" in the code.
 
 ## What changed
@@ -77,6 +77,44 @@ the sprite ones in `shaders.wgsl` and `shaders.hlsl`):
 - cbindgen writes the Metal header's copy (`build.rs` lists the type). WGSL
   puts its vectors on 8-byte boundaries, so asserts in `scene.rs` keep
   `PolychromeSprite`'s `content` on one and its size a multiple of 8.
+
+Backdrops (`src/scene.rs`, `src/style.rs`, `src/styled.rs`,
+`src/window.rs`, `build.rs`, both renderers and their shaders; Windows
+draws none):
+
+- `.backdrop(BackdropStyle)` (`Style::backdrop`) draws, under an element's
+  background and in its shape, what was drawn under it: blurred `blur`
+  pixels, with `saturation` and `brightness`, a `tint` mixed in by its
+  alpha, and `average` of the colors around in place of it. Along its edge
+  a bevel `edge` wide bends what shows through it by up to `refraction`,
+  catches a `rim` of light, and with `glow` glows with the colors around,
+  inside and `halo` pixels outside. `opacity` fades it, as does the
+  element's. `Window::paint_backdrop` paints one directly, as a `Backdrop`
+  primitive (cbindgen writes the Metal header's copy; `pad2` keeps its size
+  a multiple of 8, as WGSL lays it out).
+- A backdrop's draw order is above everything drawn before it as far
+  around as it reads (`Backdrop::reach`), not just under it, so all it
+  shows is drawn first. Within one order, as in a layer, backdrops go
+  first, under what's drawn on them.
+- For each batch of backdrops the render pass ends. What's drawn so far is
+  copied (Metal's layer is no longer `framebufferOnly`, and blade's surface
+  is made with `COPY` usage too) and halved six times into `Rgba16Float`
+  levels, each from the one before with the 13 taps of Jimenez's "Next
+  generation post processing in Call of Duty: Advanced Warfare", only as
+  far around the batch as later levels and the backdrops read
+  (`Backdrop::region`, `backdrop_level_region`). The pass then goes on,
+  loading what's drawn, and each backdrop is drawn from the levels: its
+  blur mixes the two nearest, read through a tent filter, or the copy
+  itself under 2 pixels; the last level gives the colors around. The
+  textures are made when a frame first has backdrops, and again for a new
+  size.
+- The bevel's slope comes from the shape's distance field, and
+  `backdrop_bend` is Snell's law through a quarter-circle bevel seen from
+  above: what's just inside the edge shows magnified across it. A bevel
+  that bends is polished, read from the sharp copy whatever the blur.
+- Test support: `Window::painted_backdrops` lists the backdrops the last
+  frame drew, and `gpui::render_offscreen` (macOS) draws quads and
+  backdrops off screen with the Metal renderer and reads the pixels back.
 
 `over()` in the quad shaders (Metal, WGSL and HLSL) returns clear when both
 colors are clear. It divided by their combined alpha, so the corners of a

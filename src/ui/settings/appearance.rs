@@ -4,7 +4,7 @@ use gpui::{AnyElement, Context, Window};
 
 use super::form::{group, row, update_settings};
 use super::{Pane, SettingsView};
-use crate::settings::{ControlsVisibility, FloatOnTop, Settings, ThemeMode};
+use crate::settings::{ControlsVisibility, FloatOnTop, PanelLook, Settings, ThemeMode};
 use crate::ui::components::{Segmented, Switch};
 use crate::ui::theme::Theme;
 use crate::ui::theme::settings::APPEARANCE_COLOR;
@@ -80,6 +80,26 @@ impl Pane for AppearancePane {
                             s.controls,
                         )
                         .on_select(|&v, _, cx| update_settings(cx, true, |s| s.controls = v)),
+                    ),
+                    row(
+                        "Panels over the video",
+                        Some(
+                            "How the controls, notes and menus on a video show it through them"
+                                .into(),
+                        ),
+                        theme,
+                        Segmented::new(
+                            "panels",
+                            &[
+                                (PanelLook::Plain, "Plain"),
+                                (PanelLook::Frosted, "Frosted"),
+                                (PanelLook::Glass, "Glass"),
+                                (PanelLook::Glow, "Glow"),
+                                (PanelLook::Tint, "Tint"),
+                            ],
+                            s.panels,
+                        )
+                        .on_select(|&v, _, cx| update_settings(cx, true, |s| s.panels = v)),
                     ),
                     row(
                         "Show file names",

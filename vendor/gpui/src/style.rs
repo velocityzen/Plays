@@ -5,11 +5,11 @@ use std::{
 };
 
 use crate::{
-    AbsoluteLength, App, Background, BackgroundTag, BorderStyle, Bounds, ContentMask, Corners,
-    CornersRefinement, CursorStyle, DefiniteLength, DevicePixels, Edges, EdgesRefinement, Font,
-    FontFallbacks, FontFeatures, FontStyle, FontWeight, GridLocation, Hsla, Length, Pixels, Point,
-    PointRefinement, Rgba, SharedString, Size, SizeRefinement, Styled, TextRun, Window, black, phi,
-    point, quad, rems, size,
+    AbsoluteLength, App, BackdropStyle, Background, BackgroundTag, BorderStyle, Bounds,
+    ContentMask, Corners, CornersRefinement, CursorStyle, DefiniteLength, DevicePixels, Edges,
+    EdgesRefinement, Font, FontFallbacks, FontFeatures, FontStyle, FontWeight, GridLocation, Hsla,
+    Length, Pixels, Point, PointRefinement, Rgba, SharedString, Size, SizeRefinement, Styled,
+    TextRun, Window, black, phi, point, quad, rems, size,
 };
 use collections::HashSet;
 use refineable::Refineable;
@@ -254,6 +254,10 @@ pub struct Style {
 
     /// Box shadow of the element
     pub box_shadow: Vec<BoxShadow>,
+
+    /// Plays: how the element shows what is drawn under it, behind its
+    /// background (see `BackdropStyle`).
+    pub backdrop: Option<BackdropStyle>,
 
     /// The text style of this element
     pub text: TextStyleRefinement,
@@ -630,6 +634,10 @@ impl Style {
 
         window.paint_shadows(bounds, corner_radii, &self.box_shadow);
 
+        if let Some(backdrop) = self.backdrop {
+            window.paint_backdrop(bounds, corner_radii, self.corner_smoothing, backdrop);
+        }
+
         let background_color = self.background.as_ref().and_then(Fill::color);
         if background_color.is_some_and(|color| !color.is_transparent()) {
             let mut border_color = match background_color {
@@ -776,6 +784,7 @@ impl Default for Style {
             corner_radii: Corners::default(),
             corner_smoothing: 0.,
             box_shadow: Default::default(),
+            backdrop: None,
             text: TextStyleRefinement::default(),
             mouse_cursor: None,
             opacity: None,

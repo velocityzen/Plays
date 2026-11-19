@@ -1,8 +1,9 @@
 use super::metal_atlas::MetalAtlas;
 use crate::{
-    AtlasTextureId, Background, Bounds, ContentMask, ContentTransform, DevicePixels, MonochromeSprite, PaintSurface,
-    Path, Point, PolychromeSprite, PrimitiveBatch, Quad, ScaledPixels, Scene, Shadow, Size,
-    Surface, Underline, point, size,
+    AtlasTextureId, BACKDROP_LEVELS, Backdrop, Background, Bounds, ContentMask, ContentTransform,
+    DevicePixels, MonochromeSprite, PaintSurface, Path, Point, PolychromeSprite, PrimitiveBatch,
+    Quad, ScaledPixels, Scene, Shadow, Size, Surface, Underline, backdrop_level_region,
+    backdrop_level_size, point, size,
 };
 use anyhow::Result;
 use block::ConcreteBlock;
@@ -56,6 +57,8 @@ const PATH_SAMPLE_COUNT: u32 = 4;
 /// be brighter than SDR white. Everything else draws exactly as it did in
 /// 8-bit sRGB. See PLAYS.md.
 const DRAWABLE_FORMAT: MTLPixelFormat = MTLPixelFormat::RGBA16Float;
+/// Plays: what's under backdrops is kept in half floats, as the drawable is.
+const BACKDROP_LEVEL_FORMAT: MTLPixelFormat = MTLPixelFormat::RGBA16Float;
 /// Plays: frames without an HDR surface before EDR is turned off again, so a
 /// paused or briefly hidden HDR video doesn't make the screen ramp up and down.
 const EDR_LINGER_FRAMES: u32 = 120;
@@ -139,6 +142,14 @@ pub(crate) struct MetalRenderer {
     surfaces_pipeline_state: metal::RenderPipelineState,
     hdr_surfaces_pipeline_state: metal::RenderPipelineState,
     dovi_surfaces_pipeline_state: metal::RenderPipelineState,
+    /// Plays: halves what's under backdrops, a level at a time.
+    backdrop_pass_pipeline_state: metal::RenderPipelineState,
+    /// Plays: draws backdrops from those levels.
+    backdrops_pipeline_state: metal::RenderPipelineState,
+    /// Plays: what's under backdrops, from half the viewport down, then a
+    /// copy of the frame they read sharp, made for the viewport size it
+    /// holds when a frame first has backdrops.
+    backdrop_levels: Option<(Size<DevicePixels>, Vec<metal::Texture>)>,
     /// How bright the screen can go now, relative to SDR white; read each frame.
     edr_headroom: f32,
     /// Frames since one had an HDR surface, while EDR is on.
@@ -185,6 +196,8 @@ impl MetalRenderer {
         }
         layer.set_opaque(false);
         layer.set_maximum_drawable_count(3);
+        // Plays: backdrops read what was drawn so far.
+        layer.set_framebuffer_only(false);
         unsafe {
             let _: () = msg_send![&*layer, setAllowsNextDrawableTimeout: NO];
             let _: () = msg_send![&*layer, setNeedsDisplayOnBoundsChange: YES];
@@ -306,6 +319,16 @@ impl MetalRenderer {
             DRAWABLE_FORMAT,
         );
 
+        let backdrop_pass_pipeline_state = build_backdrop_pass_pipeline_state(&device, &library);
+        let backdrops_pipeline_state = build_pipeline_state(
+            &device,
+            &library,
+            "backdrops",
+            "backdrop_vertex",
+            "backdrop_fragment",
+            DRAWABLE_FORMAT,
+        );
+
         let command_queue = device.new_command_queue();
         let sprite_atlas = Arc::new(MetalAtlas::new(device.clone()));
         let core_video_texture_cache =
@@ -326,6 +349,9 @@ impl MetalRenderer {
             surfaces_pipeline_state,
             hdr_surfaces_pipeline_state,
             dovi_surfaces_pipeline_state,
+            backdrop_pass_pipeline_state,
+            backdrops_pipeline_state,
+            backdrop_levels: None,
             edr_headroom: 1.0,
             frames_without_hdr: None,
             unit_vertices,
@@ -434,8 +460,12 @@ impl MetalRenderer {
         loop {
             let mut instance_buffer = self.instance_buffer_pool.lock().acquire(&self.device);
 
-            let command_buffer =
-                self.draw_primitives(scene, &mut instance_buffer, drawable, viewport_size);
+            let command_buffer = self.draw_primitives(
+                scene,
+                &mut instance_buffer,
+                drawable.texture(),
+                viewport_size,
+            );
 
             match command_buffer {
                 Ok(command_buffer) => {
@@ -533,7 +563,7 @@ impl MetalRenderer {
         &mut self,
         scene: &Scene,
         instance_buffer: &mut InstanceBuffer,
-        drawable: &metal::MetalDrawableRef,
+        target: &metal::TextureRef,
         viewport_size: Size<DevicePixels>,
     ) -> Result<metal::CommandBuffer> {
         let command_queue = self.command_queue.clone();
@@ -541,15 +571,11 @@ impl MetalRenderer {
         let alpha = if self.layer.is_opaque() { 1. } else { 0. };
         let mut instance_offset = 0;
 
-        let mut command_encoder = new_command_encoder(
-            command_buffer,
-            drawable,
-            viewport_size,
-            |color_attachment| {
+        let mut command_encoder =
+            new_command_encoder(command_buffer, target, viewport_size, |color_attachment| {
                 color_attachment.set_load_action(metal::MTLLoadAction::Clear);
                 color_attachment.set_clear_color(metal::MTLClearColor::new(0., 0., 0., alpha));
-            },
-        );
+            });
 
         for batch in scene.batches() {
             let ok = match batch {
@@ -580,7 +606,7 @@ impl MetalRenderer {
 
                     command_encoder = new_command_encoder(
                         command_buffer,
-                        drawable,
+                        target,
                         viewport_size,
                         |color_attachment| {
                             color_attachment.set_load_action(metal::MTLLoadAction::Load);
@@ -635,11 +661,41 @@ impl MetalRenderer {
                     viewport_size,
                     command_encoder,
                 ),
+                // Plays: what's drawn so far is read and halved, then the
+                // backdrops drawn from it.
+                PrimitiveBatch::Backdrops(backdrops) => {
+                    command_encoder.end_encoding();
+                    let levels = self.halve_under_backdrops(
+                        backdrops,
+                        target,
+                        viewport_size,
+                        command_buffer,
+                    );
+                    command_encoder = new_command_encoder(
+                        command_buffer,
+                        target,
+                        viewport_size,
+                        |color_attachment| {
+                            color_attachment.set_load_action(metal::MTLLoadAction::Load);
+                        },
+                    );
+                    match levels {
+                        Some(levels) => self.draw_backdrops(
+                            backdrops,
+                            &levels,
+                            instance_buffer,
+                            &mut instance_offset,
+                            viewport_size,
+                            command_encoder,
+                        ),
+                        None => true,
+                    }
+                }
             };
             if !ok {
                 command_encoder.end_encoding();
                 anyhow::bail!(
-                    "scene too large: {} paths, {} shadows, {} quads, {} underlines, {} mono, {} poly, {} surfaces",
+                    "scene too large: {} paths, {} shadows, {} quads, {} underlines, {} mono, {} poly, {} surfaces, {} backdrops",
                     scene.paths.len(),
                     scene.shadows.len(),
                     scene.quads.len(),
@@ -647,6 +703,7 @@ impl MetalRenderer {
                     scene.monochrome_sprites.len(),
                     scene.polychrome_sprites.len(),
                     scene.surfaces.len(),
+                    scene.backdrops.len(),
                 );
             }
         }
@@ -1306,11 +1363,222 @@ impl MetalRenderer {
         }
         true
     }
+
+    /// Plays: the levels of what's under backdrops, then the frame's copy,
+    /// made for the viewport.
+    fn backdrop_levels(
+        &mut self,
+        viewport_size: Size<DevicePixels>,
+    ) -> Option<Vec<metal::Texture>> {
+        if viewport_size.width.0 <= 0 || viewport_size.height.0 <= 0 {
+            return None;
+        }
+        if let Some((made_for, levels)) = &self.backdrop_levels
+            && *made_for == viewport_size
+        {
+            return Some(levels.clone());
+        }
+        let texture = |width: u32, height: u32, format, usage| {
+            let descriptor = metal::TextureDescriptor::new();
+            descriptor.set_width(width as u64);
+            descriptor.set_height(height as u64);
+            descriptor.set_pixel_format(format);
+            descriptor.set_storage_mode(metal::MTLStorageMode::Private);
+            descriptor.set_usage(usage);
+            self.device.new_texture(&descriptor)
+        };
+        let mut levels: Vec<metal::Texture> = (0..BACKDROP_LEVELS)
+            .map(|level| {
+                let (width, height) = backdrop_level_size(
+                    viewport_size.width.0 as u32,
+                    viewport_size.height.0 as u32,
+                    level,
+                );
+                texture(
+                    width,
+                    height,
+                    BACKDROP_LEVEL_FORMAT,
+                    metal::MTLTextureUsage::RenderTarget | metal::MTLTextureUsage::ShaderRead,
+                )
+            })
+            .collect();
+        levels.push(texture(
+            viewport_size.width.0 as u32,
+            viewport_size.height.0 as u32,
+            DRAWABLE_FORMAT,
+            metal::MTLTextureUsage::ShaderRead,
+        ));
+        self.backdrop_levels = Some((viewport_size, levels.clone()));
+        Some(levels)
+    }
+
+    /// Plays: copy what `target` has under `backdrops`, and halve it into
+    /// the levels, each from the one before; hand them back, the copy last.
+    fn halve_under_backdrops(
+        &mut self,
+        backdrops: &[Backdrop],
+        target: &metal::TextureRef,
+        viewport_size: Size<DevicePixels>,
+        command_buffer: &metal::CommandBufferRef,
+    ) -> Option<Vec<metal::Texture>> {
+        let (width, height) = (viewport_size.width.0 as f32, viewport_size.height.0 as f32);
+        let region = Backdrop::region(backdrops)?;
+        let levels = self.backdrop_levels(viewport_size)?;
+
+        // Backdrops read the copy where they draw, between its pixels.
+        let copied = region.dilate(ScaledPixels(1.));
+        let (left, top) = (
+            copied.left().0.max(0.).floor(),
+            copied.top().0.max(0.).floor(),
+        );
+        let (right, bottom) = (
+            copied.right().0.min(width).ceil(),
+            copied.bottom().0.min(height).ceil(),
+        );
+        if right > left && bottom > top {
+            let origin = metal::MTLOrigin {
+                x: left as u64,
+                y: top as u64,
+                z: 0,
+            };
+            let blit = command_buffer.new_blit_command_encoder();
+            blit.copy_from_texture(
+                target,
+                0,
+                0,
+                origin,
+                metal::MTLSize {
+                    width: (right - left) as u64,
+                    height: (bottom - top) as u64,
+                    depth: 1,
+                },
+                &levels[BACKDROP_LEVELS],
+                0,
+                0,
+                origin,
+            );
+            blit.end_encoding();
+        }
+
+        for (level, texture) in levels[..BACKDROP_LEVELS].iter().enumerate() {
+            let region = backdrop_level_region(region, level, width, height);
+            let (source, source_texel): (&metal::TextureRef, f32) = match level {
+                0 => (target, 1.),
+                _ => (&levels[level - 1], (1u32 << level) as f32),
+            };
+            let params = BackdropPassParams {
+                region,
+                texels: [
+                    source_texel,
+                    (2u32 << level) as f32,
+                    texture.width() as f32,
+                    texture.height() as f32,
+                ],
+            };
+
+            let render_pass_descriptor = metal::RenderPassDescriptor::new();
+            let color_attachment = render_pass_descriptor
+                .color_attachments()
+                .object_at(0)
+                .unwrap();
+            color_attachment.set_texture(Some(texture));
+            color_attachment.set_load_action(metal::MTLLoadAction::Load);
+            color_attachment.set_store_action(metal::MTLStoreAction::Store);
+            let command_encoder = command_buffer.new_render_command_encoder(render_pass_descriptor);
+            command_encoder.set_render_pipeline_state(&self.backdrop_pass_pipeline_state);
+            command_encoder.set_vertex_buffer(
+                BackdropPassInputIndex::Vertices as u64,
+                Some(&self.unit_vertices),
+                0,
+            );
+            command_encoder.set_vertex_bytes(
+                BackdropPassInputIndex::Params as u64,
+                mem::size_of_val(&params) as u64,
+                &params as *const BackdropPassParams as *const _,
+            );
+            command_encoder.set_fragment_bytes(
+                BackdropPassInputIndex::Params as u64,
+                mem::size_of_val(&params) as u64,
+                &params as *const BackdropPassParams as *const _,
+            );
+            command_encoder
+                .set_fragment_texture(BackdropPassInputIndex::Source as u64, Some(source));
+            command_encoder.draw_primitives(metal::MTLPrimitiveType::Triangle, 0, 6);
+            command_encoder.end_encoding();
+        }
+        Some(levels)
+    }
+
+    /// Plays: draw `backdrops` from the levels of what's under them, and
+    /// its copy.
+    fn draw_backdrops(
+        &self,
+        backdrops: &[Backdrop],
+        levels: &[metal::Texture],
+        instance_buffer: &mut InstanceBuffer,
+        instance_offset: &mut usize,
+        viewport_size: Size<DevicePixels>,
+        command_encoder: &metal::RenderCommandEncoderRef,
+    ) -> bool {
+        if backdrops.is_empty() {
+            return true;
+        }
+        align_offset(instance_offset);
+
+        command_encoder.set_render_pipeline_state(&self.backdrops_pipeline_state);
+        command_encoder.set_vertex_buffer(
+            BackdropInputIndex::Vertices as u64,
+            Some(&self.unit_vertices),
+            0,
+        );
+        command_encoder.set_vertex_buffer(
+            BackdropInputIndex::Backdrops as u64,
+            Some(&instance_buffer.metal_buffer),
+            *instance_offset as u64,
+        );
+        command_encoder.set_fragment_buffer(
+            BackdropInputIndex::Backdrops as u64,
+            Some(&instance_buffer.metal_buffer),
+            *instance_offset as u64,
+        );
+        command_encoder.set_vertex_bytes(
+            BackdropInputIndex::ViewportSize as u64,
+            mem::size_of_val(&viewport_size) as u64,
+            &viewport_size as *const Size<DevicePixels> as *const _,
+        );
+        for (index, level) in levels.iter().enumerate() {
+            command_encoder.set_fragment_texture(index as u64, Some(level));
+        }
+
+        let backdrop_bytes_len = mem::size_of_val(backdrops);
+        let next_offset = *instance_offset + backdrop_bytes_len;
+        if next_offset > instance_buffer.size {
+            return false;
+        }
+        unsafe {
+            let buffer_contents =
+                (instance_buffer.metal_buffer.contents() as *mut u8).add(*instance_offset);
+            ptr::copy_nonoverlapping(
+                backdrops.as_ptr() as *const u8,
+                buffer_contents,
+                backdrop_bytes_len,
+            );
+        }
+
+        command_encoder.draw_primitives_instanced(
+            metal::MTLPrimitiveType::Triangle,
+            0,
+            6,
+            backdrops.len() as u64,
+        );
+        *instance_offset = next_offset;
+        true
+    }
 }
 
 fn new_command_encoder<'a>(
     command_buffer: &'a metal::CommandBufferRef,
-    drawable: &'a metal::MetalDrawableRef,
+    target: &'a metal::TextureRef,
     viewport_size: Size<DevicePixels>,
     configure_color_attachment: impl Fn(&RenderPassColorAttachmentDescriptorRef),
 ) -> &'a metal::RenderCommandEncoderRef {
@@ -1319,7 +1587,7 @@ fn new_command_encoder<'a>(
         .color_attachments()
         .object_at(0)
         .unwrap();
-    color_attachment.set_texture(Some(drawable.texture()));
+    color_attachment.set_texture(Some(target));
     color_attachment.set_store_action(metal::MTLStoreAction::Store);
     configure_color_attachment(color_attachment);
 
@@ -1442,6 +1710,32 @@ fn build_path_rasterization_pipeline_state(
         .expect("could not create render pipeline state")
 }
 
+/// Plays: the pipeline that halves what's under backdrops into a level,
+/// replacing what was there.
+fn build_backdrop_pass_pipeline_state(
+    device: &metal::DeviceRef,
+    library: &metal::LibraryRef,
+) -> metal::RenderPipelineState {
+    let vertex_fn = library
+        .get_function("backdrop_pass_vertex", None)
+        .expect("error locating vertex function");
+    let fragment_fn = library
+        .get_function("backdrop_pass_fragment", None)
+        .expect("error locating fragment function");
+
+    let descriptor = metal::RenderPipelineDescriptor::new();
+    descriptor.set_label("backdrop_pass");
+    descriptor.set_vertex_function(Some(vertex_fn.as_ref()));
+    descriptor.set_fragment_function(Some(fragment_fn.as_ref()));
+    let color_attachment = descriptor.color_attachments().object_at(0).unwrap();
+    color_attachment.set_pixel_format(BACKDROP_LEVEL_FORMAT);
+    color_attachment.set_blending_enabled(false);
+
+    device
+        .new_render_pipeline_state(&descriptor)
+        .expect("could not create render pipeline state")
+}
+
 // Align to multiples of 256 make Metal happy.
 fn align_offset(offset: &mut usize) {
     *offset = (*offset).div_ceil(256) * 256;
@@ -1475,6 +1769,29 @@ enum SpriteInputIndex {
     ViewportSize = 2,
     AtlasTextureSize = 3,
     AtlasTexture = 4,
+}
+
+#[repr(C)]
+enum BackdropInputIndex {
+    Vertices = 0,
+    Backdrops = 1,
+    ViewportSize = 2,
+}
+
+#[repr(C)]
+enum BackdropPassInputIndex {
+    Vertices = 0,
+    Params = 1,
+    Source = 2,
+}
+
+/// Plays: what a pass halving what's under backdrops makes, in the
+/// viewport's pixels: `region` (origin and size), and `texels`, a texel of
+/// the source and of the level it makes, then that level's size in texels.
+#[repr(C)]
+struct BackdropPassParams {
+    region: [f32; 4],
+    texels: [f32; 4],
 }
 
 #[repr(C)]
@@ -1670,4 +1987,104 @@ pub struct SurfaceBounds {
     pub content_mask: ContentMask<ScaledPixels>,
     /// Plays: the part of the surface shown, and turned or mirrored how.
     pub content: ContentTransform,
+}
+
+/// Plays: draws `quads` (each its bounds and color), then `backdrops` (each
+/// its bounds, corners and style) over them, with the renderer windows use
+/// but off screen, at a scale of 1, and reads back the `size` pixels it
+/// made, row by row, as the drawable has them: extended sRGB, unmultiplied.
+#[cfg(any(test, feature = "test-support"))]
+pub fn render_offscreen(
+    size: Size<DevicePixels>,
+    quads: &[(Bounds<crate::Pixels>, crate::Background)],
+    backdrops: &[(
+        Bounds<crate::Pixels>,
+        crate::Corners<crate::Pixels>,
+        crate::BackdropStyle,
+    )],
+) -> Vec<[f32; 4]> {
+    let mut renderer = MetalRenderer::new(Arc::new(Mutex::new(InstanceBufferPool::default())));
+    let viewport = Bounds::new(
+        point(crate::px(0.), crate::px(0.)),
+        size.map(|v| crate::px(v.0 as f32)),
+    );
+    let content_mask = ContentMask { bounds: viewport };
+    let mut scene = Scene::default();
+    for (bounds, background) in quads {
+        scene.insert_primitive(Quad {
+            order: 0,
+            border_style: Default::default(),
+            bounds: bounds.scale(1.),
+            content_mask: content_mask.scale(1.),
+            background: *background,
+            border_color: Default::default(),
+            corner_radii: Default::default(),
+            border_widths: Default::default(),
+            corner_smoothing: 0.,
+            pad: 0,
+        });
+    }
+    for (bounds, corners, style) in backdrops {
+        scene.insert_primitive(Backdrop::new(
+            *bounds,
+            *corners,
+            crate::styled::SUPERELLIPSE_SMOOTHING,
+            *style,
+            content_mask.clone(),
+            1.,
+            1.,
+        ));
+    }
+    scene.finish();
+
+    let descriptor = metal::TextureDescriptor::new();
+    descriptor.set_width(size.width.0 as u64);
+    descriptor.set_height(size.height.0 as u64);
+    descriptor.set_pixel_format(DRAWABLE_FORMAT);
+    descriptor.set_storage_mode(metal::MTLStorageMode::Managed);
+    descriptor.set_usage(metal::MTLTextureUsage::RenderTarget | metal::MTLTextureUsage::ShaderRead);
+    let target = renderer.device.new_texture(&descriptor);
+
+    let mut instance_buffer = renderer
+        .instance_buffer_pool
+        .lock()
+        .acquire(&renderer.device);
+    let command_buffer = renderer
+        .draw_primitives(&scene, &mut instance_buffer, &target, size)
+        .expect("the scene fits");
+    let blit = command_buffer.new_blit_command_encoder();
+    blit.synchronize_resource(&target);
+    blit.end_encoding();
+    command_buffer.commit();
+    command_buffer.wait_until_completed();
+
+    let (width, height) = (size.width.0 as usize, size.height.0 as usize);
+    let mut halves = vec![0u16; width * height * 4];
+    target.get_bytes(
+        halves.as_mut_ptr() as *mut c_void,
+        (width * 8) as u64,
+        metal::MTLRegion::new_2d(0, 0, width as u64, height as u64),
+        0,
+    );
+    halves
+        .chunks_exact(4)
+        .map(|pixel| {
+            let [r, g, b, a] = [pixel[0], pixel[1], pixel[2], pixel[3]].map(half_to_f32);
+            // Quads blend as unmultiplied colors; so do backdrops.
+            [r, g, b, a]
+        })
+        .collect()
+}
+
+/// Plays: an IEEE half float as an f32.
+#[cfg(any(test, feature = "test-support"))]
+fn half_to_f32(bits: u16) -> f32 {
+    let sign = if bits & 0x8000 != 0 { -1.0 } else { 1.0 };
+    let exponent = ((bits >> 10) & 0x1f) as i32;
+    let mantissa = (bits & 0x3ff) as f32;
+    sign * match exponent {
+        0 => mantissa * 2f32.powi(-24),
+        31 => f32::INFINITY,
+        _ => (1.0 + mantissa / 1024.0) * 2f32.powi(exponent - 15),
+    }
 }

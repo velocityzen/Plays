@@ -54,6 +54,24 @@ pub enum ControlsVisibility {
     OnHover,
 }
 
+/// How panels over the video (its controls, notes, menus and console) show
+/// the picture through them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PanelLook {
+    /// See-through black.
+    Plain,
+    /// The picture blurred and darkened.
+    Frosted,
+    /// Glass: the picture a little frosted, under a clear, polished edge
+    /// that magnifies it and catches the light.
+    Glass,
+    /// Glass whose edge glows with the picture's colors, inside and out.
+    Glow,
+    /// The colors around, without the picture.
+    Tint,
+}
+
 /// Whether player windows stay above other apps' windows.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -346,6 +364,7 @@ pub struct Settings {
     pub columns: u32,
     pub controls: ControlsVisibility,
     pub show_titles: bool,
+    pub panels: PanelLook,
     pub float_on_top: FloatOnTop,
     /// Gamma for SDR video, for every open video at once; 1 leaves it be.
     pub sdr_gamma: f32,
@@ -378,6 +397,7 @@ impl Default for Settings {
             columns: 0,
             controls: ControlsVisibility::OnHover,
             show_titles: true,
+            panels: PanelLook::Frosted,
             float_on_top: FloatOnTop::Off,
             sdr_gamma: 1.0,
             hdr_gamma: 1.0,

@@ -203,6 +203,61 @@ pub mod overlay {
     }
 }
 
+/// How panels over the video show it through them, by the look Settings
+/// pick (see `gpui::BackdropStyle`).
+pub mod backdrop {
+    use gpui::{BackdropStyle, hsla, px};
+
+    use crate::settings::PanelLook;
+
+    /// The backdrop for a look; none for plain, whose panels are
+    /// `overlay::scrim()`.
+    pub fn for_look(look: PanelLook) -> Option<BackdropStyle> {
+        let style = match look {
+            PanelLook::Plain => return None,
+            PanelLook::Frosted => BackdropStyle {
+                blur: px(24.),
+                saturation: 1.4,
+                brightness: 0.55,
+                tint: hsla(0., 0., 0., 0.15),
+                edge: px(10.),
+                rim: 0.12,
+                ..Default::default()
+            },
+            PanelLook::Glass => BackdropStyle {
+                blur: px(3.),
+                saturation: 1.25,
+                brightness: 0.6,
+                tint: hsla(0., 0., 0., 0.12),
+                refraction: px(5.),
+                edge: px(6.),
+                rim: 0.55,
+                ..Default::default()
+            },
+            PanelLook::Glow => BackdropStyle {
+                blur: px(3.),
+                saturation: 1.25,
+                brightness: 0.55,
+                tint: hsla(0., 0., 0., 0.15),
+                refraction: px(5.),
+                edge: px(6.),
+                rim: 0.7,
+                glow: 0.8,
+                halo: px(18.),
+                ..Default::default()
+            },
+            PanelLook::Tint => BackdropStyle {
+                average: 1.,
+                saturation: 1.5,
+                brightness: 0.45,
+                tint: hsla(0., 0., 0., 0.1),
+                ..Default::default()
+            },
+        };
+        Some(style)
+    }
+}
+
 /// Text styles, by what the text is: its size and weight. Its color is up
 /// to where it is.
 pub mod text {

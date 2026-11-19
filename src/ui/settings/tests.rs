@@ -11,7 +11,7 @@ use super::SettingsView;
 use crate::app::SetAudioDevice;
 use crate::cast::fake::{FakeTarget, KIND};
 use crate::cast::{Casting, Looking, Protocol, Shows, Target};
-use crate::settings::{AudioDevice, Settings};
+use crate::settings::{AudioDevice, PanelLook, Settings};
 use crate::ui::testing::{self, click, shows};
 
 /// Open the Settings window and bring it to the front.
@@ -52,6 +52,26 @@ fn reset_to_defaults_asks_first(cx: &mut TestAppContext) {
     settings.simulate_prompt_answer("Reset");
     settings.run_until_parked();
     assert!(autoplay(&mut settings), "Reset puts the default back");
+}
+
+#[gpui::test]
+fn picking_how_panels_show_the_video_sets_it(cx: &mut TestAppContext) {
+    let (_, mut cx) = testing::start(cx);
+    let mut settings = open_settings(&mut cx);
+    let panels = |cx: &mut VisualTestContext| cx.update(|_, cx| cx.global::<Settings>().panels);
+    click(&mut settings, "pane-Appearance");
+    assert_eq!(panels(&mut settings), PanelLook::Frosted, "the default");
+
+    for (choice, look) in [
+        ("panels-Glass", PanelLook::Glass),
+        ("panels-Glow", PanelLook::Glow),
+        ("panels-Tint", PanelLook::Tint),
+        ("panels-Plain", PanelLook::Plain),
+        ("panels-Frosted", PanelLook::Frosted),
+    ] {
+        click(&mut settings, choice);
+        assert_eq!(panels(&mut settings), look, "{choice}");
+    }
 }
 
 #[gpui::test]

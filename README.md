@@ -19,6 +19,11 @@ GPU-accelerated UI framework.
   Elsewhere, and for video decoded in software, HDR is tone mapped to SDR:
   on Linux on the GPU (Dolby Vision on the CPU), on macOS on the CPU.
 - Every file has its own play/pause, seek bar, loop, mute and volume.
+- The controls, notes and menus over a video show it through them, as
+  Settings → Appearance says: frosted (blurred and dimmed), glass (clear,
+  with a polished edge that bends the light and catches it), glow (glass
+  whose edge glows with the colors around it, inside and out), tint (the
+  colors around it, none of their shapes), or plain see-through black.
 - Files with several tracks get a track menu on their tile: pick the audio
   track, the subtitles (or none) and, if there are several, the video track,
   while it plays. Subtitles show over the picture: text ones (SRT, ASS,
@@ -137,7 +142,7 @@ GPU-accelerated UI framework.
   live preview, the protocols that look for devices to cast to and what
   they found, where screenshots go and what they are like, the keys for
   every shortcut, grid columns, controls
-  visibility, file names. Saved as JSON in the user config dir; Settings
+  visibility, how the panels over the video look, file names. Saved as JSON in the user config dir; Settings
   File, at the foot of the sidebar, opens its folder, exports a copy,
   imports settings from one, or resets every setting to its default
   (after asking).
@@ -455,6 +460,8 @@ the TV's own: where it was when cast, the TV stays where it was.
   renderer uploads video frames' planes to textures of their own and a
   shader converts and tone maps them the same way. Images and surfaces
   can be drawn turned, mirrored and cropped, by where they are sampled.
+  Elements can have a backdrop: what was drawn under them, blurred, dimmed,
+  tinted or bent through a glass edge, from copies of it halved on the GPU.
 - `src/media/yuv.rs` (Linux): frames handed to gpui as their Y'CbCr planes
   (`yuv420p`, `nv12`, 10-bit `yuv420p10` and `p010`, which hardware decoders
   give), with the matrix from samples to R'G'B' for their YCbCr matrix,
@@ -615,7 +622,8 @@ the TV's own: where it was when cast, the TV stays where it was.
   on either side, and selected or disabled; a switch, a segmented control,
   a slider (with notches, which the seek bar puts at chapters) and a meter; menu rows, and a popover that opens a menu from a
   button; a badge; a flat card; and a floating panel to put anything in,
-  a menu's or a note's over the picture.
+  a menu's or a note's over the picture, which shows the picture through
+  it as Settings say.
 - `build.rs`, with `crates/ffmpeg-link`: links the static FFmpeg with what
   it needs in turn, read from its pkg-config files (dav1d, zlib, iconv, and
   macOS's frameworks or Linux's OpenSSL and hardware decoding libraries),
@@ -623,7 +631,8 @@ the TV's own: where it was when cast, the TV stays where it was.
   of its own because a build script's link arguments reach only its own
   package, and the stream server links FFmpeg too.
 - `src/ui/theme.rs`: colors, every size, radius and duration the UI uses,
-  and named text styles (`text_display`, `text_title`, `text_heading`,
+  the backdrop each look of the panels over the video has, and named text
+  styles (`text_display`, `text_title`, `text_heading`,
   `text_label`).
 
 On macOS, software-decoded frames are uploaded to gpui's texture atlas as
@@ -964,7 +973,19 @@ the display the window in front is on, and picking a display puts the
 window full screen, leaving full screen first when it goes to another.
 Video → Aspect Ratio and Crop check what the tile in front has (as the
 file is, and none, at first), as soon as it changes and as soon as the
-mouse is over another tile.
+mouse is over another tile. Picking a look for the panels over the video in
+Settings → Appearance sets it, and the controls of a paused video then
+show it through them with that look's backdrop, and none when plain.
+
+The looks themselves are checked in pixels on macOS, where
+`gpui::render_offscreen` (its test support) draws a panel over a picture
+with the renderer windows use, off screen, and reads it back. Frosted
+blurs and dims what's under it, and leaves what's beside it sharp; tint
+shows the colors around and nothing of their shapes; glass lights its rim,
+is clear at its edge where its top is frosted, and bends what's just inside
+the edge out to it; glow lights up what's around it in its colors, which
+frosted doesn't. Linux draws them with the same shaders in WGSL, which the
+smoke runs load.
 
 Casting is tested with a fake protocol whose devices keep what they are
 told and say what the test has them say, and the real stream server,

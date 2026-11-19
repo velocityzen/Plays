@@ -143,6 +143,9 @@ mod macos {
             "PathSprite".into(),
             "SurfaceInputIndex".into(),
             "SurfaceBounds".into(),
+            "Backdrop".into(),
+            "BackdropInputIndex".into(),
+            "BackdropPassInputIndex".into(),
             "ContentTransform".into(),
             "TransformationMatrix".into(),
         ]);

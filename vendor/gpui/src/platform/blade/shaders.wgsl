@@ -1569,3 +1569,276 @@ fn fs_yuv(input: YuvVarying) -> @location(0) vec4<f32> {
     }
     return blend_color(vec4<f32>(yuv_apply_gamma(encoded, yuv_params.gamma), 1.0), 1.0);
 }
+
+// --- backdrops --- //
+// Plays: see `Backdrop` in scene.rs, and the same shaders in shaders.metal.
+// What is drawn under a batch of backdrops is halved six times
+// (`BACKDROP_LEVELS`), each level from the one before, by `*_backdrop_pass`;
+// `*_backdrop` then draws each one from those levels.
+
+// The last level, a 64th of the viewport: `BACKDROP_LEVELS` - 1.
+const BACKDROP_LAST_LEVEL: u32 = 5u;
+const BACKDROP_LUMA: vec3<f32> = vec3<f32>(0.2126, 0.7152, 0.0722);
+// How strongly the colors around glow inside the edge, and outside it.
+const BACKDROP_GLOW_INSIDE: f32 = 0.6;
+const BACKDROP_GLOW_OUTSIDE: f32 = 0.6;
+// Glass's index of refraction, and how far its bevel bends light at most,
+// a part of the bevel's width (see `backdrop_bend`).
+const BACKDROP_IOR: f32 = 1.5;
+const BACKDROP_BEND_PEAK: f32 = 0.23126;
+
+// What a pass makes, in the viewport's pixels: `region` (origin, size),
+// and `texels`: a texel of the source, a texel of the level it makes, and
+// that level's size in texels. As `BackdropPassParams` in Rust.
+struct BackdropPassParams {
+    region: vec4<f32>,
+    texels: vec4<f32>,
+}
+var<uniform> backdrop_pass: BackdropPassParams;
+var t_backdrop_source: texture_2d<f32>;
+var s_backdrop: sampler;
+
+struct BackdropPassVarying {
+    @builtin(position) position: vec4<f32>,
+}
+
+@vertex
+fn vs_backdrop_pass(@builtin(vertex_index) vertex_id: u32) -> BackdropPassVarying {
+    let unit_vertex = vec2<f32>(f32(vertex_id & 1u), 0.5 * f32(vertex_id & 2u));
+    let texel = backdrop_pass.texels.y;
+    let size = backdrop_pass.texels.zw;
+    // The region in the level's texels.
+    let low = clamp(floor(backdrop_pass.region.xy / texel), vec2<f32>(0.0), size);
+    let high = clamp(ceil((backdrop_pass.region.xy + backdrop_pass.region.zw) / texel),
+                     vec2<f32>(0.0), size);
+    let position = mix(low, high, unit_vertex);
+    var out = BackdropPassVarying();
+    out.position = vec4<f32>(position / size * vec2<f32>(2.0, -2.0) + vec2<f32>(-1.0, 1.0), 0.0, 1.0);
+    return out;
+}
+
+fn backdrop_tap(point: vec2<f32>, to_uv: vec2<f32>) -> vec4<f32> {
+    return textureSampleLevel(t_backdrop_source, s_backdrop, point * to_uv, 0.0);
+}
+
+// Halves the source with the 13 taps of Jimenez's "Next generation post
+// processing in Call of Duty: Advanced Warfare" (2014): each tap the
+// average of four of its texels, weighted toward the middle, so what's
+// small and bright doesn't flicker as it moves.
+@fragment
+fn fs_backdrop_pass(input: BackdropPassVarying) -> @location(0) vec4<f32> {
+    let o = backdrop_pass.texels.x;
+    // The middle of this texel, in the viewport's pixels.
+    let center = input.position.xy * backdrop_pass.texels.y;
+    let to_uv = 1.0 / (vec2<f32>(textureDimensions(t_backdrop_source, 0)) * o);
+    var color = backdrop_tap(center, to_uv) * 0.125;
+    color += (backdrop_tap(center + vec2<f32>(-2.0, -2.0) * o, to_uv) +
+              backdrop_tap(center + vec2<f32>(2.0, -2.0) * o, to_uv) +
+              backdrop_tap(center + vec2<f32>(-2.0, 2.0) * o, to_uv) +
+              backdrop_tap(center + vec2<f32>(2.0, 2.0) * o, to_uv)) * 0.03125;
+    color += (backdrop_tap(center + vec2<f32>(0.0, -2.0) * o, to_uv) +
+              backdrop_tap(center + vec2<f32>(-2.0, 0.0) * o, to_uv) +
+              backdrop_tap(center + vec2<f32>(2.0, 0.0) * o, to_uv) +
+              backdrop_tap(center + vec2<f32>(0.0, 2.0) * o, to_uv)) * 0.0625;
+    color += (backdrop_tap(center + vec2<f32>(-1.0, -1.0) * o, to_uv) +
+              backdrop_tap(center + vec2<f32>(1.0, -1.0) * o, to_uv) +
+              backdrop_tap(center + vec2<f32>(-1.0, 1.0) * o, to_uv) +
+              backdrop_tap(center + vec2<f32>(1.0, 1.0) * o, to_uv)) * 0.125;
+    return color;
+}
+
+struct Backdrop {
+    order: u32,
+    pad: u32,
+    bounds: Bounds,
+    content_mask: Bounds,
+    shape: Bounds,
+    corner_radii: Corners,
+    tint: Hsla,
+    corner_smoothing: f32,
+    blur: f32,
+    saturation: f32,
+    brightness: f32,
+    average: f32,
+    refraction: f32,
+    edge: f32,
+    rim: f32,
+    glow: f32,
+    halo: f32,
+    opacity: f32,
+    pad2: u32,
+}
+var<storage, read> b_backdrops: array<Backdrop>;
+var t_backdrop0: texture_2d<f32>;
+var t_backdrop1: texture_2d<f32>;
+var t_backdrop2: texture_2d<f32>;
+var t_backdrop3: texture_2d<f32>;
+var t_backdrop4: texture_2d<f32>;
+var t_backdrop5: texture_2d<f32>;
+// The frame as it was before the backdrops.
+var t_backdrop_frame: texture_2d<f32>;
+
+struct BackdropVarying {
+    @builtin(position) position: vec4<f32>,
+    @location(0) @interpolate(flat) backdrop_id: u32,
+    @location(1) clip_distances: vec4<f32>,
+}
+
+@vertex
+fn vs_backdrop(@builtin(vertex_index) vertex_id: u32, @builtin(instance_index) instance_id: u32) -> BackdropVarying {
+    let unit_vertex = vec2<f32>(f32(vertex_id & 1u), 0.5 * f32(vertex_id & 2u));
+    let backdrop = b_backdrops[instance_id];
+    var out = BackdropVarying();
+    out.position = to_device_position(unit_vertex, backdrop.bounds);
+    out.backdrop_id = instance_id;
+    out.clip_distances = distance_from_clip_rect(unit_vertex, backdrop.bounds, backdrop.content_mask);
+    return out;
+}
+
+// A level at `point` (in the viewport's pixels), through a tent over the
+// texels around it so they don't show.
+fn backdrop_level_sample(level: texture_2d<f32>, index: u32, point: vec2<f32>) -> vec4<f32> {
+    let texel = f32(2u << index);
+    let to_uv = 1.0 / (vec2<f32>(textureDimensions(level, 0)) * texel);
+    var color = textureSampleLevel(level, s_backdrop, point * to_uv, 0.0) * 4.0;
+    color += (textureSampleLevel(level, s_backdrop, (point + vec2<f32>(texel, 0.0)) * to_uv, 0.0) +
+              textureSampleLevel(level, s_backdrop, (point - vec2<f32>(texel, 0.0)) * to_uv, 0.0) +
+              textureSampleLevel(level, s_backdrop, (point + vec2<f32>(0.0, texel)) * to_uv, 0.0) +
+              textureSampleLevel(level, s_backdrop, (point - vec2<f32>(0.0, texel)) * to_uv, 0.0)) * 2.0;
+    color += textureSampleLevel(level, s_backdrop, (point + vec2<f32>(texel, texel)) * to_uv, 0.0) +
+             textureSampleLevel(level, s_backdrop, (point + vec2<f32>(-texel, texel)) * to_uv, 0.0) +
+             textureSampleLevel(level, s_backdrop, (point + vec2<f32>(texel, -texel)) * to_uv, 0.0) +
+             textureSampleLevel(level, s_backdrop, (point + vec2<f32>(-texel, -texel)) * to_uv, 0.0);
+    return color / 16.0;
+}
+
+// The frame as it was before the backdrops, at `point`, sharp.
+fn backdrop_frame(point: vec2<f32>) -> vec4<f32> {
+    let uv = point / vec2<f32>(textureDimensions(t_backdrop_frame, 0));
+    return textureSampleLevel(t_backdrop_frame, s_backdrop, uv, 0.0);
+}
+
+fn backdrop_level(index: u32, point: vec2<f32>) -> vec4<f32> {
+    var color: vec4<f32>;
+    switch index {
+        case 0u: { color = backdrop_level_sample(t_backdrop0, 0u, point); }
+        case 1u: { color = backdrop_level_sample(t_backdrop1, 1u, point); }
+        case 2u: { color = backdrop_level_sample(t_backdrop2, 2u, point); }
+        case 3u: { color = backdrop_level_sample(t_backdrop3, 3u, point); }
+        case 4u: { color = backdrop_level_sample(t_backdrop4, 4u, point); }
+        default: { color = backdrop_level_sample(t_backdrop5, 5u, point); }
+    }
+    return color;
+}
+
+// The colors around, as bright and colorful as they can be: what glows.
+// Dark ones stay dim.
+fn backdrop_vivid(around: vec3<f32>) -> vec3<f32> {
+    let color = clamp(around, vec3<f32>(0.0), vec3<f32>(1.0));
+    let luma = dot(color, BACKDROP_LUMA);
+    let vivid = max(mix(vec3<f32>(luma), color, 1.8), vec3<f32>(0.0));
+    let peak = max(max(vivid.r, vivid.g), vivid.b);
+    return vivid / max(peak, 0.35) * 0.95;
+}
+
+// How far light bends through a bevel of a quarter circle, by Snell's law,
+// looking straight down at it: where `slope` of it (1 at the edge, where it
+// is steepest, down to 0 where it meets the flat top) shows what's under it
+// from, inward, as a part of the farthest it does (`BACKDROP_BEND_PEAK`).
+fn backdrop_bend(slope: f32) -> f32 {
+    let height = sqrt(max(1.0 - slope * slope, 0.0));
+    let bent = asin(slope) - asin(slope / BACKDROP_IOR);
+    return height * tan(bent) / BACKDROP_BEND_PEAK;
+}
+
+fn backdrop_sdf(point: vec2<f32>, backdrop: Backdrop) -> f32 {
+    return quad_sdf_smoothed(point, backdrop.shape, backdrop.corner_radii, backdrop.corner_smoothing);
+}
+
+@fragment
+fn fs_backdrop(input: BackdropVarying) -> @location(0) vec4<f32> {
+    // Alpha clip first, since we don't have `clip_distance`.
+    if (any(input.clip_distances < vec4<f32>(0.0))) {
+        return vec4<f32>(0.0);
+    }
+
+    let backdrop = b_backdrops[input.backdrop_id];
+    let point = input.position.xy;
+    let sdf = backdrop_sdf(point, backdrop);
+    let coverage = saturate(0.5 - sdf);
+    let around = backdrop_level(BACKDROP_LAST_LEVEL, point).rgb;
+    let vivid = backdrop_vivid(around);
+
+    var halo = 0.0;
+    if (backdrop.halo > 0.0 && sdf > 0.0) {
+        let t = sdf / backdrop.halo;
+        halo = backdrop.glow * BACKDROP_GLOW_OUTSIDE * exp(-4.0 * t * t) * (1.0 - coverage);
+    }
+    if (coverage <= 0.0 && halo <= 0.0) {
+        return vec4<f32>(0.0);
+    }
+
+    var color = vec3<f32>(0.0);
+    if (coverage > 0.0) {
+        // The band along the edge: 1 at the edge, down to 0 `edge` inside.
+        var band = 0.0;
+        if (backdrop.edge > 0.0) {
+            band = saturate(1.0 + sdf / backdrop.edge);
+        }
+        // Out of the shape, square to its edge.
+        var normal = vec2<f32>(0.0);
+        if (band > 0.0) {
+            let gradient = vec2<f32>(
+                backdrop_sdf(point + vec2<f32>(1.0, 0.0), backdrop) -
+                    backdrop_sdf(point - vec2<f32>(1.0, 0.0), backdrop),
+                backdrop_sdf(point + vec2<f32>(0.0, 1.0), backdrop) -
+                    backdrop_sdf(point - vec2<f32>(0.0, 1.0), backdrop));
+            let gradient_length = length(gradient);
+            if (gradient_length > 0.0001) {
+                normal = gradient / gradient_length;
+            }
+        }
+        // Light bends through the bevel as through a rounded glass edge seen
+        // from above, showing what's just inside it magnified across it.
+        let seen = point - normal * backdrop.refraction * backdrop_bend(band);
+        // Which level to read, -1 being the frame itself: the first level's
+        // texels are 2 pixels.
+        var lod = clamp(log2(max(backdrop.blur, 1.0)) - 1.0, -1.0, f32(BACKDROP_LAST_LEVEL));
+        // A bevel that bends light is polished, clear however frosted the top.
+        if (backdrop.refraction > 0.0) {
+            lod = mix(lod, -1.0, band);
+        }
+        var under: vec3<f32>;
+        if (lod < 0.0) {
+            under = mix(backdrop_frame(seen).rgb, backdrop_level(0u, seen).rgb, lod + 1.0);
+        } else {
+            let below = u32(floor(lod));
+            let above = min(below + 1u, BACKDROP_LAST_LEVEL);
+            under = mix(backdrop_level(below, seen).rgb, backdrop_level(above, seen).rgb,
+                        lod - floor(lod));
+        }
+        color = mix(under, around, backdrop.average);
+        // Brighter than SDR white shows as white.
+        color = min(color, vec3<f32>(1.0));
+        let luma = dot(color, BACKDROP_LUMA);
+        color = max(mix(vec3<f32>(luma), color, backdrop.saturation), vec3<f32>(0.0));
+        color *= backdrop.brightness;
+        let tint = hsla_to_rgba(backdrop.tint);
+        color = mix(color, tint.rgb, tint.a);
+        let band2 = band * band;
+        color += vivid * backdrop.glow * band2 * BACKDROP_GLOW_INSIDE;
+        // The rim of light, brightest where the edge faces the top left or
+        // the bottom right.
+        let facing = abs(dot(normal, vec2<f32>(-0.70710678, -0.70710678)));
+        let rim = backdrop.rim * band2 * band2 * band2 * (0.3 + 0.7 * facing * facing);
+        color += mix(vec3<f32>(1.0), vivid, saturate(backdrop.glow)) * rim;
+        color = saturate(color);
+    }
+    let inside = coverage * backdrop.opacity;
+    let outside = halo * backdrop.opacity * (1.0 - inside);
+    let alpha = inside + outside;
+    if (alpha <= 0.0) {
+        return vec4<f32>(0.0);
+    }
+    return blend_color(vec4<f32>((color * inside + vivid * outside) / alpha, alpha), 1.0);
+}
