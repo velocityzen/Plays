@@ -3,6 +3,7 @@
 //! one, serving this computer only.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use dlna::fake::{FakeRenderer, Kind};
 use gpui::{TestAppContext, VisualTestContext, WindowHandle};
@@ -173,14 +174,14 @@ fn the_renderers_protocol_info_decides_how_its_served(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn a_speaker_is_offered_for_sound_only_and_gets_the_file(cx: &mut TestAppContext) {
+fn a_speaker_is_offered_for_anything_with_sound_and_gets_a_file_of_it(cx: &mut TestAppContext) {
     let speaker = FakeRenderer::start(Kind::Speaker);
     let (_, mut cx) = start(cx, &speaker, "tone.m4a", false);
-    let offered = |cx: &mut VisualTestContext, has_video| {
-        cx.update(|_, cx| Casting::devices_for(cx, has_video).len())
+    let offered = |cx: &mut VisualTestContext, has_audio| {
+        cx.update(|_, cx| Casting::devices_for(cx, has_audio).len())
     };
-    assert_eq!(offered(&mut cx, true), 0);
-    assert_eq!(offered(&mut cx, false), 1);
+    assert_eq!(offered(&mut cx, true), 1);
+    assert_eq!(offered(&mut cx, false), 0);
     let shown = cx.update(|_, cx| Casting::devices(cx)[0].shows);
     assert_eq!(shown, Shows::Sound, "from its protocol info");
 
@@ -201,6 +202,58 @@ fn a_speaker_is_offered_for_sound_only_and_gets_the_file(cx: &mut TestAppContext
         asked(&speaker, "Play"),
         0,
         "a paused tile stays paused there"
+    );
+}
+
+#[gpui::test]
+fn a_videos_sound_goes_to_a_speaker_as_a_stream_asked_where_it_is_often(cx: &mut TestAppContext) {
+    let speaker = FakeRenderer::start(Kind::Speaker);
+    let (window, mut cx) = start(cx, &speaker, "clip.mp4", false);
+    cast(&mut cx, &speaker);
+    let (uri, metadata) = {
+        let state = speaker.state();
+        (state.uri.clone(), state.metadata.clone())
+    };
+    assert!(uri.ends_with("sound.flac"), "it lists FLAC, not AAC: {uri}");
+    assert!(
+        metadata.contains("protocolInfo=\"http-get:*:audio/flac:DLNA.ORG_OP=10;DLNA.ORG_CI=1"),
+        "a stream, re-encoded: {metadata}"
+    );
+    assert!(metadata.contains("object.item.audioItem"), "{metadata}");
+    let (status, body) = get(&uri);
+    assert_eq!(status, 200);
+    assert!(body.starts_with(b"fLaC"), "FLAC");
+    assert!(
+        tile(window, &cx).read_with(&cx, |view, _| view.player().is_sound_elsewhere()),
+        "the picture stays here"
+    );
+
+    // The picture follows it, so it's asked where it is far more often
+    // than once a second, from the start.
+    std::thread::sleep(Duration::from_millis(1000));
+    let polls = asked(&speaker, "GetPositionInfo");
+    assert!(polls >= 4, "asked {polls} times in its first second");
+
+    // Seen moving, it plays on from when it was first heard where it is,
+    // as a renderer moves its position on only now and then.
+    let view = tile(window, &cx);
+    {
+        let mut state = speaker.state();
+        state.transport = "PLAYING".into();
+        state.position = 0.5;
+    }
+    wait(&mut cx, "the bar to be where it is", |cx| {
+        view.read_with(cx, |view, _| (view.position() - 0.5).abs() < 1e-9)
+    });
+    speaker.state().position = 0.6;
+    wait(&mut cx, "the picture to play with it", |cx| {
+        view.read_with(cx, |view, _| view.player().is_playing())
+    });
+    std::thread::sleep(Duration::from_millis(600));
+    let position = view.read_with(&cx, |view, _| view.position());
+    assert!(
+        position > 1.0,
+        "at {position}, from when it was heard at 0.6, not when last asked"
     );
 }
 

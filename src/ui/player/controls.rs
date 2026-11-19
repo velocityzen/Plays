@@ -62,8 +62,7 @@ impl PlayerView {
             "volume"
         };
         let has_audio = info.is_some_and(|i| i.has_audio);
-        let has_video = info.is_some_and(|i| i.has_video);
-        let cast = self.render_cast_button(has_video, theme, cx);
+        let cast = self.render_cast_button(info, theme, cx);
         let tracks = info.filter(|info| has_track_choice(info));
         let subtitles_on = info.is_some_and(|i| i.subtitle_track.is_some());
         let looping = self.player.is_looping();
@@ -89,7 +88,7 @@ impl PlayerView {
                     .p(CONTROLS_PADDING)
                     .when(!live, |this| {
                         this.child(
-                            div().px_1().child(
+                            div().px_1().debug_selector(|| "seek".into()).child(
                                 Slider::new("seek", progress, self.seek_drag.clone())
                                     .overlay()
                                     .fill(theme.accent)
@@ -250,9 +249,12 @@ impl PlayerView {
         };
         let time = event.value as f64 * duration;
         // A device seeks once the slider lets go: it is too far away to
-        // follow it.
+        // follow it. A picture here, following its sound, shows the way.
         if self.casting().is_some() {
             self.scrub = (event.slide != Slide::End).then_some(time);
+            if self.casts_sound_only() && event.slide != Slide::End {
+                self.player.scrub(time);
+            }
             if event.slide == Slide::End {
                 self.seek(time);
             }

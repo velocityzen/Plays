@@ -74,8 +74,10 @@ GPU-accelerated UI framework.
 - A tile can play on a TV or a speaker instead (casting), from where it
   is, with its tracks: the cast button on the tile lists the devices
   found, and on macOS Video → Output Device lists those that show video
-  under the displays. Speakers are offered for files that are only sound.
-  While it casts, the tile says where it plays and how the file gets there
+  under the displays. Speakers are offered for anything with sound; a
+  video's sound goes to one while its picture plays on in the tile, in
+  step with what the speaker plays, and the tile's buttons and shortcuts
+  drive both. While it casts, the tile says where it plays and how the file gets there
   (as it is, repackaged, or re-encoded), and its bar, buttons and shortcuts
   drive the device, whose position moves the bar. The subtitles picked go
   along and change there as they change on the tile; picture ones (PGS,
@@ -136,8 +138,9 @@ bindings are generated with bindgen).
 FFmpeg is built into the app. `script/build-ffmpeg` builds it once from
 source, which takes a few minutes: FFmpeg 9.0.2 with dav1d for AV1, as
 static libraries under the LGPL. They decode, and have what the stream
-server needs besides: the MP4 and MPEG-TS muxers, the AAC, AC-3 and E-AC-3
-encoders, and the hardware video encoders (no software one). It installs
+server needs besides: the MP4, MPEG-TS, ADTS and FLAC muxers, the AAC,
+AC-3, E-AC-3 and FLAC encoders, and the hardware video encoders (no
+software one). It installs
 them in `build/ffmpeg`, where `.cargo/config.toml` points the build, and
 builds them again only when the script changes. It needs `pkg-config`,
 `ninja` and `python3` (meson, which builds dav1d, is downloaded with the
@@ -325,8 +328,9 @@ last window quits.
 
 Devices to cast to on the same network are found by themselves, in a
 second or two. A Chromecast, Google TV or TV with Cast built in is
-offered for anything, and a Nest speaker or speaker group for files that
-are only sound. A file goes to it as it is where its model plays that kind
+offered for anything, and a Nest speaker or speaker group for anything
+with sound, a video's sound alone going to it as HLS while the picture
+plays on here, following it. A file goes to it as it is where its model plays that kind
 of file (MP4, WebM, MP3, AAC, FLAC, Ogg, WAV; just MP4 on a TV of another
 make), else as HLS, re-encoded where it needs to be: H.264 up to 1080p on
 the first Chromecasts and other makes' TVs, HEVC, VP9 and HDR up to 4K on
@@ -338,9 +342,11 @@ subtitles gives it the file again from where it is. The tile's volume is
 that of what plays there, so the device's own stays where it is.
 
 A DLNA TV or speaker is offered by what it lists: one that lists only
-sound, for files that are only sound. A file goes to it as it is where it
+sound, for anything with sound. A file goes to it as it is where it
 lists that kind of file, else as a stream of MPEG-TS, re-encoded where it
-needs to be. Picking other subtitles gives it the file again from where it
+needs to be; a video's sound goes to a speaker as a stream of AAC or
+FLAC, as internet radio does, while the picture plays on here, following
+it. Picking other subtitles gives it the file again from where it
 is, as DLNA takes subtitles only with the file. The tile's volume scales
 the TV's own: where it was when cast, the TV stays where it was.
 
@@ -513,15 +519,22 @@ the TV's own: where it was when cast, the TV stays where it was.
   it connects, has the stream server serve the file with the tracks the
   tile plays, and loads it at the tile's position; then it does what the
   tile sends it (seeks in a row only the last), asks the device what it
-  is doing twice a second, and shows the tile what it asked for until the
-  device has done it. Dropping the link stops the device and the stream
+  is doing twice a second (ten times while the picture follows the
+  sound), and shows the tile what it asked for until the device has done
+  it. A video's sound sent to a speaker is the one cast with the picture
+  here: the tile keeps playing with its sound unheard, playing and pausing
+  as the speaker is seen to and following where it says it is, the time
+  it said it at moved on to now; its clock eases there, and seeks where it
+  is far off. Dropping the link stops the device and the stream
   server lets the file go; as the app quits, it waits a moment for the
   devices to stop. `dlna` adapts the DLNA crate: it asks each renderer
   found what it plays (its protocol info), which decides whether it shows
   video and how the stream server serves it (the files it lists, else a
   stream of MPEG-TS rather than HLS, which fewer TVs take; H.264 and AAC
-  in MPEG-TS for one that doesn't say), and names the MIME type as the
-  renderer lists it. Subtitles go as SRT, both ways the crate writes them;
+  in MPEG-TS for one that doesn't say; for a speaker given a video's
+  sound, a stream of AAC or FLAC, by what it lists), and names the MIME
+  type as the renderer lists it. While the picture follows the sound it
+  asks the renderer where it is ten times a second. Subtitles go as SRT, both ways the crate writes them;
   other subtitles load the file again from where it is. The renderer
   stopping after it played is the end; a seek it refuses while stopped is
   made once it plays; something else playing there ends the cast.
@@ -600,21 +613,25 @@ URL. It knows nothing of Plays or gpui, so it is tested on its own.
         │
       plan ──▶ plays as is ───────────────▶ the file by byte ranges, or the stream's own URL
         └────▶ else: each track copied ───▶ HLS segments (MPEG-TS or fragmented MP4),
-               or re-encoded                or an MPEG-TS stream, made as they are asked for
+               or re-encoded                an MPEG-TS stream, or a stream of the sound
+                                            alone (AAC or FLAC), made as they are asked for
 ```
 
 - `profile.rs`: what a device plays, as its protocol's crate knows it: the
   containers it takes as files, HLS (with MPEG-TS or fragmented MP4
-  segments) or a progressive MPEG-TS stream, and the codecs, size, bit
+  segments), a progressive MPEG-TS stream or a progressive stream of the
+  sound alone (AAC as ADTS, or FLAC), and the codecs, size, bit
   depth, HDR kinds and channels it decodes; whether the HLS playlist lists
   the subtitles, which it doesn't for a device given them beside it.
 - `media.rs`: opening a file or stream and reading what is in it.
 - `plan.rs`: the least work that plays. The file as it is, or a stream's
   own URL, when the device plays it with the default tracks; else HLS, or
-  for a DLNA TV without it an MPEG-TS stream, each track copied when the
+  for a DLNA TV without it an MPEG-TS stream, and for a DLNA speaker given
+  a video's sound a stream of it alone, each track copied when the
   device decodes it and re-encoded when it doesn't. Video is re-encoded to
   H.264 or HEVC (10-bit and HDR kept in HEVC where the device shows them),
-  no bigger than the device shows; sound to AAC, AC-3 or E-AC-3. Picture
+  no bigger than the device shows; sound to AAC, AC-3, E-AC-3 or (for a
+  stream of FLAC) FLAC. Picture
   subtitles picked from the media are drawn into video re-encoded; video
   copied goes without them.
 - `encode.rs`: the hardware video encoders only, VideoToolbox on macOS and
@@ -624,7 +641,7 @@ URL. It knows nothing of Plays or gpui, so it is tested on its own.
   only at its own keyframes, read from the file's index (or, with none, by
   reading the file); re-encoded video and sound alone are cut every six
   seconds, with a keyframe made there.
-- `mux.rs`: fragmented MP4 or MPEG-TS written in memory, cut into segments
+- `mux.rs`: fragmented MP4, MPEG-TS, ADTS or FLAC written in memory, cut into segments
   where told. Every timestamp is moved ten seconds later, so none is
   negative and segments made by different jobs line up.
 - `job.rs`: making them. A job reads from where a segment starts, copies or
@@ -771,12 +788,16 @@ over a channel.
   it won't by relative), Stop, the volume and mute. GENA subscriptions to
   AVTransport and RenderingControl send their events to a listener of the
   session's own, renewed halfway through; GetPositionInfo is asked every
-  second, with the transport state, and the volume every five seconds,
-  when there are no events for them. The session ends when the renderer stops answering, or when it
+  second, or as often as the session's told, with the transport state,
+  and the volume every five seconds, when there are no events for them.
+  A position is taken as heard halfway between the asking and the
+  answer, when it first comes: a renderer saying where it is to the
+  millisecond may move it on only once a second. The session ends when the renderer stops answering, or when it
   plays something it wasn't given here: what it's set to play, asked
   afresh, isn't ours.
 - `fake.rs`, with the `fake` feature: a pretend renderer on this computer,
-  a TV with events or a speaker without.
+  a TV with events or a speaker without, saying where it is to the
+  millisecond and, when told to, slow to answer.
 
 `cargo run -p dlna --example dlna -- list` lists the renderers on the
 network and what they play; `play` has one play a URL, with subtitles
@@ -912,8 +933,15 @@ it again with them still going along. DVD subtitles picked stay
 on this computer, the tile says, where the file goes as it is; where it is
 re-encoded they are drawn in, the file loaded again from where it was at
 a URL of its own, the first no longer served, and turning them off loads
-it again without them (macOS). Speakers are offered only
-for sound, and a video doesn't go to one. Video → Output Device lists the
+it again without them (macOS). Speakers are offered for anything with
+sound, and get a file of sound alone as it is. A video's sound goes to a
+speaker as a stream of AAC, its picture staying on the tile, which waits
+while the speaker plays but hasn't moved, plays once it's seen moving,
+pauses with it where it stopped (from the speaker or the tile), and
+keeps its place and its sound when the cast ends; dragging the slider
+shows the picture where it's dragged, however often the speaker says
+where it is, and the speaker seeks there once it's let go; a video
+without sound isn't sent to one. Video → Output Device lists the
 devices that show video after the displays, checking the one the tile in
 front casts to instead of the display. Each test has been checked to fail
 when the behavior it covers is broken.
@@ -924,8 +952,12 @@ as it is (the TV lists Matroska), seeks it to where the tile was, then
 plays it, with the subtitles picked as SRT both ways the crate writes them;
 both URLs serve what they should. A TV that lists MP4 and MPEG-TS (as
 `video/mpeg`) only gets that file as a stream of MPEG-TS, by its own name
-for it; the speaker, from its protocol info, is offered only for sound and
-gets the M4A as it is, and a paused tile leaves it paused. Space, the
+for it; the speaker, from its protocol info, is offered for anything
+with sound and gets the M4A as it is, and a paused tile leaves it paused.
+A video's sound goes to it as a stream of FLAC (it lists FLAC, not AAC),
+re-encoded, the picture staying here; it's asked where it is several
+times a second from the start, and seen moving, it plays on from when it
+was first heard where it is, not from when it was last asked. Space, the
 arrows, `M` and the volume keys play, seek, mute, turn down and pause the
 TV (its volume scaled from where it was); the bar follows where it says it
 is, and its playing to the end shows the end. Other subtitles give it the
@@ -943,8 +975,8 @@ over TLS as a real one. Picking the TV loads the tile's Matroska file
 there as HLS of MPEG-TS, saying so, from where the tile was and playing,
 with the subtitles picked as a WebVTT track (its language as BCP 47) shown
 in the style Settings give them; the playlist doesn't list them too, and
-the track's URL serves the file's cues. The speaker is offered only for
-sound and gets the M4A as it is, and a paused tile leaves it paused. An
+the track's URL serves the file's cues. The speaker is offered for
+anything with sound and gets the M4A as it is, and a paused tile leaves it paused. An
 MP4 goes as it is; space, the arrows, `M` and the volume keys play, seek,
 mute, turn down and pause it, the volume being the stream's and the
 device's own left alone; the bar follows where it says it is, its playing
@@ -971,7 +1003,10 @@ re-encoded smaller on VideoToolbox, in both kinds of segments, each
 holding only the sound that plays during it though the encoder hands
 frames back late (macOS; with no hardware encoder, as in the Linux test
 container, planning it must fail); a progressive stream from a DLNA time
-seek; a live stream; subtitles from a file and from a track in
+seek; a video's sound alone for a speaker taking only files, as ADTS
+copied, encoded from Opus to AAC, and as FLAC, seeking by time too, and
+nothing for a video's picture or a speaker without such streams; a live
+stream; subtitles from a file and from a track in
 `clip-subs.mkv`, as WebVTT, SRT and an HLS rendition, which a device
 given them beside it doesn't find in the playlist; and the DVD subtitles
 in `clip-dvdsub.mkv`, left out of video copied and not served as text,
@@ -1024,7 +1059,10 @@ info; SetAVTransportURI carries the URL and the DIDL-Lite with subtitles
 both ways; play, pause, seek (by absolute time for a speaker that takes
 only that) and volume reach it; refusals come back as typed faults;
 loading while it plays stops it first when it must; events tell what a TV
-does and asking tells what a speaker does; subscriptions are renewed, made
+does and asking tells what a speaker does, its position taken as heard
+when it first came, halfway between the asking and a slow answer, and
+asked again at once and then as often as told;
+subscriptions are renewed, made
 again when the renderer forgot them, and ended; and the session ends when
 the renderer goes away or plays something else, but not for what played
 before or a track that lags. Unit tests read descriptions and protocol

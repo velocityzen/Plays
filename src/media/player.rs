@@ -53,6 +53,12 @@ pub struct Tick {
 pub const MAX_AUDIO_DELAY: f64 = 5.0;
 /// The furthest subtitles can be moved from their times.
 pub const MAX_SUBTITLE_DELAY: f64 = 60.0;
+/// A picture following sound heard elsewhere seeks there once it is this
+/// far off, in seconds; nearer, its clock eases there.
+const FOLLOW_SEEK: f64 = 0.5;
+/// A still picture following still sound seeks there once it is this far
+/// off, in seconds, about a frame: a paused clock doesn't ease.
+const FOLLOW_STILL: f64 = 0.04;
 
 pub struct Player {
     source: Source,
@@ -457,6 +463,36 @@ impl Player {
         if let Some(audio) = &self.shared.audio {
             let delay = delay.clamp(-MAX_AUDIO_DELAY, MAX_AUDIO_DELAY);
             audio.delay.store(delay as f32);
+        }
+    }
+
+    /// Hear the sound elsewhere, on a device a cast sends it to, or here
+    /// again. While it's elsewhere, the picture follows it (`follow`).
+    pub fn set_sound_elsewhere(&mut self, elsewhere: bool) {
+        if let Some(audio) = &self.shared.audio {
+            audio.elsewhere.store(elsewhere, Ordering::Relaxed);
+        }
+    }
+
+    /// Whether the sound is heard elsewhere.
+    #[cfg(test)]
+    pub fn is_sound_elsewhere(&self) -> bool {
+        self.shared
+            .audio
+            .as_ref()
+            .is_some_and(|audio| audio.elsewhere.load(Ordering::Relaxed))
+    }
+
+    /// Keep the picture with sound heard elsewhere, now at `time`: as the
+    /// audio delay says, eased there, or sought where it's far off or
+    /// both are still.
+    pub fn follow(&mut self, time: f64) {
+        let time = time + self.audio_delay();
+        let off = (time - self.position()).abs();
+        if off > FOLLOW_SEEK || (!self.is_playing() && off > FOLLOW_STILL) {
+            self.seek(time);
+        } else {
+            self.shared.clock.ease_to(time, Instant::now());
         }
     }
 

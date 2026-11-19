@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 use parking_lot::Mutex;
 use stream_server::{Cast, CastRequest, Delivery, Pick, Server, Source, SubtitleSource};
 
-use super::target::{Device, Error, Load, Session, State, Status, Subtitles, Target};
+use super::target::{Device, Error, FOLLOW_POLL, Load, Session, State, Status, Subtitles, Target};
 use crate::media::text_encoding;
 use crate::settings::SubtitleStyle;
 
@@ -33,6 +33,8 @@ pub struct Request {
     pub volume: f32,
     pub muted: bool,
     pub looping: bool,
+    /// Only the sound goes: the picture plays here, following the device.
+    pub picture_here: bool,
 }
 
 /// Subtitles to send along.
@@ -88,8 +90,11 @@ enum Command {
 /// What the link's thread tells the tile.
 struct Shared {
     phase: Phase,
-    /// What the device last said, and when.
+    /// What the device last said, and when it was there.
     status: Option<(Status, Instant)>,
+    /// Playing, it has been seen to move on since it was last told where
+    /// to be: until then, it may be getting going, and isn't moved on.
+    moving: bool,
     /// How many commands had been done then.
     done: u64,
     /// How long the media is, as the stream server read it.
@@ -129,6 +134,7 @@ impl Link {
         let shared = Arc::new(Mutex::new(Shared {
             phase: Phase::Connecting,
             status: None,
+            moving: false,
             done: 0,
             duration: None,
             failure: None,
@@ -178,14 +184,14 @@ impl Link {
     }
 
     /// Where the device is, and whether it plays: what it last said, moved
-    /// on by the time since; or what was last asked of it, until it has
-    /// done that.
+    /// on by the time since once it's seen moving; or what was last asked
+    /// of it, until it has done that.
     fn shown(&self) -> (f64, bool) {
         let shared = self.shared.lock();
         match shared.status {
             Some((status, at)) if shared.done >= self.sent => {
                 let mut position = status.position;
-                if status.state == State::Playing {
+                if status.state == State::Playing && shared.moving {
                     position += at.elapsed().as_secs_f64();
                 }
                 if let Some(duration) = status.duration.or(shared.duration) {
@@ -204,6 +210,17 @@ impl Link {
 
     pub fn is_playing(&self) -> bool {
         self.shown().1
+    }
+
+    /// It plays, and has been seen moving on from where it was told to
+    /// be: a picture here follows it then, and waits for it before.
+    pub fn is_moving(&self) -> bool {
+        let shared = self.shared.lock();
+        shared.done >= self.sent
+            && shared.moving
+            && shared
+                .status
+                .is_some_and(|(status, _)| status.state == State::Playing)
     }
 
     /// Played to the end.
@@ -339,6 +356,9 @@ struct Worker {
     looping: bool,
     /// What the device last said it was doing.
     state: State,
+    /// Where it was first heard playing since it was last told where to
+    /// be: it's moving once it's somewhere else.
+    since: Option<f64>,
     shared: Arc<Mutex<Shared>>,
 }
 
@@ -368,6 +388,7 @@ impl Worker {
             autoplay: request.autoplay,
             volume: request.volume,
             muted: request.muted,
+            picture_here: request.picture_here,
             ..load_for(&cast)
         };
         let mut worker = Self {
@@ -380,6 +401,7 @@ impl Worker {
             load,
             looping: request.looping,
             state: State::Buffering,
+            since: None,
             shared,
         };
         worker.load.subtitles = worker.served_subtitles();
@@ -406,9 +428,14 @@ impl Worker {
     /// the tile lets go or the device goes away.
     fn serve(mut self, commands: Receiver<Command>) {
         let mut done = 0;
+        let poll = if self.load.picture_here {
+            FOLLOW_POLL
+        } else {
+            STATUS_POLL
+        };
         loop {
             let mut batch = Vec::new();
-            match commands.recv_timeout(STATUS_POLL) {
+            match commands.recv_timeout(poll) {
                 Ok(command) => batch.push(command),
                 Err(RecvTimeoutError::Timeout) => {}
                 Err(RecvTimeoutError::Disconnected) => return self.stop(),
@@ -416,6 +443,15 @@ impl Worker {
             batch.extend(commands.try_iter());
             done += batch.len() as u64;
             for command in coalesce(batch) {
+                if matches!(
+                    command,
+                    Command::Play
+                        | Command::Seek(_)
+                        | Command::Subtitles { .. }
+                        | Command::Reload { .. }
+                ) {
+                    self.since = None;
+                }
                 match self.apply(command) {
                     Ok(()) => {}
                     Err(Error::Failed(why)) => {
@@ -435,6 +471,7 @@ impl Worker {
             };
             self.state = status.state;
             if status.state == State::Ended && self.looping && !self.load.live {
+                self.since = None;
                 match self.restart() {
                     Err(Error::Failed(why)) => log::debug!("casting: looping: {why}"),
                     Err(over) => return self.over(over),
@@ -442,8 +479,15 @@ impl Worker {
                 }
                 continue;
             }
+            let moving = status.state == State::Playing
+                && *self.since.get_or_insert(status.position) != status.position;
+            if status.state != State::Playing {
+                self.since = None;
+            }
+            let at = status.at.unwrap_or_else(Instant::now);
             let mut shared = self.shared.lock();
-            shared.status = Some((status, Instant::now()));
+            shared.status = Some((status, at));
+            shared.moving = moving;
             shared.done = done;
         }
     }
@@ -524,6 +568,7 @@ impl Worker {
             autoplay,
             volume: self.load.volume,
             muted: self.load.muted,
+            picture_here: self.load.picture_here,
             ..load_for(&self.cast)
         };
         self.load.subtitles = self.served_subtitles();
@@ -594,6 +639,7 @@ fn load_for(cast: &Cast) -> Load {
         volume: 1.0,
         muted: false,
         subtitles: None,
+        picture_here: false,
     }
 }
 

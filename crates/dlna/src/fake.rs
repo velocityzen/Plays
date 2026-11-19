@@ -84,6 +84,8 @@ pub struct State {
     pub rel_time: bool,
     /// Whether it refuses another URI while it plays.
     pub locked_while_playing: bool,
+    /// How long it takes to answer an action, after it's done it.
+    pub answer_after: Duration,
     /// How long a subscription lasts, in seconds.
     pub subscription: u64,
     /// The max-age its adverts and answers give, in seconds.
@@ -222,6 +224,7 @@ impl FakeRenderer {
             refuse: Vec::new(),
             rel_time: kind == Kind::Tv,
             locked_while_playing: false,
+            answer_after: Duration::ZERO,
             subscription: 300,
             max_age: 1800,
             answers: true,
@@ -485,7 +488,12 @@ fn serve(kind: Kind, udn: &str, state: &Shared, stream: &TcpStream) {
     };
     let reply = match (method, path.rsplit('/').next().unwrap_or_default()) {
         ("GET", "description.xml") => Reply::xml(description(kind, udn)),
-        ("POST", "control") => control(service, state, &message),
+        ("POST", "control") => {
+            let reply = control(service, state, &message);
+            let after = lock(state).answer_after;
+            thread::sleep(after);
+            reply
+        }
         ("SUBSCRIBE", "event") if kind == Kind::Tv => subscribe(service, state, &message),
         ("UNSUBSCRIBE", "event") => {
             let mut state = lock(state);
@@ -637,7 +645,8 @@ fn control(service: &'static str, shared: &Shared, message: &Message) -> Reply {
                 "TrackURI",
                 state.track.clone().unwrap_or_else(|| state.uri.clone()),
             ),
-            ("RelTime", media::clock(state.position)),
+            // To the millisecond, as Rygel's renderers say it.
+            ("RelTime", media::clock_exact(state.position)),
             ("AbsTime", "NOT_IMPLEMENTED".into()),
             ("RelCount", "2147483647".into()),
             ("AbsCount", "2147483647".into()),

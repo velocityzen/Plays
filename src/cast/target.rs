@@ -4,10 +4,15 @@
 
 use std::fmt;
 use std::net::IpAddr;
+use std::time::{Duration, Instant};
 
 use stream_server::{Profile, Segments, SubtitleSource};
 
 use crate::settings::SubtitleStyle;
+
+/// How often a device is asked where it is while a picture here follows
+/// its sound.
+pub const FOLLOW_POLL: Duration = Duration::from_millis(100);
 
 /// What a device shows.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -102,6 +107,9 @@ pub struct Load {
     pub volume: f32,
     pub muted: bool,
     pub subtitles: Option<Subtitles>,
+    /// The picture plays here, following the device's sound: it's asked
+    /// where it is every `FOLLOW_POLL`.
+    pub picture_here: bool,
 }
 
 /// Subtitles served beside the media.
@@ -125,6 +133,8 @@ pub struct Status {
     pub state: State,
     /// Where it is in the media, in seconds.
     pub position: f64,
+    /// When it was there, where it says; otherwise it was when asked.
+    pub at: Option<Instant>,
     /// How long the media is, when the device says.
     pub duration: Option<f64>,
 }

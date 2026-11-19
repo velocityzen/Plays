@@ -67,6 +67,19 @@ impl Clock {
         }
     }
 
+    /// Ease toward `time`, the media time at `at` of sound heard
+    /// elsewhere, however far it is: a device's clock jitters more than
+    /// the mixer's, so it is never snapped to.
+    pub fn ease_to(&self, time: f64, at: Instant) {
+        let mut inner = self.inner.lock();
+        let Some(anchor) = inner.anchor else {
+            return;
+        };
+        let current = inner.base + at.saturating_duration_since(anchor).as_secs_f64();
+        inner.base = current + (time - current) * EASE;
+        inner.anchor = Some(at);
+    }
+
     /// Called by the audio mixer: `time` is the media time being heard at `at`.
     pub fn sync(&self, time: f64, at: Instant) {
         let mut inner = self.inner.lock();

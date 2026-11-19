@@ -11,8 +11,8 @@ use ffmpeg::media::Type;
 use ffmpeg_next as ffmpeg;
 
 use crate::{
-    AudioCodec, AudioPlan, CastRequest, Delivery, Error, Pick, Profile, Segments, Server, Source,
-    SubtitleSource, VideoCodec, VideoPlan,
+    AudioCodec, AudioPlan, CastRequest, Container, Delivery, Error, Pick, Profile, Segments,
+    Server, Source, SubtitleSource, VideoCodec, VideoPlan,
 };
 
 const LOCALHOST: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
@@ -712,6 +712,116 @@ fn streams_mpeg_ts_from_where_asked() {
     let head = request("HEAD", &cast.url(), &[]);
     assert_eq!(head.status, 200);
     assert!(head.body.is_empty());
+}
+
+#[test]
+fn streams_a_videos_sound_alone_to_a_speaker_taking_only_files() {
+    let server = server();
+    // Devialet's take AAC and FLAC; Sonos's FLAC and no AAC.
+    let speaker = Profile {
+        files: vec![Container::Aac, Container::Flac],
+        hls: None,
+        sound_stream: vec![Container::Aac, Container::Flac],
+        audio: vec![AudioCodec::Aac, AudioCodec::Flac],
+        ..Profile::default()
+    };
+    let flac_only = Profile {
+        files: vec![Container::Flac],
+        sound_stream: vec![Container::Flac],
+        ..speaker.clone()
+    };
+    let sound_of = |name: &str, profile: Profile| {
+        let mut request = CastRequest::new(Source::File(fixture(name)), profile);
+        request.video = Pick::Off;
+        server.add(request, LOCALHOST)
+    };
+
+    // AAC goes as it is, with ADTS headers.
+    let cast = sound_of("clip.mp4", speaker.clone()).unwrap();
+    assert_eq!(cast.plan().delivery, Delivery::Sound(Container::Aac));
+    assert_eq!(cast.plan().video, None);
+    assert!(matches!(cast.plan().audio, Some(AudioPlan::Copy { .. })));
+    assert_eq!(cast.mime(), "audio/aac");
+    assert!(cast.url().ends_with("/sound.aac"));
+    assert!(
+        cast.protocol_info()
+            .contains("DLNA.ORG_OP=10;DLNA.ORG_CI=1")
+    );
+    let whole = get(&cast.url());
+    assert_eq!(whole.status, 200);
+    assert_eq!(whole.header("Content-Type"), Some("audio/aac"));
+    assert_eq!(whole.header("Content-Length"), None);
+    assert!(
+        whole.body[0] == 0xFF && whole.body[1] & 0xF0 == 0xF0,
+        "it starts with an ADTS header"
+    );
+    let (video, audio) = probe(&whole.body, "aac");
+    assert!(video.is_none());
+    let audio = audio.unwrap();
+    assert_eq!(audio.codec, Id::AAC);
+    let all = audio.times.len();
+    // Two seconds of 1024-sample frames at 48 kHz.
+    assert!((90..=97).contains(&all), "{all} frames");
+
+    // From a DLNA time seek, the second half.
+    let later = request(
+        "GET",
+        &cast.url(),
+        &[("TimeSeekRange.dlna.org", "npt=1.0-")],
+    );
+    assert_eq!(
+        later.header("TimeSeekRange.dlna.org"),
+        Some("npt=1.000-2.000/2.000")
+    );
+    let half = probe(&later.body, "aac").1.unwrap().times.len();
+    assert!(half.abs_diff(all / 2) <= 3, "{half} of {all} frames");
+
+    // Other sound is re-encoded, to the first it takes.
+    let cast = sound_of("clip-opus.mkv", speaker.clone()).unwrap();
+    assert!(matches!(
+        cast.plan().audio,
+        Some(AudioPlan::Encode {
+            to: AudioCodec::Aac,
+            ..
+        })
+    ));
+    let (_, audio) = probe(&get(&cast.url()).body, "aac");
+    let audio = audio.unwrap();
+    assert_eq!(audio.codec, Id::AAC);
+    assert!(audio.times.len() >= 90, "{} frames", audio.times.len());
+
+    // To FLAC for one that takes no AAC, the whole of it.
+    let cast = sound_of("clip.mp4", flac_only.clone()).unwrap();
+    assert_eq!(cast.plan().delivery, Delivery::Sound(Container::Flac));
+    assert_eq!(cast.mime(), "audio/flac");
+    assert!(cast.url().ends_with("/sound.flac"));
+    let body = get(&cast.url()).body;
+    assert_eq!(&body[..4], b"fLaC");
+    let (_, audio) = probe(&body, "flac");
+    let audio = audio.unwrap();
+    assert_eq!(audio.codec, Id::FLAC);
+    assert!(
+        *audio.times.last().unwrap() > 1.8,
+        "to the end: {:?}",
+        audio.times.last()
+    );
+
+    // The picture and the sound together don't go this way, nor does the
+    // sound to a speaker that doesn't take a stream of it.
+    let mut both = CastRequest::new(Source::File(fixture("clip.mp4")), speaker.clone());
+    both.video = Pick::Best;
+    assert!(matches!(
+        server.add(both, LOCALHOST),
+        Err(Error::Unsupported(_))
+    ));
+    let files_only = Profile {
+        sound_stream: Vec::new(),
+        ..speaker
+    };
+    assert!(matches!(
+        sound_of("clip.mp4", files_only),
+        Err(Error::Unsupported(_))
+    ));
 }
 
 #[test]

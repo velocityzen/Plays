@@ -22,7 +22,7 @@ use crate::media::{self, MediaInfo, Source, StreamKind};
 use crate::mux::OFFSET;
 use crate::plan::{self, AudioPlan, Delivery, Pick, Plan, VideoPlan};
 use crate::playlist::{self, SubtitlesRendition, Variant};
-use crate::profile::{AudioCodec, HLS_MIME, Profile, Segments};
+use crate::profile::{AudioCodec, Container, HLS_MIME, Profile, Segments};
 use crate::subtitles::{self, Cue, SubtitleSource};
 use crate::{Error, segments};
 
@@ -161,6 +161,7 @@ impl Server {
             }
             (Delivery::Hls(_), None) => Output::Live(Live::new(Arc::clone(&media))),
             (Delivery::Stream, _) => Output::Stream,
+            (Delivery::Sound(container), _) => Output::Sound(container),
         };
         let token = token()?;
         let state = Arc::new(CastState {
@@ -251,6 +252,7 @@ impl Cast {
             Output::File(_) => format!("{}{}", state.base, state.file_name),
             Output::Vod(_) | Output::Live(_) => format!("{}master.m3u8", state.base),
             Output::Stream => format!("{}stream.ts", state.base),
+            Output::Sound(container) => format!("{}{}", state.base, sound_name(*container)),
         }
     }
 
@@ -311,6 +313,16 @@ enum Output {
     Vod(Arc<Vod>),
     Live(Arc<Live>),
     Stream,
+    /// The sound alone, AAC with ADTS headers or FLAC.
+    Sound(Container),
+}
+
+/// A stream of sound's name in its URL, which speakers may go by.
+fn sound_name(container: Container) -> &'static str {
+    match container {
+        Container::Flac => "sound.flac",
+        _ => "sound.aac",
+    }
 }
 
 struct CastState {
@@ -376,6 +388,7 @@ impl CastState {
             Output::Direct | Output::File(_) => info.container.mime(has_video),
             Output::Vod(_) | Output::Live(_) => HLS_MIME,
             Output::Stream => "video/mp2t",
+            Output::Sound(container) => container.mime(false),
         }
     }
 
@@ -384,7 +397,9 @@ impl CastState {
     fn features(&self) -> String {
         match self.output {
             Output::File(_) => format!("DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS={DLNA_FLAGS}"),
-            Output::Stream => format!("DLNA.ORG_OP=10;DLNA.ORG_CI=1;DLNA.ORG_FLAGS={DLNA_FLAGS}"),
+            Output::Stream | Output::Sound(_) => {
+                format!("DLNA.ORG_OP=10;DLNA.ORG_CI=1;DLNA.ORG_FLAGS={DLNA_FLAGS}")
+            }
             _ => "*".into(),
         }
     }
@@ -479,6 +494,9 @@ impl CastState {
             Output::Vod(vod) => self.respond_vod(vod, name),
             Output::Live(live) => self.respond_live(live, name),
             Output::Stream if name == "stream.ts" => self.respond_stream(request),
+            Output::Sound(container) if name == sound_name(*container) => {
+                self.respond_stream(request)
+            }
             _ => Response::status(404),
         }
     }

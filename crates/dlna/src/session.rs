@@ -110,6 +110,8 @@ struct Inner {
     callback: String,
     /// Once it's over, by our hand or not; what ends it after isn't news.
     ended: AtomicBool,
+    /// How often it's asked where it is, in milliseconds.
+    poll_every: AtomicU64,
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -292,7 +294,10 @@ impl Inner {
     /// Ask where it is, and what it's doing when that doesn't come as
     /// events.
     fn poll(&self, polls: u32) -> Result<Option<Ended>> {
+        let asked = Instant::now();
         let position = self.position(POLL_ANSWER)?;
+        // It said where it was halfway between the asking and the answer.
+        let heard = asked + asked.elapsed() / 2;
         let suspect = std::mem::take(&mut self.state().suspect)
             || position
                 .track_uri
@@ -307,7 +312,7 @@ impl Inner {
             Some(self.transport_state(POLL_ANSWER)?)
         };
         self.update(|status| {
-            status.position = position.position;
+            status.heard_at(position.position, heard);
             if position.duration.is_some() {
                 status.duration = position.duration;
             }
@@ -368,7 +373,7 @@ impl Inner {
                         status.duration = duration;
                     }
                     if position.is_some() {
-                        status.position = position;
+                        status.heard_at(position, Instant::now());
                     }
                 });
             }
@@ -547,13 +552,15 @@ fn listen(inner: &Inner, listener: &TcpListener, closing: &AtomicBool) {
     }
 }
 
-/// Ask where it is every `POLL`, until told to stop or the session's over.
-fn poll(inner: &Inner, stop: &mpsc::Receiver<()>) {
+/// Ask where it is every `POLL`, or as often as asked, and at once when
+/// woken, until the waker goes or the session's over.
+fn poll(inner: &Inner, wake: &mpsc::Receiver<()>) {
     let mut unanswered = 0;
     for polls in 0u32.. {
-        match stop.recv_timeout(POLL) {
-            Err(RecvTimeoutError::Timeout) => {}
-            _ => return,
+        let every = Duration::from_millis(inner.poll_every.load(Ordering::Relaxed));
+        match wake.recv_timeout(every) {
+            Ok(()) | Err(RecvTimeoutError::Timeout) => {}
+            Err(RecvTimeoutError::Disconnected) => return,
         }
         if inner.ended.load(Ordering::Relaxed) {
             return;
@@ -583,7 +590,8 @@ pub struct Session {
     inner: Arc<Inner>,
     listening: SocketAddr,
     closing: Arc<AtomicBool>,
-    stop_polling: Option<mpsc::Sender<()>>,
+    /// Wakes the polling thread, which stops once it's dropped.
+    polling: Option<mpsc::Sender<()>>,
     threads: Vec<JoinHandle<()>>,
 }
 
@@ -609,6 +617,7 @@ impl Session {
             events,
             callback: format!("http://{listening}/{}", token()),
             ended: AtomicBool::new(false),
+            poll_every: AtomicU64::new(POLL.as_millis() as u64),
         });
         let closing = Arc::new(AtomicBool::new(false));
         let mut threads = Vec::new();
@@ -632,19 +641,19 @@ impl Session {
                 Err(err) => log::info!("dlna: no events from {}, polling: {err}", of.path()),
             }
         }
-        let (stop_polling, stop) = mpsc::channel();
+        let (polling, wake) = mpsc::channel();
         let polled = Arc::clone(&inner);
         threads.push(
             thread::Builder::new()
                 .name("dlna poll".into())
-                .spawn(move || poll(&polled, &stop))?,
+                .spawn(move || poll(&polled, &wake))?,
         );
         Ok((
             Self {
                 inner,
                 listening,
                 closing,
-                stop_polling: Some(stop_polling),
+                polling: Some(polling),
                 threads,
             },
             receiver,
@@ -653,6 +662,18 @@ impl Session {
 
     pub fn device(&self) -> &Device {
         &self.inner.device
+    }
+
+    /// Ask where it is now, and this often from then on, as for a picture
+    /// that follows its sound; `None` goes back to once a second.
+    pub fn poll_every(&self, every: Option<Duration>) {
+        let every = every.unwrap_or(POLL).max(Duration::from_millis(10));
+        self.inner
+            .poll_every
+            .store(every.as_millis() as u64, Ordering::Relaxed);
+        if let Some(polling) = &self.polling {
+            let _ = polling.send(());
+        }
     }
 
     /// Give it `media` to play, as play then plays.
@@ -780,7 +801,7 @@ impl Drop for Session {
     /// Leave the renderer as it is, unsubscribed.
     fn drop(&mut self) {
         self.inner.ended.store(true, Ordering::Relaxed);
-        drop(self.stop_polling.take());
+        drop(self.polling.take());
         // One gone can't be told.
         if self.inner.state().ended != Some(Ended::Gone) {
             self.inner.unsubscribe();

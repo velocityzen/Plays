@@ -73,6 +73,11 @@ pub struct Profile {
     pub hls_subtitles: bool,
     /// A progressive MPEG-TS stream, as DLNA TVs take.
     pub stream: bool,
+    /// Containers it takes a progressive stream of the sound alone in, as
+    /// internet radio sends it, the one to re-encode to first: AAC (with
+    /// ADTS headers) or FLAC. A video's sound reaches a speaker that
+    /// otherwise takes only files this way.
+    pub sound_stream: Vec<Container>,
     /// Fetches http(s) URLs itself, so a stream that fits is handed over as is.
     pub fetches_urls: bool,
     /// Video codecs it decodes, the one to re-encode to first.
@@ -96,6 +101,7 @@ impl Default for Profile {
             hls: Some(Segments::Ts),
             hls_subtitles: true,
             stream: false,
+            sound_stream: Vec::new(),
             fetches_urls: true,
             video: vec![VideoCodec::H264],
             audio: vec![AudioCodec::Aac],

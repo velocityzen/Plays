@@ -2,13 +2,15 @@
 //! where it is, with its tracks. While it casts, the tile's controls and
 //! shortcuts drive the device and its bar follows the device; its own
 //! playback waits, paused, and goes on from where the device was once the
-//! cast ends.
+//! cast ends. A video cast to a speaker sends only its sound, and the
+//! picture plays on here, following the speaker.
 
 use gpui::prelude::*;
 use gpui::{AnyElement, App, Context, Corner, Div, ElementId, MouseDownEvent, Task, Window, div};
 use stream_server::{Pick, SubtitleSource};
 
 use super::PlayerView;
+use crate::cast::target::FOLLOW_POLL;
 use crate::cast::{Casting, Device, Error, Link, Phase, Request, Shows, SubtitleChoice};
 use crate::media::Source;
 use crate::media::decoder::MediaInfo;
@@ -17,7 +19,7 @@ use crate::settings::Settings;
 use crate::ui::components::{Button, Icon, MenuRow, Panel, Popover};
 use crate::ui::framing::Adjustments;
 use crate::ui::theme::Theme;
-use crate::ui::theme::motion::CAST_POLL;
+use crate::ui::theme::motion::{CAST_POLL, END_FOLLOW_SEEK};
 use crate::ui::theme::player::{CAST_MENU_WIDTH, ERROR_MAX_WIDTH, PIP_ICON, TRACK_MENU_OFFSET};
 use crate::ui::theme::text::TextStyle;
 
@@ -27,6 +29,8 @@ pub(super) struct Cast {
     /// It has played there, so its ending is the device going away rather
     /// than it not starting.
     on: bool,
+    /// Only the sound goes; the picture plays here, following the device.
+    picture_here: bool,
     /// Keeps the tile up to date with the device.
     _follow: Task<()>,
 }
@@ -35,6 +39,16 @@ impl PlayerView {
     /// The device the tile casts to.
     pub fn casting(&self) -> Option<&Device> {
         self.cast.as_ref().map(|cast| cast.link.device())
+    }
+
+    /// It casts its sound only, the picture playing here.
+    pub fn casts_sound_only(&self) -> bool {
+        self.cast.as_ref().is_some_and(|cast| cast.picture_here)
+    }
+
+    /// It casts, picture and all: the tile shows where it plays instead.
+    pub(super) fn casts_picture(&self) -> bool {
+        self.cast.as_ref().is_some_and(|cast| !cast.picture_here)
     }
 
     /// Cast to `device` from where the tile is, playing if it plays; or
@@ -66,19 +80,34 @@ impl PlayerView {
             return;
         }
         let info = self.player.info();
-        if device.shows == Shows::Sound && info.as_ref().is_some_and(|info| info.has_video) {
-            self.note(format!("{} plays only sound", device.name), cx);
+        if device.shows == Shows::Sound && info.as_ref().is_some_and(|info| !info.has_audio) {
+            self.note(
+                format!("{} plays only sound, and this has none", device.name),
+                cx,
+            );
             return;
         }
-        let request = self.cast_request(info.as_ref(), start, autoplay, cx);
-        // Another device this casts to lets go.
-        self.cast = None;
+        let picture_here =
+            device.shows == Shows::Sound && info.as_ref().is_some_and(|info| info.has_video);
+        let request = self.cast_request(info.as_ref(), start, autoplay, picture_here, cx);
+        // Another device this casts to lets go; its sound is here again
+        // until the new one plays it.
+        if self.cast.take().is_some_and(|cast| cast.picture_here) {
+            self.player.set_sound_elsewhere(false);
+        }
         match Casting::link(cx, &device, request) {
             Ok(link) => {
-                self.player.pause();
+                if picture_here {
+                    self.player.set_sound_elsewhere(true);
+                } else {
+                    self.player.pause();
+                }
+                // A picture following the sound looks as often as the
+                // link asks where the device is.
+                let every = if picture_here { FOLLOW_POLL } else { CAST_POLL };
                 let follow = cx.spawn(async move |this, cx| {
                     loop {
-                        cx.background_executor().timer(CAST_POLL).await;
+                        cx.background_executor().timer(every).await;
                         let going = this.update(cx, |this, cx| this.follow_cast(cx));
                         if !matches!(going, Ok(true)) {
                             break;
@@ -88,6 +117,7 @@ impl PlayerView {
                 self.cast = Some(Cast {
                     link,
                     on: false,
+                    picture_here,
                     _follow: follow,
                 });
             }
@@ -95,12 +125,14 @@ impl PlayerView {
         }
     }
 
-    /// What to cast: the file or stream, with the tracks playing here.
+    /// What to cast: the file or stream, with the tracks playing here; or,
+    /// with the picture here, its sound.
     fn cast_request(
         &self,
         info: Option<&MediaInfo>,
         start: f64,
         autoplay: bool,
+        picture_here: bool,
         cx: &App,
     ) -> Request {
         let source = match self.player.source() {
@@ -115,14 +147,21 @@ impl PlayerView {
             title: info
                 .and_then(|info| info.title.clone())
                 .unwrap_or_else(|| self.title.to_string()),
-            video: pick(info, TrackKind::Video),
+            video: if picture_here {
+                Pick::Off
+            } else {
+                pick(info, TrackKind::Video)
+            },
             audio: pick(info, TrackKind::Audio),
-            subtitles: info.and_then(|info| subtitle_choice(info, cx)),
+            subtitles: info
+                .filter(|_| !picture_here)
+                .and_then(|info| subtitle_choice(info, cx)),
             start,
             autoplay,
             volume: self.player.volume(),
             muted: self.player.is_muted(),
             looping: self.player.is_looping(),
+            picture_here,
         }
     }
 
@@ -132,14 +171,22 @@ impl PlayerView {
         let Some(cast) = self.cast.take() else {
             return false;
         };
+        let picture_here = cast.picture_here;
         let (position, playing) = (cast.link.position(), cast.link.is_playing());
         // The device stops, and its URL goes, on the link's thread.
         drop(cast);
-        if !self.player.is_live() {
+        if picture_here {
+            self.player.set_sound_elsewhere(false);
+        }
+        // A picture that followed the sound is there already.
+        let there = picture_here && (self.player.position() - position).abs() < END_FOLLOW_SEEK;
+        if !self.player.is_live() && !there {
             self.player.seek(position);
         }
         if playing {
             self.player.play();
+        } else {
+            self.player.pause();
         }
         cx.notify();
         true
@@ -166,7 +213,13 @@ impl PlayerView {
         };
         match cast.link.phase() {
             Phase::Connecting => {}
-            Phase::On { .. } => cast.on = true,
+            Phase::On { .. } if !cast.on => {
+                cast.on = true;
+                if cast.picture_here {
+                    self.note(format!("Sound on {name}"), cx);
+                }
+            }
+            Phase::On { .. } => {}
             Phase::Over(err) => {
                 let note = match err {
                     Error::Gone if cast.on => format!("{name} went away"),
@@ -179,8 +232,30 @@ impl PlayerView {
                 return false;
             }
         }
+        self.follow_sound();
         cx.notify();
         true
+    }
+
+    /// With the sound on the device, keep the picture with it: playing
+    /// once the device is seen to, and where it is. While the slider is
+    /// dragged it shows where the slider is, the device seeking only once
+    /// it's let go.
+    fn follow_sound(&mut self) {
+        let Some(cast) = self
+            .cast
+            .as_ref()
+            .filter(|cast| cast.picture_here && self.scrub.is_none())
+        else {
+            return;
+        };
+        let (time, moving) = (cast.link.position(), cast.link.is_moving());
+        if moving && !self.player.is_playing() {
+            self.player.play();
+        } else if !moving && self.player.is_playing() {
+            self.player.pause();
+        }
+        self.player.follow(time);
     }
 
     /// Whether it plays, here or on the device it casts to.
@@ -225,15 +300,27 @@ impl PlayerView {
 
     pub fn pause(&mut self) {
         match &mut self.cast {
-            Some(cast) => cast.link.pause(),
+            Some(cast) => {
+                cast.link.pause();
+                // A picture following the sound stops with it.
+                if cast.picture_here {
+                    self.player.pause();
+                }
+            }
             None => self.player.pause(),
         }
     }
 
-    /// Seek to exactly `time`, here or there.
+    /// Seek to exactly `time`, here or there: a picture following the
+    /// sound goes there too, and waits for the device.
     pub fn seek(&mut self, time: f64) {
         match &mut self.cast {
-            Some(cast) => cast.link.seek(time),
+            Some(cast) => {
+                cast.link.seek(time);
+                if cast.picture_here {
+                    self.player.seek(time);
+                }
+            }
             None => self.player.seek(time),
         }
     }
@@ -280,9 +367,15 @@ impl PlayerView {
         let Some(cast) = &mut self.cast else {
             return;
         };
-        match kind {
-            TrackKind::Subtitle => cast.link.set_subtitles(subtitles),
-            TrackKind::Video | TrackKind::Audio => cast.link.reload(
+        // With the picture here, so are its subtitles: only the sound is
+        // the device's.
+        match (kind, cast.picture_here) {
+            (TrackKind::Audio, true) => cast
+                .link
+                .reload(Pick::Off, pick(info.as_ref(), TrackKind::Audio)),
+            (_, true) => {}
+            (TrackKind::Subtitle, false) => cast.link.set_subtitles(subtitles),
+            (TrackKind::Video | TrackKind::Audio, false) => cast.link.reload(
                 pick(info.as_ref(), TrackKind::Video),
                 pick(info.as_ref(), TrackKind::Audio),
             ),
@@ -327,7 +420,7 @@ impl PlayerView {
     /// What fills the tile while it casts: where it plays, how the media
     /// gets there, what stays here, and a button to play it here again.
     pub(super) fn render_cast(&self, theme: &Theme, cx: &mut Context<Self>) -> Option<AnyElement> {
-        let cast = self.cast.as_ref()?;
+        let cast = self.cast.as_ref().filter(|cast| !cast.picture_here)?;
         let device = cast.link.device();
         let phase = cast.link.phase();
         let (line, detail) = match &phase {
@@ -370,11 +463,14 @@ impl PlayerView {
     /// of them it opens.
     pub(super) fn render_cast_button(
         &self,
-        has_video: bool,
+        info: Option<&MediaInfo>,
         theme: &Theme,
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
-        let mut devices = Casting::devices_for(cx, has_video);
+        // Until the file says, it may well have sound.
+        let has_audio = info.is_none_or(|info| info.has_audio);
+        let has_video = info.is_some_and(|info| info.has_video);
+        let mut devices = Casting::devices_for(cx, has_audio);
         if let Some(casting) = self.casting()
             && !devices.iter().any(|device| device.is(casting))
         {
@@ -394,17 +490,19 @@ impl PlayerView {
             Popover::new("cast-backdrop", button)
                 .anchor(Corner::BottomRight, TRACK_MENU_OFFSET)
                 .when(self.cast_open, |this| {
-                    this.menu(self.render_cast_menu(devices, theme, cx))
+                    this.menu(self.render_cast_menu(devices, has_video, theme, cx))
                 })
                 .on_dismiss(cx.listener(close_cast_menu))
                 .into_any_element(),
         )
     }
 
-    /// This computer, and the devices: the one playing checked.
+    /// This computer, and the devices: the one playing checked. A speaker
+    /// says it takes only a video's sound.
     fn render_cast_menu(
         &self,
         devices: Vec<Device>,
+        has_video: bool,
         theme: &Theme,
         cx: &mut Context<Self>,
     ) -> AnyElement {
@@ -415,12 +513,17 @@ impl PlayerView {
             .on_click(cx.listener(|this, _, _, cx| this.cast_to(None, cx)));
         let rows = devices.into_iter().enumerate().map(|(i, device)| {
             let checked = casting.as_ref().is_some_and(|casting| casting.is(&device));
+            let detail = if has_video && device.shows == Shows::Sound {
+                format!("{} · sound only", device.kind)
+            } else {
+                device.kind.to_owned()
+            };
             MenuRow::new(
                 ElementId::Name(format!("cast-{i}").into()),
                 device.name.clone(),
             )
             .checked(checked)
-            .detail(div().text_xs().child(device.kind))
+            .detail(div().text_xs().child(detail))
             .mx_1()
             .on_click(cx.listener(move |this, _, _, cx| this.cast_to(Some(device.clone()), cx)))
         });

@@ -16,6 +16,7 @@
 //!   URL, as Samsung TVs ask before playing.
 
 use std::fmt;
+use std::time::Instant;
 
 use crate::xml::escape;
 
@@ -275,6 +276,9 @@ pub struct Status {
     pub state: TransportState,
     /// Seconds in, when it says.
     pub position: Option<f64>,
+    /// When it was first heard to be at `position`. Renderers move their
+    /// position on about once a second, so it was truest then.
+    pub position_at: Option<Instant>,
     /// Seconds, when it knows.
     pub duration: Option<f64>,
 }
@@ -284,7 +288,18 @@ impl Default for Status {
         Self {
             state: TransportState::NoMedia,
             position: None,
+            position_at: None,
             duration: None,
+        }
+    }
+}
+
+impl Status {
+    /// Be at `position`, heard `at`: it's news only if it moved.
+    pub(crate) fn heard_at(&mut self, position: Option<f64>, at: Instant) {
+        if position != self.position {
+            self.position = position;
+            self.position_at = position.map(|_| at);
         }
     }
 }

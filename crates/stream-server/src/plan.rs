@@ -7,7 +7,8 @@
 use crate::Error;
 use crate::encode;
 use crate::media::{MediaInfo, Source, StreamKind, VideoInfo};
-use crate::profile::{AudioCodec, Hdr, Profile, Segments, VideoCodec};
+use crate::mux::Format;
+use crate::profile::{AudioCodec, Container, Hdr, Profile, Segments, VideoCodec};
 use crate::subtitles::SubtitleSource;
 
 /// Which stream of a kind to play.
@@ -32,6 +33,9 @@ pub enum Delivery {
     Hls(Segments),
     /// A progressive MPEG-TS stream, from where the device asks.
     Stream,
+    /// The sound alone, a progressive stream in this container (AAC or
+    /// FLAC), from where the device asks.
+    Sound(Container),
 }
 
 #[derive(Clone, PartialEq, Debug)]
@@ -130,6 +134,55 @@ impl Plan {
             _ => Segments::Ts,
         }
     }
+
+    /// What its jobs' muxer writes.
+    pub(crate) fn format(&self) -> Format {
+        format(self.delivery)
+    }
+}
+
+/// What the muxer writes for `delivery`.
+fn format(delivery: Delivery) -> Format {
+    match delivery {
+        Delivery::Hls(segments) => segments.into(),
+        Delivery::Sound(container) => sound_format(container).unwrap_or(Format::Adts),
+        Delivery::Direct | Delivery::File | Delivery::Stream => Format::Ts,
+    }
+}
+
+/// What the muxer writes for a stream of sound in `container`, where it
+/// can.
+fn sound_format(container: Container) -> Option<Format> {
+    match container {
+        Container::Aac => Some(Format::Adts),
+        Container::Flac => Some(Format::Flac),
+        _ => None,
+    }
+}
+
+/// The container a speaker gets the sound alone in: one that carries it
+/// as it is, else the first it takes that sound can be re-encoded for.
+fn sound_container(
+    media: &MediaInfo,
+    audio: Option<usize>,
+    profile: &Profile,
+) -> Option<Container> {
+    let codec = audio
+        .and_then(|index| media.audio(index))
+        .map(|audio| audio.codec);
+    let mut made = profile
+        .sound_stream
+        .iter()
+        .copied()
+        .filter(|container| sound_format(*container).is_some());
+    made.clone()
+        .find(|container| {
+            codec.is_some_and(|codec| {
+                profile.audio.contains(&codec)
+                    && sound_format(*container).is_some_and(|format| format.carries_audio(codec))
+            })
+        })
+        .or_else(|| made.next())
 }
 
 fn video_name(codec: VideoCodec) -> &'static str {
@@ -220,6 +273,12 @@ pub(crate) fn plan(
     let delivery = match (profile.hls, profile.stream) {
         (Some(segments), _) => Delivery::Hls(segments),
         (None, true) => Delivery::Stream,
+        (None, false)
+            if let Some(container) =
+                sound_container(media, audio, profile).filter(|_| video.is_none()) =>
+        {
+            Delivery::Sound(container)
+        }
         (None, false) => {
             return Err(Error::Unsupported(
                 "the device plays neither a file like this, HLS, nor an MPEG-TS stream".into(),
@@ -237,7 +296,7 @@ pub(crate) fn plan(
         delivery,
         subtitles: drawn(media, video.as_ref(), subtitles),
         audio: audio
-            .map(|stream| plan_audio(media, stream, profile, segments))
+            .map(|stream| plan_audio(media, stream, profile, format(delivery)))
             .transpose()?,
         video,
     })
@@ -344,28 +403,30 @@ fn plan_audio(
     media: &MediaInfo,
     stream: usize,
     profile: &Profile,
-    segments: Segments,
+    format: Format,
 ) -> Result<AudioPlan, Error> {
     let info = media
         .audio(stream)
         .ok_or_else(|| Error::Unsupported(format!("stream {stream} isn't sound")))?;
     if profile.audio.contains(&info.codec)
         && info.channels <= profile.max_channels
-        && segments.carries_audio(info.codec)
+        && format.carries_audio(info.codec)
     {
         return Ok(AudioPlan::Copy {
             stream,
             codec: info.codec,
         });
     }
+    // What this computer encodes: FLAC only for a stream of it.
+    let encodes = |codec: AudioCodec| match format {
+        Format::Flac => codec == AudioCodec::Flac,
+        _ => matches!(codec, AudioCodec::Aac | AudioCodec::Ac3 | AudioCodec::Eac3),
+    };
     let to = profile
         .audio
         .iter()
         .copied()
-        .find(|codec| {
-            matches!(codec, AudioCodec::Aac | AudioCodec::Ac3 | AudioCodec::Eac3)
-                && segments.carries_audio(*codec)
-        })
+        .find(|codec| encodes(*codec) && format.carries_audio(*codec))
         .ok_or_else(|| {
             Error::Unsupported("the device decodes no audio codec this computer encodes".into())
         })?;

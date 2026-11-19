@@ -405,7 +405,7 @@ impl Render for PlayerView {
         let framing = self.framing_for(info.as_ref());
         let has_video = self.player.frame().is_some();
         let dragging = self.seek_drag.get() || self.volume_drag.get();
-        let casting = self.cast.is_some();
+        let casting = self.casts_picture();
         let pinned = settings.controls == ControlsVisibility::Always
             || dragging
             || self.tracks_open

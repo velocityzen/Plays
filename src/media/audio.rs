@@ -126,6 +126,22 @@ impl AudioQueue {
         self.chunks.push_back(chunk);
     }
 
+    /// Let go of what plays before `time`, unheard.
+    fn skip_to(&mut self, time: f64) {
+        let rate = f64::from(self.rate);
+        while let Some(chunk) = self.chunks.front_mut() {
+            let left = chunk.frames() - chunk.pos;
+            let from = chunk.pts + chunk.pos as f64 / rate;
+            let skip = (((time - from) * rate).max(0.0) as usize).min(left);
+            chunk.pos += skip;
+            self.buffered_frames -= skip;
+            if skip < left {
+                break;
+            }
+            self.chunks.pop_front();
+        }
+    }
+
     /// Convert what is queued to `rate`, which the mixer plays at now.
     fn set_rate(&mut self, rate: u32) {
         if rate == self.rate {
@@ -168,6 +184,9 @@ pub struct AudioSource {
     pub delay: AtomicF32,
     /// Peak level of the last callback, for the level meter.
     pub peak: AtomicF32,
+    /// Its sound plays on a device a cast sends it to, which keeps the
+    /// clock: what is queued here goes unheard as the clock passes it.
+    pub elsewhere: AtomicBool,
 }
 
 impl AudioSource {
@@ -181,6 +200,7 @@ impl AudioSource {
             muted: AtomicBool::new(false),
             delay: AtomicF32::new(0.0),
             peak: AtomicF32::new(0.0),
+            elsewhere: AtomicBool::new(false),
         }
     }
 
@@ -254,10 +274,15 @@ impl Mixer {
             if queue.serial != source.serial.load(Ordering::Acquire) {
                 continue;
             }
+            let delay = f64::from(source.delay.load());
+            if source.elsewhere.load(Ordering::Relaxed) {
+                queue.skip_to(source.clock.now() - delay);
+                source.peak.store(0.0);
+                continue;
+            }
             if let Some(pts) = queue.read_pts() {
                 // What we write now is heard `latency` seconds from now,
                 // and goes with the picture `delay` seconds later.
-                let delay = f64::from(source.delay.load());
                 source.clock.sync(pts - latency + delay, now);
             }
 
@@ -342,6 +367,32 @@ mod tests {
         queue.push(ramp(480, 1.1, 48_000));
         assert_eq!(queue.buffered_frames, 1200 + 240);
         assert_eq!(queue.chunks.back().unwrap().rate, 24_000);
+    }
+
+    #[test]
+    fn sound_heard_elsewhere_is_let_go_as_the_clock_passes_it_unheard() {
+        let mixer = Mixer::detached(48_000);
+        let clock = Arc::new(Clock::new());
+        let source = Arc::new(AudioSource::new(
+            clock.clone(),
+            Arc::new(AtomicU64::new(0)),
+            mixer.sample_rate(),
+            1.0,
+        ));
+        mixer.add_source(source.clone());
+        source.playing.store(true, Ordering::Relaxed);
+        source.elsewhere.store(true, Ordering::Relaxed);
+        source.queue.lock().push(ramp(48_000, 0.0, 48_000));
+        clock.set(0.25);
+        let mut mix = vec![1.0; 960];
+        mixer.mix(&mut mix, 0.0, Instant::now());
+
+        assert!(mix.iter().all(|&sample| sample == 0.0), "unheard");
+        assert_eq!(source.peak.load(), 0.0);
+        assert_eq!(clock.now(), 0.25, "the clock goes by the sound elsewhere");
+        let queue = source.queue.lock();
+        assert_eq!(queue.buffered_frames, 36_000, "what played went");
+        assert_eq!(queue.read_pts(), Some(0.25));
     }
 
     #[test]

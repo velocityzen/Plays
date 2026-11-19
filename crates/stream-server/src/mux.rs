@@ -1,5 +1,5 @@
-//! Writing packets into fragmented MP4 or MPEG-TS, in memory, cut into
-//! segments where the caller says. Each output timestamp is moved later by
+//! Writing packets into fragmented MP4, MPEG-TS or ADTS, in memory, cut
+//! into segments where the caller says. Each output timestamp is moved later by
 //! `OFFSET`, so none is negative (MP4 fragments can't start before zero)
 //! and segments written by different jobs line up.
 
@@ -12,10 +12,41 @@ use ffmpeg::{Dictionary, Packet, Rational, codec};
 use ffmpeg_next as ffmpeg;
 
 use crate::Error;
-use crate::profile::Segments;
+use crate::profile::{AudioCodec, Segments};
 
 /// How much later than the source every output timestamp is, in seconds.
 pub(crate) const OFFSET: f64 = 10.0;
+
+/// What the muxer writes: HLS's segments, or the sound alone as internet
+/// radio sends it, AAC with ADTS headers or FLAC.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum Format {
+    Fmp4,
+    Ts,
+    Adts,
+    Flac,
+}
+
+impl From<Segments> for Format {
+    fn from(segments: Segments) -> Self {
+        match segments {
+            Segments::Fmp4 => Self::Fmp4,
+            Segments::Ts => Self::Ts,
+        }
+    }
+}
+
+impl Format {
+    /// Whether it can carry the audio codec as it is.
+    pub(crate) fn carries_audio(self, codec: AudioCodec) -> bool {
+        match self {
+            Self::Fmp4 => Segments::Fmp4.carries_audio(codec),
+            Self::Ts => Segments::Ts.carries_audio(codec),
+            Self::Adts => codec == AudioCodec::Aac,
+            Self::Flac => codec == AudioCodec::Flac,
+        }
+    }
+}
 
 /// A stream to write: its codec parameters and the time base its packets'
 /// timestamps come in.
@@ -26,7 +57,7 @@ pub(crate) struct OutStream {
 
 pub(crate) struct Muxer {
     context: *mut ffi::AVFormatContext,
-    kind: Segments,
+    kind: Format,
     /// Each stream's packets' time base, to rescale from.
     input_time_bases: Vec<Rational>,
 }
@@ -57,10 +88,12 @@ fn check(result: i32, what: &str) -> Result<(), Error> {
 }
 
 impl Muxer {
-    pub fn new(kind: Segments, streams: &[OutStream]) -> Result<Self, Error> {
+    pub fn new(kind: Format, streams: &[OutStream]) -> Result<Self, Error> {
         let format = CString::new(match kind {
-            Segments::Fmp4 => "mp4",
-            Segments::Ts => "mpegts",
+            Format::Fmp4 => "mp4",
+            Format::Ts => "mpegts",
+            Format::Adts => "adts",
+            Format::Flac => "flac",
         })
         .expect("no NUL");
         let mut context = ptr::null_mut();
@@ -93,7 +126,7 @@ impl Muxer {
                 let parameters = (*out).codecpar;
                 // The source container's tag may mean nothing here; Apple's
                 // players want HEVC in MP4 tagged `hvc1`.
-                (*parameters).codec_tag = if kind == Segments::Fmp4
+                (*parameters).codec_tag = if kind == Format::Fmp4
                     && (*parameters).codec_id == ffi::AVCodecID::AV_CODEC_ID_HEVC
                 {
                     u32::from_le_bytes(*b"hvc1")
@@ -114,14 +147,14 @@ impl Muxer {
         // zero would shift each job's differently.
         options.set("avoid_negative_ts", "disabled");
         match self.kind {
-            Segments::Fmp4 => {
+            Format::Fmp4 => {
                 options.set(
                     "movflags",
                     "empty_moov+default_base_moof+frag_custom+frag_discont+skip_trailer",
                 );
                 options.set("use_editlist", "0");
             }
-            Segments::Ts => {}
+            Format::Ts | Format::Adts | Format::Flac => {}
         }
         // SAFETY: the context is set up with its streams and a buffer.
         unsafe {
@@ -174,7 +207,7 @@ impl Muxer {
             )?;
         }
         let segment = self.take()?;
-        if self.kind == Segments::Ts {
+        if self.kind == Format::Ts {
             // Each segment starts with the tables that say what it holds.
             self.set_option("mpegts_flags", "+resend_headers");
         }
@@ -219,7 +252,13 @@ impl Muxer {
             check(
                 ffi::avio_open_dyn_buf(&mut (*self.context).pb),
                 "opening a buffer",
-            )
+            )?;
+            // What was written went with an earlier buffer: FLAC's trailer
+            // mustn't go back to put its header right in this one.
+            if self.kind == Format::Flac {
+                (*(*self.context).pb).seekable = 0;
+            }
+            Ok(())
         }
     }
 

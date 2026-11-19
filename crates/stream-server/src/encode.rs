@@ -324,6 +324,7 @@ impl AudioEncoder {
             AudioCodec::Aac => "aac",
             AudioCodec::Ac3 => "ac3",
             AudioCodec::Eac3 => "eac3",
+            AudioCodec::Flac => "flac",
             _ => return Err(Error::NoEncoder),
         };
         let codec = ffmpeg::encoder::find_by_name(name).ok_or(Error::NoEncoder)?;

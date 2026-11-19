@@ -23,7 +23,7 @@ use ffmpeg_next as ffmpeg;
 use crate::Error;
 use crate::encode::{AudioEncoder, AudioSettings, Colors, VideoEncoder, VideoSettings};
 use crate::media::{self, MediaInfo, Source};
-use crate::mux::{Muxer, OutStream};
+use crate::mux::{Format, Muxer, OutStream};
 use crate::overlay::{Coding, Overlay};
 use crate::plan::{AudioPlan, Plan, VideoPlan};
 use crate::profile::Segments;
@@ -252,7 +252,7 @@ impl Pipeline {
             Start::Key { key, time } => (Some(key), time),
             Start::Time(time) => (None, time),
         };
-        let global_header = media.kind == Segments::Fmp4;
+        let global_header = media.plan.format() == Format::Fmp4;
         let mut tracks = Vec::new();
         let mut outputs = Vec::new();
         let mut keys = Some(keys);
@@ -385,7 +385,7 @@ impl Pipeline {
             });
             outputs.push(out);
         }
-        let mut muxer = Muxer::new(media.kind, &outputs)?;
+        let mut muxer = Muxer::new(media.plan.format(), &outputs)?;
         let header = muxer.write_header()?;
         let count = outputs.len();
         Ok((

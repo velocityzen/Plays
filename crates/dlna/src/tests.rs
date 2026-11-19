@@ -344,6 +344,53 @@ fn without_events_it_is_asked() {
 }
 
 #[test]
+fn a_position_is_heard_when_it_first_comes_and_polls_can_come_often() {
+    let (fake, session, mut events) = playing(Renderer::Speaker);
+    let asked = |fake: &FakeRenderer| fake.state().received("GetPositionInfo").len();
+    let before = Instant::now();
+    fake.state().position = 12.0;
+    let heard = status(&mut events, |status| status.position == Some(12.0))
+        .and_then(|status| status.position_at)
+        .expect("when it was heard");
+    assert!(heard >= before);
+    // Asked again, it's still where it was: heard there first, then.
+    let polls = asked(&fake);
+    assert!(fake.wait_for(|state| state.received("GetPositionInfo").len() >= polls + 3));
+    assert_eq!(session.status().position_at, Some(heard));
+
+    // Where it said it was, halfway between the asking and the answer:
+    // it's then asked what it's doing, which takes as long again, so the
+    // status comes one and a half answers after that.
+    let answer_after = Duration::from_millis(200);
+    fake.state().answer_after = answer_after;
+    fake.state().position = 20.0;
+    let heard = status(&mut events, |status| status.position == Some(20.0))
+        .and_then(|status| status.position_at)
+        .expect("when it was heard");
+    let since = heard.elapsed();
+    assert!(
+        since >= answer_after * 5 / 4,
+        "heard {since:?} ago, not when the answer came"
+    );
+    fake.state().answer_after = Duration::ZERO;
+
+    // Asked now, whatever the wait it was in, then as often as asked: here
+    // five times as often, for a picture following its sound.
+    let polls = asked(&fake);
+    session.poll_every(Some(Duration::from_secs(60)));
+    assert!(fake.wait_for(|state| state.received("GetPositionInfo").len() > polls));
+    let (polls, start) = (asked(&fake), Instant::now());
+    session.poll_every(Some(Duration::from_millis(10)));
+    assert!(fake.wait_for(|state| state.received("GetPositionInfo").len() >= polls + 10));
+    assert!(
+        start.elapsed() < Duration::from_millis(400),
+        "ten polls in {:?}",
+        start.elapsed()
+    );
+    drop(session);
+}
+
+#[test]
 fn subscriptions_are_renewed_and_ended() {
     let fake = FakeRenderer::start(Renderer::Tv);
     fake.state().subscription = 1;

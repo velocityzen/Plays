@@ -26,7 +26,9 @@ use futures::channel::mpsc::UnboundedReceiver;
 use parking_lot::Mutex;
 use stream_server::{AudioCodec, Container, Profile, VideoCodec};
 
-use super::target::{Device, Error, Load, Session, Shows, State, Status, Subtitles, Target};
+use super::target::{
+    Device, Error, FOLLOW_POLL, Load, Session, Shows, State, Status, Subtitles, Target,
+};
 
 pub const KIND: &str = "DLNA";
 
@@ -300,6 +302,12 @@ fn profile(capabilities: Option<&[Capability]>) -> Profile {
     if audio.is_empty() {
         audio.push(AudioCodec::Aac);
     }
+    // A speaker takes files, and a stream of the sound as internet radio
+    // sends it, AAC or FLAC, where it takes those.
+    let sound_stream: Vec<Container> = [Container::Aac, Container::Flac]
+        .into_iter()
+        .filter(|container| !shows_video && has(*container))
+        .collect();
     let surround = audio
         .iter()
         .any(|codec| matches!(codec, AudioCodec::Ac3 | AudioCodec::Eac3))
@@ -307,9 +315,9 @@ fn profile(capabilities: Option<&[Capability]>) -> Profile {
 
     Profile {
         files,
-        // A TV takes a stream of MPEG-TS whether it lists one or not; a
-        // speaker takes only files.
+        // A TV takes a stream of MPEG-TS whether it lists one or not.
         stream: shows_video,
+        sound_stream,
         max_size: Some(if named("UHD") || named("2160") {
             (3840, 2160)
         } else {
@@ -563,7 +571,12 @@ impl Session for DlnaSession {
                 ..loudness
             }));
         }
-        self.give(media, load.autoplay, load.start)
+        self.give(media, load.autoplay, load.start)?;
+        // Asked often while a picture follows it, once it has the media:
+        // asked before, it would say what it played before.
+        self.session()?
+            .poll_every(load.picture_here.then_some(FOLLOW_POLL));
+        Ok(())
     }
 
     fn play(&mut self) -> Result<(), Error> {
@@ -692,9 +705,12 @@ impl Session for DlnaSession {
             State::Ended => duration.or(status.position),
             _ => self.pending_seek.or(status.position),
         };
+        // Where it was heard to be, not where it's to go or has ended.
+        let heard = state != State::Ended && self.pending_seek.is_none();
         Ok(Status {
             state,
             position: position.unwrap_or(0.0),
+            at: status.position_at.filter(|_| heard),
             duration,
         })
     }
@@ -743,6 +759,10 @@ mod tests {
             ]
         );
         assert!(samsung.stream);
+        assert!(
+            samsung.sound_stream.is_empty(),
+            "a TV gets the MPEG-TS stream"
+        );
         assert_eq!(samsung.hls, None, "MPEG-TS rather than HLS");
         assert!(!samsung.fetches_urls);
         assert_eq!(samsung.video, [VideoCodec::H264, VideoCodec::Mpeg2]);
@@ -795,7 +815,7 @@ mod tests {
     }
 
     #[test]
-    fn a_speaker_gets_files_only() {
+    fn a_speaker_gets_files_and_a_stream_of_its_sound() {
         let sonos = profile(listed("sonos").as_deref());
         assert_eq!(
             sonos.files,
@@ -807,6 +827,7 @@ mod tests {
             ]
         );
         assert!(!sonos.stream, "no stream of MPEG-TS for a speaker");
+        assert_eq!(sonos.sound_stream, [Container::Flac], "it lists no AAC");
         assert_eq!(sonos.hls, None);
         assert_eq!(
             sonos.audio,
@@ -820,6 +841,7 @@ mod tests {
 
         let devialet = profile(listed("devialet").as_deref());
         assert!(!devialet.stream);
+        assert_eq!(devialet.sound_stream, [Container::Aac, Container::Flac]);
         assert_eq!(
             devialet.files,
             [

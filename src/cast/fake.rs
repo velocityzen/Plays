@@ -61,6 +61,7 @@ impl FakeTarget {
             status: Status {
                 state: State::Paused,
                 position: 0.0,
+                at: None,
                 duration: None,
             },
             gone: false,
@@ -150,6 +151,7 @@ impl Session for FakeSession {
                     State::Paused
                 },
                 position: load.start,
+                at: None,
                 duration: load.duration,
             }
         })

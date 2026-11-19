@@ -566,6 +566,7 @@ impl Session for ChromecastSession {
         Ok(Status {
             state,
             position,
+            at: None,
             duration: self.duration,
         })
     }

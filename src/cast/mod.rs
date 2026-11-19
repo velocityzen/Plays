@@ -86,11 +86,11 @@ impl Casting {
     }
 
     /// The devices a tile can cast to: those that show video, and for a
-    /// tile that plays only sound, speakers too.
-    pub fn devices_for(cx: &App, has_video: bool) -> Vec<Device> {
+    /// tile with sound, speakers too, which a video sends its sound to.
+    pub fn devices_for(cx: &App, has_audio: bool) -> Vec<Device> {
         Self::devices(cx)
             .iter()
-            .filter(|device| device.shows == Shows::Video || !has_video)
+            .filter(|device| device.shows == Shows::Video || has_audio)
             .cloned()
             .collect()
     }

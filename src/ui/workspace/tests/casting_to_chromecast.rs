@@ -141,14 +141,14 @@ fn picking_a_tv_casts_the_front_tile_there_from_where_it_is_with_styled_subtitle
 }
 
 #[gpui::test]
-fn a_speaker_is_offered_for_sound_only_and_gets_the_file(cx: &mut TestAppContext) {
+fn a_speaker_is_offered_for_anything_with_sound_and_gets_a_file_of_it(cx: &mut TestAppContext) {
     let speaker = FakeDevice::start(Kind::Speaker);
     let (_, mut cx) = start(cx, &speaker, "tone.m4a", false);
-    let offered = |cx: &mut VisualTestContext, has_video| {
-        cx.update(|_, cx| Casting::devices_for(cx, has_video).len())
+    let offered = |cx: &mut VisualTestContext, has_audio| {
+        cx.update(|_, cx| Casting::devices_for(cx, has_audio).len())
     };
-    assert_eq!(offered(&mut cx, true), 0);
-    assert_eq!(offered(&mut cx, false), 1);
+    assert_eq!(offered(&mut cx, true), 1);
+    assert_eq!(offered(&mut cx, false), 0);
     let shown = cx.update(|_, cx| Casting::devices(cx)[0].shows);
     assert_eq!(shown, Shows::Sound);
 
@@ -160,6 +160,27 @@ fn a_speaker_is_offered_for_sound_only_and_gets_the_file(cx: &mut TestAppContext
     let (status, body) = get(load["media"]["contentId"].as_str().unwrap());
     assert_eq!(status, 200);
     assert_eq!(body, std::fs::read(testing::fixture("tone.m4a")).unwrap());
+}
+
+#[gpui::test]
+fn a_videos_sound_goes_to_a_speaker_as_hls_of_the_sound_alone(cx: &mut TestAppContext) {
+    let speaker = FakeDevice::start(Kind::Speaker);
+    let (window, mut cx) = start(cx, &speaker, "clip.mp4", false);
+    cast(&mut cx, &speaker);
+    let media = last(&speaker, "LOAD")["media"].clone();
+    let url = media["contentId"].as_str().unwrap().to_owned();
+    assert!(url.ends_with("master.m3u8"), "{url}");
+    let (status, master) = get(&url);
+    assert_eq!(status, 200);
+    let master = String::from_utf8(master).unwrap();
+    assert!(
+        master.contains("mp4a.40.2") && !master.contains("avc1"),
+        "the sound alone: {master}"
+    );
+    assert!(
+        tile(window, &cx).read_with(&cx, |view, _| view.player().is_sound_elsewhere()),
+        "the picture stays here"
+    );
 }
 
 #[gpui::test]

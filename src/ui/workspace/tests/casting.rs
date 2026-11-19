@@ -7,7 +7,9 @@ use std::net::TcpStream;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use gpui::{Entity, TestAppContext, VisualTestContext, WindowHandle};
+use gpui::{
+    Entity, Modifiers, MouseButton, TestAppContext, VisualTestContext, WindowHandle, point,
+};
 
 use super::open;
 use crate::cast::fake::{Call, FakeTarget};
@@ -15,7 +17,7 @@ use crate::cast::target::{Load, State};
 use crate::cast::{Casting, Device, Shows};
 use crate::media::tracks::TrackKind;
 use crate::ui::player::PlayerView;
-use crate::ui::testing::{self, OPEN_WAIT, click, press, shows};
+use crate::ui::testing::{self, OPEN_WAIT, click, find, press, shows};
 use crate::ui::theme::motion::CAST_POLL;
 use crate::ui::workspace::Workspace;
 
@@ -412,36 +414,183 @@ fn picture_subtitles_are_drawn_into_video_it_re_encodes(cx: &mut TestAppContext)
     assert_eq!(get(&drawn.url).0, 404);
 }
 
+/// A speaker taking MP4 files, and a stream of AAC for the sound of
+/// anything else.
+fn speaker(fake: &FakeTarget, name: &str) -> Device {
+    let speaker = fake.add(name, Shows::Sound);
+    fake.screen(&speaker).lock().profile = stream_server::Profile {
+        hls: None,
+        hls_subtitles: false,
+        sound_stream: vec![stream_server::Container::Aac],
+        video: Vec::new(),
+        max_size: None,
+        ..stream_server::Profile::default()
+    };
+    speaker
+}
+
 #[gpui::test]
-fn speakers_are_offered_for_sound_only(cx: &mut TestAppContext) {
+fn speakers_are_offered_for_anything_with_sound(cx: &mut TestAppContext) {
     let (window, mut cx, fake, tv) = start(cx, "tone.m4a", false);
-    let speaker = fake.add("Kitchen", Shows::Sound);
+    let speaker = speaker(&fake, "Kitchen");
     cx.update(|_, cx| Casting::refresh(cx));
-    let offered = |cx: &mut VisualTestContext, has_video| {
+    let offered = |cx: &mut VisualTestContext, has_audio| {
         cx.update(|_, cx| {
-            Casting::devices_for(cx, has_video)
+            Casting::devices_for(cx, has_audio)
                 .into_iter()
                 .map(|device| device.name)
                 .collect::<Vec<_>>()
         })
     };
-    assert_eq!(offered(&mut cx, true), ["Living Room"]);
-    assert_eq!(offered(&mut cx, false), ["Kitchen", "Living Room"]);
+    assert_eq!(offered(&mut cx, true), ["Kitchen", "Living Room"]);
+    assert_eq!(offered(&mut cx, false), ["Living Room"]);
 
     let load = cast(window, &mut cx, &fake, &speaker);
     assert_eq!(load.mime, "audio/mp4");
+    assert!(!load.picture_here, "sound alone goes as it is");
+    let (_, body) = get(&load.url);
+    assert_eq!(body, std::fs::read(testing::fixture("tone.m4a")).unwrap());
     assert!(loads(&fake, &tv).is_empty());
 }
 
 #[gpui::test]
-fn a_video_doesnt_go_to_a_speaker(cx: &mut TestAppContext) {
-    let (window, mut cx, fake, _) = start(cx, "clip.mp4", false);
-    let speaker = fake.add("Kitchen", Shows::Sound);
+fn a_video_without_sound_doesnt_go_to_a_speaker(cx: &mut TestAppContext) {
+    let (window, mut cx, fake, _) = start(cx, "clip-ip.mkv", false);
+    let speaker = speaker(&fake, "Kitchen");
     let view = tile(window, &cx);
     view.update(&mut cx, |view, cx| view.cast_to(Some(speaker.clone()), cx));
     assert_eq!(view.read_with(&cx, |view, _| view.casting().cloned()), None);
     std::thread::sleep(Duration::from_millis(100));
     assert!(calls(&fake, &speaker).is_empty());
+}
+
+#[gpui::test]
+fn a_videos_sound_goes_to_a_speaker_and_the_picture_here_follows_it(cx: &mut TestAppContext) {
+    let (window, mut cx, fake, _) = start(cx, "clip.mp4", false);
+    let speaker = speaker(&fake, "Kitchen");
+    let view = tile(window, &cx);
+    let load = cast(window, &mut cx, &fake, &speaker);
+    assert!(load.picture_here);
+    assert!(!load.autoplay, "a paused tile stays paused there");
+    assert_eq!(load.mime, "audio/aac");
+    assert_eq!(load.subtitles, None);
+    let (status, body) = get(&load.url);
+    assert_eq!(status, 200);
+    assert!(
+        body.len() > 7 && body[0] == 0xFF && body[1] & 0xF0 == 0xF0,
+        "the sound alone, as ADTS"
+    );
+    assert!(view.read_with(&cx, |view, _| view.player().is_sound_elsewhere()));
+
+    // Playing, but not yet heard moving: the picture waits, where it is.
+    say(&fake, &speaker, State::Playing, 0.5);
+    wait(&mut cx, "the picture to be where the sound is", |cx| {
+        view.read_with(cx, |view, _| (view.player().position() - 0.5).abs() < 1e-9)
+    });
+    assert!(!view.read_with(&cx, |view, _| view.player().is_playing()));
+    assert!(
+        !shows(&mut cx, "play-here"),
+        "the picture stays on the tile, not a panel saying where it went"
+    );
+
+    // Heard moving, the picture plays with it.
+    say(&fake, &speaker, State::Playing, 0.6);
+    wait(&mut cx, "the picture to play with the sound", |cx| {
+        view.read_with(cx, |view, _| view.player().is_playing())
+    });
+    // Paused there, as from its own buttons: the picture stops where it did.
+    say(&fake, &speaker, State::Paused, 1.25);
+    wait(&mut cx, "the picture to stop where the sound did", |cx| {
+        view.read_with(cx, |view, _| {
+            !view.player().is_playing() && (view.player().position() - 1.25).abs() < 1e-9
+        })
+    });
+
+    // The tile's controls reach the speaker, and stop the picture at once.
+    press(&mut cx, "space");
+    wait(&mut cx, "the speaker to play", |_| {
+        calls(&fake, &speaker).contains(&Call::Play)
+    });
+    say(&fake, &speaker, State::Playing, 1.3);
+    wait(&mut cx, "the picture to play with the sound", |cx| {
+        view.read_with(cx, |view, _| view.player().is_playing())
+    });
+    press(&mut cx, "space");
+    assert!(!view.read_with(&cx, |view, _| view.player().is_playing()));
+    wait(&mut cx, "the speaker to pause", |_| {
+        calls(&fake, &speaker).contains(&Call::Pause)
+    });
+    say(&fake, &speaker, State::Paused, 1.5);
+    wait(&mut cx, "the picture to be where the sound stopped", |cx| {
+        view.read_with(cx, |view, _| (view.player().position() - 1.5).abs() < 1e-9)
+    });
+
+    view.update(&mut cx, |view, cx| view.cast_to(None, cx));
+    let (casting, position, playing, elsewhere) = view.read_with(&cx, |view, _| {
+        (
+            view.casting().cloned(),
+            view.player().position(),
+            view.player().is_playing(),
+            view.player().is_sound_elsewhere(),
+        )
+    });
+    assert_eq!(casting, None);
+    assert!((position - 1.5).abs() < 1e-9, "it stays at {position}");
+    assert!(!playing, "paused, as the speaker was");
+    assert!(!elsewhere, "the sound is back here");
+    wait(&mut cx, "the speaker to stop", |_| {
+        calls(&fake, &speaker).contains(&Call::Stop)
+    });
+}
+
+#[gpui::test]
+fn the_picture_here_shows_where_the_slider_is_dragged_and_the_speaker_goes_there(
+    cx: &mut TestAppContext,
+) {
+    let (window, mut cx, fake, _) = start(cx, "clip.mp4", false);
+    let speaker = speaker(&fake, "Kitchen");
+    let view = tile(window, &cx);
+    cast(window, &mut cx, &fake, &speaker);
+    say(&fake, &speaker, State::Paused, 0.25);
+    wait(&mut cx, "the picture to be where the sound is", |cx| {
+        view.read_with(cx, |view, _| (view.player().position() - 0.25).abs() < 1e-9)
+    });
+
+    let bar = find(&mut cx, "seek");
+    let at = |fraction: f32| point(bar.left() + bar.size.width * fraction, bar.center().y);
+    cx.simulate_mouse_move(at(0.5), None, Modifiers::none());
+    cx.simulate_mouse_down(at(0.5), MouseButton::Left, Modifiers::none());
+    cx.simulate_mouse_move(at(0.8), MouseButton::Left, Modifiers::none());
+    let shown = view.read_with(&cx, |view, _| view.player().position());
+    assert!(shown > 1.2, "the picture shows {shown}");
+    // However often the tile hears where the speaker is meanwhile.
+    for _ in 0..10 {
+        cx.executor().advance_clock(CAST_POLL);
+        cx.run_until_parked();
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let position = view.read_with(&cx, |view, _| view.player().position());
+    assert_eq!(position, shown, "it stays where the slider is");
+    assert!(
+        !calls(&fake, &speaker)
+            .iter()
+            .any(|call| matches!(call, Call::Seek(_))),
+        "the speaker waits for the slider to be let go"
+    );
+
+    cx.simulate_mouse_up(at(0.8), MouseButton::Left, Modifiers::none());
+    wait(&mut cx, "the speaker to seek", |_| {
+        calls(&fake, &speaker)
+            .iter()
+            .any(|call| matches!(call, Call::Seek(_)))
+    });
+    let sought = calls(&fake, &speaker)
+        .into_iter()
+        .find_map(|call| match call {
+            Call::Seek(time) => Some(time),
+            _ => None,
+        });
+    assert_eq!(sought, Some(shown), "where the picture showed");
 }
 
 #[gpui::test]

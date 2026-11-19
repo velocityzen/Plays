@@ -2,9 +2,9 @@
 # Build the FFmpeg that Plays links into itself, so the app needs no FFmpeg
 # installed: static libraries under the LGPL (no --enable-gpl), with dav1d
 # for AV1. Decoding, plus what the stream server (crates/stream-server)
-# needs to repackage and re-encode for TVs: the MP4 and MPEG-TS muxers, the
-# AAC, AC-3 and E-AC-3 encoders, and the hardware video encoders (no
-# software one). They go in build/ffmpeg, where
+# needs to repackage and re-encode for TVs and speakers: the MP4, MPEG-TS,
+# ADTS and FLAC muxers, the AAC, AC-3, E-AC-3 and FLAC encoders, and the
+# hardware video encoders (no software one). They go in build/ffmpeg, where
 # .cargo/config.toml points the Rust build, and are built again only when
 # this script changes (or with --force). Sources are checked against the
 # checksums below.
@@ -155,9 +155,9 @@ PKG_CONFIG_PATH="$prefix/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" ./c
     --disable-avdevice \
     --disable-avfilter \
     --disable-encoders \
-    --enable-encoder=aac,ac3,eac3 \
+    --enable-encoder=aac,ac3,eac3,flac \
     --disable-muxers \
-    --enable-muxer=mp4,mpegts \
+    --enable-muxer=mp4,mpegts,adts,flac \
     --enable-libdav1d \
     --pkg-config-flags=--static \
     "${platform[@]}"
