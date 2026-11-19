@@ -298,11 +298,9 @@ pub mod text {
 pub mod radius {
     use gpui::{Pixels, px};
 
-    /// Panels over the picture; notes and the track reel are medium.
+    /// Panels over the picture: the controls' are small; notes, the
+    /// console and the track reel are medium.
     pub const OVERLAY: [Pixels; 3] = [px(16.), px(24.), px(32.)];
-    /// The controls' panel, which is short and has buttons close to its
-    /// corners.
-    pub const CONTROLS: Pixels = px(16.);
     /// Dialogs: Open URL.
     pub const DIALOG: Pixels = px(12.);
     /// Cards: a group of settings, the subtitle preview.
@@ -319,6 +317,20 @@ pub mod radius {
     pub const ITEM: [Pixels; 3] = [px(4.), px(5.), px(6.)];
     /// Badges with a word, such as LIVE.
     pub const BADGE: [Pixels; 3] = [px(3.), px(4.), px(5.)];
+}
+
+/// The room inside panels (`Panel`). A menu's rows keep their own room, so
+/// that its lists scroll and its columns divide from edge to edge.
+pub mod panel {
+    use gpui::{Pixels, px};
+
+    /// Panels over the picture, by size: the controls' is small, the
+    /// console medium.
+    pub const OVERLAY_PADDING: [Pixels; 3] = [px(8.), px(12.), px(16.)];
+    /// Above and below a note's line; across, it has its size's padding.
+    pub const NOTE_PADDING_Y: Pixels = px(4.);
+    /// Around the track reel's rows, as much as a menu has around its rows.
+    pub const REEL_PADDING: Pixels = px(4.);
 }
 
 /// How long things take.
@@ -483,9 +495,7 @@ pub mod player {
     use gpui::{Pixels, Point, point, px};
 
     /// How far the controls' panel floats from the tile's sides and bottom.
-    pub const CONTROLS_INSET: Pixels = px(8.);
-    /// The padding in the controls' panel.
-    pub const CONTROLS_PADDING: Pixels = px(6.);
+    pub const CONTROLS_INSET: Pixels = px(10.);
     /// The gap between the seek bar and the buttons under it.
     pub const CONTROLS_GAP: Pixels = px(2.);
     /// The volume slider's width.

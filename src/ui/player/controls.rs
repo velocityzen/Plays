@@ -11,19 +11,21 @@ use crate::media::chapters::{self, Chapter};
 use crate::media::decoder::MediaInfo;
 use crate::settings::Settings;
 use crate::ui::components::{
-    Badge, Button, ComponentSize, Panel, Popover, Slide, Slider, SliderEvent,
+    Badge, Button, ComponentSize, Panel, Popover, Sizable, Slide, Slider, SliderEvent,
 };
-use crate::ui::theme::player::{
-    CONTROLS_GAP, CONTROLS_INSET, CONTROLS_PADDING, TRACK_MENU_OFFSET, VOLUME_WIDTH,
-};
-use crate::ui::theme::{Theme, controls, overlay, radius};
+use crate::ui::theme::player::{CONTROLS_GAP, CONTROLS_INSET, TRACK_MENU_OFFSET, VOLUME_WIDTH};
+use crate::ui::theme::{Theme, controls, overlay, panel};
+
+/// The controls' panel is small: it is short, and has buttons close to its
+/// corners.
+const PANEL_SIZE: ComponentSize = ComponentSize::Small;
 
 /// How far up the tile the controls reach: the seek bar and the buttons in
 /// the panel's padding, and the gap below it. Subtitles stay above them
 /// while they show.
 pub(super) fn height(live: bool) -> Pixels {
     CONTROLS_INSET
-        + CONTROLS_PADDING * 2.
+        + PANEL_SIZE.pick(panel::OVERLAY_PADDING) * 2.
         + ComponentSize::Medium.pick(controls::HEIGHT)
         + if live {
             px(0.)
@@ -84,11 +86,10 @@ impl PlayerView {
             .child(
                 Panel::new()
                     .overlay()
-                    .superellipse(radius::CONTROLS)
+                    .with_size(PANEL_SIZE)
                     .flex()
                     .flex_col()
                     .gap(CONTROLS_GAP)
-                    .p(CONTROLS_PADDING)
                     .when(!live, |this| {
                         this.child(
                             div().px_1().debug_selector(|| "seek".into()).child(

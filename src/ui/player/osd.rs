@@ -9,9 +9,9 @@ use gpui::{AnyElement, Context, Div, SharedString, Window, div};
 use super::PlayerView;
 use super::tracks::{TrackChoice, track_row};
 use crate::ui::components::{ComponentSize, Panel};
-use crate::ui::theme::menu;
 use crate::ui::theme::motion::{OSD_DURATION, OSD_FADE, REEL_ROLL};
 use crate::ui::theme::player::{NOTE_TOP, REEL_FADED, TRACK_MENU_WIDTH};
+use crate::ui::theme::{menu, panel};
 
 /// The note over a tile on what a shortcut did.
 pub(super) enum Osd {
@@ -99,7 +99,7 @@ fn render_reel(reel: &TrackReel, shown: Duration) -> AnyElement {
     Panel::new()
         .overlay()
         .w(TRACK_MENU_WIDTH)
-        .p_1()
+        .p(panel::REEL_PADDING)
         .child(
             div()
                 .relative()

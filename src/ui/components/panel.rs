@@ -3,14 +3,15 @@ use gpui::{AnyElement, App, Refineable, StyleRefinement, Window, div};
 
 use super::{ComponentSize, Sizable};
 use crate::settings::Settings;
-use crate::ui::theme::{Theme, backdrop, overlay, radius};
+use crate::ui::theme::{Theme, backdrop, overlay, panel, radius};
 
 /// A floating panel to put anything in. By default it is a menu's: the
 /// theme's surface color with a hairline border, rounded corners and a
-/// shadow. [`overlay`](Self::overlay) makes it a note's on the picture
-/// instead, and [`note`](Self::note) is such a note. Its size sets its
-/// corners and its text. Size, lay out and fill it like a `div`; styles
-/// set on it win over its own.
+/// shadow, and no padding, as a menu's rows keep their own room.
+/// [`overlay`](Self::overlay) makes it a panel on the picture instead,
+/// padded, and [`note`](Self::note) is such a panel. Its size sets its
+/// corners, its text and, over the picture, its padding. Size, lay out and
+/// fill it like a `div`; styles set on it win over its own.
 #[derive(IntoElement, Default)]
 pub struct Panel {
     style: StyleRefinement,
@@ -30,8 +31,7 @@ impl Panel {
         Self::new()
             .overlay()
             .rounded_full()
-            .px_3()
-            .py_1()
+            .py(panel::NOTE_PADDING_Y)
             .child(text)
     }
 
@@ -79,7 +79,9 @@ impl RenderOnce for Panel {
         let mut panel = if self.overlay {
             let panel = panel
                 .superellipse(size.pick(radius::OVERLAY))
+                .p(size.pick(panel::OVERLAY_PADDING))
                 .text_color(overlay::text());
+
             match backdrop::for_look(cx.global::<Settings>().panels) {
                 Some(backdrop) => panel.backdrop(backdrop),
                 None => panel.bg(overlay::scrim()),

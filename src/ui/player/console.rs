@@ -78,7 +78,6 @@ impl PlayerView {
                 .child(
                     Panel::new()
                         .overlay()
-                        .p_3()
                         .flex()
                         .flex_col()
                         .gap_2()
