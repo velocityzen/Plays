@@ -83,7 +83,9 @@ def linked_packages(target):
             macro = any("proc-macro" in t["kind"] for t in package["targets"])
             if normal and not macro and (package["name"], package["version"]) in built:
                 stack.append(dependency["pkg"])
-    del linked[root]
+    # Plays and its own crates aren't credits.
+    for member in metadata["workspace_members"]:
+        linked.pop(member, None)
     return linked
 
 
