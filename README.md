@@ -533,6 +533,19 @@ white, PNGs (8-bit sRGB, or 16-bit with cICP) and JPEGs, and the math
 that turns light back into PQ and HLG signals. Bitmap subtitles on a turned
 picture are sampled turned with it.
 
+Text subtitles in screenshots are drawn into memory by the machine's own
+text system (Core Text, cosmic-text), on a test context the vendored gpui
+adds for it: a cue must sit centered inside the picture, at the size and
+height Settings give, twice as big on a picture twice as tall, wrap inside
+the picture, and have the outline or box Settings pick. Known PQ and HLG
+signals must land on known sRGB values, with and without gamma, reference
+white just under SDR white; a Dolby Vision profile 5 frame of known colors
+(black, greys, reference white, the primaries, a skin tone), made backwards
+through its reshaping as an encoder would, must come back as those colors,
+and moving its chroma must tint it the way IPT says. The expected values
+were worked out apart from Plays' code, and each test has been checked to
+fail when what it covers is broken.
+
 Picture in Picture's subtitles: drawn one over another they add up as
 drawn straight onto the picture; over Y'CbCr, luma takes each pixel and
 chroma the average of the four it covers, in 8-bit full range and 10-bit

@@ -138,6 +138,13 @@ native helpers give up on errors, can run in `#[gpui::test]`s.
 `src/window.rs`: `Frame::clear` clears `debug_bounds` (test builds only),
 so they hold what the last frame drew, and a test can tell an element is
 gone rather than finding where it was.
+`src/app/test_context.rs` and `src/platform/test/platform.rs`:
+`TestAppContext::with_native_text()` builds a test context whose text is
+shaped and rasterized by the system's own text system (Core Text on macOS,
+cosmic-text on Linux) rather than the no-op one, so Plays' tests can check
+subtitles as they are drawn into screenshots. `TestPlatform::with_text_system`
+takes the text system, and `TestPlatform::new` passes the no-op one as
+before.
 
 `src/taffy.rs`: two float literals are typed as `f32`, which newer Rust
 warns about otherwise.

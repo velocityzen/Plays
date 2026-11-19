@@ -122,10 +122,39 @@ impl AppContext for TestAppContext {
 impl TestAppContext {
     /// Creates a new `TestAppContext`. Usually you can rely on `#[gpui::test]` to do this for you.
     pub fn build(dispatcher: TestDispatcher, fn_name: Option<&'static str>) -> Self {
+        Self::build_on(dispatcher, fn_name, TestPlatform::new)
+    }
+
+    /// Plays: a context like `#[gpui::test]`'s, but whose text is shaped and
+    /// rasterized by the system's own text system (Core Text, cosmic-text),
+    /// for tests of text as it is drawn. Fonts are the machine's.
+    #[cfg(any(
+        target_os = "macos",
+        all(
+            any(target_os = "linux", target_os = "freebsd"),
+            any(feature = "wayland", feature = "x11")
+        )
+    ))]
+    pub fn with_native_text() -> Self {
+        #[cfg(target_os = "macos")]
+        let text_system = Arc::new(crate::platform::MacTextSystem::new());
+        #[cfg(not(target_os = "macos"))]
+        let text_system = Arc::new(crate::platform::CosmicTextSystem::new());
+        let dispatcher = TestDispatcher::new(StdRng::seed_from_u64(0));
+        Self::build_on(dispatcher, None, |background, foreground| {
+            TestPlatform::with_text_system(background, foreground, text_system)
+        })
+    }
+
+    fn build_on(
+        dispatcher: TestDispatcher,
+        fn_name: Option<&'static str>,
+        platform: impl FnOnce(BackgroundExecutor, ForegroundExecutor) -> Rc<TestPlatform>,
+    ) -> Self {
         let arc_dispatcher = Arc::new(dispatcher.clone());
         let background_executor = BackgroundExecutor::new(arc_dispatcher.clone());
         let foreground_executor = ForegroundExecutor::new(arc_dispatcher);
-        let platform = TestPlatform::new(background_executor.clone(), foreground_executor.clone());
+        let platform = platform(background_executor.clone(), foreground_executor.clone());
         let asset_source = Arc::new(());
         let http_client = http_client::FakeHttpClient::with_404_response();
         let text_system = Arc::new(TextSystem::new(platform.text_system()));
