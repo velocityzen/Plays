@@ -52,7 +52,7 @@ icons!(
 /// The app icon's glyph, from the icon itself, for About to draw it with.
 const APP_GLYPH: (&str, &[u8]) = (
     "icons/app-glyph.svg",
-    include_bytes!("../assets/AppIcon.icon/Assets/play.circle.svg"),
+    include_bytes!("../assets/AppIcon.icon/Assets/icon.svg"),
 );
 
 impl AssetSource for Assets {

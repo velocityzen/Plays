@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<svg
+    width="256px"
+    height="256px"
+    viewBox="0 0 256 256"
+    version="1.1"
+    xmlns="http://www.w3.org/2000/svg"
+    xmlns:xlink="http://www.w3.org/1999/xlink"
+>
+    <g
+        stroke="none"
+        fill="none"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        stroke-width="5"
+    >
+        <polyline
+            id="Path"
+            stroke="#FFFFFF"
+            points="116.166967 92.319023 116.166967 178.186039 116.167067 178.415596 186.333133 119.944075"
+        />
+        <polygon
+            id="Path-2"
+            stroke="#FFFFFF"
+            points="186.333133 119.944075 186.333133 119.978559 186.333133 136.084404 116.166967 194.584404 103.497731 188.74144 91.6668674 167.442853 91.6668674 70.8397691 116.167067 61.4155956 186.333133 119.915596"
+        />
+        <polyline
+            id="Path"
+            stroke="#FFFFFF"
+            points="116.167067 163.016258 167.828775 119.944075 167.828775 119.915596 103.637405 66.3685749"
+        />
+        <polyline
+            id="Path-3"
+            stroke="#FFFFFF"
+            points="158.507172 127.615368 103.497731 81.7520613 103.497731 188.616297"
+        />
+    </g>
+</svg>
