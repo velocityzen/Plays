@@ -48,6 +48,7 @@ fn film() -> Media {
             name: "English".into(),
             language: Some("en".into()),
         }],
+        hls_segments: Some(HlsSegments::Ts),
     }
 }
 
@@ -182,10 +183,19 @@ fn play_pause_seek_subtitles_and_volume_reach_it() {
             muted: true
         })
     );
+    session.set_stream_volume(0.4, false).unwrap();
 
     let state = fake.state();
     let playing = state.playing.as_ref().unwrap();
     assert_eq!(playing.position, 1234.0);
+    assert_eq!(
+        (playing.volume, playing.muted),
+        (0.4f32.into(), false),
+        "what it plays has a volume of its own"
+    );
+    assert_eq!(state.volume, 0.25, "the device's stays");
+    let stream = &state.received(MEDIA, "SET_VOLUME")[0];
+    assert_eq!(stream.payload["mediaSessionId"], playing.media_session);
     assert_eq!(playing.style.as_ref().unwrap()["fontStyle"], "BOLD");
     assert!(state.muted);
     let pause = &state.received(MEDIA, "PAUSE")[0];
@@ -321,6 +331,7 @@ fn a_speaker_takes_a_cast_too() {
         title: None,
         duration: None,
         text_tracks: Vec::new(),
+        hls_segments: None,
     };
     assert_eq!(
         session.load(&song, &Load::default()).unwrap().state,

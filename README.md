@@ -82,8 +82,9 @@ GPU-accelerated UI framework.
   video track loads the file there again from where it is. Playing it here
   again (This Computer, Play Here, or the display in the menu), closing the
   tile, or the device going away ends the cast, and the tile goes on from
-  where the device was. Quitting stops the devices cast to. DLNA TVs and
-  speakers are found so far; Chromecast and AirPlay aren't wired in yet.
+  where the device was. Quitting stops the devices cast to. Chromecasts,
+  Google TVs and Nest speakers, and DLNA TVs and speakers, are found;
+  AirPlay isn't wired in yet.
 - While a tile plays, its header and controls fade when the mouse leaves
   it, or rests on it for a couple of seconds; the pointer hides then too,
   until the mouse moves. Resting on the header or controls keeps them.
@@ -311,20 +312,34 @@ loop, on files that have subtitles or more than one audio or video track)
 opens the track menu: a column each for audio, subtitles and (when there
 are several) video. While there are devices to cast to, the cast button
 before it opens the menu of them: This Computer, then each device and its
-kind, the one playing checked. A DLNA TV or speaker on the same network is
-found by itself, in a second or two; one that lists only sound is offered
-for files that are only sound. A file goes to it as it is where it lists
-that kind of file, else as a stream of MPEG-TS, re-encoded where it needs
-to be. Picking other subtitles gives it the file again from where it is,
-as DLNA takes subtitles only with the file. The tile's volume scales the
-TV's own: where it was when cast, the TV stays where it was. For the only
-tile in a window,
+kind, the one playing checked. For the only tile in a window,
 both toggle full screen instead. When a window has more than
 one tile, the button next to maximize moves a tile to a new window sized for
 it, where it keeps playing. Every window takes drops and works the same
 way; menus and shortcuts act on the window in front, and files opened from
 Finder go to it too. Drag the top edge of a window to move it. Closing the
 last window quits.
+
+Devices to cast to on the same network are found by themselves, in a
+second or two. A Chromecast, Google TV or TV with Cast built in is
+offered for anything, and a Nest speaker or speaker group for files that
+are only sound. A file goes to it as it is where its model plays that kind
+of file (MP4, WebM, MP3, AAC, FLAC, Ogg, WAV; just MP4 on a TV of another
+make), else as HLS, re-encoded where it needs to be: H.264 up to 1080p on
+the first Chromecasts and other makes' TVs, HEVC, VP9 and HDR up to 4K on
+an Ultra or a Google TV, AV1 too on a Google TV Streamer. Subtitles show
+there as Settings → Subtitles has them look (size, color, outline or
+shadow and its color, the box behind them); turning them off and on, or
+changing how they look, changes them there as it plays, and picking other
+subtitles gives it the file again from where it is. The tile's volume is
+that of what plays there, so the device's own stays where it is.
+
+A DLNA TV or speaker is offered by what it lists: one that lists only
+sound, for files that are only sound. A file goes to it as it is where it
+lists that kind of file, else as a stream of MPEG-TS, re-encoded where it
+needs to be. Picking other subtitles gives it the file again from where it
+is, as DLNA takes subtitles only with the file. The tile's volume scales
+the TV's own: where it was when cast, the TV stays where it was.
 
 ## How it works
 
@@ -501,8 +516,17 @@ last window quits.
   renderer lists it. Subtitles go as SRT, both ways the crate writes them;
   other subtitles load the file again from where it is. The renderer
   stopping after it played is the end; a seek it refuses while stopped is
-  made once it plays; something else playing there ends the cast. `fake`
-  is a protocol for tests.
+  made once it plays; something else playing there ends the cast.
+  `chromecast` adapts the Chromecast crate: devices that show video are
+  offered for anything, speakers and groups for sound; the model each says
+  it is decides how the stream server serves it, and HLS made for it says
+  its kind of segments, which the receiver otherwise takes for MPEG-TS.
+  Subtitles go as a WebVTT track styled from Settings, beside the HLS
+  rather than in it; off and on is the track's, other subtitles load the
+  media again with a track at a URL it hasn't fetched. The tile's volume
+  is the stream's. Played to the end, it's loaded again to play again; it
+  going idle stopped, or unable to play, ends the cast, as the crate's
+  ways of ending do. `fake` is a protocol for tests.
 - `src/ui/pip/` (macOS): Picture in Picture. The tile's frames go, as they
   are due, to an `AVSampleBufferDisplayLayer` hidden over the tile, which
   AVKit's `AVPictureInPictureController` shows in the system's window; a
@@ -574,7 +598,8 @@ URL. It knows nothing of Plays or gpui, so it is tested on its own.
 - `profile.rs`: what a device plays, as its protocol's crate knows it: the
   containers it takes as files, HLS (with MPEG-TS or fragmented MP4
   segments) or a progressive MPEG-TS stream, and the codecs, size, bit
-  depth, HDR kinds and channels it decodes.
+  depth, HDR kinds and channels it decodes; whether the HLS playlist lists
+  the subtitles, which it doesn't for a device given them beside it.
 - `media.rs`: opening a file or stream and reading what is in it.
 - `plan.rs`: the least work that plays. The file as it is, or a stream's
   own URL, when the device plays it with the default tracks; else HLS, or
@@ -680,7 +705,7 @@ channel.
   launches, or when another sender plays something else.
 - `media.rs`: what LOAD takes (the URL, its type, buffered or live, a
   title and duration, WebVTT subtitle tracks, which to show and how they
-  look) and the status read back: idle and why, buffering, playing or
+  look, and for HLS its kind of segments) and the status read back: idle and why, buffering, playing or
   paused, with the position and duration.
 - `fake.rs`, with the `fake` feature: a pretend device on this computer,
   TLS with a certificate made for it.
@@ -882,6 +907,27 @@ and Devialet's protocol info, and the tile's volume scales the
 renderer's. Each test has been checked to fail when the behavior it covers
 is broken.
 
+Casting to a Chromecast is tested with the Chromecast crate's fake device,
+over TLS as a real one. Picking the TV loads the tile's Matroska file
+there as HLS of MPEG-TS, saying so, from where the tile was and playing,
+with the subtitles picked as a WebVTT track (its language as BCP 47) shown
+in the style Settings give them; the playlist doesn't list them too, and
+the track's URL serves the file's cues. The speaker is offered only for
+sound and gets the M4A as it is, and a paused tile leaves it paused. An
+MP4 goes as it is; space, the arrows, `M` and the volume keys play, seek,
+mute, turn down and pause it, the volume being the stream's and the
+device's own left alone; the bar follows where it says it is, its playing
+to the end shows the end, and playing again loads it again from the start,
+turned down as before. Picking subtitles loads it again from where it is
+with a track at a new URL; turning them off and on again is the track's,
+with no load. Another sender casting there, the app closing or another
+launching, the device going away, and it stopping or failing to play end
+the cast, leaving what plays there alone. Unit tests check the profile for
+each model (the first Chromecasts, an Ultra, a Google TV, the HD one, the
+Streamer, another make's TV, a speaker), the subtitle style from Settings,
+and language codes as BCP 47. Each test has been checked to fail when the
+behavior it covers is broken.
+
 `cargo test --workspace` tests the crates in `crates/` too. The stream
 server's tests serve the fixtures over HTTP, as a device fetches them, and
 read what comes back with FFmpeg: the plan for each fixture; a file as it
@@ -895,7 +941,8 @@ holding only the sound that plays during it though the encoder hands
 frames back late (macOS; with no hardware encoder, as in the Linux test
 container, planning it must fail); a progressive stream from a DLNA time
 seek; a live stream; and subtitles from a file and from a track in
-`clip-subs.mkv`, as WebVTT, SRT and an HLS rendition. Unit tests check how
+`clip-subs.mkv`, as WebVTT, SRT and an HLS rendition, which a device
+given them beside it doesn't find in the playlist. Unit tests check how
 far ahead a job runs, where it restarts and what it forgets, packets given
 their lengths, byte ranges, codec names from parameter sets, playlists and
 subtitle text. Each has been checked to fail when what it covers is
@@ -919,7 +966,8 @@ The Chromecast crate's tests cast to the fake device over TLS: connecting
 launches the Default Media Receiver and connects to it, the heartbeat goes
 both ways and keeps the cast past the silence that would end it; LOAD
 carries the URL, where to start, the subtitle track and its style; play,
-pause, seek, subtitles and volume reach it; its status and volume come as
+pause, seek, subtitles, the device's volume and the stream's reach it,
+the one leaving the other; its status and volume come as
 events, the end of what plays too; a refused LOAD says so; loading again
 isn't taken for another sender; stopping closes the app without telling of
 it; a speaker takes a cast; and the cast ends when the device goes away or
@@ -1047,9 +1095,20 @@ size, makes `first-open` fail.
   forms most TVs take, as DLNA has none of its own; a TV may take neither.
   A renderer that neither sends events nor answers GetPositionInfo can't
   be followed.
-- Casting: only DLNA is wired in so far. Subtitles on a DLNA TV depend
-  on the TV, as DLNA has none of its own: most take SRT one way or the
-  other, some neither, and changing them loads the file again. A DLNA TV
+- Casting to a Chromecast hasn't been checked with a real one yet, only
+  the fake device: none was on hand. What one plays goes by the model it
+  says it is, and a Google TV that calls itself just "Chromecast" is
+  taken for one of the first, getting H.264 up to 1080p; a TV of another
+  make gets H.264 and AAC in MP4 or HLS, which it may play more than.
+  Surround sound goes as stereo AAC, and Dolby Vision is re-encoded. A
+  receiver that applies the stream's volume to the device's own turns that
+  instead. Subtitles take Settings' font, size, colors, edge and box, the
+  weight only as bold or not, and not their placement or the area they go
+  in. An HLS stream from the internet is handed over as it is, and one
+  whose server doesn't let other sites have it (CORS) won't play.
+- Casting: Chromecast and DLNA are wired in so far. Subtitles on a DLNA TV
+  depend on the TV, as DLNA has none of its own: most take SRT one way or
+  the other, some neither, and changing them loads the file again. A DLNA TV
   has only its own volume, which the tile's scales. One that doesn't say
   what it plays gets H.264 and AAC in MPEG-TS, which it may still not
   play, and one that won't seek while stopped starts from the beginning a

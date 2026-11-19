@@ -5,7 +5,7 @@
 use std::fmt;
 use std::net::IpAddr;
 
-use stream_server::Profile;
+use stream_server::{Profile, Segments, SubtitleSource};
 
 use crate::settings::SubtitleStyle;
 
@@ -61,6 +61,10 @@ pub enum Error {
     Gone,
     /// It plays something else now, as from its remote or another app.
     Replaced,
+    /// It was stopped there, from its remote or another app.
+    Stopped,
+    /// It couldn't play the media.
+    Unplayable,
     /// It refused, or said something unexpected.
     Failed(String),
 }
@@ -70,6 +74,8 @@ impl fmt::Display for Error {
         match self {
             Self::Gone => f.write_str("it can't be reached"),
             Self::Replaced => f.write_str("it plays something else now"),
+            Self::Stopped => f.write_str("it was stopped there"),
+            Self::Unplayable => f.write_str("it can't play this"),
             Self::Failed(why) => f.write_str(why),
         }
     }
@@ -87,6 +93,8 @@ pub struct Load {
     pub duration: Option<f64>,
     /// A stream with no end, which can't seek.
     pub live: bool,
+    /// For HLS this computer makes, what its segments are.
+    pub segments: Option<Segments>,
     /// Where to start, in seconds.
     pub start: f64,
     pub autoplay: bool,
@@ -99,6 +107,8 @@ pub struct Load {
 /// Subtitles served beside the media.
 #[derive(Clone, PartialEq, Debug)]
 pub struct Subtitles {
+    /// Where they come from: the same at the same URLs, else others.
+    pub source: SubtitleSource,
     pub webvtt_url: String,
     pub srt_url: String,
     /// ISO 639-2, as the file has it.

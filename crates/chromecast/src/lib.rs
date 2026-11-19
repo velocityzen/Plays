@@ -19,7 +19,7 @@ pub use browser::{Browser, Found};
 pub use device::{Capabilities, Device, Record};
 pub use error::{Error, Result};
 pub use media::{
-    Color, Edge, FontFamily, IdleReason, Media, MediaStatus, PlayerState, StreamType, TextTrack,
-    TextTrackStyle, Volume,
+    Color, Edge, FontFamily, HlsSegments, IdleReason, Media, MediaStatus, PlayerState, StreamType,
+    TextTrack, TextTrackStyle, Volume,
 };
 pub use session::{DEFAULT_MEDIA_RECEIVER, Ended, Event, Load, Session};

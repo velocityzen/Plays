@@ -4,6 +4,7 @@
 //! have found, and the stream server, started for the first cast; a
 //! tile's `Link` drives its device on a thread of its own.
 
+pub mod chromecast;
 pub mod dlna;
 #[cfg(test)]
 pub mod fake;
@@ -28,6 +29,10 @@ const DEVICES_POLL: Duration = Duration::from_secs(1);
 /// on. One that can't look is left out.
 pub fn protocols() -> Vec<Arc<dyn Target>> {
     let mut targets: Vec<Arc<dyn Target>> = Vec::new();
+    match chromecast::ChromecastTarget::start() {
+        Ok(target) => targets.push(Arc::new(target)),
+        Err(err) => log::warn!("can't look for Cast devices: {err}"),
+    }
     match dlna::DlnaTarget::start() {
         Ok(target) => targets.push(Arc::new(target)),
         Err(err) => log::warn!("can't look for DLNA renderers: {err}"),

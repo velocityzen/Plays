@@ -15,6 +15,17 @@ pub struct Media {
     /// Seconds, when known.
     pub duration: Option<f64>,
     pub text_tracks: Vec<TextTrack>,
+    /// For HLS, what its segments are, as the receiver takes MPEG-TS
+    /// unless told.
+    pub hls_segments: Option<HlsSegments>,
+}
+
+/// The segments an HLS playlist points at.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum HlsSegments {
+    Ts,
+    /// Fragmented MP4.
+    Fmp4,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -166,6 +177,14 @@ impl Media {
         if let Some(duration) = self.duration {
             media.insert("duration".into(), duration.into());
         }
+        if let Some(segments) = self.hls_segments {
+            let (audio, video) = match segments {
+                HlsSegments::Ts => ("ts", "mpeg2_ts"),
+                HlsSegments::Fmp4 => ("fmp4", "fmp4"),
+            };
+            media.insert("hlsSegmentFormat".into(), audio.into());
+            media.insert("hlsVideoSegmentFormat".into(), video.into());
+        }
         if !self.text_tracks.is_empty() {
             let tracks = self
                 .text_tracks
@@ -300,6 +319,7 @@ mod tests {
                 name: "English".into(),
                 language: Some("en".into()),
             }],
+            hls_segments: Some(HlsSegments::Fmp4),
         };
         let style = TextTrackStyle {
             font_scale: 1.25,
@@ -311,6 +331,8 @@ mod tests {
         assert_eq!(json["streamType"], "BUFFERED");
         assert_eq!(json["metadata"]["title"], "A Film");
         assert_eq!(json["duration"], 5400.0);
+        assert_eq!(json["hlsSegmentFormat"], "fmp4");
+        assert_eq!(json["hlsVideoSegmentFormat"], "fmp4");
         assert_eq!(
             json["tracks"][0]["trackContentId"],
             "http://192.0.2.1:8080/a/subs.vtt"

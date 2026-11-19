@@ -10,7 +10,7 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
-use stream_server::{Cast, CastRequest, Pick, Server, Source, SubtitleSource};
+use stream_server::{Cast, CastRequest, Delivery, Pick, Server, Source, SubtitleSource};
 
 use super::target::{Device, Error, Load, Session, State, Status, Subtitles, Target};
 use crate::media::text_encoding;
@@ -503,6 +503,7 @@ impl Worker {
     fn served_subtitles(&self) -> Option<Subtitles> {
         let choice = self.subtitles.as_ref()?;
         Some(Subtitles {
+            source: choice.source.clone(),
             webvtt_url: self.cast.webvtt_url()?,
             srt_url: self.cast.srt_url()?,
             language: choice.language.clone(),
@@ -535,6 +536,10 @@ fn load_for(cast: &Cast) -> Load {
         title: String::new(),
         duration: cast.duration(),
         live: cast.duration().is_none(),
+        segments: match cast.plan().delivery {
+            Delivery::Hls(segments) => Some(segments),
+            _ => None,
+        },
         start: 0.0,
         autoplay: true,
         volume: 1.0,

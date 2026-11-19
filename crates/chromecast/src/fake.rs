@@ -59,6 +59,9 @@ pub struct Playing {
     pub position: f64,
     pub active_tracks: Vec<u32>,
     pub style: Option<Value>,
+    /// Its own volume, apart from the device's.
+    pub volume: f64,
+    pub muted: bool,
 }
 
 /// What the fake has been sent and is doing.
@@ -129,6 +132,7 @@ impl State {
                     "currentTime": playing.position,
                     "activeTrackIds": playing.active_tracks,
                     "media": playing.media,
+                    "volume": {"level": playing.volume, "muted": playing.muted},
                 });
                 if let Some(reason) = playing.idle_reason {
                     status["idleReason"] = reason.into();
@@ -315,6 +319,8 @@ impl FakeDevice {
                 position: 0.0,
                 active_tracks: Vec::new(),
                 style: None,
+                volume: 1.0,
+                muted: false,
             });
             state.media_status(&0.into())
         };
@@ -486,6 +492,8 @@ fn media(state: &mut State, command: &str, payload: &Value) -> Value {
             position: payload["currentTime"].as_f64().unwrap_or(0.0),
             active_tracks: tracks(&payload["activeTrackIds"]),
             style: payload["media"].get("textTrackStyle").cloned(),
+            volume: 1.0,
+            muted: false,
         });
         return state.media_status(request);
     }
@@ -510,6 +518,14 @@ fn media(state: &mut State, command: &str, payload: &Value) -> Value {
             playing.active_tracks = tracks(&payload["activeTrackIds"]);
             if let Some(style) = payload.get("textTrackStyle") {
                 playing.style = Some(style.clone());
+            }
+        }
+        "SET_VOLUME" => {
+            if let Some(level) = payload["volume"]["level"].as_f64() {
+                playing.volume = level;
+            }
+            if let Some(muted) = payload["volume"]["muted"].as_bool() {
+                playing.muted = muted;
             }
         }
         "GET_STATUS" => {}

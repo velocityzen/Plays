@@ -171,6 +171,7 @@ impl PlayerView {
                 let note = match err {
                     Error::Gone if cast.on => format!("{name} went away"),
                     Error::Replaced if cast.on => format!("{name} plays something else now"),
+                    Error::Stopped if cast.on => format!("{name} stopped playing it"),
                     err => format!("Can't play on {name}: {err}"),
                 };
                 self.end_cast(cx);

@@ -172,6 +172,7 @@ impl Server {
             media,
             output,
             variant,
+            hls_subtitles: request.profile.hls_subtitles,
             stop,
             subtitles: Mutex::default(),
         });
@@ -309,6 +310,8 @@ struct CastState {
     media: Arc<Media>,
     output: Output,
     variant: Variant,
+    /// Whether the HLS playlist lists the subtitles.
+    hls_subtitles: bool,
     stop: Arc<AtomicBool>,
     subtitles: Mutex<Option<Arc<Subtitles>>>,
 }
@@ -478,12 +481,14 @@ impl CastState {
 
     fn master(&self) -> Response {
         let subtitles = match &self.output {
-            Output::Vod(_) => lock(&self.subtitles)
-                .as_ref()
-                .map(|subtitles| SubtitlesRendition {
-                    language: subtitles.language.clone(),
-                    name: subtitles.name.clone(),
-                }),
+            Output::Vod(_) if self.hls_subtitles => {
+                lock(&self.subtitles)
+                    .as_ref()
+                    .map(|subtitles| SubtitlesRendition {
+                        language: subtitles.language.clone(),
+                        name: subtitles.name.clone(),
+                    })
+            }
             _ => None,
         };
         Response::text(

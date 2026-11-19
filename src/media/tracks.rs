@@ -275,6 +275,26 @@ pub fn language_name(code: &str) -> String {
     }
 }
 
+/// A language code as BCP 47 has it, as the web and Cast take it: ISO
+/// 639-1's two letters where the language has them, else as it is, with
+/// any region after it.
+pub fn language_tag(code: &str) -> String {
+    let (base, region) = match code.split_once(['-', '_']) {
+        Some((base, region)) if !region.is_empty() => (base, Some(region)),
+        _ => (code, None),
+    };
+    let lower = base.to_ascii_lowercase();
+    let base = LANGUAGES
+        .iter()
+        .find(|(codes, _)| codes.contains(&lower.as_str()))
+        .and_then(|(codes, _)| codes.iter().find(|code| code.len() == 2))
+        .map_or(lower.as_str(), |code| code);
+    match region {
+        Some(region) => format!("{base}-{region}"),
+        None => base.to_owned(),
+    }
+}
+
 /// The language a word names, as a code: the word itself if it is a code
 /// in the table, or the code for an English name such as "english".
 pub fn language_code(word: &str) -> Option<String> {
@@ -362,5 +382,15 @@ mod tests {
         assert_eq!(language_code("EN").as_deref(), Some("en"));
         assert_eq!(language_code("English").as_deref(), Some("eng"));
         assert_eq!(language_code("british"), None);
+    }
+
+    #[test]
+    fn tags_languages_as_bcp_47() {
+        assert_eq!(language_tag("eng"), "en");
+        assert_eq!(language_tag("GER"), "de");
+        assert_eq!(language_tag("pt-BR"), "pt-BR");
+        assert_eq!(language_tag("por_BR"), "pt-BR");
+        assert_eq!(language_tag("yue"), "yue", "no two letters for it");
+        assert_eq!(language_tag("xxx"), "xxx");
     }
 }

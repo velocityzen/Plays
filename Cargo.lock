@@ -4618,6 +4618,7 @@ dependencies = [
  "anyhow",
  "ashpd 0.11.1",
  "chardetng",
+ "chromecast",
  "core-foundation 0.10.0",
  "core-video",
  "cpal",

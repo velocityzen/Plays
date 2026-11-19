@@ -68,6 +68,9 @@ pub struct Profile {
     pub files: Vec<Container>,
     /// HLS, with segments of this kind.
     pub hls: Option<Segments>,
+    /// Takes subtitles from the HLS playlist. One given them beside the
+    /// media, as a Chromecast is, finds none there, so as not to show two.
+    pub hls_subtitles: bool,
     /// A progressive MPEG-TS stream, as DLNA TVs take.
     pub stream: bool,
     /// Fetches http(s) URLs itself, so a stream that fits is handed over as is.
@@ -91,6 +94,7 @@ impl Default for Profile {
         Self {
             files: vec![Container::Mp4],
             hls: Some(Segments::Ts),
+            hls_subtitles: true,
             stream: false,
             fetches_urls: true,
             video: vec![VideoCodec::H264],

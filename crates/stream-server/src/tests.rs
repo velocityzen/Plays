@@ -793,6 +793,18 @@ fn serves_subtitles_from_a_track_with_hls() {
     );
     assert_eq!(get(&sibling(&cast.url(), "s2.vtt")).status, 404);
 
+    // A device given them beside the media finds none in the playlist.
+    let beside = Profile {
+        hls_subtitles: false,
+        ..Profile::default()
+    };
+    let mut request_ = CastRequest::new(Source::File(fixture("clip-subs.mkv")), beside);
+    request_.subtitles = Some(SubtitleSource::Track(2));
+    let cast = server.add(request_, LOCALHOST).unwrap();
+    let master = get(&cast.url()).text();
+    assert!(!master.contains("SUBTITLES"), "{master}");
+    assert_eq!(get(&cast.webvtt_url().unwrap()).text(), VTT);
+
     // Not a subtitle track.
     let mut wrong = CastRequest::new(Source::File(fixture("clip-subs.mkv")), Profile::default());
     wrong.subtitles = Some(SubtitleSource::Track(0));

@@ -76,6 +76,7 @@ fn play(name: &str, url: &str, content_type: &str) -> Result<()> {
         title: Some("Plays".into()),
         duration: None,
         text_tracks: Vec::new(),
+        hls_segments: None,
     };
     println!("{:?}", session.load(&media, &Load::default())?);
     let deadline = Instant::now() + Duration::from_secs(120);

@@ -467,6 +467,14 @@ impl Session {
         Ok(Self::media_answer(&answer).ok())
     }
 
+    /// The volume of what it plays, 0 to 1, apart from the device's own.
+    pub fn set_stream_volume(&self, level: f32, muted: bool) -> Result<MediaStatus> {
+        self.command(json!({
+            "type": "SET_VOLUME",
+            "volume": {"level": level.clamp(0.0, 1.0), "muted": muted},
+        }))
+    }
+
     /// The device's volume, as it last said.
     pub fn volume(&self) -> Option<Volume> {
         self.inner.state().volume

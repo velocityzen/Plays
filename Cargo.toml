@@ -41,6 +41,7 @@ url = "2"
 chardetng = "0.1"
 encoding_rs = "0.8"
 dlna = { path = "crates/dlna" }
+chromecast = { path = "crates/chromecast" }
 
 # The same CoreFoundation and CoreVideo bindings gpui uses, to hand it
 # hardware-decoded frames to draw (`gpui::surface`).
@@ -68,8 +69,9 @@ ffmpeg-link = { path = "crates/ffmpeg-link" }
 # input and a deterministic executor. Only in test builds.
 [dev-dependencies]
 gpui = { version = "0.2.2", features = ["test-support"] }
-# Its fake renderer, for casting to it headless.
+# Their fake devices, for casting to them headless.
 dlna = { path = "crates/dlna", features = ["fake"] }
+chromecast = { path = "crates/chromecast", features = ["fake"] }
 
 [profile.dev]
 # Video decoding and pixel conversion are painfully slow without optimizations.
