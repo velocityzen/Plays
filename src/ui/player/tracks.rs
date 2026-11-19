@@ -92,7 +92,7 @@ impl PlayerView {
                     )
                     .mx_1()
                     .on_click(cx.listener(move |this, _, _, cx| {
-                        this.player.select_track(kind, index);
+                        this.select_track(kind, index, cx);
                         this.tracks_open = false;
                         cx.notify();
                     })),

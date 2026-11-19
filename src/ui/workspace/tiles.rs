@@ -5,6 +5,7 @@ use gpui::{App, Context, Entity, EntityId, Pixels, Size, px, size};
 
 use super::{TOOLBAR_SPACE, Tile, Workspace};
 use crate::app::Awake;
+use crate::cast::Device;
 use crate::ui::player::{PlayerEvent, PlayerView};
 use crate::ui::theme::layout::{
     AUDIO_WINDOW_SIZE, VIDEO_WINDOW_SIZE, WINDOW_MIN_SIZE, WINDOW_SIZE,
@@ -149,13 +150,17 @@ impl Workspace {
     }
 
     /// What its players keep awake: the screen while a video plays, the
-    /// computer while only sound does.
+    /// computer while only sound does, or a tile casts (the media is
+    /// served from here).
     pub fn keeps_awake(&self, cx: &App) -> Awake {
         self.tiles
             .iter()
             .map(|tile| {
-                let player = tile.view.read(cx).player();
-                if !player.is_playing() {
+                let view = tile.view.read(cx);
+                let player = view.player();
+                if view.casting().is_some() {
+                    Awake::Computer
+                } else if !player.is_playing() {
                     Awake::Nothing
                 } else if player.info().is_some_and(|info| info.has_video) {
                     Awake::Screen
@@ -165,6 +170,27 @@ impl Workspace {
             })
             .max()
             .unwrap_or_default()
+    }
+
+    /// The device the tile shortcuts go to casts to.
+    pub fn active_casting(&self, cx: &App) -> Option<Device> {
+        self.active_view()?.read(cx).casting().cloned()
+    }
+
+    /// Play the tile shortcuts go to here again, if it casts; whether it
+    /// did.
+    pub fn end_active_cast(&mut self, cx: &mut Context<Self>) -> bool {
+        self.active_view()
+            .is_some_and(|view| view.update(cx, |view, cx| view.end_cast(cx)))
+    }
+
+    /// Stop every device its tiles cast to, as the app quits, handing back
+    /// the threads stopping them.
+    pub fn stop_casts(&mut self, cx: &mut Context<Self>) -> Vec<std::thread::JoinHandle<()>> {
+        self.tiles
+            .iter()
+            .filter_map(|tile| tile.view.update(cx, |view, _| view.stop_cast()))
+            .collect()
     }
 
     /// Run `f` on the tile shortcuts go to.

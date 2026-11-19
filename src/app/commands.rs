@@ -4,7 +4,7 @@ use gpui::App;
 
 use super::dispatch::{with_active, with_active_in_window, with_workspace};
 use super::{
-    About, CloseAll, CloseFile, CloseWindow, OpenFiles, OpenSettings, OpenUrl, Quit,
+    About, CastTo, CloseAll, CloseFile, CloseWindow, OpenFiles, OpenSettings, OpenUrl, Quit,
     SetAspectRatio, SetAudioDevice, SetCrop, ShowOnDisplay,
 };
 use crate::hotkeys::*;
@@ -112,6 +112,10 @@ pub(super) fn register(cx: &mut App) {
     cx.on_action(|action: &ShowOnDisplay, cx| {
         let id = action.0;
         with_workspace(cx, move |w, window, cx| w.show_on_display(id, window, cx))
+    });
+    cx.on_action(|action: &CastTo, cx| {
+        let device = action.0.clone();
+        with_active(cx, move |p, cx| p.cast_to(device, cx))
     });
     cx.on_action(|_: &ToggleFullScreen, cx| {
         with_workspace(cx, |_, window, _| window.toggle_fullscreen())

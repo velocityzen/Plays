@@ -1,6 +1,8 @@
 //! A workspace window driven as someone at the screen would, on gpui's
 //! test platform (see `ui::testing`).
 
+mod casting;
+
 use gpui::{EntityId, TestAppContext, VisualTestContext, WindowHandle, px, size};
 
 use super::{TOOLBAR_SPACE, Workspace};

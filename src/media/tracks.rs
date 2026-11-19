@@ -2,8 +2,11 @@
 //! subtitle streams and the subtitle files beside it, and how to name them
 //! in a menu.
 
+use std::ffi::CString;
+use std::path::PathBuf;
+
 use ffmpeg::format::stream::{Disposition, Stream};
-use ffmpeg::media;
+use ffmpeg::{ffi, media};
 use ffmpeg_next as ffmpeg;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -29,8 +32,9 @@ pub struct Track {
     pub default: bool,
     pub forced: bool,
     pub hearing_impaired: bool,
-    /// A subtitle file beside the video rather than a stream in it.
-    pub external: bool,
+    /// The subtitle file, for subtitles beside the video rather than a
+    /// stream in it.
+    pub file: Option<PathBuf>,
 }
 
 impl Track {
@@ -75,7 +79,7 @@ impl Track {
             default: disposition.contains(Disposition::DEFAULT),
             forced: disposition.contains(Disposition::FORCED),
             hearing_impaired: disposition.contains(Disposition::HEARING_IMPAIRED),
-            external: false,
+            file: None,
         })
     }
 
@@ -101,12 +105,25 @@ impl Track {
         label
     }
 
+    /// Subtitles that are text rather than pictures.
+    pub fn is_text(&self) -> bool {
+        let Ok(name) = CString::new(self.codec.as_str()) else {
+            return false;
+        };
+        // SAFETY: looks the codec up in FFmpeg's table of them, which
+        // lives as long as the program.
+        unsafe {
+            let descriptor = ffi::avcodec_descriptor_get_by_name(name.as_ptr());
+            !descriptor.is_null() && (*descriptor).props & ffi::AV_CODEC_PROP_TEXT_SUB != 0
+        }
+    }
+
     /// The codec and format, such as "E-AC-3 · 5.1", and "External" for
     /// a subtitle file.
     pub fn detail(&self) -> String {
         let mut parts = vec![codec_display_name(&self.codec)];
         parts.extend(self.format.clone());
-        if self.external {
+        if self.file.is_some() {
             parts.push("External".to_owned());
         }
         parts.join(" · ")
@@ -288,7 +305,7 @@ mod tests {
             default: false,
             forced: false,
             hearing_impaired: false,
-            external: false,
+            file: None,
         }
     }
 
@@ -321,8 +338,20 @@ mod tests {
         assert_eq!(audio.detail(), "E-AC-3 · 5.1");
         assert_eq!(subtitle(None, None).detail(), "SRT");
         let mut external = subtitle(None, None);
-        external.external = true;
+        external.file = Some("Movie.srt".into());
         assert_eq!(external.detail(), "SRT · External");
+    }
+
+    #[test]
+    fn tells_text_subtitles_from_pictures() {
+        let mut track = subtitle(None, None);
+        assert!(track.is_text());
+        track.codec = "ass".to_owned();
+        assert!(track.is_text());
+        track.codec = "hdmv_pgs_subtitle".to_owned();
+        assert!(!track.is_text());
+        track.codec = "dvd_subtitle".to_owned();
+        assert!(!track.is_text());
     }
 
     #[test]

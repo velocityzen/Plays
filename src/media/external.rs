@@ -229,7 +229,7 @@ impl Found {
         let mut track = Track::of(&stream).context("there is no decoder for its subtitles")?;
         let naming = &self.naming;
         track.index = index;
-        track.external = true;
+        track.file = Some(self.path.clone());
         // VobSub says its language; text files only have their names.
         track.language = track.language.or_else(|| naming.language.clone());
         track.title = naming.title.clone().or(track.title);
@@ -319,7 +319,8 @@ impl SubtitleFile {
 
 /// The encoding of a text subtitle file that is neither UTF-8 nor UTF-16
 /// (which FFmpeg reads itself), by its iconv name, for FFmpeg to convert.
-fn text_encoding(path: &Path) -> Option<&'static str> {
+/// Reads some of it, so not for the UI thread.
+pub fn text_encoding(path: &Path) -> Option<&'static str> {
     let name = path.file_name()?.to_str()?;
     let (_, extension) = split_extension(name)?;
     if BITMAP_EXTENSIONS.contains(&extension.as_str()) {

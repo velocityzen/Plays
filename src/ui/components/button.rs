@@ -330,9 +330,12 @@ impl RenderOnce for Button {
             IconSide::Right => (None, icon),
         };
         let (hover, active) = (look.hover, look.active);
+        // Tests find a button by its id.
+        let selector = id.clone();
 
         let mut button = div()
             .id(id)
+            .debug_selector(move || selector.to_string())
             .control_frame(size)
             .flex_none()
             .gap_1p5()

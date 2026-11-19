@@ -59,22 +59,32 @@ pub fn wait_until(
     false
 }
 
-/// Where the element tagged `selector` was last drawn.
-pub fn find(cx: &mut VisualTestContext, selector: &'static str) -> Bounds<Pixels> {
+/// Draw the window as it is now: what a file says once it opens, say,
+/// doesn't draw it again by itself.
+fn draw(cx: &mut VisualTestContext) {
+    cx.update(|window, _| window.refresh());
     cx.run_until_parked();
+}
+
+/// Where the element tagged `selector` is drawn.
+pub fn find(cx: &mut VisualTestContext, selector: &'static str) -> Bounds<Pixels> {
+    draw(cx);
     cx.debug_bounds(selector)
         .unwrap_or_else(|| panic!("nothing on screen is tagged {selector:?}"))
 }
 
-/// Whether anything tagged `selector` was last drawn.
+/// Whether anything tagged `selector` is drawn.
 pub fn shows(cx: &mut VisualTestContext, selector: &'static str) -> bool {
-    cx.run_until_parked();
+    draw(cx);
     cx.debug_bounds(selector).is_some()
 }
 
-/// Click the middle of the element tagged `selector`.
+/// Click the middle of the element tagged `selector`, the mouse moving
+/// there first, as it does.
 pub fn click(cx: &mut VisualTestContext, selector: &'static str) {
     let at = find(cx, selector).center();
+    cx.simulate_mouse_move(at, None, Modifiers::none());
+    cx.run_until_parked();
     cx.simulate_click(at, Modifiers::none());
 }
 

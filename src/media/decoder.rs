@@ -576,7 +576,7 @@ fn run(
     // which someone put there to be shown, else the ones the file wants
     // shown, its default track or else a forced one.
     let subtitles = || tracks.iter().filter(|t| t.kind == TrackKind::Subtitle);
-    let files = || subtitles().filter(|t| t.external && !t.forced);
+    let files = || subtitles().filter(|t| t.file.is_some() && !t.forced);
     let subtitle = files()
         .find(|t| t.default)
         .or_else(|| files().next())

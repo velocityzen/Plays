@@ -40,8 +40,8 @@ impl PlayerView {
         cx: &mut Context<Self>,
     ) -> Div {
         let live = info.is_some_and(|i| i.live);
-        let duration = self.player.duration();
-        let position = self.scrub.unwrap_or_else(|| self.player.position());
+        let duration = self.duration();
+        let position = self.scrub.unwrap_or_else(|| self.position());
         let progress = duration
             .filter(|d| *d > 0.0)
             .map_or(0.0, |d| (position / d) as f32);
@@ -49,9 +49,9 @@ impl PlayerView {
             Some(d) => format!("{} / {}", format_time(position), format_time(d)),
             None => format_time(position),
         };
-        let play_icon = if self.player.is_playing() {
+        let play_icon = if self.is_playing() {
             "pause"
-        } else if duration.is_some_and(|d| position >= d - 0.05) {
+        } else if self.has_ended() {
             "replay"
         } else {
             "play"
@@ -62,6 +62,8 @@ impl PlayerView {
             "volume"
         };
         let has_audio = info.is_some_and(|i| i.has_audio);
+        let has_video = info.is_some_and(|i| i.has_video);
+        let cast = self.render_cast_button(has_video, theme, cx);
         let tracks = info.filter(|info| has_track_choice(info));
         let subtitles_on = info.is_some_and(|i| i.subtitle_track.is_some());
         let looping = self.player.is_looping();
@@ -130,6 +132,7 @@ impl PlayerView {
                                     .items_center()
                                     .justify_end()
                                     .gap_0p5()
+                                    .children(cast)
                                     .when_some(tracks, |this, info| {
                                         let button = Button::icon("tracks", "subtitles")
                                             .overlay()
@@ -157,7 +160,7 @@ impl PlayerView {
                                                 .selected(looping)
                                                 .on_click(cx.listener(|this, _, _, cx| {
                                                     let looping = !this.player.is_looping();
-                                                    this.player.set_looping(looping);
+                                                    this.set_looping(looping);
                                                     cx.notify();
                                                 })),
                                         )
@@ -167,7 +170,7 @@ impl PlayerView {
                                             Button::icon("mute", volume_icon).overlay().on_click(
                                                 cx.listener(|this, _, _, cx| {
                                                     let muted = !this.player.is_muted();
-                                                    this.player.set_muted(muted);
+                                                    this.set_muted(muted);
                                                     cx.notify();
                                                 }),
                                             ),
@@ -242,10 +245,20 @@ impl PlayerView {
     }
 
     fn on_seek(&mut self, event: &SliderEvent, _: &mut Window, cx: &mut Context<Self>) {
-        let Some(duration) = self.player.duration() else {
+        let Some(duration) = self.duration() else {
             return;
         };
         let time = event.value as f64 * duration;
+        // A device seeks once the slider lets go: it is too far away to
+        // follow it.
+        if self.casting().is_some() {
+            self.scrub = (event.slide != Slide::End).then_some(time);
+            if event.slide == Slide::End {
+                self.seek(time);
+            }
+            cx.notify();
+            return;
+        }
         match event.slide {
             Slide::Start => {
                 self.resume_after_scrub = self.player.is_playing();
@@ -270,9 +283,9 @@ impl PlayerView {
 
     fn on_volume(&mut self, event: &SliderEvent, _: &mut Window, cx: &mut Context<Self>) {
         let value = event.value;
-        self.player.set_volume(value);
+        self.set_volume(value);
         if value > 0.0 && self.player.is_muted() {
-            self.player.set_muted(false);
+            self.set_muted(false);
         }
         cx.notify();
     }

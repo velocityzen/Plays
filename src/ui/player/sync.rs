@@ -15,6 +15,9 @@ impl PlayerView {
 
     /// Hear the sound `delay` seconds after the picture (negative: before).
     pub fn set_audio_delay(&mut self, delay: f64, cx: &mut Context<Self>) {
+        if self.no_delays_while_cast(cx) {
+            return;
+        }
         if !self.player.info().is_some_and(|info| info.has_audio) {
             self.note("No audio", cx);
             return;
@@ -31,6 +34,9 @@ impl PlayerView {
 
     /// Show subtitles `delay` seconds after their times (negative: before).
     pub fn set_subtitle_delay(&mut self, delay: f64, cx: &mut Context<Self>) {
+        if self.no_delays_while_cast(cx) {
+            return;
+        }
         let has_subtitles = self
             .player
             .info()
@@ -45,6 +51,19 @@ impl PlayerView {
             delay_text(self.player.subtitle_delay())
         );
         self.note(note, cx);
+    }
+}
+
+impl PlayerView {
+    /// A device plays both the picture and the sound, so delays here don't
+    /// reach it: say so, while casting.
+    fn no_delays_while_cast(&mut self, cx: &mut Context<Self>) -> bool {
+        let Some(device) = self.casting() else {
+            return false;
+        };
+        let note = format!("Delays don't apply on {}", device.name);
+        self.note(note, cx);
+        true
     }
 }
 

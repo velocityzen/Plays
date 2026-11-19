@@ -1,5 +1,6 @@
 //! Video → Output Device: putting the window full screen on a display, such
-//! as an AirPlay one.
+//! as an AirPlay one, or playing the tile in front here again while it
+//! casts.
 
 use gpui::{Context, Window};
 
@@ -11,6 +12,11 @@ impl Workspace {
     /// elsewhere leaves full screen first, as macOS can't move it, and goes
     /// on once it has (`finish_moving`).
     pub fn show_on_display(&mut self, id: u32, window: &mut Window, cx: &mut Context<Self>) {
+        // While the tile in front casts, picking the display it is on plays
+        // it here again, as it was.
+        if self.end_active_cast(cx) && displays::of(window, cx) == Some(id) {
+            return;
+        }
         if displays::of(window, cx) == Some(id) {
             self.moving_to = None;
             if !window.is_fullscreen() {

@@ -4332,6 +4332,7 @@ dependencies = [
  "raw-window-handle",
  "serde",
  "serde_json",
+ "stream-server",
  "unicode-segmentation",
  "url",
 ]

@@ -11,22 +11,35 @@ use crate::media::tracks::TrackKind;
 
 impl PlayerView {
     pub fn play_pause(&mut self, cx: &mut Context<Self>) {
-        self.player.toggle();
+        if self.is_playing() {
+            self.pause();
+        } else {
+            self.play();
+        }
         cx.notify();
     }
 
     pub fn seek_by(&mut self, seconds: f64, cx: &mut Context<Self>) {
-        self.player.seek_by(seconds);
+        if self.casting().is_some() {
+            self.seek(self.position() + seconds);
+        } else {
+            self.player.seek_by(seconds);
+        }
         cx.notify();
     }
 
     pub fn restart(&mut self, cx: &mut Context<Self>) {
-        self.player.seek(0.0);
+        self.seek(0.0);
         cx.notify();
     }
 
     /// Pause and show the next frame (`1`) or the one before (`-1`).
     pub fn step_frame(&mut self, direction: f64, cx: &mut Context<Self>) {
+        if let Some(device) = self.casting() {
+            let note = format!("Can't step through frames on {}", device.name);
+            self.note(note, cx);
+            return;
+        }
         let frame = 1.0
             / self
                 .player
@@ -51,22 +64,22 @@ impl PlayerView {
 
     pub fn change_volume(&mut self, delta: f32, cx: &mut Context<Self>) {
         let volume = (self.player.volume() + delta).clamp(0.0, 1.0);
-        self.player.set_volume(volume);
+        self.set_volume(volume);
         if delta > 0.0 && self.player.is_muted() {
-            self.player.set_muted(false);
+            self.set_muted(false);
         }
         self.note(format!("Volume {}%", (volume * 100.0).round()), cx);
     }
 
     pub fn toggle_mute(&mut self, cx: &mut Context<Self>) {
         let muted = !self.player.is_muted();
-        self.player.set_muted(muted);
+        self.set_muted(muted);
         self.note(if muted { "Muted" } else { "Unmuted" }, cx);
     }
 
     pub fn toggle_loop(&mut self, cx: &mut Context<Self>) {
         let looping = !self.player.is_looping();
-        self.player.set_looping(looping);
+        self.set_looping(looping);
         self.note(if looping { "Loop on" } else { "Loop off" }, cx);
     }
 
@@ -91,7 +104,7 @@ impl PlayerView {
             .iter()
             .position(|choice| choice.index == selected)
             .map_or(0, |at| (at + 1) % choices.len());
-        self.player.select_track(kind, choices[at].index);
+        self.select_track(kind, choices[at].index, cx);
         if kind == TrackKind::Subtitle {
             self.hidden_subtitles = None;
         }
@@ -107,7 +120,7 @@ impl PlayerView {
         };
         if let Some(index) = info.subtitle_track {
             self.hidden_subtitles = Some(index);
-            self.player.select_track(TrackKind::Subtitle, None);
+            self.select_track(TrackKind::Subtitle, None, cx);
             self.note("Subtitles hidden", cx);
             return;
         }
@@ -119,8 +132,8 @@ impl PlayerView {
             .or((!tracks.is_empty()).then_some(0));
         match shown {
             Some(i) => {
-                self.player
-                    .select_track(TrackKind::Subtitle, Some(tracks[i].index));
+                let index = tracks[i].index;
+                self.select_track(TrackKind::Subtitle, Some(index), cx);
                 self.note(format!("Subtitles: {}", tracks[i].label(i + 1)), cx);
             }
             None => self.note("No subtitles", cx),

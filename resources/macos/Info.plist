@@ -30,7 +30,14 @@
 	<key>NSSupportsAutomaticGraphicsSwitching</key>
 	<true/>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Plays connects to streams on your local network, such as cameras.</string>
+	<string>Plays connects to streams on your local network, such as cameras, and finds TVs and speakers to play files on.</string>
+	<!-- What casting looks for: Chromecast, AirPlay video, AirPlay audio. -->
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_googlecast._tcp</string>
+		<string>_airplay._tcp</string>
+		<string>_raop._tcp</string>
+	</array>
 
 	<!-- What Finder can open with Plays, and what can be dropped on its Dock
 	     icon. Alternate: Plays shows up under Open With without becoming the

@@ -29,6 +29,7 @@ use super::player::{Graveyard, PlayerView};
 use super::theme::layout::{DROP_INSET, TOOLBAR_HEIGHT, TRAFFIC_LIGHTS, WINDOW_MIN_SIZE};
 use super::theme::{self, Theme};
 use crate::app::AudioEngine;
+use crate::cast::Casting;
 use crate::media::picture;
 use crate::settings::Settings;
 
@@ -84,6 +85,8 @@ pub struct Workspace {
     /// where it is.
     moving_to: Option<u32>,
     _settings_subscription: Subscription,
+    /// Tiles show a cast button while there are devices to cast to.
+    _casting_subscription: Subscription,
     _activation_subscription: Subscription,
     _url_form_events: Subscription,
 }
@@ -128,6 +131,7 @@ impl Workspace {
             }
             cx.notify();
         });
+        let casting_subscription = cx.observe_global::<Casting>(|_, cx| cx.notify());
         // Picks up an accent color changed in System Settings meanwhile.
         let activation_subscription = cx.observe_window_activation(window, |_, window, cx| {
             if window.is_window_active() {
@@ -185,6 +189,7 @@ impl Workspace {
             moving_to: None,
             gamma: cx.global::<Settings>().gamma(),
             _settings_subscription: settings_subscription,
+            _casting_subscription: casting_subscription,
             _activation_subscription: activation_subscription,
             _url_form_events: url_form_events,
         }

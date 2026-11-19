@@ -303,7 +303,7 @@ async fn subtitles(cx: &mut AsyncApp) -> Result<(), String> {
     })
     .await?;
     with_player(cx, |view, cx| {
-        view.player_mut().seek(0.5);
+        view.seek(0.5);
         cx.notify();
     })?;
     wait_for(cx, "\"First\" to show at 0.5s", |cx| {
@@ -336,7 +336,7 @@ async fn step_back(cx: &mut AsyncApp) -> Result<(), String> {
     })
     .await?;
     with_player(cx, |view, cx| {
-        view.player_mut().seek(1.0);
+        view.seek(1.0);
         cx.notify();
     })?;
     let mut at = wait_for_frame(cx, 1.0).await?;

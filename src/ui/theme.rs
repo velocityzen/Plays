@@ -283,6 +283,9 @@ pub mod motion {
     /// How much of the audio level meter's reading is kept each frame as
     /// the sound gets quieter; it rises at once.
     pub const LEVEL_FALLOFF: f32 = 0.88;
+    /// How often a casting tile looks at what its device last said, which
+    /// moves its bar.
+    pub const CAST_POLL: Duration = Duration::from_millis(250);
 }
 
 /// Windows and how tiles fill them.
@@ -437,8 +440,11 @@ pub mod player {
     /// The circle standing in for missing cover art, and its icon.
     pub const NO_COVER_SIZE: Pixels = px(96.);
     pub const NO_COVER_ICON: Pixels = px(40.);
-    /// The icon in a tile whose video is in Picture in Picture.
+    /// The icon in a tile whose video is in Picture in Picture, or that
+    /// plays on another device.
     pub const PIP_ICON: Pixels = px(40.);
+    /// The cast menu, and how far it goes from its button.
+    pub const CAST_MENU_WIDTH: Pixels = px(240.);
 }
 
 /// The console over a tile (`~`).

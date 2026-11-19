@@ -3,6 +3,7 @@
 //! shortcuts did. Each part is in its own file; `render` puts them together.
 
 mod adjust;
+mod cast;
 mod commands;
 mod console;
 mod content;
@@ -99,6 +100,10 @@ pub struct PlayerView {
     over_controls: bool,
     /// The console, while it shows: what keeps it up to date.
     console: Option<Task<()>>,
+    /// The device it plays on instead, while it casts.
+    cast: Option<cast::Cast>,
+    /// The menu of devices to cast to is open.
+    cast_open: bool,
 }
 
 impl EventEmitter<PlayerEvent> for PlayerView {}
@@ -150,6 +155,8 @@ impl PlayerView {
             over_header: false,
             over_controls: false,
             console: None,
+            cast: None,
+            cast_open: false,
         }
     }
 
@@ -190,9 +197,14 @@ impl PlayerView {
         };
         let source = Source::File(path);
         log::info!("opening {source}");
+        // A cast goes on with the new file, which waits here meanwhile.
+        let casting = self.casting().cloned();
+        let playing = self.is_playing();
+        self.cast = None;
         let settings = cx.global::<Settings>();
+        let autoplay = playing || settings.autoplay;
         let options = PlayerOptions {
-            autoplay: self.player.is_playing() || settings.autoplay,
+            autoplay: autoplay && casting.is_none(),
             looping: self.player.is_looping(),
             volume: self.player.volume(),
             max_short_side: settings.max_resolution.short_side(),
@@ -211,15 +223,14 @@ impl PlayerView {
         self.hidden_subtitles = None;
         self.adjustments = Adjustments::default();
         self.osd = None;
+        if let Some(device) = casting {
+            self.start_cast(device, 0.0, autoplay, cx);
+        }
         cx.notify();
     }
 
     pub fn player(&self) -> &Player {
         &self.player
-    }
-
-    pub fn player_mut(&mut self) -> &mut Player {
-        &mut self.player
     }
 
     /// How the video shows, once its size is known: turned as the file
@@ -394,10 +405,12 @@ impl Render for PlayerView {
         let framing = self.framing_for(info.as_ref());
         let has_video = self.player.frame().is_some();
         let dragging = self.seek_drag.get() || self.volume_drag.get();
+        let casting = self.cast.is_some();
         let pinned = settings.controls == ControlsVisibility::Always
             || dragging
             || self.tracks_open
-            || !self.player.is_playing()
+            || self.cast_open
+            || !self.is_playing()
             || self.player.error().is_some();
         // A resting mouse counts as gone, unless it rests on the bars; and
         // the pointer hides over the picture until it moves.
@@ -405,7 +418,8 @@ impl Render for PlayerView {
         let hide_pointer = self.mouse_in_window && self.mouse_idle && !self.over_bars() && !pinned;
         let live = info.as_ref().is_some_and(|i| i.live);
         // A stream that has started and then stalls; opening has its own message.
-        let stalled = self.player.is_buffering()
+        let stalled = !casting
+            && self.player.is_buffering()
             && self.player.is_network()
             && (has_video || info.as_ref().is_some_and(|i| !i.has_video));
         let reveal = Reveal {
@@ -431,11 +445,13 @@ impl Render for PlayerView {
                     cx.emit(PlayerEvent::Activate);
                 }
             }))
-            .bg(if has_video || info.as_ref().is_some_and(|i| i.has_video) {
-                black()
-            } else {
-                theme.tile
-            })
+            .bg(
+                if !casting && (has_video || info.as_ref().is_some_and(|i| i.has_video)) {
+                    black()
+                } else {
+                    theme.tile
+                },
+            )
             .child(
                 div()
                     .id("surface")
@@ -447,11 +463,14 @@ impl Render for PlayerView {
                     .items_center()
                     .justify_center()
                     .on_click(cx.listener(Self::on_surface_click))
-                    .child(self.render_content(&theme, framing, cover)),
+                    .child(match self.render_cast(&theme, cx) {
+                        Some(cast) => cast,
+                        None => self.render_content(&theme, framing, cover),
+                    }),
             )
             // In Picture in Picture, the subtitles are in its window.
             .when(
-                !self.cues.is_empty() && !self.in_picture_in_picture(),
+                !self.cues.is_empty() && !self.in_picture_in_picture() && !casting,
                 |this| {
                     this.child(subtitles::overlay(
                         self.cues.clone(),

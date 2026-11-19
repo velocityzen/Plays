@@ -25,6 +25,7 @@ mod videotoolbox;
 pub mod yuv;
 
 pub use audio::Mixer;
+pub use external::text_encoding;
 pub use orientation::Orientation;
 pub use output::AudioOutput;
 pub use picture::Picture;

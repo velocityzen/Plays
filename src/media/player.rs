@@ -326,14 +326,6 @@ impl Player {
         self.apply_running();
     }
 
-    pub fn toggle(&mut self) {
-        if self.playing {
-            self.pause()
-        } else {
-            self.play()
-        }
-    }
-
     /// Seek to exactly `time`.
     pub fn seek(&mut self, time: f64) {
         self.seek_to(time, SeekMode::Exact);

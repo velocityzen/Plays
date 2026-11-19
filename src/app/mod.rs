@@ -11,6 +11,8 @@ mod menus;
 #[cfg(feature = "smoke")]
 pub mod smoke;
 
+use std::time::Duration;
+
 use futures::StreamExt as _;
 use futures::channel::mpsc::UnboundedReceiver;
 use gpui::{App, actions};
@@ -18,12 +20,16 @@ use gpui::{App, actions};
 pub use audio::{AudioEngine, Route};
 pub use awake::Awake;
 
+use crate::cast::{Casting, Device};
 use crate::media::{Source, picture};
 use crate::settings::{AudioDevice, Settings};
 use crate::ui::framing::Ratio;
 use crate::ui::theme::layout::WINDOW_SIZE;
 use crate::ui::theme::{UiFont, pick_ui_font, refresh_system_colors};
 use crate::ui::workspace::Workspace;
+
+/// How often quitting looks whether the devices cast to have stopped.
+const STOP_POLL: Duration = Duration::from_millis(5);
 
 // The playback ones, which can be rebound, are in `hotkeys`.
 actions!(
@@ -60,6 +66,11 @@ pub struct SetAudioDevice(pub Option<AudioDevice>);
 #[action(namespace = plays, no_json)]
 pub struct ShowOnDisplay(pub u32);
 
+/// Cast the tile in front to this device, or play it on this computer.
+#[derive(Clone, PartialEq, Debug, gpui::Action)]
+#[action(namespace = plays, no_json)]
+pub struct CastTo(pub Option<Device>);
+
 /// `opened` brings the URLs the system asks the app to open.
 pub fn run(cx: &mut App, sources: Vec<Source>, opened: UnboundedReceiver<Vec<String>>) {
     set_up(cx, Settings::load(), AudioEngine::start);
@@ -73,6 +84,8 @@ pub fn run(cx: &mut App, sources: Vec<Source>, opened: UnboundedReceiver<Vec<Str
             .ok();
     }
     open_from_system(cx, opened);
+
+    stop_casts_on_quit(cx);
 
     // Closing the last workspace window quits, even if the settings window is
     // still open.
@@ -92,6 +105,9 @@ fn set_up(cx: &mut App, settings: Settings, audio: fn(&mut App)) {
     picture::set_gamma(sdr_gamma, hdr_gamma);
     cx.set_global(settings);
     audio(cx);
+    // No protocol is wired in yet.
+    cx.set_global(Casting::new(Vec::new()));
+    Casting::watch(cx);
     let font = pick_ui_font(cx);
     cx.set_global(UiFont(font));
     refresh_system_colors(cx);
@@ -100,7 +116,7 @@ fn set_up(cx: &mut App, settings: Settings, audio: fn(&mut App)) {
     keymap::bind_keys(cx);
     keymap::watch_hotkeys(cx);
     menus::watch_settings(cx);
-    menus::watch_displays(cx);
+    menus::watch_outputs(cx);
 }
 
 /// For `#[gpui::test]`s: the app as it starts, with default settings
@@ -108,6 +124,27 @@ fn set_up(cx: &mut App, settings: Settings, audio: fn(&mut App)) {
 #[cfg(test)]
 pub fn set_up_for_tests(cx: &mut App) {
     set_up(cx, Settings::default(), AudioEngine::start_silent);
+}
+
+/// Devices cast to stop as the app quits, rather than wait on a stream
+/// server that's gone; the app waits a moment for them.
+fn stop_casts_on_quit(cx: &mut App) {
+    cx.on_app_quit(|cx| {
+        let stopping: Vec<_> = cx
+            .windows()
+            .into_iter()
+            .filter_map(|window| window.downcast::<Workspace>())
+            .filter_map(|window| window.update(cx, |w, _, cx| w.stop_casts(cx)).ok())
+            .flatten()
+            .collect();
+        let executor = cx.background_executor().clone();
+        async move {
+            while !stopping.iter().all(|thread| thread.is_finished()) {
+                executor.timer(STOP_POLL).await;
+            }
+        }
+    })
+    .detach();
 }
 
 /// Open what the system sends, files from Finder and links, in the

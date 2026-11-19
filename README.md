@@ -71,6 +71,19 @@ GPU-accelerated UI framework.
   separate display, and macOS sends the sound there with it. AirPlay
   speakers play the sound alone once macOS has them, and the picture is
   held back as long as AirPlay delays the sound, so the two stay in step.
+- A tile can play on a TV or a speaker instead (casting), from where it
+  is, with its tracks: the cast button on the tile lists the devices
+  found, and on macOS Video → Output Device lists those that show video
+  under the displays. Speakers are offered for files that are only sound.
+  While it casts, the tile says where it plays and how the file gets there
+  (as it is, repackaged, or re-encoded), and its bar, buttons and shortcuts
+  drive the device, whose position moves the bar. The subtitles picked go
+  along and change there as they change on the tile; another audio or
+  video track loads the file there again from where it is. Playing it here
+  again (This Computer, Play Here, or the display in the menu), closing the
+  tile, or the device going away ends the cast, and the tile goes on from
+  where the device was. Quitting stops the devices cast to. The protocols (Chromecast, AirPlay, DLNA) aren't
+  wired in yet, so for now no devices are found.
 - While a tile plays, its header and controls fade when the mouse leaves
   it, or rests on it for a couple of seconds; the pointer hides then too,
   until the mouse moves. Resting on the header or controls keeps them.
@@ -296,7 +309,9 @@ in its folder, by name, in the same tile; between them, skip back and
 forward go by the seek step, around play/pause. The track button (next to
 loop, on files that have subtitles or more than one audio or video track)
 opens the track menu: a column each for audio, subtitles and (when there
-are several) video. For the only tile in a window,
+are several) video. While there are devices to cast to, the cast button
+before it opens the menu of them: This Computer, then each device and its
+kind, the one playing checked. For the only tile in a window,
 both toggle full screen instead. When a window has more than
 one tile, the button next to maximize moves a tile to a new window sized for
 it, where it keeps playing. Every window takes drops and works the same
@@ -453,8 +468,25 @@ last window quits.
   shortcuts did (`osd`, with the track reel), the `console`, what
   shortcuts do to it
   (`commands`, `adjust` for the picture, `sync` for delays and
-  `screenshot`; `pip` runs Picture in Picture for it), and the graveyard
-  frames wait in before they are released.
+  `screenshot`; `pip` runs Picture in Picture for it, `cast` casts it),
+  and the graveyard frames wait in before they are released. While a tile
+  casts, its play, pause, seek, volume, loop and track changes go to the
+  device, and what it shows (position, playing, the end) comes from it.
+- `src/cast/`: casting. A protocol is a `Target`, which finds devices (a
+  name, what they show, video or sound only, and an address) and connects
+  to one for a `Session`: what it plays, for the stream server, then load,
+  play, pause, seek, volume, subtitles, stop and status. Each protocol's
+  crate is adapted to these. `Casting`, a global, keeps the targets, asks
+  them every second what they have found, and starts the stream server
+  for the first cast, on every interface. A tile's `Link` runs its
+  session on a thread of its own, as every call may wait on the network:
+  it connects, has the stream server serve the file with the tracks the
+  tile plays, and loads it at the tile's position; then it does what the
+  tile sends it (seeks in a row only the last), asks the device what it
+  is doing twice a second, and shows the tile what it asked for until the
+  device has done it. Dropping the link stops the device and the stream
+  server lets the file go; as the app quits, it waits a moment for the
+  devices to stop. `fake` is a protocol for tests.
 - `src/ui/pip/` (macOS): Picture in Picture. The tile's frames go, as they
   are due, to an `AVSampleBufferDisplayLayer` hidden over the tile, which
   AVKit's `AVPictureInPictureController` shows in the system's window; a
@@ -665,7 +697,9 @@ tile, and the window must then fit it. These tests open the small files in
 
 `ui::testing` clicks, double-clicks and types as someone at the screen
 would, finding what to click by its debug selector (`tile-0`, a menu row's
-id), set only in test builds. A click picks a tile without pausing it, and
+or a button's id), set only in test builds. It draws the window before it
+looks, as what a file says once it opens doesn't draw it again by itself,
+and moves the mouse to what it clicks first. A click picks a tile without pausing it, and
 shortcuts then go to it; a double-click fills the window with a tile, the
 whole area under the toolbar, and another puts the grid back; ⌘W closes the
 tile in front, then the empty window; four tiles sit in two even rows.
@@ -675,7 +709,23 @@ lifts the window, and Settings with it, only while its file plays, and
 the menu items turn their mode on and off. Video → Output Device checks
 the display the window in front is on, and picking a display puts the
 window full screen, leaving full screen first when it goes to another.
-Each test has been checked to fail when the behavior it covers is broken.
+
+Casting is tested with a fake protocol whose devices keep what they are
+told and say what the test has them say, and the real stream server,
+serving this computer only. Picking a device from the cast button plays
+the file there from where the tile was, as it played (the device fetches
+the MP4 as it is), and pauses the tile. Space, the arrows and `M` play,
+pause, seek and mute it, not the tile, and the bar follows where it says
+it is. Play Here goes on in the tile from where the device was, paused as
+it was, the device stops and the file is no longer served. A device going
+away ends the cast the same way, and the cast button goes with the last
+device; quitting stops the device. Subtitles picked on a Matroska file
+cast as HLS reach the device as WebVTT with the file's cues, and turning
+them off hides them, without loading it again. Speakers are offered only
+for sound, and a video doesn't go to one. Video → Output Device lists the
+devices that show video after the displays, checking the one the tile in
+front casts to instead of the display. Each test has been checked to fail
+when the behavior it covers is broken.
 
 `cargo test --workspace` tests the crates in `crates/` too. The stream
 server's tests serve the fixtures over HTTP, as a device fetches them, and
@@ -786,7 +836,14 @@ size, makes `first-open` fail.
   re-encoded for a device without HDR isn't tone mapped, and re-encoded
   HDR keeps no mastering or light level metadata. Picture subtitles (PGS,
   DVD) aren't served, and text ones lose their placement; a track in the
-  media is read through the whole file first. Plays doesn't cast yet.
+  media is read through the whole file first.
+- Casting: no protocol is wired in yet, so no device is found. While a
+  tile casts, delays don't apply, as the device plays the picture and the
+  sound; gamma, crop, rotation, flips, aspect ratio and picture subtitles
+  stay on this computer (the tile says so), and frames can't be stepped.
+  The stream server listens on every interface, so the firewall may ask to
+  let Plays take incoming connections, and on macOS 15 and later looking
+  for devices asks to use the local network.
 - Plays can't find or connect to AirPlay receivers itself: macOS keeps
   that to its own picker and to AVPlayer, which Plays doesn't play
   through. Connect one from Control Center first. Mirrored, an AirPlay
