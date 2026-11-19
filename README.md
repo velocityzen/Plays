@@ -598,6 +598,46 @@ URL. It knows nothing of Plays or gpui, so it is tested on its own.
   seeks, Samsung's subtitles header). Each cast is served under a random
   token, at the address the device reaches this computer at.
 
+### The AirPlay crate
+
+`crates/airplay` finds AirPlay receivers, pairs with them and sends to
+them: a TV is told to play a URL (one the stream server makes) and driven
+while it does, and a speaker is sent live sound. It knows nothing of
+Plays, gpui or FFmpeg. It blocks, on the caller's thread or a session's
+own, and what a session says as it goes comes over a channel.
+
+- `browser.rs`, `device.rs`: mDNS for `_airplay._tcp` and `_raop._tcp`, a
+  receiver's two records put together by its id, and read for whether it
+  shows video, plays sound and speaks AirPlay 2, and how it pairs: once
+  with a PIN it shows, for each session only, or not at all.
+- `tlv8.rs`, `srp.rs`, `pairing.rs`: HomeKit pairing. With the PIN (SRP-6a
+  with SHA-512 and the 3072-bit group, then long-term Ed25519 keys swapped
+  under ChaCha20-Poly1305), which leaves credentials to keep; transient,
+  for receivers open to everyone; and pair-verify with the credentials,
+  for each session after.
+- `channel.rs`, `message.rs`, `connection.rs`: the control connection,
+  RTSP and HTTP requests on one TCP connection, encrypted once paired in
+  frames of up to 1024 bytes.
+- `session.rs`: AirPlay 2's session. SETUP says where our clock is, which
+  the receiver asks the time; the receiver talks back on an event
+  connection; feedback goes every two seconds. Feedback refused or the
+  event connection closed is the receiver gone.
+- `video.rs`: `/play` with the URL and where to start, `/rate`, `/scrub`
+  and `/stop`, and `/playback-info` read as loading, playing, paused or
+  ended.
+- `audio.rs`, `rtp.rs`: 16-bit stereo PCM at 44.1 kHz in RTP packets of
+  352 frames, each sent as it is due: to AirPlay 2 speakers as realtime
+  audio, sealed with a key sent in SETUP, and to AirPlay 1 ones
+  unencrypted. A sync packet every second ties RTP time to the clock, and
+  the last thousand packets are kept to send again. A frame is heard 1.5
+  seconds after it's sent, plus what an AirPlay 1 speaker says it adds.
+- `fake.rs`, with the `fake` feature: a pretend receiver on this computer,
+  for tests here and in Plays.
+
+`cargo run -p airplay --example airplay -- list` lists the receivers on
+the network; `pair`, `play` and `tone` pair with a TV, have it play a URL,
+and play a quiet tone on a speaker.
+
 ## Tests
 
 ```bash
@@ -746,6 +786,20 @@ their lengths, byte ranges, codec names from parameter sets, playlists and
 subtitle text. Each has been checked to fail when what it covers is
 broken.
 
+The AirPlay crate's tests talk to the fake receiver as to a real one: a TV
+paired once with its PIN, its credentials kept as text and verified for
+each session after; a wrong PIN, and credentials for another TV; a URL
+played, paused, sought and stopped and the volume set, every request
+encrypted, and what the TV says read as playing, paused and ended; sound
+to an AirPlay 2 speaker, sealed and sent as it is due, with its sync
+packets, our clock's answer and the latency; packets sent again when asked
+for; volume and a flush; sound to an AirPlay 1 speaker, plain, with the
+delay it adds, and one that takes only encrypted sound refused; and a
+receiver that goes away or refuses feedback ending the session. Unit tests
+check SRP against RFC 5054's vectors, both sides of pairing, the encrypted
+frames, TLV8, records and their features, RTP packets and playback info.
+Each has been checked to fail when what it covers is broken.
+
 ### Smoke runs
 
 Headless windows have no native window behind them, so a bug between
@@ -837,6 +891,11 @@ size, makes `first-open` fail.
   HDR keeps no mastering or light level metadata. Picture subtitles (PGS,
   DVD) aren't served, and text ones lose their placement; a track in the
   media is read through the whole file first.
+- AirPlay is Apple's own protocol, unpublished; the AirPlay crate speaks
+  it as others have worked it out, so an update to a TV or speaker can
+  break it. It doesn't take receivers with a password, or AirPlay 1
+  speakers that take only encrypted sound. Sound goes uncompressed, which
+  a busy Wi-Fi network may not keep up with.
 - Casting: no protocol is wired in yet, so no device is found. While a
   tile casts, delays don't apply, as the device plays the picture and the
   sound; gamma, crop, rotation, flips, aspect ratio and picture subtitles

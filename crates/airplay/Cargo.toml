@@ -1,0 +1,28 @@
+[package]
+name = "airplay"
+version = "0.1.0"
+edition = "2024"
+description = "Finds, pairs with and controls AirPlay receivers: has a TV play a URL, and sends live sound to speakers"
+license = "MIT"
+publish = false
+
+[features]
+# A pretend receiver on this computer, for tests here and in what uses the
+# crate.
+fake = []
+
+[dependencies]
+chacha20poly1305 = "0.10"
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+futures-channel = "0.3.34"
+hkdf = "0.12"
+log = "0.4"
+mdns-sd = "0.22.0"
+num-bigint = "0.4"
+plist = "1"
+rand = "0.8"
+sha2 = "0.10"
+x25519-dalek = { version = "2", features = ["static_secrets"] }
+
+[dev-dependencies]
+sha1 = "0.10"
