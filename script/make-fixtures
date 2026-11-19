@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# Make the small media files in tests/fixtures, which tests open without
+# the ffmpeg command line tool (the files are committed; run this only to
+# change them). Takes ffmpeg with libx264.
+#
+# clip.mp4       160x120, 25 fps, 2 s, H.264 with B-frames, AAC sound
+# clip-ip.mkv    the same picture with no B-frames, no sound
+# tone.m4a       1 s of 440 Hz, AAC, no picture
+# clip.srt       two cues, found beside clip.mp4
+set -euo pipefail
+
+cd "$(dirname "$0")/../tests/fixtures"
+
+ffmpeg=(ffmpeg -hide_banner -loglevel error -y)
+picture=(-f lavfi -i "testsrc=size=160x120:rate=25:duration=2")
+x264=(-c:v libx264 -pix_fmt yuv420p -preset veryslow -crf 36 -g 25)
+
+"${ffmpeg[@]}" "${picture[@]}" \
+    -f lavfi -i "sine=frequency=440:sample_rate=48000:duration=2" \
+    "${x264[@]}" -bf 3 -c:a aac -b:a 32k -ac 1 -map_metadata -1 clip.mp4
+"${ffmpeg[@]}" "${picture[@]}" \
+    "${x264[@]}" -bf 0 -map_metadata -1 clip-ip.mkv
+"${ffmpeg[@]}" -f lavfi -i "sine=frequency=440:sample_rate=48000:duration=1" \
+    -c:a aac -b:a 32k -ac 1 -map_metadata -1 tone.m4a
+cat > clip.srt <<'SRT'
+1
+00:00:00,200 --> 00:00:01,000
+First
+
+2
+00:00:01,200 --> 00:00:01,900
+Second
+SRT
+
+ls -l

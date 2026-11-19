@@ -38,7 +38,8 @@ impl HasWindowHandle for TestWindow {
     fn window_handle(
         &self,
     ) -> Result<raw_window_handle::WindowHandle<'_>, raw_window_handle::HandleError> {
-        unimplemented!("Test Windows are not backed by a real platform window")
+        // Plays: no platform window behind it, which callers can handle.
+        Err(raw_window_handle::HandleError::Unavailable)
     }
 }
 

@@ -7,6 +7,8 @@ mod fit;
 mod grid;
 mod mouse;
 mod opening;
+#[cfg(test)]
+mod tests;
 mod tiles;
 mod toolbar;
 

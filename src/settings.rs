@@ -363,7 +363,12 @@ impl Settings {
         cx.refresh_windows();
     }
 
+    /// Where the settings are saved; nowhere in tests, which must never
+    /// read or write the real ones.
     pub fn path() -> Option<PathBuf> {
+        if cfg!(test) {
+            return None;
+        }
         dirs::config_dir().map(|dir| dir.join("plays").join("settings.json"))
     }
 

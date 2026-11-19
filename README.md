@@ -543,6 +543,18 @@ Stream tests serve the clips from a small HTTP server on localhost:
 HTTP files, HLS (normal and live), a connection that stalls mid-way,
 unreachable hosts, and closing while a connection hangs.
 
+Windows are tested headless with `#[gpui::test]`, on gpui's test platform
+(its `test-support` feature, in test builds only): simulated input, a clock
+that moves only when told, and nothing drawn, so these check what the app
+does and where things are, not pixels. `app::set_up_for_tests` starts the
+app as it starts for real, but with default settings that are never saved
+(no test reads or writes the real settings file), silent audio, and without
+keeping the computer awake. Files open on real decoding threads, so tests
+wait for them in real time. A file opened into a window must open in a
+tile, and the window must then fit it. These tests open the small files in
+`tests/fixtures`, committed so they run without the `ffmpeg` tool;
+`script/make-fixtures` makes them again.
+
 ## Limitations
 
 - On Linux, frames decoded on the GPU are copied back to memory and

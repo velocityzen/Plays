@@ -132,6 +132,10 @@ item for an action can be `checked(true)`, which macOS shows with a check
 mark (`setState:`), for the output device picked in the Audio menu. Other
 platforms keep the flag and show nothing.
 
+`src/platform/test/window.rs`: a test window's `window_handle` returns
+`HandleError::Unavailable` instead of panicking, so Plays' views, whose
+native helpers give up on errors, can run in `#[gpui::test]`s.
+
 `src/taffy.rs`: two float literals are typed as `f32`, which newer Rust
 warns about otherwise.
 

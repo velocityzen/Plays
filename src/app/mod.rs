@@ -55,18 +55,7 @@ pub struct SetAudioDevice(pub Option<AudioDevice>);
 
 /// `opened` brings the URLs the system asks the app to open.
 pub fn run(cx: &mut App, sources: Vec<Source>, opened: UnboundedReceiver<Vec<String>>) {
-    let settings = Settings::load();
-    let [sdr_gamma, hdr_gamma] = settings.gamma();
-    picture::set_gamma(sdr_gamma, hdr_gamma);
-    cx.set_global(settings);
-    AudioEngine::start(cx);
-    let font = pick_ui_font(cx);
-    cx.set_global(UiFont(font));
-    refresh_system_colors(cx);
-
-    commands::register(cx);
-    keymap::bind_keys(cx);
-    keymap::watch_hotkeys(cx);
+    set_up(cx, Settings::load(), AudioEngine::start);
     awake::watch(cx);
 
     let window = Workspace::open_window(WINDOW_SIZE, cx).expect("opening the first window");
@@ -87,6 +76,29 @@ pub fn run(cx: &mut App, sources: Vec<Source>, opened: UnboundedReceiver<Vec<Str
     })
     .detach();
     cx.activate(true);
+}
+
+/// What every window needs: `settings`, the audio engine, which `audio`
+/// starts, the UI font and colors, and the actions and their keys.
+fn set_up(cx: &mut App, settings: Settings, audio: fn(&mut App)) {
+    let [sdr_gamma, hdr_gamma] = settings.gamma();
+    picture::set_gamma(sdr_gamma, hdr_gamma);
+    cx.set_global(settings);
+    audio(cx);
+    let font = pick_ui_font(cx);
+    cx.set_global(UiFont(font));
+    refresh_system_colors(cx);
+
+    commands::register(cx);
+    keymap::bind_keys(cx);
+    keymap::watch_hotkeys(cx);
+}
+
+/// For `#[gpui::test]`s: the app as it starts, with default settings
+/// (never saved), silent audio, and without keeping the computer awake.
+#[cfg(test)]
+pub fn set_up_for_tests(cx: &mut App) {
+    set_up(cx, Settings::default(), AudioEngine::start_silent);
 }
 
 /// Open what the system sends, files from Finder and links, in the

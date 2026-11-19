@@ -49,6 +49,11 @@ raw-window-handle = "0.6"
 [target.'cfg(target_os = "linux")'.dependencies]
 ashpd = { version = "0.11", default-features = false, features = ["async-std"] }
 
+# gpui's test platform, for `#[gpui::test]`s: headless windows, simulated
+# input and a deterministic executor. Only in test builds.
+[dev-dependencies]
+gpui = { version = "0.2.2", features = ["test-support"] }
+
 [profile.dev]
 # Video decoding and pixel conversion are painfully slow without optimizations.
 opt-level = 1

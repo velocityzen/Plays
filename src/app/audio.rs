@@ -69,6 +69,23 @@ impl Global for AudioEngine {}
 impl AudioEngine {
     /// Start the audio, play through the output settings ask for, and follow
     /// settings and devices from then on.
+    /// For tests: the mixer runs in time, but plays nowhere, never lists or
+    /// opens a device, and doesn't follow settings.
+    #[cfg(test)]
+    pub(super) fn start_silent(cx: &mut App) {
+        let settings = cx.global::<Settings>();
+        let (events, _) = unbounded();
+        cx.set_global(Self {
+            output: AudioOutput::new(settings.master_volume),
+            route: Route::Unavailable("Silent in tests".into()),
+            wanted: settings.audio_output.clone(),
+            generation: 0,
+            devices: Vec::new(),
+            events,
+            watch: None,
+        });
+    }
+
     pub(super) fn start(cx: &mut App) {
         let settings = cx.global::<Settings>();
         let (events, mut received) = unbounded();
