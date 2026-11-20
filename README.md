@@ -81,9 +81,13 @@ GPU-accelerated UI framework.
   Settings → Hotkeys). Settings and About float with them, so they don't
   open underneath. On macOS a window comes down while it is full screen
   and floats again after.
-- On macOS, Video → Output Device lists the displays by name and puts the
+- With more than one display, the cast button on a tile lists them by
+  name under Play On, as Video → Output Device does on macOS, and puts the
   player window full screen on the one picked, picture, subtitles and all.
-  Out of full screen, the window goes back where it was.
+  Out of full screen, the window goes back where it was. On X11 each
+  monitor is a display, named for the model it says it is. On Wayland the
+  compositor is asked for the display picked but may keep the window where
+  it is, and places it itself once out of full screen.
 - On macOS, full screen is macOS's own, in a Space of its own, unless
   Settings → Appearance → Full screen says Over the display. Then the window
   covers just its own display and goes in and out at once. The other

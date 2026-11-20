@@ -1,6 +1,6 @@
 //! Where windows are: the first window of a launch opens where the last
 //! one closed was, on its display and at its size; a display the system
-//! numbered anew is known by its name. A window Video → Output Device put
+//! numbered anew is known by its name. A window Output Device put
 //! full screen on another display comes back where it was once out of
 //! full screen. Wayland places windows itself, whatever is asked.
 

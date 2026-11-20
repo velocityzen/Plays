@@ -4,12 +4,17 @@
 //! playback waits, paused, and goes on from where the device was once the
 //! cast ends. A video cast to a speaker sends only its sound, and the
 //! picture plays on here, following the speaker.
+//!
+//! The cast button's menu also lists the displays, with more than one, to
+//! put the window full screen on, as Video → Output Device does on macOS:
+//! the only place to pick one on Linux, which has no menu bar.
 
 use gpui::prelude::*;
 use gpui::{AnyElement, App, Context, Corner, Div, ElementId, MouseDownEvent, Task, Window, div};
 use stream_server::{Pick, SubtitleSource};
 
 use super::PlayerView;
+use crate::app::ShowOnDisplay;
 use crate::cast::target::FOLLOW_POLL;
 use crate::cast::{Casting, Device, Error, Link, Phase, Request, Shows, SubtitleChoice};
 use crate::media::Source;
@@ -17,6 +22,7 @@ use crate::media::decoder::MediaInfo;
 use crate::media::tracks::TrackKind;
 use crate::settings::Settings;
 use crate::ui::components::{Button, Icon, MenuRow, Panel, Popover};
+use crate::ui::displays::{self, DisplayInfo};
 use crate::ui::framing::Adjustments;
 use crate::ui::theme::Theme;
 use crate::ui::theme::motion::{CAST_POLL, END_FOLLOW_SEEK};
@@ -459,12 +465,13 @@ impl PlayerView {
         )
     }
 
-    /// The cast button, while there are devices to cast to, and the menu
-    /// of them it opens.
+    /// The cast button, while there are devices to cast to or displays to
+    /// pick, and the menu of them it opens.
     pub(super) fn render_cast_button(
         &self,
         info: Option<&MediaInfo>,
         theme: &Theme,
+        window: &Window,
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
         // Until the file says, it may well have sound.
@@ -476,7 +483,11 @@ impl PlayerView {
         {
             devices.push(casting.clone());
         }
-        if devices.is_empty() {
+        let mut screens = displays::connected(cx);
+        if screens.len() < 2 {
+            screens.clear();
+        }
+        if devices.is_empty() && screens.is_empty() {
             return None;
         }
         let button = Button::icon("cast", "cast")
@@ -490,27 +501,53 @@ impl PlayerView {
             Popover::new("cast-backdrop", button)
                 .anchor(Corner::BottomRight, TRACK_MENU_OFFSET)
                 .when(self.cast_open, |this| {
-                    this.menu(self.render_cast_menu(devices, has_video, theme, cx))
+                    let here = (!screens.is_empty())
+                        .then(|| displays::of(window, cx))
+                        .flatten();
+                    this.menu(self.render_cast_menu(devices, screens, here, has_video, theme, cx))
                 })
                 .on_dismiss(cx.listener(close_cast_menu))
                 .into_any_element(),
         )
     }
 
-    /// This computer, and the devices: the one playing checked. A speaker
-    /// says it takes only a video's sound.
+    /// This computer, or each display (`screens`) with the window's
+    /// (`here`) checked, and the devices: the one playing checked. A
+    /// speaker says it takes only a video's sound. Picking a display puts
+    /// the window full screen there (`ShowOnDisplay`), or plays the tile
+    /// here again while it casts, if the window is on it; Wayland may keep
+    /// it on its own display, which the menu says.
     fn render_cast_menu(
         &self,
         devices: Vec<Device>,
+        screens: Vec<DisplayInfo>,
+        here: Option<u32>,
         has_video: bool,
         theme: &Theme,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let casting = self.casting().cloned();
-        let here = MenuRow::new("cast-here", "This Computer")
-            .checked(casting.is_none())
+        let this_computer = screens.is_empty().then(|| {
+            MenuRow::new("cast-here", "This Computer")
+                .checked(casting.is_none())
+                .mx_1()
+                .on_click(cx.listener(|this, _, _, cx| this.cast_to(None, cx)))
+        });
+        let wayland = !screens.is_empty() && displays::placed_by_compositor();
+        let screens = screens.into_iter().enumerate().map(|(i, screen)| {
+            MenuRow::new(
+                ElementId::Name(format!("display-{i}").into()),
+                screen.name.clone(),
+            )
+            .checked(casting.is_none() && here == Some(screen.id))
+            .detail(div().text_xs().child("Full screen"))
             .mx_1()
-            .on_click(cx.listener(|this, _, _, cx| this.cast_to(None, cx)));
+            .on_click(cx.listener(move |this, _, window, cx| {
+                this.cast_open = false;
+                window.dispatch_action(Box::new(ShowOnDisplay(screen.id)), cx);
+                cx.notify();
+            }))
+        });
         let rows = devices.into_iter().enumerate().map(|(i, device)| {
             let checked = casting.as_ref().is_some_and(|casting| casting.is(&device));
             let detail = if has_video && device.shows == Shows::Sound {
@@ -534,7 +571,18 @@ impl PlayerView {
             .w(CAST_MENU_WIDTH)
             .pb_1()
             .child(heading("Play On", theme))
-            .child(here)
+            .children(this_computer)
+            .children(screens)
+            .when(wayland, |this| {
+                this.child(
+                    div()
+                        .px_3()
+                        .py_1()
+                        .text_xs()
+                        .text_color(theme.text_muted)
+                        .child("Wayland may keep it where it is"),
+                )
+            })
             .children(rows)
             .into_any_element()
     }

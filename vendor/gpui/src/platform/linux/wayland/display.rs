@@ -14,6 +14,8 @@ pub(crate) struct WaylandDisplay {
     /// The ID of the wl_output object
     pub id: ObjectId,
     pub name: Option<String>,
+    /// Plays.
+    pub description: Option<String>,
     pub bounds: Bounds<Pixels>,
 }
 
@@ -38,5 +40,17 @@ impl PlatformDisplay for WaylandDisplay {
 
     fn bounds(&self) -> Bounds<Pixels> {
         self.bounds
+    }
+
+    // Plays: as the compositor describes it, with its connector's name,
+    // which tells two of the same model apart, unless it says it already.
+    fn name(&self) -> Option<String> {
+        match (&self.description, &self.name) {
+            (Some(description), Some(name)) if !description.contains(name.as_str()) => {
+                Some(format!("{description} ({name})"))
+            }
+            (Some(description), _) => Some(description.clone()),
+            (None, name) => name.clone(),
+        }
     }
 }

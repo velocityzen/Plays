@@ -41,10 +41,6 @@ pub struct Covers {
 
 impl Covers {
     /// The displays, as they are.
-    pub fn screens(&mut self, displays: Vec<Screen>, _: f32) -> Vec<Screen> {
-        displays
-    }
-
     /// The display with the mouse, where on the desktop it is, and whether
     /// a button is down.
     pub fn mouse(&mut self, _: &[Screen], _: f32) -> Option<Mouse> {

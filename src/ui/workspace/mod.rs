@@ -200,7 +200,7 @@ impl Workspace {
                         tile.view.update(cx, |view, cx| view.background_tick(cx));
                     }
                     this.update_on_top(window, cx);
-                    this.finish_moving(window);
+                    this.finish_moving(window, cx);
                 });
                 if alive.is_err() {
                     break;
@@ -259,7 +259,7 @@ impl Render for Workspace {
         }
         self.update_traffic_lights(window, cx);
         self.update_on_top(window, cx);
-        self.finish_moving(window);
+        self.finish_moving(window, cx);
         let theme = Theme::get(window, cx);
         let drop_highlight = theme.drop_highlight;
         let empty = self.tiles.is_empty();

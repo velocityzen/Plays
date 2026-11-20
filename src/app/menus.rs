@@ -6,8 +6,6 @@
 //! or the tile in front casts to one, and the tile in front's aspect ratio,
 //! crop and chapter as they change or another tile is in front.
 
-use std::time::Duration;
-
 use gpui::{App, Global, Menu, MenuItem, SystemMenuType};
 
 use super::dispatch::first_workspace;
@@ -21,10 +19,7 @@ use crate::media::output::DeviceInfo;
 use crate::settings::{AudioDevice, FloatOnTop, Settings};
 use crate::ui::displays::{self, DisplayInfo};
 use crate::ui::framing::{ASPECT_RATIOS, CROPS, Ratio};
-
-/// How often the displays, and the tile in front's cast, are looked at:
-/// nothing tells when a display connects, as an AirPlay display does.
-const DISPLAYS_POLL: Duration = Duration::from_secs(1);
+use crate::ui::theme::motion::DISPLAYS_POLL;
 
 pub(super) fn set_menus(cx: &mut App) {
     let float_on_top = cx.global::<Settings>().float_on_top;
@@ -405,7 +400,7 @@ fn output_menu(devices: &[DeviceInfo], picked: Option<&AudioDevice>, outputs: &M
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
-    use std::time::Instant;
+    use std::time::{Duration, Instant};
 
     use gpui::{TestAppContext, VisualTestContext};
 

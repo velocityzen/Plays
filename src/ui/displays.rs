@@ -1,18 +1,22 @@
-//! The displays a player window can show on, for Video → Output Device, and
-//! where new windows open. On macOS an AirPlay display is one of them once
-//! it is connected (Control Center → Screen Mirroring, as a separate
-//! display), and macOS sends the sound to it too. gpui has no names for
-//! displays and can't move windows, so on macOS this goes to AppKit;
-//! elsewhere displays are numbered and the window manager places windows.
+//! The displays a player window can show on, for Output Device (Video →
+//! Output Device, and the tile's cast menu), and where new windows open. On
+//! macOS an AirPlay display is one of them once it is connected (Control
+//! Center → Screen Mirroring, as a separate display), and macOS sends the
+//! sound to it too; names and moves there go to AppKit. On X11 each monitor
+//! is a display, by its product's name (EDID), and gpui moves windows; on
+//! Wayland a display is an output, by the compositor's description of it,
+//! and the compositor places windows, so a window goes full screen on one
+//! only as far as it agrees.
 //!
 //! New windows open on the display in use, not always on the main one: a
 //! tile's own window beside the window it left, and others on the display
 //! of Plays' window in front, or with the mouse when none is. A window's
 //! bounds are relative to its display, as gpui opens and reports them.
 
-use gpui::{App, Bounds, DisplayId, Pixels, Size, Window, point};
+use gpui::{App, Bounds, DisplayId, Global, Pixels, Size, Window, point};
 
 use crate::ui::theme::layout::WINDOW_GAP;
+use crate::ui::theme::motion::DISPLAYS_POLL;
 
 /// A display, as the system names it.
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -33,13 +37,58 @@ pub fn list(cx: &App) -> Vec<DisplayInfo> {
         .enumerate()
         .map(|(index, display)| {
             let id = u32::from(display.id());
-            let name = names.iter().find(|(screen, _)| *screen == id).map_or_else(
-                || format!("Display {}", index + 1),
-                |(_, name)| name.clone(),
-            );
+            let name = names
+                .iter()
+                .find(|(screen, _)| *screen == id)
+                .map(|(_, name)| name.clone())
+                .or_else(|| display.name())
+                .unwrap_or_else(|| format!("Display {}", index + 1));
             DisplayInfo { id, name }
         })
         .collect()
+}
+
+/// The displays connected when last looked (`watch`), as asking for them is
+/// too slow on X11 to do for every frame drawn.
+struct Connected(Vec<DisplayInfo>);
+impl Global for Connected {}
+
+/// The displays connected, as last looked (`watch`); looked at now where
+/// nothing watches them, as in tests.
+pub fn connected(cx: &App) -> Vec<DisplayInfo> {
+    cx.try_global::<Connected>()
+        .map_or_else(|| list(cx), |connected| connected.0.clone())
+}
+
+/// Look at the displays every `DISPLAYS_POLL`, and draw the windows again
+/// when one comes or goes.
+pub fn watch(cx: &mut App) {
+    let now = list(cx);
+    cx.set_global(Connected(now));
+    cx.spawn(async move |cx| {
+        loop {
+            cx.background_executor().timer(DISPLAYS_POLL).await;
+            let looked = cx.update(|cx| {
+                let now = list(cx);
+                if cx.global::<Connected>().0 != now {
+                    cx.set_global(Connected(now));
+                    cx.refresh_windows();
+                }
+            });
+            if looked.is_err() {
+                break;
+            }
+        }
+    })
+    .detach();
+}
+
+/// gpui's id for display `id`, while it is connected.
+pub fn find(id: u32, cx: &App) -> Option<DisplayId> {
+    cx.displays()
+        .into_iter()
+        .map(|display| display.id())
+        .find(|&found| u32::from(found) == id)
 }
 
 /// The display `window` is on.
@@ -47,22 +96,41 @@ pub fn of(window: &Window, cx: &App) -> Option<u32> {
     window.display(cx).map(|display| u32::from(display.id()))
 }
 
-/// Move `window` onto display `id`, centered, at its size or as much of it
-/// as fits. Only on macOS, and not for a window that is full screen.
-pub fn move_to(window: &Window, id: u32) {
+/// Put `window`, out of full screen, full screen on display `id`. macOS
+/// goes full screen where a window is, so it moves there first, centered,
+/// at its size or as much of it as fits; on X11 gpui moves it, and Wayland
+/// asks the compositor, which may keep it where it is.
+pub fn full_screen_on(window: &Window, id: u32, cx: &App) {
     #[cfg(target_os = "macos")]
     mac::move_to(window, id);
-    #[cfg(not(target_os = "macos"))]
-    let _ = (window, id);
+    match find(id, cx) {
+        Some(display) => window.fullscreen_on(display),
+        None if !window.is_fullscreen() => window.toggle_fullscreen(),
+        None => {}
+    }
 }
 
-/// Put `window` at `bounds` on display `id`, relative to it, as gpui opens
-/// windows there. Only on macOS, and not for a window that is full screen.
+/// Put `window` at `bounds` on display `id`, as gpui opens windows there.
+/// Not on Wayland, which places windows itself, and not for a window that
+/// is full screen.
 pub fn put(window: &Window, id: u32, bounds: Bounds<Pixels>) {
     #[cfg(target_os = "macos")]
     mac::put(window, id, bounds);
+    // A display's bounds and a window's are both the screen's on X11.
     #[cfg(not(target_os = "macos"))]
-    let _ = (window, id, bounds);
+    {
+        let _ = id;
+        window.set_frame(bounds);
+    }
+}
+
+/// Whether the compositor places windows, rather than Plays: on Wayland,
+/// where gpui runs when there is a Wayland display.
+pub fn placed_by_compositor() -> bool {
+    #[cfg(target_os = "linux")]
+    return gpui::guess_compositor() == "Wayland";
+    #[cfg(not(target_os = "linux"))]
+    false
 }
 
 /// The display a new window opens on: the one with Plays' window in front,

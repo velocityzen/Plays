@@ -4304,6 +4304,22 @@ impl Window {
         self.platform_window.fullscreen_style()
     }
 
+    /// Plays: go full screen on `display` rather than where the window is.
+    /// On X11 the window moves there first, as window managers put a window
+    /// full screen on the monitor it is on; on Wayland the compositor is
+    /// asked for that output, and may keep it where it is. macOS goes full
+    /// screen where the window is, so move it there first.
+    pub fn fullscreen_on(&self, display: DisplayId) {
+        self.platform_window.fullscreen_on(display);
+    }
+
+    /// Plays: move the window to `bounds`, at that size, in the terms of
+    /// `window_bounds`. Only X11 lets apps place their windows; elsewhere
+    /// this does nothing.
+    pub fn set_frame(&self, bounds: Bounds<Pixels>) {
+        self.platform_window.set_frame(bounds);
+    }
+
     /// Updates the IME panel position suggestions for languages like japanese, chinese.
     pub fn invalidate_character_coordinates(&self) {
         self.on_next_frame(|window, cx| {

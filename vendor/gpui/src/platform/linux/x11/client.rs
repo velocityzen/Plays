@@ -1393,38 +1393,31 @@ impl LinuxClient for X11Client {
         Box::new(state.keyboard_layout.clone())
     }
 
+    // Plays: each screen's monitors (`X11Display::all`).
     fn displays(&self) -> Vec<Rc<dyn PlatformDisplay>> {
         let state = self.0.borrow();
         let setup = state.xcb_connection.setup();
-        setup
-            .roots
-            .iter()
-            .enumerate()
-            .filter_map(|(root_id, _)| {
-                Some(Rc::new(
-                    X11Display::new(&state.xcb_connection, state.scale_factor, root_id).ok()?,
-                ) as Rc<dyn PlatformDisplay>)
-            })
+        (0..setup.roots.len())
+            .flat_map(|root_id| X11Display::all(&state.xcb_connection, state.scale_factor, root_id))
+            .map(|display| Rc::new(display) as Rc<dyn PlatformDisplay>)
             .collect()
     }
 
+    // Plays: the primary monitor.
     fn primary_display(&self) -> Option<Rc<dyn PlatformDisplay>> {
         let state = self.0.borrow();
-        X11Display::new(
+        X11Display::primary(X11Display::all(
             &state.xcb_connection,
             state.scale_factor,
             state.x_root_index,
-        )
-        .log_err()
+        ))
         .map(|display| Rc::new(display) as Rc<dyn PlatformDisplay>)
     }
 
     fn display(&self, id: DisplayId) -> Option<Rc<dyn PlatformDisplay>> {
-        let state = self.0.borrow();
-
-        Some(Rc::new(
-            X11Display::new(&state.xcb_connection, state.scale_factor, id.0 as usize).ok()?,
-        ))
+        LinuxClient::displays(self)
+            .into_iter()
+            .find(|display| display.id() == id)
     }
 
     #[cfg(feature = "screen-capture")]

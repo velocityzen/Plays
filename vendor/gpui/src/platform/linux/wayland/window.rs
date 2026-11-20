@@ -25,7 +25,7 @@ use wayland_protocols::{
 use wayland_protocols_plasma::blur::client::org_kde_kwin_blur;
 
 use crate::{
-    AnyWindowHandle, Bounds, Decorations, Globals, GpuSpecs, Modifiers, Output, Pixels,
+    AnyWindowHandle, Bounds, Decorations, DisplayId, Globals, GpuSpecs, Modifiers, Output, Pixels,
     PlatformDisplay, PlatformInput, Point, PromptButton, PromptLevel, RequestFrameOptions,
     ResizeEdge, Size, Tiling, WaylandClientStatePtr, WindowAppearance, WindowBackgroundAppearance,
     WindowBounds, WindowControlArea, WindowControls, WindowDecorations, WindowParams, px, size,
@@ -871,6 +871,7 @@ impl PlatformWindow for WaylandWindow {
             Rc::new(WaylandDisplay {
                 id: id.clone(),
                 name: display.name.clone(),
+                description: display.description.clone(),
                 bounds: display.bounds.to_pixels(state.scale),
             }) as Rc<dyn PlatformDisplay>
         })
@@ -976,6 +977,15 @@ impl PlatformWindow for WaylandWindow {
 
     fn is_fullscreen(&self) -> bool {
         self.borrow().fullscreen
+    }
+
+    // Plays: asked of the compositor, which may keep it where it is.
+    fn fullscreen_on(&self, display: DisplayId) {
+        let state = self.borrow();
+        if !state.fullscreen {
+            let output = state.client.wl_output(display);
+            state.toplevel.set_fullscreen(output.as_ref());
+        }
     }
 
     fn on_request_frame(&self, callback: Box<dyn FnMut(RequestFrameOptions)>) {

@@ -368,6 +368,9 @@ pub mod motion {
     /// How long a covered display shows after the mouse moved or clicked
     /// on it, as it rests there.
     pub const BLACKOUT_PEEK: Duration = Duration::from_secs(3);
+    /// How often the displays, and the tile in front's cast, are looked at:
+    /// nothing tells when a display connects, as an AirPlay display does.
+    pub const DISPLAYS_POLL: Duration = Duration::from_secs(1);
 }
 
 /// Windows and how tiles fill them.

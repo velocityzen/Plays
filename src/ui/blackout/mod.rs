@@ -7,8 +7,8 @@
 //! The covers are plain black windows of the system's own rather than
 //! gpui's, as nothing is drawn in them and they must never take the focus:
 //! on macOS above the menu bar and Dock, on every Space; on X11 one per
-//! monitor (RandR), which the window manager leaves alone. Wayland lets no
-//! app place windows, so there it does nothing.
+//! monitor, which gpui counts as a display, that the window manager leaves
+//! alone. Wayland lets no app place windows, so there it does nothing.
 
 #[cfg(all(target_os = "macos", not(test)))]
 mod mac;
@@ -24,7 +24,7 @@ use crate::ui::displays;
 use crate::ui::theme::motion::{BLACKOUT_PEEK, BLACKOUT_POLL};
 use crate::ui::workspace::Workspace;
 
-/// What a cover can go over: a display, or on X11 a monitor of one.
+/// What a cover can go over: a display.
 #[derive(Clone, PartialEq, Debug)]
 pub struct Screen {
     /// The display it is on, as gpui numbers them.
@@ -41,15 +41,17 @@ pub struct Spot {
 }
 
 impl Screen {
-    /// Whether `spot` is on it. A screen has its left and top edges, and
-    /// leaves its right and bottom ones to its neighbors.
+    /// Whether `spot` is on it.
     fn has(&self, spot: &Spot) -> bool {
+        self.display == spot.display && spot.at.is_none_or(|at| self.has_point(at))
+    }
+
+    /// Whether `at` is on it. A screen has its left and top edges, and
+    /// leaves its right and bottom ones to its neighbors.
+    pub fn has_point(&self, at: Point<Pixels>) -> bool {
         let bounds = &self.bounds;
-        self.display == spot.display
-            && spot.at.is_none_or(|at| {
-                (bounds.left()..bounds.right()).contains(&at.x)
-                    && (bounds.top()..bounds.bottom()).contains(&at.y)
-            })
+        (bounds.left()..bounds.right()).contains(&at.x)
+            && (bounds.top()..bounds.bottom()).contains(&at.y)
     }
 }
 
@@ -143,11 +145,10 @@ pub fn update(cx: &mut App) {
         blackout.peek = Peek::default();
         Vec::new()
     } else {
-        let screens = blackout.native.screens(displays, scale);
         let shown = blackout
             .peek
-            .showing(blackout.native.mouse(&screens, scale), Instant::now());
-        to_cover(&screens, &full_screen, shown)
+            .showing(blackout.native.mouse(&displays, scale), Instant::now());
+        to_cover(&displays, &full_screen, shown)
     };
     if wanted != blackout.covered {
         blackout.native.show(&wanted, scale);
@@ -213,10 +214,6 @@ struct Native;
 
 #[cfg(any(test, not(any(target_os = "macos", target_os = "linux"))))]
 impl Native {
-    fn screens(&mut self, displays: Vec<Screen>, _: f32) -> Vec<Screen> {
-        displays
-    }
-
     fn mouse(&mut self, _: &[Screen], _: f32) -> Option<Mouse> {
         None
     }

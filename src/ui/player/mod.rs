@@ -431,7 +431,7 @@ impl Render for PlayerView {
         };
 
         let header = self.render_header(&reveal, info.as_ref(), show_titles, window, cx);
-        let controls = self.render_controls(&reveal, info.as_ref(), &theme, cx);
+        let controls = self.render_controls(&reveal, info.as_ref(), &theme, window, cx);
         let osd = self.render_osd(window);
         let console = self.render_console();
 

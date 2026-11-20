@@ -258,6 +258,39 @@ impl PlatformWindow for TestWindow {
         self.0.lock().fullscreen_style
     }
 
+    // Plays: full screen on that display, as Linux has it, the move told
+    // once the update asking for it is done, as a system tells it.
+    fn fullscreen_on(&self, display: crate::DisplayId) {
+        let mut lock = self.0.lock();
+        lock.is_fullscreen = true;
+        let Some(platform) = lock.platform.upgrade() else {
+            return;
+        };
+        let Some(found) = crate::Platform::displays(&*platform)
+            .into_iter()
+            .find(|found| found.id() == display)
+        else {
+            return;
+        };
+        lock.display = found;
+        drop(lock);
+        let this = self.clone();
+        crate::Platform::foreground_executor(&*platform)
+            .spawn(async move {
+                let callback = this.0.lock().moved_callback.take();
+                if let Some(mut callback) = callback {
+                    callback();
+                    this.0.lock().moved_callback = Some(callback);
+                }
+            })
+            .detach();
+    }
+
+    // Plays.
+    fn set_frame(&self, bounds: Bounds<Pixels>) {
+        self.0.lock().bounds = bounds;
+    }
+
     fn on_request_frame(&self, _callback: Box<dyn FnMut(RequestFrameOptions)>) {}
 
     fn on_input(&self, callback: Box<dyn FnMut(crate::PlatformInput) -> DispatchEventResult>) {

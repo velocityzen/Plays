@@ -3,11 +3,11 @@ use x11rb::connection::RequestConnection;
 
 use crate::platform::blade::{BladeContext, BladeRenderer, BladeSurfaceConfig};
 use crate::{
-    AnyWindowHandle, Bounds, Decorations, DevicePixels, ForegroundExecutor, GpuSpecs, Modifiers,
-    Pixels, PlatformAtlas, PlatformDisplay, PlatformInput, PlatformInputHandler, PlatformWindow,
-    Point, PromptButton, PromptLevel, RequestFrameOptions, ResizeEdge, ScaledPixels, Scene, Size,
-    Tiling, WindowAppearance, WindowBackgroundAppearance, WindowBounds, WindowControlArea,
-    WindowDecorations, WindowKind, WindowParams, X11ClientStatePtr, px, size,
+    AnyWindowHandle, Bounds, Decorations, DevicePixels, DisplayId, ForegroundExecutor, GpuSpecs,
+    Modifiers, Pixels, PlatformAtlas, PlatformDisplay, PlatformInput, PlatformInputHandler,
+    PlatformWindow, Point, PromptButton, PromptLevel, RequestFrameOptions, ResizeEdge,
+    ScaledPixels, Scene, Size, Tiling, WindowAppearance, WindowBackgroundAppearance, WindowBounds,
+    WindowControlArea, WindowDecorations, WindowKind, WindowParams, X11ClientStatePtr, px, size,
 };
 
 use blade_graphics as gpu;
@@ -68,6 +68,8 @@ x11rb::atom_manager! {
         _NET_WM_STATE_FOCUSED,
         // Plays: windows kept on top.
         _NET_WM_STATE_ABOVE,
+        // Plays: windows moved where they were, or to another monitor.
+        _NET_MOVERESIZE_WINDOW,
         _NET_ACTIVE_WINDOW,
         _NET_WM_SYNC_REQUEST,
         _NET_WM_SYNC_REQUEST_COUNTER,
@@ -260,7 +262,8 @@ pub struct X11WindowState {
     bounds: Bounds<Pixels>,
     scale_factor: f32,
     renderer: BladeRenderer,
-    display: Rc<dyn PlatformDisplay>,
+    // Plays: its display is the monitor it is on, of this screen.
+    x_screen_index: usize,
     input_handler: Option<PlatformInputHandler>,
     appearance: WindowAppearance,
     background_appearance: WindowBackgroundAppearance,
@@ -272,6 +275,9 @@ pub struct X11WindowState {
     active: bool,
     hovered: bool,
     fullscreen: bool,
+    // Plays: where the window was when asked to go full screen, as the
+    // window manager says it is full screen only after it has moved it.
+    fullscreen_restore: Option<Bounds<Pixels>>,
     client_side_decorations_supported: bool,
     decorations: WindowDecorations,
     edge_constraints: Option<EdgeConstraints>,
@@ -400,9 +406,13 @@ impl X11WindowState {
         appearance: WindowAppearance,
         parent_window: Option<xproto::Window>,
     ) -> anyhow::Result<Self> {
+        // Plays: a display is a monitor of the main screen, unless it is a
+        // screen without them (`X11Display`).
         let x_screen_index = params
             .display_id
-            .map_or(x_main_screen_index, |did| did.0 as usize);
+            .map(|did| did.0 as usize)
+            .filter(|&index| index < xcb.setup().roots.len())
+            .unwrap_or(x_main_screen_index);
 
         let visual_set = find_visuals(xcb, x_screen_index);
 
@@ -678,12 +688,10 @@ impl X11WindowState {
                 BladeRenderer::new(gpu_context, &raw_window, config)?
             };
 
-            let display = Rc::new(X11Display::new(xcb, scale_factor, x_screen_index)?);
-
             Ok(Self {
                 client,
                 executor,
-                display,
+                x_screen_index,
                 x_root_window: visual_set.root,
                 bounds: bounds.to_pixels(scale_factor),
                 scale_factor,
@@ -693,6 +701,7 @@ impl X11WindowState {
                 active: false,
                 hovered: false,
                 fullscreen: false,
+                fullscreen_restore: None,
                 maximized_vertical: false,
                 maximized_horizontal: false,
                 hidden: false,
@@ -972,6 +981,7 @@ impl X11WindowStatePtr {
             .chunks_exact(4)
             .map(|chunk| u32::from_ne_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]));
 
+        let was_fullscreen = state.fullscreen;
         state.active = false;
         state.fullscreen = false;
         state.maximized_vertical = false;
@@ -993,6 +1003,10 @@ impl X11WindowStatePtr {
             } else if atom == state.atoms._NET_WM_STATE_ABOVE {
                 state.above = true;
             }
+        }
+        // Plays: out of full screen, however it left.
+        if was_fullscreen && !state.fullscreen {
+            state.fullscreen_restore = None;
         }
 
         Ok(())
@@ -1193,6 +1207,10 @@ impl PlatformWindow for X11Window {
 
     fn window_bounds(&self) -> WindowBounds {
         let state = self.0.state.borrow();
+        // Plays: full screen, or asked to be, where it was before.
+        if let Some(restore) = state.fullscreen_restore {
+            return WindowBounds::Fullscreen(restore);
+        }
         if self.is_maximized() {
             WindowBounds::Maximized(state.bounds)
         } else {
@@ -1265,8 +1283,12 @@ impl PlatformWindow for X11Window {
         self.0.state.borrow().appearance
     }
 
+    // Plays: the monitor it is on.
     fn display(&self) -> Option<Rc<dyn PlatformDisplay>> {
-        Some(self.0.state.borrow().display.clone())
+        let state = self.0.state.borrow();
+        let displays = X11Display::all(&self.0.xcb, state.scale_factor, state.x_screen_index);
+        X11Display::of(displays, state.bounds)
+            .map(|display| Rc::new(display) as Rc<dyn PlatformDisplay>)
     }
 
     fn mouse_position(&self) -> Point<Pixels> {
@@ -1450,6 +1472,11 @@ impl PlatformWindow for X11Window {
     }
 
     fn toggle_fullscreen(&self) {
+        {
+            // Plays: where it was, going in; nothing to go back to, going out.
+            let mut state = self.0.state.borrow_mut();
+            state.fullscreen_restore = (!state.fullscreen).then_some(state.bounds);
+        }
         let state = self.0.state.borrow();
         self.set_wm_hints(
             || "X11 SendEvent to fullscreen a window failed.",
@@ -1462,6 +1489,70 @@ impl PlatformWindow for X11Window {
 
     fn is_fullscreen(&self) -> bool {
         self.0.state.borrow().fullscreen
+    }
+
+    // Plays: window managers put a window full screen on the monitor it is
+    // on, so it moves there first, its middle to the monitor's, as big as
+    // it is or as fits.
+    fn fullscreen_on(&self, display: DisplayId) {
+        if self.is_fullscreen() {
+            return;
+        }
+        let (displays, bounds) = {
+            let mut state = self.0.state.borrow_mut();
+            state.fullscreen_restore = Some(state.bounds);
+            let displays = X11Display::all(&self.0.xcb, state.scale_factor, state.x_screen_index);
+            (displays, state.bounds)
+        };
+        let on = X11Display::of(displays.clone(), bounds).map(|on| on.id());
+        if on != Some(display)
+            && let Some(there) = displays.iter().find(|found| found.id() == display)
+        {
+            let room = there.bounds();
+            let size = bounds.size.min(&room.size);
+            self.set_frame(Bounds::centered_at(room.center(), size));
+        }
+        let state = self.0.state.borrow();
+        self.set_wm_hints(
+            || "X11 SendEvent to fullscreen a window failed.",
+            WmHintPropertyState::Add,
+            state.atoms._NET_WM_STATE_FULLSCREEN,
+            xproto::AtomEnum::NONE.into(),
+        )
+        .log_err();
+    }
+
+    // Plays: asked of the window manager, the window itself at `bounds`
+    // rather than its frame (static gravity), as `bounds` has it.
+    fn set_frame(&self, bounds: Bounds<Pixels>) {
+        const STATIC_GRAVITY: u32 = 10;
+        const X_Y_WIDTH_HEIGHT: u32 = 0xf << 8;
+        const FROM_APPLICATION: u32 = 1 << 12;
+        let state = self.0.state.borrow();
+        let bounds = bounds.scale(state.scale_factor);
+        let message = ClientMessageEvent::new(
+            32,
+            self.0.x_window,
+            state.atoms._NET_MOVERESIZE_WINDOW,
+            [
+                STATIC_GRAVITY | X_Y_WIDTH_HEIGHT | FROM_APPLICATION,
+                bounds.origin.x.0.round() as i32 as u32,
+                bounds.origin.y.0.round() as i32 as u32,
+                bounds.size.width.0.round() as u32,
+                bounds.size.height.0.round() as u32,
+            ],
+        );
+        check_reply(
+            || "X11 SendEvent to move a window failed.",
+            self.0.xcb.send_event(
+                false,
+                state.x_root_window,
+                xproto::EventMask::SUBSTRUCTURE_REDIRECT | xproto::EventMask::SUBSTRUCTURE_NOTIFY,
+                message,
+            ),
+        )
+        .log_err();
+        xcb_flush(&self.0.xcb);
     }
 
     // Plays.

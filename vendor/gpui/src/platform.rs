@@ -287,6 +287,12 @@ pub trait PlatformDisplay: Send + Sync + Debug {
     /// Get the bounds for this display
     fn bounds(&self) -> Bounds<Pixels>;
 
+    /// Plays: the display's name, as the system shows it to people; `None`
+    /// where the platform has none for it.
+    fn name(&self) -> Option<String> {
+        None
+    }
+
     /// Get the default bounds for this display to place a window
     fn default_bounds(&self) -> Bounds<Pixels> {
         let bounds = self.bounds();
@@ -500,6 +506,16 @@ pub(crate) trait PlatformWindow: HasWindowHandle + HasDisplayHandle {
     fn fullscreen_style(&self) -> FullscreenStyle {
         FullscreenStyle::default()
     }
+    /// Plays: go full screen on `display` rather than where the window is,
+    /// as far as the system lets apps choose.
+    fn fullscreen_on(&self, _display: DisplayId) {
+        if !self.is_fullscreen() {
+            self.toggle_fullscreen();
+        }
+    }
+    /// Plays: move the window to `bounds`, at that size, in the terms of
+    /// `bounds()`; where the system lets apps place windows.
+    fn set_frame(&self, _bounds: Bounds<Pixels>) {}
     fn on_request_frame(&self, callback: Box<dyn FnMut(RequestFrameOptions)>);
     fn on_input(&self, callback: Box<dyn FnMut(PlatformInput) -> DispatchEventResult>);
     fn on_active_status_change(&self, callback: Box<dyn FnMut(bool)>);

@@ -224,6 +224,31 @@ level and the app's presentation options. `is_fullscreen` is true either
 way, and `window_bounds` gives the bounds from before. One full screen
 already leaves the way it came. The test window keeps the style.
 
+`src/platform.rs`, `src/window.rs`, and the X11, Wayland and test
+platforms: on X11 a display is a RandR monitor rather than an X screen,
+which spans every monitor. Its id is the atom of the monitor's name, its
+bounds are where it is on the screen (as windows' are), and a window's
+display is the monitor with its middle; the screen as a whole is a display
+only where RandR lists no monitors. A window asked to open on a monitor
+opens on the main screen. `PlatformDisplay::name` gives a display's name:
+on X11 the product name in the EDID of the monitor's first output, or else
+the monitor's own (its connector's), with the connector added where two
+have the same name; on Wayland the output's description, with its
+connector's name unless it has it; `None` elsewhere.
+`Window::fullscreen_on(display)` goes full screen on a display: X11 moves
+the window there first, its middle to the monitor's, as window managers
+put a window full screen on the monitor it is on; Wayland passes the
+output to `xdg_toplevel.set_fullscreen`, which the compositor may ignore;
+macOS, and any other platform, go full screen where the window is. The
+test window moves to the display, and tells of the move once the update
+asking for it is done, as a system would. `Window::set_frame(bounds)`
+moves and sizes a window: on X11 with `_NET_MOVERESIZE_WINDOW` and static
+gravity, so the bounds are the window's own inside its frame; the test
+window takes the bounds; elsewhere it does nothing. The X11 window keeps
+where it was when asked to go full screen, and `window_bounds` gives that
+as `WindowBounds::Fullscreen` until it is out again, as window managers
+say a window is full screen only after they have moved it.
+
 `src/taffy.rs`: two float literals are typed as `f32`, which newer Rust
 warns about otherwise.
 

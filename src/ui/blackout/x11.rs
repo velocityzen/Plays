@@ -1,18 +1,18 @@
-//! The covers on X11: a black window over each monitor RandR knows, which
-//! the window manager leaves alone (override-redirect), so it is never
-//! framed or focused. On a connection of its own, made the first time
-//! there is something to cover; none on Wayland, where gpui runs then and
-//! windows can't be placed.
+//! The covers on X11: a black window over each monitor, which the window
+//! manager leaves alone (override-redirect), so it is never framed or
+//! focused. On a connection of its own, made the first time there is
+//! something to cover; none on Wayland, where gpui runs then and windows
+//! can't be placed.
 
-use gpui::{Bounds, point, px, size};
+use gpui::{point, px};
 use x11rb::connection::Connection;
-use x11rb::protocol::randr::ConnectionExt as _;
 use x11rb::protocol::xproto::{
     ConfigureWindowAux, ConnectionExt as _, CreateWindowAux, StackMode, Window, WindowClass,
 };
 use x11rb::rust_connection::RustConnection;
 
 use super::{Mouse, Screen, Spot};
+use crate::ui::displays;
 
 /// Buttons 1 to 5 down, in a pointer's state.
 const BUTTONS: u16 = 0x1f00;
@@ -39,50 +39,22 @@ impl Covers {
         self.x.as_ref()
     }
 
-    /// The monitors of the display, or the displays as they are when RandR
-    /// can't say.
-    pub fn screens(&mut self, displays: Vec<Screen>, scale: f32) -> Vec<Screen> {
-        let Some(display) = displays.first().map(|screen| screen.display) else {
-            return displays;
-        };
-        let monitors = self.x().and_then(|x| {
-            let reply = x
-                .connection
-                .randr_get_monitors(x.root, true)
-                .ok()?
-                .reply()
-                .ok()?;
-            Some(
-                reply
-                    .monitors
-                    .iter()
-                    .map(|monitor| Screen {
-                        display,
-                        bounds: Bounds::new(
-                            point(px(monitor.x.into()), px(monitor.y.into())),
-                            size(px(monitor.width.into()), px(monitor.height.into())),
-                        )
-                        .map(|value| value / scale),
-                    })
-                    .collect::<Vec<_>>(),
-            )
-        });
-        match monitors {
-            Some(monitors) if !monitors.is_empty() => monitors,
-            _ => displays,
-        }
-    }
-
     /// Where the mouse is, and whether a button is down.
     pub fn mouse(&mut self, screens: &[Screen], scale: f32) -> Option<Mouse> {
-        let display = screens.first()?.display;
         let x = self.x()?;
         let pointer = x.connection.query_pointer(x.root).ok()?.reply().ok()?;
         let (left, top) = (f32::from(pointer.root_x), f32::from(pointer.root_y));
+        let at = point(px(left / scale), px(top / scale));
+        // The monitor it is on, each a display.
+        let display = screens
+            .iter()
+            .find(|screen| screen.has_point(at))
+            .or(screens.first())?
+            .display;
         Some(Mouse {
             spot: Spot {
                 display,
-                at: Some(point(px(left / scale), px(top / scale))),
+                at: Some(at),
             },
             at: (left.into(), top.into()),
             pressed: u16::from(pointer.mask) & BUTTONS != 0,
@@ -135,7 +107,7 @@ impl Covers {
 }
 
 fn connect() -> Option<X> {
-    if std::env::var_os("WAYLAND_DISPLAY").is_some() {
+    if displays::placed_by_compositor() {
         return None;
     }
     let (connection, screen) = x11rb::connect(None).ok()?;

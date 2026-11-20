@@ -1,16 +1,15 @@
-//! Video → Output Device: putting the window full screen on a display, such
-//! as an AirPlay one, or playing the tile in front here again while it
-//! casts.
+//! Output Device: putting the window full screen on a display, such as an
+//! AirPlay one, or playing the tile in front here again while it casts.
 
-use gpui::{Context, Window};
+use gpui::{App, Context, Window};
 
 use super::Workspace;
 use crate::ui::displays;
 
 impl Workspace {
     /// Put the window full screen on display `id`. One full screen
-    /// elsewhere leaves full screen first, as macOS can't move it, and goes
-    /// on once it has (`finish_moving`).
+    /// elsewhere leaves full screen first, as a window full screen can't
+    /// move, and goes on once it has (`finish_moving`).
     pub fn show_on_display(&mut self, id: u32, window: &mut Window, cx: &mut Context<Self>) {
         // While the tile in front casts, picking the display it is on plays
         // it here again, as it was.
@@ -30,20 +29,19 @@ impl Workspace {
             window.toggle_fullscreen();
             cx.notify();
         } else {
-            self.finish_moving(window);
+            self.finish_moving(window, cx);
         }
     }
 
     /// Move to the display picked and go full screen there, once the window
     /// is out of full screen; and back where it was once out of full screen
     /// there (`come_home`). Runs on every render and tick.
-    pub(super) fn finish_moving(&mut self, window: &mut Window) {
+    pub(super) fn finish_moving(&mut self, window: &mut Window, cx: &App) {
         let mut moved = false;
         if !window.is_fullscreen()
             && let Some(id) = self.moving_to.take()
         {
-            displays::move_to(window, id);
-            window.toggle_fullscreen();
+            displays::full_screen_on(window, id, cx);
             moved = true;
         }
         self.come_home(window, moved);

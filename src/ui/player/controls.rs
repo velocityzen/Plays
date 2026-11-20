@@ -40,6 +40,7 @@ impl PlayerView {
         reveal: &Reveal,
         info: Option<&MediaInfo>,
         theme: &Theme,
+        window: &Window,
         cx: &mut Context<Self>,
     ) -> Div {
         let live = info.is_some_and(|i| i.live);
@@ -67,7 +68,7 @@ impl PlayerView {
             "volume"
         };
         let has_audio = info.is_some_and(|i| i.has_audio);
-        let cast = self.render_cast_button(info, theme, cx);
+        let cast = self.render_cast_button(info, theme, window, cx);
         let tracks = info.filter(|info| has_track_choice(info));
         let subtitles_on = info.is_some_and(|i| i.subtitle_track.is_some());
         let looping = self.player.is_looping();

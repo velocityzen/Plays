@@ -795,6 +795,32 @@ fn output_device_shows_the_window_full_screen_on_a_display(cx: &mut TestAppConte
 }
 
 #[gpui::test]
+fn the_cast_menu_puts_the_window_full_screen_on_a_display(cx: &mut TestAppContext) {
+    let (window, mut cx) = testing::start(cx);
+    open(window, &mut cx, &["clip.mp4"], false);
+    assert!(
+        !shows(&mut cx, "cast"),
+        "nothing to pick, with one display and no devices"
+    );
+
+    let second = u32::from(cx.add_display(size(px(2560.), px(1440.))));
+    click(&mut cx, "cast");
+    assert!(shows(&mut cx, "display-0") && shows(&mut cx, "display-1"));
+    assert!(
+        !shows(&mut cx, "cast-here"),
+        "the displays stand for this computer"
+    );
+
+    click(&mut cx, "display-1");
+    cx.run_until_parked();
+    let (full_screen, on) =
+        cx.update(|window, cx| (window.is_fullscreen(), displays::of(window, cx)));
+    assert!(full_screen, "full screen");
+    assert_eq!(on, Some(second), "on the display picked");
+    assert!(!shows(&mut cx, "display-0"), "the menu closed");
+}
+
+#[gpui::test]
 fn a_tile_alone_expands_to_full_screen_while_it_floats(cx: &mut TestAppContext) {
     let (window, mut cx) = testing::start(cx);
     open(window, &mut cx, &["clip.mp4"], true);
