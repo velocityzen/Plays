@@ -38,7 +38,7 @@ use gpui::{App, ClickEvent, Styled, Window};
 use crate::ui::theme::{controls, radius};
 
 /// What a button runs when clicked.
-type ClickHandler = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
+pub type ClickHandler = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 
 /// The three sizes every component comes in.
 #[derive(Clone, Copy, Default, PartialEq, Eq, Debug)]

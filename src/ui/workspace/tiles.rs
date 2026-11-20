@@ -6,6 +6,7 @@ use gpui::{App, Context, Entity, EntityId, Pixels, Size, px, size};
 use super::{TOOLBAR_SPACE, Tile, Workspace};
 use crate::app::{Awake, refresh_menus};
 use crate::cast::Device;
+use crate::settings::AudioDevice;
 use crate::ui::displays;
 use crate::ui::framing::Adjustments;
 use crate::ui::player::{PlayerEvent, PlayerView};
@@ -15,6 +16,7 @@ use crate::ui::theme::layout::{
 
 impl Workspace {
     pub(super) fn add_tile(&mut self, view: Entity<PlayerView>, cx: &mut Context<Self>) {
+        self.play_here(&view, cx);
         let subscription = cx.subscribe(&view, |this, view, event, cx| match event {
             PlayerEvent::Close => this.close(view.entity_id(), cx),
             PlayerEvent::Activate => {
@@ -114,13 +116,21 @@ impl Workspace {
             self.active = None;
         }
         self.tiles_changed(cx);
+        let sound = self.sound_device().cloned();
         window
-            .update(cx, |workspace, _, cx| workspace.adopt(view, cx))
+            .update(cx, |workspace, _, cx| workspace.adopt(view, sound, cx))
             .ok();
     }
 
-    /// Take in a tile from another window.
-    fn adopt(&mut self, view: Entity<PlayerView>, cx: &mut Context<Self>) {
+    /// Take in a tile from another window, with the device that window
+    /// plays through instead of the app's output.
+    fn adopt(
+        &mut self,
+        view: Entity<PlayerView>,
+        sound: Option<AudioDevice>,
+        cx: &mut Context<Self>,
+    ) {
+        self.set_sound_device(sound, cx);
         let graveyard = self.graveyard.clone();
         view.update(cx, |view, _| view.move_to_window(graveyard));
         self.add_tile(view, cx);

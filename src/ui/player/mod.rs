@@ -38,7 +38,7 @@ use crate::media::decoder::MediaInfo;
 use crate::media::picture::PictureId;
 use crate::media::subtitles::CueContent;
 use crate::media::{Mixer, Neighbors, Picture, Player, PlayerOptions, Source};
-use crate::settings::{ControlsVisibility, Settings, VideoFit};
+use crate::settings::{AudioDevice, ControlsVisibility, Settings, VideoFit};
 use osd::Osd;
 
 pub enum PlayerEvent {
@@ -106,6 +106,9 @@ pub struct PlayerView {
     cast: Option<cast::Cast>,
     /// The menu of devices to cast to is open.
     cast_open: bool,
+    /// The device its window plays through instead of the app's output,
+    /// which its menu checks.
+    window_sound: Option<AudioDevice>,
 }
 
 impl EventEmitter<PlayerEvent> for PlayerView {}
@@ -159,6 +162,7 @@ impl PlayerView {
             console: None,
             cast: None,
             cast_open: false,
+            window_sound: None,
         }
     }
 
@@ -295,6 +299,13 @@ impl PlayerView {
         if advanced || was_playing != self.player.is_playing() {
             cx.notify();
         }
+    }
+
+    /// Play into `mixer` from now on, its window's, which plays through
+    /// `device` instead of the app's output, if any.
+    pub fn play_into(&mut self, mixer: Option<Arc<Mixer>>, device: Option<AudioDevice>) {
+        self.player.set_mixer(mixer);
+        self.window_sound = device;
     }
 
     /// Move this tile to another window, whose frames are released through

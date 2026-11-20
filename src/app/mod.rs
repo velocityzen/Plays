@@ -62,6 +62,12 @@ pub struct SetCrop(pub Option<Ratio>);
 #[action(namespace = plays, no_json)]
 pub struct SetAudioDevice(pub Option<AudioDevice>);
 
+/// Play the window in front through this output device instead of the
+/// app's output, or with `None` through the app's output again.
+#[derive(Clone, PartialEq, Debug, gpui::Action)]
+#[action(namespace = plays, no_json)]
+pub struct SetWindowAudioDevice(pub Option<AudioDevice>);
+
 /// Show the window in front full screen on this display (its id).
 #[derive(Clone, PartialEq, Debug, gpui::Action)]
 #[action(namespace = plays, no_json)]

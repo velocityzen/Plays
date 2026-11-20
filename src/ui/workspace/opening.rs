@@ -7,7 +7,6 @@ use gpui::prelude::*;
 use gpui::{Context, PathPromptOptions, Window};
 
 use super::Workspace;
-use crate::app::AudioEngine;
 use crate::media::Source;
 use crate::media::source::media_in;
 use crate::settings::Settings;
@@ -38,7 +37,7 @@ impl Workspace {
             return;
         }
         let settings = cx.global::<Settings>().clone();
-        let mixer = AudioEngine::mixer(cx);
+        let mixer = self.mixer(cx);
         let mut opened = Vec::new();
         for source in sources {
             log::info!("opening {source}");

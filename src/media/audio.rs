@@ -1,11 +1,13 @@
-//! The mixer every open player plays into.
+//! The mixers players play into: one for each output.
 //!
-//! Decoders resample their audio to interleaved stereo `f32` at the mixer's
-//! sample rate and push it into an [`AudioSource`]. The output (`output.rs`)
-//! has the mixer sum all playing sources, apply per-player and master volume,
-//! and report what it is playing back to each player's [`Clock`] so video can
-//! follow the audio. A new output device may want another sample rate: then
-//! what is queued is converted to it, and decoders resample to it from then on.
+//! Decoders resample their audio to interleaved stereo `f32` at their
+//! mixer's sample rate and push it into an [`AudioSource`]. The output
+//! (`output.rs`) has the mixer sum all playing sources, apply per-player and
+//! master volume, and report what it is playing back to each player's
+//! [`Clock`] so video can follow the audio. A new output device may want
+//! another sample rate, and a player may move to another mixer: either way
+//! what is queued is converted to the new rate, and decoders resample to it
+//! from then on.
 
 use std::collections::VecDeque;
 use std::sync::Arc;
@@ -240,8 +242,13 @@ impl Mixer {
         }
     }
 
+    /// Mix `source` in, converting what it has queued to this mixer's
+    /// rate, as it may come from another.
     pub fn add_source(&self, source: Arc<AudioSource>) {
-        self.sources.lock().push(source);
+        // Under the lock, so a change of rate meanwhile converts it too.
+        let mut sources = self.sources.lock();
+        source.queue.lock().set_rate(self.sample_rate());
+        sources.push(source);
     }
 
     pub fn remove_source(&self, source: &Arc<AudioSource>) {
@@ -410,5 +417,33 @@ mod tests {
         assert_eq!(mixer.sample_rate(), 44_100);
         assert_eq!(source.sample_rate(), 44_100);
         assert_eq!(source.queue.lock().buffered_frames, 4410);
+    }
+
+    #[test]
+    fn a_player_moved_to_another_mixer_plays_at_its_rate() {
+        let (here, there) = (Mixer::detached(48_000), Mixer::detached(44_100));
+        let source = Arc::new(AudioSource::new(
+            Arc::new(Clock::new()),
+            Arc::new(AtomicU64::new(0)),
+            here.sample_rate(),
+            1.0,
+        ));
+        here.add_source(source.clone());
+        source.queue.lock().push(ramp(4800, 0.0, 48_000));
+
+        here.remove_source(&source);
+        there.add_source(source.clone());
+        assert_eq!(
+            source.sample_rate(),
+            44_100,
+            "what its decoder resamples to"
+        );
+        assert_eq!(
+            source.queue.lock().buffered_frames,
+            4410,
+            "what it had queued"
+        );
+        assert!(here.sources.lock().is_empty());
+        assert_eq!(there.sources.lock().len(), 1);
     }
 }

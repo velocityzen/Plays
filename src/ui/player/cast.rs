@@ -6,22 +6,25 @@
 //! picture plays on here, following the speaker.
 //!
 //! The cast button's menu also lists the displays, with more than one, to
-//! put the window full screen on, as Video → Output Device does on macOS:
-//! the only place to pick one on Linux, which has no menu bar.
+//! put the window full screen on, as Video → Output Device does on macOS;
+//! and, with more than one audio output, those the window can play its
+//! sound through instead of the app's, as Audio → Window Output Device
+//! does: the only place to pick them on Linux, which has no menu bar.
 
 use gpui::prelude::*;
 use gpui::{AnyElement, App, Context, Corner, Div, ElementId, MouseDownEvent, Task, Window, div};
 use stream_server::{Pick, SubtitleSource};
 
 use super::PlayerView;
-use crate::app::ShowOnDisplay;
+use crate::app::{AudioEngine, SetWindowAudioDevice, ShowOnDisplay};
 use crate::cast::target::FOLLOW_POLL;
 use crate::cast::{Casting, Device, Error, Link, Phase, Request, Shows, SubtitleChoice};
 use crate::media::Source;
 use crate::media::decoder::MediaInfo;
+use crate::media::output::DeviceInfo;
 use crate::media::tracks::TrackKind;
-use crate::settings::Settings;
-use crate::ui::components::{Button, Icon, MenuRow, Panel, Popover};
+use crate::settings::{AudioDevice, Settings};
+use crate::ui::components::{Button, ClickHandler, Icon, MenuRow, Panel, Popover};
 use crate::ui::displays::{self, DisplayInfo};
 use crate::ui::framing::Adjustments;
 use crate::ui::theme::Theme;
@@ -465,8 +468,8 @@ impl PlayerView {
         )
     }
 
-    /// The cast button, while there are devices to cast to or displays to
-    /// pick, and the menu of them it opens.
+    /// The cast button, while there are devices to cast to, displays or
+    /// audio outputs to pick, and the menu of them it opens.
     pub(super) fn render_cast_button(
         &self,
         info: Option<&MediaInfo>,
@@ -487,7 +490,9 @@ impl PlayerView {
         if screens.len() < 2 {
             screens.clear();
         }
-        if devices.is_empty() && screens.is_empty() {
+        let outputs = AudioEngine::devices(cx);
+        let outputs = (outputs.len() > 1 || self.window_sound.is_some()).then(|| outputs.to_vec());
+        if devices.is_empty() && screens.is_empty() && outputs.is_none() {
             return None;
         }
         let button = Button::icon("cast", "cast")
@@ -495,6 +500,10 @@ impl PlayerView {
             .selected(self.cast.is_some())
             .on_click(cx.listener(|this, _, _, cx| {
                 this.cast_open = !this.cast_open;
+                // As Linux doesn't say when outputs come and go.
+                if this.cast_open {
+                    AudioEngine::list_devices(cx);
+                }
                 cx.notify();
             }));
         Some(
@@ -504,7 +513,11 @@ impl PlayerView {
                     let here = (!screens.is_empty())
                         .then(|| displays::of(window, cx))
                         .flatten();
-                    this.menu(self.render_cast_menu(devices, screens, here, has_video, theme, cx))
+                    this.menu(
+                        self.render_cast_menu(
+                            devices, screens, here, outputs, has_video, theme, cx,
+                        ),
+                    )
                 })
                 .on_dismiss(cx.listener(close_cast_menu))
                 .into_any_element(),
@@ -516,16 +529,21 @@ impl PlayerView {
     /// speaker says it takes only a video's sound. Picking a display puts
     /// the window full screen there (`ShowOnDisplay`), or plays the tile
     /// here again while it casts, if the window is on it; Wayland may keep
-    /// it on its own display, which the menu says.
+    /// it on its own display, which the menu says. Then the window's sound
+    /// (`render_window_sound`), with `outputs` to pick from.
+    #[allow(clippy::too_many_arguments)]
     fn render_cast_menu(
         &self,
         devices: Vec<Device>,
         screens: Vec<DisplayInfo>,
         here: Option<u32>,
+        outputs: Option<Vec<DeviceInfo>>,
         has_video: bool,
         theme: &Theme,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let play_on = !devices.is_empty() || !screens.is_empty();
+        let sound = outputs.map(|outputs| self.render_window_sound(outputs, cx));
         let casting = self.casting().cloned();
         let this_computer = screens.is_empty().then(|| {
             MenuRow::new("cast-here", "This Computer")
@@ -570,22 +588,84 @@ impl PlayerView {
             .flex_col()
             .w(CAST_MENU_WIDTH)
             .pb_1()
-            .child(heading("Play On", theme))
-            .children(this_computer)
-            .children(screens)
-            .when(wayland, |this| {
-                this.child(
-                    div()
-                        .px_3()
-                        .py_1()
-                        .text_xs()
-                        .text_color(theme.text_muted)
-                        .child("Wayland may keep it where it is"),
-                )
+            .when(play_on, |this| {
+                this.child(heading("Play On", theme))
+                    .children(this_computer)
+                    .children(screens)
+                    .when(wayland, |this| {
+                        this.child(
+                            div()
+                                .px_3()
+                                .py_1()
+                                .text_xs()
+                                .text_color(theme.text_muted)
+                                .child("Wayland may keep it where it is"),
+                        )
+                    })
+                    .children(rows)
             })
-            .children(rows)
+            .when_some(sound, |this, sound| {
+                this.child(heading("Window Sound", theme)).children(sound)
+            })
             .into_any_element()
     }
+
+    /// The app's output, checked unless the window plays through one of its
+    /// own; then `outputs`, the window's own checked, and listed too while
+    /// it isn't connected.
+    /// Picking one plays the whole window through it
+    /// (`SetWindowAudioDevice`).
+    fn render_window_sound(
+        &self,
+        outputs: Vec<DeviceInfo>,
+        cx: &mut Context<Self>,
+    ) -> Vec<MenuRow> {
+        let own = self.window_sound.clone();
+        let mut rows = vec![
+            MenuRow::new("sound-app", "Same as the App")
+                .checked(own.is_none())
+                .mx_1()
+                .on_click(pick_window_sound(None, cx)),
+        ];
+        let missing = own
+            .clone()
+            .filter(|own| !outputs.iter().any(|output| output.id == own.id));
+        for (i, output) in outputs.into_iter().enumerate() {
+            let device = AudioDevice {
+                id: output.id,
+                name: output.name,
+            };
+            let checked = own.as_ref().is_some_and(|own| own.id == device.id);
+            rows.push(
+                MenuRow::new(
+                    ElementId::Name(format!("sound-{i}").into()),
+                    device.name.clone(),
+                )
+                .checked(checked)
+                .mx_1()
+                .on_click(pick_window_sound(Some(device), cx)),
+            );
+        }
+        if let Some(device) = missing {
+            rows.push(
+                MenuRow::new("sound-missing", device.name.clone())
+                    .checked(true)
+                    .detail(div().text_xs().child("Not connected"))
+                    .mx_1()
+                    .on_click(pick_window_sound(Some(device), cx)),
+            );
+        }
+        rows
+    }
+}
+
+/// Clicks that play the window through `device`, or the app's output.
+fn pick_window_sound(device: Option<AudioDevice>, cx: &mut Context<PlayerView>) -> ClickHandler {
+    Box::new(cx.listener(move |view, _, window, cx| {
+        view.cast_open = false;
+        window.dispatch_action(Box::new(SetWindowAudioDevice(device.clone())), cx);
+        cx.notify();
+    }))
 }
 
 /// Which track of a kind to cast: the one playing here.

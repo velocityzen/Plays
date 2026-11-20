@@ -3,15 +3,17 @@
 //! engine as outputs come and go or another is picked, Settings when
 //! floating on top changes, the displays as they come and go or the window
 //! in front moves to another, the devices to cast to as they come and go
-//! or the tile in front casts to one, and the tile in front's aspect ratio,
-//! crop and chapter as they change or another tile is in front.
+//! or the tile in front casts to one, the output the window in front plays
+//! through as it picks another, and the tile in front's aspect ratio, crop
+//! and chapter as they change or another tile is in front.
 
 use gpui::{App, Global, Menu, MenuItem, SystemMenuType};
 
 use super::dispatch::first_workspace;
 use super::{
     About, AudioEngine, CastTo, CloseAll, CloseFile, CloseWindow, GoToChapter, OpenFiles,
-    OpenSettings, OpenUrl, Quit, SetAspectRatio, SetAudioDevice, SetCrop, ShowOnDisplay,
+    OpenSettings, OpenUrl, Quit, SetAspectRatio, SetAudioDevice, SetCrop, SetWindowAudioDevice,
+    ShowOnDisplay,
 };
 use crate::cast::{Casting, Device, Shows};
 use crate::hotkeys::*;
@@ -32,6 +34,7 @@ pub(super) fn set_menus(cx: &mut App) {
         cx.global::<Settings>().audio_output.device.as_ref(),
         &state,
     );
+    let window_outputs = window_output_menu(AudioEngine::devices(cx), state.sound.as_ref());
     cx.set_menus(vec![
         Menu {
             name: "Plays".into(),
@@ -134,6 +137,7 @@ pub(super) fn set_menus(cx: &mut App) {
                 MenuItem::action("Mute/Unmute All", ToggleMuteAll),
                 MenuItem::separator(),
                 MenuItem::submenu(outputs),
+                MenuItem::submenu(window_outputs),
             ],
         },
         Menu {
@@ -171,9 +175,10 @@ pub(super) fn watch_settings(cx: &mut App) {
 /// What the menus show that changes without them hearing of it: besides
 /// this computer's outputs, Video → Output Device and Audio → Output Device
 /// show the displays, the one the window in front is on, the devices that
-/// show video, the speakers, and the one the tile in front casts to; Video
-/// → Aspect Ratio and Crop check the tile in front's, and Playback →
-/// Chapters lists its chapters, checking the one it's in.
+/// show video, the speakers, and the one the tile in front casts to; Audio
+/// → Window Output Device checks the one the window in front plays
+/// through; Video → Aspect Ratio and Crop check the tile in front's, and
+/// Playback → Chapters lists its chapters, checking the one it's in.
 #[derive(Clone, Default, PartialEq, Debug)]
 struct MenuState {
     displays: Vec<DisplayInfo>,
@@ -182,6 +187,9 @@ struct MenuState {
     /// Those for the tile in front: none when it has no sound.
     speakers: Vec<Device>,
     casting: Option<Device>,
+    /// The device the window in front plays through instead of the app's
+    /// output.
+    sound: Option<AudioDevice>,
     aspect: Option<Ratio>,
     crop: Option<Ratio>,
     /// The tile in front's chapters, by name, and the one it's in.
@@ -196,13 +204,14 @@ impl MenuState {
         let window = first_workspace(cx.active_window())
             .or_else(|| first_workspace(cx.window_stack().unwrap_or_default()))
             .or_else(|| first_workspace(cx.windows()));
-        let (front, casting, has_audio, picture, (chapters, chapter)) = window
+        let (front, casting, sound, has_audio, picture, (chapters, chapter)) = window
             .and_then(|handle| {
                 handle
                     .update(cx, |workspace, window, cx| {
                         (
                             displays::of(window, cx),
                             workspace.active_casting(cx),
+                            workspace.sound_device().cloned(),
                             workspace.active_has_audio(cx),
                             workspace.active_adjustments(cx),
                             workspace.active_chapters(cx),
@@ -210,7 +219,14 @@ impl MenuState {
                     })
                     .ok()
             })
-            .unwrap_or((None, None, true, Default::default(), Default::default()));
+            .unwrap_or((
+                None,
+                None,
+                None,
+                true,
+                Default::default(),
+                Default::default(),
+            ));
         let (devices, speakers) = Casting::devices_for(cx, has_audio)
             .into_iter()
             .partition(|device| device.shows == Shows::Video);
@@ -220,6 +236,7 @@ impl MenuState {
             devices,
             speakers,
             casting,
+            sound,
             aspect: picture.aspect,
             crop: picture.crop,
             chapters,
@@ -393,6 +410,39 @@ fn output_menu(devices: &[DeviceInfo], picked: Option<&AudioDevice>, outputs: &M
     }));
     Menu {
         name: "Output Device".into(),
+        items,
+    }
+}
+
+/// The app's output, checked unless the window in front plays through a
+/// device of its own, then every output connected, its own checked; its
+/// own is listed too while it isn't connected, as its sound waits for it.
+fn window_output_menu(devices: &[DeviceInfo], own: Option<&AudioDevice>) -> Menu {
+    let mut items = vec![
+        MenuItem::action("Same as the App", SetWindowAudioDevice(None)).checked(own.is_none()),
+        MenuItem::separator(),
+    ];
+    items.extend(devices.iter().map(|device| {
+        let checked = own.is_some_and(|own| own.id == device.id);
+        let device = AudioDevice {
+            id: device.id.clone(),
+            name: device.name.clone(),
+        };
+        MenuItem::action(device.name.clone(), SetWindowAudioDevice(Some(device))).checked(checked)
+    }));
+    if let Some(own) = own
+        && !devices.iter().any(|device| device.id == own.id)
+    {
+        items.push(
+            MenuItem::action(
+                format!("{} (Not Connected)", own.name),
+                SetWindowAudioDevice(Some(own.clone())),
+            )
+            .checked(true),
+        );
+    }
+    Menu {
+        name: "Window Output Device".into(),
         items,
     }
 }
@@ -693,6 +743,40 @@ mod tests {
                 ("Speakers".into(), false),
                 ("TV (Not Connected)".into(), true),
             ]
+        );
+    }
+
+    #[test]
+    fn checks_the_output_the_window_in_front_plays_through() {
+        let devices = [device("a", "Speakers"), device("b", "TV")];
+        assert_eq!(
+            listed(&window_output_menu(&devices, None)),
+            [
+                ("Same as the App".into(), true),
+                ("Speakers".into(), false),
+                ("TV".into(), false),
+            ]
+        );
+        let own = AudioDevice {
+            id: "b".into(),
+            name: "TV".into(),
+        };
+        assert_eq!(
+            listed(&window_output_menu(&devices, Some(&own))),
+            [
+                ("Same as the App".into(), false),
+                ("Speakers".into(), false),
+                ("TV".into(), true),
+            ]
+        );
+        assert_eq!(
+            listed(&window_output_menu(&devices[..1], Some(&own))),
+            [
+                ("Same as the App".into(), false),
+                ("Speakers".into(), false),
+                ("TV (Not Connected)".into(), true),
+            ],
+            "listed while it is away"
         );
     }
 

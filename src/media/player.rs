@@ -301,6 +301,27 @@ impl Player {
         self.mixer.clone()
     }
 
+    /// Play into `mixer` from now on, with what it has queued, as its
+    /// window plays through another output.
+    pub fn set_mixer(&mut self, mixer: Option<Arc<Mixer>>) {
+        let same = match (&self.mixer, &mixer) {
+            (Some(old), Some(new)) => Arc::ptr_eq(old, new),
+            (old, new) => old.is_none() && new.is_none(),
+        };
+        if same {
+            return;
+        }
+        if let Some(audio) = &self.shared.audio {
+            if let Some(old) = &self.mixer {
+                old.remove_source(audio);
+            }
+            if let Some(new) = &mixer {
+                new.add_source(audio.clone());
+            }
+        }
+        self.mixer = mixer;
+    }
+
     pub fn volume(&self) -> f32 {
         self.volume
     }

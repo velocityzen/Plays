@@ -10,11 +10,13 @@ mod mouse;
 mod on_top;
 mod opening;
 mod place;
+mod sound;
 #[cfg(test)]
 mod tests;
 mod tiles;
 mod toolbar;
 
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
@@ -32,8 +34,8 @@ use super::theme::layout::{DROP_INSET, TOOLBAR_HEIGHT, TRAFFIC_LIGHTS, WINDOW_MI
 use super::theme::{self, Theme};
 use crate::app::AudioEngine;
 use crate::cast::Casting;
-use crate::media::picture;
-use crate::settings::Settings;
+use crate::media::{Mixer, picture};
+use crate::settings::{AudioDevice, Settings};
 
 pub use on_top::float_with_players;
 pub use place::save_place_on_quit;
@@ -91,6 +93,9 @@ pub struct Workspace {
     place: Option<place::Place>,
     /// Where it was before Output Device put it full screen elsewhere.
     home: Option<place::Home>,
+    /// The device it plays through instead of the app's output, and that
+    /// output's mixer.
+    sound: Option<(AudioDevice, Arc<Mixer>)>,
     _settings_subscription: Subscription,
     /// Tiles show a cast button while there are devices to cast to.
     _casting_subscription: Subscription,
@@ -152,9 +157,7 @@ impl Workspace {
             let settings = cx.global::<Settings>();
             window.set_fullscreen_style(settings.full_screen.style());
             let (volume, gamma) = (settings.master_volume, settings.gamma());
-            if let Some(mixer) = AudioEngine::mixer(cx) {
-                mixer.set_master_volume(volume);
-            }
+            AudioEngine::set_master_volume(volume, cx);
             if gamma != this.gamma {
                 this.gamma = gamma;
                 picture::set_gamma(gamma[0], gamma[1]);
@@ -176,7 +179,11 @@ impl Workspace {
         });
         let bounds_subscription =
             cx.observe_window_bounds(window, |this, window, cx| this.note_place(window, cx));
-        cx.on_release(|this, cx| this.closed(cx)).detach();
+        cx.on_release(|this, cx| {
+            this.closed(cx);
+            this.let_go_of_sound(cx);
+        })
+        .detach();
         let url_form = cx.new(|cx| UrlForm::new(cx).centered());
         let url_form_events =
             cx.subscribe_in(&url_form, window, |this, form, event, window, cx| {
@@ -228,6 +235,7 @@ impl Workspace {
             moving_to: None,
             place: place::Place::of(window, cx),
             home: None,
+            sound: None,
             gamma: cx.global::<Settings>().gamma(),
             _settings_subscription: settings_subscription,
             _casting_subscription: casting_subscription,

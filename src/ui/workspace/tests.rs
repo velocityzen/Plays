@@ -4,6 +4,7 @@
 mod casting;
 mod casting_to_chromecast;
 mod casting_to_dlna;
+mod sound;
 
 use gpui::{
     AnyWindowHandle, AppContext, Bounds, EntityId, FullscreenStyle, Modifiers, MouseButton, Pixels,

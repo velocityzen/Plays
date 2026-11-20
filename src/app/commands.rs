@@ -5,7 +5,7 @@ use gpui::App;
 use super::dispatch::{with_active, with_active_in_window, with_workspace};
 use super::{
     About, CastTo, CloseAll, CloseFile, CloseWindow, GoToChapter, OpenFiles, OpenSettings, OpenUrl,
-    Quit, SetAspectRatio, SetAudioDevice, SetCrop, ShowOnDisplay,
+    Quit, SetAspectRatio, SetAudioDevice, SetCrop, SetWindowAudioDevice, ShowOnDisplay,
 };
 use crate::hotkeys::*;
 use crate::media::tracks::TrackKind;
@@ -117,6 +117,10 @@ pub(super) fn register(cx: &mut App) {
     cx.on_action(|action: &SetAudioDevice, cx| {
         let device = action.0.clone();
         Settings::update(cx, true, |s| s.audio_output.device = device);
+    });
+    cx.on_action(|action: &SetWindowAudioDevice, cx| {
+        let device = action.0.clone();
+        with_workspace(cx, move |w, _, cx| w.set_sound_device(device, cx))
     });
     cx.on_action(|action: &ShowOnDisplay, cx| {
         let id = action.0;

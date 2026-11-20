@@ -153,6 +153,16 @@ GPU-accelerated UI framework.
   lists outputs as they are plugged in and checks the one picked, then
   the speakers to cast the tile in front to, checking the one it casts
   to instead), remembered from run to run. A/V sync follows the audio clock.
+- A window can play through an output of its own instead, such as a TV's
+  speakers while the desk keeps its own: picked under Window Sound in a
+  tile's Play On menu, with more than one output, or on macOS Audio →
+  Window Output Device ("Same as the App" goes back). Its tiles, and files
+  opened in it, play there, picking up where they are; the other windows
+  keep the app's output. Windows that pick the same device share it, and a
+  tile moved to a new window takes the device along. While it isn't
+  connected, its sound waits for it or goes through the system's default,
+  as Settings → Audio says for the app's. It isn't remembered from run to
+  run.
 - Audio-only files show their cover art (or a note) and a level meter.
 - About Plays, in the app menu on macOS: a small window with the app's
   icon, version and the day it was built (Settings → About says them too).
