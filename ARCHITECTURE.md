@@ -416,9 +416,10 @@ flowchart LR
     `system_colors` reads macOS's own colors and the accent color from
     AppKit. `about` is the About window.
 - `src/ui/workspace/`: a window, one per window, a file per part: opening
-  files, folders and streams (`opening`), the tiles and moving one to its
-  own window (`tiles`), sizing the window for the videos opened in it
-  (`fit`), the grid (`grid`), the empty window's ring (`empty`), the
+  files, folders and streams (`opening`), the tiles, putting one in
+  another's place and moving one to its own window (`tiles`), sizing the
+  window for the videos opened in it (`fit`), the grid, where a tile
+  dragged onto another lands (`grid`), the empty window's ring (`empty`), the
   toolbar (`toolbar`), the mouse coming, going and resting, and the traffic
   lights (`mouse`), floating on top (`on_top`), where windows open and come
   back to (`place`), going full screen on another display (`display`: out
@@ -429,7 +430,10 @@ flowchart LR
   shortcuts did (`osd`, with the track reel), the `console`, what
   shortcuts do to it (`commands`, `adjust` for the picture, `sync` for
   delays and `screenshot`; `pip` runs Picture in Picture for it, `cast`
-  casts it), and the graveyard frames wait in before they are released.
+  casts it), dragging it by its picture (`drag`: with gpui's drag and drop
+  onto another tile, or the window with `Window::start_window_move` when
+  no other tile shows), and the graveyard frames wait in before they are
+  released.
   While a tile casts, its play, pause, seek, volume, loop and track changes
   go to the device, and what it shows (position, playing, the end) comes
   from it.
@@ -812,7 +816,9 @@ control over displays and full screen, and test support. Everything Plays change
   This is how the panels over the video look as Settings → Appearance
   says.
 - Corners can be superellipses, menu items can show a check mark (macOS),
-  and a window can float above other apps' windows (macOS and X11).
+  a window can float above other apps' windows (macOS and X11), and
+  `start_window_move` moves a macOS window with the mouse, as gpui already
+  did on Linux.
 - Displays have names, and on X11 each RandR monitor is a display rather
   than the whole X screen. A window can go full screen on a display picked
   (X11 moves it there first; Wayland asks the compositor, which may

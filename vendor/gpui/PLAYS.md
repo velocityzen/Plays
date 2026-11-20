@@ -254,6 +254,11 @@ say a window is full screen only after they have moved it. The Wayland
 client forgets an output once the compositor removes its global, and
 releases it, so a display unplugged leaves `displays()` too.
 
+The macOS and test windows: `Window::start_window_move` moves a macOS
+window with the mouse while its button is down, as its title bar does
+(`performWindowDragWithEvent` with the event being handled, once it is
+done); the test window has nowhere to move, where it panicked.
+
 `src/taffy.rs`: two float literals are typed as `f32`, which newer Rust
 warns about otherwise.
 

@@ -405,6 +405,13 @@ pub mod layout {
     pub const TILE_GAP: Pixels = px(2.);
     /// Around the grid while files are dragged over it.
     pub const DROP_INSET: Pixels = px(6.);
+    /// How far the mouse goes with its button down on a picture before it
+    /// drags the tile or the window, as gpui's own drags start.
+    pub const DRAG_START: Pixels = px(2.);
+    /// Where a dragged tile's title goes from the mouse, and the most it
+    /// is wide.
+    pub const DRAG_TITLE_OFFSET: Point<Pixels> = point(px(12.), px(12.));
+    pub const DRAG_TITLE_MAX_WIDTH: Pixels = px(240.);
     /// The empty window's ring: its share of the window's shorter side, and
     /// its smallest and largest sizes. It is drawn 2 points wide.
     pub const RING_SCALE: f32 = 0.8;

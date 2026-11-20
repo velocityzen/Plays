@@ -9,8 +9,8 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use gpui::{
-    Bounds, Modifiers, MouseButton, MouseDownEvent, MouseUpEvent, Pixels, TestAppContext,
-    VisualTestContext, WindowHandle,
+    Bounds, Modifiers, MouseButton, MouseDownEvent, MouseUpEvent, Pixels, Point, TestAppContext,
+    VisualTestContext, WindowHandle, point,
 };
 
 use crate::app;
@@ -112,6 +112,30 @@ pub fn double_click(cx: &mut VisualTestContext, selector: &'static str) {
         button: MouseButton::Left,
         click_count: 2,
     });
+}
+
+/// Press the middle of the element tagged `selector` and, with the
+/// button down, move the mouse by `by`, a few steps at a time as a mouse
+/// goes, and let go there.
+pub fn drag_by(cx: &mut VisualTestContext, selector: &'static str, by: Point<Pixels>) {
+    const STEPS: u8 = 4;
+    hover(cx, selector);
+    let from = find(cx, selector).center();
+    cx.simulate_mouse_down(from, MouseButton::Left, Modifiers::none());
+    let mut at = from;
+    for step in 1..=STEPS {
+        let share = f32::from(step) / f32::from(STEPS);
+        at = point(from.x + by.x * share, from.y + by.y * share);
+        cx.simulate_mouse_move(at, MouseButton::Left, Modifiers::none());
+    }
+    cx.simulate_mouse_up(at, MouseButton::Left, Modifiers::none());
+}
+
+/// Drag the middle of the element tagged `from` to the middle of the one
+/// tagged `to`.
+pub fn drag(cx: &mut VisualTestContext, from: &'static str, to: &'static str) {
+    let by = find(cx, to).center() - find(cx, from).center();
+    drag_by(cx, from, by);
 }
 
 /// Press keys, as gpui writes them: "secondary-w" is ⌘W on macOS and

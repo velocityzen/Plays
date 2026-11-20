@@ -1,5 +1,6 @@
 //! The tiles: adding and closing them, telling them where they are,
-//! maximizing one, and moving one to a window of its own.
+//! putting one in another's place, maximizing one, and moving one to a
+//! window of its own.
 
 use gpui::{App, Context, Entity, EntityId, Pixels, Size, px, size};
 
@@ -157,6 +158,22 @@ impl Workspace {
         self.maximized = None;
         self.active = None;
         self.tiles_changed(cx);
+    }
+
+    /// Put the tile `id` where the tile `onto` is, the tiles between
+    /// moving over, as a tile dragged onto another goes. Shortcuts go to it
+    /// there, under the mouse.
+    pub(super) fn move_tile(&mut self, id: EntityId, onto: EntityId, cx: &mut Context<Self>) {
+        let place = |id| self.tiles.iter().position(|t| t.view.entity_id() == id);
+        if let (Some(from), Some(to)) = (place(id), place(onto))
+            && from != to
+        {
+            let tile = self.tiles.remove(from);
+            self.tiles.insert(to, tile);
+            self.active = Some(id);
+            self.tiles_changed(cx);
+            refresh_menus(cx);
+        }
     }
 
     fn toggle_maximize(&mut self, id: EntityId, cx: &mut Context<Self>) {

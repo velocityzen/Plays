@@ -1615,6 +1615,30 @@ impl PlatformWindow for MacWindow {
             })
             .detach();
     }
+
+    // Plays: the window follows the mouse while its button is down, as
+    // from the title bar. Once the event being handled is done, as the
+    // system may move the window, and tell of it, at once.
+    fn start_window_move(&self) {
+        let this = self.0.lock();
+        let window = this.native_window;
+        let executor = this.executor.clone();
+        drop(this);
+        unsafe {
+            let app = NSApplication::sharedApplication(nil);
+            let event: id = msg_send![app, currentEvent];
+            if event.is_null() {
+                return;
+            }
+            let event: id = msg_send![event, retain];
+            executor
+                .spawn(async move {
+                    let _: () = msg_send![window, performWindowDragWithEvent: event];
+                    let _: () = msg_send![event, release];
+                })
+                .detach();
+        }
+    }
 }
 
 impl rwh::HasWindowHandle for MacWindow {

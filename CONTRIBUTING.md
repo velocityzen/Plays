@@ -258,6 +258,13 @@ What the window tests check:
 - A double-click fills the window with a tile, the whole area under the
   toolbar, and another puts the grid back; ⌘W closes the tile in front,
   then the empty window; four tiles sit in two even rows.
+- A tile dragged by its picture onto another takes that one's place, the
+  tiles between moving over, and shortcuts then go to it; it keeps playing,
+  isn't maximized, and let go over itself, stays. The only tile in a
+  window, and a maximized one, move the window instead; a press that
+  barely moves doesn't, nor does any in full screen.
+- A file closed partway in opens there again; one barely begun starts
+  over, and so does every file with Settings' resuming off.
 - `⇧S` puts every tile where the one clicked is, paused as it is, and
   `⌥⇧→` and `⌥⇧←` step them all a frame at a time; with the one clicked
   playing, the others go back to where it is and play. `⇧↑` and `⇧↓` turn

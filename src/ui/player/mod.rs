@@ -8,6 +8,7 @@ mod commands;
 mod console;
 mod content;
 mod controls;
+mod drag;
 mod graveyard;
 mod header;
 mod osd;
@@ -24,9 +25,10 @@ use std::time::Instant;
 use gpui::prelude::*;
 use gpui::{
     Bounds, ClickEvent, Context, CursorStyle, Div, EventEmitter, MouseButton, MouseMoveEvent,
-    Pixels, SharedString, Task, Window, black, div,
+    Pixels, Point, SharedString, Task, Window, black, div,
 };
 
+pub use drag::DraggedTile;
 pub use graveyard::Graveyard;
 
 use super::components::Panel;
@@ -110,6 +112,11 @@ pub struct PlayerView {
     /// The device its window plays through instead of the app's output,
     /// which its menu checks.
     window_sound: Option<AudioDevice>,
+    /// Where the picture was pressed, while that may yet move the window.
+    window_press: Option<Point<Pixels>>,
+    /// How many times the picture has moved the window.
+    #[cfg(test)]
+    pub window_moves: usize,
 }
 
 impl EventEmitter<PlayerEvent> for PlayerView {}
@@ -164,6 +171,9 @@ impl PlayerView {
             cast: None,
             cast_open: false,
             window_sound: None,
+            window_press: None,
+            #[cfg(test)]
+            window_moves: 0,
         }
     }
 
@@ -476,6 +486,18 @@ impl Render for PlayerView {
         let osd = self.render_osd(window);
         let console = self.render_console();
 
+        let surface = div()
+            .id("surface")
+            .absolute()
+            .top_0()
+            .left_0()
+            .size_full()
+            .flex()
+            .items_center()
+            .justify_center()
+            .on_click(cx.listener(Self::on_surface_click));
+        let surface = self.drag_by_picture(surface, window, cx);
+
         div()
             .id("player")
             .group(reveal.group.clone())
@@ -502,22 +524,10 @@ impl Render for PlayerView {
                     theme.tile
                 },
             )
-            .child(
-                div()
-                    .id("surface")
-                    .absolute()
-                    .top_0()
-                    .left_0()
-                    .size_full()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .on_click(cx.listener(Self::on_surface_click))
-                    .child(match self.render_cast(&theme, cx) {
-                        Some(cast) => cast,
-                        None => self.render_content(&theme, framing, cover),
-                    }),
-            )
+            .child(surface.child(match self.render_cast(&theme, cx) {
+                Some(cast) => cast,
+                None => self.render_content(&theme, framing, cover),
+            }))
             // In Picture in Picture, the subtitles are in its window.
             .when(
                 !self.cues.is_empty() && !self.in_picture_in_picture() && !casting,
@@ -551,10 +561,11 @@ impl Render for PlayerView {
             })
             .children(console)
             .children(osd)
-            // Clicks on the bars mustn't reach the surface underneath (which
-            // toggles playback), but they can't `occlude()` either: an occluding
-            // child stops its parent counting as hovered, which would hide the
-            // bars as soon as the pointer moved onto them.
+            // Presses on the bars mustn't reach the surface underneath (which
+            // expands the tile and drags it), but they can't `occlude()`
+            // either: an occluding child stops its parent counting as
+            // hovered, which would hide the bars as soon as the pointer moved
+            // onto them.
             .child(
                 header
                     .id("header")

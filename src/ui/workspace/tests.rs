@@ -4,6 +4,7 @@
 mod casting;
 mod casting_to_chromecast;
 mod casting_to_dlna;
+mod dragging;
 mod sound;
 
 use gpui::{

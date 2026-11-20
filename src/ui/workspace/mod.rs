@@ -315,7 +315,7 @@ impl Render for Workspace {
                         if empty {
                             this.child(self.render_empty(&theme, window, cx))
                         } else {
-                            this.child(self.render_grid(cx))
+                            this.child(self.render_grid(drop_highlight, cx))
                         }
                     }),
             );

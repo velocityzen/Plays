@@ -1,14 +1,20 @@
 //! The grid of tiles, in rows as Settings says, or the maximized tile alone.
+//! A tile dragged by its picture onto another takes its place.
 
 use gpui::prelude::*;
-use gpui::{Context, div};
+use gpui::{Context, Hsla, div};
 
 use super::{Tile, Workspace};
 use crate::settings::Settings;
+use crate::ui::player::DraggedTile;
 use crate::ui::theme::layout::TILE_GAP;
 
 impl Workspace {
-    pub(super) fn render_grid(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(super) fn render_grid(
+        &self,
+        drop_highlight: Hsla,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let maximized = self
             .maximized
             .and_then(|id| self.tiles.iter().find(|t| t.view.entity_id() == id));
@@ -20,6 +26,7 @@ impl Workspace {
             .global::<Settings>()
             .columns_for(visible.len())
             .clamp(1, visible.len().max(1));
+        let reorder = visible.len() > 1;
 
         div()
             .size_full()
@@ -35,16 +42,38 @@ impl Workspace {
                     .children(row.iter().map(|tile| {
                         // Tests find a tile by where it is in the window's
                         // list: "tile-0" first.
-                        let index = self
-                            .tiles
-                            .iter()
-                            .position(|t| t.view.entity_id() == tile.view.entity_id());
+                        let id = tile.view.entity_id();
+                        let index = self.tiles.iter().position(|t| t.view.entity_id() == id);
                         div()
                             .debug_selector(move || format!("tile-{}", index.unwrap_or_default()))
+                            .relative()
                             .flex_1()
                             .min_w_0()
                             .h_full()
                             .child(tile.view.clone())
+                            // Over the tile, where another dragged onto it
+                            // goes.
+                            .when(reorder, |cell| {
+                                cell.child(
+                                    div()
+                                        .absolute()
+                                        .top_0()
+                                        .left_0()
+                                        .size_full()
+                                        .drag_over::<DraggedTile>(move |style, dragged, _, _| {
+                                            if dragged.0 == id {
+                                                style
+                                            } else {
+                                                style.bg(drop_highlight)
+                                            }
+                                        })
+                                        .on_drop(cx.listener(
+                                            move |this, dragged: &DraggedTile, _, cx| {
+                                                this.move_tile(dragged.0, id, cx);
+                                            },
+                                        )),
+                                )
+                            })
                     }))
                     .children((row.len()..columns).map(|_| div().flex_1().min_w_0()))
             }))

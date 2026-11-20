@@ -73,6 +73,8 @@ GPU-accelerated UI framework.
 - Any tile can pop out into a new window, beside the one it left, where it
   keeps playing. Every window works the same: drop more files on it and
   they play side by side.
+- Drag a tile by its picture onto another to put it in that one's place.
+  A window's only tile, or a maximized one, drags the whole window.
 - Windows take the size of the video as files open, or of a grid with room
   for each video at its own size, scaled down to fit the screen. After
   that a window keeps the size you give it.
@@ -256,7 +258,11 @@ Float on Top.
 
 Click the picture to make it the tile shortcuts go to; double-click it (or
 the corner button) to maximize it. For the only tile in a window, both
-toggle full screen instead. Drag the bar to scrub. In the middle
+toggle full screen instead. Drag the picture onto another tile to put the
+tile there, the tiles between moving over; its title follows the pointer,
+and the tile it would take the place of lights up. With no other tile
+showing (the only one in its window, or maximized), dragging the picture
+moves the window, except in full screen. Drag the bar to scrub. In the middle
 under the bar, the previous and next buttons open the media file before or
 after this one in its folder, by name, in the same tile; between them,
 skip back and forward go by the seek step, around play/pause.
@@ -284,8 +290,8 @@ When a window has more than one tile, the button next to maximize moves a
 tile to a new window sized for it, beside the one it left, where it keeps
 playing. Every window takes drops and works the same way; menus and
 shortcuts act on the window in front, and files opened from Finder go to
-it too. Drag the top edge of a window to move it. Closing the last window
-quits.
+it too. Drag the top edge of a window to move it, or the picture of its
+only tile. Closing the last window quits.
 
 As files open, their window takes the size of the video, or of a grid with
 room for each video at its own size, scaled down to fit the screen. After
