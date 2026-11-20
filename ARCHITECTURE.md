@@ -135,6 +135,7 @@ Inside `src/`:
 | `ui/` | gpui views: windows, tiles, Settings, Picture in Picture, components and theme. |
 | `cast/` | Casting tiles to TVs and speakers. |
 | `settings.rs` | The settings, saved as `plays/settings.json` in the user's config folder. |
+| `progress.rs` | Where each file was when it last played, kept for 30 days in `plays/progress.json`, so it starts there again. |
 | `hotkeys.rs` | The commands shortcuts run, and their keys. |
 | `assets.rs` | Icons compiled into the binary, so the app needs no files next to it. |
 
@@ -387,6 +388,11 @@ flowchart LR
   is rebuilt from them whenever they change, and the menus show them.
 - `src/settings.rs`: the settings, saved as JSON in the user's config
   folder.
+- `src/progress.rs`: where each file was when it last played, by its
+  whole path, kept for 30 days in `progress.json` beside the settings.
+  Tiles note it as they close or open another file, every 10 seconds
+  while files are open, and as the app quits; a tile opening a file seeks
+  to it. A file barely begun, or played nearly to its end, isn't kept.
 - `src/ui/`: gpui views (`open_url`, the player and Settings below) and a
   text field based on gpui's input example (`text_input`).
   - `displays` lists the displays by the names macOS gives them (on X11,

@@ -801,6 +801,49 @@ fn output_device_shows_the_window_full_screen_on_a_display(cx: &mut TestAppConte
 }
 
 #[gpui::test]
+fn a_file_opened_again_starts_where_it_was_left(cx: &mut TestAppContext) {
+    let (window, mut cx) = testing::start(cx);
+    let position = |cx: &mut VisualTestContext| {
+        cx.run_until_parked();
+        window
+            .read_with(cx, |workspace, cx| {
+                workspace.tiles[0].view.read(cx).position()
+            })
+            .unwrap()
+    };
+    let leave_at = |time: f64, cx: &mut VisualTestContext| {
+        window
+            .update(cx, |workspace, _, cx| {
+                workspace.with_active(cx, move |player, _| {
+                    player.pause();
+                    player.seek(time);
+                })
+            })
+            .unwrap();
+        cx.run_until_parked();
+        window
+            .update(cx, |workspace, _, cx| workspace.close_active(cx))
+            .unwrap();
+    };
+
+    // Paused where it opens, to read where that is.
+    cx.update(|_, cx| Settings::update(cx, false, |s| s.autoplay = false));
+    open(window, &mut cx, &["clip.mp4"], false);
+    leave_at(1.0, &mut cx);
+    open(window, &mut cx, &["clip.mp4"], false);
+    assert_eq!(position(&mut cx), 1.0, "where it was left");
+
+    leave_at(0.02, &mut cx);
+    open(window, &mut cx, &["clip.mp4"], false);
+    assert!(position(&mut cx) < 0.5, "barely begun: from the start");
+
+    leave_at(1.0, &mut cx);
+    cx.update(|_, cx| Settings::update(cx, false, |s| s.resume_files = false));
+    open(window, &mut cx, &["clip.mp4"], false);
+    assert!(position(&mut cx) < 0.5, "not as Settings say not to");
+}
+
+#[gpui::test]
 fn a_display_gone_on_the_way_leaves_the_window_where_it_was(cx: &mut TestAppContext) {
     let (window, mut cx) = testing::start(cx);
     open(window, &mut cx, &["clip.mp4"], false);

@@ -31,6 +31,9 @@ GPU-accelerated UI framework.
 - Chapters: a notch on the bar where each starts, the time under the bar
   says which one you're in, and keys and a menu go from one to the next.
 - The previous and next media file in the folder open in the same tile.
+- A file opened again starts where it was left, for 30 days since it last
+  played; one barely begun, or played nearly to its end, starts over.
+  Settings → Playback turns it off, which forgets every file's place.
 - Audio-only files show their cover art (or a note) and a level meter.
 - While a video plays the screen doesn't sleep, and while only sound plays
   the computer doesn't. Paused or ended, they sleep as they would.
@@ -491,7 +494,8 @@ bitmap ones go where the stream puts them.
 
 The Settings window has panes for Playback, Audio, Video, Subtitles,
 Casting, Screenshots, Hotkeys, Appearance and About: the theme, master
-volume, the audio output, default volume, autoplay, loop, seek step,
+volume, the audio output, default volume, autoplay, loop, resuming
+files where they were left, seek step,
 chapter notches on the bar, fit/fill scaling, gamma for SDR and for HDR
 video (applied to every open video as you drag), decode resolution limit,
 hardware decoding, subtitle style, the protocols that look for devices to

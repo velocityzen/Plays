@@ -373,6 +373,9 @@ pub struct Settings {
     pub default_volume: f32,
     pub autoplay: bool,
     pub loop_by_default: bool,
+    /// Start a file opened again where it was left, within a while
+    /// (`progress::KEEP_DAYS`).
+    pub resume_files: bool,
     pub seek_step_seconds: u32,
     /// Mark where a file's chapters start on its seek bar.
     pub chapter_marks: bool,
@@ -411,6 +414,7 @@ impl Default for Settings {
             default_volume: 0.8,
             autoplay: true,
             loop_by_default: false,
+            resume_files: true,
             // How far the arrow keys seek.
             seek_step_seconds: 5,
             chapter_marks: true,

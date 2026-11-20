@@ -35,6 +35,7 @@ use super::theme::{self, Theme};
 use crate::app::AudioEngine;
 use crate::cast::Casting;
 use crate::media::{Mixer, picture};
+use crate::progress;
 use crate::settings::{AudioDevice, Settings};
 
 pub use on_top::float_with_players;
@@ -182,6 +183,8 @@ impl Workspace {
         cx.on_release(|this, cx| {
             this.closed(cx);
             this.let_go_of_sound(cx);
+            let notes = this.progress(cx);
+            progress::note(notes, true, cx);
         })
         .detach();
         let url_form = cx.new(|cx| UrlForm::new(cx).centered());

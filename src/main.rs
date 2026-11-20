@@ -5,6 +5,7 @@ mod assets;
 mod cast;
 mod hotkeys;
 mod media;
+mod progress;
 mod settings;
 mod ui;
 

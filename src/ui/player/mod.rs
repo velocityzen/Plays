@@ -38,6 +38,7 @@ use crate::media::decoder::MediaInfo;
 use crate::media::picture::PictureId;
 use crate::media::subtitles::CueContent;
 use crate::media::{Mixer, Neighbors, Picture, Player, PlayerOptions, Source};
+use crate::progress::{self, Note};
 use crate::settings::{AudioDevice, ControlsVisibility, Settings, VideoFit};
 use osd::Osd;
 
@@ -203,6 +204,8 @@ impl PlayerView {
         };
         let source = Source::File(path);
         log::info!("opening {source}");
+        // The file it played is left where it was, to resume.
+        progress::note(self.progress(), true, cx);
         // A cast goes on with the new file, which waits here meanwhile.
         let casting = self.casting().cloned();
         let playing = self.is_playing();
@@ -220,6 +223,7 @@ impl PlayerView {
         self.release_pictures();
         self.title = source.name().into();
         self.player = Player::open(source, self.player.mixer(), options);
+        self.resume(cx);
         self.find_neighbors(cx);
         self.player.set_muted(muted);
         self.drawn = None;
@@ -230,7 +234,7 @@ impl PlayerView {
         self.adjustments = Adjustments::default();
         self.osd = None;
         if let Some(device) = casting {
-            self.start_cast(device, 0.0, autoplay, cx);
+            self.start_cast(device, self.player.position(), autoplay, cx);
         }
         cx.notify();
     }
@@ -299,6 +303,32 @@ impl PlayerView {
         if advanced || was_playing != self.player.is_playing() {
             cx.notify();
         }
+    }
+
+    /// Where its file is, of how long, once it has opened: to resume it
+    /// there. Only files, not streams.
+    pub fn progress(&self) -> Option<Note> {
+        let Source::File(path) = self.player.source() else {
+            return None;
+        };
+        let duration = self.duration()?;
+        Some((path.clone(), self.position(), duration))
+    }
+
+    /// Start its file where it was left, if Settings say to and it played
+    /// lately (`progress::KEEP_DAYS`).
+    pub fn resume(&mut self, cx: &mut Context<Self>) {
+        let Source::File(path) = self.player.source() else {
+            return;
+        };
+        let Some(position) = progress::recall(path, cx) else {
+            return;
+        };
+        self.player.seek(position);
+        self.note(
+            format!("Resumed at {}", controls::format_time(position)),
+            cx,
+        );
     }
 
     /// Play into `mixer` from now on, its window's, which plays through

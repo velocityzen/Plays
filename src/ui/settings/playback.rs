@@ -4,6 +4,7 @@ use gpui::{AnyElement, Context, Window};
 
 use super::form::{group, percent_slider, row, update_settings};
 use super::{Pane, SettingsView};
+use crate::progress::{self, KEEP_DAYS};
 use crate::settings::Settings;
 use crate::ui::components::{Segmented, Switch};
 use crate::ui::theme::Theme;
@@ -49,6 +50,23 @@ impl Pane for PlaybackPane {
                     theme,
                     Switch::new("loop", s.loop_by_default).on_toggle(|&on, _, cx| {
                         update_settings(cx, true, |s| s.loop_by_default = on)
+                    }),
+                ),
+                row(
+                    "Resume files where they were left",
+                    Some(
+                        format!(
+                            "Each opens where it was, for {KEEP_DAYS} days since it last played"
+                        )
+                        .into(),
+                    ),
+                    theme,
+                    Switch::new("resume", s.resume_files).on_toggle(|&on, _, cx| {
+                        update_settings(cx, true, |s| s.resume_files = on);
+                        // Stopping keeps no places behind.
+                        if !on {
+                            progress::forget_all(cx);
+                        }
                     }),
                 ),
                 row(

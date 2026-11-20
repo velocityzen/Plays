@@ -6,6 +6,7 @@ use gpui::{App, Context, Entity, EntityId, Pixels, Size, px, size};
 use super::{TOOLBAR_SPACE, Tile, Workspace};
 use crate::app::{Awake, refresh_menus};
 use crate::cast::Device;
+use crate::progress::{self, Note};
 use crate::settings::AudioDevice;
 use crate::ui::displays;
 use crate::ui::framing::Adjustments;
@@ -68,6 +69,8 @@ impl Workspace {
     fn close(&mut self, id: EntityId, cx: &mut Context<Self>) {
         if let Some(index) = self.tiles.iter().position(|t| t.view.entity_id() == id) {
             let tile = self.tiles.remove(index);
+            let note = tile.view.read(cx).progress();
+            progress::note(note, true, cx);
             tile.view.update(cx, |view, _| view.release_pictures());
         }
         if self.maximized == Some(id) {
@@ -146,6 +149,8 @@ impl Workspace {
     }
 
     pub fn close_all(&mut self, cx: &mut Context<Self>) {
+        let notes = self.progress(cx);
+        progress::note(notes, true, cx);
         for tile in self.tiles.drain(..) {
             tile.view.update(cx, |view, _| view.release_pictures());
         }
@@ -221,6 +226,14 @@ impl Workspace {
                 .collect();
             (names, view.chapter())
         })
+    }
+
+    /// Where its tiles' files are, for resuming them.
+    pub fn progress(&self, cx: &App) -> Vec<Note> {
+        self.tiles
+            .iter()
+            .filter_map(|tile| tile.view.read(cx).progress())
+            .collect()
     }
 
     /// The device the tile shortcuts go to casts to.

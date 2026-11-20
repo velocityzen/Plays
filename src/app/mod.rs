@@ -23,6 +23,7 @@ pub use menus::refresh as refresh_menus;
 
 use crate::cast::{self, Casting, Device, Protocol};
 use crate::media::{Source, picture};
+use crate::progress::{self, Progress};
 use crate::settings::{AudioDevice, Settings};
 use crate::ui::framing::Ratio;
 use crate::ui::theme::{UiFont, pick_ui_font, refresh_system_colors};
@@ -101,6 +102,7 @@ pub fn run(cx: &mut App, sources: Vec<Source>, opened: UnboundedReceiver<Vec<Str
     open_from_system(cx, opened);
 
     stop_casts_on_quit(cx);
+    keep_progress(cx);
 
     // Closing the last workspace window quits, even if the settings window is
     // still open.
@@ -120,6 +122,7 @@ fn set_up(cx: &mut App, settings: Settings, audio: fn(&mut App), protocols: fn()
     let [sdr_gamma, hdr_gamma] = settings.gamma();
     picture::set_gamma(sdr_gamma, hdr_gamma);
     cx.set_global(settings);
+    cx.set_global(Progress::load());
     audio(cx);
     cx.set_global(Casting::new(protocols()));
     Casting::watch(cx);
@@ -140,6 +143,35 @@ fn set_up(cx: &mut App, settings: Settings, audio: fn(&mut App), protocols: fn()
 #[cfg(test)]
 pub fn set_up_for_tests(cx: &mut App) {
     set_up(cx, Settings::default(), AudioEngine::start_silent, Vec::new);
+}
+
+/// Note where every open file is, and save it, every
+/// `progress::SAVE_EVERY` and as the app quits.
+fn keep_progress(cx: &mut App) {
+    fn note_all(cx: &mut App) {
+        let notes: Vec<progress::Note> = cx
+            .windows()
+            .into_iter()
+            .filter_map(|window| window.downcast::<Workspace>())
+            .filter_map(|window| window.read(cx).ok().map(|w| w.progress(cx)))
+            .flatten()
+            .collect();
+        progress::note(notes, true, cx);
+    }
+    cx.spawn(async move |cx| {
+        loop {
+            cx.background_executor().timer(progress::SAVE_EVERY).await;
+            if cx.update(note_all).is_err() {
+                break;
+            }
+        }
+    })
+    .detach();
+    cx.on_app_quit(|cx| {
+        note_all(cx);
+        async {}
+    })
+    .detach();
 }
 
 /// Devices cast to stop as the app quits, rather than wait on a stream

@@ -45,6 +45,7 @@ impl Workspace {
             let mixer = mixer.clone();
             let view = cx.new(|cx| {
                 let mut view = PlayerView::new(source, mixer, &settings, graveyard);
+                view.resume(cx);
                 view.find_neighbors(cx);
                 view
             });
