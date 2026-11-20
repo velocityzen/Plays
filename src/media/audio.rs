@@ -8,18 +8,33 @@
 //! another sample rate, and a player may move to another mixer: either way
 //! what is queued is converted to the new rate, and decoders resample to it
 //! from then on.
+//!
+//! The mixer runs on the output's real-time thread, so it neither allocates
+//! nor frees, and waits for no other thread: what other threads do holding
+//! the locks it takes is short, and a lock held longer than that it goes
+//! on without, that player silent for the moment.
 
 use std::collections::VecDeque;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
-use parking_lot::Mutex;
+use parking_lot::{Mutex, MutexGuard};
 
 use super::clock::Clock;
 
 /// Channels every source delivers (interleaved L/R).
 pub const SOURCE_CHANNELS: usize = 2;
+/// Chunks a queue has room for from the start, so it seldom grows.
+const QUEUE_CHUNKS: usize = 128;
+/// Played chunks a decoder lets go of each time it queues another.
+const LET_GO_AT_ONCE: usize = 8;
+/// Players a mixer has room for from the start.
+const SOURCES: usize = 16;
+/// How long the mixer tries for a lock another thread has before going on
+/// without it: what others do holding one takes far less, unless the
+/// system put them to sleep meanwhile.
+const LOCK_REACH: Duration = Duration::from_micros(50);
 
 /// An `f32` that can be shared between threads without a lock.
 pub struct AtomicF32(AtomicU32);
@@ -52,6 +67,10 @@ pub struct AudioChunk {
 impl AudioChunk {
     fn frames(&self) -> usize {
         self.samples.len() / SOURCE_CHANNELS
+    }
+
+    fn played(&self) -> bool {
+        self.pos >= self.frames()
     }
 
     /// What is left to play of it, at `rate`.
@@ -91,6 +110,8 @@ fn resample(samples: &[f32], from: u32, to: u32) -> Vec<f32> {
 }
 
 pub struct AudioQueue {
+    /// What was decoded, in order. Chunks played through stay at the front
+    /// until the decoder lets go of them, so the mixer frees nothing.
     pub chunks: VecDeque<AudioChunk>,
     /// Seek generation the queued samples belong to.
     pub serial: u64,
@@ -103,17 +124,31 @@ pub struct AudioQueue {
 impl AudioQueue {
     pub fn new(rate: u32) -> Self {
         Self {
-            chunks: VecDeque::new(),
+            chunks: VecDeque::with_capacity(QUEUE_CHUNKS),
             serial: 0,
             buffered_frames: 0,
             rate,
         }
     }
 
-    pub fn clear(&mut self, serial: u64) {
-        self.chunks.clear();
+    /// Start again for `serial`, queueing into `fresh`; what was queued,
+    /// to let go of once the lock is.
+    fn clear(&mut self, serial: u64, fresh: VecDeque<AudioChunk>) -> VecDeque<AudioChunk> {
         self.buffered_frames = 0;
         self.serial = serial;
+        std::mem::replace(&mut self.chunks, fresh)
+    }
+
+    /// Up to `LET_GO_AT_ONCE` chunks played through, off the front.
+    fn take_played(&mut self) -> [Option<AudioChunk>; LET_GO_AT_ONCE] {
+        let mut played = [const { None }; LET_GO_AT_ONCE];
+        for slot in &mut played {
+            if !self.chunks.front().is_some_and(AudioChunk::played) {
+                break;
+            }
+            *slot = self.chunks.pop_front();
+        }
+        played
     }
 
     /// Queue `chunk`, converted to the queue's rate if the mixer changed
@@ -128,10 +163,10 @@ impl AudioQueue {
         self.chunks.push_back(chunk);
     }
 
-    /// Let go of what plays before `time`, unheard.
+    /// Pass over what plays before `time`, unheard.
     fn skip_to(&mut self, time: f64) {
         let rate = f64::from(self.rate);
-        while let Some(chunk) = self.chunks.front_mut() {
+        for chunk in self.chunks.iter_mut().filter(|chunk| !chunk.played()) {
             let left = chunk.frames() - chunk.pos;
             let from = chunk.pts + chunk.pos as f64 / rate;
             let skip = (((time - from) * rate).max(0.0) as usize).min(left);
@@ -140,7 +175,6 @@ impl AudioQueue {
             if skip < left {
                 break;
             }
-            self.chunks.pop_front();
         }
     }
 
@@ -164,7 +198,8 @@ impl AudioQueue {
     /// Media time of the next frame that will be read.
     fn read_pts(&self) -> Option<f64> {
         self.chunks
-            .front()
+            .iter()
+            .find(|chunk| !chunk.played())
             .map(|chunk| chunk.pts + chunk.pos as f64 / f64::from(self.rate))
     }
 }
@@ -210,6 +245,45 @@ impl AudioSource {
     pub fn sample_rate(&self) -> u32 {
         self.queue.lock().rate
     }
+
+    /// Queue `chunk`, letting go of some that played. Should the mixer
+    /// have changed rate since it was decoded, it is converted with the
+    /// lock let go.
+    pub fn push(&self, mut chunk: AudioChunk) {
+        let played = loop {
+            let mut queue = self.queue.lock();
+            if chunk.rate == queue.rate {
+                let played = queue.take_played();
+                queue.push(chunk);
+                break played;
+            }
+            let rate = queue.rate;
+            drop(queue);
+            chunk = chunk.resampled(rate);
+        };
+        drop(played);
+    }
+
+    /// Start again for the seek `serial`: what was queued is let go of.
+    pub fn clear(&self, serial: u64) {
+        let fresh = VecDeque::with_capacity(QUEUE_CHUNKS);
+        let old = self.queue.lock().clear(serial, fresh);
+        drop(old);
+    }
+}
+
+/// `lock`, unless another thread keeps it longer than `LOCK_REACH`.
+fn within_reach<T>(lock: &Mutex<T>) -> Option<MutexGuard<'_, T>> {
+    let start = Instant::now();
+    loop {
+        if let Some(guard) = lock.try_lock() {
+            return Some(guard);
+        }
+        if start.elapsed() >= LOCK_REACH {
+            return None;
+        }
+        std::hint::spin_loop();
+    }
 }
 
 /// State shared between the UI thread, decoder threads and the audio callback.
@@ -223,7 +297,7 @@ impl Mixer {
     pub fn new(sample_rate: u32, master_volume: f32) -> Arc<Self> {
         Arc::new(Self {
             sample_rate: AtomicU32::new(sample_rate),
-            sources: Mutex::new(Vec::new()),
+            sources: Mutex::new(Vec::with_capacity(SOURCES)),
             master_volume: AtomicF32::new(master_volume),
         })
     }
@@ -237,7 +311,9 @@ impl Mixer {
     /// player has queued is converted to it.
     pub fn set_sample_rate(&self, rate: u32) {
         self.sample_rate.store(rate, Ordering::Release);
-        for source in self.sources.lock().iter() {
+        // Converted with the list let go, which the mixer needs.
+        let sources = self.sources.lock().clone();
+        for source in sources {
             source.queue.lock().set_rate(rate);
         }
     }
@@ -245,14 +321,26 @@ impl Mixer {
     /// Mix `source` in, converting what it has queued to this mixer's
     /// rate, as it may come from another.
     pub fn add_source(&self, source: Arc<AudioSource>) {
-        // Under the lock, so a change of rate meanwhile converts it too.
-        let mut sources = self.sources.lock();
-        source.queue.lock().set_rate(self.sample_rate());
-        sources.push(source);
+        loop {
+            // Converted before it is mixed in, holding nothing up.
+            let rate = self.sample_rate();
+            source.queue.lock().set_rate(rate);
+            let mut sources = self.sources.lock();
+            // A change of rate meanwhile would have passed it by.
+            if self.sample_rate() == rate {
+                sources.push(source);
+                return;
+            }
+        }
     }
 
     pub fn remove_source(&self, source: &Arc<AudioSource>) {
-        self.sources.lock().retain(|s| !Arc::ptr_eq(s, source));
+        let removed = {
+            let mut sources = self.sources.lock();
+            let at = sources.iter().position(|s| Arc::ptr_eq(s, source));
+            at.map(|at| sources.remove(at))
+        };
+        drop(removed);
     }
 
     pub fn set_master_volume(&self, volume: f32) {
@@ -271,19 +359,28 @@ impl Mixer {
         let frames = mix.len() / SOURCE_CHANNELS;
         let master = self.master_volume.load();
 
-        for source in self.sources.lock().iter() {
+        let Some(sources) = within_reach(&self.sources) else {
+            return;
+        };
+        for source in sources.iter() {
             if !source.playing.load(Ordering::Relaxed) {
                 source.peak.store(0.0);
                 continue;
             }
-            let mut queue = source.queue.lock();
+            let Some(mut queue) = within_reach(&source.queue) else {
+                source.peak.store(0.0);
+                continue;
+            };
+            let queue = &mut *queue;
             // Samples from before the latest seek must never be heard.
             if queue.serial != source.serial.load(Ordering::Acquire) {
                 continue;
             }
             let delay = f64::from(source.delay.load());
             if source.elsewhere.load(Ordering::Relaxed) {
-                queue.skip_to(source.clock.now() - delay);
+                if let Some(now) = source.clock.try_now() {
+                    queue.skip_to(now - delay);
+                }
                 source.peak.store(0.0);
                 continue;
             }
@@ -302,10 +399,10 @@ impl Mixer {
             let gain = level_gain * master;
             let mut peak = 0.0f32;
             let mut written = 0;
-            while written < frames {
-                let Some(chunk) = queue.chunks.front_mut() else {
+            for chunk in queue.chunks.iter_mut().filter(|chunk| !chunk.played()) {
+                if written == frames {
                     break;
-                };
+                }
                 let n = (chunk.frames() - chunk.pos).min(frames - written);
                 let src =
                     &chunk.samples[chunk.pos * SOURCE_CHANNELS..(chunk.pos + n) * SOURCE_CHANNELS];
@@ -316,11 +413,7 @@ impl Mixer {
                 }
                 chunk.pos += n;
                 written += n;
-                let done = chunk.pos >= chunk.frames();
                 queue.buffered_frames -= n;
-                if done {
-                    queue.chunks.pop_front();
-                }
             }
             source.peak.store(peak * level_gain);
         }
@@ -329,7 +422,135 @@ impl Mixer {
 
 #[cfg(test)]
 mod tests {
+    use std::alloc::{GlobalAlloc, Layout, System};
+    use std::cell::Cell;
+    use std::thread::{self, JoinHandle};
+
     use super::*;
+
+    /// The system's allocator, counting what a thread watching allocates
+    /// and frees.
+    struct Watched;
+
+    thread_local! {
+        static WATCHING: Cell<bool> = const { Cell::new(false) };
+        static SEEN: Cell<usize> = const { Cell::new(0) };
+    }
+
+    fn note() {
+        let _ = WATCHING.try_with(|watching| {
+            if watching.get() {
+                SEEN.with(|seen| seen.set(seen.get() + 1));
+            }
+        });
+    }
+
+    // SAFETY: every call goes on to the system allocator as it came.
+    unsafe impl GlobalAlloc for Watched {
+        unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+            note();
+            // SAFETY: the caller's promises about `layout`, passed on.
+            unsafe { System.alloc(layout) }
+        }
+
+        unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
+            note();
+            // SAFETY: as for `alloc`.
+            unsafe { System.alloc_zeroed(layout) }
+        }
+
+        unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+            note();
+            // SAFETY: `ptr` came from this allocator, so from `System`.
+            unsafe { System.dealloc(ptr, layout) }
+        }
+
+        unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
+            note();
+            // SAFETY: as for `dealloc`, and the caller's promise about
+            // `new_size`.
+            unsafe { System.realloc(ptr, layout, new_size) }
+        }
+    }
+
+    #[global_allocator]
+    static ALLOCATOR: Watched = Watched;
+
+    /// How many times `f` allocates or frees on this thread.
+    fn allocations(f: impl FnOnce()) -> usize {
+        SEEN.with(|seen| seen.set(0));
+        WATCHING.with(|watching| watching.set(true));
+        f();
+        WATCHING.with(|watching| watching.set(false));
+        SEEN.with(Cell::get)
+    }
+
+    /// A playing player in `mixer`, a tenth of a second queued.
+    fn playing_in(mixer: &Mixer) -> Arc<AudioSource> {
+        let clock = Arc::new(Clock::new());
+        clock.start();
+        let source = Arc::new(AudioSource::new(
+            clock,
+            Arc::new(AtomicU64::new(0)),
+            mixer.sample_rate(),
+            1.0,
+        ));
+        mixer.add_source(source.clone());
+        source.playing.store(true, Ordering::Relaxed);
+        source.push(ramp(2400, 0.0, 48_000));
+        source.push(ramp(2400, 0.05, 48_000));
+        source
+    }
+
+    #[test]
+    fn mixing_takes_and_lets_go_of_no_memory() {
+        let mixer = Mixer::detached(48_000);
+        let source = playing_in(&mixer);
+        // Through the first chunk, into the second.
+        let mut mix = vec![0.0; 3000 * SOURCE_CHANNELS];
+        let seen = allocations(|| mixer.mix(&mut mix, 0.0, Instant::now()));
+        assert_eq!(seen, 0, "the mixer allocated or freed");
+        // Each frame's samples are its index in its chunk.
+        let heard = |frame: usize| mix[frame * SOURCE_CHANNELS];
+        assert_eq!(
+            (heard(2399), heard(2400), heard(2999)),
+            (2399.0, 0.0, 599.0)
+        );
+        assert_eq!(source.queue.lock().buffered_frames, 1800);
+        // The one played is let go of by the decoder, as it queues more.
+        source.push(ramp(2400, 0.1, 48_000));
+        assert_eq!(source.queue.lock().chunks.len(), 2);
+    }
+
+    /// Mix once on another thread; how long it took.
+    fn mix_elsewhere(mixer: &Arc<Mixer>) -> JoinHandle<Duration> {
+        let mixer = mixer.clone();
+        thread::spawn(move || {
+            let mut mix = vec![0.0; 480 * SOURCE_CHANNELS];
+            let start = Instant::now();
+            mixer.mix(&mut mix, 0.0, Instant::now());
+            start.elapsed()
+        })
+    }
+
+    #[test]
+    fn a_mix_waits_for_no_other_thread() {
+        let mixer = Mixer::detached(48_000);
+        let source = playing_in(&mixer);
+        let hold = Duration::from_millis(200);
+
+        let queue = source.queue.lock();
+        let mixing = mix_elsewhere(&mixer);
+        thread::sleep(hold);
+        drop(queue);
+        assert!(mixing.join().unwrap() < hold / 4, "waited for the queue");
+
+        let list = mixer.sources.lock();
+        let mixing = mix_elsewhere(&mixer);
+        thread::sleep(hold);
+        drop(list);
+        assert!(mixing.join().unwrap() < hold / 4, "waited for the list");
+    }
 
     /// `frames` of stereo, each frame's samples its index.
     fn ramp(frames: usize, pts: f64, rate: u32) -> AudioChunk {

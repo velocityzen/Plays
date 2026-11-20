@@ -1459,7 +1459,7 @@ fn reset_queues(shared: &Shared, serial: u64) {
         video.serial = serial;
     }
     if let Some(audio) = &shared.audio {
-        audio.queue.lock().clear(serial);
+        audio.clear(serial);
     }
 }
 
@@ -2188,7 +2188,7 @@ impl AudioDecoder {
             }
         }
         if !samples.is_empty() {
-            self.source.queue.lock().push(AudioChunk {
+            self.source.push(AudioChunk {
                 pts,
                 samples,
                 pos: 0,

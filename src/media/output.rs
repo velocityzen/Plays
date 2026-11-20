@@ -19,6 +19,9 @@ const FIRST_RATE: u32 = 48_000;
 
 /// How often the mixer runs while nothing is heard.
 const SILENT_PERIOD: Duration = Duration::from_millis(10);
+/// Frames an output callback has room for from the start: more than a
+/// device asks for at once.
+const MOST_CALLBACK_FRAMES: usize = 8192;
 
 /// An output device, as the system names it.
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -495,7 +498,9 @@ where
 {
     let channels = config.channels as usize;
     let sample_rate = f64::from(config.sample_rate);
-    let mut mix = Vec::<f32>::new();
+    // Made ready for more than a device asks for at once, so the callback
+    // doesn't allocate.
+    let mut mix = Vec::<f32>::with_capacity(MOST_CALLBACK_FRAMES * SOURCE_CHANNELS);
 
     let stream = device.build_output_stream::<T, _, _>(
         config,

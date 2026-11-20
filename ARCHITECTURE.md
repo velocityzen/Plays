@@ -219,9 +219,9 @@ the sound being heard. A file with no sound plays on wall time.
   queued. A tile ticks its player each time it is drawn; while the window
   isn't drawing (hidden or minimized), the window ticks every tile five
   times a second so playback, end of file and looping go on.
-- `src/media/clock.rs`: per-player clock that runs on wall time and is eased
-  toward the audio position on every audio callback. Drift too large to
-  ease snaps it.
+- `src/media/clock.rs`: per-player clock that runs on wall time and is
+  eased toward the audio position on every audio callback, unless another
+  thread has it that moment. Drift too large to ease snaps it.
 
 ## Pictures
 
@@ -302,11 +302,16 @@ flowchart LR
 
 - `src/media/audio.rs`: the mixers, one for each output, which sum all
   players and apply per-player and master volume. A mixer tells each
-  player's clock what is being heard, moved by the player's audio delay, so
-  the picture runs that far ahead of the sound (or behind it). It plays at
-  the output's rate; when a new device wants another, or a player moves to
-  another mixer, what is queued is converted to the new rate and decoders
-  resample to it from then on.
+  player's clock what is being heard, moved by the player's audio delay,
+  so the picture runs that far ahead of the sound (or behind it). It plays
+  at the output's rate; when a new device wants another, or a player moves
+  to another mixer, what is queued is converted to the new rate and
+  decoders resample to it from then on. A mixer runs on the output's
+  real-time thread, so it neither allocates nor frees, and waits for no
+  other thread. What it played stays queued until the decoder lets go of
+  it, and no sound is converted to another rate while the list of players
+  is held. A lock another thread keeps more than 50 µs it goes on without,
+  that player silent for the moment.
 - `src/media/output.rs`: where a mixer's sound goes: a cpal stream to a
   device, in the device's own format, or, with no device, a thread that
   runs the mixer in time so players keep playing silently. It lists the
