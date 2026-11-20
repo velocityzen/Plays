@@ -549,7 +549,9 @@ sequenceDiagram
   eases there, and seeks where it is far off. Dropping the link stops the
   device and the stream server lets the file go; as the app quits, where
   each device was is kept to resume from, and the app waits a moment for
-  the devices to stop.
+  the devices to stop. The next or previous file goes on to the device
+  once it's known what it holds, which decides whether a speaker gets its
+  sound alone and which subtitles go with it.
 - `src/cast/dlna.rs` adapts the DLNA crate: it asks each renderer found
   what it plays (its protocol info), which decides whether it shows video
   and how the stream server serves it (the files it lists, else a stream of

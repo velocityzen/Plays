@@ -357,6 +357,9 @@ pub mod motion {
     /// How often a casting tile looks at what its device last said, which
     /// moves its bar.
     pub const CAST_POLL: Duration = Duration::from_millis(250);
+    /// How often a cast going on with the next file looks whether it's
+    /// known yet what that file holds.
+    pub const NEXT_CAST_POLL: Duration = Duration::from_millis(50);
     /// A picture that followed the sound on a device is taken to be where
     /// the device was when the cast ends, this near, in seconds.
     pub const END_FOLLOW_SEEK: f64 = 0.25;

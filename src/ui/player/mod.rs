@@ -107,6 +107,9 @@ pub struct PlayerView {
     console: Option<Task<()>>,
     /// The device it plays on instead, while it casts.
     cast: Option<cast::Cast>,
+    /// The device it goes on casting to once the file just opened is
+    /// known.
+    next_cast: Option<cast::NextCast>,
     /// The menu of devices to cast to is open.
     cast_open: bool,
     /// The device its window plays through instead of the app's output,
@@ -169,6 +172,7 @@ impl PlayerView {
             over_controls: false,
             console: None,
             cast: None,
+            next_cast: None,
             cast_open: false,
             window_sound: None,
             window_press: None,
@@ -191,6 +195,12 @@ impl PlayerView {
             })
             .ok();
         });
+    }
+
+    /// Its folder has been looked through, for the files before and after.
+    #[cfg(test)]
+    pub fn knows_neighbors(&self) -> bool {
+        self.neighbors.is_some()
     }
 
     /// Play the media file before (`-1`) or after (`1`) this one in its
@@ -244,7 +254,7 @@ impl PlayerView {
         self.adjustments = Adjustments::default();
         self.osd = None;
         if let Some(device) = casting {
-            self.start_cast(device, self.player.position(), autoplay, cx);
+            self.cast_once_known(device, autoplay, cx);
         }
         cx.notify();
     }

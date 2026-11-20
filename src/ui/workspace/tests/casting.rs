@@ -510,6 +510,56 @@ fn picture_subtitles_are_drawn_into_video_it_re_encodes(cx: &mut TestAppContext)
     assert_eq!(get(&drawn.url).0, 404);
 }
 
+/// Open the file before (`-1`) or after (`1`) the tile's in its folder,
+/// once it knows which they are.
+fn open_neighbor(view: &Entity<PlayerView>, cx: &mut VisualTestContext, direction: i32) {
+    wait(cx, "the tile to look through its folder", |cx| {
+        view.read_with(cx, |view, _| view.knows_neighbors())
+    });
+    view.update(cx, |view, cx| view.open_neighbor(direction, cx));
+}
+
+#[gpui::test]
+fn the_next_file_goes_to_the_device_with_the_subtitles_beside_it(cx: &mut TestAppContext) {
+    let (window, mut cx, fake, tv) = start(cx, "clip-subs.mkv", false);
+    let view = tile(window, &cx);
+    let first = cast(window, &mut cx, &fake, &tv);
+    assert_eq!(first.subtitles, None, "none are picked in that one");
+    open_neighbor(&view, &mut cx, 1);
+    wait(&mut cx, "the next file to load there", |_| {
+        loads(&fake, &tv).len() == 2
+    });
+    let next = loads(&fake, &tv).remove(1);
+    let subtitles = next.subtitles.expect("clip.srt goes along");
+    let (status, vtt) = get(&subtitles.webvtt_url);
+    assert_eq!(status, 200);
+    assert!(String::from_utf8_lossy(&vtt).starts_with("WEBVTT"));
+    assert_eq!(
+        view.read_with(&cx, |view, _| view.casting().cloned()),
+        Some(tv)
+    );
+}
+
+#[gpui::test]
+fn the_previous_files_sound_goes_to_the_speaker_its_picture_staying_here(cx: &mut TestAppContext) {
+    let (window, mut cx, fake, _) = start(cx, "clip.mp4", false);
+    let speaker = speaker(&fake, "Kitchen");
+    let view = tile(window, &cx);
+    assert!(cast(window, &mut cx, &fake, &speaker).picture_here);
+    open_neighbor(&view, &mut cx, -1);
+    wait(&mut cx, "the previous file to load there", |_| {
+        loads(&fake, &speaker).len() == 2
+    });
+    let previous = loads(&fake, &speaker).remove(1);
+    assert!(previous.picture_here, "only its sound goes");
+    assert_eq!(previous.mime, "audio/aac");
+    assert!(view.read_with(&cx, |view, _| view.casts_sound_only()));
+    assert!(
+        !shows(&mut cx, "play-here"),
+        "the picture stays on the tile"
+    );
+}
+
 /// A speaker taking MP4 files, and a stream of AAC for the sound of
 /// anything else.
 fn speaker(fake: &FakeTarget, name: &str) -> Device {

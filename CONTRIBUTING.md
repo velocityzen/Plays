@@ -315,7 +315,9 @@ Casting is tested with a fake protocol whose devices keep what they are
 told and say what the test has them say, and the real stream server,
 serving this computer only. Picking a device from the cast button plays
 the file there from where the tile was, as it played (the device fetches
-the MP4 as it is), and pauses the tile. Space, the arrows and `M` play,
+the MP4 as it is), and pauses the tile. The next file goes there too,
+with the subtitles beside it, and the previous one to a speaker sends
+only its sound, the picture staying on the tile. Space, the arrows and `M` play,
 pause, seek and mute it, not the tile, and the bar follows where it says
 it is; so do the buttons of a Picture in Picture window, which isn't
 offered while the picture plays there, and they play and pause a speaker

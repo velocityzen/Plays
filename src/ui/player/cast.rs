@@ -28,7 +28,7 @@ use crate::ui::components::{Button, ClickHandler, Icon, MenuRow, Panel, Popover}
 use crate::ui::displays::{self, DisplayInfo};
 use crate::ui::framing::Adjustments;
 use crate::ui::theme::Theme;
-use crate::ui::theme::motion::{CAST_POLL, END_FOLLOW_SEEK};
+use crate::ui::theme::motion::{CAST_POLL, END_FOLLOW_SEEK, NEXT_CAST_POLL};
 use crate::ui::theme::player::{CAST_MENU_WIDTH, ERROR_MAX_WIDTH, PIP_ICON, TRACK_MENU_OFFSET};
 use crate::ui::theme::text::TextStyle;
 
@@ -44,10 +44,57 @@ pub(super) struct Cast {
     _follow: Task<()>,
 }
 
+/// A cast going on with the file just opened, once it's known what's in
+/// it: whether it has sound for a speaker, a picture to keep here, and
+/// subtitles all decide what goes.
+pub(super) struct NextCast {
+    device: Device,
+    autoplay: bool,
+    _wait: Task<()>,
+}
+
 impl PlayerView {
-    /// The device the tile casts to.
+    /// The device the tile casts to, or goes on casting to with the file
+    /// just opened.
     pub fn casting(&self) -> Option<&Device> {
-        self.cast.as_ref().map(|cast| cast.link.device())
+        match &self.cast {
+            Some(cast) => Some(cast.link.device()),
+            None => self.next_cast.as_ref().map(|next| &next.device),
+        }
+    }
+
+    /// Go on casting to `device` once the file just opened is known, or
+    /// has failed to open, from where it is then.
+    pub(super) fn cast_once_known(
+        &mut self,
+        device: Device,
+        autoplay: bool,
+        cx: &mut Context<Self>,
+    ) {
+        let wait = cx.spawn(async move |this, cx| {
+            loop {
+                let known = this.update(cx, |this, cx| {
+                    let player = &this.player;
+                    if player.info().is_none() && player.error().is_none() {
+                        return false;
+                    }
+                    if let Some(next) = this.next_cast.take() {
+                        let start = this.player.position();
+                        this.start_cast(next.device, start, next.autoplay, cx);
+                    }
+                    true
+                });
+                if !matches!(known, Ok(false)) {
+                    break;
+                }
+                cx.background_executor().timer(NEXT_CAST_POLL).await;
+            }
+        });
+        self.next_cast = Some(NextCast {
+            device,
+            autoplay,
+            _wait: wait,
+        });
     }
 
     /// It casts its sound only, the picture playing here.
@@ -84,6 +131,8 @@ impl PlayerView {
         autoplay: bool,
         cx: &mut Context<Self>,
     ) {
+        // Another device picked meanwhile is the one it casts to.
+        self.next_cast = None;
         if self.player.error().is_some() {
             self.note("Can't cast a file that doesn't play", cx);
             return;
@@ -179,6 +228,15 @@ impl PlayerView {
     /// Play here again, from where the device was, playing if it was.
     /// Whether the tile was casting.
     pub fn end_cast(&mut self, cx: &mut Context<Self>) -> bool {
+        if let Some(next) = self.next_cast.take() {
+            // The file just opened hadn't gone there yet; it plays here as
+            // it would have there.
+            if next.autoplay {
+                self.player.play();
+            }
+            cx.notify();
+            return true;
+        }
         let Some(cast) = self.cast.take() else {
             return false;
         };
@@ -207,6 +265,7 @@ impl PlayerView {
     /// it, to wait for. The player here is left where the device was, so
     /// that's where it resumes.
     pub fn stop_cast(&mut self) -> Option<std::thread::JoinHandle<()>> {
+        self.next_cast = None;
         let cast = self.cast.take()?;
         if !self.player.is_live() {
             self.player.seek(cast.link.position());
