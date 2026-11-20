@@ -487,8 +487,10 @@ flowchart LR
   Video, Subtitles, Casting, Screenshots, Hotkeys, Appearance, About) is a
   file of its own with its name and icon for the sidebar; `form` has the
   cards, rows and sliders they are made of, and `file` the settings file's
-  menu at the sidebar's foot. About shows the version and the credits, each
-  of which opens to its license.
+  menu at the sidebar's foot. About shows the version and the credits,
+  each of which opens to its license; there are hundreds, so they are in a
+  list that builds only the rows in view, each drawing its part of the
+  card.
 - `src/ui/components/`: the reusable components, one `RenderOnce`
   component per file, each in three sizes (small, medium, large) with its
   numbers for each in `theme`. An icon; a button in seven variants

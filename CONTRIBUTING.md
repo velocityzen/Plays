@@ -315,6 +315,8 @@ What the window tests check:
 - Picking a look for the panels over the video in Settings → Appearance
   sets it, and the controls of a paused video then show it through them
   with that look's backdrop, and none when plain.
+- Settings → About, scrolled hundreds of credits down, builds only the
+  few rows in view to draw, and a license there opens and closes.
 
 ### Casting
 

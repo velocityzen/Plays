@@ -1,21 +1,24 @@
 //! About: the app's version and license, and what it is built with, each
 //! with its license, from `resources/attributions.json` (which
-//! `script/attributions` writes).
+//! `script/attributions` writes). There are hundreds, so they are in a
+//! list that builds only the rows in view.
 
+#[cfg(test)]
+use std::cell::Cell;
 use std::ffi::CStr;
 use std::sync::LazyLock;
 
 use ffmpeg_next as ffmpeg;
 use gpui::prelude::*;
-use gpui::{AnyElement, Context, SharedString, Window, div};
+use gpui::{AnyElement, Context, ListAlignment, ListState, SharedString, Window, div, list};
 use serde::Deserialize;
 
-use super::form::group;
+use super::form::{card_row, group, heading};
 use super::{Pane, SettingsView};
 use crate::settings::Settings;
 use crate::ui::about;
 use crate::ui::components::{Button, ComponentSize, Icon, Sizable};
-use crate::ui::theme::settings::{ABOUT_COLOR, CREDIT_LICENSE_MAX_WIDTH};
+use crate::ui::theme::settings::{ABOUT_COLOR, CREDIT_LICENSE_MAX_WIDTH, CREDITS_OVERDRAW};
 use crate::ui::theme::text::TextStyle;
 use crate::ui::theme::{Theme, controls, radius};
 
@@ -60,6 +63,12 @@ impl Credit {
         };
         self.platforms.is_empty() || self.platforms.iter().any(|p| p == platform)
     }
+}
+
+#[cfg(test)]
+thread_local! {
+    /// How many credits' rows have been built, for the tests to see.
+    pub(super) static BUILT: Cell<usize> = const { Cell::new(0) };
 }
 
 /// Read when About first shows.
@@ -131,15 +140,24 @@ impl Entry {
         self
     }
 
-    fn render(self, open: bool, theme: &Theme, cx: &mut Context<SettingsView>) -> AnyElement {
+    fn render(&self, open: bool, theme: &Theme, cx: &mut Context<SettingsView>) -> AnyElement {
+        #[cfg(test)]
+        BUILT.with(|built| built.set(built.get() + 1));
         let muted = theme.text_muted;
         let key = self.key.clone();
         let toggle = cx.listener(move |view, _, _, cx| {
-            view.license = if view.license.as_ref() == Some(&key) {
-                None
-            } else {
-                Some(key.clone())
-            };
+            let shown = view.license.take();
+            if shown.as_ref() != Some(&key) {
+                view.license = Some(key.clone());
+            }
+            // The rows it opens and closes in are measured again.
+            if let Some(credits) = &view.credits {
+                for key in shown.iter().chain(&view.license) {
+                    if let Some(item) = credits.item_of(key) {
+                        credits.list.splice(item..item + 1, 1);
+                    }
+                }
+            }
             cx.notify();
         });
         let chevron = Icon::new(if open {
@@ -150,6 +168,7 @@ impl Entry {
         .small()
         .color(muted);
         let details = div()
+            .debug_selector(|| "credit-texts".into())
             .flex()
             .gap_2()
             .px_3()
@@ -167,18 +186,21 @@ impl Entry {
                     .flex()
                     .flex_col()
                     .gap_2()
-                    .child(div().flex().gap_4().children(self.links.into_iter().map(
-                        |(label, url)| {
-                            Button::new(label, label)
-                                .link()
-                                .small()
-                                .on_click(move |_, _, cx| cx.open_url(&url))
-                        },
-                    )))
-                    .when_some(self.note, |this, note| {
+                    .child(
+                        div()
+                            .flex()
+                            .gap_4()
+                            .children(self.links.iter().cloned().map(|(label, url)| {
+                                Button::new(label, label)
+                                    .link()
+                                    .small()
+                                    .on_click(move |_, _, cx| cx.open_url(&url))
+                            })),
+                    )
+                    .when_some(self.note.clone(), |this, note| {
                         this.child(div().text_xs().text_color(muted).child(note))
                     })
-                    .children(self.texts.into_iter().map(|text| {
+                    .children(self.texts.iter().cloned().map(|text| {
                         div()
                             .px_3()
                             .py_2()
@@ -196,7 +218,11 @@ impl Entry {
             .flex_col()
             .child(
                 div()
-                    .id(self.key)
+                    .debug_selector({
+                        let key = self.key.clone();
+                        move || format!("credit-{key}")
+                    })
+                    .id(self.key.clone())
                     .flex()
                     .items_center()
                     .gap_2()
@@ -218,10 +244,15 @@ impl Entry {
                                     .items_baseline()
                                     .gap_1p5()
                                     .text_sm()
-                                    .child(self.name)
-                                    .child(div().text_xs().text_color(muted).child(self.version)),
+                                    .child(self.name.clone())
+                                    .child(
+                                        div()
+                                            .text_xs()
+                                            .text_color(muted)
+                                            .child(self.version.clone()),
+                                    ),
                             )
-                            .when_some(self.hint, |this, hint| {
+                            .when_some(self.hint.clone(), |this, hint| {
                                 this.child(div().text_xs().text_color(muted).child(hint))
                             }),
                     )
@@ -232,12 +263,185 @@ impl Entry {
                             .truncate()
                             .text_xs()
                             .text_color(muted)
-                            .child(self.license),
+                            .child(self.license.clone()),
                     ),
             )
             .when(open, |this| this.child(details))
             .into_any_element()
     }
+}
+
+/// How many crates About credits on this platform.
+#[cfg(test)]
+pub(super) fn crates_built_in() -> usize {
+    ATTRIBUTIONS
+        .crates
+        .iter()
+        .filter(|credit| credit.built_in())
+        .count()
+}
+
+/// About's rows, made when it first shows and kept while the window is
+/// open.
+pub(super) struct Credits {
+    /// The app and its license, what it is built with, the crates' title,
+    /// then each crate.
+    list: ListState,
+    license: Entry,
+    built_with: Vec<Entry>,
+    crates: Vec<Entry>,
+}
+
+/// The list's items before the crates.
+const BEFORE_CRATES: usize = 3;
+
+impl Credits {
+    fn new() -> Self {
+        let attributions = &*ATTRIBUTIONS;
+        let texts = attributions.texts.as_slice();
+        let license = Entry {
+            key: "plays".into(),
+            name: "License".into(),
+            version: "".into(),
+            license: env!("CARGO_PKG_LICENSE").into(),
+            hint: None,
+            links: Vec::new(),
+            note: None,
+            texts: vec![LICENSE.into()],
+        };
+
+        let mut built_with = Vec::new();
+        for library in &attributions.libraries {
+            let key = format!("library {}", library.name);
+            let mut entry = Entry::new(key, library, texts);
+            if library.name == "FFmpeg" {
+                // What the app runs with, in case it was built with another.
+                entry.version = ffmpeg_version();
+                entry.license = ffmpeg::util::license().into();
+                entry.note = Some(
+                    "Plays is built with FFmpeg's source code, unchanged, by \
+                     script/build-ffmpeg in Plays' own; build Plays again to use \
+                     another FFmpeg."
+                        .into(),
+                );
+                entry = entry.hint("Opens and decodes files and streams.");
+            } else {
+                entry = entry.hint("Decodes AV1 video, in FFmpeg.");
+            }
+            built_with.push(entry);
+        }
+        if let Some(gpui) = attributions.crates.iter().find(|c| c.name == "gpui") {
+            built_with.push(
+                Entry::new("library gpui", gpui, texts)
+                    .hint("Draws the windows, from Zed Industries."),
+            );
+        }
+
+        let crates: Vec<Entry> = attributions
+            .crates
+            .iter()
+            .filter(|credit| credit.built_in())
+            .map(|credit| {
+                let key = format!("crate {} {}", credit.name, credit.version);
+                let mut entry = Entry::new(key, credit, texts);
+                entry.links[0].0 = "Repository";
+                entry
+            })
+            .collect();
+        Self {
+            list: ListState::new(
+                BEFORE_CRATES + crates.len(),
+                ListAlignment::Top,
+                CREDITS_OVERDRAW,
+            ),
+            license,
+            built_with,
+            crates,
+        }
+    }
+
+    /// The list item the credit `key` is in.
+    fn item_of(&self, key: &SharedString) -> Option<usize> {
+        if self.license.key == *key {
+            Some(0)
+        } else if self.built_with.iter().any(|entry| entry.key == *key) {
+            Some(1)
+        } else {
+            let index = self.crates.iter().position(|entry| entry.key == *key)?;
+            Some(BEFORE_CRATES + index)
+        }
+    }
+}
+
+/// The app's name, version and what it is.
+fn app(theme: &Theme) -> AnyElement {
+    div()
+        .flex()
+        .flex_col()
+        .gap_1()
+        .px_3()
+        .py_3()
+        .child(div().text_display().child("Plays"))
+        .child(div().text_sm().text_color(theme.text_muted).child(format!(
+            "{}, {}",
+            about::version(),
+            about::release_date()
+        )))
+        .child(div().pt_1().text_sm().child(env!("CARGO_PKG_DESCRIPTION")))
+        .into_any_element()
+}
+
+/// About's list item `ix`, spaced as other panes' groups are.
+fn item(
+    view: &mut SettingsView,
+    ix: usize,
+    window: &mut Window,
+    cx: &mut Context<SettingsView>,
+) -> AnyElement {
+    let Some(credits) = view.credits.as_ref() else {
+        return div().into_any_element();
+    };
+    let theme = Theme::get(window, cx);
+    let open = view.license.as_ref();
+    let row = |entry: &Entry, cx: &mut Context<SettingsView>| {
+        entry.render(open == Some(&entry.key), &theme, cx)
+    };
+    let (content, below) = match ix {
+        0 => (
+            group(None, &theme, vec![app(&theme), row(&credits.license, cx)]),
+            true,
+        ),
+        1 => (
+            group(
+                Some("Built with"),
+                &theme,
+                credits
+                    .built_with
+                    .iter()
+                    .map(|entry| row(entry, cx))
+                    .collect(),
+            ),
+            true,
+        ),
+        2 => (heading("Rust crates"), false),
+        _ => {
+            let index = ix - BEFORE_CRATES;
+            let Some(entry) = credits.crates.get(index) else {
+                return div().into_any_element();
+            };
+            let last = index + 1 == credits.crates.len();
+            (card_row(&theme, index == 0, last, row(entry, cx)), false)
+        }
+    };
+    div()
+        .px_5()
+        .map(|this| match (ix, below) {
+            (_, true) => this.pb_5(),
+            (2, _) => this.pb_2(),
+            _ => this,
+        })
+        .child(content)
+        .into_any_element()
 }
 
 /// The version of the FFmpeg the app runs with, which is built into it.
@@ -262,92 +466,34 @@ impl Pane for AboutPane {
         ABOUT_COLOR
     }
 
+    /// Its rows are in its list instead.
     fn content(
         &self,
-        view: &mut SettingsView,
+        _: &mut SettingsView,
         _: &Settings,
-        theme: &Theme,
+        _: &Theme,
         _: &mut Window,
-        cx: &mut Context<SettingsView>,
+        _: &mut Context<SettingsView>,
     ) -> Vec<AnyElement> {
-        let attributions = &*ATTRIBUTIONS;
-        let texts = attributions.texts.as_slice();
-        let open = view.license.clone();
-        let mut row = |entry: Entry| {
-            let shows = open.as_ref() == Some(&entry.key);
-            entry.render(shows, theme, cx)
-        };
+        Vec::new()
+    }
 
-        let app = div()
-            .flex()
-            .flex_col()
-            .gap_1()
-            .px_3()
-            .py_3()
-            .child(div().text_display().child("Plays"))
-            .child(div().text_sm().text_color(theme.text_muted).child(format!(
-                "{}, {}",
-                about::version(),
-                about::release_date()
-            )))
-            .child(div().pt_1().text_sm().child(env!("CARGO_PKG_DESCRIPTION")))
-            .into_any_element();
-        let license = row(Entry {
-            key: "plays".into(),
-            name: "License".into(),
-            version: "".into(),
-            license: env!("CARGO_PKG_LICENSE").into(),
-            hint: None,
-            links: Vec::new(),
-            note: None,
-            texts: vec![LICENSE.into()],
-        });
-
-        let mut built_with = Vec::new();
-        for library in &attributions.libraries {
-            let key = format!("library {}", library.name);
-            let mut entry = Entry::new(key, library, texts);
-            if library.name == "FFmpeg" {
-                // What the app runs with, in case it was built with another.
-                entry.version = ffmpeg_version();
-                entry.license = ffmpeg::util::license().into();
-                entry.note = Some(
-                    "Plays is built with FFmpeg's source code, unchanged, by \
-                     script/build-ffmpeg in Plays' own; build Plays again to use \
-                     another FFmpeg."
-                        .into(),
-                );
-                entry = entry.hint("Opens and decodes files and streams.");
-            } else {
-                entry = entry.hint("Decodes AV1 video, in FFmpeg.");
-            }
-            built_with.push(row(entry));
-        }
-        if let Some(gpui) = attributions.crates.iter().find(|c| c.name == "gpui") {
-            built_with.push(row(Entry::new("library gpui", gpui, texts)
-                .hint("Draws the windows, from Zed Industries.")));
-        }
-
-        let crates = attributions
-            .crates
-            .iter()
-            .filter(|credit| credit.built_in())
-            .map(|credit| {
-                let key = format!("crate {} {}", credit.name, credit.version);
-                let mut entry = Entry::new(key, credit, texts);
-                entry.links[0].0 = "Repository";
-                row(entry)
-            })
-            .collect();
-
-        vec![
-            group(None, theme, vec![app, license]),
-            group(Some("Built with"), theme, built_with),
-            group(Some("Rust crates"), theme, crates),
-        ]
+    fn list(&self, view: &mut SettingsView, cx: &mut Context<SettingsView>) -> Option<AnyElement> {
+        let credits = view.credits.get_or_insert_with(Credits::new);
+        Some(
+            list(credits.list.clone(), cx.processor(item))
+                .size_full()
+                .pt_2()
+                .pb_5()
+                .into_any_element(),
+        )
     }
 
     fn leave(&self, view: &mut SettingsView) {
         view.license = None;
+        // Measured again, and at the top, when it shows again.
+        if let Some(credits) = &view.credits {
+            credits.list.reset(credits.list.item_count());
+        }
     }
 }

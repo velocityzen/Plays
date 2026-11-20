@@ -7,7 +7,7 @@ use std::sync::{Arc, Weak};
 use std::thread::{self, ThreadId};
 use std::time::{Duration, Instant};
 
-use gpui::{TestAppContext, VisualTestContext};
+use gpui::{TestAppContext, VisualTestContext, point, px};
 use parking_lot::Mutex;
 
 use super::SettingsView;
@@ -16,7 +16,7 @@ use crate::cast::fake::{FakeTarget, KIND};
 use crate::cast::target::{Device, Error, Session};
 use crate::cast::{Casting, Looking, Protocol, Shows, Target};
 use crate::settings::{AudioDevice, PanelLook, Settings};
-use crate::ui::testing::{self, click, shows, wait_until};
+use crate::ui::testing::{self, click, scroll, shows, wait_until};
 
 /// Open the Settings window and bring it to the front.
 fn open_settings(cx: &mut VisualTestContext) -> VisualTestContext {
@@ -340,4 +340,33 @@ fn a_protocol_that_cant_look_says_why_and_tries_again_when_turned_on(cx: &mut Te
     look_with(&mut cx, KIND, true);
     assert_eq!(tries.get(), 2);
     assert_eq!(looking(&mut cx), [Looking::On]);
+}
+
+#[gpui::test]
+fn about_builds_only_the_credits_in_view(cx: &mut TestAppContext) {
+    let (_, mut cx) = testing::start(cx);
+    let mut settings = open_settings(&mut cx);
+    click(&mut settings, "pane-About");
+    let built = || super::about::BUILT.with(Cell::get);
+    let crates = super::about::crates_built_in();
+    assert!(crates > 100, "{crates} crates");
+
+    // Down past the first few, hundreds still below.
+    scroll(&mut settings, "settings-pane", point(px(0.), px(-3000.)));
+    let before = built();
+    let first = shows(&mut settings, "credit-plays");
+    let drawn = built() - before;
+    assert!(
+        drawn < 60,
+        "{drawn} of {crates} credits built to draw it once"
+    );
+    assert!(!first, "it scrolled past the first");
+
+    // Its own license opens and closes where it is.
+    scroll(&mut settings, "settings-pane", point(px(0.), px(3000.)));
+    assert!(!shows(&mut settings, "credit-texts"));
+    click(&mut settings, "credit-plays");
+    assert!(shows(&mut settings, "credit-texts"), "the license shows");
+    click(&mut settings, "credit-plays");
+    assert!(!shows(&mut settings, "credit-texts"), "and closes");
 }
