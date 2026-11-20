@@ -360,8 +360,10 @@ one going; turned on, it looks again and finds them. A protocol that takes
 a while to stop doesn't hold up the windows: it stops on another thread.
 One off from the start never looks, and other settings or protocols
 changing leave it as it is; one that can't start says why and tries again
-when turned off and on. Each test has been checked to fail when the
-behavior it covers is broken.
+when turned off and on. Unit tests check that of what the tile sends at
+once, only the last of seeks in a row is done, and only the last volume,
+looping and subtitles asked for. Each test has been checked to fail when
+the behavior it covers is broken.
 
 Casting to DLNA is tested with the DLNA crate's fake renderer, found as it
 would be on the network. Picking the TV gives it the tile's Matroska file

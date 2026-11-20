@@ -657,10 +657,25 @@ fn with_encoding(mut choice: SubtitleChoice) -> SubtitleChoice {
 }
 
 /// Commands as they're to be done: of seeks in a row, as a slider sends
-/// them, only the last.
+/// them, only the last; of the volume, looping and subtitles asked for,
+/// only the last of each, as each says all there is to it and is a call
+/// to the device the others would wait behind.
 fn coalesce(commands: Vec<Command>) -> Vec<Command> {
+    let last = |kind: fn(&Command) -> bool| commands.iter().rposition(kind);
+    let volume = last(|command| matches!(command, Command::Volume { .. }));
+    let looping = last(|command| matches!(command, Command::Looping(_)));
+    let subtitles = last(|command| matches!(command, Command::Subtitles { .. }));
     let mut kept: Vec<Command> = Vec::with_capacity(commands.len());
-    for command in commands {
+    for (index, command) in commands.into_iter().enumerate() {
+        let latest = match command {
+            Command::Volume { .. } => volume,
+            Command::Looping(_) => looping,
+            Command::Subtitles { .. } => subtitles,
+            _ => Some(index),
+        };
+        if latest != Some(index) {
+            continue;
+        }
         if matches!(
             (&command, kept.last()),
             (Command::Seek(_), Some(Command::Seek(_)))
@@ -693,5 +708,50 @@ mod tests {
             })
             .collect();
         assert_eq!(seeks, [Some(2.0), None, Some(4.0)]);
+    }
+
+    #[test]
+    fn keeps_only_the_last_volume_looping_and_subtitles_asked_for() {
+        let volume = |volume, muted| Command::Volume { volume, muted };
+        let subtitles = |start| Command::Subtitles {
+            subtitles: None,
+            start,
+            autoplay: true,
+        };
+        // As dragging the volume slider sends them, with other things.
+        let kept = coalesce(vec![
+            volume(0.1, false),
+            Command::Looping(true),
+            volume(0.2, false),
+            Command::Seek(1.0),
+            subtitles(1.0),
+            volume(0.3, false),
+            Command::Seek(2.0),
+            Command::Play,
+            volume(0.4, true),
+            Command::Looping(false),
+            subtitles(2.0),
+        ]);
+        let said: Vec<String> = kept
+            .iter()
+            .map(|command| match command {
+                Command::Volume { volume, muted } => format!("volume {volume} {muted}"),
+                Command::Looping(looping) => format!("looping {looping}"),
+                Command::Subtitles { start, .. } => format!("subtitles from {start}"),
+                Command::Seek(time) => format!("seek {time}"),
+                Command::Play => "play".into(),
+                _ => "other".into(),
+            })
+            .collect();
+        assert_eq!(
+            said,
+            [
+                "seek 2",
+                "play",
+                "volume 0.4 true",
+                "looping false",
+                "subtitles from 2"
+            ]
+        );
     }
 }

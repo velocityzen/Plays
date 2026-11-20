@@ -538,7 +538,7 @@ sequenceDiagram
         L-->>T: what the device is doing
     end
     T->>L: play, pause, seek, volume, tracks
-    L->>D: the same, the last of seeks in a row only
+    L->>D: the same, the last of seeks in a row and of each setting only
     T->>L: play here (link dropped)
     L->>D: stop
     L->>S: let the file go
@@ -558,21 +558,23 @@ sequenceDiagram
   cast, on every interface.
 - `src/cast/link.rs`: a tile's `Link` runs its session on a thread of its
   own, as every call may wait on the network: it connects, has the stream
-  server serve the file with the tracks the tile plays, and loads it at the
-  tile's position; then it does what the tile sends it (seeks in a row only
-  the last), asks the device what it is doing twice a second (ten times
-  while the picture follows the sound), and shows the tile what it asked
-  for until the device has done it. A video's sound sent to a speaker is
-  the one cast with the picture here: the tile keeps playing with its sound
-  unheard, playing and pausing as the speaker is seen to and following
-  where it says it is, the time it said it at moved on to now; its clock
-  eases there, and seeks where it is far off. Dropping the link stops the
-  device and the stream server lets the file go; as the app quits, where
-  each device was is kept to resume from, and the app waits a moment for
-  the devices to stop, those cast to from windows closed before too. The
-  next or previous file goes on to the device once it's known what it
-  holds, which decides whether a speaker gets its sound alone and which
-  subtitles go with it.
+  server serve the file with the tracks the tile plays, and loads it at
+  the tile's position; then it does what the tile sends it (of seeks in a
+  row only the last, and of what it sent while the device was being told
+  something else only the last volume, looping and subtitles), asks the
+  device what it is doing twice a second (ten times while the picture
+  follows the sound), and shows the tile what it asked for until the
+  device has done it. A video's sound sent to a speaker is the one cast
+  with the picture here: the tile keeps playing with its sound unheard,
+  playing and pausing as the speaker is seen to and following where it
+  says it is, the time it said it at moved on to now; its clock eases
+  there, and seeks where it is far off. Dropping the link stops the device
+  and the stream server lets the file go; as the app quits, where each
+  device was is kept to resume from, and the app waits a moment for the
+  devices to stop, those cast to from windows closed before too. The next
+  or previous file goes on to the device once it's known what it holds,
+  which decides whether a speaker gets its sound alone and which subtitles
+  go with it.
 - `src/cast/dlna.rs` adapts the DLNA crate: it asks each renderer found
   what it plays (its protocol info), which decides whether it shows video
   and how the stream server serves it (the files it lists, else a stream of
