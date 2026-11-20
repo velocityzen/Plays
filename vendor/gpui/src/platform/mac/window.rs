@@ -2029,7 +2029,7 @@ unsafe fn toggle_covering(state: &Arc<Mutex<MacWindowState>>) {
             let _: () = msg_send![window, setHasShadow: was.has_shadow];
             let _: () = msg_send![window, setMovable: was.movable];
             show_window_buttons(window, true);
-            window.setFrame_display_(was.frame, YES);
+            window.setFrame_display_(on_a_screen(was.frame, window), YES);
             if on_top {
                 window.setLevel_(NSFloatingWindowLevel);
             }
@@ -2058,6 +2058,41 @@ unsafe fn toggle_covering(state: &Arc<Mutex<MacWindowState>>) {
         let _: () = msg_send![window, setMovable: NO];
         show_window_buttons(window, false);
         window.setFrame_display_(NSScreen::frame(screen), YES);
+    }
+}
+
+/// Plays: `frame` if any of it is on a screen; or else, as its screen has
+/// gone, centered on `window`'s screen, as much of it as fits.
+unsafe fn on_a_screen(frame: NSRect, window: id) -> NSRect {
+    let overlaps = |screen: NSRect| {
+        frame.origin.x < screen.origin.x + screen.size.width
+            && screen.origin.x < frame.origin.x + frame.size.width
+            && frame.origin.y < screen.origin.y + screen.size.height
+            && screen.origin.y < frame.origin.y + frame.size.height
+    };
+    unsafe {
+        use cocoa::foundation::NSArray;
+        let screens = NSScreen::screens(nil);
+        if (0..NSArray::count(screens)).any(|i| overlaps(NSScreen::frame(screens.objectAtIndex(i))))
+        {
+            return frame;
+        }
+        let screen = window.screen();
+        if screen == nil {
+            return frame;
+        }
+        let area = NSScreen::visibleFrame(screen);
+        let (width, height) = (
+            frame.size.width.min(area.size.width),
+            frame.size.height.min(area.size.height),
+        );
+        NSRect::new(
+            NSPoint::new(
+                area.origin.x + (area.size.width - width) / 2.,
+                area.origin.y + (area.size.height - height) / 2.,
+            ),
+            NSSize::new(width, height),
+        )
     }
 }
 
@@ -2134,6 +2169,19 @@ extern "C" fn window_did_change_screen(this: &Object, _: Sel, _: id) {
     let window_state = unsafe { get_window_state(this) };
     let mut lock = window_state.as_ref().lock();
     lock.start_display_link();
+    // Plays: a window covering its display can't be moved, so it is on
+    // another screen as its own went away: it covers that one instead,
+    // outside the lock.
+    let (covering, window) = (lock.covering.is_some(), lock.native_window);
+    drop(lock);
+    if covering {
+        unsafe {
+            let screen = window.screen();
+            if screen != nil {
+                window.setFrame_display_(NSScreen::frame(screen), YES);
+            }
+        }
+    }
 }
 
 extern "C" fn window_did_change_key_status(this: &Object, selector: Sel, _: id) {

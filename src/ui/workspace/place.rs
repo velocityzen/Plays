@@ -2,7 +2,8 @@
 //! one closed was, on its display and at its size; a display the system
 //! numbered anew is known by its name. A window Output Device put
 //! full screen on another display comes back where it was once out of
-//! full screen. Wayland places windows itself, whatever is asked.
+//! full screen, unless its display has gone. Wayland places windows
+//! itself, whatever is asked.
 
 use std::fs;
 use std::path::PathBuf;
@@ -73,7 +74,7 @@ pub(super) struct Home {
     place: Place,
     /// It has been full screen there since, so leaving full screen is the
     /// way back.
-    shown: bool,
+    pub(super) shown: bool,
 }
 
 /// The place of Plays' window in front, or of the last one closed: where
@@ -210,9 +211,11 @@ impl Workspace {
 
     /// Follow the window in and out of full screen once Output Device moved
     /// it: in full screen, it has been shown there; moved again, it hasn't
-    /// yet; out of full screen after it was, it goes back where it was.
-    /// Runs on every render and tick, after `finish_moving`.
-    pub(super) fn come_home(&mut self, window: &mut Window, moved: bool) {
+    /// yet; out of full screen after it was, it goes back where it was, on
+    /// its display or one of its name, as much of it as fits. With that
+    /// display gone, it stays where the system put it. Runs on every render
+    /// and tick, after `finish_moving`.
+    pub(super) fn come_home(&mut self, window: &mut Window, moved: bool, cx: &App) {
         let Some(home) = &mut self.home else {
             return;
         };
@@ -223,8 +226,21 @@ impl Workspace {
         } else if home.shown {
             let place = home.place.clone();
             self.home = None;
-            displays::put(window, place.display, place.bounds());
-            self.place = Some(place);
+            let display = place
+                .find(&displays::list(cx))
+                .and_then(|id| cx.find_display(displays::find(id, cx)?));
+            if let Some(display) = display {
+                let id = u32::from(display.id());
+                displays::put(
+                    window,
+                    id,
+                    displays::inside(place.bounds(), display.bounds()),
+                );
+                self.place = Some(Place {
+                    display: id,
+                    ..place
+                });
+            }
         }
     }
 }

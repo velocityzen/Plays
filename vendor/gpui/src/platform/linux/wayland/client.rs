@@ -214,8 +214,9 @@ pub(crate) struct WaylandClientState {
     // Output to scale mapping
     outputs: HashMap<ObjectId, Output>,
     in_progress_outputs: HashMap<ObjectId, InProgressOutput>,
-    // Plays: to ask for full screen on one.
-    wl_outputs: HashMap<ObjectId, wl_output::WlOutput>,
+    // Plays: to ask for full screen on one, and to let one go once its
+    // global (the number) is removed, as when a display is unplugged.
+    wl_outputs: HashMap<ObjectId, (u32, wl_output::WlOutput)>,
     keyboard_layout: LinuxKeyboardLayout,
     keymap_state: Option<xkb::State>,
     compose_state: Option<xkb::compose::State>,
@@ -295,7 +296,7 @@ impl WaylandClientStatePtr {
             .wl_outputs
             .iter()
             .find(|(object_id, _)| object_id.protocol_id() == id.0)
-            .map(|(_, output)| output.clone())
+            .map(|(_, (_, output))| output.clone())
     }
 
     pub fn get_serial(&self, kind: SerialKind) -> u32 {
@@ -494,7 +495,7 @@ impl WaylandClient {
                             (),
                         );
                         in_progress_outputs.insert(output.id(), InProgressOutput::default());
-                        wl_outputs.insert(output.id(), output);
+                        wl_outputs.insert(output.id(), (global.name, output));
                     }
                     _ => {}
                 }
@@ -946,12 +947,27 @@ impl Dispatch<wl_registry::WlRegistry, GlobalListContents> for WaylandClientStat
                     state
                         .in_progress_outputs
                         .insert(output.id(), InProgressOutput::default());
-                    state.wl_outputs.insert(output.id(), output);
+                    state.wl_outputs.insert(output.id(), (name, output));
                 }
                 _ => {}
             },
-            wl_registry::Event::GlobalRemove { name: _ } => {
-                // TODO: handle global removal
+            // Plays: an output gone, as when a display is unplugged, isn't
+            // listed any more. Other globals' removal isn't handled.
+            wl_registry::Event::GlobalRemove { name } => {
+                let gone = state
+                    .wl_outputs
+                    .iter()
+                    .find(|(_, (global, _))| *global == name)
+                    .map(|(id, _)| id.clone());
+                if let Some(id) = gone {
+                    state.outputs.remove(&id);
+                    state.in_progress_outputs.remove(&id);
+                    if let Some((_, output)) = state.wl_outputs.remove(&id)
+                        && output.version() >= 3
+                    {
+                        output.release();
+                    }
+                }
             }
             _ => {}
         }

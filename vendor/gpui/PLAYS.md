@@ -185,9 +185,9 @@ takes the text system, and `TestPlatform::new` passes the no-op one as
 before. The test platform counts `activate` calls, and
 `TestAppContext::app_activations()` reads the count, so a test can tell the
 app was brought forward. `TestAppContext::add_display` connects
-another display, after the main one; `displays()` lists them all, and a
-window opens on the one its options ask for (`src/platform/test/display.rs`
-too).
+another display, after the main one, and `remove_display` disconnects it;
+`displays()` lists them all, and a window opens on the one its options ask
+for (`src/platform/test/display.rs` too).
 
 `src/platform.rs`, `src/window.rs`, and the macOS, X11 and test windows:
 `Window::set_on_top` keeps a window above other apps' windows, or puts it
@@ -222,7 +222,10 @@ options auto-hide the menu bar and Dock; the window delegate restores them
 when it isn't key. Going back restores the window's frame, style, shadow,
 level and the app's presentation options. `is_fullscreen` is true either
 way, and `window_bounds` gives the bounds from before. One full screen
-already leaves the way it came. The test window keeps the style.
+already leaves the way it came. A window covering a display that goes
+away, which macOS moves to another, covers that one instead; going back,
+a frame on no screen any more is centered on the window's screen, as much
+of it as fits. The test window keeps the style.
 
 `src/platform.rs`, `src/window.rs`, and the X11, Wayland and test
 platforms: on X11 a display is a RandR monitor rather than an X screen,
@@ -247,7 +250,9 @@ gravity, so the bounds are the window's own inside its frame; the test
 window takes the bounds; elsewhere it does nothing. The X11 window keeps
 where it was when asked to go full screen, and `window_bounds` gives that
 as `WindowBounds::Fullscreen` until it is out again, as window managers
-say a window is full screen only after they have moved it.
+say a window is full screen only after they have moved it. The Wayland
+client forgets an output once the compositor removes its global, and
+releases it, so a display unplugged leaves `displays()` too.
 
 `src/taffy.rs`: two float literals are typed as `f32`, which newer Rust
 warns about otherwise.

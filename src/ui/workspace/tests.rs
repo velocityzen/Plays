@@ -786,12 +786,44 @@ fn output_device_shows_the_window_full_screen_on_a_display(cx: &mut TestAppConte
     assert!(full_screen(&mut cx), "and still, picked again");
 
     // Another display: out of full screen here, then in again there.
-    cx.dispatch_action(ShowOnDisplay(here + 1));
+    let second = u32::from(cx.add_display(size(px(2560.), px(1440.))));
+    cx.dispatch_action(ShowOnDisplay(second));
     assert!(full_screen(&mut cx), "full screen again after the move");
-    let moving = window
-        .read_with(&cx, |workspace, _| workspace.moving_to)
-        .unwrap();
+    let (moving, on) = (
+        window
+            .read_with(&cx, |workspace, _| workspace.moving_to)
+            .unwrap(),
+        cx.update(|window, cx| displays::of(window, cx)),
+    );
     assert_eq!(moving, None, "the move is done");
+    assert_eq!(on, Some(second));
+}
+
+#[gpui::test]
+fn a_display_gone_on_the_way_leaves_the_window_where_it_was(cx: &mut TestAppContext) {
+    let (window, mut cx) = testing::start(cx);
+    open(window, &mut cx, &["clip.mp4"], false);
+    let here = cx.update(|window, cx| displays::of(window, cx));
+    let second = cx.add_display(size(px(2560.), px(1440.)));
+    cx.update(|window, _| window.toggle_fullscreen());
+    cx.run_until_parked();
+
+    // Picked from a menu that still had it, once it was unplugged: out of
+    // full screen here, with nowhere to go on to.
+    cx.remove_display(second);
+    cx.dispatch_action(ShowOnDisplay(u32::from(second)));
+    cx.run_until_parked();
+
+    let (full_screen, on) =
+        cx.update(|window, cx| (window.is_fullscreen(), displays::of(window, cx)));
+    assert!(!full_screen, "out of full screen");
+    assert_eq!(on, here, "on its display");
+    let (moving, away) = window
+        .read_with(&cx, |workspace, _| {
+            (workspace.moving_to, workspace.is_away())
+        })
+        .unwrap();
+    assert_eq!((moving, away), (None, false), "home, the move given up");
 }
 
 #[gpui::test]

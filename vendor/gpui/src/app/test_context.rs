@@ -373,6 +373,14 @@ impl TestAppContext {
         id
     }
 
+    /// Plays: disconnects display `id`, which `add_display` connected.
+    pub fn remove_display(&self, id: DisplayId) {
+        self.test_platform
+            .other_displays
+            .borrow_mut()
+            .retain(|display| display.id() != id);
+    }
+
     /// Simulates the user resizing the window to the new size.
     pub fn simulate_window_resize(&self, window_handle: AnyWindowHandle, size: Size<Pixels>) {
         self.test_window(window_handle).simulate_resize(size);

@@ -35,15 +35,21 @@ impl Workspace {
 
     /// Move to the display picked and go full screen there, once the window
     /// is out of full screen; and back where it was once out of full screen
-    /// there (`come_home`). Runs on every render and tick.
+    /// there (`come_home`). A display that went away on the way leaves the
+    /// window out of full screen, back where it was. Runs on every render
+    /// and tick.
     pub(super) fn finish_moving(&mut self, window: &mut Window, cx: &App) {
         let mut moved = false;
         if !window.is_fullscreen()
             && let Some(id) = self.moving_to.take()
         {
-            displays::full_screen_on(window, id, cx);
-            moved = true;
+            if displays::find(id, cx).is_some() {
+                displays::full_screen_on(window, id, cx);
+                moved = true;
+            } else if let Some(home) = &mut self.home {
+                home.shown = true;
+            }
         }
-        self.come_home(window, moved);
+        self.come_home(window, moved, cx);
     }
 }
