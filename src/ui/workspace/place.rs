@@ -263,6 +263,7 @@ mod tests {
         DisplayInfo {
             id,
             name: name.to_owned(),
+            bounds: Bounds::default(),
         }
     }
 

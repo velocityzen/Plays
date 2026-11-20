@@ -773,6 +773,38 @@ fn other_displays_black_out_while_a_window_is_full_screen(cx: &mut TestAppContex
 }
 
 #[gpui::test]
+fn black_out_covers_the_displays_as_last_looked_at(cx: &mut TestAppContext) {
+    let (_, mut cx) = testing::start(cx);
+    // Looked at every second rather than each time Black out looks, ten
+    // times a second, as asking is slow on X11: it covers what was seen.
+    let projector = displays::DisplayInfo {
+        id: 7,
+        name: "Projector".into(),
+        bounds: Bounds::new(point(px(3000.), px(0.)), size(px(1280.), px(720.))),
+    };
+    cx.update(|window, cx| {
+        let mut seen = displays::list(cx);
+        seen.push(projector.clone());
+        displays::remember(seen, cx);
+        Settings::update(cx, false, |s| s.black_out_displays = true);
+        window.toggle_fullscreen();
+    });
+    cx.run_until_parked();
+    let app: &TestAppContext = &cx;
+    let covered = app.update(|cx| {
+        blackout::update(cx);
+        blackout::covered(cx)
+    });
+    assert_eq!(
+        covered,
+        [blackout::Screen {
+            display: 7,
+            bounds: projector.bounds,
+        }]
+    );
+}
+
+#[gpui::test]
 fn output_device_shows_the_window_full_screen_on_a_display(cx: &mut TestAppContext) {
     let (window, mut cx) = testing::start(cx);
     open(window, &mut cx, &["clip.mp4"], false);

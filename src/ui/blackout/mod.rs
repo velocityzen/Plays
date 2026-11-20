@@ -191,13 +191,15 @@ fn full_screen(cx: &mut App) -> (Vec<Spot>, f32) {
     (spots, scale)
 }
 
-/// gpui's displays, each a screen to cover.
+/// The displays, each a screen to cover, as last looked at
+/// (`displays::connected`): asking the system ten times a second is too
+/// slow on X11.
 fn displays(cx: &App) -> Vec<Screen> {
-    cx.displays()
-        .iter()
+    displays::connected(cx)
+        .into_iter()
         .map(|display| Screen {
-            display: display.id().into(),
-            bounds: display.bounds(),
+            display: display.id,
+            bounds: display.bounds,
         })
         .collect()
 }

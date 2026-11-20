@@ -309,6 +309,9 @@ What the window tests check:
 - Video → Output Device checks the display the window in front is on, and
   picking a display puts the window full screen, leaving full screen first
   when it goes to another.
+- Black out covers the other displays while a window is full screen, and
+  only as Settings say, and it and the Output Device menus go by the
+  displays as last looked at rather than asking the system each time.
 - Video → Aspect Ratio and Crop check what the tile in front has (as the
   file is, and none, at first), as soon as it changes and as soon as the
   mouse is over another tile.

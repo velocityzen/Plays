@@ -425,7 +425,10 @@ flowchart LR
   - `displays` lists the displays by the names macOS gives them (on X11,
     each monitor by its product's name; on Wayland, each output by the
     compositor's description) and moves a window onto one, which gpui
-    can't. New windows open on the display in use.
+    can't. New windows open on the display in use. It looks at them, and
+    where each is, once a second and keeps what it saw for the menus and
+    Black out, as asking is slow on X11, a few round trips to the X server
+    for each.
   - `framing` works out how a tile's picture shows: the file's
     orientation, then the tile's turns, flips, aspect ratio and crop, as a
     size to fit and where to sample the frame.

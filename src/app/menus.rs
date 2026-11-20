@@ -231,7 +231,9 @@ impl MenuState {
             .into_iter()
             .partition(|device| device.shows == Shows::Video);
         Self {
-            displays: displays::list(cx),
+            // As last looked at: asking the system is slow on X11, and this
+            // is made every second and as the mouse goes between tiles.
+            displays: displays::connected(cx),
             front,
             devices,
             speakers,
@@ -452,7 +454,7 @@ mod tests {
     use std::sync::Arc;
     use std::time::{Duration, Instant};
 
-    use gpui::{TestAppContext, VisualTestContext};
+    use gpui::{Bounds, TestAppContext, VisualTestContext};
 
     use super::*;
     use crate::cast::fake::FakeTarget;
@@ -493,6 +495,25 @@ mod tests {
         assert_eq!(
             listed(&menu),
             [("Opening".into(), false), ("Middle".into(), true)]
+        );
+    }
+
+    #[gpui::test]
+    fn lists_the_displays_as_last_looked_at(cx: &mut TestAppContext) {
+        let (_, cx) = testing::start(cx);
+        // Looked at every second, not each time the menus are made: asking
+        // is slow on X11.
+        TestAppContext::update(&cx, |cx| {
+            let mut seen = displays::list(cx);
+            seen.push(display(7, "Projector"));
+            displays::remember(seen, cx);
+        });
+        let state = TestAppContext::update(&cx, MenuState::now);
+        assert_eq!(
+            state.displays.last().map(|display| display.name.as_str()),
+            Some("Projector"),
+            "{:?}",
+            state.displays
         );
     }
 
@@ -605,6 +626,7 @@ mod tests {
         DisplayInfo {
             id,
             name: name.into(),
+            bounds: Bounds::default(),
         }
     }
 

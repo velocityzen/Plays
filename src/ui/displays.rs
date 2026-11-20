@@ -24,6 +24,8 @@ pub struct DisplayInfo {
     /// gpui's id for it: on macOS, its `CGDirectDisplayID`.
     pub id: u32,
     pub name: String,
+    /// Where it is, as gpui has displays' bounds.
+    pub bounds: Bounds<Pixels>,
 }
 
 /// The displays connected, in the system's order.
@@ -43,13 +45,18 @@ pub fn list(cx: &App) -> Vec<DisplayInfo> {
                 .map(|(_, name)| name.clone())
                 .or_else(|| display.name())
                 .unwrap_or_else(|| format!("Display {}", index + 1));
-            DisplayInfo { id, name }
+            DisplayInfo {
+                id,
+                name,
+                bounds: display.bounds(),
+            }
         })
         .collect()
 }
 
 /// The displays connected when last looked (`watch`), as asking for them is
-/// too slow on X11 to do for every frame drawn.
+/// too slow on X11 (a few round trips to the X server for each) to do for
+/// every frame drawn, or as often as Black out looks where they are.
 struct Connected(Vec<DisplayInfo>);
 impl Global for Connected {}
 
@@ -58,6 +65,12 @@ impl Global for Connected {}
 pub fn connected(cx: &App) -> Vec<DisplayInfo> {
     cx.try_global::<Connected>()
         .map_or_else(|| list(cx), |connected| connected.0.clone())
+}
+
+/// Take `displays` as the ones last looked at, as `watch` does.
+#[cfg(test)]
+pub fn remember(displays: Vec<DisplayInfo>, cx: &mut App) {
+    cx.set_global(Connected(displays));
 }
 
 /// Look at the displays every `DISPLAYS_POLL`, and draw the windows again
