@@ -660,7 +660,8 @@ a session's own, and says what happens over a channel.
 - `channel.rs`, `proto.rs`: TLS to the device (rustls; each device signs
   its own certificate, so any is taken, though the handshake is checked
   against it), and on it Chromium's `CastMessage` protobufs, each after its
-  length, carrying JSON.
+  length, carrying JSON. Whatever comes after the device closes TLS is
+  dropped.
 - `session.rs`: a cast. It connects to the device, launches the Default
   Media Receiver (or joins it) and connects to that; requests wait for the
   answer with their request id. A thread reads everything the device says:

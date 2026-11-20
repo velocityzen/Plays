@@ -448,8 +448,9 @@ another sender; stopping closes the app without telling of it; a speaker
 takes a cast; and the cast ends when the device goes away or stops
 answering, when the app closes or another launches, and when another
 sender plays something else. Unit tests check the protobuf framing, the
-JSON LOAD sends and the status read back, and records from a Google TV, a
-Nest speaker and a group. Each has been checked to fail when what it
+JSON LOAD sends and the status read back, records from a Google TV, a
+Nest speaker and a group, and that what a device sends after closing TLS
+is dropped rather than read for ever. Each has been checked to fail when what it
 covers is broken.
 
 The DLNA crate's tests use the fake renderer over HTTP and SSDP on this
