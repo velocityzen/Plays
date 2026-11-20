@@ -58,7 +58,7 @@ flowchart TB
 
     crates["Protocol crates<br/>crates/chromecast, crates/dlna"]
     server["Stream server<br/>crates/stream-server"]
-    ffmpeg[("FFmpeg, static<br/>build/ffmpeg")]
+    ffmpeg[("FFmpeg, static<br/>build/ffmpeg-9.0.2")]
     speakers(["Output devices"])
     devices(["TVs and speakers"])
 
@@ -881,18 +881,23 @@ and play a quiet tone on a speaker.
 
 ## Linking FFmpeg
 
-FFmpeg is built once from source by `script/build-ffmpeg` into
-`build/ffmpeg`, where `.cargo/config.toml` points the build (see
-[CONTRIBUTING.md](CONTRIBUTING.md#building)).
+FFmpeg is built once from source by `script/build-ffmpeg` into a folder
+named for its version, `build/ffmpeg-9.0.2`, where `.cargo/config.toml`
+points the build (see [CONTRIBUTING.md](CONTRIBUTING.md#building)).
+ffmpeg-sys-next makes FFmpeg's Rust bindings from its headers, and makes
+them again only when `FFMPEG_DIR` changes, so a new version, in a new
+folder, gets new bindings in every profile.
 
 `build.rs`, with `crates/ffmpeg-link`, links the static FFmpeg with what
 it needs in turn, read from its pkg-config files (dav1d, zlib, iconv, and
 macOS's frameworks or Linux's OpenSSL and hardware decoding libraries),
-and the C compiler's runtime library they call into. Linking is a crate
-of its own because a build script's link arguments reach only its own
-package, and the stream server links FFmpeg too. `build.rs` also dates the
-build for About: the day of `SOURCE_DATE_EPOCH` for a reproducible build,
-else today.
+and the C compiler's runtime library they call into, from the compiler
+`CC` names (which may be behind a wrapper such as ccache), looked for
+again when an update of the compiler moves it. Linking is a crate of its
+own because a build script's link arguments reach only its own package,
+and the stream server links FFmpeg too. `build.rs` also dates the build
+for About: the day of `SOURCE_DATE_EPOCH` for a reproducible build, else
+today.
 
 ## Vendored gpui and xattr
 

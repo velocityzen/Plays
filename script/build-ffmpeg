@@ -4,10 +4,10 @@
 # for AV1. Decoding, plus what the stream server (crates/stream-server)
 # needs to repackage and re-encode for TVs and speakers: the MP4, MPEG-TS,
 # ADTS and FLAC muxers, the AAC, AC-3, E-AC-3 and FLAC encoders, and the
-# hardware video encoders (no software one). They go in build/ffmpeg, where
-# .cargo/config.toml points the Rust build, and are built again only when
-# this script changes (or with --force). Sources are checked against the
-# checksums below.
+# hardware video encoders (no software one). They go in a folder named for
+# FFmpeg's version, such as build/ffmpeg-9.0.2, where .cargo/config.toml
+# points the Rust build, and are built again only when this script changes
+# (or with --force). Sources are checked against the checksums below.
 #
 # On macOS FFmpeg uses VideoToolbox and AudioToolbox, and macOS's TLS
 # (Secure Transport), so the app needs nothing beyond macOS. On Linux it
@@ -28,7 +28,7 @@ MESON_SHA256=ab0a6ca09f8ef70c564c8241fb5a23957886a0b53fb58412b5e07eaf07dba743
 cd "$(dirname "$0")/.."
 script=$PWD/script/build-ffmpeg
 root=$PWD/build
-prefix=$root/ffmpeg
+prefix=$root/ffmpeg-$FFMPEG_VERSION
 sources=$root/sources
 work=$root/work
 
@@ -44,6 +44,14 @@ sha256() {
 remove() {
     rm -rf "$@" 2>/dev/null || rm -rf "$@"
 }
+
+# ffmpeg-sys-next makes FFmpeg's Rust bindings from its headers only when
+# FFMPEG_DIR changes, so each version goes in a folder of its own, for
+# .cargo/config.toml to name.
+if ! grep -qxF "FFMPEG_DIR = { value = \"build/ffmpeg-$FFMPEG_VERSION\", relative = true }" .cargo/config.toml; then
+    echo "Set FFMPEG_DIR in .cargo/config.toml to build/ffmpeg-$FFMPEG_VERSION" >&2
+    exit 1
+fi
 
 stamp="$(sha256 "$script") $(uname -sm)"
 if [ "${1:-}" != --force ] && [ "$(cat "$prefix/.stamp" 2>/dev/null)" = "$stamp" ]; then
@@ -172,5 +180,9 @@ printf 'FFMPEG_VERSION=%s\nDAV1D_VERSION=%s\n' "$FFMPEG_VERSION" "$DAV1D_VERSION
 
 cd "$root"
 remove "$work"
+# Other versions, and build/ffmpeg, where FFmpeg went before.
+for old in "$root/ffmpeg" "$root"/ffmpeg-*; do
+    [ "$old" = "$prefix" ] || remove "$old"
+done
 echo "$stamp" >"$prefix/.stamp"
 echo "Built FFmpeg $FFMPEG_VERSION in $prefix"

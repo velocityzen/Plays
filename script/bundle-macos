@@ -13,8 +13,9 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 script/build-ffmpeg
-# The app's own FFmpeg, even where FFMPEG_DIR names another.
-export FFMPEG_DIR=$PWD/build/ffmpeg
+# The app's own FFmpeg, the one .cargo/config.toml names, even where
+# FFMPEG_DIR names another.
+unset FFMPEG_DIR
 # The credits in Settings > About, for the crates the app is built with now.
 script/attributions
 

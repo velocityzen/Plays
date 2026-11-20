@@ -70,22 +70,37 @@ pub fn link() {
 /// macOS clang's, for `__builtin_available` checking the macOS version, and
 /// on Linux libgcc, for the atomics GCC builds as calls on ARM64. The
 /// compiler links it itself, but Rust links with `-nodefaultlibs`, so name it
-/// here, after the libraries that need it.
+/// here, after the libraries that need it. The compiler is `CC`'s, if it's
+/// set, and the library is looked for again when an update of the compiler
+/// replaces or moves it.
 fn link_compiler_runtime() {
+    println!("cargo:rerun-if-env-changed=CC");
     let compiler = env::var("CC").unwrap_or_else(|_| "cc".into());
-    let output = Command::new(&compiler)
+    let runtime = runtime_library(&compiler);
+    println!("cargo:rerun-if-changed={}", runtime.display());
+    println!("cargo:rustc-link-arg={}", runtime.display());
+}
+
+/// Where `compiler` keeps its runtime library. `compiler` is a command, as
+/// `CC` may be: the compiler with arguments, or behind a wrapper such as
+/// `ccache clang`.
+fn runtime_library(compiler: &str) -> PathBuf {
+    let mut words = compiler.split_whitespace();
+    let program = words.next().unwrap_or("cc");
+    let output = Command::new(program)
+        .args(words)
         .arg("-print-libgcc-file-name")
         .output()
         .unwrap_or_else(|err| panic!("running {compiler}: {err}"));
     let runtime = String::from_utf8_lossy(&output.stdout);
-    let runtime = Path::new(runtime.trim());
+    let runtime = PathBuf::from(runtime.trim());
     if !runtime.is_file() {
         panic!(
             "{compiler}'s runtime library isn't at {}",
             runtime.display()
         );
     }
-    println!("cargo:rustc-link-arg={}", runtime.display());
+    runtime
 }
 
 /// The linker arguments a pkg-config file gives in `Libs` and `Libs.private`,
@@ -142,4 +157,31 @@ fn expand(value: &str, variables: &HashMap<String, String>) -> String {
     }
     expanded.push_str(rest);
     expanded
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ffmpeg_is_built_in_a_folder_named_for_its_version() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let script = fs::read_to_string(root.join("script/build-ffmpeg")).unwrap();
+        let version = script
+            .lines()
+            .find_map(|line| line.strip_prefix("FFMPEG_VERSION="))
+            .unwrap();
+        let config = fs::read_to_string(root.join(".cargo/config.toml")).unwrap();
+        let folder = config
+            .lines()
+            .find_map(|line| line.strip_prefix("FFMPEG_DIR = { value = \""))
+            .and_then(|rest| rest.split('"').next())
+            .unwrap();
+        assert_eq!(folder, format!("build/ffmpeg-{version}"));
+    }
+
+    #[test]
+    fn finds_the_runtime_of_a_compiler_named_with_a_wrapper() {
+        assert_eq!(runtime_library("env cc"), runtime_library("cc"));
+    }
 }

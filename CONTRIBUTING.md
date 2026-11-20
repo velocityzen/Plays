@@ -30,12 +30,15 @@ source, which takes a few minutes: FFmpeg 9.0.2 with dav1d for AV1, as
 static libraries under the LGPL. They decode, and have what the stream
 server needs besides: the MP4, MPEG-TS, ADTS and FLAC muxers, the AAC,
 AC-3, E-AC-3 and FLAC encoders, and the hardware video encoders (no
-software one). It installs them in `build/ffmpeg`, where
-`.cargo/config.toml` points the build, and builds them again only when the
-script changes (or with `--force`). Sources are checked against the
-checksums in the script. It needs `pkg-config`, `ninja` and `python3`
-(meson, which builds dav1d, is downloaded with the sources), and `nasm` on
-x86_64.
+software one). It installs them in a folder named for the version,
+`build/ffmpeg-9.0.2`, where `.cargo/config.toml` points the build, and
+builds them again only when the script changes (or with `--force`).
+FFmpeg's Rust bindings are made again only when that folder changes, not
+when the headers in it do, so a new version is named in both the script
+and `.cargo/config.toml`; the script stops if they don't match. Sources
+are checked against the checksums in the script. It needs `pkg-config`,
+`ninja` and `python3` (meson, which builds dav1d, is downloaded with the
+sources), and `nasm` on x86_64.
 
 The repository is a Cargo workspace: Plays, and beside it in `crates/` the
 crates it is built from, each built and tested on its own. Cargo commands
@@ -59,10 +62,12 @@ cargo run --release -- path/to/video.mp4 path/to/song.mp3 https://example.com/li
 
 FFmpeg uses VideoToolbox, AudioToolbox and macOS's TLS, so the app needs
 nothing beyond macOS. To build with another FFmpeg instead, such as
-Homebrew's (which is GPL, and which the app then needs installed to run):
+Homebrew's (which is GPL, and which the app then needs installed to run),
+name the folder Homebrew keeps its version in, so the bindings are made
+again when Homebrew upgrades it:
 
 ```bash
-FFMPEG_DIR=$(brew --prefix ffmpeg) cargo build --release
+FFMPEG_DIR=$(realpath "$(brew --prefix ffmpeg)") cargo build --release
 ```
 
 ### Linux (Debian/Ubuntu)
@@ -427,6 +432,10 @@ fail when the behavior it covers is broken.
 ### The crates
 
 `cargo test --workspace` tests the crates in `crates/` too.
+
+ffmpeg-link's tests check that `.cargo/config.toml` names the folder for
+the FFmpeg version `script/build-ffmpeg` builds, and that the compiler's
+runtime library is found when `CC` puts the compiler behind a wrapper.
 
 The stream server's tests serve the fixtures over HTTP, as a device
 fetches them, and read what comes back with FFmpeg: the plan for each

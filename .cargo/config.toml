@@ -1,4 +1,6 @@
 [env]
-# The FFmpeg that script/build-ffmpeg builds, which is linked into the app.
-# Set FFMPEG_DIR to build with another one, such as Homebrew's.
-FFMPEG_DIR = { value = "build/ffmpeg", relative = true }
+# The FFmpeg that script/build-ffmpeg builds, which is linked into the app,
+# in a folder named for its version: ffmpeg-sys-next makes FFmpeg's Rust
+# bindings from its headers only when FFMPEG_DIR changes. Set FFMPEG_DIR to
+# build with another one, such as Homebrew's.
+FFMPEG_DIR = { value = "build/ffmpeg-9.0.2", relative = true }

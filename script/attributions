@@ -17,7 +17,6 @@ import urllib.request
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUTPUT = os.path.join(ROOT, "resources", "attributions.json")
-FFMPEG = os.path.join(ROOT, "build", "ffmpeg")
 STANDARD = os.path.join(ROOT, "build", "licenses")
 SPDX = "https://raw.githubusercontent.com/spdx/license-list-data/v3.29.0/text/{}.txt"
 
@@ -138,14 +137,23 @@ class Texts:
         return self.index[text]
 
 
+def ffmpeg_folder():
+    """Where script/build-ffmpeg puts FFmpeg: the folder .cargo/config.toml
+    names as FFMPEG_DIR, which is in the repository."""
+    with open(os.path.join(ROOT, ".cargo", "config.toml")) as file:
+        found = re.search(r'^FFMPEG_DIR = \{ value = "([^"]+)"', file.read(), re.M)
+    return os.path.join(ROOT, found.group(1))
+
+
 def native(texts):
     """FFmpeg and dav1d, as script/build-ffmpeg builds them."""
-    versions_path = os.path.join(FFMPEG, "versions")
+    folder = ffmpeg_folder()
+    versions_path = os.path.join(folder, "versions")
     if not os.path.isfile(versions_path):
         sys.exit("FFmpeg isn't built: run script/build-ffmpeg first")
     with open(versions_path) as file:
         versions = dict(line.strip().split("=", 1) for line in file if "=" in line)
-    licenses = os.path.join(FFMPEG, "share", "licenses")
+    licenses = os.path.join(folder, "share", "licenses")
     ffmpeg, dav1d = versions["FFMPEG_VERSION"], versions["DAV1D_VERSION"]
     return [
         {
