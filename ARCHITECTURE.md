@@ -429,11 +429,16 @@ flowchart LR
   assertion on macOS, the desktop portal's Inhibit on Linux. `smoke` runs
   the real app through scripted scenarios (see
   [CONTRIBUTING.md](CONTRIBUTING.md#smoke-runs)).
-- `src/hotkeys.rs`: the commands shortcuts can run, their default
-  keys, how they are saved in Settings and shown (`⌃⌘F`, `Ctrl+Alt+F`).
-  Each command has a gpui action, bound in the `Workspace` key context so
+- `src/hotkeys.rs`: the commands shortcuts can run, their default keys,
+  how they are saved in Settings and shown (`⌃⌘F`, `Ctrl+Alt+F`). Each
+  command has a gpui action, bound in the `Workspace` key context so
   single keys such as space don't fire while typing elsewhere. The keymap
-  is rebuilt from them whenever they change, and the menus show them.
+  is rebuilt from them whenever they change, and the menus show them. Each
+  command is listed once, under its group, with its action, its name in
+  the settings file and its title; a macro (`commands!`) makes the
+  actions, the `Command` enum, the order Settings shows them in, and every
+  table of them from that list. Default keys are a `match` of their own,
+  which must name every command.
 - `src/settings.rs`: the settings, saved as JSON in the user's config
   folder with the version of Plays they're from. Each value is read on
   its own, so one a setting can't take (typed wrong, or from a later

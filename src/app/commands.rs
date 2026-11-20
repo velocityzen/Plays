@@ -207,3 +207,31 @@ fn change_subtitle_height(cx: &mut App, delta: f32) {
         format!("Subtitle height {}%", (style.position * 100.0).round())
     });
 }
+
+#[cfg(test)]
+mod tests {
+    use gpui::{Action, TestAppContext};
+
+    use super::*;
+
+    #[gpui::test]
+    fn every_command_and_menu_action_does_something(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            register(cx);
+            for command in Command::ALL {
+                assert!(
+                    cx.is_action_available(&*command.action()),
+                    "nothing does {command:?}"
+                );
+            }
+            let menu_only: [&dyn Action; 2] = [&PlayAll, &PauseAll];
+            for action in menu_only {
+                assert!(
+                    cx.is_action_available(action),
+                    "nothing does {}",
+                    action.name()
+                );
+            }
+        });
+    }
+}

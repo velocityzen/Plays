@@ -187,15 +187,17 @@ dropped from the GPU once they are off screen. Unit tests cover finding
 files for a video, reading their names and telling encodings, and the
 shortcuts: no default key used twice, a key moving to the command it is
 given, reading and writing them in the settings file, staying out of text
-fields, and how they are shown. The text field's tests compose as an IME
-does: the cursor stays in what is composed, counted within it even after
-other text and wider characters, deleting it leaves an empty field to type
-into, and ranges outside the text are kept inside it. The settings file is
-read a value at a time, so one that's wrong leaves only its setting as
-Plays starts it out; a file not read whole, half written or from a later
-Plays, is kept beside it as `settings.json.bad`, and a good one, or one
-from before there was a version, is read as it is; and saving replaces a
-file whole rather than writing over it.
+fields, how they are shown, and every command's action (and the menu's
+Play All and Pause All) having something that does it. The text field's
+tests compose as an IME does: the cursor stays in what is composed,
+counted within it even after other text and wider characters, deleting it
+leaves an empty field to type into, and ranges outside the text are kept
+inside it. The settings file is read a value at a time, so one that's
+wrong leaves only its setting as Plays starts it out; a file not read
+whole, half written or from a later Plays, is kept beside it as
+`settings.json.bad`, and a good one, or one from before there was a
+version, is read as it is; and saving replaces a file whole rather than
+writing over it.
 
 A clip remuxed with a display matrix must report its turn and flip; unit
 tests check that orientations compose like their matrices, read FFmpeg's

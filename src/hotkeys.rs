@@ -11,127 +11,131 @@ use std::collections::BTreeMap;
 use gpui::{Action, DummyKeyboardMapper, KeyBinding, KeyBindingContextPredicate, Keystroke};
 use serde::{Deserialize, Serialize};
 
-gpui::actions!(
-    plays,
-    [
-        PlayPause,
-        SeekForward,
-        SeekBackward,
-        NextFrame,
-        PreviousFrame,
-        NextChapter,
-        PreviousChapter,
-        Restart,
-        PreviousFile,
-        NextFile,
-        ToggleLoop,
-        VolumeUp,
-        VolumeDown,
-        ToggleMute,
-        NextAudioTrack,
-        AudioEarlier,
-        AudioLater,
-        ResetAudioDelay,
-        NextSubtitleTrack,
-        NextVideoTrack,
-        ToggleSubtitles,
-        BiggerSubtitles,
-        SmallerSubtitles,
-        SubtitlesUp,
-        SubtitlesDown,
-        SubtitlesEarlier,
-        SubtitlesLater,
-        ResetSubtitleDelay,
-        RotateRight,
-        RotateLeft,
-        FlipHorizontally,
-        FlipVertically,
-        NextAspectRatio,
-        NextCrop,
-        ResetPicture,
-        TakeScreenshot,
-        ToggleFullScreen,
-        ExitFullScreen,
-        TogglePictureInPicture,
-        ToggleFloatOnTop,
-        ToggleFloatOnTopWhilePlaying,
-        ToggleConsole,
-        PlayPauseAll,
-        PlayAll,
-        PauseAll,
-        RestartAll,
-        SeekForwardAll,
-        SeekBackwardAll,
-        NextFrameAll,
-        PreviousFrameAll,
-        SyncAll,
-        VolumeUpAll,
-        VolumeDownAll,
-        ToggleMuteAll,
-    ]
-);
+/// Every command once, in the order Settings shows them, under its group:
+/// its variant, the gpui action it fires, its name in the settings file and
+/// its title. The actions, `Command`, `Command::ALL`, `id`, `title`, `group`
+/// and `action` are all made from this one list, so a command can't be
+/// missing from any of them. Its default keys are a `match` of their own
+/// (`Command::default_keys`), which must name every command too.
+macro_rules! commands {
+    ($($group:ident { $($command:ident => $action:ident, $id:literal, $title:literal;)+ })+) => {
+        gpui::actions!(plays, [$($($action,)+)+]);
+
+        /// What a shortcut does.
+        #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+        pub enum Command {
+            $($($command,)+)+
+        }
+
+        impl Command {
+            /// Every command, in the order Settings shows them.
+            pub const ALL: [Self; [$($(stringify!($command),)+)+].len()] =
+                [$($(Self::$command,)+)+];
+
+            /// Its name in the settings file.
+            pub fn id(self) -> &'static str {
+                match self {
+                    $($(Self::$command => $id,)+)+
+                }
+            }
+
+            pub fn title(self) -> &'static str {
+                match self {
+                    $($(Self::$command => $title,)+)+
+                }
+            }
+
+            pub fn group(self) -> Group {
+                match self {
+                    $($(Self::$command)|+ => Group::$group,)+
+                }
+            }
+
+            pub fn action(self) -> Box<dyn Action> {
+                match self {
+                    $($(Self::$command => Box::new($action),)+)+
+                }
+            }
+        }
+    };
+}
+
+commands! {
+    Playback {
+        PlayPause => PlayPause, "play_pause", "Play/pause";
+        SeekForward => SeekForward, "seek_forward", "Seek forward";
+        SeekBackward => SeekBackward, "seek_backward", "Seek backward";
+        NextFrame => NextFrame, "next_frame", "Next frame";
+        PreviousFrame => PreviousFrame, "previous_frame", "Previous frame";
+        NextChapter => NextChapter, "next_chapter", "Next chapter";
+        PreviousChapter => PreviousChapter, "previous_chapter", "Previous chapter";
+        Restart => Restart, "restart", "Restart";
+        PreviousFile => PreviousFile, "previous_file", "Previous file in its folder";
+        NextFile => NextFile, "next_file", "Next file in its folder";
+        Loop => ToggleLoop, "loop", "Loop";
+    }
+    Audio {
+        VolumeUp => VolumeUp, "volume_up", "Volume up";
+        VolumeDown => VolumeDown, "volume_down", "Volume down";
+        Mute => ToggleMute, "mute", "Mute";
+        NextAudioTrack => NextAudioTrack, "next_audio_track", "Next audio track";
+        AudioEarlier => AudioEarlier, "audio_earlier", "Audio earlier";
+        AudioLater => AudioLater, "audio_later", "Audio later";
+        ResetAudioDelay => ResetAudioDelay, "reset_audio_delay", "Reset audio delay";
+    }
+    Subtitles {
+        NextSubtitleTrack => NextSubtitleTrack, "next_subtitle_track", "Next subtitles";
+        ToggleSubtitles => ToggleSubtitles, "toggle_subtitles", "Show/hide subtitles";
+        BiggerSubtitles => BiggerSubtitles, "bigger_subtitles", "Bigger subtitles";
+        SmallerSubtitles => SmallerSubtitles, "smaller_subtitles", "Smaller subtitles";
+        SubtitlesUp => SubtitlesUp, "subtitles_up", "Move subtitles up";
+        SubtitlesDown => SubtitlesDown, "subtitles_down", "Move subtitles down";
+        SubtitlesEarlier => SubtitlesEarlier, "subtitles_earlier", "Subtitles earlier";
+        SubtitlesLater => SubtitlesLater, "subtitles_later", "Subtitles later";
+        ResetSubtitleDelay => ResetSubtitleDelay, "reset_subtitle_delay", "Reset subtitle delay";
+    }
+    Video {
+        NextVideoTrack => NextVideoTrack, "next_video_track", "Next video track";
+        RotateRight => RotateRight, "rotate_right", "Rotate right";
+        RotateLeft => RotateLeft, "rotate_left", "Rotate left";
+        FlipHorizontally => FlipHorizontally, "flip_horizontally", "Flip horizontally";
+        FlipVertically => FlipVertically, "flip_vertically", "Flip vertically";
+        NextAspectRatio => NextAspectRatio, "next_aspect_ratio", "Next aspect ratio";
+        NextCrop => NextCrop, "next_crop", "Next crop";
+        ResetPicture => ResetPicture, "reset_picture", "Reset picture";
+        TakeScreenshot => TakeScreenshot, "take_screenshot", "Take screenshot";
+    }
+    Window {
+        FullScreen => ToggleFullScreen, "full_screen", "Full screen";
+        ExitFullScreen => ExitFullScreen, "exit_full_screen", "Exit full screen";
+        PictureInPicture => TogglePictureInPicture, "picture_in_picture", "Picture in Picture";
+        FloatOnTop => ToggleFloatOnTop, "float_on_top", "Float on top";
+        FloatOnTopWhilePlaying => ToggleFloatOnTopWhilePlaying,
+            "float_on_top_while_playing", "Float on top while playing";
+        Console => ToggleConsole, "console", "Show/hide console";
+    }
+    AllFiles {
+        PlayPauseAll => PlayPauseAll, "play_pause_all", "Play/pause all";
+        SeekForwardAll => SeekForwardAll, "seek_forward_all", "Seek all forward";
+        SeekBackwardAll => SeekBackwardAll, "seek_backward_all", "Seek all backward";
+        NextFrameAll => NextFrameAll, "next_frame_all", "Next frame on all";
+        PreviousFrameAll => PreviousFrameAll, "previous_frame_all", "Previous frame on all";
+        RestartAll => RestartAll, "restart_all", "Restart all";
+        SyncAll => SyncAll, "sync_all", "Sync all to the tile in front";
+        VolumeUpAll => VolumeUpAll, "volume_up_all", "Volume up on all";
+        VolumeDownAll => VolumeDownAll, "volume_down_all", "Volume down on all";
+        MuteAll => ToggleMuteAll, "mute_all", "Mute/unmute all";
+    }
+}
+
+// Every tile in the window, from the Playback menu only: no shortcut is
+// offered for them.
+gpui::actions!(plays, [PlayAll, PauseAll]);
 
 /// The key context the shortcuts work in: a window with files open, but
 /// not while typing in a text field there (the stream URL), so Space and
 /// letters type.
 pub const CONTEXT: &str = "Workspace && !TextInput";
-
-/// What a shortcut does.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Command {
-    PlayPause,
-    SeekForward,
-    SeekBackward,
-    NextFrame,
-    PreviousFrame,
-    NextChapter,
-    PreviousChapter,
-    Restart,
-    PreviousFile,
-    NextFile,
-    Loop,
-    VolumeUp,
-    VolumeDown,
-    Mute,
-    NextAudioTrack,
-    AudioEarlier,
-    AudioLater,
-    ResetAudioDelay,
-    NextSubtitleTrack,
-    NextVideoTrack,
-    ToggleSubtitles,
-    BiggerSubtitles,
-    SmallerSubtitles,
-    SubtitlesUp,
-    SubtitlesDown,
-    SubtitlesEarlier,
-    SubtitlesLater,
-    ResetSubtitleDelay,
-    RotateRight,
-    RotateLeft,
-    FlipHorizontally,
-    FlipVertically,
-    NextAspectRatio,
-    NextCrop,
-    ResetPicture,
-    TakeScreenshot,
-    FullScreen,
-    ExitFullScreen,
-    PictureInPicture,
-    FloatOnTop,
-    FloatOnTopWhilePlaying,
-    Console,
-    PlayPauseAll,
-    RestartAll,
-    SeekForwardAll,
-    SeekBackwardAll,
-    NextFrameAll,
-    PreviousFrameAll,
-    SyncAll,
-    VolumeUpAll,
-    VolumeDownAll,
-    MuteAll,
-}
 
 /// How the commands are grouped in Settings.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -167,298 +171,14 @@ impl Group {
 }
 
 impl Command {
-    pub const ALL: [Self; 52] = [
-        Self::PlayPause,
-        Self::SeekForward,
-        Self::SeekBackward,
-        Self::NextFrame,
-        Self::PreviousFrame,
-        Self::NextChapter,
-        Self::PreviousChapter,
-        Self::Restart,
-        Self::PreviousFile,
-        Self::NextFile,
-        Self::Loop,
-        Self::VolumeUp,
-        Self::VolumeDown,
-        Self::Mute,
-        Self::NextAudioTrack,
-        Self::AudioEarlier,
-        Self::AudioLater,
-        Self::ResetAudioDelay,
-        Self::NextSubtitleTrack,
-        Self::ToggleSubtitles,
-        Self::BiggerSubtitles,
-        Self::SmallerSubtitles,
-        Self::SubtitlesUp,
-        Self::SubtitlesDown,
-        Self::SubtitlesEarlier,
-        Self::SubtitlesLater,
-        Self::ResetSubtitleDelay,
-        Self::NextVideoTrack,
-        Self::RotateRight,
-        Self::RotateLeft,
-        Self::FlipHorizontally,
-        Self::FlipVertically,
-        Self::NextAspectRatio,
-        Self::NextCrop,
-        Self::ResetPicture,
-        Self::TakeScreenshot,
-        Self::FullScreen,
-        Self::ExitFullScreen,
-        Self::PictureInPicture,
-        Self::FloatOnTop,
-        Self::FloatOnTopWhilePlaying,
-        Self::Console,
-        Self::PlayPauseAll,
-        Self::SeekForwardAll,
-        Self::SeekBackwardAll,
-        Self::NextFrameAll,
-        Self::PreviousFrameAll,
-        Self::RestartAll,
-        Self::SyncAll,
-        Self::VolumeUpAll,
-        Self::VolumeDownAll,
-        Self::MuteAll,
-    ];
-
-    /// Its name in the settings file.
-    pub fn id(self) -> &'static str {
-        match self {
-            Self::PlayPause => "play_pause",
-            Self::SeekForward => "seek_forward",
-            Self::SeekBackward => "seek_backward",
-            Self::NextFrame => "next_frame",
-            Self::PreviousFrame => "previous_frame",
-            Self::NextChapter => "next_chapter",
-            Self::PreviousChapter => "previous_chapter",
-            Self::Restart => "restart",
-            Self::PreviousFile => "previous_file",
-            Self::NextFile => "next_file",
-            Self::Loop => "loop",
-            Self::VolumeUp => "volume_up",
-            Self::VolumeDown => "volume_down",
-            Self::Mute => "mute",
-            Self::NextAudioTrack => "next_audio_track",
-            Self::AudioEarlier => "audio_earlier",
-            Self::AudioLater => "audio_later",
-            Self::ResetAudioDelay => "reset_audio_delay",
-            Self::NextSubtitleTrack => "next_subtitle_track",
-            Self::NextVideoTrack => "next_video_track",
-            Self::ToggleSubtitles => "toggle_subtitles",
-            Self::BiggerSubtitles => "bigger_subtitles",
-            Self::SmallerSubtitles => "smaller_subtitles",
-            Self::SubtitlesUp => "subtitles_up",
-            Self::SubtitlesDown => "subtitles_down",
-            Self::SubtitlesEarlier => "subtitles_earlier",
-            Self::SubtitlesLater => "subtitles_later",
-            Self::ResetSubtitleDelay => "reset_subtitle_delay",
-            Self::RotateRight => "rotate_right",
-            Self::RotateLeft => "rotate_left",
-            Self::FlipHorizontally => "flip_horizontally",
-            Self::FlipVertically => "flip_vertically",
-            Self::NextAspectRatio => "next_aspect_ratio",
-            Self::NextCrop => "next_crop",
-            Self::ResetPicture => "reset_picture",
-            Self::TakeScreenshot => "take_screenshot",
-            Self::FullScreen => "full_screen",
-            Self::ExitFullScreen => "exit_full_screen",
-            Self::PictureInPicture => "picture_in_picture",
-            Self::FloatOnTop => "float_on_top",
-            Self::FloatOnTopWhilePlaying => "float_on_top_while_playing",
-            Self::Console => "console",
-            Self::PlayPauseAll => "play_pause_all",
-            Self::RestartAll => "restart_all",
-            Self::SeekForwardAll => "seek_forward_all",
-            Self::SeekBackwardAll => "seek_backward_all",
-            Self::NextFrameAll => "next_frame_all",
-            Self::PreviousFrameAll => "previous_frame_all",
-            Self::SyncAll => "sync_all",
-            Self::VolumeUpAll => "volume_up_all",
-            Self::VolumeDownAll => "volume_down_all",
-            Self::MuteAll => "mute_all",
-        }
-    }
-
     fn from_id(id: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|command| command.id() == id)
-    }
-
-    pub fn title(self) -> &'static str {
-        match self {
-            Self::PlayPause => "Play/pause",
-            Self::SeekForward => "Seek forward",
-            Self::SeekBackward => "Seek backward",
-            Self::NextFrame => "Next frame",
-            Self::PreviousFrame => "Previous frame",
-            Self::NextChapter => "Next chapter",
-            Self::PreviousChapter => "Previous chapter",
-            Self::Restart => "Restart",
-            Self::PreviousFile => "Previous file in its folder",
-            Self::NextFile => "Next file in its folder",
-            Self::Loop => "Loop",
-            Self::VolumeUp => "Volume up",
-            Self::VolumeDown => "Volume down",
-            Self::Mute => "Mute",
-            Self::NextAudioTrack => "Next audio track",
-            Self::AudioEarlier => "Audio earlier",
-            Self::AudioLater => "Audio later",
-            Self::ResetAudioDelay => "Reset audio delay",
-            Self::NextSubtitleTrack => "Next subtitles",
-            Self::NextVideoTrack => "Next video track",
-            Self::ToggleSubtitles => "Show/hide subtitles",
-            Self::BiggerSubtitles => "Bigger subtitles",
-            Self::SmallerSubtitles => "Smaller subtitles",
-            Self::SubtitlesUp => "Move subtitles up",
-            Self::SubtitlesDown => "Move subtitles down",
-            Self::SubtitlesEarlier => "Subtitles earlier",
-            Self::SubtitlesLater => "Subtitles later",
-            Self::ResetSubtitleDelay => "Reset subtitle delay",
-            Self::RotateRight => "Rotate right",
-            Self::RotateLeft => "Rotate left",
-            Self::FlipHorizontally => "Flip horizontally",
-            Self::FlipVertically => "Flip vertically",
-            Self::NextAspectRatio => "Next aspect ratio",
-            Self::NextCrop => "Next crop",
-            Self::ResetPicture => "Reset picture",
-            Self::TakeScreenshot => "Take screenshot",
-            Self::FullScreen => "Full screen",
-            Self::ExitFullScreen => "Exit full screen",
-            Self::PictureInPicture => "Picture in Picture",
-            Self::FloatOnTop => "Float on top",
-            Self::FloatOnTopWhilePlaying => "Float on top while playing",
-            Self::Console => "Show/hide console",
-            Self::PlayPauseAll => "Play/pause all",
-            Self::RestartAll => "Restart all",
-            Self::SeekForwardAll => "Seek all forward",
-            Self::SeekBackwardAll => "Seek all backward",
-            Self::NextFrameAll => "Next frame on all",
-            Self::PreviousFrameAll => "Previous frame on all",
-            Self::SyncAll => "Sync all to the tile in front",
-            Self::VolumeUpAll => "Volume up on all",
-            Self::VolumeDownAll => "Volume down on all",
-            Self::MuteAll => "Mute/unmute all",
-        }
     }
 
     /// Whether this system has what it does: Picture in Picture is
     /// macOS's.
     pub fn available(self) -> bool {
         self != Self::PictureInPicture || cfg!(target_os = "macos")
-    }
-
-    pub fn group(self) -> Group {
-        match self {
-            Self::PlayPause
-            | Self::SeekForward
-            | Self::SeekBackward
-            | Self::NextFrame
-            | Self::PreviousFrame
-            | Self::NextChapter
-            | Self::PreviousChapter
-            | Self::Restart
-            | Self::PreviousFile
-            | Self::NextFile
-            | Self::Loop => Group::Playback,
-            Self::VolumeUp
-            | Self::VolumeDown
-            | Self::Mute
-            | Self::NextAudioTrack
-            | Self::AudioEarlier
-            | Self::AudioLater
-            | Self::ResetAudioDelay => Group::Audio,
-            Self::NextSubtitleTrack
-            | Self::ToggleSubtitles
-            | Self::BiggerSubtitles
-            | Self::SmallerSubtitles
-            | Self::SubtitlesUp
-            | Self::SubtitlesDown
-            | Self::SubtitlesEarlier
-            | Self::SubtitlesLater
-            | Self::ResetSubtitleDelay => Group::Subtitles,
-            Self::NextVideoTrack
-            | Self::RotateRight
-            | Self::RotateLeft
-            | Self::FlipHorizontally
-            | Self::FlipVertically
-            | Self::NextAspectRatio
-            | Self::NextCrop
-            | Self::ResetPicture
-            | Self::TakeScreenshot => Group::Video,
-            Self::FullScreen
-            | Self::ExitFullScreen
-            | Self::PictureInPicture
-            | Self::FloatOnTop
-            | Self::FloatOnTopWhilePlaying
-            | Self::Console => Group::Window,
-            Self::PlayPauseAll
-            | Self::RestartAll
-            | Self::SeekForwardAll
-            | Self::SeekBackwardAll
-            | Self::NextFrameAll
-            | Self::PreviousFrameAll
-            | Self::SyncAll
-            | Self::VolumeUpAll
-            | Self::VolumeDownAll
-            | Self::MuteAll => Group::AllFiles,
-        }
-    }
-
-    pub fn action(self) -> Box<dyn Action> {
-        match self {
-            Self::PlayPause => Box::new(PlayPause),
-            Self::SeekForward => Box::new(SeekForward),
-            Self::SeekBackward => Box::new(SeekBackward),
-            Self::NextFrame => Box::new(NextFrame),
-            Self::PreviousFrame => Box::new(PreviousFrame),
-            Self::NextChapter => Box::new(NextChapter),
-            Self::PreviousChapter => Box::new(PreviousChapter),
-            Self::Restart => Box::new(Restart),
-            Self::PreviousFile => Box::new(PreviousFile),
-            Self::NextFile => Box::new(NextFile),
-            Self::Loop => Box::new(ToggleLoop),
-            Self::VolumeUp => Box::new(VolumeUp),
-            Self::VolumeDown => Box::new(VolumeDown),
-            Self::Mute => Box::new(ToggleMute),
-            Self::NextAudioTrack => Box::new(NextAudioTrack),
-            Self::AudioEarlier => Box::new(AudioEarlier),
-            Self::AudioLater => Box::new(AudioLater),
-            Self::ResetAudioDelay => Box::new(ResetAudioDelay),
-            Self::NextSubtitleTrack => Box::new(NextSubtitleTrack),
-            Self::NextVideoTrack => Box::new(NextVideoTrack),
-            Self::ToggleSubtitles => Box::new(ToggleSubtitles),
-            Self::BiggerSubtitles => Box::new(BiggerSubtitles),
-            Self::SmallerSubtitles => Box::new(SmallerSubtitles),
-            Self::SubtitlesUp => Box::new(SubtitlesUp),
-            Self::SubtitlesDown => Box::new(SubtitlesDown),
-            Self::SubtitlesEarlier => Box::new(SubtitlesEarlier),
-            Self::SubtitlesLater => Box::new(SubtitlesLater),
-            Self::ResetSubtitleDelay => Box::new(ResetSubtitleDelay),
-            Self::RotateRight => Box::new(RotateRight),
-            Self::RotateLeft => Box::new(RotateLeft),
-            Self::FlipHorizontally => Box::new(FlipHorizontally),
-            Self::FlipVertically => Box::new(FlipVertically),
-            Self::NextAspectRatio => Box::new(NextAspectRatio),
-            Self::NextCrop => Box::new(NextCrop),
-            Self::ResetPicture => Box::new(ResetPicture),
-            Self::TakeScreenshot => Box::new(TakeScreenshot),
-            Self::FullScreen => Box::new(ToggleFullScreen),
-            Self::ExitFullScreen => Box::new(ExitFullScreen),
-            Self::PictureInPicture => Box::new(TogglePictureInPicture),
-            Self::FloatOnTop => Box::new(ToggleFloatOnTop),
-            Self::FloatOnTopWhilePlaying => Box::new(ToggleFloatOnTopWhilePlaying),
-            Self::Console => Box::new(ToggleConsole),
-            Self::PlayPauseAll => Box::new(PlayPauseAll),
-            Self::RestartAll => Box::new(RestartAll),
-            Self::SeekForwardAll => Box::new(SeekForwardAll),
-            Self::SeekBackwardAll => Box::new(SeekBackwardAll),
-            Self::NextFrameAll => Box::new(NextFrameAll),
-            Self::PreviousFrameAll => Box::new(PreviousFrameAll),
-            Self::SyncAll => Box::new(SyncAll),
-            Self::VolumeUpAll => Box::new(VolumeUpAll),
-            Self::VolumeDownAll => Box::new(VolumeDownAll),
-            Self::MuteAll => Box::new(ToggleMuteAll),
-        }
     }
 
     /// The keys a command starts out with. `secondary` is ⌘ on macOS and
