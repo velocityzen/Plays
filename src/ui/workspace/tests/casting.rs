@@ -765,3 +765,24 @@ fn quitting_stops_the_device(cx: &mut TestAppContext) {
     };
     assert!((position - 1.5).abs() < 0.05, "kept {position}");
 }
+
+#[gpui::test]
+fn closing_the_last_window_quits_once_the_device_has_stopped(cx: &mut TestAppContext) {
+    let (window, mut cx, fake, tv) = start(cx, "clip.mp4", false);
+    cast(window, &mut cx, &fake, &tv);
+    window
+        .update(&mut cx, |_, window, _| window.remove_window())
+        .unwrap();
+    cx.run_until_parked();
+    // What the app waits for as it quits.
+    let stopping = TestAppContext::update(&cx, crate::app::stop_all_casts);
+    assert_eq!(
+        stopping.len(),
+        1,
+        "the closed window's device is waited for"
+    );
+    for thread in stopping {
+        thread.join().unwrap();
+    }
+    assert_eq!(calls(&fake, &tv).last(), Some(&Call::Stop));
+}

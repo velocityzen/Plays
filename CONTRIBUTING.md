@@ -325,28 +325,29 @@ a video's sound is cast to. Play Here goes on in the tile from where the
 device was, paused as it was, the device stops, and with no cast left the
 stream server stops listening. A device going away ends the cast the same
 way, and the cast button goes with the last device; quitting stops the
-device and keeps where it was to resume from. Subtitles picked on a
-Matroska file cast as HLS reach the device as WebVTT with the file's cues,
-and turning them off hides them, without loading it again; another sound
-track loads it again with them still going along. DVD subtitles picked
-stay on this computer, the tile says, where the file goes as it is; where
-it is re-encoded they are drawn in, the file loaded again from where it
-was at a URL of its own, the first no longer served, and turning them off
-loads it again without them (macOS). Speakers are offered for anything
-with sound, and get a file of sound alone as it is. A video's sound goes
-to a speaker as a stream of AAC, its picture staying on the tile, which
-waits while the speaker plays but hasn't moved, plays once it's seen
-moving, pauses with it where it stopped (from the speaker or the tile),
-and keeps its place and its sound when the cast ends; dragging the slider
-shows the picture where it's dragged, however often the speaker says where
-it is, and the speaker seeks there once it's let go; a video without sound
-isn't sent to one. Video → Output Device lists the devices that show video
-after the displays, checking the one the tile in front casts to instead of
-the display; a speaker it casts to leaves the display checked. Audio →
-Output Device lists the speakers after this computer's outputs for a tile
-with sound and none for one without, checking the one cast to (or a TV)
-instead of the output. Settings → Casting lists the devices found, a new
-one as it's found, and turning a protocol off there saves it off, stops it
+device and keeps where it was to resume from, and closing the last window,
+which quits, waits for it to stop too. Subtitles picked on a Matroska file
+cast as HLS reach the device as WebVTT with the file's cues, and turning
+them off hides them, without loading it again; another sound track loads
+it again with them still going along. DVD subtitles picked stay on this
+computer, the tile says, where the file goes as it is; where it is
+re-encoded they are drawn in, the file loaded again from where it was at a
+URL of its own, the first no longer served, and turning them off loads it
+again without them (macOS). Speakers are offered for anything with sound,
+and get a file of sound alone as it is. A video's sound goes to a speaker
+as a stream of AAC, its picture staying on the tile, which waits while the
+speaker plays but hasn't moved, plays once it's seen moving, pauses with
+it where it stopped (from the speaker or the tile), and keeps its place
+and its sound when the cast ends; dragging the slider shows the picture
+where it's dragged, however often the speaker says where it is, and the
+speaker seeks there once it's let go; a video without sound isn't sent to
+one. Video → Output Device lists the devices that show video after the
+displays, checking the one the tile in front casts to instead of the
+display; a speaker it casts to leaves the display checked. Audio → Output
+Device lists the speakers after this computer's outputs for a tile with
+sound and none for one without, checking the one cast to (or a TV) instead
+of the output. Settings → Casting lists the devices found, a new one as
+it's found, and turning a protocol off there saves it off, stops it
 looking (its target dropped), takes its devices away and leaves a cast to
 one going; turned on, it looks again and finds them. A protocol that takes
 a while to stop doesn't hold up the windows: it stops on another thread.

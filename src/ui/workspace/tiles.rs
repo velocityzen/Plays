@@ -276,9 +276,9 @@ impl Workspace {
             .is_some_and(|view| view.update(cx, |view, cx| view.end_cast(cx)))
     }
 
-    /// Stop every device its tiles cast to, as the app quits, handing back
-    /// the threads stopping them.
-    pub fn stop_casts(&mut self, cx: &mut Context<Self>) -> Vec<std::thread::JoinHandle<()>> {
+    /// Stop every device its tiles cast to, as the app quits or the window
+    /// closes, handing back the threads stopping them.
+    pub fn stop_casts(&mut self, cx: &mut App) -> Vec<std::thread::JoinHandle<()>> {
         self.tiles
             .iter()
             .filter_map(|tile| tile.view.update(cx, |view, _| view.stop_cast()))

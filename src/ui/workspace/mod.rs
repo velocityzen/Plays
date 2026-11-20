@@ -33,7 +33,7 @@ use super::player::{Graveyard, PlayerView};
 use super::theme::layout::{DROP_INSET, TOOLBAR_HEIGHT, TRAFFIC_LIGHTS, WINDOW_MIN_SIZE};
 use super::theme::{self, Theme};
 use crate::app::AudioEngine;
-use crate::cast::Casting;
+use crate::cast::{self, Casting};
 use crate::media::{Mixer, picture};
 use crate::progress;
 use crate::settings::{AudioDevice, Settings};
@@ -185,6 +185,9 @@ impl Workspace {
             this.let_go_of_sound(cx);
             let notes = this.progress(cx);
             progress::note(notes, true, cx);
+            // Closing the last window quits, which waits for these.
+            let stopping = this.stop_casts(cx);
+            cast::Stopping::add(stopping, cx);
         })
         .detach();
         let url_form = cx.new(|cx| UrlForm::new(cx).centered());

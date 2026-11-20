@@ -14,7 +14,7 @@ pub mod target;
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Arc, Weak};
-use std::thread;
+use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use gpui::{App, BorrowAppContext, Global};
@@ -25,6 +25,25 @@ pub use link::{Link, Phase, Request, SubtitleChoice};
 pub use target::{Device, Error, Shows, Target};
 
 use crate::settings::Settings;
+
+/// The threads stopping devices cast to from windows already closed, for
+/// the app to wait for as it quits, as closing the last window quits it.
+#[derive(Default)]
+pub struct Stopping(Vec<JoinHandle<()>>);
+
+impl Global for Stopping {}
+
+impl Stopping {
+    pub fn add(threads: Vec<JoinHandle<()>>, cx: &mut App) {
+        let stopping = cx.default_global::<Self>();
+        stopping.0.retain(|thread| !thread.is_finished());
+        stopping.0.extend(threads);
+    }
+
+    pub fn take(cx: &mut App) -> Vec<JoinHandle<()>> {
+        std::mem::take(&mut cx.default_global::<Self>().0)
+    }
+}
 
 /// How often the targets are asked what they have found.
 const DEVICES_POLL: Duration = Duration::from_secs(1);

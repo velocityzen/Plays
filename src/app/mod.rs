@@ -180,13 +180,7 @@ fn keep_progress(cx: &mut App) {
 /// server that's gone; the app waits a moment for them.
 fn stop_casts_on_quit(cx: &mut App) {
     cx.on_app_quit(|cx| {
-        let stopping: Vec<_> = cx
-            .windows()
-            .into_iter()
-            .filter_map(|window| window.downcast::<Workspace>())
-            .filter_map(|window| window.update(cx, |w, _, cx| w.stop_casts(cx)).ok())
-            .flatten()
-            .collect();
+        let stopping = stop_all_casts(cx);
         let executor = cx.background_executor().clone();
         async move {
             while !stopping.iter().all(|thread| thread.is_finished()) {
@@ -195,6 +189,21 @@ fn stop_casts_on_quit(cx: &mut App) {
         }
     })
     .detach();
+}
+
+/// Stop every device cast to from the windows open, handing back the
+/// threads stopping them and those stopping devices cast to from windows
+/// closed before.
+pub(crate) fn stop_all_casts(cx: &mut App) -> Vec<std::thread::JoinHandle<()>> {
+    let mut stopping: Vec<_> = cx
+        .windows()
+        .into_iter()
+        .filter_map(|window| window.downcast::<Workspace>())
+        .filter_map(|window| window.update(cx, |w, _, cx| w.stop_casts(cx)).ok())
+        .flatten()
+        .collect();
+    stopping.extend(cast::Stopping::take(cx));
+    stopping
 }
 
 /// Open what the system sends, files from Finder and links, in the
