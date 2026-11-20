@@ -454,15 +454,18 @@ flowchart LR
 - `src/ui/pip/` (macOS): Picture in Picture. The tile's frames go, as they
   are due, to an `AVSampleBufferDisplayLayer` hidden over the tile, which
   AVKit's `AVPictureInPictureController` shows in the system's window; a
-  delegate of Plays' own answers its buttons. The tile pumps its player on
-  a timer of its own, since gpui stops drawing a covered window. VideoToolbox
+  delegate of Plays' own answers its buttons. The layer's timebase runs
+  and stops with playback, whichever buttons played or paused it, and
+  moves the window's progress bar. The tile pumps its player on a timer of
+  its own, since gpui stops drawing a covered window. VideoToolbox
   surfaces go as they are, tagged with their colors (HDR included); other
   frames are copied into BGRA buffers, and turned or mirrored videos are
-  turned on the GPU. AVKit moves the layer's video into its window at a size
-  and scale of its own rather than fitted to it, so Plays keeps it filling
-  the window. Subtitles can't go over the video there, so while any show,
-  frames are scaled to the window's pixels on the GPU and the subtitles
-  drawn into them (`burn_in`), in the frame's own signal and samples.
+  turned on the GPU. AVKit moves the layer's video into its window at a
+  size and scale of its own rather than fitted to it, so Plays keeps it
+  filling the window. Subtitles can't go over the video there, so while
+  any show, frames are scaled to the window's pixels on the GPU and the
+  subtitles drawn into them (`burn_in`), in the frame's own signal and
+  samples.
 - `src/ui/settings/`: the Settings window. Each pane (Playback, Audio,
   Video, Subtitles, Casting, Screenshots, Hotkeys, Appearance, About) is a
   file of its own with its name and icon for the sidebar; `form` has the

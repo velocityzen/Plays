@@ -230,7 +230,8 @@ Picture in Picture's subtitles: drawn one over another they add up as
 drawn straight onto the picture; over Y'CbCr, luma takes each pixel and
 chroma the average of the four it covers, in 8-bit full range and 10-bit
 video range samples (high in their 16 bits), and over BGRA; over HDR they
-are at reference white.
+are at reference white. Its progress bar runs and stops with playback
+whether the tile's buttons or the window's own play and pause it.
 
 The looks of the panels over the video are checked in pixels on macOS,
 where `gpui::render_offscreen` (its test support) draws a panel over a

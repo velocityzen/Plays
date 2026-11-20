@@ -498,6 +498,8 @@ pub struct Pip {
     /// Follows playback, for the window's progress bar; null if it couldn't
     /// be made.
     timebase: CMTimebaseRef,
+    /// Whether the timebase was last set to run, if it has been.
+    running: Option<bool>,
     /// The last frame's format, for the next of the same.
     format: CMFormatDescriptionRef,
     /// The last frame handed over, how it was turned, and with which
@@ -572,6 +574,7 @@ impl Pip {
                 delegate,
                 shared,
                 timebase,
+                running: None,
                 format: ptr::null(),
                 shown: None,
                 images: Buffers::default(),
@@ -635,27 +638,8 @@ impl Pip {
     /// Keep the window's buttons and progress with playback.
     pub fn update(&mut self, playback: Playback) {
         // SAFETY: `shared` lives until `drop`.
-        let previous = std::mem::replace(&mut *unsafe { &*self.shared }.playback.lock(), playback);
-        let mut changed = previous.playing != playback.playing
-            || previous.duration.is_some() != playback.duration.is_some()
-            || previous
-                .duration
-                .zip(playback.duration)
-                .is_some_and(|(a, b)| (a - b).abs() > 0.5);
-        if !self.timebase.is_null() {
-            // SAFETY: the timebase lives until `drop`.
-            unsafe {
-                if previous.playing != playback.playing {
-                    CMTimebaseSetRate(self.timebase, if playback.playing { 1.0 } else { 0.0 });
-                }
-                let now = seconds(CMTimebaseGetTime(self.timebase));
-                // A seek, or drift from the clock: catch up.
-                if !now.is_finite() || (now - playback.position).abs() > 0.25 {
-                    CMTimebaseSetTime(self.timebase, time(playback.position));
-                    changed = true;
-                }
-            }
-        }
+        let told = &unsafe { &*self.shared }.playback;
+        let changed = keep_up(self.timebase, &mut self.running, told, playback);
         if changed {
             // SAFETY: the controller lives until `drop`.
             unsafe {
@@ -1290,6 +1274,43 @@ unsafe fn place(layer: *mut Object, superlayer: *mut Object, frame: Bounds<Pixel
     }
 }
 
+/// Keep `timebase`, the window's progress, with `playback`: `told` is
+/// what the window was last told, which its own buttons change first, and
+/// `running` whether the timebase was last set to run. Whether the window
+/// must be told playback changed.
+fn keep_up(
+    timebase: CMTimebaseRef,
+    running: &mut Option<bool>,
+    told: &Mutex<Playback>,
+    playback: Playback,
+) -> bool {
+    let previous = std::mem::replace(&mut *told.lock(), playback);
+    let mut changed = previous.playing != playback.playing
+        || previous.duration.is_some() != playback.duration.is_some()
+        || previous
+            .duration
+            .zip(playback.duration)
+            .is_some_and(|(a, b)| (a - b).abs() > 0.5);
+    if !timebase.is_null() {
+        // SAFETY: the caller's timebase, alive while it's used.
+        unsafe {
+            // By what it was last set to, not what the window was told:
+            // its own buttons change that first.
+            if *running != Some(playback.playing) {
+                CMTimebaseSetRate(timebase, if playback.playing { 1.0 } else { 0.0 });
+                *running = Some(playback.playing);
+            }
+            let now = seconds(CMTimebaseGetTime(timebase));
+            // A seek, or drift from the clock: catch up.
+            if !now.is_finite() || (now - playback.position).abs() > 0.25 {
+                CMTimebaseSetTime(timebase, time(playback.position));
+                changed = true;
+            }
+        }
+    }
+    changed
+}
+
 /// A timebase on the host clock, stopped at zero; null if there is none.
 fn make_timebase() -> CMTimebaseRef {
     type Create = unsafe extern "C" fn(CFAllocatorRef, CMClockRef, *mut CMTimebaseRef) -> OSStatus;
@@ -1482,5 +1503,47 @@ impl Drop for Turner {
             (self.invalidate)(self.session);
             CFRelease(self.session as CFTypeRef);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    unsafe extern "C" {
+        fn CMTimebaseGetRate(timebase: CMTimebaseRef) -> f64;
+    }
+
+    #[test]
+    fn the_progress_runs_as_playback_does_whichever_buttons_play_it() {
+        let timebase = make_timebase();
+        assert!(!timebase.is_null(), "a timebase on the host clock");
+        // SAFETY: the timebase lives until the end.
+        let rate = || unsafe { CMTimebaseGetRate(timebase) };
+        let told = Mutex::new(Playback::default());
+        let mut running = None;
+        let mut keep = |playing, position| {
+            let duration = Some(10.0);
+            let playback = Playback {
+                playing,
+                position,
+                duration,
+            };
+            keep_up(timebase, &mut running, &told, playback);
+        };
+        keep(true, 0.0);
+        assert_eq!(rate(), 1.0, "running with playback");
+        // Paused from the window, which says so first, then the tile.
+        told.lock().playing = false;
+        keep(false, 0.1);
+        assert_eq!(rate(), 0.0, "stopped with playback");
+        // Played and paused from the tile, then played from the window.
+        keep(true, 0.1);
+        keep(false, 0.2);
+        told.lock().playing = true;
+        keep(true, 0.2);
+        assert_eq!(rate(), 1.0, "running again");
+        // SAFETY: made above, and done with.
+        unsafe { CFRelease(timebase) };
     }
 }
