@@ -84,7 +84,7 @@ impl Workspace {
                 .filter(|tile| fitting.opened.contains(&tile.view.entity_id()))
                 .all(|tile| {
                     let player = tile.view.read(cx).player();
-                    player.info().is_some() || player.error().is_some()
+                    player.is_known() || player.error().is_some()
                 })
     }
 

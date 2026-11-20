@@ -47,7 +47,7 @@ fn open(
                 workspace.tiles.len() == files.len()
                     && workspace.tiles.iter().all(|tile| {
                         let player = tile.view.read(cx).player();
-                        player.info().is_some() && (!playing || player.is_playing())
+                        player.is_known() && (!playing || player.is_playing())
                     })
             })
             .unwrap()

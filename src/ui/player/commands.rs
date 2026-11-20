@@ -40,7 +40,7 @@ impl PlayerView {
     pub fn chapters(&self) -> Vec<Chapter> {
         self.player
             .info()
-            .map(|info| info.chapters)
+            .map(|info| info.chapters.clone())
             .unwrap_or_default()
     }
 

@@ -252,7 +252,9 @@ pub struct Shared {
     /// The seek generation the UI wants; frames and samples from older
     /// generations are ignored.
     pub serial: Arc<AtomicU64>,
-    pub info: Mutex<Option<MediaInfo>>,
+    /// Shared rather than copied, as the UI reads it every frame; changed
+    /// (rarely) by copying it.
+    pub info: Mutex<Option<Arc<MediaInfo>>>,
     pub error: Mutex<Option<String>>,
     pub video: Mutex<VideoQueue>,
     pub audio: Option<Arc<AudioSource>>,
@@ -500,7 +502,7 @@ impl Decoders {
         }
         // Whatever happened, say what plays.
         if let Some(info) = shared.info.lock().as_mut() {
-            info.select(kind, self.selected(kind));
+            Arc::make_mut(info).select(kind, self.selected(kind));
         }
     }
 
@@ -545,6 +547,7 @@ impl Decoders {
                 let options = self.options;
                 let decoder = VideoDecoder::new(stream, options.max_short_side, options.hardware)?;
                 if let Some(info) = shared.info.lock().as_mut() {
+                    let info = Arc::make_mut(info);
                     info.video_size = Some(decoder.display_size());
                     info.orientation = decoder.orientation;
                     info.frame_rate = Some(1.0 / decoder.frame_duration);
@@ -561,6 +564,7 @@ impl Decoders {
                     .ok_or_else(|| anyhow!("no audio output device is available"))?;
                 let decoder = AudioDecoder::new(stream, output)?;
                 if let Some(info) = shared.info.lock().as_mut() {
+                    let info = Arc::make_mut(info);
                     info.audio_codec = Some(decoder.codec_name());
                     info.audio_details = Some(AudioDetails::of(&decoder.decoder));
                 }
@@ -735,7 +739,7 @@ fn run(
         audio_details: audio.map(|a| AudioDetails::of(&a.decoder)),
         chapters,
     };
-    *shared.info.lock() = Some(info);
+    *shared.info.lock() = Some(Arc::new(info));
 
     let mut session = Session {
         shared,
@@ -1712,7 +1716,7 @@ impl VideoDecoder {
             (None, None) => {}
         }
         if let Some(info) = session.shared.info.lock().as_mut() {
-            info.hardware = api;
+            Arc::make_mut(info).hardware = api;
         }
     }
 

@@ -93,7 +93,7 @@ impl PlayerView {
         let title = self
             .player
             .info()
-            .and_then(|i| i.title)
+            .and_then(|i| i.title.clone())
             .map(SharedString::from)
             .unwrap_or_else(|| self.title.clone());
         div()

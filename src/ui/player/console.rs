@@ -40,7 +40,7 @@ impl PlayerView {
         let info = self.player.info();
         let facts = Facts {
             source: self.player.source().to_string(),
-            info: info.as_ref(),
+            info: info.as_deref(),
             stats: self.player.stats(),
             position: self.player.position(),
             duration: self.player.duration().filter(|_| !self.player.is_live()),

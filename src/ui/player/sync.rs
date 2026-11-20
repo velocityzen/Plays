@@ -18,7 +18,7 @@ impl PlayerView {
         if self.no_delays_while_cast(cx) {
             return;
         }
-        if !self.player.info().is_some_and(|info| info.has_audio) {
+        if !self.player.has_audio() {
             self.note("No audio", cx);
             return;
         }

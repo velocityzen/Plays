@@ -239,8 +239,43 @@ impl Player {
         }
     }
 
-    pub fn info(&self) -> Option<MediaInfo> {
+    /// What the file holds, once it is known: shared, not copied.
+    pub fn info(&self) -> Option<Arc<MediaInfo>> {
         self.shared.info.lock().clone()
+    }
+
+    /// Whether it is known yet what the file holds.
+    pub fn is_known(&self) -> bool {
+        self.shared.info.lock().is_some()
+    }
+
+    pub fn has_video(&self) -> bool {
+        self.shared
+            .info
+            .lock()
+            .as_ref()
+            .is_some_and(|i| i.has_video)
+    }
+
+    pub fn has_audio(&self) -> bool {
+        self.shared
+            .info
+            .lock()
+            .as_ref()
+            .is_some_and(|i| i.has_audio)
+    }
+
+    /// How long until the next frame decoded is due, while it plays: for
+    /// what ticks it on its own, to know when to again.
+    pub fn until_next_frame(&self) -> Option<Duration> {
+        if !self.playing || self.buffering {
+            return None;
+        }
+        let serial = self.shared.serial.load(Ordering::Acquire);
+        let queue = self.shared.video.lock();
+        let next = queue.frames.front().filter(|_| queue.serial == serial)?;
+        let left = next.pts - self.shared.clock.now();
+        Some(Duration::from_secs_f64(left.max(0.0)))
     }
 
     pub fn error(&self) -> Option<String> {
@@ -413,7 +448,7 @@ impl Player {
             };
             // Shown in menus right away; the decoder puts it back if the
             // track can't be played.
-            info.select(kind, index);
+            Arc::make_mut(info).select(kind, index);
         }
         self.send(Command::Select { kind, index });
         if index.is_none() {

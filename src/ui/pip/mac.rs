@@ -22,6 +22,7 @@
 
 use std::ffi::{CStr, c_char, c_int, c_void};
 use std::sync::{Arc, OnceLock};
+use std::time::{Duration, Instant};
 use std::{ptr, slice};
 
 use anyhow::{Context as _, Result, anyhow, bail, ensure};
@@ -278,6 +279,31 @@ impl Shared {
 /// The delegate's instance variable pointing at its `Shared`, null once the
 /// tile is done with it.
 const SHARED: &str = "playsShared";
+/// How often the layers over the video are looked through for one AVKit
+/// put there, while where the video goes stays the same.
+const LOOK_AGAIN: Duration = Duration::from_millis(500);
+
+/// When to look through the layers over the video for one AVKit put there:
+/// when where the video goes changes, and now and then besides.
+#[derive(Default)]
+struct Lookout {
+    /// When it last looked, and where the video went then: the rectangle
+    /// it fills, and the window's size and scale.
+    last: Option<(Instant, [f64; 7])>,
+}
+
+impl Lookout {
+    fn due(&mut self, place: [f64; 7], now: Instant) -> bool {
+        if let Some((at, last)) = self.last
+            && last == place
+            && now.saturating_duration_since(at) < LOOK_AGAIN
+        {
+            return false;
+        }
+        self.last = Some((now, place));
+        true
+    }
+}
 
 /// Its `Shared`, while the tile has it.
 fn shared(this: &Object) -> Option<&Shared> {
@@ -515,6 +541,7 @@ pub struct Pip {
     video: *mut Object,
     /// The window's content width and height in points, and its scale.
     window: Option<(f64, f64, f64)>,
+    lookout: Lookout,
     /// The subtitles showing, counted each time they change.
     subtitles: Option<Subtitles>,
     revision: u64,
@@ -582,6 +609,7 @@ impl Pip {
                 asked: false,
                 video: ptr::null_mut(),
                 window: None,
+                lookout: Lookout::default(),
                 subtitles: None,
                 revision: 0,
                 burned: None,
@@ -707,8 +735,21 @@ impl Pip {
             let fill: CGRect = msg_send![holder, convertRect: bounds fromLayer: content];
             let frame: CGRect = msg_send![self.video, frame];
             let transform: CATransform3D = msg_send![self.video, sublayerTransform];
+            let placed = frame.close_to(&fill) && transform == CATransform3D::IDENTITY;
+            let place = [
+                fill.x,
+                fill.y,
+                fill.width,
+                fill.height,
+                size.0,
+                size.1,
+                size.2,
+            ];
+            if !self.lookout.due(place, Instant::now()) && placed {
+                return;
+            }
             let covers = covering(holder, self.video);
-            if frame.close_to(&fill) && transform == CATransform3D::IDENTITY && covers.is_empty() {
+            if placed && covers.is_empty() {
                 return;
             }
             let _: () = msg_send![class!(CATransaction), begin];
@@ -1509,6 +1550,26 @@ impl Drop for Turner {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_layers_are_looked_through_when_the_video_moves_and_now_and_then() {
+        let mut lookout = Lookout::default();
+        let start = Instant::now();
+        let here = [0.0, 0.0, 480.0, 270.0, 480.0, 270.0, 2.0];
+        assert!(lookout.due(here, start), "the first time");
+        assert!(!lookout.due(here, start + Duration::from_millis(16)));
+        assert!(!lookout.due(here, start + Duration::from_millis(400)));
+        let bigger = [0.0, 0.0, 640.0, 360.0, 640.0, 360.0, 2.0];
+        assert!(
+            lookout.due(bigger, start + Duration::from_millis(420)),
+            "resized"
+        );
+        assert!(!lookout.due(bigger, start + Duration::from_millis(440)));
+        assert!(
+            lookout.due(bigger, start + Duration::from_millis(920)),
+            "a while on"
+        );
+    }
 
     unsafe extern "C" {
         fn CMTimebaseGetRate(timebase: CMTimebaseRef) -> f64;

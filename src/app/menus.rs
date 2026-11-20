@@ -549,7 +549,7 @@ mod tests {
                 let mut known = false;
                 window
                     .update(cx, |workspace, _, cx| {
-                        workspace.with_active(cx, |view, _| known = view.player().info().is_some())
+                        workspace.with_active(cx, |view, _| known = view.player().is_known())
                     })
                     .unwrap();
                 known
@@ -833,7 +833,7 @@ mod tests {
             let mut known = false;
             window
                 .update(cx, |workspace, _, cx| {
-                    workspace.with_active(cx, |view, _| known = view.player().info().is_some())
+                    workspace.with_active(cx, |view, _| known = view.player().is_known())
                 })
                 .unwrap();
             known

@@ -90,8 +90,7 @@ fn with_no_other_tile_showing_the_picture_drags_the_window(cx: &mut TestAppConte
     let opened = wait_until(&mut cx, |cx| {
         window
             .read_with(cx, |workspace, cx| {
-                workspace.tiles.len() == 2
-                    && workspace.tiles[1].view.read(cx).player().info().is_some()
+                workspace.tiles.len() == 2 && workspace.tiles[1].view.read(cx).player().is_known()
             })
             .unwrap()
     });

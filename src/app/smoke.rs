@@ -439,7 +439,7 @@ async fn open(cx: &mut AsyncApp, files: &[&str]) -> Result<(), String> {
         players.len() == files.len()
             && players.iter().all(|view| {
                 let player = view.read(cx).player();
-                player.info().is_some() || player.error().is_some()
+                player.is_known() || player.error().is_some()
             })
     })
     .await?;
@@ -537,7 +537,7 @@ fn video_tiles(cx: &mut AsyncApp) -> Result<Vec<VideoTile>, String> {
         players(cx)
             .iter()
             .map(|view| view.read(cx).player())
-            .filter(|player| player.info().is_some_and(|info| info.has_video))
+            .filter(|player| player.has_video())
             .map(|player| VideoTile {
                 name: player.source().name(),
                 playing: player.is_playing(),

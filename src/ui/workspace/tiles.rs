@@ -215,7 +215,7 @@ impl Workspace {
                     Awake::Computer
                 } else if !player.is_playing() {
                     Awake::Nothing
-                } else if player.info().is_some_and(|info| info.has_video) {
+                } else if player.has_video() {
                     Awake::Screen
                 } else {
                     Awake::Computer

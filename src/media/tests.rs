@@ -58,7 +58,7 @@ fn a_decoder_thread_failing_says_so_and_stops_waiting() {
         wait_until(Duration::from_secs(5), || player.error().is_some()),
         "no error said"
     );
-    assert!(player.info().is_some(), "it had opened");
+    assert!(player.is_known(), "it had opened");
     assert!(player.error().unwrap().contains("as the test asked"));
     assert!(!player.is_buffering());
     assert!(!player.tick().animate, "nothing more to draw");
@@ -85,6 +85,34 @@ fn a_paused_player_lets_its_decoder_sleep() {
     std::thread::sleep(Duration::from_millis(500));
     let waits = player.decoder_waits() - before;
     assert!(waits <= 5, "it looked {waits} times in half a second");
+}
+
+/// What a file holds is shared with whatever asks, every frame, not
+/// copied for each; picking a track makes it anew, leaving what was handed
+/// out as it was.
+#[test]
+fn what_a_file_holds_is_shared_not_copied() {
+    let fixtures = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    let mut player = Player::open(
+        Source::File(fixtures.join("clip-subs.mkv")),
+        Some(Mixer::detached(48_000)),
+        options(false, false),
+    );
+    assert!(wait_until(Duration::from_secs(5), || player.is_known()));
+    let first = player.info().unwrap();
+    assert!(Arc::ptr_eq(&first, &player.info().unwrap()), "copied");
+    assert!(player.has_video() && player.has_audio());
+    assert_eq!(first.selected(TrackKind::Subtitle), None);
+
+    player.select_track(TrackKind::Subtitle, Some(2));
+    let picked = player.info().unwrap();
+    assert!(!Arc::ptr_eq(&first, &picked));
+    assert_eq!(picked.selected(TrackKind::Subtitle), Some(2));
+    assert_eq!(
+        first.selected(TrackKind::Subtitle),
+        None,
+        "what was handed out"
+    );
 }
 
 fn wait_until(timeout: Duration, mut done: impl FnMut() -> bool) -> bool {
@@ -192,14 +220,14 @@ fn reports_the_streams_as_the_file_has_them() {
         info.container
     );
     assert!(info.container.bit_rate.is_some());
-    let video = info.video_details.unwrap();
+    let video = info.video_details.as_ref().unwrap();
     assert_eq!(video.profile.as_deref(), Some("High"));
     assert_eq!(video.coded_size, (320, 240));
     assert_eq!(video.pixel_format, Some("yuv420p"));
     // x264 tags the matrix and range, and leaves the rest unspecified.
     assert_eq!(video.matrix, Some("bt709"));
     assert_eq!(video.full_range, Some(false));
-    let audio = info.audio_details.unwrap();
+    let audio = info.audio_details.as_ref().unwrap();
     assert_eq!(audio.profile.as_deref(), Some("LC"));
     assert_eq!((audio.sample_rate, audio.channels), (48_000, 2));
     assert_eq!(audio.layout.as_deref(), Some("stereo"));

@@ -266,7 +266,7 @@ impl PlayerView {
     /// How the video shows, once its size is known: turned as the file
     /// says, then as adjusted here.
     pub fn framing(&self) -> Option<Framing> {
-        self.framing_for(self.player.info().as_ref())
+        self.framing_for(self.player.info().as_deref())
     }
 
     fn framing_for(&self, info: Option<&MediaInfo>) -> Option<Framing> {
@@ -465,7 +465,7 @@ impl Render for PlayerView {
         let subtitle_style = settings.subtitles.clone();
         let show_titles = settings.show_titles;
         let info = self.player.info();
-        let framing = self.framing_for(info.as_ref());
+        let framing = self.framing_for(info.as_deref());
         let has_video = self.player.frame().is_some();
         let dragging = self.seek_drag.get() || self.volume_drag.get();
         let casting = self.casts_picture();
@@ -491,8 +491,8 @@ impl Render for PlayerView {
             group: format!("tile-{}", cx.entity_id()).into(),
         };
 
-        let header = self.render_header(&reveal, info.as_ref(), show_titles, window, cx);
-        let controls = self.render_controls(&reveal, info.as_ref(), &theme, window, cx);
+        let header = self.render_header(&reveal, info.as_deref(), show_titles, window, cx);
+        let controls = self.render_controls(&reveal, info.as_deref(), &theme, window, cx);
         let osd = self.render_osd(window);
         let console = self.render_console();
 

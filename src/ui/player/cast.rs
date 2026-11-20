@@ -11,6 +11,8 @@
 //! sound through instead of the app's, as Audio → Window Output Device
 //! does: the only place to pick them on Linux, which has no menu bar.
 
+use std::sync::Arc;
+
 use gpui::prelude::*;
 use gpui::{AnyElement, App, Context, Corner, Div, ElementId, MouseDownEvent, Task, Window, div};
 use stream_server::{Pick, SubtitleSource};
@@ -75,7 +77,7 @@ impl PlayerView {
             loop {
                 let known = this.update(cx, |this, cx| {
                     let player = &this.player;
-                    if player.info().is_none() && player.error().is_none() {
+                    if !player.is_known() && player.error().is_none() {
                         return false;
                     }
                     if let Some(next) = this.next_cast.take() {
@@ -147,7 +149,7 @@ impl PlayerView {
         }
         let picture_here =
             device.shows == Shows::Sound && info.as_ref().is_some_and(|info| info.has_video);
-        let request = self.cast_request(info.as_ref(), start, autoplay, picture_here, cx);
+        let request = self.cast_request(info.as_deref(), start, autoplay, picture_here, cx);
         // Another device this casts to lets go; its sound is here again
         // until the new one plays it.
         if self.cast.take().is_some_and(|cast| cast.picture_here) {
@@ -436,7 +438,7 @@ impl PlayerView {
         // The track asked for, as the decoder may yet say an earlier one.
         let mut info = self.player.info();
         if let Some(info) = &mut info {
-            info.select(kind, index);
+            Arc::make_mut(info).select(kind, index);
         }
         let subtitles = info.as_ref().and_then(|info| subtitle_choice(info, cx));
         let Some(cast) = &mut self.cast else {
@@ -447,12 +449,12 @@ impl PlayerView {
         match (kind, cast.picture_here) {
             (TrackKind::Audio, true) => cast
                 .link
-                .reload(Pick::Off, pick(info.as_ref(), TrackKind::Audio)),
+                .reload(Pick::Off, pick(info.as_deref(), TrackKind::Audio)),
             (_, true) => {}
             (TrackKind::Subtitle, false) => cast.link.set_subtitles(subtitles),
             (TrackKind::Video | TrackKind::Audio, false) => cast.link.reload(
-                pick(info.as_ref(), TrackKind::Video),
-                pick(info.as_ref(), TrackKind::Audio),
+                pick(info.as_deref(), TrackKind::Video),
+                pick(info.as_deref(), TrackKind::Audio),
             ),
         }
     }

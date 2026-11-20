@@ -69,7 +69,7 @@ impl PlayerView {
         cx: &mut Context<Self>,
         change: impl FnOnce(&mut Adjustments),
     ) {
-        if !self.player.info().is_some_and(|info| info.has_video) {
+        if !self.player.has_video() {
             self.note("No video", cx);
             return;
         }

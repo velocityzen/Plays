@@ -4,10 +4,13 @@
 //! it is due, with the subtitles showing laid out for it; and what the
 //! Picture in Picture window's buttons ask for comes back here.
 
+use std::iter;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use futures::StreamExt;
 use futures::channel::mpsc::unbounded;
+use futures::future::{self, Either};
 use gpui::{Bounds, Context, Point, Task, Window};
 
 use super::{PlayerEvent, PlayerView};
@@ -19,8 +22,14 @@ use crate::ui::overlay;
 use crate::ui::pip::{self, Pip, PipEvent, Playback, Subtitles};
 use crate::ui::theme::Theme;
 
-/// How often the pump looks for the next frame.
-const PUMP_EVERY: Duration = Duration::from_millis(4);
+/// The least the pump waits for the next frame, due or not.
+const PUMP_LEAST: Duration = Duration::from_millis(2);
+/// How often it looks while playing with no frame decoded yet.
+const PUMP_WAITING: Duration = Duration::from_millis(10);
+/// How long it waits, at most, with no frame to come: paused, or with no
+/// picture that moves. Enough to keep the window's place and its buttons
+/// up to date; what its buttons ask for wakes it at once.
+const PUMP_IDLE: Duration = Duration::from_millis(100);
 /// How long AVKit gets to be ready to open the window.
 const START_WITHIN: Duration = Duration::from_secs(3);
 
@@ -94,16 +103,25 @@ impl PlayerView {
             }
         };
         let pump = cx.spawn_in(window, async move |this, cx| {
+            let mut wait = PUMP_LEAST;
             loop {
-                cx.background_executor().timer(PUMP_EVERY).await;
-                let going = this.update_in(cx, |this, window, cx| {
-                    while let Ok(event) = received.try_recv() {
+                let timer = cx.background_executor().timer(wait);
+                // A button pressed in its window is seen to at once.
+                let pressed = match future::select(timer, received.next()).await {
+                    Either::Left(_) => None,
+                    Either::Right((Some(event), _)) => Some(event),
+                    Either::Right((None, _)) => break,
+                };
+                let next = this.update_in(cx, |this, window, cx| {
+                    let more = iter::from_fn(|| received.try_recv().ok());
+                    for event in pressed.into_iter().chain(more) {
                         this.on_pip_event(event, window, cx);
                     }
                     this.pump_pip(window, cx)
                 });
-                if !matches!(going, Ok(true)) {
-                    break;
+                match next {
+                    Ok(Some(next)) => wait = next,
+                    _ => break,
                 }
             }
         });
@@ -123,11 +141,10 @@ impl PlayerView {
     }
 
     /// Move the player along, hand over the frame due now, and keep the
-    /// window's buttons up to date. Whether to keep going.
-    fn pump_pip(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
-        if self.pip.is_none() {
-            return false;
-        }
+    /// window's buttons up to date. How long to wait before the next time,
+    /// if there is one.
+    fn pump_pip(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Option<Duration> {
+        self.pip.as_ref()?;
         self.background_tick(cx);
         let cues = self.player.subtitles();
         self.show_cues(cues);
@@ -136,23 +153,20 @@ impl PlayerView {
             .framing()
             .map_or(Orientation::UPRIGHT, |framing| framing.orientation());
         // Where it plays, here or on the device its sound is cast to.
+        let playing = self.is_playing();
         let playback = Playback {
-            playing: self.is_playing(),
+            playing,
             position: self.position(),
             duration: self.duration().filter(|_| !self.player.is_live()),
         };
-        let Some(session) = &mut self.pip else {
-            return false;
-        };
+        let session = self.pip.as_mut()?;
         if session.started {
             session.pip.follow_window();
         }
         if let Some(frame) = &frame {
             self.lay_out_subtitles(frame, orientation, window, cx);
         }
-        let Some(session) = &mut self.pip else {
-            return false;
-        };
+        let session = self.pip.as_mut()?;
         if let Some(frame) = &frame {
             session.pip.show(frame, orientation);
         }
@@ -161,9 +175,13 @@ impl PlayerView {
             log::warn!("Picture in Picture never became possible");
             self.pip = None;
             self.note("Picture in Picture couldn't open", cx);
-            return false;
+            return None;
         }
-        true
+        Some(pump_wait(
+            playing,
+            self.player.has_video(),
+            self.player.until_next_frame(),
+        ))
     }
 
     /// Hand the subtitles showing over, laid out for frames like `frame`,
@@ -184,16 +202,30 @@ impl PlayerView {
         } else {
             picture
         };
-        let layout = Layout {
-            cues: self.cues.iter().map(Arc::as_ptr).collect(),
-            style: cx.global::<Settings>().subtitles.clone(),
-            picture,
-            orientation,
-            size: session.pip.subtitle_size(shown),
-        };
-        if session.laid_out.as_ref() == Some(&layout) {
+        let style = &cx.global::<Settings>().subtitles;
+        let size = session.pip.subtitle_size(shown);
+        // Looked at as it is, made anew only when something changed.
+        let same = session.laid_out.as_ref().is_some_and(|laid| {
+            laid.picture == picture
+                && laid.orientation == orientation
+                && laid.size == size
+                && laid.style == *style
+                && laid
+                    .cues
+                    .iter()
+                    .copied()
+                    .eq(self.cues.iter().map(Arc::as_ptr))
+        });
+        if same {
             return;
         }
+        let layout = Layout {
+            cues: self.cues.iter().map(Arc::as_ptr).collect(),
+            style: style.clone(),
+            picture,
+            orientation,
+            size,
+        };
         let subtitles = self.subtitles_for(&layout, window, cx);
         if let Some(session) = &mut self.pip {
             session.pip.set_subtitles(subtitles);
@@ -277,6 +309,17 @@ impl PlayerView {
     }
 }
 
+/// How long the pump waits before looking again: until the next frame is
+/// due while one is, a little while one is being decoded, and long while
+/// paused or with no picture that moves (a song's cover).
+fn pump_wait(playing: bool, moving_picture: bool, next_frame: Option<Duration>) -> Duration {
+    match (playing && moving_picture, next_frame) {
+        (false, _) => PUMP_IDLE,
+        (true, Some(due)) => due.clamp(PUMP_LEAST, PUMP_IDLE),
+        (true, None) => PUMP_WAITING,
+    }
+}
+
 /// Bring the tile's window forward, and with it its Space when it is full
 /// screen in one. Plays is often not the app in front then, as Picture in
 /// Picture floats over every app and Space, and a window of an app behind
@@ -285,4 +328,28 @@ fn bring_back(window: &mut Window, cx: &mut Context<PlayerView>) {
     cx.activate(true);
     window.activate_window();
     cx.emit(PlayerEvent::Activate);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_pump_waits_for_the_next_frame_and_idles_while_paused() {
+        let ms = Duration::from_millis;
+        assert_eq!(
+            pump_wait(true, true, Some(ms(33))),
+            ms(33),
+            "the next frame"
+        );
+        assert_eq!(pump_wait(true, true, Some(ms(0))), PUMP_LEAST, "one late");
+        assert_eq!(pump_wait(true, true, Some(ms(900))), PUMP_IDLE, "far off");
+        assert_eq!(pump_wait(true, true, None), PUMP_WAITING, "being decoded");
+        assert_eq!(pump_wait(false, true, Some(ms(33))), PUMP_IDLE, "paused");
+        assert_eq!(pump_wait(true, false, None), PUMP_IDLE, "a cover");
+        assert!(
+            PUMP_IDLE >= ms(100),
+            "a paused tile looks ten times a second"
+        );
+    }
 }
