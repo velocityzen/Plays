@@ -1068,9 +1068,12 @@ fn failed(state: &VodState, mine: Option<u64>) -> Option<Error> {
 }
 
 /// A live stream's HLS segments: one job from where the stream is when
-/// first asked for, keeping the last few segments.
+/// first asked for, keeping the last few segments. A source that isn't
+/// live, only silent about how long it is, is read no faster than the
+/// device plays it: a few segments past the last it asked for.
 pub(crate) struct Live {
     media: Arc<Media>,
+    paced: bool,
     state: Mutex<LiveState>,
     changed: Condvar,
 }
@@ -1080,6 +1083,8 @@ struct LiveState {
     init: Option<Arc<Vec<u8>>>,
     segments: VecDeque<LiveSegment>,
     next_sequence: usize,
+    /// One past the last segment asked for.
+    wanted: usize,
     running: bool,
     ended: bool,
     failure: Option<String>,
@@ -1102,13 +1107,15 @@ pub(crate) struct LiveWindow {
 impl Live {
     pub fn new(media: Arc<Media>) -> Arc<Self> {
         Arc::new(Self {
+            paced: !media.source.is_live(),
             media,
             state: Mutex::default(),
             changed: Condvar::new(),
         })
     }
 
-    /// The segments to list, once there are a couple to start on.
+    /// The segments to list, once there are a couple to start on (a paced
+    /// job makes `AHEAD` before any is asked for).
     pub fn window(self: &Arc<Self>) -> Result<LiveWindow, Error> {
         let deadline = Instant::now() + WAIT;
         let mut state = lock(&self.state);
@@ -1159,6 +1166,10 @@ impl Live {
         let deadline = Instant::now() + WAIT;
         let mut state = lock(&self.state);
         self.run_if_idle(&mut state);
+        if sequence >= state.wanted && sequence <= state.next_sequence + REACH {
+            state.wanted = sequence + 1;
+            self.changed.notify_all();
+        }
         loop {
             if let Some(segment) = state.segments.iter().find(|s| s.sequence == sequence) {
                 return Ok(Arc::clone(&segment.bytes));
@@ -1243,6 +1254,13 @@ impl Live {
                 });
                 while state.segments.len() > LIVE_KEPT {
                     state.segments.pop_front();
+                }
+                self.changed.notify_all();
+                while self.paced && !state.closed && state.next_sequence >= state.wanted + AHEAD {
+                    state = self
+                        .changed
+                        .wait(state)
+                        .unwrap_or_else(|poisoned| poisoned.into_inner());
                 }
             }
         }

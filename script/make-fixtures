@@ -5,6 +5,8 @@
 #
 # clip.mp4       160x120, 25 fps, 2 s, H.264 with B-frames, AAC sound
 # clip-ip.mkv    the same picture with no B-frames, no sound
+# clip-no-duration.mkv  12 s of clip-ip.mkv's picture, written through a
+#                pipe so the file never says how long it is
 # clip-opus.mkv  clip.mp4 with its sound as Opus, which a speaker taking
 #                only AAC gets re-encoded
 # tone.m4a       1 s of 440 Hz, AAC, no picture
@@ -29,6 +31,8 @@ x264=(-c:v libx264 -pix_fmt yuv420p -preset veryslow -crf 36 -g 25)
     "${x264[@]}" -bf 3 -c:a aac -b:a 32k -ac 1 -map_metadata -1 clip.mp4
 "${ffmpeg[@]}" "${picture[@]}" \
     "${x264[@]}" -bf 0 -map_metadata -1 clip-ip.mkv
+"${ffmpeg[@]}" -f lavfi -i "testsrc=size=160x120:rate=25:duration=12" \
+    "${x264[@]}" -bf 0 -map_metadata -1 -f matroska - > clip-no-duration.mkv
 "${ffmpeg[@]}" -i clip.mp4 -map 0 -c:v copy -c:a libopus -b:a 24k \
     -map_metadata -1 clip-opus.mkv
 "${ffmpeg[@]}" -f lavfi -i "sine=frequency=440:sample_rate=48000:duration=1" \

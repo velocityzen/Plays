@@ -632,16 +632,18 @@ flowchart LR
 - `mux.rs`: fragmented MP4, MPEG-TS, ADTS or FLAC written in memory, cut
   into segments where told. Every timestamp is moved ten seconds later, so
   none is negative and segments made by different jobs line up.
-- `job.rs`: making them. A job reads from where a segment starts, copies or
-  re-encodes, and cuts where the leading stream (video, else sound) reaches
-  the next segment's start, holding the other stream's packets past it
-  until then. Jobs run three segments ahead of the device and wait; asking
-  for one far from the job (a seek), or behind it and no longer kept,
-  starts another there, and a segment is cut the same way whichever job
-  makes it. Packets without a length get
-  one from the next. A live stream has one job, keeping the last ten
-  segments and listing six; a progressive stream is made for each request,
-  from the time it asks for.
+- `job.rs`: making them. A job reads from where a segment starts, copies
+  or re-encodes, and cuts where the leading stream (video, else sound)
+  reaches the next segment's start, holding the other stream's packets
+  past it until then. Jobs run three segments ahead of the device and
+  wait; asking for one far from the job (a seek), or behind it and no
+  longer kept, starts another there, and a segment is cut the same way
+  whichever job makes it. Packets without a length get one from the next.
+  A live stream has one job, keeping the last ten segments and listing
+  six. A file that never says how long it is goes the same way, but its
+  job too waits three segments ahead of the device, so it isn't read to
+  its end before the device starts. A progressive stream is made for each
+  request, from the time it asks for.
 - `overlay.rs`: picture subtitles drawn into video as it is re-encoded.
   The track's packets are decoded as the media is read; a display set
   shows until the next or its own end, and one with nothing in it clears

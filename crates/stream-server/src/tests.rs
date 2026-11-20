@@ -866,6 +866,27 @@ fn serves_a_live_stream_as_it_comes() {
     assert_eq!(get(&sibling(&cast.url(), "7.ts")).status, 500);
 }
 
+#[test]
+fn serves_a_file_that_never_says_how_long_it_is_as_the_device_plays_it() {
+    let server = server();
+    let cast = cast(&server, "clip-no-duration.mkv", hls(Segments::Ts));
+    let playlist = sibling(&cast.url(), "video.m3u8");
+    assert!(get(&playlist).text().contains("#EXT-X-MEDIA-SEQUENCE:0"));
+    // A device slow to ask for the first segment finds the file still
+    // waiting at its start, not played through without it.
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    let listed = get(&playlist).text();
+    assert_eq!(segment_names(&listed), ["0.ts", "1.ts", "2.ts"], "{listed}");
+    for number in 0..12 {
+        let segment = get(&sibling(&cast.url(), &format!("{number}.ts")));
+        assert_eq!(segment.status, 200, "segment {number}");
+        let (video, _) = probe(&segment.body, "ts");
+        assert!(close(video.unwrap().first(), 10.0 + f64::from(number)));
+    }
+    assert!(get(&playlist).text().ends_with("#EXT-X-ENDLIST\n"));
+    assert_eq!(get(&sibling(&cast.url(), "12.ts")).status, 500);
+}
+
 const VTT: &str = "WEBVTT\n\n00:00:00.200 --> 00:00:01.000\nFirst\n\n\
                    00:00:01.200 --> 00:00:01.900\nSecond\n\n";
 const SRT: &str = "1\n00:00:00,200 --> 00:00:01,000\nFirst\n\n\
