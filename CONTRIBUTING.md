@@ -200,7 +200,9 @@ ahead of what the mixer has played; with subtitles delayed either way, a
 cue must show only at its moved time, including right after a seek past
 where it originally ended. With no audio device, a player must still play
 in real time; unit tests check that what is queued follows the mixer to
-another sample rate, from where it was.
+another sample rate, from where it was. A unit test opens devices that
+take their time to open, and the app must go on meanwhile, at first and
+when Settings pick another, then play through each once it's open.
 
 Stream tests serve the clips from a small HTTP server on localhost:
 HTTP files, HLS (normal and live), a connection that stalls mid-way,

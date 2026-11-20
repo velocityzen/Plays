@@ -32,6 +32,12 @@ pub struct DeviceInfo {
     pub name: String,
 }
 
+/// A mixer for an output, at `master_volume`, made before the output so
+/// that players can play into it while the output is made elsewhere.
+pub fn mixer(master_volume: f32) -> Arc<Mixer> {
+    Mixer::new(FIRST_RATE, master_volume)
+}
+
 /// Every output device connected now that can play. Slow on some systems
 /// (ALSA opens each to see what it plays), so not for the UI thread.
 pub fn devices() -> Vec<DeviceInfo> {
@@ -333,7 +339,8 @@ impl std::fmt::Display for OpenError {
 }
 
 /// The mixer and where its sound goes. Not `Send` (a cpal stream isn't
-/// everywhere), so it lives on the UI thread.
+/// everywhere), so it stays on the thread that made it, which waits while
+/// it opens a device: the app gives each a thread of its own.
 pub struct AudioOutput {
     mixer: Arc<Mixer>,
     sink: Sink,
@@ -352,15 +359,11 @@ enum Sink {
 }
 
 impl AudioOutput {
-    /// An output that plays nowhere until told where, at `master_volume`.
-    pub fn new(master_volume: f32) -> Self {
-        let mixer = Mixer::new(FIRST_RATE, master_volume);
+    /// An output of `mixer` (from `mixer`), playing nowhere until told
+    /// where.
+    pub fn with_mixer(mixer: Arc<Mixer>) -> Self {
         let sink = Sink::Silent(Silent::start(mixer.clone()));
         Self { mixer, sink }
-    }
-
-    pub fn mixer(&self) -> &Arc<Mixer> {
-        &self.mixer
     }
 
     /// The device it plays through, if any.
@@ -610,13 +613,14 @@ mod tests {
     fn plays_through_the_devices_here() {
         let devices = devices();
         eprintln!("outputs: {devices:#?}");
-        let mut output = AudioOutput::new(0.0);
+        let mixer = mixer(0.0);
+        let mut output = AudioOutput::with_mixer(mixer.clone());
         let playing = output
             .play_through(None, |_| {})
             .cloned()
             .expect("a default output");
         eprintln!("default: {playing:?}");
-        assert_eq!(output.mixer().sample_rate(), playing.rate);
+        assert_eq!(mixer.sample_rate(), playing.rate);
         for device in &devices {
             assert!(is_connected(Some(&device.id)), "{device:?} by its id");
             let latency = find(Some(&device.id)).map(|device| stream_latency(&device));
@@ -624,7 +628,7 @@ mod tests {
             match output.play_through(Some(&device.id), |_| {}).cloned() {
                 Ok(playing) => {
                     assert_eq!(playing.id.as_deref(), Some(device.id.as_str()));
-                    assert_eq!(output.mixer().sample_rate(), playing.rate);
+                    assert_eq!(mixer.sample_rate(), playing.rate);
                 }
                 Err(err) => eprintln!("{}: {err}", device.name),
             }

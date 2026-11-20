@@ -98,8 +98,9 @@ The threads, then:
 
 - the UI thread, where gpui runs everything in `src/app` and `src/ui`;
 - two per player, `demux` and `decode` (`src/media/decoder.rs`);
-- one per audio output: cpal's callback, or a thread that runs the mixer in
-  time when there is no device (`src/media/output.rs`);
+- two per audio output: one that holds it and opens its devices
+  (`src/app/audio.rs`), and cpal's callback, or a thread that runs the
+  mixer in time when there is no device (`src/media/output.rs`);
 - one per casting tile (`src/cast/link.rs`), and the threads each protocol's
   crate runs its sessions and discovery on;
 - the stream server's: one per HTTP connection, and one per job making
@@ -321,18 +322,24 @@ flowchart LR
   outputs and finds one by the id the system keeps for it. On macOS it
   adds the latency CoreAudio gives the device's stream, which cpal leaves
   out and AirPlay makes long, to how late what is mixed will be heard, and
-  CoreAudio says when outputs come and go. Elsewhere the list is read again
-  when it is shown.
-- `src/app/audio.rs`: the `AudioEngine`, which keeps the outputs and
-  which device each plays through. The app's output plays through the
-  device picked in Settings → Audio, or the system's default. A window may
-  play through a device of its own instead: the engine keeps an output,
-  with its own mixer, for each device a window picked, shared by every
-  window that picks it and closed with the last of them, routed and watched
-  like the app's. While a device picked isn't connected, its sound waits
-  for it (players keep playing, silently) or goes through the system's
-  default, as settings say; the device is looked for every two seconds, and
-  the sound goes back to it as soon as it's there. In tests, the outputs
+  CoreAudio says when outputs come and go. Elsewhere the list is read
+  again when it is shown. An output isn't `Send` (a cpal stream isn't
+  everywhere), so it stays on the thread that made it.
+- `src/app/audio.rs`: the `AudioEngine`, which keeps the outputs and which
+  device each plays through. The app's output plays through the device
+  picked in Settings → Audio, or the system's default. A window may play
+  through a device of its own instead: the engine keeps an output, with
+  its own mixer, for each device a window picked, shared by every window
+  that picks it and closed with the last of them, routed and watched like
+  the app's. While a device picked isn't connected, its sound waits for it
+  (players keep playing, silently) or goes through the system's default,
+  as settings say; the device is looked for every two seconds, and the
+  sound goes back to it as soon as it's there. Each output is held by a
+  thread of its own, which opens its devices, as finding and opening one
+  can take longer than the UI thread can wait: the UI thread asks it to
+  route the output, and it says where it did once it has, which the UI
+  thread takes if nothing was asked since. The output plays nowhere until
+  then, and Settings say which device it is opening. In tests, the outputs
   play nowhere and no device is listed or opened.
 - `src/ui/workspace/sound.rs`: a window's sound, through the app's output
   or a device of its own. Its tiles play there, and a tile moved to a new

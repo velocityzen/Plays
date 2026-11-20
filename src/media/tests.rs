@@ -11,7 +11,7 @@ use ffmpeg_next::Rational;
 use super::audio::Mixer;
 use super::decoder::output_size;
 use super::orientation::Orientation;
-use super::output::AudioOutput;
+use super::output::{self, AudioOutput};
 use super::player::{Player, PlayerOptions};
 use super::source::Source;
 use super::tracks::TrackKind;
@@ -316,12 +316,9 @@ fn plays_on_in_time_with_no_device() {
         return;
     };
     // Plays nowhere until told where: nothing asks it for sound.
-    let output = AudioOutput::new(1.0);
-    let mut player = Player::open(
-        Source::File(path),
-        Some(output.mixer().clone()),
-        options(true, false),
-    );
+    let mixer = output::mixer(1.0);
+    let _output = AudioOutput::with_mixer(mixer.clone());
+    let mut player = Player::open(Source::File(path), Some(mixer), options(true, false));
     let start = Instant::now();
     while player.is_playing() && start.elapsed() < Duration::from_secs(10) {
         player.tick();
