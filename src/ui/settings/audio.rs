@@ -1,4 +1,5 @@
-//! Audio: the volume of everything, and the output it plays through.
+//! Audio: the volume of everything, the output it plays through, and
+//! whether a window sent to a display plays through its speakers.
 
 use gpui::prelude::*;
 use gpui::{AnyElement, ClickEvent, Context, Corner, SharedString, Window, div, point};
@@ -83,6 +84,19 @@ impl Pane for AudioPane {
                 .max_w(OUTPUT_MAX_WIDTH)
                 .truncate()
                 .child(AudioEngine::device_description(cx)),
+        ));
+        rows.push(row(
+            "Play on the display's speakers",
+            Some(
+                "A window Output Device puts full screen on another display, such as a \
+                 TV, plays through its speakers until it comes back, unless it has an \
+                 output of its own."
+                    .into(),
+            ),
+            theme,
+            Switch::new("sound-follows-display", s.sound_follows_display).on_toggle(
+                |&on, _, cx| update_settings(cx, true, |s| s.sound_follows_display = on),
+            ),
         ));
         vec![group(None, theme, rows)]
     }

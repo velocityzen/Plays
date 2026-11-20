@@ -1,7 +1,7 @@
 //! Output Device: putting the window full screen on a display, such as an
 //! AirPlay one, or playing the tile in front here again while it casts.
 
-use gpui::{App, Context, Window};
+use gpui::{Context, Window};
 
 use super::Workspace;
 use crate::ui::displays;
@@ -25,6 +25,7 @@ impl Workspace {
         }
         self.leave_home();
         self.moving_to = Some(id);
+        self.follow_display(id, cx);
         if window.is_fullscreen() {
             window.toggle_fullscreen();
             cx.notify();
@@ -38,7 +39,7 @@ impl Workspace {
     /// there (`come_home`). A display that went away on the way leaves the
     /// window out of full screen, back where it was. Runs on every render
     /// and tick.
-    pub(super) fn finish_moving(&mut self, window: &mut Window, cx: &App) {
+    pub(super) fn finish_moving(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let mut moved = false;
         if !window.is_fullscreen()
             && let Some(id) = self.moving_to.take()

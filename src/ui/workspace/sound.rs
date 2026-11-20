@@ -2,6 +2,12 @@
 //! picked from a tile's Play On menu or Audio → Window Output Device. Its
 //! tiles play there, the rest of the app's windows through the app's
 //! output, and a tile moved to a new window takes the device along.
+//!
+//! A window Output Device puts full screen on another display plays
+//! through that display's speakers, such as a TV's, until it comes back,
+//! as Settings → Audio says: the output named after the display, as macOS
+//! names an HDMI or DisplayPort output. Not one with an output picked for
+//! it, and picking one there stops it.
 
 use std::sync::Arc;
 
@@ -10,7 +16,9 @@ use gpui::{App, Context, Entity};
 use super::Workspace;
 use crate::app::{AudioEngine, refresh_menus};
 use crate::media::Mixer;
-use crate::settings::AudioDevice;
+use crate::media::output::DeviceInfo;
+use crate::settings::{AudioDevice, Settings};
+use crate::ui::displays;
 use crate::ui::player::PlayerView;
 
 impl Workspace {
@@ -28,8 +36,53 @@ impl Workspace {
     }
 
     /// Play its tiles through `device` from now on, or with `None` through
-    /// the app's output.
+    /// the app's output, as picked from a menu: its sound no longer follows
+    /// the display it was sent to.
     pub fn set_sound_device(&mut self, device: Option<AudioDevice>, cx: &mut Context<Self>) {
+        if let Some(home) = &mut self.home {
+            home.sound = None;
+        }
+        self.play_through(device, cx);
+    }
+
+    /// Output Device is sending the window to display `id`: play through
+    /// its speakers, unless Settings say not to or it plays through an
+    /// output picked for it. Following another display's speakers already,
+    /// it plays through what it did before where there are none.
+    pub(super) fn follow_display(&mut self, id: u32, cx: &mut Context<Self>) {
+        if !cx.global::<Settings>().sound_follows_display {
+            return;
+        }
+        let Some(home) = &self.home else {
+            return;
+        };
+        let before = match &home.sound {
+            Some(before) => before.clone(),
+            None if self.sound.is_none() => None,
+            // Picked for it.
+            None => return,
+        };
+        let following = home.sound.is_some();
+        let speakers = displays::list(cx)
+            .into_iter()
+            .find(|display| display.id == id)
+            .and_then(|display| speakers_of(&display.name, AudioEngine::devices(cx)))
+            .map(|device| AudioDevice {
+                id: device.id.clone(),
+                name: device.name.clone(),
+            });
+        if speakers.is_none() && !following {
+            return;
+        }
+        if let Some(home) = &mut self.home {
+            home.sound = Some(before.clone());
+        }
+        self.play_through(speakers.or(before), cx);
+    }
+
+    /// Play its tiles through `device`, or with `None` through the app's
+    /// output.
+    pub(super) fn play_through(&mut self, device: Option<AudioDevice>, cx: &mut Context<Self>) {
         let id = |device: Option<&AudioDevice>| device.map(|device| device.id.clone());
         if id(self.sound_device()) == id(device.as_ref()) {
             return;
@@ -62,5 +115,101 @@ impl Workspace {
         if let Some((device, _)) = self.sound.take() {
             AudioEngine::let_go(&device, cx);
         }
+    }
+}
+
+/// The words of a name, to match by: "LG TV SSCR2" is `lg tv sscr2`.
+fn words(name: &str) -> Vec<String> {
+    name.split(|c: char| !c.is_alphanumeric())
+        .filter(|word| !word.is_empty())
+        .map(str::to_lowercase)
+        .collect()
+}
+
+/// Whether `words` has `part` in it, word for word.
+fn has_words(words: &[String], part: &[String]) -> bool {
+    !part.is_empty() && words.windows(part.len()).any(|run| run == part)
+}
+
+/// The output that is display `name`'s speakers: the one named as it is,
+/// or else the only one whose name has the display's in it, or is in the
+/// display's, word for word ("LG TV" for "LG TV SSCR2", "Studio Display
+/// Speakers" for "Studio Display").
+fn speakers_of<'a>(name: &str, devices: &'a [DeviceInfo]) -> Option<&'a DeviceInfo> {
+    let display = words(name);
+    if display.is_empty() {
+        return None;
+    }
+    let named = |device: &&DeviceInfo| words(&device.name) == display;
+    if let Some(device) = devices.iter().find(named) {
+        return Some(device);
+    }
+    let mut alike = devices.iter().filter(|device| {
+        let device = words(&device.name);
+        has_words(&device, &display) || has_words(&display, &device)
+    });
+    match (alike.next(), alike.next()) {
+        (Some(device), None) => Some(device),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn outputs(names: &[&str]) -> Vec<DeviceInfo> {
+        names
+            .iter()
+            .enumerate()
+            .map(|(index, name)| DeviceInfo {
+                id: format!("output-{index}"),
+                name: (*name).to_owned(),
+            })
+            .collect()
+    }
+
+    fn speakers(display: &str, names: &[&str]) -> Option<String> {
+        speakers_of(display, &outputs(names)).map(|device| device.name.clone())
+    }
+
+    #[test]
+    fn a_displays_speakers_are_the_output_named_after_it() {
+        let mac = ["MacBook Pro Speakers", "AirPods Pro", "LG TV SSCR2"];
+        assert_eq!(
+            speakers("LG TV SSCR2", &mac).as_deref(),
+            Some("LG TV SSCR2")
+        );
+        assert_eq!(
+            speakers("lg tv  sscr2", &mac).as_deref(),
+            Some("LG TV SSCR2")
+        );
+        assert_eq!(
+            speakers("Built-in Retina Display", &mac),
+            None,
+            "none of its own"
+        );
+
+        assert_eq!(
+            speakers("Studio Display", &["Studio Display Speakers", "AirPods"]).as_deref(),
+            Some("Studio Display Speakers"),
+        );
+        assert_eq!(
+            speakers("DELL U2720Q (DP-1)", &["DELL U2720Q", "Headphones"]).as_deref(),
+            Some("DELL U2720Q"),
+            "a display named with its connector too",
+        );
+        assert_eq!(
+            speakers("LG TV", &["LG TV SSCR2", "LG TV Soundbar"]),
+            None,
+            "not one of two",
+        );
+        assert_eq!(
+            speakers("LG TV", &["LG TV", "LG TV Soundbar"]).as_deref(),
+            Some("LG TV"),
+            "the one named as it is, first",
+        );
+        assert_eq!(speakers("TV", &["TVS Speakers"]), None, "word for word");
+        assert_eq!(speakers("", &["Speakers"]), None);
     }
 }

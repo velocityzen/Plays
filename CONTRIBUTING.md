@@ -282,6 +282,11 @@ What the window tests check:
   device along and shares its output, going back to the app's output
   leaves the other window on the device, and the output closes with its
   last window.
+- A window sent full screen to a display plays through the output named
+  after it, follows it to another, plays as it did on one without
+  speakers, and goes back to the app's output when it comes back; full
+  screen where it is, a device picked for it before or while away, and
+  Settings saying not to, keep the sound where it is.
 - Floating on top while playing lifts the window, and Settings with it,
   only while its file plays, and the menu items turn their mode on and off.
 - Video → Output Device checks the display the window in front is on, and

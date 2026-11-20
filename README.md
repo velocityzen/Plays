@@ -110,6 +110,8 @@ GPU-accelerated UI framework.
   or a device you pick, remembered from run to run.
 - A window can play through an output of its own instead, such as a TV's
   speakers while the desk keeps its own.
+- A window sent full screen to a TV plays through the TV's speakers until
+  it comes back.
 - While the device picked isn't connected, the sound waits for it, or goes
   through the system's default, and goes back to it as soon as it's there.
 - AirPlay speakers play the sound once macOS has them, with the picture
@@ -377,6 +379,17 @@ and a tile moved to a new window takes the device along. While it isn't
 connected, its sound waits for it or goes through the system's default, as
 Settings → Audio says for the app's. It isn't remembered from run to run.
 
+A window that Play On (or Video → Output Device) puts full screen on
+another display plays through that display's speakers, such as a TV's over
+HDMI, until it comes back, and then through what it played through before.
+The display's speakers are the output named after it, as macOS names an
+HDMI or DisplayPort output (`LG TV` for the display `LG TV`, or one output
+with the display's name in it, such as `Studio Display Speakers`). A
+display with none, and one the window is on already, leave the sound as
+it is. So does an output picked for the window; picking one, or "Same as
+the App", while it is there keeps that when it comes back. Settings →
+Audio → Play on the display's speakers turns this off.
+
 On Linux, audio goes through ALSA (PipeWire and PulseAudio provide an ALSA
 device), so Settings → Audio lists ALSA's outputs: `default` and
 `pipewire` or `pulse` go through the sound server, which picks the
@@ -500,8 +513,9 @@ bitmap ones go where the stream puts them.
 
 The Settings window has panes for Playback, Audio, Video, Subtitles,
 Casting, Screenshots, Hotkeys, Appearance and About: the theme, master
-volume, the audio output, default volume, autoplay, loop, resuming
-files where they were left, seek step,
+volume, the audio output, playing a window sent to a display through its
+speakers, default volume, autoplay, loop, resuming files where they were
+left, seek step,
 chapter notches on the bar, fit/fill scaling, gamma for SDR and for HDR
 video (applied to every open video as you drag), decode resolution limit,
 hardware decoding, subtitle style, the protocols that look for devices to
@@ -562,6 +576,11 @@ or resets every setting to its default (after asking).
   wanted is playing: the device list in Settings → Audio is read again
   when its menu opens. ALSA's own error messages about plugins with
   nothing behind them show in the terminal when it does.
+- On Linux, ALSA names a TV's HDMI output after the sound card (`HDMI 0`),
+  not the TV, so a window sent to a TV keeps its sound unless an output is
+  named after the display, as one defined in `~/.asoundrc` can be. Whether
+  macOS names them right has been checked with displays named as their
+  outputs, not on a TV yet.
 - On GNOME Wayland (client-side decorations) the window can be moved from
   the toolbar but has no resize handles.
 - Windows can't float on top under Wayland, which has no way for an app to

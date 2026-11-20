@@ -320,7 +320,12 @@ flowchart LR
   play nowhere and no device is listed or opened.
 - `src/ui/workspace/sound.rs`: a window's sound, through the app's output
   or a device of its own. Its tiles play there, and a tile moved to a new
-  window takes the device along.
+  window takes the device along. A window Output Device sends full screen
+  to another display plays through the output named after that display,
+  its speakers, while there, unless a device was picked for it; coming back,
+  it plays as it did before. An output is named after a display when its
+  words are the display's, or, failing that, when it is the one output
+  whose words take in the display's or are taken in by them.
 
 ## Subtitles
 

@@ -368,6 +368,10 @@ pub struct Settings {
     /// Volume applied on top of every player's own volume.
     pub master_volume: f32,
     pub audio_output: AudioOutputSettings,
+    /// A window Output Device puts full screen on another display plays
+    /// through that display's speakers while it is there, unless it plays
+    /// through an output picked for it.
+    pub sound_follows_display: bool,
     pub casting: CastingSettings,
     /// Volume new players start at.
     pub default_volume: f32,
@@ -410,6 +414,7 @@ impl Default for Settings {
             theme: ThemeMode::System,
             master_volume: 1.0,
             audio_output: AudioOutputSettings::default(),
+            sound_follows_display: true,
             casting: CastingSettings::default(),
             default_volume: 0.8,
             autoplay: true,
