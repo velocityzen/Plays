@@ -846,6 +846,8 @@ struct VodState {
 
 struct Running {
     id: u64,
+    /// Where it started, for the tests to see.
+    #[cfg(test)]
     from: usize,
     next: usize,
     stop: Arc<AtomicBool>,
@@ -906,10 +908,12 @@ impl Vod {
             if state.closed {
                 return Err(Error::Source("the cast has ended".into()));
             }
+            // Not one the job made already, which isn't kept or it'd be
+            // had: the job doesn't make it again.
             let coming = state
                 .job
                 .as_ref()
-                .is_some_and(|job| job.from <= segment && segment <= job.next + REACH);
+                .is_some_and(|job| job.next <= segment && segment <= job.next + REACH);
             if !coming {
                 if let Some(err) = failed(&state, mine) {
                     return Err(err);
@@ -961,6 +965,7 @@ impl Vod {
         let stop = Arc::new(AtomicBool::new(false));
         state.job = Some(Running {
             id,
+            #[cfg(test)]
             from,
             next: from,
             stop: Arc::clone(&stop),
@@ -1482,6 +1487,25 @@ mod tests {
         assert!(alone.pass(packet(0, 0, 0)).is_none());
         assert_eq!(alone.pass(packet(0, 50, 0)).unwrap().packet.duration(), 50);
         assert_eq!(alone.rest()[0].packet.duration(), 50);
+    }
+
+    #[test]
+    fn going_back_past_what_it_kept_while_it_runs_starts_a_job_there() {
+        let vod = tone();
+        vod.segment(0).unwrap();
+        vod.segment(2).unwrap();
+        vod.segment(5).unwrap();
+        let (kept, from) = settled(&vod);
+        assert_eq!(from, Some(0), "the job from the start still runs");
+        assert!(!kept.contains(&0), "and has forgotten the first: {kept:?}");
+        let asked = Instant::now();
+        assert!(!vod.segment(0).unwrap().is_empty());
+        assert!(
+            asked.elapsed() < Duration::from_secs(10),
+            "made again in {:?}",
+            asked.elapsed()
+        );
+        vod.close();
     }
 
     #[test]

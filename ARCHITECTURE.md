@@ -617,8 +617,9 @@ flowchart LR
   re-encodes, and cuts where the leading stream (video, else sound) reaches
   the next segment's start, holding the other stream's packets past it
   until then. Jobs run three segments ahead of the device and wait; asking
-  for one far from the job (a seek) starts another there, and a segment is
-  cut the same way whichever job makes it. Packets without a length get
+  for one far from the job (a seek), or behind it and no longer kept,
+  starts another there, and a segment is cut the same way whichever job
+  makes it. Packets without a length get
   one from the next. A live stream has one job, keeping the last ten
   segments and listing six; a progressive stream is made for each request,
   from the time it asks for.
