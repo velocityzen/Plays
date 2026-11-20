@@ -6,6 +6,9 @@ description = "Serves media on the network in a form a TV or speaker plays: as i
 license = "MIT"
 publish = false
 
+[lints]
+workspace = true
+
 [dependencies]
 # The same FFmpeg bindings Plays uses, linked to the same static FFmpeg.
 ffmpeg-next = { version = "9.1", default-features = false, features = [

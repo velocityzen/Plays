@@ -6,6 +6,9 @@ description = "Finds and controls Google Cast devices: has a Chromecast, Google 
 license = "MIT"
 publish = false
 
+[lints]
+workspace = true
+
 [features]
 # A pretend Cast device on this computer, for tests here and in what uses
 # the crate.

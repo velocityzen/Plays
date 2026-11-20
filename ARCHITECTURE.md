@@ -111,7 +111,8 @@ The threads, then:
 ## The repository
 
 The repository is a Cargo workspace: Plays, and beside it in `crates/` the
-crates it is built from, each built and tested on its own.
+crates it is built from, each built and tested on its own. The workspace's
+clippy lints, in the root `Cargo.toml`, apply to all of them.
 
 | Path | What it is |
 | --- | --- |
@@ -216,13 +217,16 @@ the sound being heard. A file with no sound plays on wall time.
   with them, without a seek. Either thread failing, by an error or a
   panic, says why for the tile to show, the first to fail standing, and
   the player stops waiting for more. `mod.rs` has the decode thread and
-  what it is told; `demux.rs` the demux thread and its packet queues;
-  `video.rs` and `audio.rs` the two decoders; `convert.rs` turning frames
-  into pictures. `shared.rs` holds what a player and its threads share,
-  behind methods: each seek starts a generation, numbered by a serial, and
-  what was decoded or found for an earlier one (frames, sound, where a
-  skip landed, the end of the file) is never handed out once the next has
-  started, so nothing that takes from it checks the serial itself.
+  what it is told: it opens the file's streams, then each time round takes
+  the commands, carries out a seek, waits for a skip to land and decodes a
+  packet for each queue with room; `demux.rs` the demux thread and its
+  packet queues; `video.rs` and `audio.rs` the two decoders; `convert.rs`
+  turning frames into pictures. `shared.rs` holds what a player and its
+  threads share, behind methods: each seek starts a generation, numbered
+  by a serial, and what was decoded or found for an earlier one (frames,
+  sound, where a skip landed, the end of the file) is never handed out
+  once the next has started, so nothing that takes from it checks the
+  serial itself.
 - `src/media/player.rs`: the UI-side handle: play/pause/seek, frame
   selection, buffering after seeks (and, for streams, until a second is
   read ahead or when the network runs dry), end-of-file and looping, and
@@ -722,7 +726,9 @@ flowchart LR
   listing six. A file that never says how long it is goes the same way,
   but its job too waits three segments ahead of the device, so it isn't
   read to its end before the device starts. A progressive stream is made
-  for each request, from the time it asks for.
+  for each request, from the time it asks for. A file's segments and a
+  live stream's are read through the same loop, which hands each packet to
+  what cuts them.
 - `overlay.rs`: picture subtitles drawn into video as it is re-encoded.
   The track's packets are decoded as the media is read; a display set
   shows until the next or its own end, and one with nothing in it clears

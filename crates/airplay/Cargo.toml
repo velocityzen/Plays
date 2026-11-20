@@ -6,6 +6,9 @@ description = "Finds, pairs with and controls AirPlay receivers: has a TV play a
 license = "MIT"
 publish = false
 
+[lints]
+workspace = true
+
 [features]
 # A pretend receiver on this computer, for tests here and in what uses the
 # crate.

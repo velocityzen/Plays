@@ -36,127 +36,157 @@ pub(super) fn set_menus(cx: &mut App) {
     );
     let window_outputs = window_output_menu(AudioEngine::devices(cx), state.sound.as_ref());
     cx.set_menus(vec![
-        Menu {
-            name: "Plays".into(),
-            items: vec![
-                MenuItem::action("About Plays", About),
-                MenuItem::separator(),
-                MenuItem::action("Settings…", OpenSettings),
-                MenuItem::separator(),
-                MenuItem::os_submenu("Services", SystemMenuType::Services),
-                MenuItem::separator(),
-                MenuItem::action("Quit Plays", Quit),
-            ],
-        },
-        Menu {
-            name: "File".into(),
-            items: vec![
-                MenuItem::action("Open…", OpenFiles),
-                MenuItem::action("Open URL…", OpenUrl),
-                MenuItem::separator(),
-                MenuItem::action("Close File", CloseFile),
-                MenuItem::action("Close All Files", CloseAll),
-                MenuItem::action("Close Window", CloseWindow),
-            ],
-        },
-        Menu {
-            name: "Playback".into(),
-            items: vec![
-                MenuItem::action("Play/Pause", PlayPause),
-                MenuItem::action("Restart", Restart),
-                MenuItem::action("Loop", ToggleLoop),
-                MenuItem::separator(),
-                MenuItem::action("Next Frame", NextFrame),
-                MenuItem::action("Previous Frame", PreviousFrame),
-                MenuItem::action("Next Chapter", NextChapter),
-                MenuItem::action("Previous Chapter", PreviousChapter),
-                MenuItem::action("Seek Forward", SeekForward),
-                MenuItem::action("Seek Backward", SeekBackward),
-                MenuItem::action("Previous File", PreviousFile),
-                MenuItem::action("Next File", NextFile),
-            ]
-            .into_iter()
-            .chain(chapter_menu(&state.chapters, state.chapter).map(MenuItem::submenu))
-            .chain([
-                MenuItem::separator(),
-                MenuItem::action("Play/Pause All", PlayPauseAll),
-                MenuItem::action("Play All", PlayAll),
-                MenuItem::action("Pause All", PauseAll),
-                MenuItem::action("Restart All", RestartAll),
-                MenuItem::action("Seek All Forward", SeekForwardAll),
-                MenuItem::action("Seek All Backward", SeekBackwardAll),
-                MenuItem::action("Next Frame on All", NextFrameAll),
-                MenuItem::action("Previous Frame on All", PreviousFrameAll),
-                MenuItem::action("Sync All to This Tile", SyncAll),
-            ])
-            .collect(),
-        },
-        Menu {
-            name: "Video".into(),
-            items: vec![
-                MenuItem::action("Full Screen", ToggleFullScreen),
-                MenuItem::action("Picture in Picture", TogglePictureInPicture),
-                MenuItem::action("Float on Top", ToggleFloatOnTop)
-                    .checked(float_on_top == FloatOnTop::Always),
-                MenuItem::action("Float on Top While Playing", ToggleFloatOnTopWhilePlaying)
-                    .checked(float_on_top == FloatOnTop::WhilePlaying),
-                MenuItem::submenu(display_menu(&state)),
-                MenuItem::separator(),
-                MenuItem::action("Next Video Track", NextVideoTrack),
-                MenuItem::separator(),
-                MenuItem::action("Rotate Right", RotateRight),
-                MenuItem::action("Rotate Left", RotateLeft),
-                MenuItem::action("Flip Horizontally", FlipHorizontally),
-                MenuItem::action("Flip Vertically", FlipVertically),
-                MenuItem::separator(),
-                MenuItem::submenu(aspect_menu(state.aspect)),
-                MenuItem::submenu(crop_menu(state.crop)),
-                MenuItem::separator(),
-                MenuItem::action("Reset Picture", ResetPicture),
-                MenuItem::separator(),
-                MenuItem::action("Take Screenshot", TakeScreenshot),
-                MenuItem::separator(),
-                MenuItem::action("Console", ToggleConsole),
-            ],
-        },
-        Menu {
-            name: "Audio".into(),
-            items: vec![
-                MenuItem::action("Volume Up", VolumeUp),
-                MenuItem::action("Volume Down", VolumeDown),
-                MenuItem::action("Mute/Unmute", ToggleMute),
-                MenuItem::separator(),
-                MenuItem::action("Next Audio Track", NextAudioTrack),
-                MenuItem::separator(),
-                MenuItem::action("Audio Earlier", AudioEarlier),
-                MenuItem::action("Audio Later", AudioLater),
-                MenuItem::action("Reset Audio Delay", ResetAudioDelay),
-                MenuItem::separator(),
-                MenuItem::action("Volume Up on All", VolumeUpAll),
-                MenuItem::action("Volume Down on All", VolumeDownAll),
-                MenuItem::action("Mute/Unmute All", ToggleMuteAll),
-                MenuItem::separator(),
-                MenuItem::submenu(outputs),
-                MenuItem::submenu(window_outputs),
-            ],
-        },
-        Menu {
-            name: "Subtitles".into(),
-            items: vec![
-                MenuItem::action("Show/Hide Subtitles", ToggleSubtitles),
-                MenuItem::action("Next Subtitles", NextSubtitleTrack),
-                MenuItem::separator(),
-                MenuItem::action("Bigger", BiggerSubtitles),
-                MenuItem::action("Smaller", SmallerSubtitles),
-                MenuItem::action("Move Up", SubtitlesUp),
-                MenuItem::action("Move Down", SubtitlesDown),
-                MenuItem::separator(),
-                MenuItem::action("Earlier", SubtitlesEarlier),
-                MenuItem::action("Later", SubtitlesLater),
-                MenuItem::action("Reset Delay", ResetSubtitleDelay),
-            ],
-        },
+        plays_menu(),
+        file_menu(),
+        playback_menu(&state),
+        video_menu(float_on_top, &state),
+        audio_menu(outputs, window_outputs),
+        subtitles_menu(),
     ]);
+}
+
+/// The app's own menu.
+fn plays_menu() -> Menu {
+    Menu {
+        name: "Plays".into(),
+        items: vec![
+            MenuItem::action("About Plays", About),
+            MenuItem::separator(),
+            MenuItem::action("Settings…", OpenSettings),
+            MenuItem::separator(),
+            MenuItem::os_submenu("Services", SystemMenuType::Services),
+            MenuItem::separator(),
+            MenuItem::action("Quit Plays", Quit),
+        ],
+    }
+}
+
+/// Opening and closing files and windows.
+fn file_menu() -> Menu {
+    Menu {
+        name: "File".into(),
+        items: vec![
+            MenuItem::action("Open…", OpenFiles),
+            MenuItem::action("Open URL…", OpenUrl),
+            MenuItem::separator(),
+            MenuItem::action("Close File", CloseFile),
+            MenuItem::action("Close All Files", CloseAll),
+            MenuItem::action("Close Window", CloseWindow),
+        ],
+    }
+}
+
+/// Playing the tile in front, its chapters, and every tile.
+fn playback_menu(state: &MenuState) -> Menu {
+    Menu {
+        name: "Playback".into(),
+        items: vec![
+            MenuItem::action("Play/Pause", PlayPause),
+            MenuItem::action("Restart", Restart),
+            MenuItem::action("Loop", ToggleLoop),
+            MenuItem::separator(),
+            MenuItem::action("Next Frame", NextFrame),
+            MenuItem::action("Previous Frame", PreviousFrame),
+            MenuItem::action("Next Chapter", NextChapter),
+            MenuItem::action("Previous Chapter", PreviousChapter),
+            MenuItem::action("Seek Forward", SeekForward),
+            MenuItem::action("Seek Backward", SeekBackward),
+            MenuItem::action("Previous File", PreviousFile),
+            MenuItem::action("Next File", NextFile),
+        ]
+        .into_iter()
+        .chain(chapter_menu(&state.chapters, state.chapter).map(MenuItem::submenu))
+        .chain([
+            MenuItem::separator(),
+            MenuItem::action("Play/Pause All", PlayPauseAll),
+            MenuItem::action("Play All", PlayAll),
+            MenuItem::action("Pause All", PauseAll),
+            MenuItem::action("Restart All", RestartAll),
+            MenuItem::action("Seek All Forward", SeekForwardAll),
+            MenuItem::action("Seek All Backward", SeekBackwardAll),
+            MenuItem::action("Next Frame on All", NextFrameAll),
+            MenuItem::action("Previous Frame on All", PreviousFrameAll),
+            MenuItem::action("Sync All to This Tile", SyncAll),
+        ])
+        .collect(),
+    }
+}
+
+/// The window and its display, and the tile in front's picture.
+fn video_menu(float_on_top: FloatOnTop, state: &MenuState) -> Menu {
+    Menu {
+        name: "Video".into(),
+        items: vec![
+            MenuItem::action("Full Screen", ToggleFullScreen),
+            MenuItem::action("Picture in Picture", TogglePictureInPicture),
+            MenuItem::action("Float on Top", ToggleFloatOnTop)
+                .checked(float_on_top == FloatOnTop::Always),
+            MenuItem::action("Float on Top While Playing", ToggleFloatOnTopWhilePlaying)
+                .checked(float_on_top == FloatOnTop::WhilePlaying),
+            MenuItem::submenu(display_menu(state)),
+            MenuItem::separator(),
+            MenuItem::action("Next Video Track", NextVideoTrack),
+            MenuItem::separator(),
+            MenuItem::action("Rotate Right", RotateRight),
+            MenuItem::action("Rotate Left", RotateLeft),
+            MenuItem::action("Flip Horizontally", FlipHorizontally),
+            MenuItem::action("Flip Vertically", FlipVertically),
+            MenuItem::separator(),
+            MenuItem::submenu(aspect_menu(state.aspect)),
+            MenuItem::submenu(crop_menu(state.crop)),
+            MenuItem::separator(),
+            MenuItem::action("Reset Picture", ResetPicture),
+            MenuItem::separator(),
+            MenuItem::action("Take Screenshot", TakeScreenshot),
+            MenuItem::separator(),
+            MenuItem::action("Console", ToggleConsole),
+        ],
+    }
+}
+
+/// The sound of the tile in front and every tile, and where it plays.
+fn audio_menu(outputs: Menu, window_outputs: Menu) -> Menu {
+    Menu {
+        name: "Audio".into(),
+        items: vec![
+            MenuItem::action("Volume Up", VolumeUp),
+            MenuItem::action("Volume Down", VolumeDown),
+            MenuItem::action("Mute/Unmute", ToggleMute),
+            MenuItem::separator(),
+            MenuItem::action("Next Audio Track", NextAudioTrack),
+            MenuItem::separator(),
+            MenuItem::action("Audio Earlier", AudioEarlier),
+            MenuItem::action("Audio Later", AudioLater),
+            MenuItem::action("Reset Audio Delay", ResetAudioDelay),
+            MenuItem::separator(),
+            MenuItem::action("Volume Up on All", VolumeUpAll),
+            MenuItem::action("Volume Down on All", VolumeDownAll),
+            MenuItem::action("Mute/Unmute All", ToggleMuteAll),
+            MenuItem::separator(),
+            MenuItem::submenu(outputs),
+            MenuItem::submenu(window_outputs),
+        ],
+    }
+}
+
+/// The subtitles of the tile in front.
+fn subtitles_menu() -> Menu {
+    Menu {
+        name: "Subtitles".into(),
+        items: vec![
+            MenuItem::action("Show/Hide Subtitles", ToggleSubtitles),
+            MenuItem::action("Next Subtitles", NextSubtitleTrack),
+            MenuItem::separator(),
+            MenuItem::action("Bigger", BiggerSubtitles),
+            MenuItem::action("Smaller", SmallerSubtitles),
+            MenuItem::action("Move Up", SubtitlesUp),
+            MenuItem::action("Move Down", SubtitlesDown),
+            MenuItem::separator(),
+            MenuItem::action("Earlier", SubtitlesEarlier),
+            MenuItem::action("Later", SubtitlesLater),
+            MenuItem::action("Reset Delay", ResetSubtitleDelay),
+        ],
+    }
 }
 
 /// Set the menus again when floating on top, which they check, changes.

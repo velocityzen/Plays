@@ -65,6 +65,24 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
+/// Wait for `changed` to be rung, until `deadline` at the most; past it,
+/// a request fails as `late` says.
+fn wait_until<'a, T>(
+    changed: &Condvar,
+    state: MutexGuard<'a, T>,
+    deadline: Instant,
+    late: &str,
+) -> Result<MutexGuard<'a, T>, Error> {
+    let left = deadline.saturating_duration_since(Instant::now());
+    if left.is_zero() {
+        return Err(Error::Mux(late.into()));
+    }
+    Ok(changed
+        .wait_timeout(state, left)
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .0)
+}
+
 /// Reads that fail partway, for the tests: a source's location, and how
 /// many packets the next job reading it gets before its reads fail as a
 /// disk's or a network's might. Jobs after it read the source as it is.
@@ -273,75 +291,11 @@ impl Pipeline {
             Start::Key { key, time } => (Some(key), time),
             Start::Time(time) => (None, time),
         };
-        let global_header = media.plan.format() == Format::Fmp4;
         let mut tracks = Vec::new();
         let mut outputs = Vec::new();
-        let mut keys = Some(keys);
         if let Some(plan) = &media.plan.video {
-            let (stream_index, parameters, time_base, frame_rate) = stream_details(&input, plan)?;
-            let (work, out) = match plan {
-                VideoPlan::Copy { .. } => (
-                    Work::CopyVideo {
-                        started: false,
-                        from: from_key,
-                        domain,
-                    },
-                    OutStream {
-                        parameters,
-                        time_base,
-                    },
-                ),
-                VideoPlan::Encode {
-                    stream,
-                    to,
-                    encoder,
-                    width,
-                    height,
-                    ten_bit,
-                    bit_rate,
-                    ..
-                } => {
-                    let decoder = open_video_decoder(&parameters, time_base)?;
-                    let colors = Colors::of(&parameters);
-                    let size = media
-                        .info
-                        .video(*stream)
-                        .map_or((*width, *height), |video| (video.width, video.height));
-                    let overlay = media.plan.subtitles.and_then(|subtitles| {
-                        Overlay::open(&input, subtitles, size, Coding::of(&colors, *ten_bit))
-                            .inspect_err(|err| log::warn!("the subtitles can't be drawn in: {err}"))
-                            .ok()
-                    });
-                    let encoder = VideoEncoder::open(&VideoSettings {
-                        encoder,
-                        codec: *to,
-                        width: *width,
-                        height: *height,
-                        ten_bit: *ten_bit,
-                        bit_rate: *bit_rate,
-                        time_base,
-                        frame_rate,
-                        colors,
-                        global_header,
-                    })?;
-                    let out = OutStream {
-                        parameters: encoder.parameters(),
-                        time_base: encoder.time_base(),
-                    };
-                    (
-                        Work::Video {
-                            decoder,
-                            encoder: Box::new(encoder),
-                            keys: keys.take().expect("keys for one video track"),
-                            from: from_time,
-                            first: true,
-                            last: None,
-                            overlay: overlay.map(Box::new),
-                        },
-                        out,
-                    )
-                }
-            };
+            let (stream_index, time_base, work, out) =
+                video_work(media, &input, plan, from_key, from_time, keys, domain)?;
             tracks.push(Track {
                 input: stream_index,
                 output: outputs.len(),
@@ -351,53 +305,7 @@ impl Pipeline {
             outputs.push(out);
         }
         if let Some(plan) = &media.plan.audio {
-            let stream_index = match plan {
-                AudioPlan::Copy { stream, .. } | AudioPlan::Encode { stream, .. } => *stream,
-            };
-            let stream = input
-                .stream(stream_index)
-                .ok_or_else(|| Error::Source(format!("there is no stream {stream_index}")))?;
-            let (parameters, time_base) = (stream.parameters(), stream.time_base());
-            let (work, out) = match plan {
-                AudioPlan::Copy { .. } => (
-                    Work::CopyAudio {
-                        started: false,
-                        from: from_time,
-                    },
-                    OutStream {
-                        parameters,
-                        time_base,
-                    },
-                ),
-                AudioPlan::Encode {
-                    to,
-                    channels,
-                    sample_rate,
-                    bit_rate,
-                    ..
-                } => {
-                    let decoder = open_audio_decoder(&parameters, time_base)?;
-                    let encoder = AudioEncoder::open(&AudioSettings {
-                        codec: *to,
-                        channels: *channels,
-                        sample_rate: *sample_rate,
-                        bit_rate: *bit_rate,
-                        global_header,
-                    })?;
-                    let out = OutStream {
-                        parameters: encoder.parameters(),
-                        time_base: encoder.time_base(),
-                    };
-                    (
-                        Work::Audio {
-                            decoder,
-                            encoder: Box::new(encoder),
-                            from: from_time,
-                        },
-                        out,
-                    )
-                }
-            };
+            let (stream_index, time_base, work, out) = audio_work(media, &input, plan, from_time)?;
             tracks.push(Track {
                 input: stream_index,
                 output: outputs.len(),
@@ -514,49 +422,9 @@ impl Pipeline {
                 started,
                 from,
                 domain,
-            } => {
-                let Some(packet) = packet else {
-                    return Ok(());
-                };
-                let in_domain = match domain {
-                    Domain::Dts => packet.dts().or(packet.pts()),
-                    Domain::Pts => packet.pts().or(packet.dts()),
-                };
-                if !*started {
-                    // From a keyframe, the one asked for or the first.
-                    if !packet.is_key()
-                        || from.is_some_and(|from| in_domain.is_none_or(|ts| ts < from))
-                    {
-                        return Ok(());
-                    }
-                    *started = true;
-                }
-                let key = packet.is_key();
-                made.push((
-                    packet
-                        .pts()
-                        .or(packet.dts())
-                        .map(|ts| ts as f64 * time_base),
-                    key,
-                    in_domain.filter(|_| key),
-                    packet,
-                ));
-            }
+            } => made.extend(copy_video(packet, started, *from, *domain, time_base)),
             Work::CopyAudio { started, from } => {
-                let Some(packet) = packet else {
-                    return Ok(());
-                };
-                let time = packet
-                    .pts()
-                    .or(packet.dts())
-                    .map(|ts| ts as f64 * time_base);
-                if !*started {
-                    if time.is_none_or(|time| time < *from - EPSILON) {
-                        return Ok(());
-                    }
-                    *started = true;
-                }
-                made.push((time, packet.is_key(), None, packet));
+                made.extend(copy_audio(packet, started, *from, time_base));
             }
             Work::Video {
                 decoder,
@@ -568,16 +436,7 @@ impl Pipeline {
                 overlay,
             } => {
                 let end = packet.is_none();
-                match &packet {
-                    Some(packet) => {
-                        if let Err(err) = decoder.send_packet(packet) {
-                            log::debug!("a video packet didn't decode: {err}");
-                        }
-                    }
-                    None => {
-                        let _ = decoder.send_eof();
-                    }
-                }
+                send(decoder, packet.as_ref(), "video");
                 let mut decoded = frame::Video::empty();
                 while decoder.receive_frame(&mut decoded).is_ok() {
                     let Some(ts) = decoded.timestamp().or(decoded.pts()) else {
@@ -612,16 +471,7 @@ impl Pipeline {
                 from,
             } => {
                 let end = packet.is_none();
-                match &packet {
-                    Some(packet) => {
-                        if let Err(err) = decoder.send_packet(packet) {
-                            log::debug!("a sound packet didn't decode: {err}");
-                        }
-                    }
-                    None => {
-                        let _ = decoder.send_eof();
-                    }
-                }
+                send(decoder, packet.as_ref(), "sound");
                 let mut decoded = frame::Audio::empty();
                 while decoder.receive_frame(&mut decoded).is_ok() {
                     let Some(ts) = decoded.timestamp().or(decoded.pts()) else {
@@ -656,10 +506,80 @@ impl Pipeline {
     }
 }
 
-fn drain_video(
-    encoder: &mut VideoEncoder,
-    made: &mut Vec<(Option<f64>, bool, Option<i64>, Packet)>,
-) {
+/// An output packet a track made: when it shows, in seconds, whether it
+/// is a keyframe, its mark (see `Out`) and the packet.
+type Made = (Option<f64>, bool, Option<i64>, Packet);
+
+/// A copied video packet to pass on, from a keyframe on: the one at `from`,
+/// in `domain`, or the first.
+fn copy_video(
+    packet: Option<Packet>,
+    started: &mut bool,
+    from: Option<i64>,
+    domain: Domain,
+    time_base: f64,
+) -> Option<Made> {
+    let packet = packet?;
+    let in_domain = match domain {
+        Domain::Dts => packet.dts().or(packet.pts()),
+        Domain::Pts => packet.pts().or(packet.dts()),
+    };
+    if !*started {
+        // From a keyframe, the one asked for or the first.
+        if !packet.is_key() || from.is_some_and(|from| in_domain.is_none_or(|ts| ts < from)) {
+            return None;
+        }
+        *started = true;
+    }
+    let key = packet.is_key();
+    Some((
+        packet
+            .pts()
+            .or(packet.dts())
+            .map(|ts| ts as f64 * time_base),
+        key,
+        in_domain.filter(|_| key),
+        packet,
+    ))
+}
+
+/// A copied sound packet to pass on, from `from` seconds on.
+fn copy_audio(
+    packet: Option<Packet>,
+    started: &mut bool,
+    from: f64,
+    time_base: f64,
+) -> Option<Made> {
+    let packet = packet?;
+    let time = packet
+        .pts()
+        .or(packet.dts())
+        .map(|ts| ts as f64 * time_base);
+    if !*started {
+        if time.is_none_or(|time| time < from - EPSILON) {
+            return None;
+        }
+        *started = true;
+    }
+    Some((time, packet.is_key(), None, packet))
+}
+
+/// Give a decoder the next packet of its `what` track, or with `None`,
+/// tell it the track has ended.
+fn send(decoder: &mut ffmpeg::decoder::Opened, packet: Option<&Packet>, what: &str) {
+    match packet {
+        Some(packet) => {
+            if let Err(err) = decoder.send_packet(packet) {
+                log::debug!("a {what} packet didn't decode: {err}");
+            }
+        }
+        None => {
+            let _ = decoder.send_eof();
+        }
+    }
+}
+
+fn drain_video(encoder: &mut VideoEncoder, made: &mut Vec<Made>) {
     let time_base = f64::from(encoder.time_base());
     let mut packet = Packet::empty();
     while encoder.receive(&mut packet) {
@@ -672,10 +592,7 @@ fn drain_video(
     }
 }
 
-fn drain_audio(
-    encoder: &mut AudioEncoder,
-    made: &mut Vec<(Option<f64>, bool, Option<i64>, Packet)>,
-) {
+fn drain_audio(encoder: &mut AudioEncoder, made: &mut Vec<Made>) {
     let time_base = f64::from(encoder.time_base());
     let mut packet = Packet::empty();
     while encoder.receive(&mut packet) {
@@ -686,6 +603,145 @@ fn drain_audio(
             std::mem::replace(&mut packet, Packet::empty()),
         ));
     }
+}
+
+/// The video track's work and output stream, and its stream's index and
+/// time base: copied from the keyframe `from_key`, or re-encoded from
+/// `from_time`.
+fn video_work(
+    media: &Media,
+    input: &Input,
+    plan: &VideoPlan,
+    from_key: Option<i64>,
+    from_time: f64,
+    keys: Keys,
+    domain: Domain,
+) -> Result<(usize, Rational, Work, OutStream), Error> {
+    let global_header = media.plan.format() == Format::Fmp4;
+    let (stream_index, parameters, time_base, frame_rate) = stream_details(input, plan)?;
+    let (work, out) = match plan {
+        VideoPlan::Copy { .. } => (
+            Work::CopyVideo {
+                started: false,
+                from: from_key,
+                domain,
+            },
+            OutStream {
+                parameters,
+                time_base,
+            },
+        ),
+        VideoPlan::Encode {
+            stream,
+            to,
+            encoder,
+            width,
+            height,
+            ten_bit,
+            bit_rate,
+            ..
+        } => {
+            let decoder = open_video_decoder(&parameters, time_base)?;
+            let colors = Colors::of(&parameters);
+            let size = media
+                .info
+                .video(*stream)
+                .map_or((*width, *height), |video| (video.width, video.height));
+            let overlay = media.plan.subtitles.and_then(|subtitles| {
+                Overlay::open(input, subtitles, size, Coding::of(&colors, *ten_bit))
+                    .inspect_err(|err| log::warn!("the subtitles can't be drawn in: {err}"))
+                    .ok()
+            });
+            let encoder = VideoEncoder::open(&VideoSettings {
+                encoder,
+                codec: *to,
+                width: *width,
+                height: *height,
+                ten_bit: *ten_bit,
+                bit_rate: *bit_rate,
+                time_base,
+                frame_rate,
+                colors,
+                global_header,
+            })?;
+            let out = OutStream {
+                parameters: encoder.parameters(),
+                time_base: encoder.time_base(),
+            };
+            (
+                Work::Video {
+                    decoder,
+                    encoder: Box::new(encoder),
+                    keys,
+                    from: from_time,
+                    first: true,
+                    last: None,
+                    overlay: overlay.map(Box::new),
+                },
+                out,
+            )
+        }
+    };
+    Ok((stream_index, time_base, work, out))
+}
+
+/// The sound track's work and output stream, and its stream's index and
+/// time base, from `from_time`.
+fn audio_work(
+    media: &Media,
+    input: &Input,
+    plan: &AudioPlan,
+    from_time: f64,
+) -> Result<(usize, Rational, Work, OutStream), Error> {
+    let global_header = media.plan.format() == Format::Fmp4;
+    let stream_index = match plan {
+        AudioPlan::Copy { stream, .. } | AudioPlan::Encode { stream, .. } => *stream,
+    };
+    let stream = input
+        .stream(stream_index)
+        .ok_or_else(|| Error::Source(format!("there is no stream {stream_index}")))?;
+    let (parameters, time_base) = (stream.parameters(), stream.time_base());
+    let (work, out) = match plan {
+        AudioPlan::Copy { .. } => (
+            Work::CopyAudio {
+                started: false,
+                from: from_time,
+            },
+            OutStream {
+                parameters,
+                time_base,
+            },
+        ),
+        AudioPlan::Encode {
+            to,
+            channels,
+            sample_rate,
+            bit_rate,
+            ..
+        } => {
+            let decoder = open_audio_decoder(&parameters, time_base)?;
+            let encoder = AudioEncoder::open(&AudioSettings {
+                codec: *to,
+                channels: *channels,
+                sample_rate: *sample_rate,
+                bit_rate: *bit_rate,
+                global_header,
+            })?;
+            let out = OutStream {
+                parameters: encoder.parameters(),
+                time_base: encoder.time_base(),
+            };
+            (
+                Work::Audio {
+                    decoder,
+                    encoder: Box::new(encoder),
+                    from: from_time,
+                },
+                out,
+            )
+        }
+    };
+    Ok((stream_index, time_base, work, out))
 }
 
 /// The video stream's index, parameters, time base and frame rate.
@@ -807,40 +863,34 @@ fn make_segments(
     }
     let mut segment = from;
     let mut held: Vec<Out> = Vec::new();
-    let mut outs = Vec::new();
-    loop {
-        if stop.load(Ordering::Relaxed) {
-            return Ok(());
-        }
-        let more = pipeline.step(&mut outs, Broken::Fails)?;
-        for out in outs.drain(..) {
-            let leader = out.output == 0;
-            if leader && out.key && past(timeline, segment, &out, true) {
-                if !deliver(Product::Segment(segment, pipeline.muxer.cut()?)) {
-                    return Ok(());
+    let read = read_through(&mut pipeline, stop, Broken::Fails, &mut |pipeline, out| {
+        let leader = out.output == 0;
+        if leader && out.key && past(timeline, segment, &out, true) {
+            if !deliver(Product::Segment(segment, pipeline.muxer.cut()?)) {
+                return Ok(false);
+            }
+            segment += 1;
+            // A gap in the media leaves segments with nothing in them.
+            while past(timeline, segment, &out, true) {
+                if !deliver(Product::Segment(segment, Vec::new())) {
+                    return Ok(false);
                 }
                 segment += 1;
-                // A gap in the media leaves segments with nothing in them.
-                while past(timeline, segment, &out, true) {
-                    if !deliver(Product::Segment(segment, Vec::new())) {
-                        return Ok(());
-                    }
-                    segment += 1;
-                }
-                for follower in held.drain(..) {
-                    pipeline.write(follower)?;
-                }
-            } else if !leader && past(timeline, segment, &out, false) {
-                // It starts after this segment; it waits for the leading
-                // stream's keyframe to cut it.
-                held.push(out);
-                continue;
             }
-            pipeline.write(out)?;
+            for follower in held.drain(..) {
+                pipeline.write(follower)?;
+            }
+        } else if !leader && past(timeline, segment, &out, false) {
+            // It starts after this segment; it waits for the leading
+            // stream's keyframe to cut it.
+            held.push(out);
+            return Ok(true);
         }
-        if !more {
-            break;
-        }
+        pipeline.write(out)?;
+        Ok(true)
+    })?;
+    if !read {
+        return Ok(());
     }
     for follower in held {
         pipeline.write(follower)?;
@@ -855,6 +905,32 @@ fn make_segments(
         }
     }
     Ok(())
+}
+
+/// Read the source to its end, handing each output packet to `each`, which
+/// writes it or holds it for later, and says whether to go on. False if it
+/// stopped before the end, for `stop` or as `each` said.
+fn read_through(
+    pipeline: &mut Pipeline,
+    stop: &AtomicBool,
+    broken: Broken,
+    each: &mut dyn FnMut(&mut Pipeline, Out) -> Result<bool, Error>,
+) -> Result<bool, Error> {
+    let mut outs = Vec::new();
+    loop {
+        if stop.load(Ordering::Relaxed) {
+            return Ok(false);
+        }
+        let more = pipeline.step(&mut outs, broken)?;
+        for out in outs.drain(..) {
+            if !each(pipeline, out)? {
+                return Ok(false);
+            }
+        }
+        if !more {
+            return Ok(true);
+        }
+    }
 }
 
 /// A file's HLS segments, made as they are asked for.
@@ -1000,15 +1076,12 @@ impl Vod {
         state: MutexGuard<'a, VodState>,
         deadline: Instant,
     ) -> Result<MutexGuard<'a, VodState>, Error> {
-        let left = deadline.saturating_duration_since(Instant::now());
-        if left.is_zero() {
-            return Err(Error::Mux("making the segment took too long".into()));
-        }
-        Ok(self
-            .changed
-            .wait_timeout(state, left)
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .0)
+        wait_until(
+            &self.changed,
+            state,
+            deadline,
+            "making the segment took too long",
+        )
     }
 
     /// Start a job making segments from `from`, stopping the one before.
@@ -1232,15 +1305,7 @@ impl Live {
         state: MutexGuard<'a, LiveState>,
         deadline: Instant,
     ) -> Result<MutexGuard<'a, LiveState>, Error> {
-        let left = deadline.saturating_duration_since(Instant::now());
-        if left.is_zero() {
-            return Err(Error::Mux("the stream took too long".into()));
-        }
-        Ok(self
-            .changed
-            .wait_timeout(state, left)
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .0)
+        wait_until(&self.changed, state, deadline, "the stream took too long")
     }
 
     fn run_if_idle(self: &Arc<Self>, state: &mut LiveState) {
@@ -1327,51 +1392,44 @@ fn make_live(
     let mut start: Option<f64> = None;
     let mut latest = f64::NEG_INFINITY;
     let mut held: Vec<Out> = Vec::new();
-    let mut outs = Vec::new();
-    loop {
-        if stop.load(Ordering::Relaxed) {
-            return Ok(());
+    let read = read_through(&mut pipeline, stop, Broken::Ends, &mut |pipeline, out| {
+        let leader = out.output == 0;
+        latest = latest.max(out.time);
+        if leader && start.is_none() {
+            start = Some(out.time);
         }
-        let more = pipeline.step(&mut outs, Broken::Ends)?;
-        for out in outs.drain(..) {
-            let leader = out.output == 0;
-            latest = latest.max(out.time);
-            if leader && start.is_none() {
-                start = Some(out.time);
+        if let Some(begun) = start
+            && leader
+            && out.key
+            && out.time - begun >= media.segment - EPSILON
+        {
+            let (before, after): (Vec<Out>, Vec<Out>) = held
+                .drain(..)
+                .partition(|follower| follower.time < out.time);
+            for follower in before {
+                pipeline.write(follower)?;
             }
-            if let Some(begun) = start
-                && leader
-                && out.key
-                && out.time - begun >= media.segment - EPSILON
-            {
-                let (before, after): (Vec<Out>, Vec<Out>) = held
-                    .drain(..)
-                    .partition(|follower| follower.time < out.time);
-                for follower in before {
-                    pipeline.write(follower)?;
-                }
-                let segment = LiveProduct::Segment {
-                    duration: out.time - begun,
-                    bytes: pipeline.muxer.cut()?,
-                };
-                if !deliver(segment) {
-                    return Ok(());
-                }
-                start = Some(out.time);
-                for follower in after {
-                    pipeline.write(follower)?;
-                }
-            } else if !leader
-                && start.is_some_and(|begun| out.time >= begun + media.segment - EPSILON)
-            {
-                held.push(out);
-                continue;
+            let segment = LiveProduct::Segment {
+                duration: out.time - begun,
+                bytes: pipeline.muxer.cut()?,
+            };
+            if !deliver(segment) {
+                return Ok(false);
             }
-            pipeline.write(out)?;
+            start = Some(out.time);
+            for follower in after {
+                pipeline.write(follower)?;
+            }
+        } else if !leader && start.is_some_and(|begun| out.time >= begun + media.segment - EPSILON)
+        {
+            held.push(out);
+            return Ok(true);
         }
-        if !more {
-            break;
-        }
+        pipeline.write(out)?;
+        Ok(true)
+    })?;
+    if !read {
+        return Ok(());
     }
     for follower in held {
         pipeline.write(follower)?;

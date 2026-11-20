@@ -64,145 +64,9 @@ impl Pane for SubtitlesPane {
     ) -> Vec<AnyElement> {
         let style = s.subtitles.clamped();
         vec![
-            group(
-                Some("Text"),
-                theme,
-                vec![
-                    row(
-                        "Font",
-                        None,
-                        theme,
-                        font_picker(view, &style.font, theme, cx),
-                    ),
-                    row(
-                        "Weight",
-                        None,
-                        theme,
-                        Segmented::new(
-                            "subtitle-weight",
-                            &[
-                                (SubtitleWeight::Regular, "Regular"),
-                                (SubtitleWeight::Medium, "Medium"),
-                                (SubtitleWeight::Bold, "Bold"),
-                            ],
-                            style.weight,
-                        )
-                        .on_select(|&v, _, cx| {
-                            update_settings(cx, true, |s| s.subtitles.weight = v)
-                        }),
-                    ),
-                    row(
-                        "Size",
-                        Some("Grows with the picture".into()),
-                        theme,
-                        range_slider(
-                            view,
-                            "subtitle-size",
-                            style.size,
-                            SUBTITLE_SIZE_RANGE,
-                            20.0,
-                            theme,
-                            |s, v| s.subtitles.size = v,
-                        ),
-                    ),
-                    row(
-                        "Color",
-                        None,
-                        theme,
-                        swatches("subtitle-color", style.color, theme, |s, c| s.color = c),
-                    ),
-                ],
-            ),
-            group(
-                Some("Edges and background"),
-                theme,
-                vec![
-                    row(
-                        "Edge",
-                        None,
-                        theme,
-                        Segmented::new(
-                            "subtitle-edge",
-                            &[
-                                (SubtitleEdge::None, "None"),
-                                (SubtitleEdge::Outline, "Outline"),
-                                (SubtitleEdge::Shadow, "Shadow"),
-                            ],
-                            style.edge,
-                        )
-                        .on_select(|&v, _, cx| update_settings(cx, true, |s| s.subtitles.edge = v)),
-                    ),
-                    row(
-                        "Edge color",
-                        None,
-                        theme,
-                        swatches("subtitle-edge-color", style.edge_color, theme, |s, c| {
-                            s.edge_color = c
-                        }),
-                    ),
-                    row(
-                        "Background",
-                        Some("A box behind each line".into()),
-                        theme,
-                        percent_slider(
-                            view,
-                            "subtitle-background",
-                            style.background_opacity,
-                            theme,
-                            |s, v| s.subtitles.background_opacity = v,
-                        ),
-                    ),
-                    row(
-                        "Background color",
-                        None,
-                        theme,
-                        swatches(
-                            "subtitle-background-color",
-                            style.background,
-                            theme,
-                            |s, c| s.background = c,
-                        ),
-                    ),
-                ],
-            ),
-            group(
-                Some("Position"),
-                theme,
-                vec![
-                    row(
-                        "Place on",
-                        Some(
-                            "Tile lets subtitles sit in the black bars around a letterboxed \
-                             picture"
-                                .into(),
-                        ),
-                        theme,
-                        Segmented::new(
-                            "subtitle-area",
-                            &[
-                                (SubtitleArea::Picture, "Picture"),
-                                (SubtitleArea::Tile, "Tile"),
-                            ],
-                            style.area,
-                        )
-                        .on_select(|&v, _, cx| update_settings(cx, true, |s| s.subtitles.area = v)),
-                    ),
-                    row(
-                        "Height",
-                        Some("Above the bottom. Subtitles move up while the controls show.".into()),
-                        theme,
-                        range_slider(
-                            view,
-                            "subtitle-position",
-                            style.position,
-                            SUBTITLE_POSITION_RANGE,
-                            100.0,
-                            theme,
-                            |s, v| s.subtitles.position = v,
-                        ),
-                    ),
-                ],
-            ),
+            text_group(view, &style, theme, cx),
+            edges_group(view, &style, theme),
+            position_group(view, &style, theme),
         ]
     }
 
@@ -214,6 +78,160 @@ impl Pane for SubtitlesPane {
     fn leave(&self, view: &mut SettingsView) {
         view.font_menu.open = false;
     }
+}
+
+/// The subtitles' font, and its weight, size and color.
+fn text_group(
+    view: &mut SettingsView,
+    style: &SubtitleStyle,
+    theme: &Theme,
+    cx: &mut Context<SettingsView>,
+) -> AnyElement {
+    group(
+        Some("Text"),
+        theme,
+        vec![
+            row(
+                "Font",
+                None,
+                theme,
+                font_picker(view, &style.font, theme, cx),
+            ),
+            row(
+                "Weight",
+                None,
+                theme,
+                Segmented::new(
+                    "subtitle-weight",
+                    &[
+                        (SubtitleWeight::Regular, "Regular"),
+                        (SubtitleWeight::Medium, "Medium"),
+                        (SubtitleWeight::Bold, "Bold"),
+                    ],
+                    style.weight,
+                )
+                .on_select(|&v, _, cx| update_settings(cx, true, |s| s.subtitles.weight = v)),
+            ),
+            row(
+                "Size",
+                Some("Grows with the picture".into()),
+                theme,
+                range_slider(
+                    view,
+                    "subtitle-size",
+                    style.size,
+                    SUBTITLE_SIZE_RANGE,
+                    20.0,
+                    theme,
+                    |s, v| s.subtitles.size = v,
+                ),
+            ),
+            row(
+                "Color",
+                None,
+                theme,
+                swatches("subtitle-color", style.color, theme, |s, c| s.color = c),
+            ),
+        ],
+    )
+}
+
+/// The edge drawn around the letters, and the box behind each line.
+fn edges_group(view: &mut SettingsView, style: &SubtitleStyle, theme: &Theme) -> AnyElement {
+    group(
+        Some("Edges and background"),
+        theme,
+        vec![
+            row(
+                "Edge",
+                None,
+                theme,
+                Segmented::new(
+                    "subtitle-edge",
+                    &[
+                        (SubtitleEdge::None, "None"),
+                        (SubtitleEdge::Outline, "Outline"),
+                        (SubtitleEdge::Shadow, "Shadow"),
+                    ],
+                    style.edge,
+                )
+                .on_select(|&v, _, cx| update_settings(cx, true, |s| s.subtitles.edge = v)),
+            ),
+            row(
+                "Edge color",
+                None,
+                theme,
+                swatches("subtitle-edge-color", style.edge_color, theme, |s, c| {
+                    s.edge_color = c
+                }),
+            ),
+            row(
+                "Background",
+                Some("A box behind each line".into()),
+                theme,
+                percent_slider(
+                    view,
+                    "subtitle-background",
+                    style.background_opacity,
+                    theme,
+                    |s, v| s.subtitles.background_opacity = v,
+                ),
+            ),
+            row(
+                "Background color",
+                None,
+                theme,
+                swatches(
+                    "subtitle-background-color",
+                    style.background,
+                    theme,
+                    |s, c| s.background = c,
+                ),
+            ),
+        ],
+    )
+}
+
+/// Where the subtitles go on the tile.
+fn position_group(view: &mut SettingsView, style: &SubtitleStyle, theme: &Theme) -> AnyElement {
+    group(
+        Some("Position"),
+        theme,
+        vec![
+            row(
+                "Place on",
+                Some(
+                    "Tile lets subtitles sit in the black bars around a letterboxed \
+                     picture"
+                        .into(),
+                ),
+                theme,
+                Segmented::new(
+                    "subtitle-area",
+                    &[
+                        (SubtitleArea::Picture, "Picture"),
+                        (SubtitleArea::Tile, "Tile"),
+                    ],
+                    style.area,
+                )
+                .on_select(|&v, _, cx| update_settings(cx, true, |s| s.subtitles.area = v)),
+            ),
+            row(
+                "Height",
+                Some("Above the bottom. Subtitles move up while the controls show.".into()),
+                theme,
+                range_slider(
+                    view,
+                    "subtitle-position",
+                    style.position,
+                    SUBTITLE_POSITION_RANGE,
+                    100.0,
+                    theme,
+                    |s, v| s.subtitles.position = v,
+                ),
+            ),
+        ],
+    )
 }
 
 /// A row of colors to pick one from, for the subtitle style's color that

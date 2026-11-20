@@ -583,10 +583,6 @@ fn control(service: &'static str, shared: &Shared, message: &Message) -> Reply {
     let action = call.action.clone();
     let mut state = lock(shared);
     state.calls.push(call.clone());
-    let refuse = |code: u16, description: &str| Reply {
-        status: 500,
-        ..Reply::xml(soap::fault(code, description))
-    };
     if call.service != service {
         return refuse(401, "Invalid Action");
     }
@@ -594,14 +590,46 @@ fn control(service: &'static str, shared: &Shared, message: &Message) -> Reply {
         return refuse(*code, "Refused");
     }
     let arg = |name: &str| call.arg(name).unwrap_or_default().to_owned();
+    let answer = match service {
+        AV_TRANSPORT => av_transport(&mut state, &action, &arg),
+        RENDERING_CONTROL => rendering_control(&mut state, &action, &arg),
+        CONNECTION_MANAGER => connection_manager(&state, &action),
+        _ => Err(refuse(401, "Invalid Action")),
+    };
+    let (out, notify) = match answer {
+        Ok(answer) => answer,
+        Err(fault) => return fault,
+    };
+    let out: Vec<(&str, &str)> = out
+        .iter()
+        .map(|(name, value)| (*name, value.as_str()))
+        .collect();
+    Reply {
+        notify,
+        ..Reply::xml(soap::answer(service, &action, &out))
+    }
+}
+
+/// What an action answers with: its out arguments, and the service whose
+/// subscribers are to hear of what it changed; or the fault it gets.
+type Answer = Result<(Vec<(&'static str, String)>, Option<&'static str>), Reply>;
+
+/// A SOAP fault, as an action that can't be done gets.
+fn refuse(code: u16, description: &str) -> Reply {
+    Reply {
+        status: 500,
+        ..Reply::xml(soap::fault(code, description))
+    }
+}
+
+/// An action of AVTransport: what plays, and playing it.
+fn av_transport(state: &mut State, action: &str, arg: &dyn Fn(&str) -> String) -> Answer {
     let mut notify = None;
-    let out: Vec<(&str, String)> = match (service, action.as_str()) {
-        (AV_TRANSPORT, "SetAVTransportURI")
-            if state.locked_while_playing && state.transport == "PLAYING" =>
-        {
-            return refuse(705, "Transport is locked");
+    let out = match action {
+        "SetAVTransportURI" if state.locked_while_playing && state.transport == "PLAYING" => {
+            return Err(refuse(705, "Transport is locked"));
         }
-        (AV_TRANSPORT, "SetAVTransportURI") => {
+        "SetAVTransportURI" => {
             state.uri = arg("CurrentURI");
             state.metadata = arg("CurrentURIMetaData");
             state.duration = Element::parse(&state.metadata)
@@ -617,40 +645,40 @@ fn control(service: &'static str, shared: &Shared, message: &Message) -> Reply {
             notify = Some(AV_TRANSPORT);
             Vec::new()
         }
-        (AV_TRANSPORT, "Play") if state.uri.is_empty() => {
-            return refuse(701, "Transition not available");
+        "Play" if state.uri.is_empty() => {
+            return Err(refuse(701, "Transition not available"));
         }
-        (AV_TRANSPORT, "Play") => {
+        "Play" => {
             state.transport = "PLAYING".into();
             notify = Some(AV_TRANSPORT);
             Vec::new()
         }
-        (AV_TRANSPORT, "Pause") if state.transport != "PLAYING" => {
-            return refuse(701, "Transition not available");
+        "Pause" if state.transport != "PLAYING" => {
+            return Err(refuse(701, "Transition not available"));
         }
-        (AV_TRANSPORT, "Pause") => {
+        "Pause" => {
             state.transport = "PAUSED_PLAYBACK".into();
             notify = Some(AV_TRANSPORT);
             Vec::new()
         }
-        (AV_TRANSPORT, "Stop") => {
+        "Stop" => {
             state.transport = "STOPPED".into();
             state.position = 0.0;
             notify = Some(AV_TRANSPORT);
             Vec::new()
         }
-        (AV_TRANSPORT, "Seek") => {
+        "Seek" => {
             let unit = arg("Unit");
             if unit != "ABS_TIME" && !(unit == "REL_TIME" && state.rel_time) {
-                return refuse(710, "Seek mode not supported");
+                return Err(refuse(710, "Seek mode not supported"));
             }
             let Some(target) = media::seconds(&arg("Target")) else {
-                return refuse(711, "Illegal seek target");
+                return Err(refuse(711, "Illegal seek target"));
             };
             state.position = target;
             Vec::new()
         }
-        (AV_TRANSPORT, "GetPositionInfo") => vec![
+        "GetPositionInfo" => vec![
             ("Track", "1".into()),
             ("TrackDuration", media::clock_exact(state.duration)),
             ("TrackMetaData", state.metadata.clone()),
@@ -664,7 +692,7 @@ fn control(service: &'static str, shared: &Shared, message: &Message) -> Reply {
             ("RelCount", "2147483647".into()),
             ("AbsCount", "2147483647".into()),
         ],
-        (AV_TRANSPORT, "GetMediaInfo") => vec![
+        "GetMediaInfo" => vec![
             ("NrTracks", u8::from(!state.uri.is_empty()).to_string()),
             ("MediaDuration", media::clock(state.duration)),
             ("CurrentURI", state.uri.clone()),
@@ -675,46 +703,56 @@ fn control(service: &'static str, shared: &Shared, message: &Message) -> Reply {
             ("RecordMedium", "NOT_IMPLEMENTED".into()),
             ("WriteStatus", "NOT_IMPLEMENTED".into()),
         ],
-        (AV_TRANSPORT, "GetTransportInfo") => vec![
+        "GetTransportInfo" => vec![
             ("CurrentTransportState", state.transport.clone()),
             ("CurrentTransportStatus", "OK".into()),
             ("CurrentSpeed", "1".into()),
         ],
-        (RENDERING_CONTROL, "GetVolume") => vec![("CurrentVolume", state.volume.to_string())],
-        (RENDERING_CONTROL, "SetVolume") => {
+        _ => return Err(refuse(401, "Invalid Action")),
+    };
+    Ok((out, notify))
+}
+
+/// An action of RenderingControl: the volume, and muting.
+fn rendering_control(state: &mut State, action: &str, arg: &dyn Fn(&str) -> String) -> Answer {
+    let mut notify = None;
+    let out = match action {
+        "GetVolume" => vec![("CurrentVolume", state.volume.to_string())],
+        "SetVolume" => {
             let Ok(volume) = arg("DesiredVolume").parse::<u32>() else {
-                return refuse(402, "Invalid Args");
+                return Err(refuse(402, "Invalid Args"));
             };
             if volume > 100 {
-                return refuse(601, "Argument Value Out of Range");
+                return Err(refuse(601, "Argument Value Out of Range"));
             }
             state.volume = volume;
             notify = Some(RENDERING_CONTROL);
             Vec::new()
         }
-        (RENDERING_CONTROL, "GetMute") => {
+        "GetMute" => {
             vec![("CurrentMute", u8::from(state.muted).to_string())]
         }
-        (RENDERING_CONTROL, "SetMute") => {
+        "SetMute" => {
             state.muted = matches!(arg("DesiredMute").as_str(), "1" | "true");
             notify = Some(RENDERING_CONTROL);
             Vec::new()
         }
-        (CONNECTION_MANAGER, "GetProtocolInfo") => {
+        _ => return Err(refuse(401, "Invalid Action")),
+    };
+    Ok((out, notify))
+}
+
+/// An action of ConnectionManager: what it can play.
+fn connection_manager(state: &State, action: &str) -> Answer {
+    let out = match action {
+        "GetProtocolInfo" => {
             let sink: Vec<String> = Capability::parse_list(&state.sink)
                 .iter()
                 .map(ToString::to_string)
                 .collect();
             vec![("Source", String::new()), ("Sink", sink.join(","))]
         }
-        _ => return refuse(401, "Invalid Action"),
+        _ => return Err(refuse(401, "Invalid Action")),
     };
-    let out: Vec<(&str, &str)> = out
-        .iter()
-        .map(|(name, value)| (*name, value.as_str()))
-        .collect();
-    Reply {
-        notify,
-        ..Reply::xml(soap::answer(service, &action, &out))
-    }
+    Ok((out, None))
 }

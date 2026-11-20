@@ -20,26 +20,8 @@ impl Workspace {
         let client_decorated = matches!(window.window_decorations(), Decorations::Client { .. });
         let count = self.tiles.len();
         let playing = self.any_playing(cx);
-        let streams = self
-            .tiles
-            .iter()
-            .filter(|t| t.view.read(cx).player().is_network())
-            .count();
-        let plural = |n: usize, one: &str, many: &str| match n {
-            1 => format!("1 {one}"),
-            n => format!("{n} {many}"),
-        };
         let compact = window.viewport_size().width < COMPACT_WIDTH;
-        let status = match (count - streams, streams) {
-            (0, 0) => "Nothing open".to_string(),
-            (files, 0) => plural(files, "file", "files"),
-            (0, streams) => plural(streams, "stream", "streams"),
-            (files, streams) => format!(
-                "{} · {}",
-                plural(files, "file", "files"),
-                plural(streams, "stream", "streams")
-            ),
-        };
+        let status = self.status(cx);
 
         div()
             .flex()
@@ -131,6 +113,30 @@ impl Workspace {
                         .on_click(|_, window, _| window.remove_window()),
                 )
             })
+    }
+
+    /// What is open, as the toolbar says it: how many files and streams.
+    fn status(&self, cx: &App) -> String {
+        let count = self.tiles.len();
+        let streams = self
+            .tiles
+            .iter()
+            .filter(|t| t.view.read(cx).player().is_network())
+            .count();
+        let plural = |n: usize, one: &str, many: &str| match n {
+            1 => format!("1 {one}"),
+            n => format!("{n} {many}"),
+        };
+        match (count - streams, streams) {
+            (0, 0) => "Nothing open".to_string(),
+            (files, 0) => plural(files, "file", "files"),
+            (0, streams) => plural(streams, "stream", "streams"),
+            (files, streams) => format!(
+                "{} · {}",
+                plural(files, "file", "files"),
+                plural(streams, "stream", "streams")
+            ),
+        }
     }
 }
 

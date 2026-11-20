@@ -139,34 +139,39 @@ pub(crate) fn read(
             0 | u32::MAX => start + UNKNOWN_LENGTH,
             end => base + f64::from(end) / 1000.0,
         };
-        let mut spans = Vec::new();
-        for rect in subtitle.rects() {
-            let more = match rect {
-                Rect::Ass(ass) => from_ass(dialogue_text(ass.get())),
-                Rect::Text(text) => vec![Span {
-                    text: text.get().trim().to_owned(),
-                    ..Span::default()
-                }],
-                Rect::Bitmap(_) | Rect::None(_) => Vec::new(),
-            };
-            if !spans.is_empty() && !more.is_empty() {
-                push(&mut spans, "\n", Span::default());
-            }
-            for span in more {
-                let style = Span {
-                    text: String::new(),
-                    ..span
-                };
-                push(&mut spans, &span.text, style);
-            }
-        }
-        let spans = tidy(spans);
+        let spans = spans_of(subtitle);
         if !spans.is_empty() && end > start {
             cues.push(Cue { start, end, spans });
         }
     }
     cues.sort_by(|a, b| a.start.total_cmp(&b.start));
     Ok(cues)
+}
+
+/// A decoded subtitle's text, each of its parts on lines of its own.
+fn spans_of(subtitle: &ffmpeg::Subtitle) -> Vec<Span> {
+    let mut spans = Vec::new();
+    for rect in subtitle.rects() {
+        let more = match rect {
+            Rect::Ass(ass) => from_ass(dialogue_text(ass.get())),
+            Rect::Text(text) => vec![Span {
+                text: text.get().trim().to_owned(),
+                ..Span::default()
+            }],
+            Rect::Bitmap(_) | Rect::None(_) => Vec::new(),
+        };
+        if !spans.is_empty() && !more.is_empty() {
+            push(&mut spans, "\n", Span::default());
+        }
+        for span in more {
+            let style = Span {
+                text: String::new(),
+                ..span
+            };
+            push(&mut spans, &span.text, style);
+        }
+    }
+    tidy(spans)
 }
 
 /// A decoded `AVSubtitle`, freed when dropped.

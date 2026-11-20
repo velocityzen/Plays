@@ -5,3 +5,6 @@ edition = "2024"
 description = "Links the static FFmpeg script/build-ffmpeg builds, from a build script"
 license = "MIT"
 publish = false
+
+[lints]
+workspace = true

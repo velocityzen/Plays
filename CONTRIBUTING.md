@@ -638,6 +638,11 @@ in real time; Vulkan can be software (lavapipe). It uses `Xvfb`,
 
 - Cargo commands at the top of the repository act on Plays alone;
   `--workspace` takes in the crates in `crates/`.
+- `cargo clippy --workspace --all-targets --all-features` prints nothing.
+  The workspace's lints are in the root `Cargo.toml`, and Plays and each
+  crate take them with `[lints] workspace = true`; one is
+  `too_many_lines`, so a function over 100 lines is split into helpers
+  named for what each part does.
 - The crates in `crates/` know nothing of Plays or gpui (the protocol
   crates nothing of FFmpeg either), and are built and tested on their own.
 - Everything Plays changes in `vendor/gpui` is marked "Plays" in the code

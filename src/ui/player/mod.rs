@@ -26,7 +26,7 @@ use std::time::Instant;
 use gpui::prelude::*;
 use gpui::{
     Bounds, ClickEvent, Context, CursorStyle, Div, EventEmitter, MouseButton, MouseMoveEvent,
-    Pixels, Point, SharedString, Task, Window, black, div,
+    Pixels, Point, SharedString, Stateful, Task, Window, black, div,
 };
 
 pub use drag::DraggedTile;
@@ -42,7 +42,7 @@ use crate::media::picture::PictureId;
 use crate::media::subtitles::CueContent;
 use crate::media::{Mixer, Neighbors, Picture, PlayerOptions, Source};
 use crate::progress::{self, Note};
-use crate::settings::{AudioDevice, ControlsVisibility, Settings, VideoFit};
+use crate::settings::{AudioDevice, ControlsVisibility, Settings, SubtitleStyle, VideoFit};
 use osd::Osd;
 use playback::Playback;
 
@@ -456,22 +456,7 @@ impl Reveal {
 
 impl Render for PlayerView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let tick = self.playback.tick();
-        if let Some(picture) = tick.retired {
-            self.retire(picture);
-        }
-        self.drawn = self.playback.local().frame().map(|frame| frame.id());
-        let cues = self.playback.local().subtitles();
-        self.show_cues(cues);
-        let level = self.playback.local().level();
-        self.level = if level > self.level {
-            level
-        } else {
-            self.level * LEVEL_FALLOFF + level * (1. - LEVEL_FALLOFF)
-        };
-        if tick.animate || self.level > 0.005 {
-            window.request_animation_frame();
-        }
+        self.take_tick(window);
 
         let theme = Theme::get(window, cx);
         let settings = cx.global::<Settings>();
@@ -482,14 +467,8 @@ impl Render for PlayerView {
         let info = player.info();
         let framing = self.framing_for(info.as_deref());
         let has_video = player.frame().is_some();
-        let dragging = self.seek_drag.get() || self.volume_drag.get();
         let casting = self.casts_picture();
-        let pinned = settings.controls == ControlsVisibility::Always
-            || dragging
-            || self.tracks_open
-            || self.cast_open
-            || !self.is_playing()
-            || player.error().is_some();
+        let pinned = self.bars_pinned(settings.controls == ControlsVisibility::Always);
         // A resting mouse counts as gone, unless it rests on the bars; and
         // the pointer hides over the picture until it moves.
         let layout = self.layout;
@@ -513,17 +492,7 @@ impl Render for PlayerView {
         let osd = self.render_osd(window);
         let console = self.render_console();
 
-        let surface = div()
-            .id("surface")
-            .absolute()
-            .top_0()
-            .left_0()
-            .size_full()
-            .flex()
-            .items_center()
-            .justify_center()
-            .on_click(cx.listener(Self::on_surface_click));
-        let surface = self.drag_by_picture(surface, window, cx);
+        let surface = self.render_surface(window, cx);
 
         div()
             .id("player")
@@ -559,33 +528,17 @@ impl Render for PlayerView {
             .when(
                 !self.cues.is_empty() && !self.in_picture_in_picture() && !casting,
                 |this| {
-                    this.child(subtitles::overlay(
-                        self.cues.clone(),
-                        subtitles::Layout {
-                            framing,
-                            cover,
-                            controls_height: controls::height(live),
-                            controls_pinned: pinned,
-                            mouse_in_window,
-                            font: theme.font.clone(),
-                            style: subtitle_style,
-                        },
+                    this.child(self.render_subtitles(
+                        &reveal,
+                        framing,
+                        cover,
+                        live,
+                        &theme,
+                        subtitle_style,
                     ))
                 },
             )
-            .when(stalled, |this| {
-                this.child(
-                    div()
-                        .absolute()
-                        .top_0()
-                        .left_0()
-                        .size_full()
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .child(Panel::note("Buffering…").text_xs()),
-                )
-            })
+            .when(stalled, |this| this.child(render_buffering()))
             .children(console)
             .children(osd)
             // Presses on the bars mustn't reach the surface underneath (which
@@ -612,4 +565,95 @@ impl Render for PlayerView {
                     .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation()),
             )
     }
+}
+
+impl PlayerView {
+    /// Take what playback has for this frame: retire the picture it drew
+    /// over, show the cues now, follow the sound's level, and ask for the
+    /// next frame while anything moves.
+    fn take_tick(&mut self, window: &mut Window) {
+        let tick = self.playback.tick();
+        if let Some(picture) = tick.retired {
+            self.retire(picture);
+        }
+        self.drawn = self.playback.local().frame().map(|frame| frame.id());
+        let cues = self.playback.local().subtitles();
+        self.show_cues(cues);
+        let level = self.playback.local().level();
+        self.level = if level > self.level {
+            level
+        } else {
+            self.level * LEVEL_FALLOFF + level * (1. - LEVEL_FALLOFF)
+        };
+        if tick.animate || self.level > 0.005 {
+            window.request_animation_frame();
+        }
+    }
+
+    /// Whether the header and controls show wherever the mouse is: `always`,
+    /// as Settings says, or while something on them is in use, or while it
+    /// isn't playing.
+    fn bars_pinned(&self, always: bool) -> bool {
+        let dragging = self.seek_drag.get() || self.volume_drag.get();
+        always
+            || dragging
+            || self.tracks_open
+            || self.cast_open
+            || !self.is_playing()
+            || self.playback.local().error().is_some()
+    }
+
+    /// What the picture shows on, filling the tile: a double click on it
+    /// expands the tile, and dragging it drags the tile.
+    fn render_surface(&self, window: &Window, cx: &mut Context<Self>) -> Stateful<Div> {
+        let surface = div()
+            .id("surface")
+            .absolute()
+            .top_0()
+            .left_0()
+            .size_full()
+            .flex()
+            .items_center()
+            .justify_center()
+            .on_click(cx.listener(Self::on_surface_click));
+        self.drag_by_picture(surface, window, cx)
+    }
+
+    /// The cues showing, placed on the picture and kept above the controls
+    /// while they show.
+    fn render_subtitles(
+        &self,
+        reveal: &Reveal,
+        framing: Option<Framing>,
+        cover: bool,
+        live: bool,
+        theme: &Theme,
+        style: SubtitleStyle,
+    ) -> impl IntoElement {
+        subtitles::overlay(
+            self.cues.clone(),
+            subtitles::Layout {
+                framing,
+                cover,
+                controls_height: controls::height(live),
+                controls_pinned: reveal.pinned,
+                mouse_in_window: reveal.mouse_in_window,
+                font: theme.font.clone(),
+                style,
+            },
+        )
+    }
+}
+
+/// Says a stream is buffering, in the middle of the tile.
+fn render_buffering() -> Div {
+    div()
+        .absolute()
+        .top_0()
+        .left_0()
+        .size_full()
+        .flex()
+        .items_center()
+        .justify_center()
+        .child(Panel::note("Buffering…").text_xs())
 }

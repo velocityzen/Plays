@@ -6,6 +6,9 @@ description = "Finds and controls UPnP media renderers: has a smart TV or a spea
 license = "MIT"
 publish = false
 
+[lints]
+workspace = true
+
 [features]
 # A pretend renderer on this computer, for tests here and in what uses the
 # crate.

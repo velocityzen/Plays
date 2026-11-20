@@ -10,7 +10,7 @@ use std::sync::LazyLock;
 
 use ffmpeg_next as ffmpeg;
 use gpui::prelude::*;
-use gpui::{AnyElement, Context, ListAlignment, ListState, SharedString, Window, div, list};
+use gpui::{AnyElement, Context, Div, ListAlignment, ListState, SharedString, Window, div, list};
 use serde::Deserialize;
 
 use super::form::{card_row, group, heading};
@@ -143,6 +143,24 @@ impl Entry {
     fn render(&self, open: bool, theme: &Theme, cx: &mut Context<SettingsView>) -> AnyElement {
         #[cfg(test)]
         BUILT.with(|built| built.set(built.get() + 1));
+        let heading = self.render_heading(open, theme, cx);
+        let details = self.render_details(theme);
+        div()
+            .flex()
+            .flex_col()
+            .child(heading)
+            .when(open, |this| this.child(details))
+            .into_any_element()
+    }
+
+    /// The row that opens and closes it: its name and version, a hint, and
+    /// its license's name.
+    fn render_heading(
+        &self,
+        open: bool,
+        theme: &Theme,
+        cx: &mut Context<SettingsView>,
+    ) -> impl IntoElement {
         let muted = theme.text_muted;
         let key = self.key.clone();
         let toggle = cx.listener(move |view, _, _, cx| {
@@ -167,7 +185,61 @@ impl Entry {
         })
         .small()
         .color(muted);
-        let details = div()
+        div()
+            .debug_selector({
+                let key = self.key.clone();
+                move || format!("credit-{key}")
+            })
+            .id(self.key.clone())
+            .flex()
+            .items_center()
+            .gap_2()
+            .px_3()
+            .py_2()
+            .cursor_pointer()
+            .on_click(toggle)
+            .child(chevron)
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .flex()
+                    .flex_col()
+                    .gap_0p5()
+                    .child(
+                        div()
+                            .flex()
+                            .items_baseline()
+                            .gap_1p5()
+                            .text_sm()
+                            .child(self.name.clone())
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(muted)
+                                    .child(self.version.clone()),
+                            ),
+                    )
+                    .when_some(self.hint.clone(), |this, hint| {
+                        this.child(div().text_xs().text_color(muted).child(hint))
+                    }),
+            )
+            .child(
+                div()
+                    .flex_none()
+                    .max_w(CREDIT_LICENSE_MAX_WIDTH)
+                    .truncate()
+                    .text_xs()
+                    .text_color(muted)
+                    .child(self.license.clone()),
+            )
+    }
+
+    /// What shows while it is open: its links, any note on its license, and
+    /// the license texts.
+    fn render_details(&self, theme: &Theme) -> Div {
+        let muted = theme.text_muted;
+        div()
             .debug_selector(|| "credit-texts".into())
             .flex()
             .gap_2()
@@ -212,62 +284,7 @@ impl Entry {
                             .text_color(muted)
                             .child(text)
                     })),
-            );
-        div()
-            .flex()
-            .flex_col()
-            .child(
-                div()
-                    .debug_selector({
-                        let key = self.key.clone();
-                        move || format!("credit-{key}")
-                    })
-                    .id(self.key.clone())
-                    .flex()
-                    .items_center()
-                    .gap_2()
-                    .px_3()
-                    .py_2()
-                    .cursor_pointer()
-                    .on_click(toggle)
-                    .child(chevron)
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .flex()
-                            .flex_col()
-                            .gap_0p5()
-                            .child(
-                                div()
-                                    .flex()
-                                    .items_baseline()
-                                    .gap_1p5()
-                                    .text_sm()
-                                    .child(self.name.clone())
-                                    .child(
-                                        div()
-                                            .text_xs()
-                                            .text_color(muted)
-                                            .child(self.version.clone()),
-                                    ),
-                            )
-                            .when_some(self.hint.clone(), |this, hint| {
-                                this.child(div().text_xs().text_color(muted).child(hint))
-                            }),
-                    )
-                    .child(
-                        div()
-                            .flex_none()
-                            .max_w(CREDIT_LICENSE_MAX_WIDTH)
-                            .truncate()
-                            .text_xs()
-                            .text_color(muted)
-                            .child(self.license.clone()),
-                    ),
             )
-            .when(open, |this| this.child(details))
-            .into_any_element()
     }
 }
 

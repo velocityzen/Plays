@@ -3,7 +3,7 @@
 //! forward and the next file, and tracks, loop and volume.
 
 use gpui::prelude::*;
-use gpui::{ClickEvent, Context, Corner, Div, Pixels, Window, div, px};
+use gpui::{AnyElement, ClickEvent, Context, Corner, Div, Pixels, Window, div, px};
 
 use super::tracks::{close_tracks, has_track_choice};
 use super::{PlayerView, Reveal};
@@ -62,17 +62,7 @@ impl PlayerView {
         } else {
             "play"
         };
-        let player = self.playback.local();
-        let volume_icon = if player.is_muted() || player.volume() == 0.0 {
-            "mute"
-        } else {
-            "volume"
-        };
-        let has_audio = info.is_some_and(|i| i.has_audio);
         let cast = self.render_cast_button(info, theme, window, cx);
-        let tracks = info.filter(|info| has_track_choice(info));
-        let subtitles_on = info.is_some_and(|i| i.subtitle_track.is_some());
-        let looping = player.is_looping();
 
         // The controls float on a panel over the bottom of the tile. Its
         // corners are less round than other panels', as it is short and
@@ -93,15 +83,7 @@ impl PlayerView {
                     .flex_col()
                     .gap(CONTROLS_GAP)
                     .when(!live, |this| {
-                        this.child(
-                            div().px_1().debug_selector(|| "seek".into()).child(
-                                Slider::new("seek", progress, self.seek_drag.clone())
-                                    .overlay()
-                                    .fill(theme.accent)
-                                    .notches(notches)
-                                    .on_change(cx.listener(Self::on_seek)),
-                            ),
-                        )
+                        this.child(self.render_seek_bar(progress, notches, theme, cx))
                     })
                     .child(
                         div()
@@ -110,97 +92,121 @@ impl PlayerView {
                             .gap_0p5()
                             // The time and the buttons on the right take equal
                             // room, so the transport is in the middle.
-                            .child(
-                                div()
-                                    .flex_1()
-                                    .min_w_0()
-                                    .flex()
-                                    .items_center()
-                                    .gap_1()
-                                    .pl_1()
-                                    .when(live, |this| {
-                                        this.child(Badge::label("LIVE", theme.danger))
-                                    })
-                                    .child(
-                                        div()
-                                            .min_w_0()
-                                            .truncate()
-                                            .text_xs()
-                                            .text_color(overlay::text())
-                                            .child(time_label),
-                                    ),
-                            )
+                            .child(render_time(live, time_label, theme))
                             .child(self.render_transport(live, play_icon, cx))
-                            .child(
-                                div()
-                                    .flex_1()
-                                    .flex()
-                                    .items_center()
-                                    .justify_end()
-                                    .gap_0p5()
-                                    .children(cast)
-                                    .when_some(tracks, |this, info| {
-                                        let button = Button::icon("tracks", "subtitles")
-                                            .overlay()
-                                            .selected(subtitles_on)
-                                            .on_click(cx.listener(|this, _, _, cx| {
-                                                this.tracks_open = !this.tracks_open;
-                                                cx.notify();
-                                            }));
-                                        this.child(
-                                            Popover::new("tracks-backdrop", button)
-                                                .anchor(Corner::BottomRight, TRACK_MENU_OFFSET)
-                                                .when(self.tracks_open, |this| {
-                                                    this.menu(
-                                                        self.render_tracks_menu(info, theme, cx),
-                                                    )
-                                                })
-                                                .on_dismiss(cx.listener(close_tracks)),
-                                        )
-                                    })
-                                    .when(!live, |this| {
-                                        this.child(
-                                            Button::icon("loop", "loop")
-                                                .overlay()
-                                                .icon_color(overlay::text_muted())
-                                                .selected(looping)
-                                                .on_click(cx.listener(|this, _, _, cx| {
-                                                    let looping =
-                                                        !this.playback.local().is_looping();
-                                                    this.set_looping(looping);
-                                                    cx.notify();
-                                                })),
-                                        )
-                                    })
-                                    .when(has_audio, |this| {
-                                        this.child(
-                                            Button::icon("mute", volume_icon).overlay().on_click(
-                                                cx.listener(|this, _, _, cx| {
-                                                    let muted = !this.playback.local().is_muted();
-                                                    this.set_muted(muted);
-                                                    cx.notify();
-                                                }),
-                                            ),
-                                        )
-                                        .child(
-                                            div().w(VOLUME_WIDTH).pr_1().child(
-                                                Slider::new(
-                                                    "volume",
-                                                    if player.is_muted() {
-                                                        0.0
-                                                    } else {
-                                                        player.volume()
-                                                    },
-                                                    self.volume_drag.clone(),
-                                                )
-                                                .overlay()
-                                                .on_change(cx.listener(Self::on_volume)),
-                                            ),
-                                        )
-                                    }),
-                            ),
+                            .child(self.render_buttons(live, info, cast, theme, cx)),
                     ),
             )
+    }
+
+    /// The seek bar, with a notch where each chapter starts.
+    fn render_seek_bar(
+        &self,
+        progress: f32,
+        notches: Vec<f32>,
+        theme: &Theme,
+        cx: &mut Context<Self>,
+    ) -> Div {
+        div().px_1().debug_selector(|| "seek".into()).child(
+            Slider::new("seek", progress, self.seek_drag.clone())
+                .overlay()
+                .fill(theme.accent)
+                .notches(notches)
+                .on_change(cx.listener(Self::on_seek)),
+        )
+    }
+
+    /// The buttons on the right: casting, tracks, loop, and the volume.
+    fn render_buttons(
+        &self,
+        live: bool,
+        info: Option<&MediaInfo>,
+        cast: Option<AnyElement>,
+        theme: &Theme,
+        cx: &mut Context<Self>,
+    ) -> Div {
+        let player = self.playback.local();
+        let volume_icon = if player.is_muted() || player.volume() == 0.0 {
+            "mute"
+        } else {
+            "volume"
+        };
+        let has_audio = info.is_some_and(|i| i.has_audio);
+        let tracks = info.filter(|info| has_track_choice(info));
+        let looping = player.is_looping();
+        div()
+            .flex_1()
+            .flex()
+            .items_center()
+            .justify_end()
+            .gap_0p5()
+            .children(cast)
+            .when_some(tracks, |this, info| {
+                this.child(self.render_tracks_button(info, theme, cx))
+            })
+            .when(!live, |this| {
+                this.child(
+                    Button::icon("loop", "loop")
+                        .overlay()
+                        .icon_color(overlay::text_muted())
+                        .selected(looping)
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            let looping = !this.playback.local().is_looping();
+                            this.set_looping(looping);
+                            cx.notify();
+                        })),
+                )
+            })
+            .when(has_audio, |this| {
+                this.child(
+                    Button::icon("mute", volume_icon)
+                        .overlay()
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            let muted = !this.playback.local().is_muted();
+                            this.set_muted(muted);
+                            cx.notify();
+                        })),
+                )
+                .child(
+                    div().w(VOLUME_WIDTH).pr_1().child(
+                        Slider::new(
+                            "volume",
+                            if player.is_muted() {
+                                0.0
+                            } else {
+                                player.volume()
+                            },
+                            self.volume_drag.clone(),
+                        )
+                        .overlay()
+                        .on_change(cx.listener(Self::on_volume)),
+                    ),
+                )
+            })
+    }
+
+    /// The tracks button, lit while subtitles show, and the menu of tracks
+    /// it opens.
+    fn render_tracks_button(
+        &self,
+        info: &MediaInfo,
+        theme: &Theme,
+        cx: &mut Context<Self>,
+    ) -> Popover {
+        let subtitles_on = info.subtitle_track.is_some();
+        let button = Button::icon("tracks", "subtitles")
+            .overlay()
+            .selected(subtitles_on)
+            .on_click(cx.listener(|this, _, _, cx| {
+                this.tracks_open = !this.tracks_open;
+                cx.notify();
+            }));
+        Popover::new("tracks-backdrop", button)
+            .anchor(Corner::BottomRight, TRACK_MENU_OFFSET)
+            .when(self.tracks_open, |this| {
+                this.menu(self.render_tracks_menu(info, theme, cx))
+            })
+            .on_dismiss(cx.listener(close_tracks))
     }
 
     /// The file before this one in its folder, skip back, play, skip
@@ -281,6 +287,26 @@ fn skip(
         let step = f64::from(cx.global::<Settings>().seek_step_seconds);
         this.seek_by(step * direction, cx);
     }
+}
+
+/// The time on the left, after a LIVE badge for a live stream.
+fn render_time(live: bool, time_label: String, theme: &Theme) -> Div {
+    div()
+        .flex_1()
+        .min_w_0()
+        .flex()
+        .items_center()
+        .gap_1()
+        .pl_1()
+        .when(live, |this| this.child(Badge::label("LIVE", theme.danger)))
+        .child(
+            div()
+                .min_w_0()
+                .truncate()
+                .text_xs()
+                .text_color(overlay::text())
+                .child(time_label),
+        )
 }
 
 /// Where it is, of how long it is, and the chapter it's in for a file of

@@ -7,6 +7,7 @@ use gpui::{Context, Div, div};
 
 use super::PlayerView;
 use crate::media::decoder::MediaInfo;
+use crate::media::details::{AudioDetails, VideoDetails};
 use crate::media::player::PlaybackStats;
 use crate::media::{Picture, tracks::TrackKind};
 use crate::ui::components::Panel;
@@ -127,12 +128,27 @@ fn sections(facts: &Facts) -> Vec<Vec<Row>> {
         file.push(("State", "Opening…".to_owned()));
         return vec![file];
     };
+    file.extend(file_rows(facts, info));
+    let mut sections = vec![file];
+    if let Some(video) = &info.video_details {
+        sections.push(video_rows(facts, info, video));
+    }
+    if let Some(audio) = &info.audio_details {
+        sections.push(audio_rows(facts, info, audio));
+    }
+    sections.extend(subtitle_rows(facts, info));
+    sections
+}
+
+/// The file's format, where it plays, and how far ahead it is read.
+fn file_rows(facts: &Facts, info: &MediaInfo) -> Vec<Row> {
+    let mut rows = Vec::new();
     let mut format = info.container.format.clone();
     if let Some(rate) = info.container.bit_rate {
         format = joined([format, bit_rate(rate)]);
     }
-    file.push(("Format", format));
-    file.push((
+    rows.push(("Format", format));
+    rows.push((
         "Time",
         match (info.live, facts.duration) {
             (true, _) => format!("{} · live", time(facts.position)),
@@ -150,121 +166,125 @@ fn sections(facts: &Facts) -> Vec<Vec<Row>> {
     } else {
         read_ahead
     };
-    file.push((if facts.network { "Downloaded" } else { "Read" }, read));
-    let mut sections = vec![file];
+    rows.push((if facts.network { "Downloaded" } else { "Read" }, read));
+    rows
+}
 
-    if let Some(video) = &info.video_details {
-        let mut rows = Vec::new();
-        let codec = info.video_codec.clone().unwrap_or_default();
-        let (width, height) = video.coded_size;
-        rows.push((
-            "Video",
-            joined(
-                [
-                    Some(with_profile(codec, video.profile.as_deref())),
-                    Some(format!("{width}×{height}")),
-                    video.pixel_format.map(str::to_owned),
-                    info.frame_rate
-                        .map(|fps| format!("{} fps", decimals(fps, 3))),
-                    video.bit_rate.map(bit_rate),
-                ]
-                .into_iter()
-                .flatten(),
-            ),
-        ));
-        let light = match video.transfer {
-            Some("smpte2084") => Some("HDR PQ".to_owned()),
-            Some("arib-std-b67") => Some("HDR HLG".to_owned()),
-            other => other.map(str::to_owned),
-        };
-        let range = video
-            .full_range
-            .map(|full| if full { "full range" } else { "video range" }.to_owned());
-        let color = joined(
+/// The video's format and color, how it is decoded, and how it shows.
+fn video_rows(facts: &Facts, info: &MediaInfo, video: &VideoDetails) -> Vec<Row> {
+    let mut rows = Vec::new();
+    let codec = info.video_codec.clone().unwrap_or_default();
+    let (width, height) = video.coded_size;
+    rows.push((
+        "Video",
+        joined(
             [
-                light,
-                video.primaries.map(str::to_owned),
-                video.matrix.map(str::to_owned),
-                range,
+                Some(with_profile(codec, video.profile.as_deref())),
+                Some(format!("{width}×{height}")),
+                video.pixel_format.map(str::to_owned),
+                info.frame_rate
+                    .map(|fps| format!("{} fps", decimals(fps, 3))),
+                video.bit_rate.map(bit_rate),
             ]
             .into_iter()
             .flatten(),
-        );
-        if !color.is_empty() {
-            rows.push(("Color", color));
-        }
-        let decoder = info.hardware.unwrap_or("software").to_owned();
-        rows.push((
-            "Decoder",
-            match facts.picture {
-                Some((kind, (width, height))) => format!("{decoder} → {width}×{height} {kind}"),
-                None => decoder,
-            },
-        ));
-        let stats = facts.stats;
-        let mut shown = vec![
-            format!("{} fps", decimals(stats.shown_fps, 1)),
-            format!("{} dropped", stats.dropped),
-        ];
-        if let Some(lateness) = stats.lateness {
-            shown.push(format!("{} vs clock", milliseconds(lateness)));
-        }
-        rows.push(("Shown", joined(shown)));
-        rows.push((
-            "Queued",
-            match stats.queued_frames {
-                1 => "1 frame".to_owned(),
-                frames => format!("{frames} frames"),
-            },
-        ));
-        sections.push(rows);
+        ),
+    ));
+    let light = match video.transfer {
+        Some("smpte2084") => Some("HDR PQ".to_owned()),
+        Some("arib-std-b67") => Some("HDR HLG".to_owned()),
+        other => other.map(str::to_owned),
+    };
+    let range = video
+        .full_range
+        .map(|full| if full { "full range" } else { "video range" }.to_owned());
+    let color = joined(
+        [
+            light,
+            video.primaries.map(str::to_owned),
+            video.matrix.map(str::to_owned),
+            range,
+        ]
+        .into_iter()
+        .flatten(),
+    );
+    if !color.is_empty() {
+        rows.push(("Color", color));
     }
-
-    if let Some(audio) = &info.audio_details {
-        let codec = info.audio_codec.clone().unwrap_or_default();
-        let channels = audio
-            .layout
-            .clone()
-            .unwrap_or_else(|| format!("{} channels", audio.channels));
-        let mut rows = vec![(
-            "Audio",
-            joined(
-                [
-                    Some(with_profile(codec, audio.profile.as_deref())),
-                    Some(sample_rate(audio.sample_rate)),
-                    Some(channels),
-                    audio.sample_format.map(str::to_owned),
-                    audio.bit_rate.map(bit_rate),
-                ]
-                .into_iter()
-                .flatten(),
-            ),
-        )];
-        let mut output = facts
-            .output_rate
-            .map(|rate| vec![format!("{} stereo", sample_rate(rate))])
-            .unwrap_or_default();
-        output.push(format!("{:.2} s queued", facts.stats.queued_audio));
-        rows.push(("Output", joined(output)));
-        rows.push(("Delay", seconds(facts.audio_delay, 2)));
-        sections.push(rows);
+    let decoder = info.hardware.unwrap_or("software").to_owned();
+    rows.push((
+        "Decoder",
+        match facts.picture {
+            Some((kind, (width, height))) => format!("{decoder} → {width}×{height} {kind}"),
+            None => decoder,
+        },
+    ));
+    let stats = facts.stats;
+    let mut shown = vec![
+        format!("{} fps", decimals(stats.shown_fps, 1)),
+        format!("{} dropped", stats.dropped),
+    ];
+    if let Some(lateness) = stats.lateness {
+        shown.push(format!("{} vs clock", milliseconds(lateness)));
     }
+    rows.push(("Shown", joined(shown)));
+    rows.push((
+        "Queued",
+        match stats.queued_frames {
+            1 => "1 frame".to_owned(),
+            frames => format!("{frames} frames"),
+        },
+    ));
+    rows
+}
 
+/// The sound's format, what it is played as, and its delay.
+fn audio_rows(facts: &Facts, info: &MediaInfo, audio: &AudioDetails) -> Vec<Row> {
+    let codec = info.audio_codec.clone().unwrap_or_default();
+    let channels = audio
+        .layout
+        .clone()
+        .unwrap_or_else(|| format!("{} channels", audio.channels));
+    let mut rows = vec![(
+        "Audio",
+        joined(
+            [
+                Some(with_profile(codec, audio.profile.as_deref())),
+                Some(sample_rate(audio.sample_rate)),
+                Some(channels),
+                audio.sample_format.map(str::to_owned),
+                audio.bit_rate.map(bit_rate),
+            ]
+            .into_iter()
+            .flatten(),
+        ),
+    )];
+    let mut output = facts
+        .output_rate
+        .map(|rate| vec![format!("{} stereo", sample_rate(rate))])
+        .unwrap_or_default();
+    output.push(format!("{:.2} s queued", facts.stats.queued_audio));
+    rows.push(("Output", joined(output)));
+    rows.push(("Delay", seconds(facts.audio_delay, 2)));
+    rows
+}
+
+/// The subtitles showing, and their delay.
+fn subtitle_rows(facts: &Facts, info: &MediaInfo) -> Option<Vec<Row>> {
     let subtitles = info
         .subtitle_track
         .and_then(|index| info.tracks.iter().find(|t| t.index == index))
         .filter(|track| track.kind == TrackKind::Subtitle);
-    if let Some(track) = subtitles {
+    subtitles.map(|track| {
         let number = info
             .tracks(TrackKind::Subtitle)
             .position(|t| t.index == track.index)
             .map_or(1, |at| at + 1);
-        sections.push(vec![
+        vec![
             ("Subtitles", joined([track.label(number), track.detail()])),
             ("Delay", seconds(facts.subtitle_delay, 1)),
-        ]);
-    }
-    sections
+        ]
+    })
 }
 
 fn joined(parts: impl IntoIterator<Item = String>) -> String {

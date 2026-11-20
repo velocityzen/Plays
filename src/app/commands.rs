@@ -19,6 +19,14 @@ use crate::ui::settings::SettingsView;
 const VOLUME_STEP: f32 = 0.05;
 
 pub(super) fn register(cx: &mut App) {
+    register_app(cx);
+    register_tile(cx);
+    register_tile_view(cx);
+    register_every_tile(cx);
+}
+
+/// Quitting, the app's own windows, and opening and closing files.
+fn register_app(cx: &mut App) {
     cx.on_action(|_: &Quit, cx| cx.quit());
     // Deferred, as in `with_workspace`, so the window in front (Settings,
     // say) can be reached.
@@ -48,8 +56,10 @@ pub(super) fn register(cx: &mut App) {
     });
     cx.on_action(|_: &CloseFile, cx| with_workspace(cx, |w, _, cx| w.close_active(cx)));
     cx.on_action(|_: &CloseAll, cx| with_workspace(cx, |w, _, cx| w.close_all(cx)));
+}
 
-    // The tile in front.
+/// The tile in front: playing it, its sound, and its tracks and subtitles.
+fn register_tile(cx: &mut App) {
     cx.on_action(|_: &PlayPause, cx| with_active(cx, |p, cx| p.play_pause(cx)));
     cx.on_action(|_: &SeekForward, cx| {
         let step = seek_step(cx);
@@ -96,6 +106,11 @@ pub(super) fn register(cx: &mut App) {
     cx.on_action(|_: &SmallerSubtitles, cx| change_subtitle_size(cx, -0.1));
     cx.on_action(|_: &SubtitlesUp, cx| change_subtitle_height(cx, 0.01));
     cx.on_action(|_: &SubtitlesDown, cx| change_subtitle_height(cx, -0.01));
+}
+
+/// The tile in front, continued: its picture, where it plays and shows, and
+/// its console.
+fn register_tile_view(cx: &mut App) {
     cx.on_action(|_: &RotateRight, cx| with_active(cx, |p, cx| p.rotate(1, cx)));
     cx.on_action(|_: &RotateLeft, cx| with_active(cx, |p, cx| p.rotate(-1, cx)));
     cx.on_action(|_: &FlipHorizontally, cx| with_active(cx, |p, cx| p.flip(true, cx)));
@@ -148,8 +163,10 @@ pub(super) fn register(cx: &mut App) {
             }
         })
     });
+}
 
-    // Every tile in the window in front.
+/// Every tile in the window in front.
+fn register_every_tile(cx: &mut App) {
     cx.on_action(|_: &PlayPauseAll, cx| with_workspace(cx, |w, _, cx| w.toggle_all(cx)));
     cx.on_action(|_: &PlayAll, cx| with_workspace(cx, |w, _, cx| w.play_all(cx)));
     cx.on_action(|_: &PauseAll, cx| with_workspace(cx, |w, _, cx| w.pause_all(cx)));

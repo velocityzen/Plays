@@ -166,81 +166,89 @@ impl RenderOnce for Slider {
                             .bg(knob_color),
                     ),
             )
-            .child(
-                canvas(
-                    |bounds, window, _| window.insert_hitbox(bounds, HitboxBehavior::Normal),
-                    move |bounds, hitbox, window, _| {
-                        window.set_cursor_style(CursorStyle::PointingHand, &hitbox);
-                        // Where the knob's center would be under the mouse.
-                        let fraction = move |position: Point<Pixels>| -> f32 {
-                            let travel = bounds.size.width - inset * 2.;
-                            if travel <= px(0.) {
-                                return 0.0;
-                            }
-                            ((position.x - bounds.left() - inset) / travel).clamp(0.0, 1.0)
-                        };
-
-                        window.on_mouse_event({
-                            let (dragging, on_change) = (dragging.clone(), on_change.clone());
-                            move |event: &MouseDownEvent, phase, window, cx| {
-                                if phase != DispatchPhase::Bubble
-                                    || event.button != MouseButton::Left
-                                    || !hitbox.is_hovered(window)
-                                {
-                                    return;
-                                }
-                                dragging.set(true);
-                                cx.stop_propagation();
-                                let value = fraction(event.position);
-                                on_change(
-                                    &SliderEvent {
-                                        value,
-                                        slide: Slide::Start,
-                                    },
-                                    window,
-                                    cx,
-                                );
-                            }
-                        });
-
-                        window.on_mouse_event({
-                            let (dragging, on_change) = (dragging.clone(), on_change.clone());
-                            move |event: &MouseMoveEvent, phase, window, cx| {
-                                if phase != DispatchPhase::Bubble || !dragging.get() {
-                                    return;
-                                }
-                                // The button was released somewhere we didn't see.
-                                let released = event.pressed_button != Some(MouseButton::Left);
-                                if released {
-                                    dragging.set(false);
-                                }
-                                let value = fraction(event.position);
-                                let slide = if released { Slide::End } else { Slide::Move };
-                                on_change(&SliderEvent { value, slide }, window, cx);
-                            }
-                        });
-
-                        window.on_mouse_event(move |event: &MouseUpEvent, phase, window, cx| {
-                            if phase != DispatchPhase::Bubble || !dragging.get() {
-                                return;
-                            }
-                            dragging.set(false);
-                            let value = fraction(event.position);
-                            on_change(
-                                &SliderEvent {
-                                    value,
-                                    slide: Slide::End,
-                                },
-                                window,
-                                cx,
-                            );
-                        });
-                    },
-                )
-                .absolute()
-                .top_0()
-                .left_0()
-                .size_full(),
-            )
+            .child(drag_area(inset, dragging, on_change))
     }
+}
+
+/// Where the mouse drags the slider: a press on it starts a slide, which
+/// follows the mouse wherever it goes until the button is let go.
+fn drag_area(
+    inset: Pixels,
+    dragging: Rc<Cell<bool>>,
+    on_change: ChangeHandler,
+) -> impl IntoElement {
+    canvas(
+        |bounds, window, _| window.insert_hitbox(bounds, HitboxBehavior::Normal),
+        move |bounds, hitbox, window, _| {
+            window.set_cursor_style(CursorStyle::PointingHand, &hitbox);
+            // Where the knob's center would be under the mouse.
+            let fraction = move |position: Point<Pixels>| -> f32 {
+                let travel = bounds.size.width - inset * 2.;
+                if travel <= px(0.) {
+                    return 0.0;
+                }
+                ((position.x - bounds.left() - inset) / travel).clamp(0.0, 1.0)
+            };
+
+            window.on_mouse_event({
+                let (dragging, on_change) = (dragging.clone(), on_change.clone());
+                move |event: &MouseDownEvent, phase, window, cx| {
+                    if phase != DispatchPhase::Bubble
+                        || event.button != MouseButton::Left
+                        || !hitbox.is_hovered(window)
+                    {
+                        return;
+                    }
+                    dragging.set(true);
+                    cx.stop_propagation();
+                    let value = fraction(event.position);
+                    on_change(
+                        &SliderEvent {
+                            value,
+                            slide: Slide::Start,
+                        },
+                        window,
+                        cx,
+                    );
+                }
+            });
+
+            window.on_mouse_event({
+                let (dragging, on_change) = (dragging.clone(), on_change.clone());
+                move |event: &MouseMoveEvent, phase, window, cx| {
+                    if phase != DispatchPhase::Bubble || !dragging.get() {
+                        return;
+                    }
+                    // The button was released somewhere we didn't see.
+                    let released = event.pressed_button != Some(MouseButton::Left);
+                    if released {
+                        dragging.set(false);
+                    }
+                    let value = fraction(event.position);
+                    let slide = if released { Slide::End } else { Slide::Move };
+                    on_change(&SliderEvent { value, slide }, window, cx);
+                }
+            });
+
+            window.on_mouse_event(move |event: &MouseUpEvent, phase, window, cx| {
+                if phase != DispatchPhase::Bubble || !dragging.get() {
+                    return;
+                }
+                dragging.set(false);
+                let value = fraction(event.position);
+                on_change(
+                    &SliderEvent {
+                        value,
+                        slide: Slide::End,
+                    },
+                    window,
+                    cx,
+                );
+            });
+        },
+    )
+    .absolute()
+    .top_0()
+    .left_0()
+    .size_full()
 }

@@ -425,106 +425,116 @@ pub mod receiver {
         pub fn setup(&mut self, message: &[u8]) -> Result<(Vec<u8>, Outcome)> {
             let tlv = Tlv::decode(message)?;
             match tlv.state() {
-                Some(1) => {
-                    let transient = tlv
-                        .get(Tag::Flags)
-                        .and_then(|flags| flags.first())
-                        .is_some_and(|flags| flags & TRANSIENT != 0);
-                    let pin = if transient { TRANSIENT_PIN } else { &self.pin };
-                    let salt: [u8; 16] = rand::random();
-                    let server = srp::Server::new::<Sha512>(
-                        Group::pairing(),
-                        USERNAME,
-                        pin.as_bytes(),
-                        &salt,
-                        &rand::random::<[u8; 32]>(),
-                    );
-                    let reply = Tlv::new()
-                        .byte(Tag::State, 2)
-                        .with(Tag::Salt, salt)
-                        .with(Tag::PublicKey, server.public())
-                        .encode();
-                    self.setup = Some((server, transient));
-                    Ok((reply, Outcome::Going))
-                }
-                Some(3) => {
-                    let (server, transient) = self
-                        .setup
-                        .as_ref()
-                        .ok_or_else(|| Error::protocol("M3 before M1"))?;
-                    let session = server.session::<Sha512>(USERNAME, tlv.need(Tag::PublicKey)?)?;
-                    if !proves(tlv.need(Tag::Proof)?, &session.proof) {
-                        return Ok((Self::refuse(4, 2), Outcome::Going));
-                    }
-                    let reply = Tlv::new()
-                        .byte(Tag::State, 4)
-                        .with(Tag::Proof, &session.server_proof)
-                        .encode();
-                    let outcome = if *transient {
-                        Outcome::Secret(session.key.clone())
-                    } else {
-                        Outcome::Going
-                    };
-                    self.session = Some(session);
-                    Ok((reply, outcome))
-                }
-                Some(5) => {
-                    let key = &self
-                        .session
-                        .as_ref()
-                        .ok_or_else(|| Error::protocol("M5 before M3"))?
-                        .key;
-                    let encrypt =
-                        crypto::derive(key, "Pair-Setup-Encrypt-Salt", "Pair-Setup-Encrypt-Info");
-                    let inner = Tlv::decode(&crypto::open(
-                        &encrypt,
-                        message_nonce("PS-Msg05"),
-                        &[],
-                        tlv.need(Tag::EncryptedData)?,
-                    )?)?;
-                    let id = inner.need(Tag::Identifier)?;
-                    let public = key32(inner.need(Tag::PublicKey)?)?;
-                    let x = crypto::derive(
-                        key,
-                        "Pair-Setup-Controller-Sign-Salt",
-                        "Pair-Setup-Controller-Sign-Info",
-                    );
-                    if verify(
-                        &public,
-                        &[&x[..], id, &public].concat(),
-                        inner.need(Tag::Signature)?,
-                    )
-                    .is_err()
-                    {
-                        return Ok((Self::refuse(6, 2), Outcome::Going));
-                    }
-                    self.paired.push((id.to_vec(), public));
-
-                    let x = crypto::derive(
-                        key,
-                        "Pair-Setup-Accessory-Sign-Salt",
-                        "Pair-Setup-Accessory-Sign-Info",
-                    );
-                    let ours = self.signing.verifying_key().to_bytes();
-                    let signature = self
-                        .signing
-                        .sign(&[&x[..], self.id.as_bytes(), &ours].concat());
-                    let inner = Tlv::new()
-                        .with(Tag::Identifier, self.id.as_bytes())
-                        .with(Tag::PublicKey, ours)
-                        .with(Tag::Signature, signature.to_bytes())
-                        .encode();
-                    let reply = Tlv::new()
-                        .byte(Tag::State, 6)
-                        .with(
-                            Tag::EncryptedData,
-                            crypto::seal(&encrypt, message_nonce("PS-Msg06"), &[], &inner),
-                        )
-                        .encode();
-                    Ok((reply, Outcome::Going))
-                }
+                Some(1) => self.setup_m1(&tlv),
+                Some(3) => self.setup_m3(&tlv),
+                Some(5) => self.setup_m5(&tlv),
                 state => Err(Error::protocol(format!("pair-setup step {state:?}"))),
             }
+        }
+
+        /// M2, for M1: the salt and public key for a PIN, or for the
+        /// transient one.
+        fn setup_m1(&mut self, tlv: &Tlv) -> Result<(Vec<u8>, Outcome)> {
+            let transient = tlv
+                .get(Tag::Flags)
+                .and_then(|flags| flags.first())
+                .is_some_and(|flags| flags & TRANSIENT != 0);
+            let pin = if transient { TRANSIENT_PIN } else { &self.pin };
+            let salt: [u8; 16] = rand::random();
+            let server = srp::Server::new::<Sha512>(
+                Group::pairing(),
+                USERNAME,
+                pin.as_bytes(),
+                &salt,
+                &rand::random::<[u8; 32]>(),
+            );
+            let reply = Tlv::new()
+                .byte(Tag::State, 2)
+                .with(Tag::Salt, salt)
+                .with(Tag::PublicKey, server.public())
+                .encode();
+            self.setup = Some((server, transient));
+            Ok((reply, Outcome::Going))
+        }
+
+        /// M4, for M3: proof that the sender knows the PIN; a transient
+        /// pairing's secret is ready then.
+        fn setup_m3(&mut self, tlv: &Tlv) -> Result<(Vec<u8>, Outcome)> {
+            let (server, transient) = self
+                .setup
+                .as_ref()
+                .ok_or_else(|| Error::protocol("M3 before M1"))?;
+            let session = server.session::<Sha512>(USERNAME, tlv.need(Tag::PublicKey)?)?;
+            if !proves(tlv.need(Tag::Proof)?, &session.proof) {
+                return Ok((Self::refuse(4, 2), Outcome::Going));
+            }
+            let reply = Tlv::new()
+                .byte(Tag::State, 4)
+                .with(Tag::Proof, &session.server_proof)
+                .encode();
+            let outcome = if *transient {
+                Outcome::Secret(session.key.clone())
+            } else {
+                Outcome::Going
+            };
+            self.session = Some(session);
+            Ok((reply, outcome))
+        }
+
+        /// M6, for M5: the sender's long-term key taken, and ours.
+        fn setup_m5(&mut self, tlv: &Tlv) -> Result<(Vec<u8>, Outcome)> {
+            let key = &self
+                .session
+                .as_ref()
+                .ok_or_else(|| Error::protocol("M5 before M3"))?
+                .key;
+            let encrypt = crypto::derive(key, "Pair-Setup-Encrypt-Salt", "Pair-Setup-Encrypt-Info");
+            let inner = Tlv::decode(&crypto::open(
+                &encrypt,
+                message_nonce("PS-Msg05"),
+                &[],
+                tlv.need(Tag::EncryptedData)?,
+            )?)?;
+            let id = inner.need(Tag::Identifier)?;
+            let public = key32(inner.need(Tag::PublicKey)?)?;
+            let x = crypto::derive(
+                key,
+                "Pair-Setup-Controller-Sign-Salt",
+                "Pair-Setup-Controller-Sign-Info",
+            );
+            if verify(
+                &public,
+                &[&x[..], id, &public].concat(),
+                inner.need(Tag::Signature)?,
+            )
+            .is_err()
+            {
+                return Ok((Self::refuse(6, 2), Outcome::Going));
+            }
+            self.paired.push((id.to_vec(), public));
+
+            let x = crypto::derive(
+                key,
+                "Pair-Setup-Accessory-Sign-Salt",
+                "Pair-Setup-Accessory-Sign-Info",
+            );
+            let ours = self.signing.verifying_key().to_bytes();
+            let signature = self
+                .signing
+                .sign(&[&x[..], self.id.as_bytes(), &ours].concat());
+            let inner = Tlv::new()
+                .with(Tag::Identifier, self.id.as_bytes())
+                .with(Tag::PublicKey, ours)
+                .with(Tag::Signature, signature.to_bytes())
+                .encode();
+            let reply = Tlv::new()
+                .byte(Tag::State, 6)
+                .with(
+                    Tag::EncryptedData,
+                    crypto::seal(&encrypt, message_nonce("PS-Msg06"), &[], &inner),
+                )
+                .encode();
+            Ok((reply, Outcome::Going))
         }
 
         /// The answer to a pair-verify message.

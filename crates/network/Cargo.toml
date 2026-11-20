@@ -6,6 +6,9 @@ description = "What the casting crates share on the network: connecting, reading
 license = "MIT"
 publish = false
 
+[lints]
+workspace = true
+
 [features]
 # Finding devices over mDNS, for the crates that do; DLNA has SSDP.
 mdns = ["dep:futures-channel", "dep:mdns-sd"]
