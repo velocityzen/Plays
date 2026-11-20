@@ -28,6 +28,8 @@ pub(crate) struct TestPlatform {
 
     pub(crate) active_window: RefCell<Option<TestWindow>>,
     active_display: Rc<dyn PlatformDisplay>,
+    /// Plays: displays connected after the first, the main one.
+    pub(crate) other_displays: RefCell<Vec<Rc<dyn PlatformDisplay>>>,
     active_cursor: Mutex<CursorStyle>,
     current_clipboard_item: Mutex<Option<ClipboardItem>>,
     #[cfg(any(target_os = "linux", target_os = "freebsd"))]
@@ -121,6 +123,7 @@ impl TestPlatform {
             screen_capture_sources: Default::default(),
             active_cursor: Default::default(),
             active_display: Rc::new(TestDisplay::new()),
+            other_displays: Default::default(),
             active_window: Default::default(),
             current_clipboard_item: Mutex::new(None),
             #[cfg(any(target_os = "linux", target_os = "freebsd"))]
@@ -283,7 +286,9 @@ impl Platform for TestPlatform {
     }
 
     fn displays(&self) -> Vec<std::rc::Rc<dyn crate::PlatformDisplay>> {
-        vec![self.active_display.clone()]
+        std::iter::once(self.active_display.clone())
+            .chain(self.other_displays.borrow().iter().cloned())
+            .collect()
     }
 
     fn primary_display(&self) -> Option<std::rc::Rc<dyn crate::PlatformDisplay>> {
@@ -322,12 +327,13 @@ impl Platform for TestPlatform {
         handle: AnyWindowHandle,
         params: WindowParams,
     ) -> anyhow::Result<Box<dyn crate::PlatformWindow>> {
-        let window = TestWindow::new(
-            handle,
-            params,
-            self.weak.clone(),
-            self.active_display.clone(),
-        );
+        // Plays: on the display asked for, else the main one.
+        let display = self
+            .displays()
+            .into_iter()
+            .find(|display| Some(display.id()) == params.display_id)
+            .unwrap_or_else(|| self.active_display.clone());
+        let window = TestWindow::new(handle, params, self.weak.clone(), display);
         Ok(Box::new(window))
     }
 

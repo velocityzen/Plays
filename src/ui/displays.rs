@@ -1,11 +1,18 @@
-//! The displays a player window can show on, for Video → Output Device. On
-//! macOS an AirPlay display is one of them once it is connected (Control
-//! Center → Screen Mirroring, as a separate display), and macOS sends the
-//! sound to it too. gpui has no names for displays and can't move windows,
-//! so on macOS this goes to AppKit; elsewhere displays are numbered and the
-//! window manager places windows.
+//! The displays a player window can show on, for Video → Output Device, and
+//! where new windows open. On macOS an AirPlay display is one of them once
+//! it is connected (Control Center → Screen Mirroring, as a separate
+//! display), and macOS sends the sound to it too. gpui has no names for
+//! displays and can't move windows, so on macOS this goes to AppKit;
+//! elsewhere displays are numbered and the window manager places windows.
+//!
+//! New windows open on the display in use, not always on the main one: a
+//! tile's own window beside the window it left, and others on the display
+//! of Plays' window in front, or with the mouse when none is. A window's
+//! bounds are relative to its display, as gpui opens and reports them.
 
-use gpui::{App, Window};
+use gpui::{App, Bounds, DisplayId, Pixels, Size, Window, point};
+
+use crate::ui::theme::layout::WINDOW_GAP;
 
 /// A display, as the system names it.
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -49,6 +56,56 @@ pub fn move_to(window: &Window, id: u32) {
     let _ = (window, id);
 }
 
+/// The display a new window opens on: the one with Plays' window in front,
+/// or else, on macOS, the one with the mouse. `None` leaves it to the
+/// system, which opens it on the main display. Ask it once whatever asked
+/// for the window is done with its own (`App::defer`), or the window in
+/// front can't say where it is.
+pub fn in_use(cx: &mut App) -> Option<DisplayId> {
+    let front = cx.active_window().and_then(|handle| {
+        handle
+            .update(cx, |_, window, cx| {
+                window.display(cx).map(|display| display.id())
+            })
+            .ok()
+            .flatten()
+    });
+    front.or_else(|| {
+        let mouse = with_mouse()?;
+        cx.displays()
+            .into_iter()
+            .map(|display| display.id())
+            .find(|&id| u32::from(id) == mouse)
+    })
+}
+
+/// The display with the mouse, as the system numbers it; only macOS says.
+fn with_mouse() -> Option<u32> {
+    #[cfg(target_os = "macos")]
+    return mac::with_mouse();
+    #[cfg(not(target_os = "macos"))]
+    None
+}
+
+/// Where a window of `size` goes beside the window at `from` on a display
+/// of `room` (bounds relative to the display): to its right, or else to its
+/// left, the tops level, or centered where neither side has room. On the
+/// display, as far as it fits.
+pub fn beside(from: Bounds<Pixels>, size: Size<Pixels>, room: Bounds<Pixels>) -> Bounds<Pixels> {
+    let right = from.right() + WINDOW_GAP;
+    let left = from.left() - WINDOW_GAP - size.width;
+    let x = if right + size.width <= room.right() {
+        right
+    } else if left >= room.left() {
+        left
+    } else {
+        room.center().x - size.width / 2.
+    };
+    let x = x.min(room.right() - size.width).max(room.left());
+    let y = from.top().min(room.bottom() - size.height).max(room.top());
+    Bounds::new(point(x, y), size)
+}
+
 // objc's message macros test a `cargo-clippy` feature this crate doesn't have.
 #[cfg(target_os = "macos")]
 #[allow(unexpected_cfgs)]
@@ -67,6 +124,37 @@ mod mac {
         y: f64,
         width: f64,
         height: f64,
+    }
+
+    #[repr(C)]
+    #[derive(Clone, Copy)]
+    struct Point {
+        x: f64,
+        y: f64,
+    }
+
+    /// The `CGDirectDisplayID` of the screen with the mouse, asked on the
+    /// main thread only, as `names` is.
+    pub fn with_mouse() -> Option<u32> {
+        // SAFETY: as in `names`; the point and frames are plain structs,
+        // both in AppKit's global coordinates.
+        unsafe {
+            let main: BOOL = msg_send![class!(NSThread), isMainThread];
+            if main != YES {
+                return None;
+            }
+            let mouse: Point = msg_send![class!(NSEvent), mouseLocation];
+            let screens: *mut Object = msg_send![class!(NSScreen), screens];
+            let count: usize = msg_send![screens, count];
+            (0..count)
+                .map(|index| -> *mut Object { msg_send![screens, objectAtIndex: index] })
+                .find(|&screen| {
+                    let frame: Rect = msg_send![screen, frame];
+                    (frame.x..frame.x + frame.width).contains(&mouse.x)
+                        && (frame.y..frame.y + frame.height).contains(&mouse.y)
+                })
+                .and_then(|screen| number(screen))
+        }
     }
 
     /// Each screen's `CGDirectDisplayID` and its name, asked on the main
@@ -159,11 +247,63 @@ mod mac {
     }
 }
 
-#[cfg(all(test, target_os = "macos"))]
+#[cfg(test)]
 mod tests {
+    use gpui::{Bounds, point, px, size};
+
+    use super::beside;
+    use crate::ui::theme::layout::WINDOW_GAP;
+
+    #[test]
+    fn a_window_opens_beside_the_one_it_came_from() {
+        let room = Bounds::new(point(px(0.), px(0.)), size(px(1920.), px(1080.)));
+        let new = size(px(600.), px(400.));
+        let at = |x: f32, y: f32, width: f32| {
+            Bounds::new(point(px(x), px(y)), size(px(width), px(500.)))
+        };
+
+        let right = beside(at(100., 100., 800.), new, room);
+        assert_eq!(
+            right.origin,
+            point(px(900.) + WINDOW_GAP, px(100.)),
+            "to the right"
+        );
+        assert_eq!(right.size, new);
+
+        let left = beside(at(1000., 100., 800.), new, room);
+        assert_eq!(
+            left.origin.x,
+            px(400.) - WINDOW_GAP,
+            "to the left, with no room right"
+        );
+
+        let middle = beside(at(300., 100., 1400.), new, room);
+        assert_eq!(
+            middle.origin.x,
+            px(660.),
+            "centered, with room on neither side"
+        );
+
+        let low = beside(at(100., 900., 800.), new, room);
+        assert_eq!(
+            low.origin.y,
+            px(680.),
+            "up from the bottom, to stay on the display"
+        );
+
+        let wide = beside(at(100., 100., 800.), size(px(2400.), px(400.)), room);
+        assert_eq!(
+            wide.origin.x,
+            px(0.),
+            "its left edge on it, when it's wider than that"
+        );
+    }
+
+    #[cfg(target_os = "macos")]
     #[test]
     fn appkit_is_asked_the_screens_names_on_the_main_thread_only() {
         // Tests run off it, as this one does.
         assert!(super::mac::names().is_empty());
+        assert_eq!(super::mac::with_mouse(), None);
     }
 }

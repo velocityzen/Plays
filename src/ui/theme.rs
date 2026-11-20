@@ -377,6 +377,8 @@ pub mod layout {
     pub const AUDIO_WINDOW_SIZE: Size<Pixels> = size(px(420.), px(420.));
     /// A popped-out tile's window before the size of its video is known.
     pub const VIDEO_WINDOW_SIZE: Size<Pixels> = size(px(960.), px(540.));
+    /// How far a popped-out tile's window keeps from the window it left.
+    pub const WINDOW_GAP: Pixels = px(12.);
     /// Room a window sized for its videos leaves on its screen, for the
     /// panels and docks of desktops gpui can't ask (macOS tells).
     pub const SCREEN_MARGIN: Size<Pixels> = size(px(48.), px(96.));

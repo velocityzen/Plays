@@ -9,6 +9,7 @@ use gpui::{
     WindowOptions, div, img, linear_color_stop, linear_gradient, rgb, svg, white,
 };
 
+use super::displays;
 use super::theme::Theme;
 use super::theme::about::{ICON, ICON_BOTTOM, ICON_GLYPH, ICON_RADIUS, ICON_TOP, WINDOW_SIZE};
 use super::theme::layout::TRAFFIC_LIGHTS;
@@ -61,7 +62,8 @@ struct AboutWindow(WindowHandle<AboutView>);
 impl Global for AboutWindow {}
 
 impl AboutView {
-    /// Bring the About window to the front, opening it if it isn't open.
+    /// Bring the About window to the front, opening it if it isn't open,
+    /// on the display in use (`displays::in_use`).
     pub fn open_window(cx: &mut App) {
         if let Some(handle) = cx.try_global::<AboutWindow>().map(|open| open.0)
             && handle
@@ -71,13 +73,15 @@ impl AboutView {
             return;
         }
         let mac = cfg!(target_os = "macos");
+        let display = displays::in_use(cx);
         let opened = cx.open_window(
             WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
-                    None,
+                    display,
                     WINDOW_SIZE,
                     cx,
                 ))),
+                display_id: display,
                 titlebar: Some(TitlebarOptions {
                     title: Some("About Plays".into()),
                     appears_transparent: mac,

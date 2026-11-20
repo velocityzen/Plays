@@ -184,7 +184,10 @@ subtitles as they are drawn into screenshots. `TestPlatform::with_text_system`
 takes the text system, and `TestPlatform::new` passes the no-op one as
 before. The test platform counts `activate` calls, and
 `TestAppContext::app_activations()` reads the count, so a test can tell the
-app was brought forward.
+app was brought forward. `TestAppContext::add_display` connects
+another display, after the main one; `displays()` lists them all, and a
+window opens on the one its options ask for (`src/platform/test/display.rs`
+too).
 
 `src/platform.rs`, `src/window.rs`, and the macOS, X11 and test windows:
 `Window::set_on_top` keeps a window above other apps' windows, or puts it

@@ -6,6 +6,7 @@ use gpui::{App, Context, Entity, EntityId, Pixels, Size, px, size};
 use super::{TOOLBAR_SPACE, Tile, Workspace};
 use crate::app::{Awake, refresh_menus};
 use crate::cast::Device;
+use crate::ui::displays;
 use crate::ui::framing::Adjustments;
 use crate::ui::player::{PlayerEvent, PlayerView};
 use crate::ui::theme::layout::{
@@ -76,14 +77,29 @@ impl Workspace {
         self.tiles_changed(cx);
     }
 
-    /// Move a tile to a new window, sized for it, where it keeps playing.
+    /// Move a tile to a new window, sized for it, where it keeps playing:
+    /// beside this one, on its display.
     fn pop_out(&mut self, id: EntityId, cx: &mut Context<Self>) {
         let Some(index) = self.tiles.iter().position(|t| t.view.entity_id() == id) else {
             return;
         };
         let view = self.tiles[index].view.clone();
         let window_size = window_size_for(view.read(cx));
-        let window = match Self::open_window(window_size, cx) {
+        let here = self
+            .window
+            .update(cx, |_, window, cx| {
+                Some((window.display(cx)?, window.bounds()))
+            })
+            .ok()
+            .flatten();
+        let opened = match here {
+            Some((display, from)) => {
+                let bounds = displays::beside(from, window_size, display.bounds());
+                Self::open_window_at(Some(display.id()), bounds, cx)
+            }
+            None => Self::open_window(window_size, cx),
+        };
+        let window = match opened {
             Ok(window) => window,
             Err(err) => {
                 log::error!("could not open a window: {err:#}");

@@ -27,6 +27,7 @@ use gpui::{
 };
 
 use super::components::Icon;
+use super::displays;
 use super::theme::layout::{SETTINGS_WINDOW_MIN_SIZE, SETTINGS_WINDOW_SIZE, TRAFFIC_LIGHTS};
 use super::theme::settings::{
     SIDEBAR_ROW_HEIGHT, SIDEBAR_TOP, SIDEBAR_TOP_MAC, SIDEBAR_WIDTH, TITLE_HEIGHT,
@@ -112,7 +113,8 @@ struct SettingsWindow(WindowHandle<SettingsView>);
 impl Global for SettingsWindow {}
 
 impl SettingsView {
-    /// Bring the Settings window to the front, opening it if it isn't open.
+    /// Bring the Settings window to the front, opening it if it isn't open,
+    /// on the display in use (`displays::in_use`).
     pub fn open_window(cx: &mut App) {
         if let Some(handle) = cx.try_global::<SettingsWindow>().map(|open| open.0)
             && handle
@@ -121,13 +123,15 @@ impl SettingsView {
         {
             return;
         }
-        let bounds = Bounds::centered(None, SETTINGS_WINDOW_SIZE, cx);
+        let display = displays::in_use(cx);
+        let bounds = Bounds::centered(display, SETTINGS_WINDOW_SIZE, cx);
         // On macOS the sidebar runs up under the traffic lights, as in System
         // Settings.
         let mac = cfg!(target_os = "macos");
         let opened = cx.open_window(
             WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
+                display_id: display,
                 titlebar: Some(TitlebarOptions {
                     title: Some("Plays Settings".into()),
                     appears_transparent: mac,

@@ -16,6 +16,15 @@ impl TestDisplay {
             bounds: Bounds::from_corners(Point::default(), Point::new(px(1920.), px(1080.))),
         }
     }
+
+    /// Plays: another display, as `TestAppContext::add_display` connects it.
+    pub fn at(id: DisplayId, bounds: Bounds<Pixels>) -> Self {
+        TestDisplay {
+            id,
+            uuid: uuid::Uuid::new_v4(),
+            bounds,
+        }
+    }
 }
 
 impl PlatformDisplay for TestDisplay {

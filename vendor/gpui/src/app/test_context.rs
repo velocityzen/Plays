@@ -1,9 +1,9 @@
 use crate::{
     Action, AnyView, AnyWindowHandle, App, AppCell, AppContext, AsyncApp, AvailableSpace,
-    BackgroundExecutor, BorrowAppContext, Bounds, Capslock, ClipboardItem, DrawPhase, Drawable,
-    Element, Empty, EventEmitter, ForegroundExecutor, Global, InputEvent, Keystroke, Modifiers,
-    ModifiersChangedEvent, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels,
-    Platform, Point, Render, Result, Size, Task, TestDispatcher, TestPlatform,
+    BackgroundExecutor, BorrowAppContext, Bounds, Capslock, ClipboardItem, DisplayId, DrawPhase,
+    Drawable, Element, Empty, EventEmitter, ForegroundExecutor, Global, InputEvent, Keystroke,
+    Modifiers, ModifiersChangedEvent, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
+    Pixels, Platform, Point, Render, Result, Size, Task, TestDispatcher, TestDisplay, TestPlatform,
     TestScreenCaptureSource, TestWindow, TextSystem, VisualContext, Window, WindowBounds,
     WindowHandle, WindowOptions,
 };
@@ -359,6 +359,18 @@ impl TestAppContext {
     /// `cx.activate()` during this test.
     pub fn app_activations(&self) -> usize {
         self.test_platform.activations.get()
+    }
+
+    /// Plays: connects another display of `size`, after the others, and
+    /// returns its id.
+    pub fn add_display(&self, size: Size<Pixels>) -> DisplayId {
+        let mut others = self.test_platform.other_displays.borrow_mut();
+        let id = DisplayId(others.len() as u32 + 2);
+        others.push(Rc::new(TestDisplay::at(
+            id,
+            Bounds::new(Point::default(), size),
+        )));
+        id
     }
 
     /// Simulates the user resizing the window to the new size.

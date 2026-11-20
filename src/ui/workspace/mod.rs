@@ -19,11 +19,12 @@ use std::time::{Duration, Instant};
 use anyhow::Result;
 use gpui::prelude::*;
 use gpui::{
-    AnyWindowHandle, App, Bounds, Context, Entity, EntityId, ExternalPaths, FocusHandle, Pixels,
-    Size, Subscription, TitlebarOptions, Window, WindowBounds, WindowHandle, WindowOptions, black,
-    div, px,
+    AnyWindowHandle, App, Bounds, Context, DisplayId, Entity, EntityId, ExternalPaths, FocusHandle,
+    Pixels, Size, Subscription, TitlebarOptions, Window, WindowBounds, WindowHandle, WindowOptions,
+    black, div, px,
 };
 
+use super::displays;
 use super::open_url::{OpenUrlDialog, OpenUrlEvent, UrlForm};
 use super::player::{Graveyard, PlayerView};
 use super::theme::layout::{DROP_INSET, TOOLBAR_HEIGHT, TRAFFIC_LIGHTS, WINDOW_MIN_SIZE};
@@ -92,12 +93,25 @@ pub struct Workspace {
 }
 
 impl Workspace {
-    /// Open an empty window of the given size, centered on the screen.
+    /// Open an empty window of the given size, centered on the display in
+    /// use.
     pub fn open_window(window_size: Size<Pixels>, cx: &mut App) -> Result<WindowHandle<Self>> {
-        let bounds = Bounds::centered(None, window_size, cx);
+        let display = displays::in_use(cx);
+        let bounds = Bounds::centered(display, window_size, cx);
+        Self::open_window_at(display, bounds, cx)
+    }
+
+    /// Open an empty window at `bounds` on `display`, relative to it; the
+    /// main display when `None`.
+    pub(crate) fn open_window_at(
+        display: Option<DisplayId>,
+        bounds: Bounds<Pixels>,
+        cx: &mut App,
+    ) -> Result<WindowHandle<Self>> {
         cx.open_window(
             WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
+                display_id: display,
                 titlebar: Some(TitlebarOptions {
                     title: Some("Plays".into()),
                     appears_transparent: true,

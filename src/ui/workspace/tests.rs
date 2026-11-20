@@ -6,8 +6,8 @@ mod casting_to_chromecast;
 mod casting_to_dlna;
 
 use gpui::{
-    AppContext, EntityId, Modifiers, MouseButton, TestAppContext, VisualTestContext, WindowHandle,
-    px, size,
+    AnyWindowHandle, AppContext, Bounds, EntityId, Modifiers, MouseButton, TestAppContext,
+    VisualTestContext, WindowHandle, point, px, size,
 };
 
 use super::{TOOLBAR_SPACE, Workspace};
@@ -21,7 +21,7 @@ use crate::ui::testing::{
     self, OPEN_WAIT, click, double_click, find, fixture, hover, press, shows, wait_until,
 };
 use crate::ui::theme::backdrop;
-use crate::ui::theme::layout::WINDOW_MIN_SIZE;
+use crate::ui::theme::layout::{WINDOW_GAP, WINDOW_MIN_SIZE, WINDOW_SIZE};
 use crate::ui::theme::motion::FIT_POLL;
 
 /// Open `files` into `window`, and wait until every one of them has
@@ -513,6 +513,76 @@ fn picture_in_picture_going_back_brings_the_app_and_its_window_forward(cx: &mut 
     cx.update(|window, _| window.toggle_fullscreen());
     pip_says(&mut cx, PipEvent::Stopped);
     assert_eq!(cx.app_activations(), before + 1);
+}
+
+/// The display `window` is on.
+fn display_of(window: AnyWindowHandle, cx: &mut VisualTestContext) -> Option<u32> {
+    window
+        .update(cx, |_, window, cx| displays::of(window, cx))
+        .unwrap()
+}
+
+#[gpui::test]
+fn new_windows_open_on_the_display_in_use(cx: &mut TestAppContext) {
+    let (first, mut cx) = testing::start(cx);
+    let main = display_of(first.into(), &mut cx);
+    let second = cx.add_display(size(px(2560.), px(1440.)));
+    assert_ne!(main, Some(u32::from(second)));
+
+    // A window on the second display, in front.
+    let there = cx
+        .update(|_, cx| {
+            let bounds = Bounds::centered(Some(second), WINDOW_SIZE, cx);
+            Workspace::open_window_at(Some(second), bounds, cx)
+        })
+        .unwrap();
+    let mut there_cx = VisualTestContext::from_window(there.into(), &cx);
+    there_cx.update(|window, _| window.activate_window());
+    there_cx.run_until_parked();
+
+    let next = cx
+        .update(|_, cx| Workspace::open_window(WINDOW_SIZE, cx))
+        .unwrap();
+    assert_eq!(
+        display_of(next.into(), &mut cx),
+        Some(u32::from(second)),
+        "a new window opens where the one in front is"
+    );
+
+    cx.update(|_, cx| SettingsView::open_window(cx));
+    cx.run_until_parked();
+    let settings = cx
+        .windows()
+        .into_iter()
+        .find_map(|window| window.downcast::<SettingsView>())
+        .expect("a Settings window");
+    assert_eq!(
+        display_of(settings.into(), &mut cx),
+        Some(u32::from(second)),
+        "and Settings with it"
+    );
+
+    // A tile popped out goes beside its window, on its display.
+    open(there, &mut there_cx, &["clip.mp4", "tone.m4a"], false);
+    let from = there_cx.update(|window, _| window.bounds());
+    let before = there_cx.windows();
+    hover(&mut there_cx, "tile-0");
+    click(&mut there_cx, "pop-out");
+    there_cx.run_until_parked();
+    let popped = there_cx
+        .windows()
+        .into_iter()
+        .find(|window| !before.contains(window))
+        .expect("a window for the tile");
+    assert_eq!(display_of(popped, &mut there_cx), Some(u32::from(second)));
+    let bounds = popped
+        .update(&mut there_cx, |_, window, _| window.bounds())
+        .unwrap();
+    assert_eq!(
+        bounds.origin,
+        point(from.right() + WINDOW_GAP, from.top()),
+        "to its right, the tops level"
+    );
 }
 
 #[gpui::test]
