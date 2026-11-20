@@ -162,7 +162,9 @@ the end, with them unknown), keeping up when frames are consumed rarely, a
 decoder thread panicking (saying so and waiting no more), a paused
 player's decoder sleeping, and hardware decoding (VideoToolbox is required
 on macOS); unit tests read timestamps at the ends of what they can be, and
-take colors FFmpeg has no names for as unspecified. The mixer's tests
+take colors FFmpeg has no names for as unspecified, and check that nothing
+decoded or found for a seek (frames, sound, where a skip landed, the end
+of the file) is handed out once the next has started. The mixer's tests
 count, with an allocator of their own, that mixing neither allocates nor
 frees, and hold its locks and the clock's on another thread to see it
 doesn't wait for them. On macOS, zero-copy frames are read back and run

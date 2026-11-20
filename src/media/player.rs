@@ -1,20 +1,16 @@
 use std::collections::VecDeque;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::Ordering;
 use std::sync::mpsc::{self, Sender};
 use std::time::{Duration, Instant};
 
 use gpui::RenderImage;
-use parking_lot::Mutex;
 
-use super::audio::{AudioSource, Mixer};
-use super::clock::Clock;
-use super::decoder::{
-    self, Command, DecodeOptions, Doorbell, MediaInfo, SeekMode, Shared, VideoFrame, VideoQueue,
-};
+use super::audio::Mixer;
+use super::decoder::{self, Command, DecodeOptions, MediaInfo, SeekMode, Shared, VideoFrame};
 use super::picture::Picture;
 use super::source::Source;
-use super::subtitles::{CueContent, CueQueue};
+use super::subtitles::CueContent;
 use super::tracks::TrackKind;
 
 /// Network streams start (and resume after running dry) once this many
@@ -180,33 +176,13 @@ impl Stats {
 
 impl Player {
     pub fn open(source: Source, mixer: Option<Arc<Mixer>>, options: PlayerOptions) -> Self {
-        let clock = Arc::new(Clock::new());
-        let serial = Arc::new(AtomicU64::new(1));
-        let audio = mixer.as_ref().map(|mixer| {
-            let source = Arc::new(AudioSource::new(
-                clock.clone(),
-                serial.clone(),
-                mixer.sample_rate(),
-                options.volume,
-            ));
-            mixer.add_source(source.clone());
-            source
-        });
-        let shared = Arc::new(Shared {
-            clock,
-            serial,
-            info: Mutex::new(None),
-            error: Mutex::new(None),
-            video: Mutex::new(VideoQueue::default()),
-            audio,
-            cover: Mutex::new(None),
-            subtitles: Mutex::new(CueQueue::default()),
-            eof_serial: AtomicU64::new(0),
-            read_ahead: AtomicU64::new(0.0f64.to_bits()),
-            stop: AtomicBool::new(false),
-            landed: Mutex::new(None),
-            wake: Doorbell::default(),
-        });
+        let shared = Arc::new(Shared::new(
+            mixer.as_ref().map(|mixer| mixer.sample_rate()),
+            options.volume,
+        ));
+        if let (Some(mixer), Some(audio)) = (&mixer, shared.audio()) {
+            mixer.add_source(audio.clone());
+        }
         let name = source.name();
         let network = source.is_network();
         let (commands, receiver) = mpsc::channel();
@@ -241,28 +217,20 @@ impl Player {
 
     /// What the file holds, once it is known: shared, not copied.
     pub fn info(&self) -> Option<Arc<MediaInfo>> {
-        self.shared.info.lock().clone()
+        self.shared.info()
     }
 
     /// Whether it is known yet what the file holds.
     pub fn is_known(&self) -> bool {
-        self.shared.info.lock().is_some()
+        self.shared.info().is_some()
     }
 
     pub fn has_video(&self) -> bool {
-        self.shared
-            .info
-            .lock()
-            .as_ref()
-            .is_some_and(|i| i.has_video)
+        self.shared.info().is_some_and(|i| i.has_video)
     }
 
     pub fn has_audio(&self) -> bool {
-        self.shared
-            .info
-            .lock()
-            .as_ref()
-            .is_some_and(|i| i.has_audio)
+        self.shared.info().is_some_and(|i| i.has_audio)
     }
 
     /// How long until the next frame decoded is due, while it plays: for
@@ -271,15 +239,14 @@ impl Player {
         if !self.playing || self.buffering {
             return None;
         }
-        let serial = self.shared.serial.load(Ordering::Acquire);
-        let queue = self.shared.video.lock();
-        let next = queue.frames.front().filter(|_| queue.serial == serial)?;
-        let left = next.pts - self.shared.clock.now();
+        let frames = self.shared.frames()?;
+        let next = frames.front()?;
+        let left = next.pts - self.shared.clock().now();
         Some(Duration::from_secs_f64(left.max(0.0)))
     }
 
     pub fn error(&self) -> Option<String> {
-        self.shared.error.lock().clone()
+        self.shared.error()
     }
 
     pub fn frame(&self) -> Option<Picture> {
@@ -303,7 +270,7 @@ impl Player {
     }
 
     pub fn cover(&self) -> Option<Arc<RenderImage>> {
-        self.shared.cover.lock().clone()
+        self.shared.cover()
     }
 
     pub fn is_playing(&self) -> bool {
@@ -321,7 +288,7 @@ impl Player {
 
     /// A live network stream, which has no duration and can't seek.
     pub fn is_live(&self) -> bool {
-        self.shared.info.lock().as_ref().is_some_and(|i| i.live)
+        self.shared.info().is_some_and(|i| i.live)
     }
 
     pub fn is_looping(&self) -> bool {
@@ -347,7 +314,7 @@ impl Player {
         if same {
             return;
         }
-        if let Some(audio) = &self.shared.audio {
+        if let Some(audio) = self.shared.audio() {
             if let Some(old) = &self.mixer {
                 old.remove_source(audio);
             }
@@ -363,11 +330,11 @@ impl Player {
     }
 
     pub fn duration(&self) -> Option<f64> {
-        self.shared.info.lock().as_ref().and_then(|i| i.duration)
+        self.shared.info().and_then(|i| i.duration)
     }
 
     pub fn position(&self) -> f64 {
-        let now = self.shared.clock.now().max(0.0);
+        let now = self.shared.clock().now().max(0.0);
         match self.duration() {
             Some(duration) => now.min(duration),
             None => now,
@@ -376,7 +343,7 @@ impl Player {
 
     /// Current audio level, 0..1.
     pub fn level(&self) -> f32 {
-        self.shared.audio.as_ref().map_or(0.0, |a| a.peak.load())
+        self.shared.audio().map_or(0.0, |a| a.peak.load())
     }
 
     pub fn play(&mut self) {
@@ -412,7 +379,7 @@ impl Player {
             Some(duration) => time.clamp(0.0, duration),
             None => time.max(0.0),
         };
-        let serial = self.shared.serial.fetch_add(1, Ordering::AcqRel) + 1;
+        let serial = self.shared.new_serial();
         self.ended = false;
         // A scrub waits for nothing: it has no sound, and plays on only
         // after a seek.
@@ -423,9 +390,9 @@ impl Player {
         } else {
             self.start_buffering();
         }
-        let from = self.shared.clock.now();
-        self.shared.subtitles.lock().seeked(from, time);
-        self.shared.clock.set(time);
+        let from = self.shared.clock().now();
+        self.shared.subtitles().seeked(from, time);
+        self.shared.clock().set(time);
         self.send(Command::Seek { time, serial, mode });
     }
 
@@ -441,18 +408,14 @@ impl Player {
     /// Play another track, or turn subtitles off (`None`). The new track is
     /// read from the playhead; until it is, the picture on screen stays.
     pub fn select_track(&mut self, kind: TrackKind, index: Option<usize>) {
-        {
-            let mut info = self.shared.info.lock();
-            let Some(info) = info.as_mut().filter(|info| info.selected(kind) != index) else {
-                return;
-            };
-            // Shown in menus right away; the decoder puts it back if the
-            // track can't be played.
-            Arc::make_mut(info).select(kind, index);
+        // Shown in menus right away; the decoder puts it back if the
+        // track can't be played.
+        if !self.shared.select_track(kind, index) {
+            return;
         }
         self.send(Command::Select { kind, index });
         if index.is_none() {
-            self.shared.subtitles.lock().clear();
+            self.shared.subtitles().clear();
         } else if kind != TrackKind::Subtitle && !self.is_live() {
             // Subtitles start with the packets kept of them, so the picture
             // plays on; the others start at the playhead. Live streams can't
@@ -464,37 +427,36 @@ impl Player {
     /// Tell the decode thread, waking it.
     fn send(&self, command: Command) {
         let _ = self.commands.send(command);
-        self.shared.wake.ring();
+        self.shared.ring();
     }
 
     /// How many times the decode thread has waited for something to do.
     #[cfg(test)]
     pub(super) fn decoder_waits(&self) -> u64 {
-        self.shared.wake.waits()
+        self.shared.waits()
     }
 
     /// The seek generation, for tests to tell whether something seeked.
     #[cfg(test)]
     pub(super) fn serial(&self) -> u64 {
-        self.shared.serial.load(Ordering::Acquire)
+        self.shared.serial()
     }
 
     /// The times of the frames decoded for the last seek and not yet shown.
     #[cfg(test)]
     pub(super) fn queued(&self) -> Vec<f64> {
-        let queue = self.shared.video.lock();
-        if queue.serial != self.serial() {
+        let Some(frames) = self.shared.frames() else {
             return Vec::new();
-        }
-        queue.frames.iter().map(|frame| frame.pts).collect()
+        };
+        frames.iter().map(|frame| frame.pts).collect()
     }
 
     /// The subtitles showing now.
     /// Seeks keep the cues decoded around the playhead, so going back a
     /// frame keeps them on screen.
     pub fn subtitles(&self) -> Vec<Arc<CueContent>> {
-        let now = self.shared.clock.now();
-        self.shared.subtitles.lock().showing(now)
+        let now = self.shared.clock().now();
+        self.shared.subtitles().showing(now)
     }
 
     /// Skip some seconds forward or back. Where keyframes are far apart, it
@@ -511,7 +473,7 @@ impl Player {
 
     pub fn set_muted(&mut self, muted: bool) {
         self.muted = muted;
-        if let Some(audio) = &self.shared.audio {
+        if let Some(audio) = self.shared.audio() {
             audio.muted.store(muted, Ordering::Relaxed);
         }
     }
@@ -520,8 +482,7 @@ impl Player {
     /// (negative: earlier).
     pub fn audio_delay(&self) -> f64 {
         self.shared
-            .audio
-            .as_ref()
+            .audio()
             .map_or(0.0, |audio| f64::from(audio.delay.load()))
     }
 
@@ -529,7 +490,7 @@ impl Player {
     /// it), up to `MAX_AUDIO_DELAY` either way. The sound plays on as it
     /// was; the picture, and the playhead with it, moves against it.
     pub fn set_audio_delay(&mut self, delay: f64) {
-        if let Some(audio) = &self.shared.audio {
+        if let Some(audio) = self.shared.audio() {
             let delay = delay.clamp(-MAX_AUDIO_DELAY, MAX_AUDIO_DELAY);
             audio.delay.store(delay as f32);
         }
@@ -538,7 +499,7 @@ impl Player {
     /// Hear the sound elsewhere, on a device a cast sends it to, or here
     /// again. While it's elsewhere, the picture follows it (`follow`).
     pub fn set_sound_elsewhere(&mut self, elsewhere: bool) {
-        if let Some(audio) = &self.shared.audio {
+        if let Some(audio) = self.shared.audio() {
             audio.elsewhere.store(elsewhere, Ordering::Relaxed);
         }
     }
@@ -547,8 +508,7 @@ impl Player {
     #[cfg(test)]
     pub fn is_sound_elsewhere(&self) -> bool {
         self.shared
-            .audio
-            .as_ref()
+            .audio()
             .is_some_and(|audio| audio.elsewhere.load(Ordering::Relaxed))
     }
 
@@ -561,25 +521,25 @@ impl Player {
         if off > FOLLOW_SEEK || (!self.is_playing() && off > FOLLOW_STILL) {
             self.seek(time);
         } else {
-            self.shared.clock.ease_to(time, Instant::now());
+            self.shared.clock().ease_to(time, Instant::now());
         }
     }
 
     /// How much later than their times subtitles show, in seconds
     /// (negative: earlier).
     pub fn subtitle_delay(&self) -> f64 {
-        self.shared.subtitles.lock().delay
+        self.shared.subtitles().delay
     }
 
     /// Show subtitles `delay` seconds after their times (negative: before),
     /// up to `MAX_SUBTITLE_DELAY` either way.
     pub fn set_subtitle_delay(&mut self, delay: f64) {
-        self.shared.subtitles.lock().delay = delay.clamp(-MAX_SUBTITLE_DELAY, MAX_SUBTITLE_DELAY);
+        self.shared.subtitles().delay = delay.clamp(-MAX_SUBTITLE_DELAY, MAX_SUBTITLE_DELAY);
     }
 
     pub fn set_volume(&mut self, volume: f32) {
         self.volume = volume.clamp(0.0, 1.0);
-        if let Some(audio) = &self.shared.audio {
+        if let Some(audio) = self.shared.audio() {
             audio.volume.store(self.volume);
         }
     }
@@ -595,11 +555,11 @@ impl Player {
     fn apply_running(&self) {
         let running = self.playing && !self.buffering;
         if running {
-            self.shared.clock.start();
+            self.shared.clock().start();
         } else {
-            self.shared.clock.pause();
+            self.shared.clock().pause();
         }
-        if let Some(audio) = &self.shared.audio {
+        if let Some(audio) = self.shared.audio() {
             audio.playing.store(running, Ordering::Relaxed);
         }
     }
@@ -616,51 +576,45 @@ impl Player {
         if self.error().is_some() {
             return tick;
         }
-        let serial = self.shared.serial.load(Ordering::Acquire);
+        let serial = self.shared.serial();
         // A skip landed on a keyframe away from where it was asked to.
-        let landed = self.shared.landed.lock().take();
-        if let Some((landed_serial, time)) = landed
-            && landed_serial == serial
-        {
-            self.shared.clock.set(time);
+        if let Some(time) = self.shared.take_landed() {
+            self.shared.clock().set(time);
         }
-        let eof = self.shared.eof_serial.load(Ordering::Acquire) == serial;
-        let has_audio = info.has_audio && self.shared.audio.is_some();
+        let eof = self.shared.eof();
+        let has_audio = info.has_audio && self.shared.audio().is_some();
         let running = self.playing && !self.buffering;
         let stale = self.current.as_ref().is_none_or(|f| f.serial != serial);
 
         let mut next = None;
         let mut queued_frames = None;
-        {
-            let mut queue = self.shared.video.lock();
-            if queue.serial == serial {
-                if self.scrubbing {
-                    // A scrub queues only what is to be seen: the latest.
-                    next = queue.frames.drain(..).next_back();
-                } else if stale {
-                    // After opening or seeking, show the first frame right
-                    // away.
-                    next = queue.frames.pop_front();
-                }
-                if running {
-                    let now = self.shared.clock.now();
-                    let mut popped = 0;
-                    while queue.frames.front().is_some_and(|f| f.pts <= now) {
-                        next = queue.frames.pop_front();
-                        popped += 1;
-                    }
-                    if let Some(frame) = next.as_ref().filter(|_| popped > 0) {
-                        self.stats.record(now - frame.pts, popped - 1);
-                        self.recent.record(now - frame.pts, popped - 1);
-                    }
-                }
-                queued_frames = Some(queue.frames.len());
+        if let Some(mut frames) = self.shared.frames() {
+            if self.scrubbing {
+                // A scrub queues only what is to be seen: the latest.
+                next = frames.drain(..).next_back();
+            } else if stale {
+                // After opening or seeking, show the first frame right
+                // away.
+                next = frames.pop_front();
             }
+            if running {
+                let now = self.shared.clock().now();
+                let mut popped = 0;
+                while frames.front().is_some_and(|f| f.pts <= now) {
+                    next = frames.pop_front();
+                    popped += 1;
+                }
+                if let Some(frame) = next.as_ref().filter(|_| popped > 0) {
+                    self.stats.record(now - frame.pts, popped - 1);
+                    self.recent.record(now - frame.pts, popped - 1);
+                }
+            }
+            queued_frames = Some(frames.len());
         }
         if let Some(frame) = next {
             tick.retired = self.current.replace(frame).map(|f| f.picture);
             // Room for another.
-            self.shared.wake.ring();
+            self.shared.ring();
         }
         let video_drained = queued_frames == Some(0);
         let current_pts = self
@@ -668,18 +622,6 @@ impl Player {
             .as_ref()
             .filter(|f| f.serial == serial)
             .map(|f| f.pts);
-
-        // Seconds of decoded audio for this serial.
-        let audio_buffered = || {
-            self.shared.audio.as_ref().map_or(0.0, |a| {
-                let queue = a.queue.lock();
-                if queue.serial == serial {
-                    queue.buffered_seconds()
-                } else {
-                    0.0
-                }
-            })
-        };
 
         if self.buffering {
             // Files play as soon as there is something to play; network
@@ -690,9 +632,9 @@ impl Player {
             let audio_ready = !has_audio
                 || eof
                 || if self.network {
-                    audio_buffered() >= STREAM_START_AUDIO_SECONDS
+                    self.shared.queued_audio() >= STREAM_START_AUDIO_SECONDS
                 } else {
-                    audio_buffered() > 0.0
+                    self.shared.queued_audio() > 0.0
                 };
             let read_ahead_ready = !self.network
                 || eof
@@ -705,7 +647,7 @@ impl Player {
         } else if self.playing
             && eof
             && (!info.has_video || video_drained)
-            && (!has_audio || audio_buffered() == 0.0)
+            && (!has_audio || self.shared.queued_audio() == 0.0)
         {
             if self.looping && !info.live {
                 self.seek(0.0);
@@ -718,12 +660,12 @@ impl Player {
             // A network stream ran dry: hold the clock until data arrives again
             // instead of playing on in silence with a frozen picture.
             let starved = if has_audio {
-                audio_buffered() == 0.0
+                self.shared.queued_audio() == 0.0
             } else {
                 let frame_time = info.frame_rate.map_or(0.04, |fps| 1.0 / fps);
                 video_drained
                     && current_pts.is_some_and(|pts| {
-                        self.shared.clock.now() - pts > (2.0 * frame_time).max(0.5)
+                        self.shared.clock().now() - pts > (2.0 * frame_time).max(0.5)
                     })
             };
             if starved {
@@ -738,24 +680,9 @@ impl Player {
 
     /// How playback is going, for the console.
     pub fn stats(&self) -> PlaybackStats {
-        let serial = self.shared.serial.load(Ordering::Acquire);
         let (shown_fps, lateness) = self.recent.rate();
-        let queued_frames = {
-            let queue = self.shared.video.lock();
-            if queue.serial == serial {
-                queue.frames.len()
-            } else {
-                0
-            }
-        };
-        let queued_audio = self.shared.audio.as_ref().map_or(0.0, |audio| {
-            let queue = audio.queue.lock();
-            if queue.serial == serial {
-                queue.buffered_seconds()
-            } else {
-                0.0
-            }
-        });
+        let queued_frames = self.shared.frames().map_or(0, |frames| frames.len());
+        let queued_audio = self.shared.queued_audio();
         PlaybackStats {
             shown_fps,
             shown: self.recent.total,
@@ -770,7 +697,7 @@ impl Player {
     /// Take every picture this player may have drawn, so they can be released.
     pub fn take_pictures(&mut self) -> Vec<Picture> {
         let mut pictures: Vec<_> = self.current.take().map(|f| f.picture).into_iter().collect();
-        pictures.extend(self.shared.cover.lock().take().map(Picture::Image));
+        pictures.extend(self.shared.take_cover().map(Picture::Image));
         pictures
     }
 }
@@ -778,9 +705,9 @@ impl Player {
 impl Drop for Player {
     fn drop(&mut self) {
         // Aborts a network connection or read that is still blocking.
-        self.shared.stop.store(true, Ordering::Relaxed);
+        self.shared.stop();
         self.send(Command::Stop);
-        if let (Some(mixer), Some(audio)) = (&self.mixer, &self.shared.audio) {
+        if let (Some(mixer), Some(audio)) = (&self.mixer, self.shared.audio()) {
             mixer.remove_source(audio);
         }
     }

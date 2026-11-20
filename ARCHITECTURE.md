@@ -97,7 +97,7 @@ device the file.
 The threads, then:
 
 - the UI thread, where gpui runs everything in `src/app` and `src/ui`;
-- two per player, `demux` and `decode` (`src/media/decoder.rs`);
+- two per player, `demux` and `decode` (`src/media/decoder/`);
 - two per audio output: one that holds it and opens its devices
   (`src/app/audio.rs`), and cpal's callback, or a thread that runs the
   mixer in time when there is no device (`src/media/output.rs`);
@@ -188,7 +188,7 @@ flowchart TB
 Audio is the master: the picture follows the clock, and the clock follows
 the sound being heard. A file with no sound plays on wall time.
 
-- `src/media/decoder.rs`: two threads per file or stream. The demux thread
+- `src/media/decoder/`: two threads per file or stream. The demux thread
   reads packets ahead (about a second for files, up to 15 s for network
   streams so a slow connection doesn't stall decoding) and carries out
   seeks. The decode thread decodes only while its output queues have room,
@@ -214,7 +214,14 @@ the sound being heard. A file with no sound plays on wall time.
   packets are kept for a few seconds, so a subtitle track picked starts
   with them, without a seek. Either thread failing, by an error or a
   panic, says why for the tile to show, the first to fail standing, and
-  the player stops waiting for more.
+  the player stops waiting for more. `mod.rs` has the decode thread and
+  what it is told; `demux.rs` the demux thread and its packet queues;
+  `video.rs` and `audio.rs` the two decoders; `convert.rs` turning frames
+  into pictures. `shared.rs` holds what a player and its threads share,
+  behind methods: each seek starts a generation, numbered by a serial, and
+  what was decoded or found for an earlier one (frames, sound, where a
+  skip landed, the end of the file) is never handed out once the next has
+  started, so nothing that takes from it checks the serial itself.
 - `src/media/player.rs`: the UI-side handle: play/pause/seek, frame
   selection, buffering after seeks (and, for streams, until a second is
   read ahead or when the network runs dry), end-of-file and looping, and
