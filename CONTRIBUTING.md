@@ -314,37 +314,39 @@ the MP4 as it is), and pauses the tile. Space, the arrows and `M` play,
 pause, seek and mute it, not the tile, and the bar follows where it says
 it is; so do the buttons of a Picture in Picture window, which isn't
 offered while the picture plays there, and they play and pause a speaker
-a video's sound is cast to. Play Here goes on in the tile from where the device was, paused as
-it was, the device stops and the file is no longer served. A device going
-away ends the cast the same way, and the cast button goes with the last
-device; quitting stops the device. Subtitles picked on a Matroska file
-cast as HLS reach the device as WebVTT with the file's cues, and turning
-them off hides them, without loading it again; another sound track loads
-it again with them still going along. DVD subtitles picked stay on this
-computer, the tile says, where the file goes as it is; where it is
-re-encoded they are drawn in, the file loaded again from where it was at a
-URL of its own, the first no longer served, and turning them off loads it
-again without them (macOS). Speakers are offered for anything with sound,
-and get a file of sound alone as it is. A video's sound goes to a speaker
-as a stream of AAC, its picture staying on the tile, which waits while the
-speaker plays but hasn't moved, plays once it's seen moving, pauses with
-it where it stopped (from the speaker or the tile), and keeps its place
-and its sound when the cast ends; dragging the slider shows the picture
-where it's dragged, however often the speaker says where it is, and the
-speaker seeks there once it's let go; a video without sound isn't sent to
-one. Video → Output Device lists the devices that show video after the
+a video's sound is cast to. Play Here goes on in the tile from where the
+device was, paused as it was, the device stops, and with no cast left the
+stream server stops listening. A device going away ends the cast the same
+way, and the cast button goes with the last device; quitting stops the
+device. Subtitles picked on a Matroska file cast as HLS reach the device
+as WebVTT with the file's cues, and turning them off hides them, without
+loading it again; another sound track loads it again with them still
+going along. DVD subtitles picked stay on this computer, the tile says,
+where the file goes as it is; where it is re-encoded they are drawn in,
+the file loaded again from where it was at a URL of its own, the first no
+longer served, and turning them off loads it again without them (macOS).
+Speakers are offered for anything with sound, and get a file of sound
+alone as it is. A video's sound goes to a speaker as a stream of AAC, its
+picture staying on the tile, which waits while the speaker plays but
+hasn't moved, plays once it's seen moving, pauses with it where it
+stopped (from the speaker or the tile), and keeps its place and its sound
+when the cast ends; dragging the slider shows the picture where it's
+dragged, however often the speaker says where it is, and the speaker
+seeks there once it's let go; a video without sound isn't sent to one.
+Video → Output Device lists the devices that show video after the
 displays, checking the one the tile in front casts to instead of the
 display; a speaker it casts to leaves the display checked. Audio → Output
 Device lists the speakers after this computer's outputs for a tile with
-sound and none for one without, checking the one cast to (or a TV) instead
-of the output. Settings → Casting lists the devices found, a new one as
-it's found, and turning a protocol off there saves it off, stops it
-looking (its target dropped), takes its devices away and leaves a cast to
-one going; turned on, it looks again and finds them. A protocol that takes
-a while to stop doesn't hold up the windows: it stops on another thread. One off from the
-start never looks, and other settings or protocols changing leave it as it
-is; one that can't start says why and tries again when turned off and on.
-Each test has been checked to fail when the behavior it covers is broken.
+sound and none for one without, checking the one cast to (or a TV)
+instead of the output. Settings → Casting lists the devices found, a new
+one as it's found, and turning a protocol off there saves it off, stops
+it looking (its target dropped), takes its devices away and leaves a cast
+to one going; turned on, it looks again and finds them. A protocol that
+takes a while to stop doesn't hold up the windows: it stops on another
+thread. One off from the start never looks, and other settings or
+protocols changing leave it as it is; one that can't start says why and
+tries again when turned off and on. Each test has been checked to fail
+when the behavior it covers is broken.
 
 Casting to DLNA is tested with the DLNA crate's fake renderer, found as it
 would be on the network. Picking the TV gives it the tile's Matroska file
@@ -402,31 +404,32 @@ fail when the behavior it covers is broken.
 The stream server's tests serve the fixtures over HTTP, as a device
 fetches them, and read what comes back with FFmpeg: the plan for each
 fixture; a file as it is, with byte ranges, HEAD, CORS, DLNA's headers and
-nothing served but what was cast; HLS in both kinds of segments, each
-starting with a keyframe (and MPEG-TS ones with their tables) at its time,
-with every frame and all the sound once; a segment asked for first, made
-by a job starting there, the same as one made from the start; sound
-re-encoded to AC-3; video re-encoded smaller on VideoToolbox, in both
-kinds of segments, each holding only the sound that plays during it though
-the encoder hands frames back late (macOS; with no hardware encoder, as in
-the Linux test container, planning it must fail); a progressive stream
-from a DLNA time seek; a video's sound alone for a speaker taking only
-files, as ADTS copied, encoded from Opus to AAC, and as FLAC, seeking by
-time too, and nothing for a video's picture or a speaker without such
-streams; a live stream; subtitles from a file and from a track in
-`clip-subs.mkv`, as WebVTT, SRT and an HLS rendition, which a device given
-them beside it doesn't find in the playlist; and the DVD subtitles in
-`clip-dvdsub.mkv`, left out of video copied and not served as text, and
-drawn into video re-encoded, each frame at a cue's time differing from the
-same frame without them where its cue's bar is and nowhere else (macOS).
-Unit tests check how far ahead a job runs, where it restarts and what it
-forgets, packets given their lengths, byte ranges, a request's head too
-long refused before it's all read, one sent a byte at a time cut off when a
-whole one would be, connections past the most served at once closed and
-their places given back, codec names from
-parameter sets, playlists, subtitle text, and picture subtitles' timing,
-colors (PQ and HLG at graphics white), scaling and blending into NV12 and
-P010. Each has been checked to fail when what it covers is broken.
+nothing served but what was cast, and only to the device it was cast to;
+HLS in both kinds of segments, each starting with a keyframe (and MPEG-TS
+ones with their tables) at its time, with every frame and all the sound
+once; a segment asked for first, made by a job starting there, the same as
+one made from the start; sound re-encoded to AC-3; video re-encoded
+smaller on VideoToolbox, in both kinds of segments, each holding only the
+sound that plays during it though the encoder hands frames back late
+(macOS; with no hardware encoder, as in the Linux test container, planning
+it must fail); a progressive stream from a DLNA time seek; a video's sound
+alone for a speaker taking only files, as ADTS copied, encoded from Opus
+to AAC, and as FLAC, seeking by time too, and nothing for a video's
+picture or a speaker without such streams; a live stream; subtitles from a
+file and from a track in `clip-subs.mkv`, as WebVTT, SRT and an HLS
+rendition, which a device given them beside it doesn't find in the
+playlist; and the DVD subtitles in `clip-dvdsub.mkv`, left out of video
+copied and not served as text, and drawn into video re-encoded, each frame
+at a cue's time differing from the same frame without them where its cue's
+bar is and nowhere else (macOS). Unit tests check how far ahead a job
+runs, where it restarts and what it forgets, packets given their lengths,
+byte ranges, a request's head too long refused before it's all read, one
+sent a byte at a time cut off when a whole one would be, connections past
+the most served at once closed and their places given back, codec names
+from parameter sets, playlists, subtitle text, and picture subtitles'
+timing, colors (PQ and HLG at graphics white), scaling and blending into
+NV12 and P010. Each has been checked to fail when what it covers is
+broken.
 
 The AirPlay crate's tests talk to the fake receiver as to a real one: a TV
 paired once with its PIN, its credentials kept as text and verified for

@@ -4,7 +4,7 @@
 
 use std::fs::File;
 use std::io::{self, BufRead, BufReader, Read, Seek, SeekFrom, Write};
-use std::net::{Shutdown, TcpListener, TcpStream};
+use std::net::{IpAddr, Shutdown, TcpListener, TcpStream};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -48,6 +48,8 @@ pub(crate) struct Request {
     pub query: String,
     /// Names in lower case.
     pub headers: Vec<(String, String)>,
+    /// Who asked, when it came over the network.
+    pub peer: Option<IpAddr>,
 }
 
 impl Request {
@@ -214,12 +216,14 @@ fn connection(stream: TcpStream, handler: &Handler) -> io::Result<()> {
         stream: stream.try_clone()?,
         until: Instant::now(),
     });
+    let peer = stream.peer_addr()?.ip();
     let mut writer = stream;
     loop {
         reader.get_mut().until = Instant::now() + IDLE;
-        let Some((request, keep_alive)) = read_request(&mut reader)? else {
+        let Some((mut request, keep_alive)) = read_request(&mut reader)? else {
             return Ok(());
         };
+        request.peer = Some(peer);
         let response = if request.method == Method::Options {
             Response::status(204)
                 .with("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
@@ -325,6 +329,7 @@ fn read_request(reader: &mut impl BufRead) -> io::Result<Option<(Request, bool)>
         path: path.to_owned(),
         query: query.to_owned(),
         headers,
+        peer: None,
     };
     // Whatever body came with it isn't wanted, but is read past.
     if let Some(len) = request

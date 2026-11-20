@@ -112,6 +112,13 @@ fn cast(
     loads(fake, device).remove(0)
 }
 
+/// Whether anything listens where `url` is.
+fn listening(url: &str) -> bool {
+    let rest = url.strip_prefix("http://").expect("an http:// URL");
+    let host = rest.split('/').next().expect("a host");
+    TcpStream::connect(host).is_ok()
+}
+
 /// What `url` serves: its status and body.
 pub(super) fn get(url: &str) -> (u16, Vec<u8>) {
     let rest = url.strip_prefix("http://").expect("an http:// URL");
@@ -300,8 +307,9 @@ fn ending_the_cast_plays_on_here_from_where_the_device_was(cx: &mut TestAppConte
     wait(&mut cx, "the device to stop", |_| {
         calls(&fake, &tv).contains(&Call::Stop)
     });
-    wait(&mut cx, "the stream server to let the file go", |_| {
-        get(&load.url).0 == 404
+    // With no cast left, the stream server stops listening.
+    wait(&mut cx, "the stream server to stop", |_| {
+        !listening(&load.url)
     });
 }
 

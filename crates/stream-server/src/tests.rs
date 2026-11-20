@@ -242,6 +242,23 @@ fn close(a: f64, b: f64) -> bool {
 }
 
 #[test]
+fn a_cast_is_served_only_to_its_device() {
+    let server = server();
+    let device = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 2));
+    let elsewhere = server
+        .add(
+            CastRequest::new(Source::File(fixture("clip.mp4")), Profile::default()),
+            device,
+        )
+        .expect("the fixture casts");
+    // Asked for from this computer instead.
+    let url = elsewhere.url().replace("127.0.0.2", "127.0.0.1");
+    assert_eq!(get(&url).status, 404);
+    let here = cast(&server, "clip.mp4", Profile::default());
+    assert_eq!(get(&here.url()).status, 200);
+}
+
+#[test]
 fn serves_a_file_as_it_is_with_ranges() {
     let server = server();
     let cast = cast(&server, "clip.mp4", Profile::default());

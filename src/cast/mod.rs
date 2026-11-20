@@ -13,7 +13,7 @@ mod link;
 pub mod target;
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 use std::thread;
 use std::time::Duration;
 
@@ -126,7 +126,8 @@ pub struct Casting {
     devices: Vec<Device>,
     /// Where the stream server listens.
     address: SocketAddr,
-    server: Mutex<Option<Arc<Server>>>,
+    /// The stream server while a cast uses it: it stops once none does.
+    server: Mutex<Weak<Server>>,
 }
 
 impl Global for Casting {}
@@ -296,18 +297,19 @@ impl Casting {
         Ok(Link::start(target, device.clone(), server, request))
     }
 
-    /// The stream server, started the first time it's needed.
+    /// The stream server, started when a cast needs it and none is
+    /// running: casts hold it, and it stops listening once the last ends.
     fn server(&self) -> Result<Arc<Server>, String> {
         let mut server = self.server.lock();
-        if let Some(server) = &*server {
-            return Ok(Arc::clone(server));
+        if let Some(server) = server.upgrade() {
+            return Ok(server);
         }
         let started = Arc::new(
             Server::start_on(self.address)
                 .map_err(|err| format!("can't serve the media: {err}"))?,
         );
         log::info!("stream server on port {}", started.port());
-        *server = Some(Arc::clone(&started));
+        *server = Arc::downgrade(&started);
         Ok(started)
     }
 }

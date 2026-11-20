@@ -171,6 +171,7 @@ impl Server {
             ),
             file_name: file_name(&media.source),
             token: token.clone(),
+            device,
             media,
             output,
             variant,
@@ -327,6 +328,8 @@ fn sound_name(container: Container) -> &'static str {
 
 struct CastState {
     token: String,
+    /// The device it's for, the only one it's served to.
+    device: IpAddr,
     /// `http://host:port/token/`.
     base: String,
     /// The file's name in its URL, keeping its extension for devices that
@@ -663,6 +666,11 @@ impl Shared {
         let Some(state) = lock(&self.casts).get(token).cloned() else {
             return Response::status(404);
         };
+        // Its URL may be seen on the network, but only its device gets it.
+        if let Some(peer) = request.peer.filter(|peer| *peer != state.device) {
+            log::warn!("{peer} asked for a cast to {}", state.device);
+            return Response::status(404);
+        }
         log::debug!("{:?} {name}", request.method);
         state.respond(name, request)
     }

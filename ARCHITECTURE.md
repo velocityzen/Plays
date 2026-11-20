@@ -643,8 +643,10 @@ flowchart LR
   connection, at most 64 at once, kept open between requests for 30
   seconds, in which the next request's head must all come: GET, HEAD and
   OPTIONS, byte ranges, CORS for Chromecast, and DLNA's headers (content
-  features, time seeks, Samsung's subtitles header). Each cast is served under a random
-  token, at the address the device reaches this computer at.
+  features, time seeks, Samsung's subtitles header). Each cast is served
+  under a random token, at the address the device reaches this computer
+  at, and only to that device. The app starts the server for a cast and it
+  stops once no cast uses it.
 
 It re-encodes video only on a hardware encoder, so a computer without one
 (Linux without NVENC or VA-API) can't cast video a device doesn't play as
