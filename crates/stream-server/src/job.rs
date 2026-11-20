@@ -65,6 +65,12 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
+/// Reads that fail partway, for the tests: a source's location, and how
+/// many packets the next job reading it gets before its reads fail as a
+/// disk's or a network's might. Jobs after it read the source as it is.
+#[cfg(test)]
+pub(crate) static BREAKS: Mutex<Vec<(String, usize)>> = Mutex::new(Vec::new());
+
 /// A packet on its way out.
 struct Out {
     packet: Packet,
@@ -156,6 +162,17 @@ struct Track {
     work: Work,
 }
 
+/// What reading a source failing partway comes to.
+#[derive(Clone, Copy)]
+enum Broken {
+    /// The source ends there. For a live stream or a progressive one,
+    /// which can't be made again from where it broke.
+    Ends,
+    /// The job fails, so the segments past it aren't made (empty, as at
+    /// the source's end) but asked for again, by a job of their own.
+    Fails,
+}
+
 /// Reading a source and turning its packets into output packets, written
 /// through a muxer.
 struct Pipeline {
@@ -165,6 +182,9 @@ struct Pipeline {
     lengths: Lengths,
     /// Each output stream's latest time, for packets that have none.
     times: Vec<f64>,
+    /// Packets read before reads fail, from `BREAKS`.
+    #[cfg(test)]
+    reads_left: Option<usize>,
 }
 
 /// Each output stream's latest packet, held until the next one says how
@@ -396,16 +416,35 @@ impl Pipeline {
                 tracks,
                 lengths: Lengths::new(count),
                 times: vec![0.0; count],
+                #[cfg(test)]
+                reads_left: {
+                    let location = media.source.location();
+                    let mut breaks = lock(&BREAKS);
+                    let at = breaks.iter().position(|(source, _)| *source == location);
+                    at.map(|at| breaks.remove(at).1)
+                },
             },
             header,
         ))
     }
 
     /// Read the next packet and turn it into output packets; false at the
-    /// end of the source.
-    fn step(&mut self, outs: &mut Vec<Out>) -> Result<bool, Error> {
+    /// end of the source, or where reading it fails if `broken` says so.
+    fn step(&mut self, outs: &mut Vec<Out>, broken: Broken) -> Result<bool, Error> {
         let mut packet = Packet::empty();
-        match packet.read(&mut self.input) {
+        let read = packet.read(&mut self.input);
+        #[cfg(test)]
+        let read = match &mut self.reads_left {
+            Some(0) => Err(ffmpeg::Error::Other {
+                errno: ffmpeg::util::error::EIO,
+            }),
+            Some(left) => {
+                *left -= 1;
+                read
+            }
+            None => read,
+        };
+        match read {
             Ok(()) => {}
             Err(ffmpeg::Error::Eof) => {
                 self.flush(outs)?;
@@ -416,12 +455,17 @@ impl Pipeline {
                 thread::sleep(Duration::from_millis(10));
                 return Ok(true);
             }
-            Err(err) => {
-                // As FFmpeg's own tools do: what was read plays, to here.
-                log::warn!("reading the media stopped: {err}");
-                self.flush(outs)?;
-                return Ok(false);
-            }
+            Err(err) => match broken {
+                Broken::Ends => {
+                    // As FFmpeg's own tools do: what was read plays, to here.
+                    log::warn!("reading the media stopped: {err}");
+                    self.flush(outs)?;
+                    return Ok(false);
+                }
+                Broken::Fails => {
+                    return Err(Error::Source(format!("reading the media failed: {err}")));
+                }
+            },
         }
         let index = packet.stream();
         for track in &mut self.tracks {
@@ -768,7 +812,7 @@ fn make_segments(
         if stop.load(Ordering::Relaxed) {
             return Ok(());
         }
-        let more = pipeline.step(&mut outs)?;
+        let more = pipeline.step(&mut outs, Broken::Fails)?;
         for out in outs.drain(..) {
             let leader = out.output == 0;
             if leader && out.key && past(timeline, segment, &out, true) {
@@ -1288,7 +1332,7 @@ fn make_live(
         if stop.load(Ordering::Relaxed) {
             return Ok(());
         }
-        let more = pipeline.step(&mut outs)?;
+        let more = pipeline.step(&mut outs, Broken::Ends)?;
         for out in outs.drain(..) {
             let leader = out.output == 0;
             latest = latest.max(out.time);
@@ -1383,7 +1427,7 @@ fn make_stream(
         if stop.load(Ordering::Relaxed) {
             return Ok(());
         }
-        let more = pipeline.step(&mut outs)?;
+        let more = pipeline.step(&mut outs, Broken::Ends)?;
         for out in outs.drain(..) {
             pipeline.write(out)?;
             written += 1;

@@ -682,11 +682,14 @@ flowchart LR
   wait; asking for one far from the job (a seek), or behind it and no
   longer kept, starts another there, and a segment is cut the same way
   whichever job makes it. Packets without a length get one from the next.
-  A live stream has one job, keeping the last ten segments and listing
-  six. A file that never says how long it is goes the same way, but its
-  job too waits three segments ahead of the device, so it isn't read to
-  its end before the device starts. A progressive stream is made for each
-  request, from the time it asks for.
+  A file's read failing partway (a network share's, say) fails the job, so
+  the segments past it are made again when asked for, not served empty as
+  past the file's end; a live or progressive stream ends there, with what
+  was read. A live stream has one job, keeping the last ten segments and
+  listing six. A file that never says how long it is goes the same way,
+  but its job too waits three segments ahead of the device, so it isn't
+  read to its end before the device starts. A progressive stream is made
+  for each request, from the time it asks for.
 - `overlay.rs`: picture subtitles drawn into video as it is re-encoded.
   The track's packets are decoded as the media is read; a display set
   shows until the next or its own end, and one with nothing in it clears

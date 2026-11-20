@@ -779,6 +779,35 @@ fn re_encodes_video_whose_colors_ffmpeg_has_no_names_for() {
     assert_eq!(frames, 50);
 }
 
+/// A read failing partway through a file, as a network share's might: the
+/// segments past it aren't served empty, and are read again when asked for.
+#[test]
+fn a_read_failing_partway_through_a_file_is_tried_again() {
+    let dir = std::env::temp_dir().join("stream-server-tests");
+    fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("read-fails.mkv");
+    fs::copy(fixture("clip-ip.mkv"), &path).unwrap();
+    // Ten frames into the first segment.
+    let location = path.to_string_lossy().into_owned();
+    crate::job::BREAKS.lock().unwrap().push((location, 10));
+    let server = server();
+    let cast = server
+        .add(
+            CastRequest::new(Source::File(path), hls(Segments::Ts)),
+            LOCALHOST,
+        )
+        .expect("the file casts");
+    // The job asked for it failed, so the request does.
+    assert_eq!(get(&sibling(&cast.url(), "0.ts")).status, 500);
+    // The next is made by a job of its own, whole; so is the first, asked
+    // for again.
+    let (second, _) = fetch(&cast.url(), Segments::Ts, 1);
+    assert_eq!(second.times.len(), 25);
+    assert!(close(second.first(), 11.0), "{}", second.first());
+    let (first, _) = fetch(&cast.url(), Segments::Ts, 0);
+    assert_eq!(first.times.len(), 25);
+}
+
 #[test]
 fn streams_mpeg_ts_from_where_asked() {
     let server = server();
