@@ -640,9 +640,10 @@ flowchart LR
   subtitles, and codec names read from each stream's parameter sets) and
   the media and subtitle playlists.
 - `http.rs`, `server.rs`: a small HTTP/1.1 server with a thread for each
-  connection, kept open between requests: GET, HEAD and OPTIONS, byte
-  ranges, CORS for Chromecast, and DLNA's headers (content features, time
-  seeks, Samsung's subtitles header). Each cast is served under a random
+  connection, at most 64 at once, kept open between requests for 30
+  seconds, in which the next request's head must all come: GET, HEAD and
+  OPTIONS, byte ranges, CORS for Chromecast, and DLNA's headers (content
+  features, time seeks, Samsung's subtitles header). Each cast is served under a random
   token, at the address the device reaches this computer at.
 
 It re-encodes video only on a hardware encoder, so a computer without one
