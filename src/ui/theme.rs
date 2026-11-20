@@ -363,6 +363,11 @@ pub mod motion {
     /// How far into a chapter going to the one before goes back to its
     /// start instead.
     pub const CHAPTER_RESTART: f64 = 2.0;
+    /// How often Black out other displays looks at what to cover.
+    pub const BLACKOUT_POLL: Duration = Duration::from_millis(100);
+    /// How long a covered display shows after the mouse moved or clicked
+    /// on it, as it rests there.
+    pub const BLACKOUT_PEEK: Duration = Duration::from_secs(3);
 }
 
 /// Windows and how tiles fill them.

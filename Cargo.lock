@@ -4642,6 +4642,7 @@ dependencies = [
  "stream-server",
  "unicode-segmentation",
  "url",
+ "x11rb",
 ]
 
 [[package]]

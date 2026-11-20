@@ -15,7 +15,6 @@ use super::{TOOLBAR_SPACE, Workspace};
 use crate::app::ShowOnDisplay;
 use crate::hotkeys::{ToggleFloatOnTop, ToggleFloatOnTopWhilePlaying};
 use crate::settings::{FloatOnTop, FullScreen, PanelLook, Settings};
-use crate::ui::displays;
 use crate::ui::pip::PipEvent;
 use crate::ui::settings::SettingsView;
 use crate::ui::testing::{
@@ -24,6 +23,7 @@ use crate::ui::testing::{
 use crate::ui::theme::backdrop;
 use crate::ui::theme::layout::{WINDOW_GAP, WINDOW_MIN_SIZE, WINDOW_SIZE};
 use crate::ui::theme::motion::FIT_POLL;
+use crate::ui::{blackout, displays};
 
 /// Open `files` into `window`, and wait until every one of them has
 /// opened, and, with `playing`, is playing.
@@ -733,6 +733,39 @@ fn windows_go_full_screen_as_settings_say(cx: &mut TestAppContext) {
         .update(&mut cx, |_, window, _| window.fullscreen_style())
         .unwrap();
     assert_eq!(next, FullscreenStyle::OverDisplay, "a new window too");
+}
+
+#[gpui::test]
+fn other_displays_black_out_while_a_window_is_full_screen(cx: &mut TestAppContext) {
+    let (_, mut cx) = testing::start(cx);
+    let second = u32::from(cx.add_display(size(px(2560.), px(1440.))));
+    // As the app does, outside any window's update.
+    let covered = |cx: &mut VisualTestContext| -> Vec<u32> {
+        cx.run_until_parked();
+        let app: &TestAppContext = cx;
+        app.update(|cx| {
+            blackout::update(cx);
+            blackout::covered(cx)
+        })
+        .iter()
+        .map(|screen| screen.display)
+        .collect()
+    };
+    let full_screen =
+        |cx: &mut VisualTestContext| cx.update(|window, _| window.toggle_fullscreen());
+
+    full_screen(&mut cx);
+    assert_eq!(covered(&mut cx), [0u32; 0], "not unless Settings say");
+    cx.update(|_, cx| Settings::update(cx, false, |s| s.black_out_displays = true));
+    assert_eq!(covered(&mut cx), [second], "the other display");
+
+    full_screen(&mut cx);
+    assert_eq!(covered(&mut cx), [0u32; 0], "not out of full screen");
+
+    full_screen(&mut cx);
+    assert_eq!(covered(&mut cx), [second]);
+    cx.deactivate_window();
+    assert_eq!(covered(&mut cx), [0u32; 0], "nor with another app in front");
 }
 
 #[gpui::test]

@@ -1,4 +1,5 @@
 pub mod about;
+pub mod blackout;
 pub mod components;
 pub mod displays;
 pub mod framing;

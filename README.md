@@ -89,6 +89,12 @@ GPU-accelerated UI framework.
   covers just its own display and goes in and out at once. The other
   displays stay as they are, and the menu bar and Dock keep out of the way
   while the window is in front.
+- Settings → Appearance → Black out other displays covers every other
+  display in black while a window is full screen, for projectors, TVs and
+  dark rooms. Moving the mouse onto a covered display, or clicking it,
+  shows it again until the mouse rests there. Leaving full screen, or
+  switching to another app, takes the black away. On X11 each monitor
+  counts as a display; Wayland doesn't let Plays place the covers.
   An AirPlay TV or projector is one of them once it's connected as a
   separate display, and macOS sends the sound there with it. AirPlay
   speakers play the sound alone once macOS has them, and the picture is

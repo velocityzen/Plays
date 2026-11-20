@@ -387,6 +387,8 @@ pub struct Settings {
     pub panels: PanelLook,
     pub float_on_top: FloatOnTop,
     pub full_screen: FullScreen,
+    /// Cover the other displays in black while a window is full screen.
+    pub black_out_displays: bool,
     /// Gamma for SDR video, for every open video at once; 1 leaves it be.
     pub sdr_gamma: f32,
     /// Gamma for HDR video (Dolby Vision included).
@@ -421,6 +423,7 @@ impl Default for Settings {
             panels: PanelLook::Frosted,
             float_on_top: FloatOnTop::Off,
             full_screen: FullScreen::OwnSpace,
+            black_out_displays: false,
             sdr_gamma: 1.0,
             hdr_gamma: 1.0,
             subtitles: SubtitleStyle::default(),

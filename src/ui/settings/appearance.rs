@@ -127,10 +127,26 @@ impl Pane for AppearancePane {
                 ]
                 .into_iter()
                 .chain(cfg!(target_os = "macos").then(|| full_screen_row(s, theme)))
+                .chain([black_out_row(s, theme)])
                 .collect(),
             ),
         ]
     }
+}
+
+/// The other displays in black while a window is full screen.
+fn black_out_row(s: &Settings, theme: &Theme) -> AnyElement {
+    row(
+        "Black out other displays",
+        Some(
+            "While a window is full screen. Moving the mouse onto one, or \
+             clicking it, shows it until the mouse rests there."
+                .into(),
+        ),
+        theme,
+        Switch::new("black-out", s.black_out_displays)
+            .on_toggle(|&on, _, cx| update_settings(cx, true, |s| s.black_out_displays = on)),
+    )
 }
 
 /// Full screen in a Space of its own, as macOS has it, or over the display

@@ -24,6 +24,7 @@ pub use menus::refresh as refresh_menus;
 use crate::cast::{self, Casting, Device, Protocol};
 use crate::media::{Source, picture};
 use crate::settings::{AudioDevice, Settings};
+use crate::ui::blackout;
 use crate::ui::framing::Ratio;
 use crate::ui::theme::{UiFont, pick_ui_font, refresh_system_colors};
 use crate::ui::workspace::{Workspace, save_place_on_quit};
@@ -80,6 +81,7 @@ pub struct CastTo(pub Option<Device>);
 pub fn run(cx: &mut App, sources: Vec<Source>, opened: UnboundedReceiver<Vec<String>>) {
     set_up(cx, Settings::load(), AudioEngine::start, cast::protocols);
     awake::watch(cx);
+    blackout::watch(cx);
 
     let window = Workspace::open_first_window(cx).expect("opening the first window");
     save_place_on_quit(cx);
