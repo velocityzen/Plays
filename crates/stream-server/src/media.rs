@@ -222,33 +222,35 @@ fn container(name: &str, path: &str) -> Container {
 
 fn video_info(stream: &ffmpeg::format::stream::Stream) -> VideoInfo {
     let parameters = stream.parameters();
-    // SAFETY: the parameters belong to an open stream.
+    // SAFETY: the parameters belong to an open stream. They are read through
+    // the pointer, never a reference, and the transfer as the C int it is:
+    // a file can hold numbers the Rust enum has no variant for.
     let (width, height, format, transfer, dolby_vision, picture) = unsafe {
-        let raw = &*parameters.as_ptr();
+        let raw = parameters.as_ptr();
         let dolby_vision = !ffi::av_packet_side_data_get(
-            raw.coded_side_data,
-            raw.nb_coded_side_data,
+            (*raw).coded_side_data,
+            (*raw).nb_coded_side_data,
             ffi::AVPacketSideDataType::AV_PKT_DATA_DOVI_CONF,
         )
         .is_null();
         let disposition = (*stream.as_ptr()).disposition;
         (
-            raw.width.max(0) as u32,
-            raw.height.max(0) as u32,
-            raw.format,
-            raw.color_trc,
+            (*raw).width.max(0) as u32,
+            (*raw).height.max(0) as u32,
+            (*raw).format,
+            (&raw const (*raw).color_trc).cast::<u32>().read(),
             dolby_vision,
             disposition & ffi::AV_DISPOSITION_ATTACHED_PIC != 0,
         )
     };
     let hdr = if dolby_vision {
         Some(Hdr::DolbyVision)
+    } else if transfer == ffi::AVColorTransferCharacteristic::AVCOL_TRC_SMPTE2084 as u32 {
+        Some(Hdr::Hdr10)
+    } else if transfer == ffi::AVColorTransferCharacteristic::AVCOL_TRC_ARIB_STD_B67 as u32 {
+        Some(Hdr::Hlg)
     } else {
-        match transfer {
-            ffi::AVColorTransferCharacteristic::AVCOL_TRC_SMPTE2084 => Some(Hdr::Hdr10),
-            ffi::AVColorTransferCharacteristic::AVCOL_TRC_ARIB_STD_B67 => Some(Hdr::Hlg),
-            _ => None,
-        }
+        None
     };
     let rate = stream.avg_frame_rate();
     VideoInfo {
@@ -264,10 +266,12 @@ fn video_info(stream: &ffmpeg::format::stream::Stream) -> VideoInfo {
 
 /// Bits per sample of a pixel format, by its first component; 8 when unknown.
 fn bit_depth(format: i32) -> u8 {
-    if format < 0 {
+    // Only a format the Rust enum has a variant for is made one.
+    if !(0..ffi::AVPixelFormat::AV_PIX_FMT_NB as i32).contains(&format) {
         return 8;
     }
-    // SAFETY: FFmpeg's descriptor table, for a format it gave.
+    // SAFETY: the enum's variants run without a gap from NONE (-1) to NB,
+    // and FFmpeg's descriptor table is for any of them.
     unsafe {
         let descriptor =
             ffi::av_pix_fmt_desc_get(std::mem::transmute::<i32, ffi::AVPixelFormat>(format));

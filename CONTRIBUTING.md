@@ -440,27 +440,29 @@ smaller on VideoToolbox, in both kinds of segments, each holding only the
 sound that plays during it though the encoder hands frames back late
 (macOS; with no hardware encoder, as in the Linux test container, planning
 it must fail); video whose only keyframe is its first re-encoded, not
-copied as one segment (macOS); a progressive stream from a DLNA time seek;
-a video's sound alone for a speaker taking only files, as ADTS copied,
-encoded from Opus to AAC, and as FLAC, seeking by time too, and nothing
-for a video's picture or a speaker without such streams; a live stream;
-subtitles from a file and from a track in `clip-subs.mkv`, as WebVTT, SRT
-and an HLS rendition, which a device given them beside it doesn't find in
-the playlist; and the DVD subtitles in `clip-dvdsub.mkv`, left out of
-video copied and not served as text, and drawn into video re-encoded, each
-frame at a cue's time differing from the same frame without them where its
-cue's bar is and nowhere else (macOS). Unit tests check how far ahead a
-job runs, where it restarts and what it forgets, packets given their
-lengths, byte ranges, a request's head too long refused before it's all
-read, one sent a byte at a time cut off when a whole one would be,
-connections past the most served at once closed and their places given
-back, codec names from parameter sets, playlists (made once for a file),
-no more segments than the most for a file claiming to last for ever, a
-segment handed over by the muxer without being copied, the muxer's output
-going back to put things right but not into what it handed over, subtitle
-text, and picture subtitles' timing, colors (PQ and HLG at graphics
-white), scaling and blending into NV12 and P010. Each has been checked to
-fail when what it covers is broken.
+copied as one segment (macOS); colors FFmpeg has no names for read as
+unknown, and video with them re-encoded to 10-bit HEVC (macOS); a
+progressive stream from a DLNA time seek; a video's sound alone for a
+speaker taking only files, as ADTS copied, encoded from Opus to AAC, and
+as FLAC, seeking by time too, and nothing for a video's picture or a
+speaker without such streams; a live stream; subtitles from a file and
+from a track in `clip-subs.mkv`, as WebVTT, SRT and an HLS rendition,
+which a device given them beside it doesn't find in the playlist; and the
+DVD subtitles in `clip-dvdsub.mkv`, left out of video copied and not
+served as text, and drawn into video re-encoded, each frame at a cue's
+time differing from the same frame without them where its cue's bar is and
+nowhere else (macOS). Unit tests check how far ahead a job runs, where it
+restarts and what it forgets, packets given their lengths, byte ranges, a
+request's head too long refused before it's all read, one sent a byte at a
+time cut off when a whole one would be, connections past the most served
+at once closed and their places given back, codec names from parameter
+sets, playlists (made once for a file), no more segments than the most for
+a file claiming to last for ever, a segment handed over by the muxer
+without being copied, the muxer's output going back to put things right
+but not into what it handed over, subtitle text, and picture subtitles'
+timing, colors (PQ and HLG at graphics white), scaling and blending into
+NV12 and P010. Each has been checked to fail when what it covers is
+broken.
 
 The AirPlay crate's tests talk to the fake receiver as to a real one: a TV
 paired once with its PIN, its credentials kept as text and verified for
@@ -541,9 +543,10 @@ cargo run -p airplay --example airplay -- list
 The window, casting and stream server tests open the small files in
 `tests/fixtures`, committed so they run without the `ffmpeg` tool.
 `script/make-fixtures` makes them again (writing the DVD subtitles'
-pictures itself, as FFmpeg makes picture subtitles only from pictures). It
-takes `ffmpeg` with `libx264`; run it only to change them. The script lists
-what each file is.
+pictures itself, as FFmpeg makes picture subtitles only from pictures, and
+the colors FFmpeg has no names for into `clip-odd-colors.mkv`, as it won't
+write them). It takes `ffmpeg` with `libx264`; run it only to change them.
+The script lists what each file is.
 
 ### Smoke runs
 

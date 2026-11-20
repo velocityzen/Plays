@@ -4,15 +4,18 @@ use std::fs;
 use std::io::{Read, Write};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use ffmpeg::codec::Id;
+use ffmpeg::ffi;
 use ffmpeg::media::Type;
 use ffmpeg_next as ffmpeg;
 
+use crate::encode::Colors;
 use crate::{
-    AudioCodec, AudioPlan, CastRequest, Container, Delivery, Error, Pick, Profile, Segments,
-    Server, Source, SubtitleSource, VideoCodec, VideoPlan,
+    AudioCodec, AudioPlan, CastRequest, Container, Delivery, Error, MediaInfo, Pick, Profile,
+    Segments, Server, Source, SubtitleSource, VideoCodec, VideoPlan,
 };
 
 const LOCALHOST: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
@@ -699,6 +702,81 @@ fn re_encodes_video_on_the_hardware_encoder() {
         let audio = audio.unwrap();
         assert_eq!(audio.times.first(), segments[1].1.times.first(), "{kind:?}");
     }
+}
+
+/// FFmpeg hands colors over as C enums, and a file can hold numbers they
+/// have no names for: those are read as unknown, never as a Rust enum.
+#[test]
+fn reads_colors_ffmpeg_has_no_names_for_as_unknown() {
+    use ffi::AVColorPrimaries::AVCOL_PRI_BT2020;
+    use ffi::AVColorSpace::AVCOL_SPC_BT2020_NCL;
+    use ffi::AVColorTransferCharacteristic::AVCOL_TRC_SMPTE2084;
+
+    let source = Source::File(fixture("clip-odd-colors.mkv"));
+    let input = crate::media::open(&source, Arc::default()).expect("the fixture opens");
+    let stream = input.streams().best(Type::Video).expect("a picture");
+    let colors = Colors::of(&stream.parameters());
+    assert_eq!(
+        (colors.primaries, colors.transfer, colors.space),
+        (None, None, None)
+    );
+    let media = MediaInfo::read(&input, "clip-odd-colors.mkv");
+    let video = media.video(stream.index()).expect("a picture");
+    assert_eq!((video.bit_depth, video.hdr), (10, None));
+
+    // Ones it names are kept.
+    let mut parameters = ffmpeg::codec::Parameters::new();
+    // SAFETY: the parameters are FFmpeg's own, and these are values it names.
+    unsafe {
+        let raw = parameters.as_mut_ptr();
+        (*raw).color_primaries = AVCOL_PRI_BT2020;
+        (*raw).color_trc = AVCOL_TRC_SMPTE2084;
+        (*raw).color_space = AVCOL_SPC_BT2020_NCL;
+    }
+    let colors = Colors::of(&parameters);
+    assert_eq!(
+        (colors.primaries, colors.transfer, colors.space),
+        (
+            Some(AVCOL_PRI_BT2020),
+            Some(AVCOL_TRC_SMPTE2084),
+            Some(AVCOL_SPC_BT2020_NCL)
+        )
+    );
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn re_encodes_video_whose_colors_ffmpeg_has_no_names_for() {
+    let server = server();
+    let profile = Profile {
+        video: vec![VideoCodec::Hevc],
+        max_bit_depth: 10,
+        ..hls(Segments::Fmp4)
+    };
+    let cast = cast(&server, "clip-odd-colors.mkv", profile);
+    assert!(
+        matches!(
+            cast.plan().video,
+            Some(VideoPlan::Encode {
+                to: VideoCodec::Hevc,
+                ten_bit: true,
+                hdr: None,
+                ..
+            })
+        ),
+        "{:?}",
+        cast.plan()
+    );
+    let mut frames = 0;
+    for number in 0..2 {
+        let (video, _) = fetch(&cast.url(), Segments::Fmp4, number);
+        assert_eq!(
+            (video.codec, video.width, video.height),
+            (Id::HEVC, 160, 120)
+        );
+        frames += video.times.len();
+    }
+    assert_eq!(frames, 50);
 }
 
 #[test]

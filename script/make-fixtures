@@ -20,6 +20,9 @@
 #                white bar outlined in black, low in the picture for the
 #                first cue and high for the second (written here as VobSub,
 #                as FFmpeg turns only pictures into picture subtitles)
+# clip-odd-colors.mkv  2 s of a flat 10-bit FFV1 picture whose Matroska
+#                colors say primaries 15, transfer 40 and matrix 30,
+#                numbers FFmpeg has no names for
 set -euo pipefail
 
 cd "$(dirname "$0")/../tests/fixtures"
@@ -158,5 +161,24 @@ PY
     -metadata:s:s:0 language=eng -metadata:s:s:0 title=English \
     -map_metadata -1 clip-dvdsub.mkv
 rm clip-dvdsub.idx clip-dvdsub.sub
+
+# FFmpeg won't write colors it has no names for, so the file is tagged
+# with known ones and those are changed in its Colour element after. FFV1
+# keeps no colors of its own, so the container's are what's read.
+"${ffmpeg[@]}" -f lavfi -i "color=c=0x336699:size=160x120:rate=25:duration=2" \
+    -vf "format=yuv420p10le,setparams=color_primaries=bt2020:color_trc=smpte2084:colorspace=bt2020nc" \
+    -c:v ffv1 -g 25 -map_metadata -1 clip-odd-colors.mkv
+python3 - <<'PY'
+data = bytearray(open("clip-odd-colors.mkv", "rb").read())
+colour = data.find(b"\x55\xb0")
+assert colour >= 0 and data[colour + 2] & 0x80, "a Colour element"
+end = colour + 3 + (data[colour + 2] & 0x7F)
+# Primaries, TransferCharacteristics and MatrixCoefficients, a byte each.
+for tag, value in [(b"\x55\xbb", 15), (b"\x55\xba", 40), (b"\x55\xb1", 30)]:
+    at = data.find(tag, colour, end)
+    assert at >= 0 and data[at + 2] == 0x81, tag.hex()
+    data[at + 3] = value
+open("clip-odd-colors.mkv", "wb").write(data)
+PY
 
 ls -l

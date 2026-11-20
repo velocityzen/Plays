@@ -646,7 +646,9 @@ flowchart LR
   sound alone (AAC as ADTS, or FLAC), and the codecs, size, bit
   depth, HDR kinds and channels it decodes; whether the HLS playlist lists
   the subtitles, which it doesn't for a device given them beside it.
-- `media.rs`: opening a file or stream and reading what is in it.
+- `media.rs`: opening a file or stream and reading what is in it. Colors
+  and pixel formats come from FFmpeg as C ints, read as numbers and made
+  Rust enums only when FFmpeg names them: a file can hold any number.
 - `plan.rs`: the least work that plays. The file as it is, or a stream's
   own URL, when the device plays it with the default tracks; else HLS, or
   for a DLNA TV without it an MPEG-TS stream, and for a DLNA speaker given
@@ -658,7 +660,9 @@ flowchart LR
   into video re-encoded; video copied goes without them.
 - `encode.rs`: the hardware video encoders only, VideoToolbox on macOS and
   NVENC or VA-API on Linux, each tried once and remembered; FFmpeg's own
-  sound encoders, through a resampler and a FIFO of whole frames.
+  sound encoders, through a resampler and a FIFO of whole frames. A
+  10-bit encoding keeps the source's colors, those FFmpeg names; others
+  are left unknown, as unspecified ones are.
 - `segments.rs`: where a file's segments start. Copied video can be cut
   only at its own keyframes, read from the file's index (or, with none, by
   reading the file); re-encoded video and sound alone are cut every six
