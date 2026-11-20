@@ -81,16 +81,19 @@ impl PlayerView {
                         )
                     }),
             )
-            .when(pip::supported() && self.player.frame().is_some(), |this| {
-                this.child(
-                    Button::icon("pip", "pip")
-                        .overlay()
-                        .selected(self.pip.is_some())
-                        .on_click(cx.listener(|this, _, window, cx| {
-                            this.toggle_picture_in_picture(window, cx)
-                        })),
-                )
-            })
+            .when(
+                pip::supported() && self.player.frame().is_some() && !self.casts_picture(),
+                |this| {
+                    this.child(
+                        Button::icon("pip", "pip")
+                            .overlay()
+                            .selected(self.pip.is_some())
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.toggle_picture_in_picture(window, cx)
+                            })),
+                    )
+                },
+            )
             .when(!self.alone, |this| {
                 this.child(
                     Button::icon("pop-out", "pop-out")

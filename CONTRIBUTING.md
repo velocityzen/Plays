@@ -311,7 +311,9 @@ serving this computer only. Picking a device from the cast button plays
 the file there from where the tile was, as it played (the device fetches
 the MP4 as it is), and pauses the tile. Space, the arrows and `M` play,
 pause, seek and mute it, not the tile, and the bar follows where it says
-it is. Play Here goes on in the tile from where the device was, paused as
+it is; so do the buttons of a Picture in Picture window, which isn't
+offered while the picture plays there, and they play and pause a speaker
+a video's sound is cast to. Play Here goes on in the tile from where the device was, paused as
 it was, the device stops and the file is no longer served. A device going
 away ends the cast the same way, and the cast button goes with the last
 device; quitting stops the device. Subtitles picked on a Matroska file

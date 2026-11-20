@@ -17,8 +17,9 @@ use crate::cast::target::{Load, State};
 use crate::cast::{Casting, Device, Shows};
 use crate::media::tracks::TrackKind;
 use crate::settings::Settings;
+use crate::ui::pip::{self, PipEvent};
 use crate::ui::player::PlayerView;
-use crate::ui::testing::{self, OPEN_WAIT, click, find, press, shows};
+use crate::ui::testing::{self, OPEN_WAIT, click, find, hover, press, shows};
 use crate::ui::theme::motion::CAST_POLL;
 use crate::ui::workspace::Workspace;
 
@@ -208,6 +209,66 @@ fn the_tiles_controls_reach_the_device_and_its_status_moves_the_bar(cx: &mut Tes
     say(&fake, &tv, State::Paused, 1.25);
     wait(&mut cx, "the bar to follow the device", |cx| {
         view.read_with(cx, |view, _| (view.position() - 1.25).abs() < 1e-9)
+    });
+}
+
+/// What a Picture in Picture window's button asks of `view`.
+fn pip_button(cx: &mut VisualTestContext, view: &Entity<PlayerView>, event: PipEvent) {
+    view.update_in(cx, |view, window, cx| view.on_pip_event(event, window, cx));
+}
+
+#[gpui::test]
+fn picture_in_pictures_buttons_drive_the_device_and_it_isnt_offered(cx: &mut TestAppContext) {
+    let (window, mut cx, fake, tv) = start(cx, "clip.mp4", false);
+    let view = tile(window, &cx);
+    if pip::supported() {
+        wait(&mut cx, "a picture", |cx| {
+            view.read_with(cx, |view, _| view.player().frame().is_some())
+        });
+        hover(&mut cx, "tile-0");
+        assert!(shows(&mut cx, "pip"), "offered while it plays here");
+    }
+    cast(window, &mut cx, &fake, &tv);
+    if pip::supported() {
+        hover(&mut cx, "tile-0");
+        assert!(!shows(&mut cx, "pip"), "no picture here to show");
+    }
+
+    pip_button(&mut cx, &view, PipEvent::SetPlaying(true));
+    wait(&mut cx, "the device to play", |_| {
+        calls(&fake, &tv).contains(&Call::Play)
+    });
+    pip_button(&mut cx, &view, PipEvent::Skip(1.0));
+    wait(&mut cx, "the device to seek", |_| {
+        calls(&fake, &tv)
+            .iter()
+            .any(|call| matches!(call, Call::Seek(_)))
+    });
+    pip_button(&mut cx, &view, PipEvent::SetPlaying(false));
+    wait(&mut cx, "the device to pause", |_| {
+        calls(&fake, &tv).contains(&Call::Pause)
+    });
+    assert!(
+        !view.read_with(&cx, |view, _| view.player().is_playing()),
+        "the tile's own playback stays paused"
+    );
+}
+
+#[gpui::test]
+fn picture_in_pictures_buttons_drive_a_speaker_the_sound_is_cast_to(cx: &mut TestAppContext) {
+    let (window, mut cx, fake, _) = start(cx, "clip.mp4", false);
+    let speaker = speaker(&fake, "Kitchen");
+    let view = tile(window, &cx);
+    cast(window, &mut cx, &fake, &speaker);
+
+    pip_button(&mut cx, &view, PipEvent::SetPlaying(true));
+    wait(&mut cx, "the speaker to play", |_| {
+        calls(&fake, &speaker).contains(&Call::Play)
+    });
+    say(&fake, &speaker, State::Playing, 0.5);
+    pip_button(&mut cx, &view, PipEvent::SetPlaying(false));
+    wait(&mut cx, "the speaker to pause", |_| {
+        calls(&fake, &speaker).contains(&Call::Pause)
     });
 }
 

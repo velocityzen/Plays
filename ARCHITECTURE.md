@@ -440,8 +440,9 @@ flowchart LR
   no other tile shows), and the graveyard frames wait in before they are
   released.
   While a tile casts, its play, pause, seek, volume, loop and track changes
-  go to the device, and what it shows (position, playing, the end) comes
-  from it.
+  go to the device, Picture in Picture's buttons too, and what it shows
+  (position, playing, the end) comes from it. Picture in Picture closes,
+  and isn't offered, while the picture plays on the device.
 - `src/ui/pip/` (macOS): Picture in Picture. The tile's frames go, as they
   are due, to an `AVSampleBufferDisplayLayer` hidden over the tile, which
   AVKit's `AVPictureInPictureController` shows in the system's window; a

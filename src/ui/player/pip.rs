@@ -68,6 +68,10 @@ impl PlayerView {
             );
             return;
         }
+        if self.casts_picture() {
+            self.note("The picture plays on the device it casts to", cx);
+            return;
+        }
         let Some(frame) = self.player.frame() else {
             self.note("No picture for Picture in Picture", cx);
             return;
@@ -131,10 +135,11 @@ impl PlayerView {
         let orientation = self
             .framing()
             .map_or(Orientation::UPRIGHT, |framing| framing.orientation());
+        // Where it plays, here or on the device its sound is cast to.
         let playback = Playback {
-            playing: self.player.is_playing(),
-            position: self.player.position(),
-            duration: self.player.duration().filter(|_| !self.player.is_live()),
+            playing: self.is_playing(),
+            position: self.position(),
+            duration: self.duration().filter(|_| !self.player.is_live()),
         };
         let Some(session) = &mut self.pip else {
             return false;
@@ -242,9 +247,10 @@ impl PlayerView {
     ) {
         log::debug!("Picture in Picture: {event:?}");
         match event {
-            PipEvent::SetPlaying(true) => self.player.play(),
-            PipEvent::SetPlaying(false) => self.player.pause(),
-            PipEvent::Skip(seconds) => self.player.seek_by(seconds),
+            // Its buttons drive the tile as its own do, and a cast with it.
+            PipEvent::SetPlaying(true) => self.play(),
+            PipEvent::SetPlaying(false) => self.pause(),
+            PipEvent::Skip(seconds) => self.seek_by(seconds, cx),
             PipEvent::Started => {
                 if let Some(session) = &mut self.pip {
                     session.started = true;

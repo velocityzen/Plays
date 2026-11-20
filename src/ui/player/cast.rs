@@ -110,6 +110,8 @@ impl PlayerView {
                     self.player.set_sound_elsewhere(true);
                 } else {
                     self.player.pause();
+                    // The picture plays there now, not in a window here.
+                    self.close_picture_in_picture();
                 }
                 // A picture following the sound looks as often as the
                 // link asks where the device is.
