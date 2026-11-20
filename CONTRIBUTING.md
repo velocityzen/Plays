@@ -328,7 +328,8 @@ sound and none for one without, checking the one cast to (or a TV) instead
 of the output. Settings → Casting lists the devices found, a new one as
 it's found, and turning a protocol off there saves it off, stops it
 looking (its target dropped), takes its devices away and leaves a cast to
-one going; turned on, it looks again and finds them. One off from the
+one going; turned on, it looks again and finds them. A protocol that takes
+a while to stop doesn't hold up the windows: it stops on another thread. One off from the
 start never looks, and other settings or protocols changing leave it as it
 is; one that can't start says why and tries again when turned off and on.
 Each test has been checked to fail when the behavior it covers is broken.

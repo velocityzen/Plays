@@ -4,15 +4,19 @@
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::sync::{Arc, Weak};
+use std::thread::{self, ThreadId};
+use std::time::{Duration, Instant};
 
 use gpui::{TestAppContext, VisualTestContext};
+use parking_lot::Mutex;
 
 use super::SettingsView;
 use crate::app::SetAudioDevice;
 use crate::cast::fake::{FakeTarget, KIND};
+use crate::cast::target::{Device, Error, Session};
 use crate::cast::{Casting, Looking, Protocol, Shows, Target};
 use crate::settings::{AudioDevice, PanelLook, Settings};
-use crate::ui::testing::{self, click, shows};
+use crate::ui::testing::{self, click, shows, wait_until};
 
 /// Open the Settings window and bring it to the front.
 fn open_settings(cx: &mut VisualTestContext) -> VisualTestContext {
@@ -234,11 +238,76 @@ fn a_protocol_looks_only_while_its_on(cx: &mut TestAppContext) {
     assert_eq!(looking(&mut cx), [Looking::On, Looking::Off]);
 
     look_with(&mut cx, KIND, false);
+    assert!(found(&mut cx).is_empty());
     assert!(
-        last.borrow().upgrade().is_none(),
+        wait_until(&mut cx, |_| last.borrow().upgrade().is_none()),
         "turned off, it stops looking"
     );
-    assert!(found(&mut cx).is_empty());
+}
+
+/// How long `SlowToStop` takes to stop, as long as a real protocol may.
+const STOPS_IN: Duration = Duration::from_millis(500);
+
+/// A protocol that takes a while to stop looking, as the real ones wait
+/// for their threads to end: the thread it stopped on, once it has.
+struct SlowToStop {
+    fake: FakeTarget,
+    stopped: Arc<Mutex<Option<ThreadId>>>,
+}
+
+impl Target for SlowToStop {
+    fn kind(&self) -> &'static str {
+        KIND
+    }
+
+    fn devices(&self) -> Vec<Device> {
+        self.fake.devices()
+    }
+
+    fn connect(&self, device: &Device) -> Result<Box<dyn Session>, Error> {
+        self.fake.connect(device)
+    }
+}
+
+impl Drop for SlowToStop {
+    fn drop(&mut self) {
+        thread::sleep(STOPS_IN);
+        *self.stopped.lock() = Some(thread::current().id());
+    }
+}
+
+#[gpui::test]
+fn a_protocol_turned_off_stops_looking_without_holding_up_the_windows(cx: &mut TestAppContext) {
+    let (_, mut cx) = testing::start(cx);
+    let stopped = Arc::<Mutex<Option<ThreadId>>>::default();
+    let start = {
+        let stopped = Arc::clone(&stopped);
+        move || {
+            let fake = FakeTarget::default();
+            fake.add("Den TV", Shows::Video);
+            let stopped = Arc::clone(&stopped);
+            Ok(Arc::new(SlowToStop { fake, stopped }) as Arc<dyn Target>)
+        }
+    };
+    cx.update(|_, cx| {
+        cx.set_global(Casting::new(vec![Protocol::new(KIND, "fakes", start)]));
+        Casting::watch(cx);
+    });
+    assert_eq!(found(&mut cx), ["Den TV"]);
+
+    let began = Instant::now();
+    look_with(&mut cx, KIND, false);
+    assert!(began.elapsed() < STOPS_IN, "the windows don't wait for it");
+    assert!(found(&mut cx).is_empty(), "its devices go at once");
+    assert!(
+        wait_until(&mut cx, |_| stopped.lock().is_some()),
+        "it stops all the same"
+    );
+    assert_ne!(
+        *stopped.lock(),
+        Some(thread::current().id()),
+        "it stops away from the windows"
+    );
 }
 
 #[gpui::test]

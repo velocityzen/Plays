@@ -516,8 +516,10 @@ sequenceDiagram
   play, pause, seek, volume, subtitles, stop and status. Each protocol's
   crate is adapted to these (`target.rs`). `Casting`, a global, keeps the
   protocols, starting each one Settings have on looking (its target) and
-  dropping it when turned off, which stops it looking; a cast to one of its
-  devices goes on, its link holding the target. It asks the targets every
+  dropping it when turned off, which stops it looking. It is dropped on a
+  thread of its own, as stopping waits for the target's threads to end,
+  which can take a second, and the windows would stop drawing meanwhile; a
+  cast to one of its devices goes on, its link holding the target. It asks the targets every
   second what they have found, and starts the stream server for the first
   cast, on every interface.
 - `src/cast/link.rs`: a tile's `Link` runs its session on a thread of its

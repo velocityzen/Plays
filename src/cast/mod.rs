@@ -14,6 +14,7 @@ pub mod target;
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
+use std::thread;
 use std::time::Duration;
 
 use gpui::{App, BorrowAppContext, Global};
@@ -27,6 +28,19 @@ use crate::settings::Settings;
 
 /// How often the targets are asked what they have found.
 const DEVICES_POLL: Duration = Duration::from_secs(1);
+
+/// Let go of a target that has stopped looking, on a thread of its own: it
+/// waits for its threads to end as it goes, which can take a second, and
+/// the windows would stop drawing meanwhile. A cast to one of its devices
+/// keeps it until the cast ends.
+fn let_go(target: Arc<dyn Target>) {
+    let spawned = thread::Builder::new()
+        .name("cast stop looking".into())
+        .spawn(move || drop(target));
+    if let Err(err) = spawned {
+        log::warn!("cast: no thread to stop looking on, so it stops here: {err}");
+    }
+}
 
 /// A protocol Plays casts with: its name, what it finds, and how it starts
 /// looking for them.
@@ -164,8 +178,9 @@ impl Casting {
     }
 
     /// Start the protocols Settings have on looking, and stop those off,
-    /// their devices no longer found. A cast to one goes on; one that
-    /// couldn't start tries again when turned off and on.
+    /// their devices no longer found, away from the windows (`let_go`). A
+    /// cast to one goes on; one that couldn't start tries again when turned
+    /// off and on.
     pub fn look_as_set(cx: &mut App) {
         let set = &cx.global::<Settings>().casting;
         let Some(casting) = cx.try_global::<Self>() else {
@@ -183,7 +198,9 @@ impl Casting {
             for kept in &mut casting.protocols {
                 let on = set.looks_with(kept.protocol.kind);
                 if !on {
-                    kept.target = None;
+                    if let Some(Ok(target)) = kept.target.take() {
+                        let_go(target);
+                    }
                 } else if kept.target.is_none() {
                     let started = (kept.protocol.start)();
                     if let Err(why) = &started {
