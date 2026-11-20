@@ -413,7 +413,8 @@ them beside it doesn't find in the playlist; and the DVD subtitles in
 drawn into video re-encoded, each frame at a cue's time differing from the
 same frame without them where its cue's bar is and nowhere else (macOS).
 Unit tests check how far ahead a job runs, where it restarts and what it
-forgets, packets given their lengths, byte ranges, codec names from
+forgets, packets given their lengths, byte ranges, a request's head too
+long refused before it's all read, codec names from
 parameter sets, playlists, subtitle text, and picture subtitles' timing,
 colors (PQ and HLG at graphics white), scaling and blending into NV12 and
 P010. Each has been checked to fail when what it covers is broken.

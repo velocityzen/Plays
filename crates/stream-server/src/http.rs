@@ -177,14 +177,41 @@ fn connection(stream: TcpStream, handler: &Handler) -> io::Result<()> {
     }
 }
 
+/// The next line of a request's head into `line`, reading no further than
+/// what `size` leaves of `MAX_HEAD`; how long it was, 0 at the end.
+fn read_head_line(
+    reader: &mut impl BufRead,
+    line: &mut String,
+    size: &mut usize,
+) -> io::Result<usize> {
+    let left = MAX_HEAD - *size;
+    let mut bytes = Vec::new();
+    // A byte past what's left, to tell a line that fits from one that doesn't.
+    let n = reader
+        .by_ref()
+        .take(left as u64 + 1)
+        .read_until(b'\n', &mut bytes)?;
+    if n > left {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "a request's head too long",
+        ));
+    }
+    *size += n;
+    *line = String::from_utf8(bytes)
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "a head that isn't text"))?;
+    Ok(n)
+}
+
 /// The next request, and whether the connection may stay open after it;
 /// `None` when the client closed the connection.
-fn read_request(reader: &mut BufReader<TcpStream>) -> io::Result<Option<(Request, bool)>> {
+fn read_request(reader: &mut impl BufRead) -> io::Result<Option<(Request, bool)>> {
     let mut line = String::new();
+    // What of `MAX_HEAD` is used, blank lines before the request too.
+    let mut size = 0;
     // Blank lines between requests are allowed.
     loop {
-        line.clear();
-        match reader.read_line(&mut line) {
+        match read_head_line(reader, &mut line, &mut size) {
             Ok(0) => return Ok(None),
             Ok(_) if line.trim().is_empty() => continue,
             Ok(_) => break,
@@ -214,18 +241,10 @@ fn read_request(reader: &mut BufReader<TcpStream>) -> io::Result<Option<(Request
     };
     let (path, query) = target.split_once('?').unwrap_or((target, ""));
     let mut headers = Vec::new();
-    let mut size = line.len();
+    let mut header = String::new();
     loop {
-        let mut header = String::new();
-        if reader.read_line(&mut header)? == 0 {
+        if read_head_line(reader, &mut header, &mut size)? == 0 {
             break;
-        }
-        size += header.len();
-        if size > MAX_HEAD {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "headers too long",
-            ));
         }
         let header = header.trim_end();
         if header.is_empty() {
@@ -422,5 +441,53 @@ mod tests {
         assert_eq!(range(Some("bytes=x-"), 100), Err(()));
         assert_eq!(range(Some("bytes=0-"), 0), Err(()));
         assert_eq!(range(Some("items=0-1"), 100), Ok(None));
+    }
+
+    /// A reader counting what's read from it.
+    struct Counted<R> {
+        inner: R,
+        read: usize,
+    }
+
+    impl<R: Read> Read for Counted<R> {
+        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            let n = self.inner.read(buf)?;
+            self.read += n;
+            Ok(n)
+        }
+    }
+
+    /// What reading a request from `head` and then `filler` gives, and how
+    /// much was read.
+    fn read_from(head: &str, filler: impl Read) -> (io::Result<bool>, usize) {
+        let mut reader = BufReader::new(Counted {
+            inner: head.as_bytes().chain(filler),
+            read: 0,
+        });
+        let request = read_request(&mut reader).map(|request| request.is_some());
+        (request, reader.get_ref().read)
+    }
+
+    #[test]
+    fn a_head_too_long_is_refused_before_it_is_all_read() {
+        let endless = || io::repeat(b'a').take(8 << 20);
+        for (head, filler) in [
+            ("", Box::new(endless()) as Box<dyn Read>),
+            ("GET / HTTP/1.1\r\nX-Long: ", Box::new(endless())),
+            ("", Box::new(io::Cursor::new(b"\r\n".repeat(1 << 20)))),
+        ] {
+            let (request, read) = read_from(head, filler);
+            assert_eq!(
+                request.map_err(|err| err.kind()).err(),
+                Some(io::ErrorKind::InvalidData),
+                "after {head:?}"
+            );
+            assert!(read < 2 * MAX_HEAD, "{read} bytes read after {head:?}");
+        }
+        let (request, _) = read_from(
+            "\r\nGET /a?b HTTP/1.1\r\nRange: bytes=0-\r\n\r\n",
+            io::empty(),
+        );
+        assert!(request.unwrap(), "a head as long as it may be is read");
     }
 }
