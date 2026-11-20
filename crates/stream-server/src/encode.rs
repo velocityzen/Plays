@@ -5,6 +5,7 @@
 
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant};
 
 use ffmpeg::codec::{self, Flags};
 use ffmpeg::ffi;
@@ -33,44 +34,88 @@ fn video_encoders(codec: VideoCodec) -> &'static [&'static str] {
     }
 }
 
-/// The hardware encoder that opens here for `codec`, if any. Tried once
-/// per codec and depth, and remembered.
+/// The hardware encoder that opens here for `codec`, if any: one that has
+/// opened is had from then on; one that didn't isn't tried again at that
+/// size for a while.
 pub(crate) fn video_encoder(
     codec: VideoCodec,
     width: u32,
     height: u32,
     ten_bit: bool,
 ) -> Option<&'static str> {
-    /// Each codec and depth's encoder, or none, once tried.
-    type Found = HashMap<(VideoCodec, bool), Option<&'static str>>;
-    static FOUND: OnceLock<Mutex<Found>> = OnceLock::new();
-    let found = FOUND.get_or_init(Default::default);
-    let mut found = found
+    static PROBED: OnceLock<Mutex<Probed>> = OnceLock::new();
+    let probed = PROBED.get_or_init(Default::default);
+    let mut probed = probed
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    *found.entry((codec, ten_bit)).or_insert_with(|| {
-        video_encoders(codec).iter().copied().find(|name| {
-            let settings = VideoSettings {
-                encoder: name,
-                codec,
-                width,
-                height,
-                ten_bit,
-                bit_rate: 2_000_000,
-                time_base: Rational::new(1, 25),
-                frame_rate: Some(Rational::new(25, 1)),
-                colors: Colors::default(),
-                global_header: true,
-            };
-            match VideoEncoder::open(&settings) {
-                Ok(_) => true,
-                Err(err) => {
-                    log::info!("{name} doesn't open here: {err}");
-                    false
-                }
+    probed.encoder(codec, (width, height), ten_bit, Instant::now(), |name| {
+        let settings = VideoSettings {
+            encoder: name,
+            codec,
+            width,
+            height,
+            ten_bit,
+            bit_rate: 2_000_000,
+            time_base: Rational::new(1, 25),
+            frame_rate: Some(Rational::new(25, 1)),
+            colors: Colors::default(),
+            global_header: true,
+        };
+        match VideoEncoder::open(&settings) {
+            Ok(_) => true,
+            Err(err) => {
+                log::info!("{name} doesn't open here: {err}");
+                false
             }
-        })
+        }
     })
+}
+
+/// How long an encoder that didn't open at a size isn't tried there again:
+/// the hardware's sessions can be in use for a while.
+const RETRY_AFTER: Duration = Duration::from_secs(60);
+
+/// What opening the hardware encoders has shown.
+#[derive(Default)]
+struct Probed {
+    /// Each codec and depth's encoder, once one has opened.
+    found: HashMap<(VideoCodec, bool), &'static str>,
+    /// When none opened, by codec, depth and size.
+    failed: HashMap<(VideoCodec, bool, (u32, u32)), Instant>,
+}
+
+impl Probed {
+    /// The first of `codec`'s encoders that `opens` at `size`, or none.
+    fn encoder(
+        &mut self,
+        codec: VideoCodec,
+        size: (u32, u32),
+        ten_bit: bool,
+        now: Instant,
+        mut opens: impl FnMut(&'static str) -> bool,
+    ) -> Option<&'static str> {
+        if let Some(&name) = self.found.get(&(codec, ten_bit)) {
+            return Some(name);
+        }
+        self.failed
+            .retain(|_, at| now.saturating_duration_since(*at) < RETRY_AFTER);
+        if self.failed.contains_key(&(codec, ten_bit, size)) {
+            return None;
+        }
+        let found = video_encoders(codec)
+            .iter()
+            .copied()
+            .find(|name| opens(name));
+        match found {
+            Some(name) => {
+                self.found.insert((codec, ten_bit), name);
+            }
+            None => {
+                self.failed.insert((codec, ten_bit, size), now);
+            }
+        }
+        found
+    }
 }
 
 /// How a picture's colors are coded, kept from the source.
@@ -681,5 +726,59 @@ mod vaapi {
                 result
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// An encoder failing to open (too big a picture, or the hardware's
+    /// sessions used up) is left alone a while at that size, not for good.
+    #[test]
+    fn tries_an_encoder_again_after_it_fails_to_open() {
+        let mut probed = Probed::default();
+        let start = Instant::now();
+        let first = video_encoders(VideoCodec::H264)[0];
+        let never = |_: &'static str| -> bool { panic!("tried again") };
+
+        // Too big for it, so none here at that size, for a while.
+        let big = (8192, 4320);
+        assert_eq!(
+            probed.encoder(VideoCodec::H264, big, false, start, |_| false),
+            None
+        );
+        let later = start + Duration::from_secs(10);
+        assert_eq!(
+            probed.encoder(VideoCodec::H264, big, false, later, never),
+            None
+        );
+        // A size it takes is tried, and finds it; from then on it's had.
+        let hd = (1920, 1080);
+        assert_eq!(
+            probed.encoder(VideoCodec::H264, hd, false, later, |_| true),
+            Some(first)
+        );
+        assert_eq!(
+            probed.encoder(VideoCodec::H264, (640, 360), false, later, never),
+            Some(first)
+        );
+
+        // Busy at first, and free a minute on.
+        let first = video_encoders(VideoCodec::Hevc)[0];
+        assert_eq!(
+            probed.encoder(VideoCodec::Hevc, hd, true, start, |_| false),
+            None
+        );
+        let soon = start + Duration::from_secs(30);
+        assert_eq!(
+            probed.encoder(VideoCodec::Hevc, hd, true, soon, never),
+            None
+        );
+        let minute = start + RETRY_AFTER;
+        assert_eq!(
+            probed.encoder(VideoCodec::Hevc, hd, true, minute, |_| true),
+            Some(first)
+        );
     }
 }

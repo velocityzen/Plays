@@ -659,10 +659,11 @@ flowchart LR
   stream of FLAC) FLAC. Picture subtitles picked from the media are drawn
   into video re-encoded; video copied goes without them.
 - `encode.rs`: the hardware video encoders only, VideoToolbox on macOS and
-  NVENC or VA-API on Linux, each tried once and remembered; FFmpeg's own
-  sound encoders, through a resampler and a FIFO of whole frames. A
-  10-bit encoding keeps the source's colors, those FFmpeg names; others
-  are left unknown, as unspecified ones are.
+  NVENC or VA-API on Linux, one that opens remembered, one that doesn't
+  left alone at that size for a minute (its sessions may be in use);
+  FFmpeg's own sound encoders, through a resampler and a FIFO of whole
+  frames. A 10-bit encoding keeps the source's colors, those FFmpeg names;
+  others are left unknown, as unspecified ones are.
 - `segments.rs`: where a file's segments start. Copied video can be cut
   only at its own keyframes, read from the file's index (or, with none, by
   reading the file); re-encoded video and sound alone are cut every six

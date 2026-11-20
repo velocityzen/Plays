@@ -457,13 +457,15 @@ check how far ahead a job runs, where it restarts and what it forgets,
 packets given their lengths, byte ranges, a request's head too long
 refused before it's all read, one sent a byte at a time cut off when a
 whole one would be, connections past the most served at once closed and
-their places given back, codec names from parameter sets, playlists (made
-once for a file), no more segments than the most for a file claiming to
-last for ever, a segment handed over by the muxer without being copied,
-the muxer's output going back to put things right but not into what it
-handed over, subtitle text, and picture subtitles' timing, colors (PQ and
-HLG at graphics white), scaling and blending into NV12 and P010. Each has
-been checked to fail when what it covers is broken.
+their places given back, codec names from parameter sets, a hardware
+encoder kept once it opens and, when it doesn't, tried again at another
+size or a minute on, playlists (made once for a file), no more segments
+than the most for a file claiming to last for ever, a segment handed over
+by the muxer without being copied, the muxer's output going back to put
+things right but not into what it handed over, subtitle text, and picture
+subtitles' timing, colors (PQ and HLG at graphics white), scaling and
+blending into NV12 and P010. Each has been checked to fail when what it
+covers is broken.
 
 The AirPlay crate's tests talk to the fake receiver as to a real one: a TV
 paired once with its PIN, its credentials kept as text and verified for
