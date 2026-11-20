@@ -411,6 +411,10 @@ pub(crate) struct AudioSettings {
     pub global_header: bool,
 }
 
+/// How far the sound may drift from its times, in seconds, before silence
+/// is put in or sound dropped to bring it back: about a frame of AAC.
+const MAX_DRIFT: f64 = 0.02;
+
 /// An audio encoder, resampling what it is given to its format and
 /// handing it over a frame of its size at a time.
 pub(crate) struct AudioEncoder {
@@ -519,18 +523,29 @@ impl AudioEncoder {
             decoded.set_channel_layout(layout);
         }
         let input = (decoded.format(), layout, decoded.rate());
+        let in_rate = f64::from(input.2.max(1));
         if self
             .resampler
             .as_ref()
             .is_none_or(|(_, current)| *current != input)
         {
-            let resampler = resampling::Context::get(
+            // The resampler keeps the sound where its times put it, padding
+            // a gap in it with silence and dropping sound that overlaps
+            // what came before, past MAX_DRIFT; one made partway carries on
+            // from where the sound sent so far reaches, in its samples.
+            let mut options = Dictionary::new();
+            options.set("min_comp", "0.001");
+            options.set("min_hard_comp", &MAX_DRIFT.to_string());
+            let reached = (self.reached() * in_rate).round() as i64;
+            options.set("first_pts", &reached.to_string());
+            let resampler = resampling::Context::get_with(
                 input.0,
                 input.1,
                 input.2,
                 self.format,
                 self.layout,
                 self.rate,
+                options,
             )
             .map_err(|err| Error::Encode(format!("resampling: {err}")))?;
             self.resampler = Some((resampler, input));
@@ -539,6 +554,14 @@ impl AudioEncoder {
             .resampler
             .as_mut()
             .expect("the resampler was just made");
+        // SAFETY: the resampler is open; the time is in its units, a
+        // second being the input's rate times the output's.
+        unsafe {
+            ffi::swr_next_pts(
+                resampler.as_mut_ptr(),
+                (time * in_rate * f64::from(self.rate)).round() as i64,
+            )
+        };
         let pending = resampler
             .delay()
             .map_or(0, |delay| delay.output.max(0) as usize);
@@ -550,6 +573,15 @@ impl AudioEncoder {
             .map_err(|err| Error::Encode(format!("resampling: {err}")))?;
         self.push(&resampled)?;
         self.encode_whole_frames()
+    }
+
+    /// Where the sound sent so far reaches, in seconds: the next frame's
+    /// time, and what's waiting to be encoded, less what's to be dropped.
+    fn reached(&self) -> f64 {
+        // SAFETY: the FIFO is valid.
+        let waiting = i64::from(unsafe { ffi::av_audio_fifo_size(self.fifo) });
+        let samples = self.next_pts.unwrap_or(0) + waiting - self.skip as i64;
+        samples as f64 / f64::from(self.rate)
     }
 
     fn push(&mut self, resampled: &frame::Audio) -> Result<(), Error> {

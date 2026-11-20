@@ -11,6 +11,8 @@
 #                too few to cut copied video into segments at
 # clip-opus.mkv  clip.mp4 with its sound as Opus, which a speaker taking
 #                only AAC gets re-encoded
+# clip-sound-gap.mkv  clip.mp4's picture with 1.6 s of Opus sound and
+#                none from 0.6 s to 1 s, the rest playing from 1 s on
 # tone.m4a       1 s of 440 Hz, AAC, no picture
 # clip.srt       two cues, found beside clip.mp4
 # clip-subs.mkv  clip.mp4 with clip.srt in it, as an English track
@@ -43,6 +45,11 @@ x264=(-c:v libx264 -pix_fmt yuv420p -preset veryslow -crf 36 -g 25)
     -sc_threshold 0 -bf 0 -map_metadata -1 clip-one-key.mp4
 "${ffmpeg[@]}" -i clip.mp4 -map 0 -c:v copy -c:a libopus -b:a 24k \
     -map_metadata -1 clip-opus.mkv
+# Frames as long as Opus's, so each keeps its own time.
+"${ffmpeg[@]}" -i clip.mp4 \
+    -f lavfi -i "sine=frequency=440:sample_rate=48000:duration=1.6:samples_per_frame=960" \
+    -filter:a "asetpts='if(gte(T,0.6),PTS+0.4/TB,PTS)'" -map 0:v -map 1:a \
+    -c:v copy -c:a libopus -b:a 24k -ac 1 -map_metadata -1 clip-sound-gap.mkv
 "${ffmpeg[@]}" -f lavfi -i "sine=frequency=440:sample_rate=48000:duration=1" \
     -c:a aac -b:a 32k -ac 1 -map_metadata -1 tone.m4a
 cat > clip.srt <<'SRT'

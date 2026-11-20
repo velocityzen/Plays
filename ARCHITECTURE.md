@@ -662,8 +662,11 @@ flowchart LR
   NVENC or VA-API on Linux, one that opens remembered, one that doesn't
   left alone at that size for a minute (its sessions may be in use);
   FFmpeg's own sound encoders, through a resampler and a FIFO of whole
-  frames. A 10-bit encoding keeps the source's colors, those FFmpeg names;
-  others are left unknown, as unspecified ones are.
+  frames. The resampler keeps the sound where its times put it: a gap in
+  it is filled with silence, and sound overlapping what came before is
+  dropped, once either is past 20 ms, so the sound after doesn't drift
+  from the picture. A 10-bit encoding keeps the source's colors, those
+  FFmpeg names; others are left unknown, as unspecified ones are.
 - `segments.rs`: where a file's segments start. Copied video can be cut
   only at its own keyframes, read from the file's index (or, with none, by
   reading the file); re-encoded video and sound alone are cut every six

@@ -618,6 +618,53 @@ fn re_encodes_sound_the_device_lacks() {
     assert!(audio.first() >= 9.9, "{}", audio.first());
 }
 
+/// A gap in the source's sound stays a gap when the sound is re-encoded:
+/// the sound after it plays with the picture it went with, not early, and
+/// its segment comes out the same whichever job makes it.
+#[test]
+fn re_encoded_sound_keeps_to_the_picture_over_a_gap_in_it() {
+    // When a segment's sound starts and ends; AAC frames are 1024 samples.
+    let span = |audio: Option<Probed>| {
+        let audio = audio.expect("sound in the segment");
+        let last = audio
+            .times
+            .iter()
+            .copied()
+            .fold(f64::NEG_INFINITY, f64::max);
+        (audio.first(), last + 1024.0 / 48_000.0)
+    };
+    let gap = |server: &Server| cast(server, "clip-sound-gap.mkv", hls(Segments::Ts));
+
+    let whole = server();
+    let cast = gap(&whole);
+    assert!(
+        matches!(
+            cast.plan().audio,
+            Some(AudioPlan::Encode {
+                to: AudioCodec::Aac,
+                ..
+            })
+        ),
+        "{:?}",
+        cast.plan()
+    );
+    let (from, _) = span(fetch(&cast.url(), Segments::Ts, 0).1);
+    assert!(close(from, 10.0), "the sound starts at {from}");
+    // The sound goes on at 1 s, with the second segment, to its end.
+    let (from, to) = span(fetch(&cast.url(), Segments::Ts, 1).1);
+    assert!(
+        close(from, 11.0) && close(to, 12.0),
+        "sound from {from} to {to}"
+    );
+
+    let middle = server();
+    let (again, until) = span(fetch(&gap(&middle).url(), Segments::Ts, 1).1);
+    assert!(
+        close(again, from) && close(until, to),
+        "sound from {again} to {until}"
+    );
+}
+
 #[cfg(target_os = "macos")]
 #[test]
 fn re_encodes_video_whose_keyframes_are_too_far_apart_to_cut_it_at() {
