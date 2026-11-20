@@ -116,8 +116,11 @@ impl Directory {
             }
             Err(err) => {
                 log::debug!("dlna: {location}: {err}");
-                // Tried again when it's next heard from.
-                if entry.device.is_none() {
+                // Tried again when it's next heard from; one read before
+                // is kept as it was meanwhile.
+                if entry.device.is_some() {
+                    entry.location.clear();
+                } else {
                     self.entries.remove(udn);
                 }
                 None
@@ -685,6 +688,39 @@ mod tests {
             Some(Found::Removed(device("Renamed")))
         );
         assert_eq!(directory.byebye("uuid:tv"), None);
+    }
+
+    /// A renderer that moves and can't be read there at first, as when it
+    /// says where it is before it answers there, is kept as it was and
+    /// read when next heard from.
+    #[test]
+    fn a_renderer_that_moves_is_read_again_when_its_first_read_fails() {
+        let mut directory = Directory::default();
+        let now = Instant::now();
+        let tv = advert("uuid:tv", MEDIA_RENDERER);
+        directory.alive(&tv, now);
+        directory.described("uuid:tv", &tv.location, Ok(device("TV")));
+        let moved = Advert {
+            location: "http://192.0.2.11/dmr".into(),
+            ..tv.clone()
+        };
+        assert_eq!(directory.alive(&moved, now), Some(moved.location.clone()));
+        let failed = Err(crate::Error::protocol("not yet"));
+        assert_eq!(
+            directory.described("uuid:tv", &moved.location, failed),
+            None
+        );
+        assert_eq!(directory.devices(), [device("TV")], "kept meanwhile");
+        assert_eq!(
+            directory.alive(&moved, now),
+            Some(moved.location.clone()),
+            "read again"
+        );
+        assert_eq!(
+            directory.described("uuid:tv", &moved.location, Ok(device("Moved"))),
+            Some(Found::Changed(device("Moved")))
+        );
+        assert_eq!(directory.alive(&moved, now), None, "and not again");
     }
 
     #[test]

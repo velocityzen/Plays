@@ -770,6 +770,9 @@ happens over a channel.
   max-age it gave. Renderers are found over IPv4 only, and a description
   is fetched only from the address its advert came from, by one of four
   threads, at most 64 waiting for them. At most 256 renderers are kept.
+  One that moves is read again where it's gone; if that read fails, as
+  when it says where it is before it answers there, it's kept as it was
+  and read when next heard from.
 - `device.rs`, `xml.rs`: the device description, read for the name,
   maker, model, icons and where AVTransport, RenderingControl and
   ConnectionManager are, of any version. The renderer may be a device

@@ -522,7 +522,8 @@ plays something else, but not for what played before or a track that lags.
 Unit tests read descriptions and protocol info in the forms Samsung, LG
 and Sonos give them and as a Devialet speaker gave them (ids changed),
 SSDP's messages, DIDL-Lite, times, URLs and HTTP, check the events
-listener stops with nothing connecting to wake it, and refuse what a
+listener stops with nothing connecting to wake it and a renderer that
+moves read again when its first read there fails, and refuse what a
 hostile device could send: XML nested too deep, an advert or a
 subscription lasting for ever, a chunk too long to count, a URL with a
 character across where `http://` would end, URLs with spaces or line
