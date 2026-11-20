@@ -187,26 +187,30 @@ the sound being heard. A file with no sound plays on wall time.
 
 - `src/media/decoder.rs`: two threads per file or stream. The demux thread
   reads packets ahead (about a second for files, up to 15 s for network
-  streams so a slow connection doesn't stall decoding) and carries out seeks.
-  The decode thread decodes only while its output queues have room, so
-  memory stays bounded however much is read ahead. It converts video to
-  BGRA `RenderImage`s (with the right YUV matrix and pixel aspect), except
-  where frames stay on the GPU (macOS) or go over as their Y'CbCr planes
-  (Linux); resamples audio to the mixer's rate; and handles accurate
-  seeking: frames no other frame refers to aren't decoded on the way to a
-  seek's target. A skip (the arrow keys, the skip buttons) is accurate when
-  a keyframe is within a second before its target, and otherwise lands on
-  the nearest keyframe its way, which shows at once. Dragging the seek bar
-  scrubs: each move shows the first frame decoded on its way at once, then
-  one every 40 ms or so, then the frame asked for, decoding nothing past it
-  and no sound, so nothing waits on buffering. A move up to two seconds past
-  the frame decoded last decodes on from there rather than going back to a
-  keyframe. Letting go seeks exactly. It plays one track of each kind;
-  picking an audio or video track opens a decoder for it and seeks to the
-  playhead, so the new track starts where playback is. The other subtitle
-  tracks' packets are kept for a few seconds, so a subtitle track picked
-  starts with them, without a seek. Either thread failing, by an error or
-  a panic, says why for the tile to show, the first to fail standing, and
+  streams so a slow connection doesn't stall decoding) and carries out
+  seeks. The decode thread decodes only while its output queues have room,
+  so memory stays bounded however much is read ahead. With nothing to do
+  it sleeps until rung: by the player sending a command or taking a frame,
+  or by the demux thread reading what it waits for. Sound playing makes
+  room with nothing to ring, so it sleeps as long as that takes, and a
+  quarter of a second at most. It converts video to BGRA `RenderImage`s
+  (with the right YUV matrix and pixel aspect), except where frames stay
+  on the GPU (macOS) or go over as their Y'CbCr planes (Linux); resamples
+  audio to the mixer's rate; and handles accurate seeking: frames no other
+  frame refers to aren't decoded on the way to a seek's target. A skip
+  (the arrow keys, the skip buttons) is accurate when a keyframe is within
+  a second before its target, and otherwise lands on the nearest keyframe
+  its way, which shows at once. Dragging the seek bar scrubs: each move
+  shows the first frame decoded on its way at once, then one every 40 ms
+  or so, then the frame asked for, decoding nothing past it and no sound,
+  so nothing waits on buffering. A move up to two seconds past the frame
+  decoded last decodes on from there rather than going back to a keyframe.
+  Letting go seeks exactly. It plays one track of each kind; picking an
+  audio or video track opens a decoder for it and seeks to the playhead,
+  so the new track starts where playback is. The other subtitle tracks'
+  packets are kept for a few seconds, so a subtitle track picked starts
+  with them, without a seek. Either thread failing, by an error or a
+  panic, says why for the tile to show, the first to fail standing, and
   the player stops waiting for more.
 - `src/media/player.rs`: the UI-side handle: play/pause/seek, frame
   selection, buffering after seeks (and, for streams, until a second is

@@ -10,7 +10,7 @@ use parking_lot::Mutex;
 use super::audio::{AudioSource, Mixer};
 use super::clock::Clock;
 use super::decoder::{
-    self, Command, DecodeOptions, MediaInfo, SeekMode, Shared, VideoFrame, VideoQueue,
+    self, Command, DecodeOptions, Doorbell, MediaInfo, SeekMode, Shared, VideoFrame, VideoQueue,
 };
 use super::picture::Picture;
 use super::source::Source;
@@ -205,6 +205,7 @@ impl Player {
             read_ahead: AtomicU64::new(0.0f64.to_bits()),
             stop: AtomicBool::new(false),
             landed: Mutex::new(None),
+            wake: Doorbell::default(),
         });
         let name = source.name();
         let network = source.is_network();
@@ -390,7 +391,7 @@ impl Player {
         let from = self.shared.clock.now();
         self.shared.subtitles.lock().seeked(from, time);
         self.shared.clock.set(time);
-        let _ = self.commands.send(Command::Seek { time, serial, mode });
+        self.send(Command::Seek { time, serial, mode });
     }
 
     /// Decode the frame on screen again, for a paused player whose frames
@@ -414,7 +415,7 @@ impl Player {
             // track can't be played.
             info.select(kind, index);
         }
-        let _ = self.commands.send(Command::Select { kind, index });
+        self.send(Command::Select { kind, index });
         if index.is_none() {
             self.shared.subtitles.lock().clear();
         } else if kind != TrackKind::Subtitle && !self.is_live() {
@@ -423,6 +424,18 @@ impl Player {
             // seek; theirs starts with the next packet.
             self.seek(self.position());
         }
+    }
+
+    /// Tell the decode thread, waking it.
+    fn send(&self, command: Command) {
+        let _ = self.commands.send(command);
+        self.shared.wake.ring();
+    }
+
+    /// How many times the decode thread has waited for something to do.
+    #[cfg(test)]
+    pub(super) fn decoder_waits(&self) -> u64 {
+        self.shared.wake.waits()
     }
 
     /// The seek generation, for tests to tell whether something seeked.
@@ -611,6 +624,8 @@ impl Player {
         }
         if let Some(frame) = next {
             tick.retired = self.current.replace(frame).map(|f| f.picture);
+            // Room for another.
+            self.shared.wake.ring();
         }
         let video_drained = queued_frames == Some(0);
         let current_pts = self
@@ -729,7 +744,7 @@ impl Drop for Player {
     fn drop(&mut self) {
         // Aborts a network connection or read that is still blocking.
         self.shared.stop.store(true, Ordering::Relaxed);
-        let _ = self.commands.send(Command::Stop);
+        self.send(Command::Stop);
         if let (Some(mixer), Some(audio)) = (&self.mixer, &self.shared.audio) {
             mixer.remove_source(audio);
         }

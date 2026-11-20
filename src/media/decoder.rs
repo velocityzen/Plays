@@ -26,7 +26,7 @@ use std::panic::{self, AssertUnwindSafe};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::mpsc::{Receiver, RecvTimeoutError, TryRecvError};
+use std::sync::mpsc::{Receiver, TryRecvError};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
@@ -101,9 +101,15 @@ const NETWORK_TIMEOUT_MICROS: &str = "15000000";
 /// Consecutive decoding errors after which a hardware decoder is replaced by
 /// a software one.
 const HARDWARE_ERROR_LIMIT: u32 = 8;
-/// How long the decode thread sleeps when every queue is full.
-const IDLE_WAIT: Duration = Duration::from_millis(4);
-const DONE_WAIT: Duration = Duration::from_millis(100);
+/// How long the decode thread waits, at most, with nothing to do. What it
+/// waits for rings it awake sooner; only time brings a subtitle file's
+/// next cues within reach, and they are decoded seconds early.
+const IDLE_WAIT: Duration = Duration::from_millis(250);
+/// The least it waits for the mixer to make room for more sound: about a
+/// callback's worth, should the mixer stop taking it.
+const AUDIO_ROOM_WAIT: Duration = Duration::from_millis(10);
+/// How long a network read that has nothing yet waits to try again.
+const READ_AGAIN_WAIT: Duration = Duration::from_millis(4);
 const AV_TIME_BASE: f64 = 1_000_000.0;
 const NO_PTS: i64 = i64::MIN;
 
@@ -203,6 +209,42 @@ pub struct VideoQueue {
     pub serial: u64,
 }
 
+/// Wakes the decode thread when what it waits for may have come: a
+/// command, packets read, a seek carried out, a frame taken off its queue.
+#[derive(Default)]
+pub struct Doorbell {
+    rung: Mutex<bool>,
+    bell: Condvar,
+    /// How many times the decode thread waited, for tests to tell it
+    /// sleeps.
+    #[cfg(test)]
+    waits: AtomicU64,
+}
+
+impl Doorbell {
+    pub fn ring(&self) {
+        *self.rung.lock() = true;
+        self.bell.notify_one();
+    }
+
+    /// Until it rings, or `timeout` passes. A ring while nobody waited
+    /// ends the next wait at once.
+    fn wait(&self, timeout: Duration) {
+        #[cfg(test)]
+        self.waits.fetch_add(1, Ordering::Relaxed);
+        let mut rung = self.rung.lock();
+        if !*rung {
+            self.bell.wait_for(&mut rung, timeout);
+        }
+        *rung = false;
+    }
+
+    #[cfg(test)]
+    pub fn waits(&self) -> u64 {
+        self.waits.load(Ordering::Relaxed)
+    }
+}
+
 /// Everything the UI thread and the decoder threads share for one player.
 pub struct Shared {
     pub clock: Arc<Clock>,
@@ -227,6 +269,9 @@ pub struct Shared {
     /// Where a skip landed (serial, time) when that isn't where it was
     /// asked to, for the clock.
     pub landed: Mutex<Option<(u64, f64)>>,
+    /// Rung for the decode thread: by the player when it sends a command
+    /// or takes a frame, and by the demux thread when it reads.
+    pub wake: Doorbell,
 }
 
 impl Shared {
@@ -757,20 +802,16 @@ fn run(
 
     let mut wait: Option<Duration> = None;
     loop {
+        if let Some(timeout) = wait {
+            shared.wake.wait(timeout);
+        }
         // Commands. Seeks are coalesced so dragging a slider only seeks to the latest spot.
         let mut seek = None;
         let mut selects = Vec::new();
-        let first = match wait {
-            Some(timeout) => match commands.recv_timeout(timeout) {
-                Ok(command) => Some(command),
-                Err(RecvTimeoutError::Timeout) => None,
-                Err(RecvTimeoutError::Disconnected) => return Ok(()),
-            },
-            None => match commands.try_recv() {
-                Ok(command) => Some(command),
-                Err(TryRecvError::Empty) => None,
-                Err(TryRecvError::Disconnected) => return Ok(()),
-            },
+        let first = match commands.try_recv() {
+            Ok(command) => Some(command),
+            Err(TryRecvError::Empty) => None,
+            Err(TryRecvError::Disconnected) => return Ok(()),
         };
         if let Some(mut command) = first {
             loop {
@@ -928,11 +969,13 @@ fn run(
             shared.eof_serial.store(session.serial, Ordering::Release);
         }
 
-        wait = match (progressed, done) {
-            (true, _) => None,
-            (false, true) => Some(DONE_WAIT),
-            (false, false) => Some(IDLE_WAIT),
-        };
+        // Sound playing makes room as it goes, with nothing to ring.
+        let sound_room = decoders
+            .audio
+            .as_ref()
+            .filter(|a| !done && !a.finished)
+            .and_then(AudioDecoder::until_room);
+        wait = (!progressed).then(|| sound_room.map_or(IDLE_WAIT, |room| room.min(IDLE_WAIT)));
     }
 }
 
@@ -1072,7 +1115,9 @@ impl Packets {
             .fold(f64::INFINITY, f64::min)
     }
 
-    fn push(&mut self, packet: Packet) {
+    /// Queue `packet`; whether the decode thread may be waiting for it,
+    /// its queue having been empty.
+    fn push(&mut self, packet: Packet) -> bool {
         let index = packet.stream();
         let queue = [&mut self.video, &mut self.audio, &mut self.subtitle]
             .into_iter()
@@ -1080,19 +1125,21 @@ impl Packets {
             .find(|q| q.index == index);
         if let Some(queue) = queue {
             self.bytes += packet.size();
+            let waited = queue.packets.is_empty();
             queue.packets.push_back(packet);
-            return;
+            return waited;
         }
         if self.cover_index == Some(index) {
             if !self.cover_seen {
                 self.cover_seen = true;
                 self.cover = Some(packet);
+                return true;
             }
-            return;
+            return false;
         }
         // Kept from a little before the next packet to decode, or this one.
         let Some(start) = packet.pts().or(packet.dts()) else {
-            return;
+            return false;
         };
         let next = self
             .queues()
@@ -1103,6 +1150,7 @@ impl Packets {
             spare.packets.push_back(packet);
             spare.keep_from(next - SPARE_SUBTITLE_SECONDS, SPARE_SUBTITLE_PACKETS);
         }
+        false
     }
 
     fn clear(&mut self) {
@@ -1282,6 +1330,8 @@ fn demux(mut input: ffmpeg::format::context::Input, demuxer: &Demuxer, name: &st
                     }
                 }
                 demuxer.publish(&packets);
+                drop(packets);
+                demuxer.shared.wake.ring();
             }
             continue;
         }
@@ -1293,21 +1343,29 @@ fn demux(mut input: ffmpeg::format::context::Input, demuxer: &Demuxer, name: &st
             // Read from before the seek position.
             continue;
         }
-        match result {
+        let waited = match result {
             Ok(()) => packets.push(packet),
-            Err(ffmpeg::Error::Eof) => packets.eof = true,
+            Err(ffmpeg::Error::Eof) => {
+                packets.eof = true;
+                true
+            }
             Err(ffmpeg::Error::Other { errno }) if errno == ffmpeg::util::error::EAGAIN => {
                 drop(packets);
-                thread::sleep(IDLE_WAIT);
+                thread::sleep(READ_AGAIN_WAIT);
                 continue;
             }
             Err(_) if stopping() => return,
             Err(err) => {
                 log::warn!("{name}: read error, treating it as the end: {err}");
                 packets.eof = true;
+                true
             }
-        }
+        };
         demuxer.publish(&packets);
+        drop(packets);
+        if waited {
+            demuxer.shared.wake.ring();
+        }
     }
 }
 
@@ -1383,7 +1441,7 @@ fn read_to_video(input: &mut ffmpeg::format::context::Input, video: (usize, f64)
                 }
             }
             Err(ffmpeg::Error::Other { errno }) if errno == ffmpeg::util::error::EAGAIN => {
-                thread::sleep(IDLE_WAIT);
+                thread::sleep(READ_AGAIN_WAIT);
             }
             Err(err) => {
                 landing.error = Some(err);
@@ -2018,6 +2076,15 @@ impl AudioDecoder {
 
     fn has_room(&self) -> bool {
         self.source.queue.lock().buffered_seconds() < AUDIO_QUEUE_SECONDS
+    }
+
+    /// How soon the mixer, playing, makes room for more.
+    fn until_room(&self) -> Option<Duration> {
+        if !self.source.playing.load(Ordering::Relaxed) {
+            return None;
+        }
+        let over = self.source.queue.lock().buffered_seconds() - AUDIO_QUEUE_SECONDS;
+        Some(Duration::from_secs_f64(over.max(0.0)).max(AUDIO_ROOM_WAIT))
     }
 
     fn reset(&mut self) {

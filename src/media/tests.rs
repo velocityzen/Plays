@@ -64,6 +64,29 @@ fn a_decoder_thread_failing_says_so_and_stops_waiting() {
     assert!(!player.tick().animate, "nothing more to draw");
 }
 
+/// A paused player with its queues full lets its decode thread sleep,
+/// rather than look for something to do hundreds of times a second.
+#[test]
+fn a_paused_player_lets_its_decoder_sleep() {
+    let fixtures = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    let mixer = Mixer::detached(48_000);
+    let mut player = Player::open(
+        Source::File(fixtures.join("clip.mp4")),
+        Some(mixer.clone()),
+        options(false, false),
+    );
+    assert!(wait_until(Duration::from_secs(5), || {
+        player.tick();
+        player.frame_pts().is_some()
+    }));
+    // The picture and sound queues fill; then there's nothing to do.
+    std::thread::sleep(Duration::from_millis(300));
+    let before = player.decoder_waits();
+    std::thread::sleep(Duration::from_millis(500));
+    let waits = player.decoder_waits() - before;
+    assert!(waits <= 5, "it looked {waits} times in half a second");
+}
+
 fn wait_until(timeout: Duration, mut done: impl FnMut() -> bool) -> bool {
     let start = Instant::now();
     while start.elapsed() < timeout {
