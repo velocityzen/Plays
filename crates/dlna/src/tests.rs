@@ -343,6 +343,39 @@ fn without_events_it_is_asked() {
     drop(session);
 }
 
+/// A TV that takes subscriptions but whose events never come, as when a
+/// firewall stops them, is asked what it does instead.
+#[test]
+fn a_tv_whose_events_never_come_is_asked() {
+    let fake = FakeRenderer::start(Renderer::Tv);
+    fake.state().silent = true;
+    let (session, mut events) = Session::connect(&fake.device()).unwrap();
+    assert_eq!(fake.state().subscribers.len(), 2, "subscribed");
+    session.load(&film()).unwrap();
+    session.play().unwrap();
+    assert!(
+        status(&mut events, |status| status.state
+            == TransportState::Playing)
+        .is_some()
+    );
+    fake.state().transport = "PAUSED_PLAYBACK".into();
+    assert!(status(&mut events, |status| status.state == TransportState::Paused).is_some());
+    fake.state().volume = 55;
+    assert!(volume(
+        &mut events,
+        Volume {
+            level: 0.55,
+            muted: false
+        }
+    ));
+    fake.finish();
+    assert!(
+        status(&mut events, |status| status.state
+            == TransportState::Stopped)
+        .is_some()
+    );
+}
+
 #[test]
 fn a_position_is_heard_when_it_first_comes_and_polls_can_come_often() {
     let (fake, session, mut events) = playing(Renderer::Speaker);

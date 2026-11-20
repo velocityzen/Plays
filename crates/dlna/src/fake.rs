@@ -88,6 +88,9 @@ pub struct State {
     pub answer_after: Duration,
     /// How long it takes to answer a renewal, after it's counted it.
     pub renew_after: Duration,
+    /// Whether the events it's subscribed to never come, as when a
+    /// firewall stops them.
+    pub silent: bool,
     /// How long a subscription lasts, in seconds.
     pub subscription: u64,
     /// The max-age its adverts and answers give, in seconds.
@@ -157,6 +160,9 @@ fn lock(state: &Mutex<State>) -> MutexGuard<'_, State> {
 fn notify(state: &Mutex<State>, service: &str, only: Option<&str>) {
     let sends: Vec<(String, String, u32, String)> = {
         let mut state = lock(state);
+        if state.silent {
+            return;
+        }
         let body = state.last_change(service);
         state
             .subscribers
@@ -228,6 +234,7 @@ impl FakeRenderer {
             locked_while_playing: false,
             answer_after: Duration::ZERO,
             renew_after: Duration::ZERO,
+            silent: false,
             subscription: 300,
             max_age: 1800,
             answers: true,

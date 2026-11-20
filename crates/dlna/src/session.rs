@@ -112,6 +112,10 @@ struct State {
     /// the next poll.
     suspect: bool,
     subscriptions: Vec<Subscription>,
+    /// The services an event has come from. One subscribed to is asked
+    /// still until one does: its events may never reach us, as when a
+    /// firewall stops them.
+    heard: Vec<Evented>,
     /// Why it ended, once it has.
     ended: Option<Ended>,
 }
@@ -301,10 +305,12 @@ impl Inner {
     }
 
     fn evented(&self, of: Evented) -> bool {
-        self.state()
-            .subscriptions
-            .iter()
-            .any(|subscription| subscription.of == of)
+        let state = self.state();
+        state.heard.contains(&of)
+            && state
+                .subscriptions
+                .iter()
+                .any(|subscription| subscription.of == of)
     }
 
     /// Ask where it is, and what it's doing when that doesn't come as
@@ -421,6 +427,12 @@ impl Inner {
         else {
             return;
         };
+        {
+            let mut state = self.state();
+            if !state.heard.contains(&of) {
+                state.heard.push(of);
+            }
+        }
         match Element::parse(last_change.text()) {
             Ok(last_change) => self.changed(of, &last_change),
             Err(err) => log::debug!("dlna: an event's LastChange: {err}"),

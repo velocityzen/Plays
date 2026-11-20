@@ -798,13 +798,15 @@ happens over a channel.
   AVTransport and RenderingControl send their events to a listener of the
   session's own, renewed halfway through; GetPositionInfo is asked every
   second, or as often as the session's told, with the transport state, and
-  the volume every five seconds, when there are no events for them. A
-  position is taken as heard halfway between the asking and the answer,
-  when it first comes: a renderer saying where it is to the millisecond
-  may move it on only once a second. The session ends when the renderer
-  stops answering, or when it plays something it wasn't given here: what
-  it's set to play, asked afresh, isn't ours. A renderer that neither
-  sends events nor answers GetPositionInfo can't be followed. The events
+  the volume every five seconds, when there are no events for them: a
+  service subscribed to counts as evented only once an event has come from
+  it, as some never reach us (a firewall stopping them, say). A position
+  is taken as heard halfway between the asking and the answer, when it
+  first comes: a renderer saying where it is to the millisecond may move
+  it on only once a second. The session ends when the renderer stops
+  answering, or when it plays something it wasn't given here: what it's
+  set to play, asked afresh, isn't ours. A renderer that neither sends
+  events nor answers GetPositionInfo can't be followed. The events
   listener looks for a connection every 50 ms rather than waiting in
   `accept`, which nothing could wake once the Mac changed network and its
   address was gone. Ending the session stops the polling thread first, so
@@ -812,7 +814,7 @@ happens over a channel.
 - `fake.rs`, with the `fake` feature: a pretend renderer on this computer,
   a TV with events or a speaker without, saying where it is and how long
   what it plays is to the millisecond and, when told to, slow to answer an
-  action or a renewal.
+  action or a renewal, or with events that never come.
 
 `cargo run -p dlna --example dlna -- list` lists the renderers on the
 network and what they play; `play` has one play a URL, with subtitles
