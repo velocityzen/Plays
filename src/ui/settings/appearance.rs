@@ -4,7 +4,7 @@ use gpui::{AnyElement, Context, Window};
 
 use super::form::{group, row, update_settings};
 use super::{Pane, SettingsView};
-use crate::settings::{ControlsVisibility, FloatOnTop, PanelLook, Settings, ThemeMode};
+use crate::settings::{ControlsVisibility, FloatOnTop, FullScreen, PanelLook, Settings, ThemeMode};
 use crate::ui::components::{Segmented, Switch};
 use crate::ui::theme::Theme;
 use crate::ui::theme::settings::APPEARANCE_COLOR;
@@ -124,8 +124,34 @@ impl Pane for AppearancePane {
                         )
                         .on_select(|&v, _, cx| update_settings(cx, true, |s| s.float_on_top = v)),
                     ),
-                ],
+                ]
+                .into_iter()
+                .chain(cfg!(target_os = "macos").then(|| full_screen_row(s, theme)))
+                .collect(),
             ),
         ]
     }
+}
+
+/// Full screen in a Space of its own, as macOS has it, or over the display
+/// the window is on.
+fn full_screen_row(s: &Settings, theme: &Theme) -> AnyElement {
+    row(
+        "Full screen",
+        Some(
+            "Over the display leaves the other displays as they are, and goes in \
+             and out at once."
+                .into(),
+        ),
+        theme,
+        Segmented::new(
+            "full-screen",
+            &[
+                (FullScreen::OwnSpace, "Own Space"),
+                (FullScreen::OverDisplay, "Over the display"),
+            ],
+            s.full_screen,
+        )
+        .on_select(|&v, _, cx| update_settings(cx, true, |s| s.full_screen = v)),
+    )
 }

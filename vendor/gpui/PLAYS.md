@@ -211,6 +211,19 @@ the position in the events relative to the frame, so windows reported
 where they are inside it, and opened there again, crept down and right. macOS always opens windows
 where they are asked to; Wayland lets the compositor place them.
 
+`src/platform.rs`, `src/window.rs`, and the macOS and test windows:
+`Window::set_fullscreen_style` picks how `toggle_fullscreen` goes full
+screen on macOS. `FullscreenStyle::OwnSpace` is macOS's own full screen, in
+a Space of its own. With `FullscreenStyle::OverDisplay` the window covers
+its display's whole frame instead, in the Space it is in, at once. While
+it does, it can't be moved or resized, has no shadow or traffic lights,
+and stays at the normal level. While it is key, the app's presentation
+options auto-hide the menu bar and Dock; the window delegate restores them
+when it isn't key. Going back restores the window's frame, style, shadow,
+level and the app's presentation options. `is_fullscreen` is true either
+way, and `window_bounds` gives the bounds from before. One full screen
+already leaves the way it came. The test window keeps the style.
+
 `src/taffy.rs`: two float literals are typed as `f32`, which newer Rust
 warns about otherwise.
 

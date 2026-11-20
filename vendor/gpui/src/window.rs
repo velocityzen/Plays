@@ -4292,6 +4292,18 @@ impl Window {
         self.platform_window.is_on_top()
     }
 
+    /// Plays: how the window goes full screen from now on
+    /// (`toggle_fullscreen`); one full screen now leaves the way it came.
+    /// Only macOS has a choice.
+    pub fn set_fullscreen_style(&self, style: crate::FullscreenStyle) {
+        self.platform_window.set_fullscreen_style(style);
+    }
+
+    /// Plays: how the window goes full screen.
+    pub fn fullscreen_style(&self) -> crate::FullscreenStyle {
+        self.platform_window.fullscreen_style()
+    }
+
     /// Updates the IME panel position suggestions for languages like japanese, chinese.
     pub fn invalidate_character_coordinates(&self) {
         self.on_next_frame(|window, cx| {

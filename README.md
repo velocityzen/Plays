@@ -84,6 +84,11 @@ GPU-accelerated UI framework.
 - On macOS, Video → Output Device lists the displays by name and puts the
   player window full screen on the one picked, picture, subtitles and all.
   Out of full screen, the window goes back where it was.
+- On macOS, full screen is macOS's own, in a Space of its own, unless
+  Settings → Appearance → Full screen says Over the display. Then the window
+  covers just its own display and goes in and out at once. The other
+  displays stay as they are, and the menu bar and Dock keep out of the way
+  while the window is in front.
   An AirPlay TV or projector is one of them once it's connected as a
   separate display, and macOS sends the sound there with it. AirPlay
   speakers play the sound alone once macOS has them, and the picture is

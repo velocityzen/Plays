@@ -147,8 +147,10 @@ impl Workspace {
     fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let focus_handle = cx.focus_handle();
         window.focus(&focus_handle);
-        let settings_subscription = cx.observe_global::<Settings>(|this: &mut Self, cx| {
+        window.set_fullscreen_style(cx.global::<Settings>().full_screen.style());
+        let settings_subscription = cx.observe_global_in::<Settings>(window, |this, window, cx| {
             let settings = cx.global::<Settings>();
+            window.set_fullscreen_style(settings.full_screen.style());
             let (volume, gamma) = (settings.master_volume, settings.gamma());
             if let Some(mixer) = AudioEngine::mixer(cx) {
                 mixer.set_master_volume(volume);

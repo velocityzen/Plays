@@ -6,15 +6,15 @@ mod casting_to_chromecast;
 mod casting_to_dlna;
 
 use gpui::{
-    AnyWindowHandle, AppContext, Bounds, EntityId, Modifiers, MouseButton, Pixels, TestAppContext,
-    VisualTestContext, WindowHandle, point, px, size,
+    AnyWindowHandle, AppContext, Bounds, EntityId, FullscreenStyle, Modifiers, MouseButton, Pixels,
+    TestAppContext, VisualTestContext, WindowHandle, point, px, size,
 };
 
 use super::place::Place;
 use super::{TOOLBAR_SPACE, Workspace};
 use crate::app::ShowOnDisplay;
 use crate::hotkeys::{ToggleFloatOnTop, ToggleFloatOnTopWhilePlaying};
-use crate::settings::{FloatOnTop, PanelLook, Settings};
+use crate::settings::{FloatOnTop, FullScreen, PanelLook, Settings};
 use crate::ui::displays;
 use crate::ui::pip::PipEvent;
 use crate::ui::settings::SettingsView;
@@ -713,6 +713,26 @@ fn leaving_full_screen_on_another_display_goes_back_where_it_was(cx: &mut TestAp
     cx.update(|window, _| window.toggle_fullscreen());
     assert!(!away(&mut cx), "back, out of full screen");
     assert_eq!(cx.update(|_, cx| Workspace::last_place(cx)), here);
+}
+
+#[gpui::test]
+fn windows_go_full_screen_as_settings_say(cx: &mut TestAppContext) {
+    let (_, mut cx) = testing::start(cx);
+    let style = |cx: &mut VisualTestContext| {
+        cx.run_until_parked();
+        cx.update(|window, _| window.fullscreen_style())
+    };
+    assert_eq!(style(&mut cx), FullscreenStyle::OwnSpace);
+
+    cx.update(|_, cx| Settings::update(cx, false, |s| s.full_screen = FullScreen::OverDisplay));
+    assert_eq!(style(&mut cx), FullscreenStyle::OverDisplay);
+    let next = cx
+        .update(|_, cx| Workspace::open_window(WINDOW_SIZE, cx))
+        .unwrap();
+    let next = next
+        .update(&mut cx, |_, window, _| window.fullscreen_style())
+        .unwrap();
+    assert_eq!(next, FullscreenStyle::OverDisplay, "a new window too");
 }
 
 #[gpui::test]

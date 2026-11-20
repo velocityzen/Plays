@@ -74,6 +74,43 @@ fn picking_how_panels_show_the_video_sets_it(cx: &mut TestAppContext) {
     }
 }
 
+#[cfg(target_os = "macos")]
+#[gpui::test]
+fn picking_how_windows_go_full_screen_sets_it(cx: &mut TestAppContext) {
+    use crate::settings::FullScreen;
+    use gpui::FullscreenStyle;
+
+    let (_, mut cx) = testing::start(cx);
+    let mut settings = open_settings(&mut cx);
+    click(&mut settings, "pane-Appearance");
+    // Tall enough for the row, at the foot of the pane.
+    settings.simulate_resize(gpui::size(gpui::px(720.), gpui::px(1000.)));
+    let picked = |settings: &mut VisualTestContext, cx: &mut VisualTestContext| {
+        settings.run_until_parked();
+        (
+            settings.update(|_, cx| cx.global::<Settings>().full_screen),
+            cx.update(|window, _| window.fullscreen_style()),
+        )
+    };
+    assert_eq!(
+        picked(&mut settings, &mut cx),
+        (FullScreen::OwnSpace, FullscreenStyle::OwnSpace),
+        "macOS's own, unless asked"
+    );
+
+    click(&mut settings, "full-screen-Over the display");
+    assert_eq!(
+        picked(&mut settings, &mut cx),
+        (FullScreen::OverDisplay, FullscreenStyle::OverDisplay),
+        "and the player window goes full screen that way"
+    );
+    click(&mut settings, "full-screen-Own Space");
+    assert_eq!(
+        picked(&mut settings, &mut cx),
+        (FullScreen::OwnSpace, FullscreenStyle::OwnSpace)
+    );
+}
+
 #[gpui::test]
 fn picking_an_output_in_the_audio_menu_sets_it(cx: &mut TestAppContext) {
     let (_, mut cx) = testing::start(cx);

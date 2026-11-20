@@ -494,6 +494,12 @@ pub(crate) trait PlatformWindow: HasWindowHandle + HasDisplayHandle {
     fn is_on_top(&self) -> bool {
         false
     }
+    /// Plays: how the window goes full screen from now on.
+    fn set_fullscreen_style(&self, _style: FullscreenStyle) {}
+    /// Plays: how the window goes full screen.
+    fn fullscreen_style(&self) -> FullscreenStyle {
+        FullscreenStyle::default()
+    }
     fn on_request_frame(&self, callback: Box<dyn FnMut(RequestFrameOptions)>);
     fn on_input(&self, callback: Box<dyn FnMut(PlatformInput) -> DispatchEventResult>);
     fn on_active_status_change(&self, callback: Box<dyn FnMut(bool)>);
@@ -1200,6 +1206,20 @@ pub(crate) struct WindowParams {
 
     #[cfg(target_os = "macos")]
     pub tabbing_identifier: Option<String>,
+}
+
+/// Plays: how a window goes full screen, on macOS. Elsewhere full screen
+/// covers the window's own display already.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum FullscreenStyle {
+    /// In a Space of its own, as macOS has full screen.
+    #[default]
+    OwnSpace,
+    /// Over its display, in the Space it is in: the window covers the
+    /// display, with the menu bar and Dock out of the way while it is in
+    /// front, and goes in and out at once. The other displays stay as they
+    /// are.
+    OverDisplay,
 }
 
 /// Represents the status of how a window should be opened.

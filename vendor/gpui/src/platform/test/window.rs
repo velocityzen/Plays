@@ -29,6 +29,7 @@ pub(crate) struct TestWindowState {
     moved_callback: Option<Box<dyn FnMut()>>,
     input_handler: Option<PlatformInputHandler>,
     is_fullscreen: bool,
+    fullscreen_style: crate::FullscreenStyle,
     // Plays.
     on_top: bool,
 }
@@ -77,6 +78,7 @@ impl TestWindow {
             moved_callback: None,
             input_handler: None,
             is_fullscreen: false,
+            fullscreen_style: Default::default(),
             on_top: false,
         })))
     }
@@ -244,6 +246,16 @@ impl PlatformWindow for TestWindow {
     // Plays.
     fn is_on_top(&self) -> bool {
         self.0.lock().on_top
+    }
+
+    // Plays.
+    fn set_fullscreen_style(&self, style: crate::FullscreenStyle) {
+        self.0.lock().fullscreen_style = style;
+    }
+
+    // Plays.
+    fn fullscreen_style(&self) -> crate::FullscreenStyle {
+        self.0.lock().fullscreen_style
     }
 
     fn on_request_frame(&self, _callback: Box<dyn FnMut(RequestFrameOptions)>) {}

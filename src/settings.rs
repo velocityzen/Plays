@@ -89,6 +89,26 @@ impl FloatOnTop {
     }
 }
 
+/// How player windows go full screen, on macOS.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FullScreen {
+    /// In a Space of their own, as macOS has it.
+    #[default]
+    OwnSpace,
+    /// Over their display, leaving the other displays as they are.
+    OverDisplay,
+}
+
+impl FullScreen {
+    pub fn style(self) -> gpui::FullscreenStyle {
+        match self {
+            Self::OwnSpace => gpui::FullscreenStyle::OwnSpace,
+            Self::OverDisplay => gpui::FullscreenStyle::OverDisplay,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SubtitleWeight {
@@ -366,6 +386,7 @@ pub struct Settings {
     pub show_titles: bool,
     pub panels: PanelLook,
     pub float_on_top: FloatOnTop,
+    pub full_screen: FullScreen,
     /// Gamma for SDR video, for every open video at once; 1 leaves it be.
     pub sdr_gamma: f32,
     /// Gamma for HDR video (Dolby Vision included).
@@ -399,6 +420,7 @@ impl Default for Settings {
             show_titles: true,
             panels: PanelLook::Frosted,
             float_on_top: FloatOnTop::Off,
+            full_screen: FullScreen::OwnSpace,
             sdr_gamma: 1.0,
             hdr_gamma: 1.0,
             subtitles: SubtitleStyle::default(),

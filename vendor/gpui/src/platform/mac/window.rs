@@ -418,6 +418,10 @@ struct MacWindowState {
     fullscreen_restore_bounds: Bounds<Pixels>,
     // Plays: the window is to stay on top, other than while full screen.
     on_top: bool,
+    // Plays: how the window goes full screen, and what it was before while
+    // it covers its display.
+    fullscreen_style: crate::FullscreenStyle,
+    covering: Option<Covering>,
     move_tab_to_new_window_callback: Option<Box<dyn FnMut()>>,
     merge_all_windows_callback: Option<Box<dyn FnMut()>>,
     select_next_tab_callback: Option<Box<dyn FnMut()>>,
@@ -511,10 +515,12 @@ impl MacWindowState {
     }
 
     fn is_fullscreen(&self) -> bool {
-        unsafe {
-            let style_mask = self.native_window.styleMask();
-            style_mask.contains(NSWindowStyleMask::NSFullScreenWindowMask)
-        }
+        // Plays: covering its display is full screen too.
+        self.covering.is_some()
+            || unsafe {
+                let style_mask = self.native_window.styleMask();
+                style_mask.contains(NSWindowStyleMask::NSFullScreenWindowMask)
+            }
     }
 
     fn bounds(&self) -> Bounds<Pixels> {
@@ -727,6 +733,8 @@ impl MacWindow {
                 first_mouse: false,
                 fullscreen_restore_bounds: Bounds::default(),
                 on_top: false,
+                fullscreen_style: Default::default(),
+                covering: None,
                 move_tab_to_new_window_callback: None,
                 merge_all_windows_callback: None,
                 select_next_tab_callback: None,
@@ -1364,13 +1372,37 @@ impl PlatformWindow for MacWindow {
     fn toggle_fullscreen(&self) {
         let this = self.0.lock();
         let window = this.native_window;
+        // Plays: over its display, or back from there, at once; otherwise
+        // in a Space of its own, or back from there.
+        let in_space = unsafe {
+            window
+                .styleMask()
+                .contains(NSWindowStyleMask::NSFullScreenWindowMask)
+        };
+        let cover = this.covering.is_some()
+            || (!in_space && this.fullscreen_style == crate::FullscreenStyle::OverDisplay);
+        let state = self.0.clone();
         this.executor
             .spawn(async move {
                 unsafe {
-                    window.toggleFullScreen_(nil);
+                    if cover {
+                        toggle_covering(&state);
+                    } else {
+                        window.toggleFullScreen_(nil);
+                    }
                 }
             })
             .detach();
+    }
+
+    // Plays.
+    fn set_fullscreen_style(&self, style: crate::FullscreenStyle) {
+        self.0.lock().fullscreen_style = style;
+    }
+
+    // Plays.
+    fn fullscreen_style(&self) -> crate::FullscreenStyle {
+        self.0.lock().fullscreen_style
     }
 
     // Plays: a window full screen stays at the normal level, so it can go
@@ -1379,6 +1411,7 @@ impl PlatformWindow for MacWindow {
         let mut this = self.0.lock();
         this.on_top = on_top;
         let window = this.native_window;
+        let covering = this.covering.is_some();
         this.executor
             .spawn(async move {
                 unsafe {
@@ -1392,7 +1425,8 @@ impl PlatformWindow for MacWindow {
                                 | NSWindowCollectionBehavior::NSWindowCollectionBehaviorFullScreenPrimary,
                         );
                     }
-                    let full_screen = style.contains(NSWindowStyleMask::NSFullScreenWindowMask);
+                    let full_screen =
+                        covering || style.contains(NSWindowStyleMask::NSFullScreenWindowMask);
                     window.setLevel_(if on_top && !full_screen {
                         NSFloatingWindowLevel
                     } else {
@@ -1411,14 +1445,7 @@ impl PlatformWindow for MacWindow {
     }
 
     fn is_fullscreen(&self) -> bool {
-        let this = self.0.lock();
-        let window = this.native_window;
-
-        unsafe {
-            window
-                .styleMask()
-                .contains(NSWindowStyleMask::NSFullScreenWindowMask)
-        }
+        self.0.lock().is_fullscreen()
     }
 
     fn on_request_frame(&self, callback: Box<dyn FnMut(RequestFrameOptions)>) {
@@ -1971,6 +1998,85 @@ extern "C" fn window_did_resize(this: &Object, _: Sel, _: id) {
     window_state.as_ref().lock().move_traffic_light();
 }
 
+/// Plays: a window covering its display, full screen in the Space it is
+/// in, and what it was before.
+struct Covering {
+    frame: NSRect,
+    style: NSWindowStyleMask,
+    has_shadow: BOOL,
+    movable: BOOL,
+    /// The app's presentation options before, which come back whenever the
+    /// window isn't key.
+    presentation: NSUInteger,
+}
+
+/// Plays: the menu bar and Dock out of the way of a window covering its
+/// display, there again when the mouse goes to them: auto-hide each.
+const COVERING_PRESENTATION: NSUInteger = (1 << 0) | (1 << 2);
+
+/// Plays: cover the window's display with it, or put it back as it was.
+/// Outside any lock: AppKit calls back into the window as its frame changes.
+unsafe fn toggle_covering(state: &Arc<Mutex<MacWindowState>>) {
+    unsafe {
+        let mut lock = state.lock();
+        let window = lock.native_window;
+        let app = NSApplication::sharedApplication(nil);
+        if let Some(was) = lock.covering.take() {
+            let on_top = lock.on_top;
+            drop(lock);
+            let _: () = msg_send![app, setPresentationOptions: was.presentation];
+            window.setStyleMask_(was.style);
+            let _: () = msg_send![window, setHasShadow: was.has_shadow];
+            let _: () = msg_send![window, setMovable: was.movable];
+            show_window_buttons(window, true);
+            window.setFrame_display_(was.frame, YES);
+            if on_top {
+                window.setLevel_(NSFloatingWindowLevel);
+            }
+            return;
+        }
+        let screen = window.screen();
+        if screen == nil {
+            return;
+        }
+        let style = window.styleMask();
+        lock.fullscreen_restore_bounds = lock.bounds();
+        lock.covering = Some(Covering {
+            frame: NSWindow::frame(window),
+            style,
+            has_shadow: msg_send![window, hasShadow],
+            movable: msg_send![window, isMovable],
+            presentation: msg_send![app, presentationOptions],
+        });
+        drop(lock);
+        window.setLevel_(NSNormalWindowLevel);
+        if window.isKeyWindow() == YES {
+            let _: () = msg_send![app, setPresentationOptions: COVERING_PRESENTATION];
+        }
+        window.setStyleMask_(style & !NSWindowStyleMask::NSResizableWindowMask);
+        let _: () = msg_send![window, setHasShadow: NO];
+        let _: () = msg_send![window, setMovable: NO];
+        show_window_buttons(window, false);
+        window.setFrame_display_(NSScreen::frame(screen), YES);
+    }
+}
+
+/// Plays: show or hide the traffic lights.
+unsafe fn show_window_buttons(window: id, show: bool) {
+    for kind in [
+        NSWindowButton::NSWindowCloseButton,
+        NSWindowButton::NSWindowMiniaturizeButton,
+        NSWindowButton::NSWindowZoomButton,
+    ] {
+        unsafe {
+            let button = window.standardWindowButton_(kind);
+            if button != nil {
+                let _: () = msg_send![button, setHidden: if show { NO } else { YES }];
+            }
+        }
+    }
+}
+
 extern "C" fn window_will_enter_fullscreen(this: &Object, _: Sel, _: id) {
     let window_state = unsafe { get_window_state(this) };
     let mut lock = window_state.as_ref().lock();
@@ -2052,7 +2158,21 @@ extern "C" fn window_did_change_key_status(this: &Object, selector: Sel, _: id) 
     }
 
     let executor = lock.executor.clone();
+    // Plays: a window covering its display puts the menu bar and Dock out of
+    // the way while it is key, and back when it isn't.
+    let covering_presentation = lock.covering.as_ref().map(|covering| covering.presentation);
     drop(lock);
+    if let Some(presentation) = covering_presentation {
+        let options = if is_active {
+            COVERING_PRESENTATION
+        } else {
+            presentation
+        };
+        unsafe {
+            let app = NSApplication::sharedApplication(nil);
+            let _: () = msg_send![app, setPresentationOptions: options];
+        }
+    }
 
     // When a window becomes active, trigger an immediate synchronous frame request to prevent
     // tab flicker when switching between windows in native tabs mode.
