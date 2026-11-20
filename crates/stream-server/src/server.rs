@@ -124,7 +124,7 @@ impl Server {
         let stop = Arc::new(AtomicBool::new(false));
         let mut input = media::open(&request.source, Arc::clone(&stop))?;
         let info = MediaInfo::read(&input, &request.source.location());
-        let plan = plan::plan(
+        let mut plan = plan::plan(
             &info,
             &request.source,
             request.video,
@@ -132,16 +132,33 @@ impl Server {
             request.subtitles.as_ref(),
             &request.profile,
         )?;
-        log::info!("casting {}: {}", request.source.location(), plan.describe());
         let live = request.source.is_live() || info.duration.is_none();
         let segment = self.shared.segment;
-        let variant = variant(&input, &info, &plan);
         let timeline = match plan.delivery {
             Delivery::Hls(_) if !live => {
-                Some(segments::timeline(&mut input, &info, &plan, segment))
+                let mut timeline = segments::timeline(&mut input, &info, &plan, segment);
+                let copied = matches!(plan.video, Some(VideoPlan::Copy { .. }));
+                if copied && timeline.longest() > segment * segments::LONGEST_COPIED {
+                    match plan::re_encode_video(
+                        &mut plan,
+                        &info,
+                        &request.profile,
+                        request.subtitles.as_ref(),
+                    ) {
+                        Ok(()) => timeline = segments::timeline(&mut input, &info, &plan, segment),
+                        Err(err) => log::warn!(
+                            "{}: keyframes {:.0} s apart, copied as they are: {err}",
+                            request.source.location(),
+                            timeline.longest()
+                        ),
+                    }
+                }
+                Some(timeline)
             }
             _ => None,
         };
+        log::info!("casting {}: {}", request.source.location(), plan.describe());
+        let variant = variant(&input, &info, &plan);
         drop(input);
         let media = Arc::new(Media {
             source: request.source.clone(),

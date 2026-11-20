@@ -644,9 +644,13 @@ flowchart LR
   reading the file); re-encoded video and sound alone are cut every six
   seconds, with a keyframe made there. A file is at most 100,000 segments
   long, about a week: one claiming to last longer is taken to end there.
-- `mux.rs`: fragmented MP4, MPEG-TS, ADTS or FLAC written in memory, cut
-  into segments where told. Every timestamp is moved ten seconds later, so
-  none is negative and segments made by different jobs line up.
+  Copied video with keyframes more than five segments apart is re-encoded
+  instead (copied as it is only where it can't be), as each segment is
+  held whole while it is made and served.
+- `mux.rs`: fragmented MP4, MPEG-TS, ADTS or FLAC written into memory of
+  its own, cut into segments where told and each handed over as it is
+  rather than copied out of FFmpeg's. Every timestamp is moved ten seconds
+  later, so none is negative and segments made by different jobs line up.
 - `job.rs`: making them. A job reads from where a segment starts, copies
   or re-encodes, and cuts where the leading stream (video, else sound)
   reaches the next segment's start, holding the other stream's packets

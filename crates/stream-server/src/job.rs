@@ -756,16 +756,10 @@ fn make_segments(
     };
     let keys = Keys::At(timeline.starts[from + 1..].to_vec(), 0);
     let (mut pipeline, header) = Pipeline::open(media, start, keys, domain, Arc::clone(stop))?;
-    let mut pending = Vec::new();
-    match media.kind {
-        Segments::Fmp4 => {
-            if !deliver(Product::Init(header)) {
-                return Ok(());
-            }
-        }
-        // MPEG-TS has no header of its own; whatever the muxer wrote first
-        // starts the first segment.
-        Segments::Ts => pending = header,
+    // MPEG-TS has no header of its own; whatever the muxer wrote first
+    // starts the first segment.
+    if media.kind == Segments::Fmp4 && !deliver(Product::Init(header)) {
+        return Ok(());
     }
     let mut segment = from;
     let mut held: Vec<Out> = Vec::new();
@@ -778,9 +772,7 @@ fn make_segments(
         for out in outs.drain(..) {
             let leader = out.output == 0;
             if leader && out.key && past(timeline, segment, &out, true) {
-                let mut bytes = std::mem::take(&mut pending);
-                bytes.extend(pipeline.muxer.cut()?);
-                if !deliver(Product::Segment(segment, bytes)) {
+                if !deliver(Product::Segment(segment, pipeline.muxer.cut()?)) {
                     return Ok(());
                 }
                 segment += 1;
@@ -809,9 +801,7 @@ fn make_segments(
     for follower in held {
         pipeline.write(follower)?;
     }
-    let mut bytes = pending;
-    bytes.extend(pipeline.muxer.finish()?);
-    if !deliver(Product::Segment(segment, bytes)) {
+    if !deliver(Product::Segment(segment, pipeline.muxer.finish()?)) {
         return Ok(());
     }
     // The media ended before the segments the timeline has after this.
@@ -1287,14 +1277,8 @@ fn make_live(
     };
     let (mut pipeline, header) =
         Pipeline::open(media, Start::Beginning, keys, Domain::Pts, Arc::clone(stop))?;
-    let mut pending = Vec::new();
-    match media.kind {
-        Segments::Fmp4 => {
-            if !deliver(LiveProduct::Init(header)) {
-                return Ok(());
-            }
-        }
-        Segments::Ts => pending = header,
+    if media.kind == Segments::Fmp4 && !deliver(LiveProduct::Init(header)) {
+        return Ok(());
     }
     let mut start: Option<f64> = None;
     let mut latest = f64::NEG_INFINITY;
@@ -1322,11 +1306,9 @@ fn make_live(
                 for follower in before {
                     pipeline.write(follower)?;
                 }
-                let mut bytes = std::mem::take(&mut pending);
-                bytes.extend(pipeline.muxer.cut()?);
                 let segment = LiveProduct::Segment {
                     duration: out.time - begun,
-                    bytes,
+                    bytes: pipeline.muxer.cut()?,
                 };
                 if !deliver(segment) {
                     return Ok(());
@@ -1350,8 +1332,7 @@ fn make_live(
     for follower in held {
         pipeline.write(follower)?;
     }
-    let mut bytes = pending;
-    bytes.extend(pipeline.muxer.finish()?);
+    let bytes = pipeline.muxer.finish()?;
     let duration = start.map_or(0.0, |begun| (latest - begun).max(0.0));
     deliver(LiveProduct::Segment { duration, bytes });
     Ok(())
@@ -1393,7 +1374,9 @@ fn make_stream(
         next: None,
     };
     let (mut pipeline, header) = Pipeline::open(media, from, keys, Domain::Pts, Arc::clone(stop))?;
-    let mut pending = header;
+    if !header.is_empty() && sender.send(header).is_err() {
+        return Ok(());
+    }
     let mut written = 0;
     let mut outs = Vec::new();
     loop {
@@ -1407,12 +1390,12 @@ fn make_stream(
         }
         if written >= STREAM_BATCH || !more {
             written = 0;
-            pending.extend(if more {
+            let bytes = if more {
                 pipeline.muxer.take()?
             } else {
                 pipeline.muxer.finish()?
-            });
-            if !pending.is_empty() && sender.send(std::mem::take(&mut pending)).is_err() {
+            };
+            if !bytes.is_empty() && sender.send(bytes).is_err() {
                 // The device hung up.
                 return Ok(());
             }

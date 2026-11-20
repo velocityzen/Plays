@@ -1,10 +1,11 @@
-//! Writing packets into fragmented MP4, MPEG-TS or ADTS, in memory, cut
-//! into segments where the caller says. Each output timestamp is moved later by
+//! Writing packets into fragmented MP4, MPEG-TS or ADTS, in memory of
+//! our own, cut into segments where the caller says and handed over as
+//! they are. Each output timestamp is moved later by
 //! `OFFSET`, so none is negative (MP4 fragments can't start before zero)
 //! and segments written by different jobs line up.
 
-use std::ffi::CString;
-use std::ptr;
+use std::ffi::{CString, c_int, c_void};
+use std::{ptr, slice};
 
 use ffmpeg::ffi;
 use ffmpeg::packet::Mut;
@@ -16,6 +17,11 @@ use crate::profile::{AudioCodec, Segments};
 
 /// How much later than the source every output timestamp is, in seconds.
 pub(crate) const OFFSET: f64 = 10.0;
+/// How much FFmpeg gathers before handing it to the sink.
+const IO_BUFFER: usize = 32 * 1024;
+const SEEK_SET: c_int = 0;
+const SEEK_CUR: c_int = 1;
+const SEEK_END: c_int = 2;
 
 /// What the muxer writes: HLS's segments, or the sound alone as internet
 /// radio sends it, AAC with ADTS headers or FLAC.
@@ -60,20 +66,114 @@ pub(crate) struct Muxer {
     kind: Format,
     /// Each stream's packets' time base, to rescale from.
     input_time_bases: Vec<Rational>,
+    /// Where the context's `pb` writes, from `Box::into_raw`.
+    sink: *mut Sink,
 }
 
-// SAFETY: the muxer is used by one thread at a time, the job's.
+// SAFETY: the muxer is used by one thread at a time, the job's, and the
+// sink only by the muxer.
 unsafe impl Send for Muxer {}
 
 impl Drop for Muxer {
     fn drop(&mut self) {
-        // SAFETY: the context and its dynamic buffer were made in `new`
-        // and are freed once.
+        // SAFETY: the context, its `pb` and the sink were made in `new` and
+        // are freed once, the sink after what writes to it.
         unsafe {
-            self.close_buffer();
+            let mut pb = (*self.context).pb;
+            (*self.context).pb = ptr::null_mut();
             ffi::avformat_free_context(self.context);
+            if !pb.is_null() {
+                ffi::av_freep((&raw mut (*pb).buffer).cast());
+                ffi::avio_context_free(&mut pb);
+            }
+            drop(Box::from_raw(self.sink));
         }
     }
+}
+
+/// Where the muxer writes: memory of ours, so what was written is handed
+/// over as it is instead of copied out of FFmpeg's.
+#[derive(Default)]
+struct Sink {
+    /// What was written since the last take.
+    bytes: Vec<u8>,
+    /// Where `bytes` starts in all that was written.
+    base: u64,
+    /// Where the next write goes.
+    at: u64,
+}
+
+impl Sink {
+    /// Write `data` at `at`, over what is there and past it; not before
+    /// what was taken.
+    fn write(&mut self, data: &[u8]) -> bool {
+        let Some(offset) = self
+            .at
+            .checked_sub(self.base)
+            .and_then(|offset| usize::try_from(offset).ok())
+        else {
+            return false;
+        };
+        if offset > self.bytes.len() {
+            self.bytes.resize(offset, 0);
+        }
+        let over = (self.bytes.len() - offset).min(data.len());
+        self.bytes[offset..offset + over].copy_from_slice(&data[..over]);
+        self.bytes.extend_from_slice(&data[over..]);
+        self.at += data.len() as u64;
+        true
+    }
+
+    /// Where the next write goes, as FFmpeg asks; not back into what was
+    /// taken.
+    fn seek(&mut self, offset: i64, whence: c_int) -> i64 {
+        let end = self.base + self.bytes.len() as u64;
+        let to = match whence & !ffi::AVSEEK_FORCE {
+            ffi::AVSEEK_SIZE => return end as i64,
+            SEEK_SET => Some(offset),
+            SEEK_CUR => (self.at as i64).checked_add(offset),
+            SEEK_END => (end as i64).checked_add(offset),
+            _ => return i64::from(ffi::AVERROR(ffi::EINVAL)),
+        };
+        match to.and_then(|to| u64::try_from(to).ok()) {
+            Some(to) if to >= self.base => {
+                self.at = to;
+                to as i64
+            }
+            _ => i64::from(ffi::AVERROR(ffi::EIO)),
+        }
+    }
+
+    /// What was written since the last take.
+    fn take(&mut self) -> Vec<u8> {
+        let bytes = std::mem::take(&mut self.bytes);
+        self.base += bytes.len() as u64;
+        bytes
+    }
+}
+
+unsafe extern "C" fn write_packet(opaque: *mut c_void, data: *const u8, size: c_int) -> c_int {
+    // SAFETY: `opaque` is the muxer's sink, which outlives the `pb` calling
+    // this and is touched only from inside the muxer's calls into FFmpeg;
+    // `data` holds `size` bytes.
+    let (sink, data) = unsafe {
+        let data = match usize::try_from(size) {
+            Ok(size) if size > 0 && !data.is_null() => slice::from_raw_parts(data, size),
+            _ => &[],
+        };
+        (&mut *opaque.cast::<Sink>(), data)
+    };
+    if sink.write(data) {
+        size
+    } else {
+        ffi::AVERROR(ffi::EIO)
+    }
+}
+
+unsafe extern "C" fn seek(opaque: *mut c_void, offset: i64, whence: c_int) -> i64 {
+    // SAFETY: as in `write_packet`.
+    let sink = unsafe { &mut *opaque.cast::<Sink>() };
+    sink.seek(offset, whence)
 }
 
 fn check(result: i32, what: &str) -> Result<(), Error> {
@@ -113,6 +213,7 @@ impl Muxer {
                 context,
                 kind,
                 input_time_bases: streams.iter().map(|stream| stream.time_base).collect(),
+                sink: Box::into_raw(Box::default()),
             };
             for stream in streams {
                 let out = ffi::avformat_new_stream(context, ptr::null());
@@ -135,12 +236,13 @@ impl Muxer {
                 };
                 (*out).time_base = stream.time_base.into();
             }
-            muxer.open_buffer()?;
+            muxer.open_sink()?;
             Ok(muxer)
         }
     }
 
-    /// Start writing: the header, which for MP4 is the init segment.
+    /// Start writing: the header. MP4's, the init segment, is handed back;
+    /// the others' starts what is taken next.
     pub fn write_header(&mut self) -> Result<Vec<u8>, Error> {
         let mut options = Dictionary::new();
         // Timestamps are written as they come: shifting them to start at
@@ -163,7 +265,10 @@ impl Muxer {
             ffi::av_dict_free(&mut raw);
             check(result, "writing the header")?;
         }
-        self.take()
+        match self.kind {
+            Format::Fmp4 => self.take(),
+            Format::Ts | Format::Adts | Format::Flac => Ok(Vec::new()),
+        }
     }
 
     /// The time base packets of stream `index` are written in.
@@ -192,10 +297,10 @@ impl Muxer {
         }
     }
 
-    /// End the segment written since the last cut, and return it.
-    pub fn cut(&mut self) -> Result<Vec<u8>, Error> {
-        // SAFETY: flushing the interleaving queue, then the muxer's own
-        // buffers (an MP4 fragment, or MPEG-TS's PES packets).
+    /// Write out the interleaving queue, then the muxer's own buffers (an
+    /// MP4 fragment, or MPEG-TS's PES packets).
+    fn flush(&mut self) -> Result<(), Error> {
+        // SAFETY: the context is open; flushing writes to the sink.
         unsafe {
             check(
                 ffi::av_interleaved_write_frame(self.context, ptr::null_mut()),
@@ -204,8 +309,13 @@ impl Muxer {
             check(
                 ffi::av_write_frame(self.context, ptr::null_mut()),
                 "flushing",
-            )?;
+            )
         }
+    }
+
+    /// End the segment written since the last cut, and return it.
+    pub fn cut(&mut self) -> Result<Vec<u8>, Error> {
+        self.flush()?;
         let segment = self.take()?;
         if self.kind == Format::Ts {
             // Each segment starts with the tables that say what it holds.
@@ -217,24 +327,22 @@ impl Muxer {
     /// What has been written since the last take, without cutting: for a
     /// stream sent as it is made.
     pub fn take(&mut self) -> Result<Vec<u8>, Error> {
-        // SAFETY: closing the buffer hands back what it holds; a new one is
-        // opened for what comes next.
+        // SAFETY: the context's `pb` writes to the sink; flushing it hands
+        // the sink what FFmpeg still holds, and nothing writes meanwhile.
         unsafe {
-            let bytes = self.close_buffer();
-            self.open_buffer()?;
-            Ok(bytes)
+            let pb = (*self.context).pb;
+            ffi::avio_flush(pb);
+            check((*pb).error, "writing")?;
+            Ok((*self.sink).take())
         }
     }
 
     /// Write what is left and end the output.
     pub fn finish(&mut self) -> Result<Vec<u8>, Error> {
-        let last = self.cut()?;
-        // SAFETY: the context is open; the trailer goes to the buffer.
+        self.flush()?;
+        // SAFETY: the context is open; the trailer goes to the sink.
         unsafe { check(ffi::av_write_trailer(self.context), "writing the trailer")? };
-        let mut rest = self.take()?;
-        let mut all = last;
-        all.append(&mut rest);
-        Ok(all)
+        self.take()
     }
 
     fn set_option(&mut self, name: &str, value: &str) {
@@ -246,40 +354,141 @@ impl Muxer {
         }
     }
 
-    unsafe fn open_buffer(&mut self) -> Result<(), Error> {
-        // SAFETY: the context is valid; its `pb` is ours.
+    /// Have the context write to the sink.
+    unsafe fn open_sink(&mut self) -> Result<(), Error> {
+        // SAFETY: the context is valid and has no `pb` yet; the buffer is
+        // FFmpeg's to grow or replace, and freed in `drop`.
         unsafe {
-            check(
-                ffi::avio_open_dyn_buf(&mut (*self.context).pb),
-                "opening a buffer",
-            )?;
-            // What was written went with an earlier buffer: FLAC's trailer
-            // mustn't go back to put its header right in this one.
-            if self.kind == Format::Flac {
-                (*(*self.context).pb).seekable = 0;
+            let buffer = ffi::av_malloc(IO_BUFFER).cast::<u8>();
+            if buffer.is_null() {
+                return Err(Error::Mux("making a buffer".into()));
             }
+            let pb = ffi::avio_alloc_context(
+                buffer,
+                IO_BUFFER as c_int,
+                1,
+                self.sink.cast(),
+                None,
+                Some(write_packet),
+                Some(seek),
+            );
+            if pb.is_null() {
+                ffi::av_free(buffer.cast());
+                return Err(Error::Mux("making the output".into()));
+            }
+            // What FLAC's trailer would go back to put its header right in
+            // was handed over already.
+            if self.kind == Format::Flac {
+                (*pb).seekable = 0;
+            }
+            (*self.context).pb = pb;
             Ok(())
         }
     }
+}
 
-    /// Close the buffer and return what it held.
-    unsafe fn close_buffer(&mut self) -> Vec<u8> {
-        // SAFETY: `pb` is a dynamic buffer opened by `open_buffer`, or null.
-        unsafe {
-            let pb = (*self.context).pb;
-            if pb.is_null() {
-                return Vec::new();
-            }
-            let mut data = ptr::null_mut();
-            let size = ffi::avio_close_dyn_buf(pb, &mut data);
-            (*self.context).pb = ptr::null_mut();
-            let bytes = if size > 0 && !data.is_null() {
-                std::slice::from_raw_parts(data, size as usize).to_vec()
-            } else {
-                Vec::new()
-            };
-            ffi::av_free(data.cast());
-            bytes
+#[cfg(test)]
+mod tests {
+    use std::alloc::{GlobalAlloc, Layout, System};
+    use std::cell::Cell;
+    use std::path::PathBuf;
+
+    use ffmpeg::media::Type;
+
+    use super::*;
+
+    thread_local! {
+        static ALLOCATED: Cell<usize> = const { Cell::new(0) };
+    }
+
+    /// Counts the fresh allocations each thread makes, to see what is
+    /// copied: growing what was allocated isn't counted.
+    struct Counted;
+
+    // SAFETY: allocating is left to the system's allocator.
+    unsafe impl GlobalAlloc for Counted {
+        unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+            let _ = ALLOCATED.try_with(|allocated| allocated.set(allocated.get() + layout.size()));
+            // SAFETY: as the caller asked.
+            unsafe { System.alloc(layout) }
         }
+
+        unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+            // SAFETY: as the caller asked.
+            unsafe { System.dealloc(ptr, layout) }
+        }
+
+        unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, size: usize) -> *mut u8 {
+            // SAFETY: as the caller asked.
+            unsafe { System.realloc(ptr, layout, size) }
+        }
+    }
+
+    #[global_allocator]
+    static COUNTED: Counted = Counted;
+
+    fn allocated() -> usize {
+        ALLOCATED.with(Cell::get)
+    }
+
+    #[test]
+    fn the_sink_goes_back_to_put_things_right_but_not_into_what_it_handed_over() {
+        let mut sink = Sink::default();
+        assert!(sink.write(b"size....box"));
+        assert_eq!(sink.seek(0, SEEK_SET), 0);
+        assert!(sink.write(b"SIZE"));
+        assert_eq!(sink.seek(0, SEEK_END), 11);
+        assert!(sink.write(b"!"));
+        assert_eq!(sink.seek(0, ffi::AVSEEK_SIZE), 12);
+        assert_eq!(sink.take(), b"SIZE....box!");
+        assert!(sink.write(b"next"));
+        assert_eq!(sink.seek(-2, SEEK_CUR), 14);
+        assert!(sink.write(b"XT"));
+        // Before what was handed over.
+        assert!(sink.seek(4, SEEK_SET) < 0);
+        assert_eq!(sink.seek(18, SEEK_SET | ffi::AVSEEK_FORCE), 18);
+        assert!(sink.write(b"."));
+        assert_eq!(sink.take(), b"neXT\0\0.");
+        assert_eq!(sink.seek(0, ffi::AVSEEK_SIZE), 19);
+    }
+
+    #[test]
+    fn hands_over_what_it_wrote_without_copying_it() {
+        crate::init();
+        let path =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/clip-ip.mkv");
+        let input = ffmpeg::format::input(&path).expect("the fixture");
+        let stream = input.streams().best(Type::Video).expect("video");
+        let time_base = Rational::new(1, 25);
+        let mut muxer = Muxer::new(
+            Format::Fmp4,
+            &[OutStream {
+                parameters: stream.parameters(),
+                time_base,
+            }],
+        )
+        .expect("a muxer");
+        muxer.write_header().expect("the header");
+        // Eight megabytes of picture, as copied video's segments can be.
+        let picture = vec![0_u8; 512 * 1024];
+        for frame in 0..16 {
+            let mut packet = Packet::copy(&picture);
+            packet.set_pts(Some(frame));
+            packet.set_dts(Some(frame));
+            packet.set_duration(1);
+            if frame == 0 {
+                packet.set_flags(ffmpeg::packet::Flags::KEY);
+            }
+            muxer.write(packet, 0).expect("a packet");
+        }
+        let before = allocated();
+        let segment = muxer.cut().expect("the segment");
+        let copied = allocated() - before;
+        assert!(segment.len() >= 16 * picture.len(), "{}", segment.len());
+        assert!(
+            copied < segment.len() / 8,
+            "{copied} bytes allocated to hand over {}",
+            segment.len()
+        );
     }
 }

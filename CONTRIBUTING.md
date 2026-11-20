@@ -427,25 +427,28 @@ one made from the start; sound re-encoded to AC-3; video re-encoded
 smaller on VideoToolbox, in both kinds of segments, each holding only the
 sound that plays during it though the encoder hands frames back late
 (macOS; with no hardware encoder, as in the Linux test container, planning
-it must fail); a progressive stream from a DLNA time seek; a video's sound
-alone for a speaker taking only files, as ADTS copied, encoded from Opus
-to AAC, and as FLAC, seeking by time too, and nothing for a video's
-picture or a speaker without such streams; a live stream; subtitles from a
-file and from a track in `clip-subs.mkv`, as WebVTT, SRT and an HLS
-rendition, which a device given them beside it doesn't find in the
-playlist; and the DVD subtitles in `clip-dvdsub.mkv`, left out of video
-copied and not served as text, and drawn into video re-encoded, each frame
-at a cue's time differing from the same frame without them where its cue's
-bar is and nowhere else (macOS). Unit tests check how far ahead a job
-runs, where it restarts and what it forgets, packets given their lengths,
-byte ranges, a request's head too long refused before it's all read, one
-sent a byte at a time cut off when a whole one would be, connections past
-the most served at once closed and their places given back, codec names
-from parameter sets, playlists (made once for a file), no more segments
-than the most for a file claiming to last for ever, subtitle text, and
-picture subtitles' timing, colors (PQ and HLG at graphics white), scaling
-and blending into NV12 and P010. Each has been checked to fail when what
-it covers is broken.
+it must fail); video whose only keyframe is its first re-encoded, not
+copied as one segment (macOS); a progressive stream from a DLNA time seek;
+a video's sound alone for a speaker taking only files, as ADTS copied,
+encoded from Opus to AAC, and as FLAC, seeking by time too, and nothing
+for a video's picture or a speaker without such streams; a live stream;
+subtitles from a file and from a track in `clip-subs.mkv`, as WebVTT, SRT
+and an HLS rendition, which a device given them beside it doesn't find in
+the playlist; and the DVD subtitles in `clip-dvdsub.mkv`, left out of
+video copied and not served as text, and drawn into video re-encoded, each
+frame at a cue's time differing from the same frame without them where its
+cue's bar is and nowhere else (macOS). Unit tests check how far ahead a
+job runs, where it restarts and what it forgets, packets given their
+lengths, byte ranges, a request's head too long refused before it's all
+read, one sent a byte at a time cut off when a whole one would be,
+connections past the most served at once closed and their places given
+back, codec names from parameter sets, playlists (made once for a file),
+no more segments than the most for a file claiming to last for ever, a
+segment handed over by the muxer without being copied, the muxer's output
+going back to put things right but not into what it handed over, subtitle
+text, and picture subtitles' timing, colors (PQ and HLG at graphics
+white), scaling and blending into NV12 and P010. Each has been checked to
+fail when what it covers is broken.
 
 The AirPlay crate's tests talk to the fake receiver as to a real one: a TV
 paired once with its PIN, its credentials kept as text and verified for

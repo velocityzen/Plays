@@ -458,6 +458,10 @@ anything with sound; a video's sound goes to one while its picture plays
 on in the tile, in step with what the speaker plays, and the tile's
 buttons and shortcuts drive both.
 
+Video whose keyframes are more than half a minute apart, as in some screen
+recordings, is re-encoded to go as HLS, so the device can be given it a
+few seconds at a time.
+
 The subtitles picked go along and change there as they change on the
 tile. Picture subtitles (PGS, DVD) in the file go drawn into the picture
 where it is re-encoded, and stay here where it isn't. Another audio or

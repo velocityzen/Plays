@@ -15,6 +15,10 @@ use crate::profile::Container;
 /// The most segments a file is cut into, a week of six-second ones: a
 /// broken or crafted file can claim to last for ever.
 pub(crate) const MOST_SEGMENTS: usize = 100_000;
+/// The longest a segment of copied video may be, in segment lengths:
+/// video with keyframes further apart than this is re-encoded, since all
+/// of a segment is held at once.
+pub(crate) const LONGEST_COPIED: f64 = 5.0;
 
 /// Which timestamp a keyframe is known by: MP4's index holds decoding
 /// times, Matroska's (and a scan) presentation times.
@@ -53,12 +57,16 @@ impl Timeline {
         (self.end_of(segment) - self.start(segment)).max(0.0)
     }
 
-    /// The longest segment, rounded up, as HLS's target duration.
-    pub fn target(&self) -> u64 {
+    /// How long the longest segment is.
+    pub fn longest(&self) -> f64 {
         (0..self.len())
             .map(|segment| self.duration(segment))
-            .fold(1.0_f64, f64::max)
-            .ceil() as u64
+            .fold(0.0_f64, f64::max)
+    }
+
+    /// The longest segment, rounded up, as HLS's target duration.
+    pub fn target(&self) -> u64 {
+        self.longest().max(1.0).ceil() as u64
     }
 }
 

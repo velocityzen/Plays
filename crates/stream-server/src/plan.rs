@@ -358,7 +358,34 @@ fn plan_video(
             codec: info.codec,
         });
     }
+    encoded_video(info, stream, profile, segments)
+}
 
+/// Re-encode the video `plan` copies, drawing in the picture `subtitles`
+/// it can now: for video with keyframes too far apart to cut it at.
+pub(crate) fn re_encode_video(
+    plan: &mut Plan,
+    media: &MediaInfo,
+    profile: &Profile,
+    subtitles: Option<&SubtitleSource>,
+) -> Result<(), Error> {
+    let Some(VideoPlan::Copy { stream, .. }) = plan.video else {
+        return Ok(());
+    };
+    let info = media
+        .video(stream)
+        .ok_or_else(|| Error::Unsupported(format!("stream {stream} isn't a video")))?;
+    plan.video = Some(encoded_video(info, stream, profile, plan.segments())?);
+    plan.subtitles = drawn(media, plan.video.as_ref(), subtitles);
+    Ok(())
+}
+
+fn encoded_video(
+    info: &VideoInfo,
+    stream: usize,
+    profile: &Profile,
+    segments: Segments,
+) -> Result<VideoPlan, Error> {
     let (width, height) = fit_size(info.width, info.height, profile.max_size);
     let deep = info.bit_depth > 8 || info.hdr.is_some();
     let mut candidates: Vec<VideoCodec> = profile

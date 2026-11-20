@@ -617,6 +617,29 @@ fn re_encodes_sound_the_device_lacks() {
 
 #[cfg(target_os = "macos")]
 #[test]
+fn re_encodes_video_whose_keyframes_are_too_far_apart_to_cut_it_at() {
+    let server = server();
+    // Its only keyframe is its first: copied, its six seconds would be one
+    // segment, all of it held at once.
+    let cast = cast(&server, "clip-one-key.mp4", hls(Segments::Ts));
+    assert!(
+        matches!(cast.plan().video, Some(VideoPlan::Encode { .. })),
+        "{:?}",
+        cast.plan().video
+    );
+    assert_eq!(cast.plan().describe(), "re-encoded to H.264");
+    let playlist = get(&sibling(&cast.url(), "video.m3u8")).text();
+    assert_eq!(segment_names(&playlist).len(), 6, "{playlist}");
+    let (video, _) = fetch(&cast.url(), Segments::Ts, 3);
+    assert!(video.keys[0], "it starts with a keyframe");
+    assert_eq!(video.times.len(), 25);
+    // Keyframes a second apart are cut at as they are.
+    let near = self::cast(&server, "clip.mp4", hls(Segments::Ts));
+    assert!(matches!(near.plan().video, Some(VideoPlan::Copy { .. })));
+}
+
+#[cfg(target_os = "macos")]
+#[test]
 fn re_encodes_video_on_the_hardware_encoder() {
     // Too big for the device, so it is made smaller.
     let profile = |kind| Profile {
