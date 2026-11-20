@@ -10,6 +10,8 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
+use network::lock;
+
 use crate::device::Device;
 use crate::http::{self, Message, Url};
 use crate::media::{self, Capability};
@@ -149,12 +151,6 @@ impl State {
 }
 
 type Shared = Arc<Mutex<State>>;
-
-fn lock(state: &Mutex<State>) -> MutexGuard<'_, State> {
-    state
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-}
 
 /// Send `service`'s state to its subscribers, or `only` the one.
 fn notify(state: &Mutex<State>, service: &str, only: Option<&str>) {

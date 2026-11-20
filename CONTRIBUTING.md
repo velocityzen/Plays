@@ -482,6 +482,18 @@ over, subtitle text, and picture subtitles' timing, colors (PQ and HLG at
 graphics white), scaling and blending into NV12 and P010. Each has been
 checked to fail when what it covers is broken.
 
+The network crate's tests connect past an address that refuses to one that
+takes it, and with none, give the last refusal; lock a mutex a panic left
+poisoned; read messages one after another off one stream, keeping what
+came past each, with lines ending in LF alone, blank lines before a
+message skipped, and bodies by length, in chunks and to the end only when
+asked; and refuse a head, a chunk or a body too long, a length that isn't
+a number or is past the most, and a stream ending partway through a
+message. A message sent a byte at a time through `Deadline` is cut off
+when a whole one would be, and a deadline started again counts from then.
+The mDNS directory's tests take a type's newest record, move a device off
+a record that now names another, and put addresses IPv4 first.
+
 The AirPlay crate's tests talk to the fake receiver as to a real one: a TV
 paired once with its PIN, its credentials kept as text and verified for
 each session after; a wrong PIN, and credentials for another TV; a URL
@@ -489,24 +501,29 @@ played, paused, sought and stopped and the volume set, every request
 encrypted, and what the TV says read as playing, paused and ended; sound
 to an AirPlay 2 speaker, sealed and sent as it is due, with its sync
 packets, our clock's answer and the latency; packets sent again when asked
-for; volume and a flush; sound to an AirPlay 1 speaker, plain, with the
-delay it adds; sound to one that takes it only encrypted, which it
-decrypts with the key it unwraps from the ANNOUNCE back to what was sent,
-and one that takes only FairPlay refused; a receiver that goes away or
-refuses feedback ending the session, and an AirPlay 1 speaker going away
-while it plays ending it too; a request answered too late failing, its
-connection closed, and the late answer not taken for the next request's,
-which fails at once; a session the receiver ended stopped without asking
-it anything; and a session dropped without being stopped, or failing once
-connected (a speaker busy with another sender refusing RECORD), letting go
-of the receiver: its connections closed and its clock no longer answering.
-Unit tests check SRP against RFC 5054's vectors, both sides of pairing,
-the encrypted frames, AES-128 CBC against NIST's vectors, RSA-OAEP both
-ways, base64, TLV8, records and their features, RTP packets and playback
-info, and that an answer with another request's CSeq is refused and the
-connection closed. The key wrapped with the AirPort's public key has been
-checked to unwrap with its private one. Each has been checked to fail when
-what it covers is broken.
+for; the receiver told the sender's own id in SETUP and `/play`; volume
+and a flush; sound to an AirPlay 1 speaker, plain, with the delay it adds;
+sound to one that takes it only encrypted, which it decrypts with the key
+it unwraps from the ANNOUNCE back to what was sent, and one that takes
+only FairPlay refused; a receiver that goes away or refuses feedback
+ending the session, and an AirPlay 1 speaker going away while it plays
+ending it too; a request answered too late failing, its connection closed,
+and the late answer not taken for the next request's, which fails at once;
+a session the receiver ended stopped without asking it anything; and a
+session dropped without being stopped, or failing once connected (a
+speaker busy with another sender refusing RECORD), letting go of the
+receiver: its connections closed and its clock no longer answering. Unit
+tests check SRP against RFC 5054's vectors, both sides of pairing, the
+encrypted frames, AES-128 CBC against NIST's vectors, RSA-OAEP both ways,
+base64, TLV8, records and their features, RTP packets and playback info,
+that an answer with another request's CSeq is refused and the connection
+closed, that one too long to be one, past the most a body may be, or sent
+a byte at a time, plain or encrypted, fails in time, that a receiver's or
+a sender's forged proof is refused, that packets go again to the receiver
+alone, never more than are kept, in the order asked, as sequence numbers
+wrap round, and that each sender made afresh has an id of its own. The key
+wrapped with the AirPort's public key has been checked to unwrap with its
+private one. Each has been checked to fail when what it covers is broken.
 
 The Chromecast crate's tests cast to the fake device over TLS: connecting
 launches the Default Media Receiver and connects to it, the heartbeat goes

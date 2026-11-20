@@ -15,9 +15,7 @@ use crate::*;
 const PIN: &str = "4719";
 
 fn sender() -> Sender {
-    Sender {
-        name: "Plays test".into(),
-    }
+    Sender::new("Plays test")
 }
 
 /// The next event, waited for up to `wait`.
@@ -154,6 +152,35 @@ fn a_tv_plays_a_url_and_is_driven_while_it_does() {
             .iter()
             .any(|request| request.method == "TEARDOWN")
     );
+}
+
+#[test]
+fn a_receiver_knows_the_sender_by_its_id() {
+    let fake = FakeReceiver::start(Kind::Tv { pin: PIN });
+    let credentials = pair(&fake);
+    let sender = sender();
+    let (mut session, _events) =
+        VideoSession::connect(&fake.device(), Some(&credentials), &sender).unwrap();
+    session
+        .play("http://192.0.2.1:8080/video.mp4", 0.0, true)
+        .unwrap();
+    {
+        let state = fake.state();
+        let setup = state
+            .requests
+            .iter()
+            .find(|request| request.method == "SETUP")
+            .expect("a SETUP")
+            .dictionary();
+        assert_eq!(setup["deviceID"].as_string(), Some(sender.id.as_str()));
+        assert_eq!(setup["macAddress"].as_string(), Some(sender.id.as_str()));
+        let play = state.requests("POST", "/play")[0].dictionary();
+        assert_eq!(
+            play["SenderMACAddress"].as_string(),
+            Some(sender.id.as_str())
+        );
+    }
+    session.stop();
 }
 
 #[test]

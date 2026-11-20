@@ -11,6 +11,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use network::lock;
 use plist::{Dictionary, Value};
 
 use crate::channel::{Keys, Sealed};
@@ -210,12 +211,6 @@ impl Shared {
     fn gone(&self) -> bool {
         self.gone.load(Ordering::Relaxed)
     }
-}
-
-fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 pub struct FakeReceiver {
@@ -454,7 +449,7 @@ fn int(n: u64) -> Value {
 
 /// One connection: requests in, answers out, encrypted once paired.
 fn serve(stream: TcpStream, shared: &Arc<Shared>) {
-    let mut link = Link::Plain(stream);
+    let mut link = Link::plain(stream);
     let mut reader = Reader::default();
     // The session's secret, for the event connection's keys.
     let mut secret: Option<Vec<u8>> = None;

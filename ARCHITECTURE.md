@@ -120,6 +120,7 @@ crates it is built from, each built and tested on its own.
 | `crates/chromecast` | Finds Google Cast devices and drives them. |
 | `crates/dlna` | Finds UPnP media renderers and drives them. |
 | `crates/airplay` | Finds AirPlay receivers, pairs with them and sends to them. Plays doesn't use it yet. |
+| `crates/network` | What the three casting crates share on the network: connecting, reading HTTP and RTSP within bounds and in time, and finding devices over mDNS. |
 | `crates/ffmpeg-link` | Links the static FFmpeg into Plays and into the stream server's tests. |
 | `vendor/gpui` | gpui 0.2.2, patched for Plays. |
 | `vendor/xattr` | xattr 0.2.3, which gpui reaches, patched to build on Linux. |
@@ -744,6 +745,29 @@ It re-encodes video only on a hardware encoder, so a computer without one
 (Linux without NVENC or VA-API) can't cast video a device doesn't play as
 it is.
 
+## The network crate
+
+`crates/network` holds what the Chromecast, DLNA and AirPlay crates share
+on the network, so a fix in one reaches them all.
+
+- `connect_first`: a device on more than one network has an address on
+  each, and not all reach it from here, so each is tried in turn.
+- `http`: HTTP and RTSP messages read off a connection. A head is at most
+  64 KiB, its lines ending in CRLF or LF alone; a body comes by its
+  `Content-Length`, in chunks, or to the end of the stream when the caller
+  says it may, and is at most a megabyte. Lengths are checked before
+  anything is added to them. A reader keeps what it read past one message
+  for the next, as AirPlay's connection carries many. `Deadline` gives a
+  whole message its time, each read waiting only as long as is left, so a
+  device sending a byte at a time takes no longer than a whole message may.
+- `mdns`, with the `mdns` feature: browsing for one or more service types
+  on threads of their own, and the devices their records make. A device's
+  records are put together by its id, the newest of each type counting;
+  what a protocol makes of them, and which types it browses, is its
+  `Protocol`.
+- `Found`, what browsing says of a device (added, changed, gone), and
+  `lock`, which takes a mutex a panic left poisoned.
+
 ## The Chromecast crate
 
 `crates/chromecast` finds Google Cast devices (Chromecasts, Google TVs,
@@ -751,9 +775,9 @@ Nest speakers and speaker groups) and has one play a URL, then drives it.
 It knows nothing of Plays, gpui or FFmpeg, blocks on the caller's thread or
 a session's own, and says what happens over a channel.
 
-- `browser.rs`, `device.rs`: mDNS for `_googlecast._tcp`; a record's TXT
-  gives the id, name (`fn`), model (`md`), what it does (`ca`: video out,
-  sound out, a group) and what it's showing (`rs`).
+- `browser.rs`, `device.rs`: mDNS for `_googlecast._tcp`, with `network`'s
+  browser; a record's TXT gives the id, name (`fn`), model (`md`), what it
+  does (`ca`: video out, sound out, a group) and what it's showing (`rs`).
 - `channel.rs`, `proto.rs`: TLS to the device (rustls; each device signs
   its own certificate, so any is taken, though the handshake is checked
   against it), and on it Chromium's `CastMessage` protobufs, each after its
@@ -804,10 +828,11 @@ happens over a channel.
   so a device can't have Plays ask anything of another. ConnectionManager's
   protocol info is read into capabilities: the protocol, MIME type and
   DLNA profile of each.
-- `http.rs`, `soap.rs`: just enough HTTP/1.1, and SOAP actions on it. A
-  response has its time as a whole, however slowly it comes, and is at
-  most a megabyte after its head. A refusal's `UPnPError` becomes a typed
-  fault, as each service numbers them.
+- `http.rs`, `soap.rs`: just enough HTTP/1.1, read with `network`'s
+  reader, and SOAP actions on it. A response has its time as a whole,
+  however slowly it comes, and is at most a megabyte after its head. A
+  refusal's `UPnPError` becomes a typed fault, as each service numbers
+  them.
 - `media.rs`: the DIDL-Lite that goes with a URL (title, class, `res`
   with its protocol info, duration and size), with subtitles both as a
   second `res` and as Samsung's `sec:CaptionInfoEx`, as DLNA has no
@@ -852,34 +877,40 @@ knows nothing of Plays, gpui or FFmpeg. It blocks, on the caller's thread
 or a session's own, and what a session says as it goes comes over a
 channel. Plays doesn't cast with it yet.
 
-- `browser.rs`, `device.rs`: mDNS for `_airplay._tcp` and `_raop._tcp`, a
-  receiver's two records put together by its id, and read for whether it
-  shows video, plays sound and speaks AirPlay 2, and how it pairs: once
-  with a PIN it shows, for each session only, or not at all. An AirPlay 1
-  speaker that doesn't say its features, as older ones don't, plays sound.
+- `browser.rs`, `device.rs`: mDNS for `_airplay._tcp` and `_raop._tcp`,
+  with `network`'s browser, a receiver's two records put together by its
+  id, and read for whether it shows video, plays sound and speaks AirPlay
+  2, and how it pairs: once with a PIN it shows, for each session only, or
+  not at all. An AirPlay 1 speaker that doesn't say its features, as older
+  ones don't, plays sound.
 - `tlv8.rs`, `srp.rs`, `pairing.rs`: HomeKit pairing. With the PIN (SRP-6a
   with SHA-512 and the 3072-bit group, then long-term Ed25519 keys swapped
   under ChaCha20-Poly1305), which leaves credentials to keep; transient,
   for receivers open to everyone; and pair-verify with the credentials,
-  for each session after.
+  for each session after. Proofs are compared in constant time.
 - `channel.rs`, `message.rs`, `connection.rs`: the control connection,
   RTSP and HTTP requests on one TCP connection, encrypted once paired in
   frames of up to 1024 bytes. A receiver on more than one network has an
   address on each, and not all reach it from here, so each is tried in
-  turn. An answer must carry its request's CSeq. A request that fails, or
-  gets the answer to another, closes the connection, as what comes next on
-  it could be a late answer or the rest of a frame cut short; later
-  requests fail at once.
-- `session.rs`: AirPlay 2's session. SETUP says where our clock is, which
-  the receiver asks the time; the receiver talks back on an event
-  connection; feedback goes every two seconds. An AirPlay 1 speaker, which
-  has neither, is sent OPTIONS every two seconds instead. Feedback or
-  OPTIONS refused or unanswered, or the event connection closed, is the
-  receiver gone, and stopping the session then asks nothing more of it (no
-  `/stop` or TEARDOWN, which could wait on a receiver that's gone).
-  Dropped, a session stops its threads (the clock's, feedback or OPTIONS,
-  events, resends) and closes its connections, whether it was stopped
-  first, let go, or failed partway through setting up.
+  turn. An answer is read with `network`'s reader, so its body is at most
+  a megabyte, and must come whole within ten seconds, however slowly: the
+  deadline is under the encryption, as a frame is read as one. It must
+  carry its request's CSeq. A request that fails, or gets the answer to
+  another, closes the connection, as what comes next on it could be a late
+  answer or the rest of a frame cut short; later requests fail at once.
+- `session.rs`: AirPlay 2's session. SETUP says who we are, by the
+  sender's id (made up in a MAC address's form, for the caller to keep and
+  give back so receivers know it again; `/play` says it too), and where
+  our clock is, which the receiver asks the time; the receiver talks back
+  on an event connection; feedback goes every two seconds. An AirPlay 1
+  speaker, which has neither, is sent OPTIONS every two seconds instead.
+  Feedback or OPTIONS refused or unanswered, or the event connection
+  closed, is the receiver gone, and stopping the session then asks nothing
+  more of it (no `/stop` or TEARDOWN, which could wait on a receiver
+  that's gone). Dropped, a session stops its threads (the clock's,
+  feedback or OPTIONS, events, resends) and closes its connections,
+  whether it was stopped first, let go, or failed partway through setting
+  up.
 - `video.rs`: `/play` with the URL and where to start, `/rate`, `/scrub`
   and `/stop`, and `/playback-info` read as loading, playing, paused or
   ended.
@@ -891,8 +922,9 @@ channel. Plays doesn't cast with it yet.
   ANNOUNCE, the key wrapped (`rsa.rs`: RSA-OAEP with SHA-1) with the
   public key every AirPort Express holds the private half of. A sync
   packet every second ties RTP time to the clock, and the last thousand
-  packets are kept to send again. A frame is heard 1.5 seconds after it's
-  sent, plus what an AirPlay 1 speaker says it adds.
+  packets are kept to send again, to the receiver alone when it asks, each
+  found by how far it is from the oldest kept. A frame is heard 1.5
+  seconds after it's sent, plus what an AirPlay 1 speaker says it adds.
 - `fake.rs`, with the `fake` feature: a pretend receiver on this computer,
   for tests here and in Plays. An encrypted AirPlay 1 fake holds a key
   of its own, made for it, rather than the AirPort's, and senders here

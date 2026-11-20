@@ -1,18 +1,17 @@
 //! Just enough HTTP/1.1 for UPnP: a request to a device on a connection of
 //! its own, and reading what comes over one, a response or a request (the
-//! events a device sends back, or in the fake, what's sent to it). SSDP's
-//! datagrams are the same head without a body.
+//! events a device sends back, or in the fake, what's sent to it), which
+//! `network`'s reader does. SSDP's datagrams are the same head without a
+//! body.
 
-use std::io::{self, BufRead, BufReader, Read, Write};
+use std::io::{self, Write};
 use std::net::{IpAddr, SocketAddr, TcpStream, ToSocketAddrs, UdpSocket};
-use std::time::{Duration, Instant};
+use std::time::Duration;
+
+pub use network::http::{Deadline, Head, Message};
 
 /// How long each address has to take a connection.
 const CONNECT: Duration = Duration::from_secs(3);
-/// The most of a head or a body taken: a description, an answer or an
-/// event is a few kilobytes.
-const MAX_HEAD: usize = 64 * 1024;
-const MAX_BODY: usize = 1024 * 1024;
 
 pub const USER_AGENT: &str = "dlna/0.1 UPnP/1.0 DLNADOC/1.50";
 
@@ -128,194 +127,6 @@ impl std::fmt::Display for Url {
     }
 }
 
-/// A start line and headers.
-#[derive(Clone, PartialEq, Eq, Debug, Default)]
-pub struct Head {
-    pub start: String,
-    pub headers: Vec<(String, String)>,
-}
-
-impl Head {
-    /// From its lines, which end with CRLF or LF alone.
-    pub fn parse(text: &str) -> Option<Self> {
-        let mut lines = text.lines();
-        let start = lines.next()?.trim().to_owned();
-        if start.is_empty() {
-            return None;
-        }
-        let headers = lines
-            .take_while(|line| !line.trim().is_empty())
-            .filter_map(|line| {
-                let (name, value) = line.split_once(':')?;
-                Some((name.trim().to_owned(), value.trim().to_owned()))
-            })
-            .collect();
-        Some(Self { start, headers })
-    }
-
-    /// A header by its name, whatever its case.
-    pub fn header(&self, name: &str) -> Option<&str> {
-        self.headers
-            .iter()
-            .find(|(key, _)| key.eq_ignore_ascii_case(name))
-            .map(|(_, value)| value.as_str())
-    }
-
-    /// A response's status.
-    pub fn status(&self) -> Option<u16> {
-        let mut words = self.start.split_whitespace();
-        words
-            .next()
-            .filter(|version| version.starts_with("HTTP/"))?;
-        words.next()?.parse().ok()
-    }
-
-    /// A request's method and path.
-    pub fn request(&self) -> Option<(&str, &str)> {
-        let mut words = self.start.split_whitespace();
-        let method = words.next()?;
-        let path = words.next()?;
-        words
-            .next()
-            .filter(|version| version.starts_with("HTTP/"))?;
-        Some((method, path))
-    }
-}
-
-/// A head and its body.
-#[derive(Clone, PartialEq, Eq, Debug, Default)]
-pub struct Message {
-    pub head: Head,
-    pub body: Vec<u8>,
-}
-
-impl Message {
-    pub fn header(&self, name: &str) -> Option<&str> {
-        self.head.header(name)
-    }
-
-    pub fn text(&self) -> String {
-        String::from_utf8_lossy(&self.body).into_owned()
-    }
-
-    /// Read one off `stream`: a response's body goes on to the end when it
-    /// doesn't say how long it is, a request's is then empty.
-    pub fn read(stream: impl Read, response: bool) -> io::Result<Self> {
-        let mut reader = BufReader::new(stream.take((MAX_HEAD + MAX_BODY) as u64));
-        let mut head = String::new();
-        loop {
-            let start = head.len();
-            if reader.read_line(&mut head)? == 0 {
-                return Err(io::Error::new(
-                    io::ErrorKind::UnexpectedEof,
-                    "closed in the head",
-                ));
-            }
-            if head.len() > MAX_HEAD {
-                return Err(io::Error::other("a head too long"));
-            }
-            // Blank lines before the start line are skipped.
-            if head[start..].trim().is_empty() {
-                if head[..start].trim().is_empty() {
-                    head.clear();
-                    continue;
-                }
-                break;
-            }
-        }
-        let head = Head::parse(&head).ok_or_else(|| io::Error::other("no start line"))?;
-        let mut body = Vec::new();
-        let chunked = head
-            .header("Transfer-Encoding")
-            .is_some_and(|coding| coding.to_ascii_lowercase().contains("chunked"));
-        if chunked {
-            read_chunks(&mut reader, &mut body)?;
-        } else if let Some(length) = head.header("Content-Length") {
-            let length: usize = length
-                .parse()
-                .map_err(|_| io::Error::other("a bad Content-Length"))?;
-            if length > MAX_BODY {
-                return Err(io::Error::other("a body too long"));
-            }
-            body.resize(length, 0);
-            reader.read_exact(&mut body)?;
-        } else if response {
-            reader.read_to_end(&mut body)?;
-        }
-        Ok(Self { head, body })
-    }
-}
-
-fn read_chunks(reader: &mut impl BufRead, body: &mut Vec<u8>) -> io::Result<()> {
-    loop {
-        let mut line = String::new();
-        reader.read_line(&mut line)?;
-        let size = line.trim().split(';').next().unwrap_or_default();
-        let size = usize::from_str_radix(size.trim(), 16)
-            .map_err(|_| io::Error::other("a bad chunk size"))?;
-        if size == 0 {
-            // The trailer, to its blank line.
-            loop {
-                line.clear();
-                if reader.read_line(&mut line)? == 0 || line.trim().is_empty() {
-                    return Ok(());
-                }
-            }
-        }
-        // Not `body.len() + size`, which a chunk size could overflow.
-        if size > MAX_BODY - body.len() {
-            return Err(io::Error::other("a body too long"));
-        }
-        let start = body.len();
-        body.resize(start + size, 0);
-        reader.read_exact(&mut body[start..])?;
-        line.clear();
-        reader.read_line(&mut line)?;
-    }
-}
-
-/// Connect to the first of `url`'s addresses that takes it.
-fn connect(url: &Url) -> io::Result<TcpStream> {
-    let mut refused = None;
-    for address in url.addresses()? {
-        match TcpStream::connect_timeout(&address, CONNECT) {
-            Ok(stream) => return Ok(stream),
-            Err(err) => refused = Some(err),
-        }
-    }
-    Err(refused.unwrap_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no address")))
-}
-
-/// Reads from a stream until a deadline, each read waiting only as long
-/// as is left: a device sending a byte at a time takes no longer.
-pub struct Deadline<'a> {
-    stream: &'a TcpStream,
-    until: Instant,
-}
-
-impl<'a> Deadline<'a> {
-    pub fn new(stream: &'a TcpStream, within: Duration) -> Self {
-        Self {
-            stream,
-            until: Instant::now() + within,
-        }
-    }
-}
-
-impl Read for Deadline<'_> {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let left = self.until.saturating_duration_since(Instant::now());
-        if left.is_zero() {
-            return Err(io::Error::new(
-                io::ErrorKind::TimedOut,
-                "no whole message in time",
-            ));
-        }
-        self.stream.set_read_timeout(Some(left))?;
-        self.stream.read(buf)
-    }
-}
-
 /// Send a request and wait up to `timeout` for the whole response.
 pub fn request(
     method: &str,
@@ -324,7 +135,7 @@ pub fn request(
     body: &[u8],
     timeout: Duration,
 ) -> io::Result<Message> {
-    let mut stream = connect(url)?;
+    let (mut stream, _) = network::connect_first(&url.addresses()?, CONNECT)?;
     stream.set_read_timeout(Some(timeout))?;
     stream.set_write_timeout(Some(timeout))?;
     let mut request = format!(
@@ -390,6 +201,7 @@ pub fn local_address_towards(remote: IpAddr) -> io::Result<IpAddr> {
 mod tests {
     use std::net::TcpListener;
     use std::thread;
+    use std::time::Instant;
 
     use super::*;
 
@@ -438,20 +250,6 @@ mod tests {
         assert_eq!(url.join("/x\r\nHost: elsewhere"), None);
         assert_eq!(url.join("x y"), None);
         assert_eq!(url.join("/upnp/control").unwrap().path, "/upnp/control");
-    }
-
-    #[test]
-    fn heads_have_headers_whatever_their_case() {
-        let head = Head::parse(
-            "HTTP/1.1 200 OK\r\nCACHE-CONTROL: max-age = 1800\r\nLocation:http://a/b\r\n\r\n",
-        )
-        .unwrap();
-        assert_eq!(head.status(), Some(200));
-        assert_eq!(head.header("cache-control"), Some("max-age = 1800"));
-        assert_eq!(head.header("LOCATION"), Some("http://a/b"));
-        let search = Head::parse("M-SEARCH * HTTP/1.1\nST: ssdp:all\n").unwrap();
-        assert_eq!(search.request(), Some(("M-SEARCH", "*")));
-        assert_eq!(search.status(), None);
     }
 
     /// A server that answers one request with `answer`, and hands back the
@@ -522,22 +320,6 @@ mod tests {
         let took = started.elapsed();
         assert!(answer.is_err(), "no whole answer came");
         assert!(took < Duration::from_secs(2), "it took {took:?}");
-    }
-
-    #[test]
-    fn chunks_too_long_are_errors() {
-        let mut body = Vec::new();
-        let mut huge = &b"5\r\nhello\r\nfffffffffffffffc\r\n"[..];
-        assert!(
-            read_chunks(&mut huge, &mut body).is_err(),
-            "past what counts"
-        );
-        let mut over = format!("{:x}\r\n", MAX_BODY + 1).into_bytes();
-        over.extend([0; 64]);
-        assert!(
-            read_chunks(&mut over.as_slice(), &mut Vec::new()).is_err(),
-            "a byte past the most a body may be"
-        );
     }
 
     #[test]

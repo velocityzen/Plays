@@ -12,6 +12,7 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use futures_channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
+use network::lock;
 use serde_json::{Value, json};
 
 use crate::channel::{Channel, Incoming};
@@ -111,12 +112,6 @@ struct Inner {
     /// Whether we are ending it, so it ending isn't news.
     stopping: AtomicBool,
     events: UnboundedSender<Event>,
-}
-
-fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 impl Inner {

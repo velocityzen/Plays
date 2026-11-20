@@ -71,12 +71,13 @@ dependencies = [
  "futures-channel",
  "hkdf",
  "log",
- "mdns-sd",
+ "network",
  "num-bigint",
  "plist",
  "rand 0.8.8",
  "sha1",
  "sha2 0.10.9",
+ "subtle",
  "x25519-dalek",
 ]
 
@@ -1060,7 +1061,7 @@ version = "0.1.0"
 dependencies = [
  "futures-channel",
  "log",
- "mdns-sd",
+ "network",
  "prost",
  "rcgen",
  "rustls",
@@ -1789,6 +1790,7 @@ dependencies = [
  "futures-channel",
  "if-addrs",
  "log",
+ "network",
  "quick-xml 0.42.0",
  "socket2",
 ]
@@ -3965,6 +3967,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ee6cda3051665f1fb8d9e08fc35c96d5a244fb1be711a03b71118828afc9a873"
 dependencies = [
  "jni-sys 0.3.1",
+]
+
+[[package]]
+name = "network"
+version = "0.1.0"
+dependencies = [
+ "futures-channel",
+ "log",
+ "mdns-sd",
 ]
 
 [[package]]

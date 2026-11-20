@@ -44,9 +44,7 @@ fn main() {
 }
 
 fn sender() -> Sender {
-    Sender {
-        name: "Plays".into(),
-    }
+    Sender::new("Plays")
 }
 
 fn list() -> Result<()> {

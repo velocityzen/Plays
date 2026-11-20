@@ -5,6 +5,8 @@ use std::io::{Read, Write};
 use std::net::{IpAddr, Shutdown, SocketAddr, TcpStream};
 use std::time::Duration;
 
+use network::http::Deadline;
+
 use crate::channel::{Keys, Sealed};
 use crate::error::{Error, Result};
 use crate::message::{Message, Reader};
@@ -20,16 +22,33 @@ pub(crate) const REPLY_TIMEOUT: Duration = Duration::from_secs(10);
 pub(crate) const REPLY_TIMEOUT: Duration = Duration::from_secs(1);
 const USER_AGENT: &str = "AirPlay/550.10";
 
+/// A connection, plain or encrypted. Reads from its TCP stream end by the
+/// deadline last started, which is under the encryption: a frame is read
+/// as one, and each byte of it isn't to have all the time left afresh.
 pub(crate) enum Link {
-    Plain(TcpStream),
-    Sealed(Sealed<TcpStream>),
+    Plain(Deadline<TcpStream>),
+    Sealed(Sealed<Deadline<TcpStream>>),
 }
 
 impl Link {
+    /// Over `stream`, reads waiting as long as it says until a deadline is
+    /// started.
+    pub fn plain(stream: TcpStream) -> Self {
+        Self::Plain(Deadline::unset(stream))
+    }
+
     fn tcp(&self) -> &TcpStream {
         match self {
-            Self::Plain(stream) => stream,
-            Self::Sealed(sealed) => sealed.get_ref(),
+            Self::Plain(stream) => stream.get_ref(),
+            Self::Sealed(sealed) => sealed.get_ref().get_ref(),
+        }
+    }
+
+    /// What's read from now on is to come `within` from now.
+    fn deadline(&mut self, within: Duration) {
+        match self {
+            Self::Plain(stream) => stream.start(within),
+            Self::Sealed(sealed) => sealed.get_mut().start(within),
         }
     }
 }
@@ -151,27 +170,11 @@ pub(crate) struct Connection {
 impl Connection {
     /// Connect at the first of `addresses` that takes it.
     pub fn open(addresses: &[SocketAddr]) -> Result<Self> {
-        let mut refused = None;
-        for remote in addresses {
-            match TcpStream::connect_timeout(remote, CONNECT_TIMEOUT) {
-                Ok(stream) => return Self::on(stream, *remote),
-                Err(err) => {
-                    log::debug!("airplay: {remote}: {err}");
-                    refused = Some(err);
-                }
-            }
-        }
-        Err(refused
-            .unwrap_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "no address"))
-            .into())
-    }
-
-    fn on(stream: TcpStream, remote: SocketAddr) -> Result<Self> {
-        stream.set_read_timeout(Some(REPLY_TIMEOUT))?;
+        let (stream, remote) = network::connect_first(addresses, CONNECT_TIMEOUT)?;
         stream.set_nodelay(true)?;
         Ok(Self {
             local: stream.local_addr()?.ip(),
-            link: Some(Link::Plain(stream)),
+            link: Some(Link::plain(stream)),
             reader: Reader::default(),
             cseq: 0,
             remote,
@@ -311,9 +314,11 @@ impl Connection {
     }
 }
 
-/// Write a request, and read what comes back.
+/// Write a request, and read what comes back, which is to come whole
+/// within `REPLY_TIMEOUT`.
 fn round_trip(link: &mut Link, reader: &mut Reader, request: &[u8]) -> Result<Response> {
     link.write_all(request)?;
+    link.deadline(REPLY_TIMEOUT);
     let response = reader
         .read(link)?
         .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::UnexpectedEof))?;
@@ -323,8 +328,65 @@ fn round_trip(link: &mut Link, reader: &mut Reader, request: &[u8]) -> Result<Re
 #[cfg(test)]
 mod tests {
     use std::net::{Ipv4Addr, TcpListener};
+    use std::time::Instant;
 
     use super::*;
+
+    /// A receiver that reads the first request it's sent, then answers as
+    /// `answer` does.
+    fn receiver(answer: impl FnOnce(&mut TcpStream) + Send + 'static) -> SocketAddr {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let address = listener.local_addr().unwrap();
+        std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            Reader::default().read(&mut stream).unwrap().unwrap();
+            answer(&mut stream);
+        });
+        address
+    }
+
+    #[test]
+    fn an_answer_longer_than_any_may_be_is_an_error() {
+        let address = receiver(|stream| {
+            let _ = stream.write_all(
+                b"RTSP/1.0 200 OK\r\nCSeq: 1\r\nContent-Length: 18446744073709551615\r\n\r\n",
+            );
+        });
+        let mut connection = Connection::open(&[address]).unwrap();
+        assert!(connection.send(Request::rtsp("OPTIONS", "*")).is_err());
+    }
+
+    #[test]
+    fn an_answer_past_the_most_a_body_may_be_is_an_error_though_it_all_comes() {
+        let address = receiver(|stream| {
+            let length = 1024 * 1024 + 1;
+            let head = format!("RTSP/1.0 200 OK\r\nCSeq: 1\r\nContent-Length: {length}\r\n\r\n");
+            let mut answer = head.into_bytes();
+            answer.resize(answer.len() + length, b'x');
+            let _ = stream.write_all(&answer);
+        });
+        let mut connection = Connection::open(&[address]).unwrap();
+        assert!(connection.send(Request::rtsp("OPTIONS", "*")).is_err());
+    }
+
+    #[test]
+    fn an_answer_sent_a_byte_at_a_time_takes_no_longer_than_a_whole_one_may() {
+        let address = receiver(|stream| {
+            let _ = stream.write_all(b"RTSP/1.0 200 OK\r\n");
+            // Each byte well within the wait, but never the whole head.
+            for _ in 0..200 {
+                std::thread::sleep(REPLY_TIMEOUT / 20);
+                if stream.write_all(b"X").is_err() {
+                    return;
+                }
+            }
+        });
+        let mut connection = Connection::open(&[address]).unwrap();
+        let asked = Instant::now();
+        assert!(connection.send(Request::rtsp("OPTIONS", "*")).is_err());
+        let took = asked.elapsed();
+        assert!(took < REPLY_TIMEOUT * 2, "it took {took:?}");
+    }
 
     #[test]
     fn an_answer_to_another_request_is_refused_and_the_connection_let_go() {
@@ -350,6 +412,37 @@ mod tests {
             Err(Error::Io(err)) if err.kind() == std::io::ErrorKind::NotConnected
         ));
         assert!(receiver.join().unwrap(), "the connection is still open");
+    }
+
+    /// Encrypted, the frame the answer comes in is read as one: each byte
+    /// of it may not have all the time left afresh.
+    #[test]
+    fn an_encrypted_answer_sent_a_byte_at_a_time_takes_no_longer_either() {
+        let keys = Keys::control(b"a secret both sides have");
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let address = listener.local_addr().unwrap();
+        std::thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            let mut sealed = Sealed::new(stream, keys.swapped());
+            Reader::default().read(&mut sealed).unwrap().unwrap();
+            let mut frame = Sealed::new(Vec::new(), keys.swapped());
+            frame
+                .write_all(b"RTSP/1.0 200 OK\r\nCSeq: 1\r\nContent-Length: 0\r\n\r\n")
+                .unwrap();
+            let mut stream = sealed.get_ref();
+            for byte in frame.get_ref() {
+                std::thread::sleep(REPLY_TIMEOUT / 20);
+                if stream.write_all(&[*byte]).is_err() {
+                    return;
+                }
+            }
+        });
+        let mut connection = Connection::open(&[address]).unwrap();
+        connection.seal(keys);
+        let asked = Instant::now();
+        assert!(connection.send(Request::rtsp("OPTIONS", "*")).is_err());
+        let took = asked.elapsed();
+        assert!(took < REPLY_TIMEOUT * 2, "it took {took:?}");
     }
 
     #[test]

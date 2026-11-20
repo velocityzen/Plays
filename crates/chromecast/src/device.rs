@@ -1,7 +1,8 @@
 //! A Cast device as its `_googlecast._tcp` record describes it.
 
-use std::collections::HashMap;
-use std::net::{IpAddr, SocketAddr};
+use std::net::SocketAddr;
+
+pub use network::mdns::Record;
 
 /// What a device does, as its `ca` says.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
@@ -36,35 +37,10 @@ pub struct Device {
     pub showing: Option<String>,
 }
 
-/// A service record as mDNS gives it.
-#[derive(Clone, PartialEq, Debug)]
-pub struct Record {
-    /// The instance name, unescaped.
-    pub instance: String,
-    pub addresses: Vec<IpAddr>,
-    pub port: u16,
-    pub txt: HashMap<String, String>,
-}
-
-impl Record {
-    fn get(&self, key: &str) -> Option<&str> {
-        self.txt
-            .get(key)
-            .map(String::as_str)
-            .filter(|value| !value.is_empty())
-    }
-
-    /// The addresses to try it at: IPv4 first, each kind in order.
-    fn socket_addresses(&self) -> Vec<SocketAddr> {
-        let mut addresses: Vec<SocketAddr> = self
-            .addresses
-            .iter()
-            .map(|ip| SocketAddr::new(*ip, self.port))
-            .collect();
-        addresses.sort_by_key(|address| (address.is_ipv6(), *address));
-        addresses.dedup();
-        addresses
-    }
+/// A TXT property of `record`, unless it's empty, which a device says of
+/// what it doesn't have.
+fn get<'a>(record: &'a Record, key: &str) -> Option<&'a str> {
+    record.txt(key).filter(|value| !value.is_empty())
 }
 
 impl Device {
@@ -74,19 +50,16 @@ impl Device {
             return None;
         }
         Some(Self {
-            id: record.get("id")?.to_owned(),
-            name: record
-                .get("fn")
-                .map_or_else(|| record.instance.clone(), str::to_owned),
-            model: record.get("md").unwrap_or_default().to_owned(),
+            id: get(record, "id")?.to_owned(),
+            name: get(record, "fn").map_or_else(|| record.instance.clone(), str::to_owned),
+            model: get(record, "md").unwrap_or_default().to_owned(),
             capabilities: Capabilities(
-                record
-                    .get("ca")
+                get(record, "ca")
                     .and_then(|ca| ca.parse().ok())
                     .unwrap_or_default(),
             ),
             addresses,
-            showing: record.get("rs").map(str::to_owned),
+            showing: get(record, "rs").map(str::to_owned),
         })
     }
 

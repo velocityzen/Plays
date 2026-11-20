@@ -1,0 +1,16 @@
+[package]
+name = "network"
+version = "0.1.0"
+edition = "2024"
+description = "What the casting crates share on the network: connecting, reading HTTP and RTSP messages within bounds, and finding devices over mDNS"
+license = "MIT"
+publish = false
+
+[features]
+# Finding devices over mDNS, for the crates that do; DLNA has SSDP.
+mdns = ["dep:futures-channel", "dep:mdns-sd"]
+
+[dependencies]
+futures-channel = { version = "0.3.34", optional = true }
+log = "0.4"
+mdns-sd = { version = "0.22.0", optional = true }

@@ -4,9 +4,10 @@
 
 use std::io::{self, Read, Write};
 use std::net::{Shutdown, SocketAddr, TcpStream};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use network::lock;
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::crypto::{CryptoProvider, verify_tls12_signature, verify_tls13_signature};
 use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
@@ -89,11 +90,6 @@ fn client_config() -> io::Result<Arc<ClientConfig>> {
     Ok(Arc::new(config))
 }
 
-fn lock(tls: &Mutex<Connection>) -> MutexGuard<'_, Connection> {
-    tls.lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-}
-
 /// Write what TLS has to send.
 fn flush(tls: &mut Connection, mut tcp: &TcpStream) -> io::Result<()> {
     while tls.wants_write() {
@@ -120,22 +116,10 @@ pub(crate) struct Incoming {
 impl Channel {
     /// Connect at the first of `addresses` that takes it.
     pub fn connect(addresses: &[SocketAddr]) -> io::Result<(Self, Incoming)> {
-        let mut refused = None;
-        for remote in addresses {
-            match TcpStream::connect_timeout(remote, CONNECT_TIMEOUT) {
-                Ok(tcp) => {
-                    let name = ServerName::IpAddress(remote.ip().into());
-                    let tls =
-                        ClientConnection::new(client_config()?, name).map_err(io::Error::other)?;
-                    return Self::start(tcp, tls.into());
-                }
-                Err(err) => {
-                    log::debug!("chromecast: {remote}: {err}");
-                    refused = Some(err);
-                }
-            }
-        }
-        Err(refused.unwrap_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no address")))
+        let (tcp, remote) = network::connect_first(addresses, CONNECT_TIMEOUT)?;
+        let name = ServerName::IpAddress(remote.ip().into());
+        let tls = ClientConnection::new(client_config()?, name).map_err(io::Error::other)?;
+        Self::start(tcp, tls.into())
     }
 
     /// Shake hands on `tcp` as `tls` is to, client or server.

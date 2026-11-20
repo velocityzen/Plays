@@ -1,8 +1,9 @@
 //! A receiver, as its mDNS records describe it: `_airplay._tcp` for what
 //! it is and does, `_raop._tcp` for how it takes sound.
 
-use std::collections::HashMap;
-use std::net::{IpAddr, SocketAddr};
+use std::net::SocketAddr;
+
+pub use network::mdns::Record;
 
 /// What a receiver says it does: the `features` bits, low word first.
 #[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
@@ -84,36 +85,6 @@ pub struct Device {
     pub public_key: Option<[u8; 32]>,
 }
 
-/// An mDNS service record, resolved.
-#[derive(Clone, PartialEq, Debug)]
-pub struct Record {
-    /// The instance name: `Name` for `_airplay._tcp`, `MAC@Name` for
-    /// `_raop._tcp`.
-    pub instance: String,
-    pub addresses: Vec<IpAddr>,
-    pub port: u16,
-    pub txt: HashMap<String, String>,
-}
-
-impl Record {
-    fn get(&self, key: &str) -> Option<&str> {
-        self.txt.get(key).map(String::as_str)
-    }
-
-    /// The addresses to try it at: IPv4 first, as receivers listen there,
-    /// each kind in order.
-    fn socket_addresses(&self) -> Vec<SocketAddr> {
-        let mut addresses: Vec<SocketAddr> = self
-            .addresses
-            .iter()
-            .map(|ip| SocketAddr::new(*ip, self.port))
-            .collect();
-        addresses.sort_by_key(|address| (address.is_ipv6(), *address));
-        addresses.dedup();
-        addresses
-    }
-}
-
 /// A MAC address in the form `_raop._tcp` names use: hex, no colons.
 pub(crate) fn normalize_id(id: &str) -> String {
     id.chars()
@@ -152,12 +123,12 @@ impl Device {
         let main = airplay.or(raop)?;
         let get = |airplay_key: &str, raop_key: &str| {
             airplay
-                .and_then(|record| record.get(airplay_key))
-                .or_else(|| raop.and_then(|record| record.get(raop_key)))
+                .and_then(|record| record.txt(airplay_key))
+                .or_else(|| raop.and_then(|record| record.txt(raop_key)))
         };
         let raop_name = raop.and_then(|record| record.instance.split_once('@'));
         let id = airplay
-            .and_then(|record| record.get("deviceid"))
+            .and_then(|record| record.txt("deviceid"))
             .map(normalize_id)
             .or_else(|| raop_name.map(|(mac, _)| normalize_id(mac)))?;
         let name = match airplay {
@@ -179,8 +150,8 @@ impl Device {
             addresses: Some(main.socket_addresses()).filter(|addresses| !addresses.is_empty())?,
             features,
             flags: flags(get("flags", "sf")),
-            codecs: numbers(raop.and_then(|record| record.get("cn"))),
-            encryptions: numbers(raop.and_then(|record| record.get("et"))),
+            codecs: numbers(raop.and_then(|record| record.txt("cn"))),
+            encryptions: numbers(raop.and_then(|record| record.txt("et"))),
             public_key: public_key(get("pk", "pk")),
         })
     }

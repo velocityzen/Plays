@@ -14,6 +14,7 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant, SystemTime};
 
 use futures_channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
+use network::lock;
 
 use crate::device::{Device, Service};
 use crate::error::{Error, Result};
@@ -130,12 +131,6 @@ struct Inner {
     ended: AtomicBool,
     /// How often it's asked where it is, in milliseconds.
     poll_every: AtomicU64,
-}
-
-fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 /// A path no other session has.

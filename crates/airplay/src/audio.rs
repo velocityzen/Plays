@@ -5,13 +5,14 @@
 //! encrypted, in AES under a key the ANNOUNCE gives wrapped for it.
 
 use std::collections::VecDeque;
-use std::net::{SocketAddr, UdpSocket};
+use std::net::{IpAddr, SocketAddr, UdpSocket};
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
 use futures_channel::mpsc::UnboundedReceiver;
+use network::lock;
 use plist::{Dictionary, Value};
 
 use crate::connection::Request;
@@ -34,6 +35,7 @@ const PCM_44100_16_2: u64 = 0x800;
 const MIN_DB: f32 = -30.0;
 const MUTED_DB: f32 = -144.0;
 
+/// Packets sent, by sequence number: one after another, the oldest first.
 type Backlog = Arc<Mutex<VecDeque<(u16, Vec<u8>)>>>;
 
 /// How the packets go.
@@ -150,16 +152,10 @@ impl AudioStream {
                 let Ok((n, from)) = resends.recv_from(&mut buffer) else {
                     continue;
                 };
-                let Some((first, count)) = rtp::resend_request(&buffer[..n]) else {
-                    continue;
-                };
-                let kept = kept
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
-                for seq in (0..count).map(|i| first.wrapping_add(i)) {
-                    if let Some((_, packet)) = kept.iter().find(|(kept, _)| *kept == seq) {
-                        let _ = resends.send_to(&rtp::resend(packet), from);
-                    }
+                // Copied out, so the lock isn't held while they're sent.
+                let packets = resends_for(&lock(&kept), remote, from, &buffer[..n]);
+                for packet in packets {
+                    let _ = resends.send_to(&packet, from);
                 }
             }
         })?;
@@ -265,10 +261,7 @@ impl AudioStream {
             Encryption::None => packet.extend(payload),
         }
         self.data.send(&packet)?;
-        let mut backlog = self
-            .backlog
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut backlog = lock(&self.backlog);
         if backlog.len() == BACKLOG {
             backlog.pop_front();
         }
@@ -325,6 +318,39 @@ impl AudioStream {
     pub fn stop(self) {
         self.control.stop();
     }
+}
+
+/// The packets to send again for a resend request from `from`: none to
+/// anyone but the receiver, and of those it asks for, the ones still kept,
+/// in the order asked. Each is found by how far it is from the oldest kept,
+/// as the backlog holds one sequence number after another.
+fn resends_for(
+    backlog: &VecDeque<(u16, Vec<u8>)>,
+    receiver: IpAddr,
+    from: SocketAddr,
+    request: &[u8],
+) -> Vec<Vec<u8>> {
+    if from.ip() != receiver {
+        return Vec::new();
+    }
+    let (Some((first, count)), Some(&(oldest, _))) =
+        (rtp::resend_request(request), backlog.front())
+    else {
+        return Vec::new();
+    };
+    // Where the request starts, from the oldest kept: past the backlog's
+    // end when it starts before it, as sequence numbers wrap around.
+    let start = usize::from(first.wrapping_sub(oldest));
+    let end = start + usize::from(count);
+    // What it asks for from there, then what it wraps around to.
+    let wrapped = end.saturating_sub(1 << 16);
+    (start..end.min(backlog.len()))
+        .chain(0..wrapped.min(backlog.len()))
+        .filter_map(|at| backlog.get(at))
+        // Nothing it didn't ask for, should the backlog ever skip one.
+        .filter(|(seq, _)| seq.wrapping_sub(first) < count)
+        .map(|(_, packet)| rtp::resend(packet))
+        .collect()
 }
 
 fn frames(n: u64) -> Duration {
@@ -455,6 +481,74 @@ mod tests {
         assert_eq!(volume_db(0.8, true), -144.0);
         assert_eq!(volume_from_db(-15.0), 0.5);
         assert_eq!(volume_from_db(-144.0), 0.0);
+    }
+
+    /// Packets kept to send again, from `first` on, each its header alone.
+    fn backlog(first: u16, count: u16) -> VecDeque<(u16, Vec<u8>)> {
+        (0..count)
+            .map(|i| first.wrapping_add(i))
+            .map(|seq| (seq, rtp::audio_header(false, seq, 0, 0).to_vec()))
+            .collect()
+    }
+
+    /// The sequence numbers of the packets `resends_for` gives.
+    fn seqs(resent: &[Vec<u8>]) -> Vec<u16> {
+        resent
+            .iter()
+            .map(|packet| {
+                let original = rtp::receiver::resent(packet).unwrap();
+                rtp::receiver::audio(original).unwrap().0
+            })
+            .collect()
+    }
+
+    const RECEIVER: [u8; 4] = [192, 168, 1, 20];
+
+    fn from_receiver() -> SocketAddr {
+        (RECEIVER, 6001).into()
+    }
+
+    fn ask(backlog: &VecDeque<(u16, Vec<u8>)>, first: u16, count: u16) -> Vec<u16> {
+        let request = rtp::receiver::resend_request(first, count);
+        seqs(&resends_for(
+            backlog,
+            RECEIVER.into(),
+            from_receiver(),
+            &request,
+        ))
+    }
+
+    #[test]
+    fn only_the_receiver_is_sent_packets_again() {
+        let kept = backlog(100, 10);
+        let request = rtp::receiver::resend_request(102, 2);
+        let stranger = "192.168.1.99:6001".parse().unwrap();
+        assert!(resends_for(&kept, RECEIVER.into(), stranger, &request).is_empty());
+        assert_eq!(ask(&kept, 102, 2), [102, 103]);
+        assert!(resends_for(&kept, RECEIVER.into(), from_receiver(), b"nonsense").is_empty());
+    }
+
+    #[test]
+    fn a_request_for_every_packet_gets_at_most_those_kept_in_order() {
+        let kept = backlog(64_000, BACKLOG as u16);
+        let all: Vec<u16> = kept.iter().map(|(seq, _)| *seq).collect();
+        assert_eq!(ask(&kept, 64_000, u16::MAX), all);
+        assert_eq!(ask(&kept, 0, u16::MAX), all, "from wherever it starts");
+        assert_eq!(
+            ask(&kept, 63_990, 15),
+            [64_000, 64_001, 64_002, 64_003, 64_004]
+        );
+        assert_eq!(ask(&kept, 64_999, 0), [] as [u16; 0]);
+        assert_eq!(ask(&kept, 63_000, 10), [] as [u16; 0], "long gone");
+        assert_eq!(ask(&kept, 2000, 10), [] as [u16; 0], "not yet sent");
+    }
+
+    #[test]
+    fn sequence_numbers_wrap_around() {
+        let kept = backlog(65_530, 10);
+        assert_eq!(ask(&kept, 65_534, 4), [65_534, 65_535, 0, 1]);
+        assert_eq!(ask(&kept, 2, 5), [2, 3]);
+        assert_eq!(ask(&kept, 65_535, 1), [65_535]);
     }
 
     #[test]

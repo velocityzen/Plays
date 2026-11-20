@@ -1,10 +1,10 @@
 //! HTTP and RTSP messages, which AirPlay mixes on one connection: a start
-//! line, headers, and a body as long as `Content-Length` says.
+//! line, headers, and a body as long as `Content-Length` says. They're
+//! read with `network`'s reader, which bounds them.
 
 use std::io::{self, Read};
 
-/// Longest head taken, so a receiver sending nonsense can't fill memory.
-const MAX_HEAD: usize = 64 * 1024;
+use network::http;
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct Message {
@@ -48,72 +48,27 @@ impl Message {
     }
 }
 
-/// Reads messages off a stream, keeping what it read past the last one.
-#[derive(Default)]
-pub struct Reader {
-    buffer: Vec<u8>,
+impl From<http::Message> for Message {
+    fn from(message: http::Message) -> Self {
+        Self {
+            start: message.head.start,
+            headers: message.head.headers,
+            body: message.body,
+        }
+    }
 }
+
+/// Reads messages off a connection, keeping what it read past one for the
+/// next: the connection stays open after each, so a body that doesn't say
+/// how long it is is empty.
+#[derive(Default)]
+pub struct Reader(http::Reader);
 
 impl Reader {
     /// The next message; `None` once the stream ends between messages.
-    pub fn read(&mut self, stream: &mut impl Read) -> io::Result<Option<Message>> {
-        let end = loop {
-            if let Some(end) = self.buffer.windows(4).position(|w| w == b"\r\n\r\n") {
-                break end;
-            }
-            if self.buffer.len() > MAX_HEAD {
-                return Err(invalid("a message head that doesn't end"));
-            }
-            if !self.fill(stream)? {
-                return if self.buffer.is_empty() {
-                    Ok(None)
-                } else {
-                    Err(io::ErrorKind::UnexpectedEof.into())
-                };
-            }
-        };
-        let head = String::from_utf8_lossy(&self.buffer[..end]).into_owned();
-        let mut lines = head.split("\r\n");
-        let start = lines.next().unwrap_or_default().to_owned();
-        let headers: Vec<(String, String)> = lines
-            .filter_map(|line| {
-                let (name, value) = line.split_once(':')?;
-                Some((name.trim().to_owned(), value.trim().to_owned()))
-            })
-            .collect();
-        let length = headers
-            .iter()
-            .find(|(name, _)| name.eq_ignore_ascii_case("Content-Length"))
-            .map(|(_, value)| value.parse::<usize>())
-            .transpose()
-            .map_err(|_| invalid("a Content-Length that isn't a number"))?
-            .unwrap_or(0);
-        let body_start = end + 4;
-        while self.buffer.len() < body_start + length {
-            if !self.fill(stream)? {
-                return Err(io::ErrorKind::UnexpectedEof.into());
-            }
-        }
-        let body = self.buffer[body_start..body_start + length].to_vec();
-        self.buffer.drain(..body_start + length);
-        Ok(Some(Message {
-            start,
-            headers,
-            body,
-        }))
+    pub fn read(&mut self, stream: impl Read) -> io::Result<Option<Message>> {
+        Ok(self.0.read(stream, false)?.map(Message::from))
     }
-
-    /// Read more; false at the end of the stream.
-    fn fill(&mut self, stream: &mut impl Read) -> io::Result<bool> {
-        let mut chunk = [0; 4096];
-        let n = stream.read(&mut chunk)?;
-        self.buffer.extend_from_slice(&chunk[..n]);
-        Ok(n > 0)
-    }
-}
-
-fn invalid(what: &str) -> io::Error {
-    io::Error::new(io::ErrorKind::InvalidData, what)
 }
 
 #[cfg(test)]

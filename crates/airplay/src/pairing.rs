@@ -7,6 +7,7 @@ use std::fmt;
 
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use sha2::Sha512;
+use subtle::ConstantTimeEq;
 use x25519_dalek::{PublicKey, StaticSecret};
 
 use crate::crypto::{self, message_nonce};
@@ -23,6 +24,12 @@ const TRANSIENT: u8 = 0x10;
 
 const WRONG_PIN: &str = "the PIN is wrong";
 const FORGOTTEN: &str = "it doesn't know this computer any more; pair again";
+
+/// Whether `proof` is the one `expected`, compared in the same time however
+/// much of it is right, so how long it takes gives nothing away.
+fn proves(proof: &[u8], expected: &[u8]) -> bool {
+    proof.ct_eq(expected).into()
+}
 
 /// What pairing with a PIN leaves: who we are to the receiver, and how to
 /// tell it's the receiver. Kept, to verify on each connection.
@@ -206,7 +213,7 @@ impl Setup {
     pub fn m4(&mut self, m4: &[u8]) -> Result<Vec<u8>> {
         let m4 = received(m4, 4, WRONG_PIN)?;
         let session = self.session()?;
-        if m4.need(Tag::Proof)? != session.server_proof {
+        if !proves(m4.need(Tag::Proof)?, &session.server_proof) {
             return Err(Error::pairing("the receiver's proof doesn't match"));
         }
         Ok(session.key.clone())
@@ -446,7 +453,7 @@ pub mod receiver {
                         .as_ref()
                         .ok_or_else(|| Error::protocol("M3 before M1"))?;
                     let session = server.session::<Sha512>(USERNAME, tlv.need(Tag::PublicKey)?)?;
-                    if tlv.need(Tag::Proof)? != session.proof {
+                    if !proves(tlv.need(Tag::Proof)?, &session.proof) {
                         return Ok((Self::refuse(4, 2), Outcome::Going));
                     }
                     let reply = Tlv::new()
@@ -640,6 +647,50 @@ mod tests {
         let err = pair(&mut accessory, "4321").unwrap_err();
         assert!(err.to_string().contains("PIN is wrong"), "{err}");
         assert!(accessory.paired().is_empty());
+    }
+
+    /// `message` with the first byte of its proof changed.
+    fn forged(message: &[u8], state: u8) -> Vec<u8> {
+        let tlv = Tlv::decode(message).unwrap();
+        let mut proof = tlv.need(Tag::Proof).unwrap().to_vec();
+        proof[0] ^= 1;
+        let mut forged = Tlv::new().byte(Tag::State, state);
+        if let Some(public) = tlv.get(Tag::PublicKey) {
+            forged = forged.with(Tag::PublicKey, public);
+        }
+        forged.with(Tag::Proof, proof).encode()
+    }
+
+    #[test]
+    fn a_receiver_whose_proof_is_wrong_is_refused() {
+        let mut accessory = Accessory::new("AA:BB:CC:DD:EE:FF", "1234");
+        let mut setup = Setup::new("1234");
+        let (m2, _) = accessory.setup(&setup.m1()).unwrap();
+        let (m4, _) = accessory.setup(&setup.m3(&m2).unwrap()).unwrap();
+        let err = setup.m4(&forged(&m4, 4)).unwrap_err();
+        assert!(err.to_string().contains("proof doesn't match"), "{err}");
+        let tlv = Tlv::decode(&m4).unwrap();
+        let proof = tlv.need(Tag::Proof).unwrap();
+        let short = Tlv::new()
+            .byte(Tag::State, 4)
+            .with(Tag::Proof, &proof[..proof.len() - 1])
+            .encode();
+        assert!(setup.m4(&short).is_err(), "nor is one cut short");
+        assert!(setup.m4(&m4).is_ok(), "the real one is taken");
+    }
+
+    #[test]
+    fn a_sender_whose_proof_is_wrong_is_refused() {
+        let mut accessory = Accessory::new("AA:BB:CC:DD:EE:FF", "1234");
+        let mut setup = Setup::new("1234");
+        let (m2, _) = accessory.setup(&setup.m1()).unwrap();
+        let (m4, outcome) = accessory
+            .setup(&forged(&setup.m3(&m2).unwrap(), 3))
+            .unwrap();
+        going(outcome);
+        assert!(Tlv::decode(&m4).unwrap().get(Tag::Error).is_some());
+        let err = setup.m4(&m4).unwrap_err();
+        assert!(err.to_string().contains("PIN is wrong"), "{err}");
     }
 
     #[test]

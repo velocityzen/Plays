@@ -59,6 +59,8 @@ pub struct VideoSession {
     started: bool,
     /// The item's id, which `/play` names.
     uuid: String,
+    /// The sender's id, which `/play` says too.
+    sender_id: String,
 }
 
 fn int(n: i64) -> Value {
@@ -85,6 +87,7 @@ impl VideoSession {
                 control,
                 started: false,
                 uuid,
+                sender_id: sender.id.clone(),
             },
             events,
         ))
@@ -120,7 +123,7 @@ impl VideoSession {
         put("referenceRestrictions", int(3));
         put("volume", 1.0.into());
         put("rate", if autoplay { 1.0 } else { 0.0 }.into());
-        put("SenderMACAddress", "AA:BB:CC:DD:EE:FF".into());
+        put("SenderMACAddress", self.sender_id.clone().into());
         put("model", "iPhone14,3".into());
         put("osBuildVersion", "20G1116".into());
         put("clientBundleID", "com.apple.TVRemote".into());

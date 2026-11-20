@@ -8,11 +8,12 @@ use std::io;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use futures_channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
+use network::lock;
 use socket2::{Domain, Protocol, SockRef, Socket, Type};
 
 use crate::device::Device;
@@ -41,14 +42,9 @@ const MOST_KEPT: usize = 256;
 const DESCRIBERS: usize = 4;
 const WAITING: usize = 64;
 
-/// A change in what's found.
-#[derive(Clone, PartialEq, Debug)]
-pub enum Found {
-    Added(Device),
-    /// Its description changed.
-    Changed(Device),
-    Removed(Device),
-}
+/// A change in what's found: a renderer added, or its description
+/// changed, or gone.
+pub type Found = network::Found<Device>;
 
 struct Entry {
     location: String,
@@ -163,12 +159,6 @@ impl Directory {
         devices.sort_by(|a, b| a.name.cmp(&b.name).then_with(|| a.id.cmp(&b.id)));
         devices
     }
-}
-
-fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 /// Where searches go, and adverts come from.
