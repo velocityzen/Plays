@@ -261,6 +261,36 @@ fn a_receiver_going_away_ends_the_session_at_once() {
 }
 
 #[test]
+fn a_session_dropped_without_stopping_lets_go_of_the_receiver() {
+    let fake = FakeReceiver::start(Kind::Speaker);
+    let (stream, mut events) = AudioStream::connect(&fake.device(), None, &sender()).unwrap();
+    assert!(fake.wait_for(|state| state.event_reply.is_some()));
+    assert!(fake.tells_the_time());
+
+    drop(stream);
+    // Its threads stopped with it, and the connections they kept closed.
+    assert!(
+        fake.wait_for(|state| state.closed == state.connections && state.events_closed),
+        "the receiver is still held"
+    );
+    assert!(!fake.tells_the_time(), "its clock still answers");
+    assert!(events.try_recv().is_err_and(|err| err.is_closed()));
+}
+
+#[test]
+fn a_session_failing_after_it_connects_lets_go_of_the_receiver() {
+    let fake = FakeReceiver::start(Kind::Speaker);
+    // Busy with another sender.
+    fake.state().refuse_record = true;
+    assert!(AudioStream::connect(&fake.device(), None, &sender()).is_err());
+    assert!(
+        fake.wait_for(|state| state.connections == 1 && state.closed == 1 && state.events_closed),
+        "the receiver is still held"
+    );
+    assert!(!fake.tells_the_time(), "its clock still answers");
+}
+
+#[test]
 fn a_receiver_refusing_feedback_ends_the_session() {
     let fake = FakeReceiver::start(Kind::Tv { pin: PIN });
     let credentials = pair(&fake);

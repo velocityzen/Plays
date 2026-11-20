@@ -827,7 +827,10 @@ channel. Plays doesn't cast with it yet.
 - `session.rs`: AirPlay 2's session. SETUP says where our clock is, which
   the receiver asks the time; the receiver talks back on an event
   connection; feedback goes every two seconds. Feedback refused or the
-  event connection closed is the receiver gone.
+  event connection closed is the receiver gone. Dropped, a session stops
+  its threads (the clock's, feedback, events, resends) and closes its
+  connections, whether it was stopped first, let go, or failed partway
+  through setting up.
 - `video.rs`: `/play` with the URL and where to start, `/rate`, `/scrub`
   and `/stop`, and `/playback-info` read as loading, playing, paused or
   ended.

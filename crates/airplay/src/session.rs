@@ -48,9 +48,12 @@ pub enum Event {
     Gone,
 }
 
-/// A session's connection and the threads that keep it.
+/// A session's connection and the threads that keep it. Dropped, the
+/// threads stop and the connections close, once they have.
 pub(crate) struct Control {
     connection: Arc<Mutex<Connection>>,
+    /// To close the connection without waiting for whoever holds it.
+    control_stream: Option<TcpStream>,
     /// The secret pairing gave, for the other connections' keys.
     pub secret: Option<Vec<u8>>,
     /// The RTSP session, once SETUP says it.
@@ -94,6 +97,7 @@ impl Control {
         let (events, receiver) = unbounded();
         let control = Self {
             remote: connection.remote,
+            control_stream: connection.tcp().try_clone().ok(),
             connection: Arc::new(Mutex::new(connection)),
             secret,
             rtsp_session: None,
@@ -222,19 +226,13 @@ impl Control {
         Ok(())
     }
 
-    /// End the session: TEARDOWN, and the threads stopped.
-    pub fn stop(mut self) {
+    /// End the session: TEARDOWN, then what dropping it does.
+    pub fn stop(self) {
+        // Its threads are to take the connection closing as asked for.
         self.stop.store(true, Ordering::Relaxed);
         let uri = self.uri();
         if let Err(err) = self.exchange(Request::rtsp("TEARDOWN", uri)) {
             log::debug!("airplay: teardown: {err}");
-        }
-        if let Some(stream) = self.event_stream.take() {
-            let _ = stream.shutdown(Shutdown::Both);
-        }
-        let _ = self.connection().tcp().shutdown(Shutdown::Both);
-        for thread in self.threads.drain(..) {
-            let _ = thread.join();
         }
     }
 
@@ -247,6 +245,24 @@ impl Control {
         let stop = Arc::clone(&self.stop);
         self.threads.push(spawn(name, move || work(stop))?);
         Ok(())
+    }
+}
+
+impl Drop for Control {
+    /// Stop the threads, closing the connections they wait on, and wait
+    /// for them to end: whether the session was stopped, failed partway or
+    /// was let go.
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::Relaxed);
+        for stream in [self.event_stream.take(), self.control_stream.take()]
+            .into_iter()
+            .flatten()
+        {
+            let _ = stream.shutdown(Shutdown::Both);
+        }
+        for thread in self.threads.drain(..) {
+            let _ = thread.join();
+        }
     }
 }
 

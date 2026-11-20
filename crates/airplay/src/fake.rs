@@ -145,6 +145,15 @@ pub struct State {
     /// Whether it refuses feedback, as a receiver that has lost the session
     /// does.
     pub refuse_feedback: bool,
+    /// Whether it refuses RECORD, as one busy with another sender does.
+    pub refuse_record: bool,
+    /// Control connections taken, and those the sender closed since.
+    pub connections: usize,
+    pub closed: usize,
+    /// Whether the sender closed the event connection.
+    pub events_closed: bool,
+    /// Where the sender's clock is.
+    clock: Option<SocketAddr>,
     /// Where the sender takes resend requests, and the socket to ask from.
     resends: Option<(SocketAddr, Arc<UdpSocket>)>,
     /// How AirPlay 1's ANNOUNCE said sound comes.
@@ -236,6 +245,11 @@ impl FakeReceiver {
                 timing: None,
                 event_reply: None,
                 refuse_feedback: false,
+                refuse_record: false,
+                connections: 0,
+                closed: 0,
+                events_closed: false,
+                clock: None,
                 resends: None,
                 announced: Encryption::None,
             }),
@@ -252,8 +266,12 @@ impl FakeReceiver {
                 };
                 let _ = stream.set_nonblocking(false);
                 accepting.keep(&stream);
+                accepting.state().connections += 1;
                 let shared = Arc::clone(&accepting);
-                thread::spawn(move || serve(stream, &shared));
+                thread::spawn(move || {
+                    serve(stream, &shared);
+                    shared.state().closed += 1;
+                });
             }
         });
         lock(&LISTENING).push(address);
@@ -335,6 +353,13 @@ impl FakeReceiver {
         for stream in lock(&self.shared.streams).drain(..) {
             let _ = stream.shutdown(Shutdown::Both);
         }
+    }
+
+    /// Whether the sender's clock answers, as it does while the session's
+    /// threads run.
+    pub fn tells_the_time(&self) -> bool {
+        let clock = self.state().clock.expect("a session set up");
+        time_at(clock, Duration::from_millis(500)).is_some()
     }
 
     /// Wait up to two seconds for `done` to be true of its state.
@@ -533,6 +558,7 @@ fn answer(shared: &Arc<Shared>, request: &Received, secret: Option<&[u8]>) -> Re
         }
         ("GET", "/playback-info") => Reply::ok().plist(shared.state().playback.clone()),
         ("POST", "/feedback") if shared.state().refuse_feedback => Reply::status(500),
+        ("RECORD", _) if shared.state().refuse_record => Reply::status(453),
         ("RECORD" | "FLUSH" | "TEARDOWN" | "OPTIONS", _)
         | ("PUT", "/setProperty")
         | ("POST", "/feedback") => Reply::ok(),
@@ -637,23 +663,26 @@ fn setup(shared: &Arc<Shared>, request: &Received, secret: Option<&[u8]>) -> Rep
     Reply::ok().plist(answer)
 }
 
-/// Ask the sender's clock the time, and keep the answer.
+/// Ask the sender's clock the time, and keep where it is and the answer.
 fn ask_the_time(shared: &Shared, to: SocketAddr) {
-    let Ok(socket) = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)) else {
-        return;
-    };
-    let _ = socket.set_read_timeout(Some(Duration::from_secs(2)));
+    shared.state().clock = Some(to);
+    if let Some(timing) = time_at(to, Duration::from_secs(2)) {
+        shared.state().timing = Some(timing);
+    }
+}
+
+/// When the clock at `to` was asked the time, and its answer, if it
+/// answers within `wait`.
+fn time_at(to: SocketAddr, wait: Duration) -> Option<(u64, Vec<u8>)> {
+    let socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).ok()?;
+    socket.set_read_timeout(Some(wait)).ok()?;
     let sent = rtp::ntp_now();
-    if socket
+    socket
         .send_to(&receiver::timing_request(1, sent), to)
-        .is_err()
-    {
-        return;
-    }
+        .ok()?;
     let mut answer = [0; 64];
-    if let Ok(n) = socket.recv(&mut answer) {
-        shared.state().timing = Some((sent, answer[..n].to_vec()));
-    }
+    let n = socket.recv(&mut answer).ok()?;
+    Some((sent, answer[..n].to_vec()))
 }
 
 /// Listen for the event connection; once the sender's on it, say something
@@ -683,14 +712,14 @@ fn talk_back(shared: &Arc<Shared>, keys: Keys) -> u16 {
             ],
             body: Vec::new(),
         };
-        if sealed.write_all(&request.encode()).is_err() {
-            return;
-        }
-        if let Ok(Some(answer)) = Reader::default().read(&mut sealed) {
+        if sealed.write_all(&request.encode()).is_ok()
+            && let Ok(Some(answer)) = Reader::default().read(&mut sealed)
+        {
             shared.state().event_reply = Some(answer.status());
+            // Hold it open until one side goes.
+            let _ = sealed.read_to_end(&mut Vec::new());
         }
-        // Hold it open until one side goes.
-        let _ = sealed.read_to_end(&mut Vec::new());
+        shared.state().events_closed = true;
     });
     port
 }
