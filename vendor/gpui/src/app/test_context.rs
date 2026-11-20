@@ -355,6 +355,12 @@ impl TestAppContext {
         self.test_platform.opened_url.borrow().clone()
     }
 
+    /// Plays: how many times the app was brought forward with
+    /// `cx.activate()` during this test.
+    pub fn app_activations(&self) -> usize {
+        self.test_platform.activations.get()
+    }
+
     /// Simulates the user resizing the window to the new size.
     pub fn simulate_window_resize(&self, window_handle: AnyWindowHandle, size: Size<Pixels>) {
         self.test_window(window_handle).simulate_resize(size);

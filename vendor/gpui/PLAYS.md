@@ -182,7 +182,9 @@ shaped and rasterized by the system's own text system (Core Text on macOS,
 cosmic-text on Linux) rather than the no-op one, so Plays' tests can check
 subtitles as they are drawn into screenshots. `TestPlatform::with_text_system`
 takes the text system, and `TestPlatform::new` passes the no-op one as
-before.
+before. The test platform counts `activate` calls, and
+`TestAppContext::app_activations()` reads the count, so a test can tell the
+app was brought forward.
 
 `src/platform.rs`, `src/window.rs`, and the macOS, X11 and test windows:
 `Window::set_on_top` keeps a window above other apps' windows, or puts it

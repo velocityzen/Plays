@@ -234,7 +234,12 @@ impl PlayerView {
         })
     }
 
-    fn on_pip_event(&mut self, event: PipEvent, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn on_pip_event(
+        &mut self,
+        event: PipEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         log::debug!("Picture in Picture: {event:?}");
         match event {
             PipEvent::SetPlaying(true) => self.player.play(),
@@ -246,17 +251,32 @@ impl PlayerView {
                     session.pip.set_layer_visible(false);
                 }
             }
-            PipEvent::Stopped => self.pip = None,
+            PipEvent::Stopped => {
+                let shown = self.pip.take().is_some_and(|session| session.started);
+                // Closed from its own window while this one is full screen:
+                // the video plays on here, in a Space of its own, out of
+                // sight, so go back to it.
+                if shown && window.is_fullscreen() {
+                    bring_back(window, cx);
+                }
+            }
             PipEvent::Failed(why) => {
                 log::warn!("Picture in Picture couldn't start: {why}");
                 self.pip = None;
                 self.note("Picture in Picture couldn't open", cx);
             }
-            PipEvent::Restore => {
-                window.activate_window();
-                cx.emit(PlayerEvent::Activate);
-            }
+            PipEvent::Restore => bring_back(window, cx),
         }
         cx.notify();
     }
+}
+
+/// Bring the tile's window forward, and with it its Space when it is full
+/// screen in one. Plays is often not the app in front then, as Picture in
+/// Picture floats over every app and Space, and a window of an app behind
+/// can't come forward alone: the app comes first.
+fn bring_back(window: &mut Window, cx: &mut Context<PlayerView>) {
+    cx.activate(true);
+    window.activate_window();
+    cx.emit(PlayerEvent::Activate);
 }

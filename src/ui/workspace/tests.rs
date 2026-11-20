@@ -15,6 +15,7 @@ use crate::app::ShowOnDisplay;
 use crate::hotkeys::{ToggleFloatOnTop, ToggleFloatOnTopWhilePlaying};
 use crate::settings::{FloatOnTop, PanelLook, Settings};
 use crate::ui::displays;
+use crate::ui::pip::PipEvent;
 use crate::ui::settings::SettingsView;
 use crate::ui::testing::{
     self, OPEN_WAIT, click, double_click, find, fixture, hover, press, shows, wait_until,
@@ -486,6 +487,32 @@ fn floats_on_top_always_or_while_playing(cx: &mut TestAppContext) {
         "the same item again turns it off"
     );
     assert_eq!(on_top(&mut cx), (false, false));
+}
+
+#[gpui::test]
+fn picture_in_picture_going_back_brings_the_app_and_its_window_forward(cx: &mut TestAppContext) {
+    let (window, mut cx) = testing::start(cx);
+    open(window, &mut cx, &["clip.mp4"], false);
+    let tile = window
+        .read_with(&cx, |workspace, _| workspace.tiles[0].view.clone())
+        .unwrap();
+    let pip_says = |cx: &mut VisualTestContext, event: PipEvent| {
+        cx.update(|window, cx| tile.update(cx, |view, cx| view.on_pip_event(event, window, cx)));
+        cx.run_until_parked();
+    };
+    let before = cx.app_activations();
+
+    // Its button to go back, pressed while another app and Space are in
+    // front: the window alone can't come forward from behind them.
+    pip_says(&mut cx, PipEvent::Restore);
+    assert_eq!(cx.app_activations(), before + 1, "the app comes forward");
+    assert!(cx.update(|window, _| window.is_window_active()));
+
+    // One that never showed, or that this tile closed itself, leaves
+    // everything where it is, full screen or not.
+    cx.update(|window, _| window.toggle_fullscreen());
+    pip_says(&mut cx, PipEvent::Stopped);
+    assert_eq!(cx.app_activations(), before + 1);
 }
 
 #[gpui::test]

@@ -10,7 +10,7 @@ use collections::VecDeque;
 use futures::channel::oneshot;
 use parking_lot::Mutex;
 use std::{
-    cell::RefCell,
+    cell::{Cell, RefCell},
     path::{Path, PathBuf},
     rc::{Rc, Weak},
     sync::Arc,
@@ -35,6 +35,8 @@ pub(crate) struct TestPlatform {
     pub(crate) prompts: RefCell<TestPrompts>,
     screen_capture_sources: RefCell<Vec<TestScreenCaptureSource>>,
     pub opened_url: RefCell<Option<String>>,
+    /// Plays: how many times the app was brought forward.
+    pub(crate) activations: Cell<usize>,
     pub text_system: Arc<dyn PlatformTextSystem>,
     #[cfg(target_os = "windows")]
     bitmap_factory: std::mem::ManuallyDrop<IWICImagingFactory>,
@@ -125,6 +127,7 @@ impl TestPlatform {
             current_primary_item: Mutex::new(None),
             weak: weak.clone(),
             opened_url: Default::default(),
+            activations: Default::default(),
             #[cfg(target_os = "windows")]
             bitmap_factory,
             text_system,
@@ -263,7 +266,8 @@ impl Platform for TestPlatform {
     }
 
     fn activate(&self, _ignoring_other_apps: bool) {
-        //
+        // Plays: counted, for tests.
+        self.activations.set(self.activations.get() + 1);
     }
 
     fn hide(&self) {
