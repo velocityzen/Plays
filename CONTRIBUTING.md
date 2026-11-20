@@ -266,8 +266,9 @@ What the window tests check:
   does the mouse moving over one, but not while it drags (a slider of the
   tile it came from).
 - A double-click fills the window with a tile, the whole area under the
-  toolbar, and another puts the grid back; ⌘W closes the tile in front,
-  then the empty window; four tiles sit in two even rows.
+  toolbar, and another puts the grid back, as opening more files does;
+  ⌘W closes the tile in front, then the empty window; four tiles sit in
+  two even rows.
 - A tile dragged by its picture onto another takes that one's place, the
   tiles between moving over, and shortcuts then go to it; it keeps playing,
   isn't maximized, and let go over itself, stays. The only tile in a

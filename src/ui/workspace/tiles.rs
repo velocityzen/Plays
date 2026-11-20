@@ -177,16 +177,18 @@ impl Workspace {
     }
 
     fn toggle_maximize(&mut self, id: EntityId, cx: &mut Context<Self>) {
-        self.maximized = if self.maximized == Some(id) {
-            None
-        } else {
-            Some(id)
-        };
+        let maximized = (self.maximized != Some(id)).then_some(id);
+        self.set_maximized(maximized, cx);
+        self.tiles_changed(cx);
+    }
+
+    /// Show the tile `maximized` alone, or with none, every tile.
+    pub(super) fn set_maximized(&mut self, maximized: Option<EntityId>, cx: &mut Context<Self>) {
+        self.maximized = maximized;
         for tile in &self.tiles {
-            let maximized = self.maximized == Some(tile.view.entity_id());
+            let maximized = maximized == Some(tile.view.entity_id());
             tile.view.update(cx, |view, _| view.maximized = maximized);
         }
-        self.tiles_changed(cx);
     }
 
     /// The tile shortcuts go to: the maximized one, else the one the mouse

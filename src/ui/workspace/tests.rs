@@ -19,6 +19,7 @@ use crate::hotkeys::{ToggleFloatOnTop, ToggleFloatOnTopWhilePlaying};
 use crate::media::tracks::TrackKind;
 use crate::settings::{FloatOnTop, FullScreen, PanelLook, Settings};
 use crate::ui::pip::PipEvent;
+use crate::ui::player::PlayerEvent;
 use crate::ui::settings::SettingsView;
 use crate::ui::testing::{
     self, OPEN_WAIT, click, double_click, find, fixture, hover, press, shows, wait_until,
@@ -918,6 +919,44 @@ fn a_tile_alone_expands_to_full_screen_while_it_floats(cx: &mut TestAppContext) 
     assert!(full_screen(&mut cx), "so does the button");
     click(&mut cx, "maximize");
     assert!(!full_screen(&mut cx));
+}
+
+#[gpui::test]
+fn files_opened_while_a_tile_is_maximized_show_beside_it(cx: &mut TestAppContext) {
+    let (window, mut cx) = testing::start(cx);
+    open(window, &mut cx, &["clip.mp4", "tone.m4a"], false);
+    let first = window
+        .read_with(&cx, |workspace, _| workspace.tiles[0].view.clone())
+        .unwrap();
+    first.update(&mut cx, |_, cx| cx.emit(PlayerEvent::ToggleMaximize));
+    cx.run_until_parked();
+    assert!(!shows(&mut cx, "tile-1"), "the maximized tile alone");
+
+    window
+        .update(&mut cx, |workspace, _, cx| {
+            workspace.open_paths(vec![fixture("clip-subs.mkv")], cx)
+        })
+        .unwrap();
+    let opened = wait_until(&mut cx, |cx| {
+        window
+            .read_with(cx, |workspace, _| workspace.tiles.len() == 3)
+            .unwrap()
+    });
+    assert!(opened, "clip-subs.mkv didn't open");
+    for tile in ["tile-0", "tile-1", "tile-2"] {
+        assert!(shows(&mut cx, tile), "{tile} shows");
+    }
+    let (maximized, flagged) = window
+        .read_with(&cx, |workspace, cx| {
+            let flagged = workspace
+                .tiles
+                .iter()
+                .any(|tile| tile.view.read(cx).maximized);
+            (workspace.maximized, flagged)
+        })
+        .unwrap();
+    assert_eq!(maximized, None);
+    assert!(!flagged, "no tile says it's maximized");
 }
 
 #[gpui::test]

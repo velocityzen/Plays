@@ -259,15 +259,16 @@ Float on Top.
 ### Tiles
 
 Click the picture to make it the tile shortcuts go to; double-click it (or
-the corner button) to maximize it. For the only tile in a window, both
-toggle full screen instead. Drag the picture onto another tile to put the
-tile there, the tiles between moving over; its title follows the pointer,
-and the tile it would take the place of lights up. With no other tile
-showing (the only one in its window, or maximized), dragging the picture
-moves the window, except in full screen. Drag the bar to scrub. In the middle
-under the bar, the previous and next buttons open the media file before or
-after this one in its folder, by name, in the same tile; between them,
-skip back and forward go by the seek step, around play/pause.
+the corner button) to maximize it; opening more files puts the grid back,
+with them in it. For the only tile in a window, both toggle full screen
+instead. Drag the picture onto another tile to put the tile there, the
+tiles between moving over; its title follows the pointer, and the tile it
+would take the place of lights up. With no other tile showing (the only
+one in its window, or maximized), dragging the picture moves the window,
+except in full screen. Drag the bar to scrub. In the middle under the bar,
+the previous and next buttons open the media file before or after this one
+in its folder, by name, in the same tile; between them, skip back and
+forward go by the seek step, around play/pause.
 
 The track button (next to loop, on files that have subtitles or more than
 one audio or video track) opens the track menu: a column each for audio,
