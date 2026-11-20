@@ -9,6 +9,10 @@ use quick_xml::escape::resolve_predefined_entity;
 use quick_xml::events::{BytesStart, Event};
 use quick_xml::reader::Reader;
 
+/// How deep elements may nest. UPnP's go a dozen deep; a tree much deeper
+/// would overflow the stack being dropped or searched.
+const MAX_DEPTH: usize = 64;
+
 /// An element and what's in it.
 #[derive(Clone, PartialEq, Debug, Default)]
 pub struct Element {
@@ -29,6 +33,9 @@ impl Element {
         let mut open: Vec<Element> = Vec::new();
         loop {
             let event = reader.read_event().map_err(|err| err.to_string())?;
+            if matches!(event, Event::Start(_) | Event::Empty(_)) && open.len() >= MAX_DEPTH {
+                return Err(format!("elements nested more than {MAX_DEPTH} deep"));
+            }
             match event {
                 Event::Start(start) => open.push(Self::start(&start)?),
                 Event::Empty(start) => {
@@ -187,6 +194,30 @@ mod tests {
         assert!(Element::parse("<a><b></a>").is_err());
         assert!(Element::parse("<a>").is_err());
         assert!(Element::parse("<a>&nbsp;</a>").is_err());
+    }
+
+    #[test]
+    fn documents_nested_too_deep_are_errors() {
+        let nested = |depth: usize| format!("{}{}", "<a>".repeat(depth), "</a>".repeat(depth));
+        assert!(
+            Element::parse(&nested(MAX_DEPTH)).is_ok(),
+            "as deep as it may be"
+        );
+        assert!(
+            Element::parse(&nested(MAX_DEPTH + 1)).is_err(),
+            "a level deeper"
+        );
+        let empty = format!(
+            "{}<b/>{}",
+            "<a>".repeat(MAX_DEPTH),
+            "</a>".repeat(MAX_DEPTH)
+        );
+        assert!(
+            Element::parse(&empty).is_err(),
+            "an empty element a level deeper"
+        );
+        // Deep enough to overflow the stack dropping it.
+        assert!(Element::parse(&nested(100_000)).is_err());
     }
 
     #[test]

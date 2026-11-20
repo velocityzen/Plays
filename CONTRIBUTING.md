@@ -466,7 +466,8 @@ when the renderer goes away or plays something else, but not for what
 played before or a track that lags. Unit tests read descriptions and
 protocol info in the forms Samsung, LG and Sonos give them and as a
 Devialet speaker gave them (ids changed), SSDP's messages, DIDL-Lite,
-times, URLs and HTTP. Each has been checked to fail when what it covers is
+times, URLs and HTTP, and refuse what a hostile device could send: XML
+nested too deep. Each has been checked to fail when what it covers is
 broken.
 
 Each protocol crate has an example that talks to real devices on the
