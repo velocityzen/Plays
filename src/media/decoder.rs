@@ -46,7 +46,7 @@ use super::chapters::Chapter;
 use super::clock::Clock;
 use super::details::{AudioDetails, ContainerDetails, VideoDetails};
 use super::dovi;
-use super::external::{self, SubtitleFile};
+use super::external::{self, Reading, SubtitleFile};
 use super::hdr;
 use super::hwaccel;
 use super::orientation::Orientation;
@@ -448,14 +448,22 @@ struct Decoders {
     subtitle: Option<SubtitleDecoder>,
     /// The packets of the subtitles playing, when they come from a file.
     subtitle_file: Option<SubtitleFile>,
+    /// The subtitle file to play next, being read; what plays plays on
+    /// until it is.
+    reading: Option<Reading>,
 }
 
 impl Decoders {
+    /// The track playing, or for subtitles the file being read to play.
     fn selected(&self, kind: TrackKind) -> Option<usize> {
         match kind {
             TrackKind::Video => self.video.as_ref().map(|v| v.index),
             TrackKind::Audio => self.audio.as_ref().map(|a| a.index),
-            TrackKind::Subtitle => self.subtitle.as_ref().map(|s| s.index),
+            TrackKind::Subtitle => self
+                .reading
+                .as_ref()
+                .map(|reading| reading.index)
+                .or_else(|| self.subtitle.as_ref().map(|s| s.index)),
         }
     }
 
@@ -465,24 +473,61 @@ impl Decoders {
             .ok_or_else(|| anyhow!("there is no stream {index}"))
     }
 
-    fn open_subtitles(&self, index: usize) -> Result<(SubtitleDecoder, Option<SubtitleFile>)> {
-        if let Some(path) = index
-            .checked_sub(self.streams.len())
-            .and_then(|i| self.files.get(i))
-        {
-            let (decoder, file) = SubtitleFile::open(path, index, self.canvas)
-                .with_context(|| format!("reading {}", path.display()))?;
-            return Ok((decoder, Some(file)));
-        }
+    /// A decoder for subtitle stream `index`.
+    fn open_subtitles(&self, index: usize) -> Result<SubtitleDecoder> {
         let stream = self.stream(index)?;
-        let decoder = SubtitleDecoder::new(
+        SubtitleDecoder::new(
             index,
             &stream.parameters,
             stream.time_base,
             self.canvas,
             None,
-        )?;
-        Ok((decoder, None))
+        )
+    }
+
+    /// Start reading subtitles `index` if they come from a file, on a
+    /// thread of its own, as a file can be large and far away: they play
+    /// once it is read (`take_read`). Says whether they do.
+    fn read_subtitles(&mut self, index: usize, shared: &Arc<Shared>) -> Result<bool> {
+        let Some(path) = index
+            .checked_sub(self.streams.len())
+            .and_then(|i| self.files.get(i))
+        else {
+            return Ok(false);
+        };
+        let shared = shared.clone();
+        let reading = Reading::start(path.clone(), index, self.canvas, move || {
+            shared.wake.ring();
+        })?;
+        self.reading = Some(reading);
+        Ok(true)
+    }
+
+    /// Play the subtitle file being read once it is, from a little before
+    /// the playhead, in place of what played. Says whether it was read.
+    fn take_read(&mut self, demuxer: &Demuxer, shared: &Shared, name: &str) -> bool {
+        let Some(read) = self.reading.as_ref().and_then(Reading::take) else {
+            return false;
+        };
+        self.reading = None;
+        match read {
+            Ok((decoder, mut file)) => {
+                let mut cues = shared.subtitles.lock();
+                file.seek(cues.cue_time(shared.clock.now()));
+                // The other track's cues go.
+                cues.clear();
+                drop(cues);
+                self.subtitle = Some(decoder);
+                self.subtitle_file = Some(file);
+                // A file's subtitles don't come from the demuxer.
+                demuxer.select(TrackKind::Subtitle, None);
+            }
+            Err(err) => log::warn!("{name}: can't play that track: {err:#}"),
+        }
+        if let Some(info) = shared.info.lock().as_mut() {
+            Arc::make_mut(info).select(TrackKind::Subtitle, self.selected(TrackKind::Subtitle));
+        }
+        true
     }
 
     /// Play another track, or no subtitles (video and audio can't be turned
@@ -492,7 +537,7 @@ impl Decoders {
         kind: TrackKind,
         index: Option<usize>,
         demuxer: &Demuxer,
-        shared: &Shared,
+        shared: &Arc<Shared>,
         name: &str,
     ) {
         if self.selected(kind) != index
@@ -511,33 +556,36 @@ impl Decoders {
         kind: TrackKind,
         index: Option<usize>,
         demuxer: &Demuxer,
-        shared: &Shared,
+        shared: &Arc<Shared>,
     ) -> Result<()> {
         let Some(index) = index else {
             if kind == TrackKind::Subtitle {
                 demuxer.select(kind, None);
                 self.subtitle = None;
                 self.subtitle_file = None;
+                self.reading = None;
                 shared.subtitles.lock().clear();
             }
             return Ok(());
         };
         if kind == TrackKind::Subtitle {
-            let (decoder, file) = self.open_subtitles(index)?;
+            // Back to what plays, while another was read.
+            if self.subtitle.as_ref().is_some_and(|s| s.index == index) {
+                self.reading = None;
+                return Ok(());
+            }
+            if self.read_subtitles(index, shared)? {
+                return Ok(());
+            }
+            let decoder = self.open_subtitles(index)?;
+            self.reading = None;
             // The other track's cues go; this one's come from the packets
-            // kept of it, or its file, without a seek.
+            // kept of it, without a seek.
             shared.subtitles.lock().clear();
-            // A file's subtitles don't come from the demuxer.
-            let queue = match file {
-                Some(_) => None,
-                None => Some(PacketQueue::new(
-                    index,
-                    f64::from(self.stream(index)?.time_base),
-                )),
-            };
+            let queue = PacketQueue::new(index, f64::from(self.stream(index)?.time_base));
             self.subtitle = Some(decoder);
-            self.subtitle_file = file;
-            demuxer.select(kind, queue);
+            self.subtitle_file = None;
+            demuxer.select(kind, Some(queue));
             return Ok(());
         }
         let stream = self.stream(index)?;
@@ -600,6 +648,19 @@ fn run(
     options: DecodeOptions,
     commands: &Receiver<Command>,
 ) -> Result<()> {
+    // The subtitle files beside it are looked for, and opened, while it
+    // opens: each can take a while.
+    let looking = match source {
+        Source::File(path) => {
+            let path = path.clone();
+            thread::Builder::new()
+                .name("subtitle files".into())
+                .spawn(move || external::tracks(&path))
+                .inspect_err(|err| log::warn!("{source}: not looking for subtitle files: {err}"))
+                .ok()
+        }
+        _ => None,
+    };
     let interrupt = shared.clone();
     let input = open_input(source, move || interrupt.stop.load(Ordering::Relaxed))?;
     let name = source.name();
@@ -613,18 +674,16 @@ fn run(
         audio: None,
         subtitle: None,
         subtitle_file: None,
+        reading: None,
     };
-    if let Source::File(path) = source {
-        for found in external::find(path) {
-            let index = decoders.streams.len() + decoders.files.len();
-            match found.track(index) {
-                Ok(track) => {
-                    tracks.push(track);
-                    decoders.files.push(found.path);
-                }
-                Err(err) => log::warn!("{}: skipping it: {err:#}", found.path.display()),
-            }
-        }
+    let found = looking.map(|looking| looking.join().unwrap_or_default());
+    for mut track in found.into_iter().flatten() {
+        let Some(path) = track.file.clone() else {
+            continue;
+        };
+        track.index = decoders.streams.len() + decoders.files.len();
+        tracks.push(track);
+        decoders.files.push(path);
     }
 
     let mut cover: Option<VideoDecoder> = None;
@@ -669,12 +728,15 @@ fn run(
         .or_else(|| subtitles().find(|t| t.default))
         .or_else(|| subtitles().find(|t| t.forced));
     if let Some(track) = subtitle {
-        match decoders.open_subtitles(track.index) {
-            Ok((decoder, file)) => {
-                decoders.subtitle = Some(decoder);
-                decoders.subtitle_file = file;
+        let index = track.index;
+        let started = decoders.read_subtitles(index, shared).and_then(|read| {
+            if !read {
+                decoders.subtitle = Some(decoders.open_subtitles(index)?);
             }
-            Err(err) => log::warn!("{source}: skipping subtitles: {err:#}"),
+            Ok(())
+        });
+        if let Err(err) = started {
+            log::warn!("{source}: skipping subtitles: {err:#}");
         }
     }
 
@@ -761,10 +823,12 @@ fn run(
         packets: Mutex::new(Packets {
             video: queue(TrackKind::Video),
             audio: queue(TrackKind::Audio),
-            subtitle: match decoders.subtitle_file {
-                Some(_) => None,
-                None => queue(TrackKind::Subtitle),
-            },
+            // A file's subtitles don't come from the demuxer, and are still
+            // being read.
+            subtitle: decoders
+                .subtitle
+                .as_ref()
+                .map(|s| PacketQueue::new(s.index, f64::from(decoders.streams[s.index].time_base))),
             spare: decoders
                 .streams
                 .iter()
@@ -936,6 +1000,7 @@ fn run(
         // Subtitles are few and small, and each has to be ready before its
         // time, so they are decoded as soon as they are read. A subtitle
         // file is read all at once, so it is decoded as the playhead nears.
+        progressed |= decoders.take_read(&demuxer, shared, &name);
         if let Some(s) = &mut decoders.subtitle
             && session.settled
         {

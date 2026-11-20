@@ -4,14 +4,20 @@
 //! every subtitle file in `Subs/Movie/`, as releases often lay them out.
 //!
 //! A file's name says its language and whether it is forced or for the
-//! hearing impaired. When one is picked, all its packets are read (subtitle
-//! files are small) and fed to its decoder a little ahead of the playhead.
+//! hearing impaired. They are opened, to see what they hold, while the
+//! video opens, several at once. When one is picked, all its packets are
+//! read, on a thread of its own, as a bitmap file can be tens of megabytes
+//! and on a share far away, and fed to its decoder a little ahead of the
+//! playhead.
 
 use std::fs::{self, File};
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{self, Receiver, TryRecvError};
 
-use anyhow::{Context as _, Result};
+use anyhow::{Context as _, Result, anyhow, bail};
 use ffmpeg::{Packet, media};
 use ffmpeg_next as ffmpeg;
 
@@ -26,12 +32,40 @@ const EXTENSIONS: &[&str] = &[
 /// The ones that are bitmaps rather than text.
 const BITMAP_EXTENSIONS: &[&str] = &["sup", "idx"];
 
+/// How many subtitle files are opened at once.
+const OPENED_AT_ONCE: usize = 8;
+
 /// How much of a text file is read to tell its encoding.
 const ENCODING_SAMPLE_BYTES: u64 = 4 * 1024 * 1024;
 
 /// After a seek, packets from this long before it are decoded again, for
 /// the cues still showing then.
 const LOOKBACK: f64 = 30.0;
+
+/// For tests: files that take this much longer to open (`Found::track`)
+/// or read (`SubtitleFile::open`), as on a share far away.
+#[cfg(test)]
+pub(super) mod slow {
+    use std::path::{Path, PathBuf};
+    use std::sync::Mutex;
+    use std::time::Duration;
+
+    pub static TO_OPEN: Mutex<Vec<(PathBuf, Duration)>> = Mutex::new(Vec::new());
+    pub static TO_READ: Mutex<Vec<(PathBuf, Duration)>> = Mutex::new(Vec::new());
+
+    /// Take as long as `files` say `path` takes.
+    pub fn wait(files: &Mutex<Vec<(PathBuf, Duration)>>, path: &Path) {
+        let slow = files
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|(slow, _)| slow == path)
+            .map(|(_, took)| *took);
+        if let Some(took) = slow {
+            std::thread::sleep(took);
+        }
+    }
+}
 
 /// A subtitle file found for a video.
 #[derive(Clone, Debug, PartialEq)]
@@ -218,9 +252,50 @@ fn language_tag(part: &str) -> Option<String> {
         .then(|| format!("{base}-{region}"))
 }
 
+/// The subtitle files for the video at `video` that FFmpeg can read, as
+/// tracks (numbered 0: they follow the video's), those beside it first.
+/// Each is opened to see what it holds, which can take a while, so several
+/// at once, each on a thread of its own.
+pub fn tracks(video: &Path) -> Vec<Track> {
+    let found = find(video);
+    let mut tracks = Vec::new();
+    for some in found.chunks(OPENED_AT_ONCE) {
+        let opened: Vec<Result<Track>> = std::thread::scope(|scope| {
+            let opening: Vec<_> = some
+                .iter()
+                .map(|found| {
+                    let thread = std::thread::Builder::new()
+                        .name("subtitle file".into())
+                        .spawn_scoped(scope, || found.track());
+                    (found, thread.ok())
+                })
+                .collect();
+            opening
+                .into_iter()
+                .map(|(found, thread)| match thread {
+                    Some(thread) => thread
+                        .join()
+                        .unwrap_or_else(|_| Err(anyhow!("opening it panicked"))),
+                    // No thread to spare: open it here.
+                    None => found.track(),
+                })
+                .collect()
+        });
+        for (found, opened) in some.iter().zip(opened) {
+            match opened {
+                Ok(track) => tracks.push(track),
+                Err(err) => log::warn!("{}: skipping it: {err:#}", found.path.display()),
+            }
+        }
+    }
+    tracks
+}
+
 impl Found {
-    /// The file as a subtitle track numbered `index`, if FFmpeg can read it.
-    pub fn track(&self, index: usize) -> Result<Track> {
+    /// The file as a subtitle track, numbered 0, if FFmpeg can read it.
+    pub fn track(&self) -> Result<Track> {
+        #[cfg(test)]
+        slow::wait(&slow::TO_OPEN, &self.path);
         let input = ffmpeg::format::input(&self.path).context("FFmpeg can't read it")?;
         let stream = input
             .streams()
@@ -228,7 +303,7 @@ impl Found {
             .context("it has no subtitles")?;
         let mut track = Track::of(&stream).context("there is no decoder for its subtitles")?;
         let naming = &self.naming;
-        track.index = index;
+        track.index = 0;
         track.file = Some(self.path.clone());
         // VobSub says its language; text files only have their names.
         track.language = track.language.or_else(|| naming.language.clone());
@@ -256,13 +331,16 @@ pub struct SubtitleFile {
 
 impl SubtitleFile {
     /// Read the subtitle file at `path`, numbered `index` among the tracks,
-    /// and open a decoder for it. Bitmaps that don't say what they are
-    /// placed on go on `canvas`.
+    /// and open a decoder for it, unless `stop` is set first. Bitmaps that
+    /// don't say what they are placed on go on `canvas`.
     pub fn open(
         path: &Path,
         index: usize,
         canvas: Option<(u32, u32)>,
+        stop: &AtomicBool,
     ) -> Result<(SubtitleDecoder, Self)> {
+        #[cfg(test)]
+        slow::wait(&slow::TO_READ, path);
         let mut input = ffmpeg::format::input(path).context("FFmpeg can't read it")?;
         let stream = input
             .streams()
@@ -276,11 +354,15 @@ impl SubtitleFile {
             log::info!("{}: reading it as {encoding}", path.display());
         }
         let decoder = SubtitleDecoder::new(index, &parameters, time_base, canvas, encoding)?;
-        let mut packets: Vec<Packet> = input
-            .packets()
-            .filter(|(stream, _)| stream.index() == stream_index)
-            .map(|(_, packet)| packet)
-            .collect();
+        let mut packets: Vec<Packet> = Vec::new();
+        for (stream, packet) in input.packets() {
+            if stop.load(Ordering::Relaxed) {
+                bail!("no longer wanted");
+            }
+            if stream.index() == stream_index {
+                packets.push(packet);
+            }
+        }
         packets.sort_by_key(|packet| packet.pts().or(packet.dts()).unwrap_or(i64::MIN));
         Ok((
             decoder,
@@ -314,6 +396,59 @@ impl SubtitleFile {
         }
         self.next += 1;
         Some(packet)
+    }
+}
+
+/// What reading a subtitle file gives: its decoder and its packets.
+type Loaded = Result<(SubtitleDecoder, SubtitleFile)>;
+
+/// A subtitle file being read on a thread of its own, to play once it is.
+/// Dropped, it stops reading.
+pub struct Reading {
+    /// The track it is.
+    pub index: usize,
+    read: Receiver<Loaded>,
+    stop: Arc<AtomicBool>,
+}
+
+impl Reading {
+    /// Read the file at `path` as track `index` (`SubtitleFile::open`),
+    /// calling `done` once it has.
+    pub fn start(
+        path: PathBuf,
+        index: usize,
+        canvas: Option<(u32, u32)>,
+        done: impl FnOnce() + Send + 'static,
+    ) -> Result<Self> {
+        let (sender, read) = mpsc::sync_channel(1);
+        let stop = Arc::new(AtomicBool::new(false));
+        let stopped = stop.clone();
+        std::thread::Builder::new()
+            .name("subtitle file".into())
+            .spawn(move || {
+                let file = SubtitleFile::open(&path, index, canvas, &stopped)
+                    .with_context(|| format!("reading {}", path.display()));
+                if sender.send(file).is_ok() {
+                    done();
+                }
+            })
+            .context("starting to read it")?;
+        Ok(Self { index, read, stop })
+    }
+
+    /// Its decoder and packets once it is read, or why it couldn't be.
+    pub fn take(&self) -> Option<Loaded> {
+        match self.read.try_recv() {
+            Ok(read) => Some(read),
+            Err(TryRecvError::Empty) => None,
+            Err(TryRecvError::Disconnected) => Some(Err(anyhow!("reading it stopped"))),
+        }
+    }
+}
+
+impl Drop for Reading {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::Relaxed);
     }
 }
 

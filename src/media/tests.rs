@@ -10,6 +10,7 @@ use ffmpeg_next::Rational;
 
 use super::audio::Mixer;
 use super::decoder::output_size;
+use super::external;
 use super::orientation::Orientation;
 use super::output::{self, AudioOutput};
 use super::player::{Player, PlayerOptions};
@@ -877,6 +878,142 @@ fn plays_subtitle_files_beside_the_video() {
         ["Привет из файла, как дела?"]
     );
     assert_eq!(player.info().unwrap().subtitle_track, Some(subtitles[1]));
+}
+
+/// A 10-second video, `dir/clip.mkv`, with `files` beside it (name and
+/// what it says), in `plays-tests/dir`.
+fn video_with_subtitle_files(dir: &str, files: &[(&str, &str)]) -> Option<PathBuf> {
+    let folder = std::env::temp_dir().join("plays-tests").join(dir);
+    std::fs::create_dir_all(&folder).unwrap();
+    // Only these, not those of an earlier run.
+    for entry in std::fs::read_dir(&folder).unwrap().flatten() {
+        if entry.path().extension().is_some_and(|ext| ext == "srt") {
+            std::fs::remove_file(entry.path()).unwrap();
+        }
+    }
+    for (name, text) in files {
+        let srt = format!("1\n00:00:00,500 --> 00:00:09,500\n{text}\n");
+        std::fs::write(folder.join(name), srt).unwrap();
+    }
+    media(
+        &format!("{dir}/clip.mkv"),
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc=size=160x120:rate=25:duration=10",
+            "-c:v",
+            "libx264",
+            "-g",
+            "25",
+            "-pix_fmt",
+            "yuv420p",
+        ],
+    )
+}
+
+#[test]
+fn keeps_playing_while_a_subtitle_file_is_read() {
+    let Some(path) = video_with_subtitle_files(
+        "slow-to-read",
+        &[("clip.en.srt", "Hello"), ("clip.fr.srt", "Bonjour")],
+    ) else {
+        eprintln!("ffmpeg not found, skipping");
+        return;
+    };
+    let french = path.with_file_name("clip.fr.srt");
+    external::slow::TO_READ
+        .lock()
+        .unwrap()
+        .push((french, Duration::from_secs(3)));
+    let mut player = Player::open(Source::File(path), None, options(true, false));
+    assert!(wait_until(Duration::from_secs(5), || {
+        player.tick();
+        subtitle_text(&player) == ["Hello"]
+    }));
+    let subtitles: Vec<_> = player
+        .info()
+        .unwrap()
+        .tracks(TrackKind::Subtitle)
+        .map(|track| track.index)
+        .collect();
+
+    player.select_track(TrackKind::Subtitle, Some(subtitles[1]));
+    let from = player.frame_pts().unwrap();
+    let start = Instant::now();
+    while start.elapsed() < Duration::from_millis(1500) {
+        player.tick();
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let played = player.frame_pts().unwrap() - from;
+    assert!(played > 1.1, "played {played:.2}s of 1.5 while it was read");
+    assert_eq!(player.info().unwrap().subtitle_track, Some(subtitles[1]));
+
+    assert!(
+        wait_until(Duration::from_secs(5), || {
+            player.tick();
+            subtitle_text(&player) == ["Bonjour"]
+        }),
+        "showing {:?} once it was read",
+        subtitle_text(&player)
+    );
+}
+
+#[test]
+fn opens_before_its_subtitle_files_are_read() {
+    let files = [
+        ("clip.en.srt", "Hello"),
+        ("clip.fr.srt", "Bonjour"),
+        ("clip.it.srt", "Ciao"),
+    ];
+    let Some(path) = video_with_subtitle_files("slow-to-open", &files) else {
+        eprintln!("ffmpeg not found, skipping");
+        return;
+    };
+    // Each takes a second to open, as on a share far away, and the one
+    // shown three to read.
+    for (name, _) in files {
+        let file = path.with_file_name(name);
+        let took = Duration::from_secs(1);
+        external::slow::TO_OPEN.lock().unwrap().push((file, took));
+    }
+    let english = path.with_file_name("clip.en.srt");
+    let took = Duration::from_secs(3);
+    external::slow::TO_READ
+        .lock()
+        .unwrap()
+        .push((english, took));
+
+    let start = Instant::now();
+    let mut player = Player::open(Source::File(path), None, options(false, false));
+    assert!(wait_until(Duration::from_secs(10), || {
+        player.tick();
+        player.frame_pts().is_some()
+    }));
+    let took = start.elapsed();
+    assert!(
+        took < Duration::from_secs(2),
+        "the first frame took {took:?}"
+    );
+    let info = player.info().unwrap();
+    let subtitles: Vec<_> = info.tracks(TrackKind::Subtitle).collect();
+    assert_eq!(subtitles.len(), 3);
+    // English, the first by name.
+    assert_eq!(
+        info.subtitle_track,
+        Some(subtitles[0].index),
+        "shown from the start"
+    );
+
+    player.seek(1.0);
+    assert!(
+        wait_until(Duration::from_secs(5), || {
+            player.tick();
+            subtitle_text(&player) == ["Hello"]
+        }),
+        "showing {:?} once it was read",
+        subtitle_text(&player)
+    );
 }
 
 #[test]

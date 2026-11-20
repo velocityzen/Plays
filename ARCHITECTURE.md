@@ -101,6 +101,8 @@ The threads, then:
 - two per audio output: one that holds it and opens its devices
   (`src/app/audio.rs`), and cpal's callback, or a thread that runs the
   mixer in time when there is no device (`src/media/output.rs`);
+- while a video opens or a subtitle file is picked, a few that open and
+  read its subtitle files (`src/media/external.rs`);
 - one per casting tile (`src/cast/link.rs`), and the threads each protocol's
   crate runs its sessions and discovery on;
 - the stream server's: one per HTTP connection, and one per job making
@@ -363,10 +365,14 @@ flowchart LR
   seek reads from), and moving subtitles later brings them back. A cue read
   again is kept once.
 - `src/media/external.rs`: subtitle files beside a video: finding them,
-  reading their names, and telling a text file's encoding (with `chardetng`)
-  for FFmpeg's iconv to convert. A picked file is read whole and its packets
-  decoded two seconds ahead of the playhead; after a seek, from 30 seconds
-  before it, so cues already showing are there.
+  reading their names, and telling a text file's encoding (with
+  `chardetng`) for FFmpeg's iconv to convert. The files beside a video are
+  opened, to see what they hold, while it opens, eight at once. A picked
+  file is read whole on a thread of its own, as a bitmap one can be tens
+  of megabytes and on a share far away, those shown before going on until
+  it is. Its packets are decoded two seconds ahead of the playhead, from
+  30 seconds before it once read and after a seek, so cues already showing
+  are there.
 - `src/ui/subtitles.rs`: paints a tile's cues on the picture it frames, in
   the style from Settings, turning and cropping bitmap ones with it; the
   settings' Subtitles pane draws its preview with the same code.

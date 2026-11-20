@@ -169,22 +169,25 @@ A Matroska file with two audio and two SRT tracks checks that tracks are
 listed and named, that switching audio while playing brings in the other
 track, and that subtitles show, change track and turn off, at the right
 times. A clip with an English SRT and a Windows-1251 Russian one beside it
-checks that they are listed and named, that the first shows from the start,
-that seeking back lands in a cue already showing, and that the Russian one
-reads right. DVD subtitles drawn as a clip plays are dropped from the GPU
-once they are off screen. Unit tests cover finding files for a video, reading their
-names and telling encodings, and the shortcuts: no default key used twice,
-a key moving to the command it is given, reading and writing them in the
-settings file, staying out of text fields, and how they are shown. The
-text field's tests compose as an IME does: the cursor stays in what is
-composed, counted within it even after other text and wider characters,
-deleting it leaves an empty field to type into, and ranges outside the
-text are kept inside it. The settings file is read a value at a time, so
-one that's wrong leaves only its setting as Plays starts it out; a file
-not read whole, half written or from a later Plays, is kept beside it as
-`settings.json.bad`, and a good one, or one from before there was a
-version, is read as it is; and saving replaces a file whole rather than
-writing over it.
+checks that they are listed and named, that the first shows from the
+start, that seeking back lands in a cue already showing, and that the
+Russian one reads right. With its subtitle files slow to open and read, as
+on a share far away, a clip must show its first frame without waiting to
+read them or to open them one by one, and play on while a picked one is
+read, showing it once it is. DVD subtitles drawn as a clip plays are
+dropped from the GPU once they are off screen. Unit tests cover finding
+files for a video, reading their names and telling encodings, and the
+shortcuts: no default key used twice, a key moving to the command it is
+given, reading and writing them in the settings file, staying out of text
+fields, and how they are shown. The text field's tests compose as an IME
+does: the cursor stays in what is composed, counted within it even after
+other text and wider characters, deleting it leaves an empty field to type
+into, and ranges outside the text are kept inside it. The settings file is
+read a value at a time, so one that's wrong leaves only its setting as
+Plays starts it out; a file not read whole, half written or from a later
+Plays, is kept beside it as `settings.json.bad`, and a good one, or one
+from before there was a version, is read as it is; and saving replaces a
+file whole rather than writing over it.
 
 A clip remuxed with a display matrix must report its turn and flip; unit
 tests check that orientations compose like their matrices, read FFmpeg's
