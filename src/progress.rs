@@ -150,10 +150,9 @@ impl Progress {
         let Some(path) = path() else {
             return;
         };
-        let result = path
-            .parent()
-            .map_or(Ok(()), fs::create_dir_all)
-            .and_then(|()| fs::write(&path, serde_json::to_string(&self.files)?));
+        let result = serde_json::to_string(&self.files)
+            .map_err(std::io::Error::from)
+            .and_then(|json| crate::files::write_whole(&path, json.as_bytes()));
         if let Err(err) = result {
             log::warn!("could not save {}: {err}", path.display());
         }

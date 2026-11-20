@@ -1,12 +1,19 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::ops::RangeInclusive;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use gpui::{App, BorrowAppContext, Global};
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
 
+use crate::files;
 use crate::hotkeys::Hotkeys;
+
+/// Which Plays' settings a file holds, written in it as `version`. Files
+/// from before there was one are the first.
+pub const VERSION: u64 = 1;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -467,34 +474,74 @@ impl Settings {
     }
 
     pub fn load() -> Self {
-        let Some(path) = Self::path() else {
+        Self::path().map_or_else(Self::default, |path| Self::load_from(&path))
+    }
+
+    /// The settings in `path`, each value read on its own: one a setting
+    /// can't take leaves just that setting as Plays starts it out. A file
+    /// not read whole, or from a later Plays, whose settings this one would
+    /// lose saving over it, is kept beside it as `settings.json.bad`.
+    fn load_from(path: &Path) -> Self {
+        let Ok(text) = fs::read_to_string(path) else {
             return Self::default();
         };
-        match fs::read_to_string(&path) {
-            Ok(text) => serde_json::from_str(&text).unwrap_or_else(|err| {
-                log::warn!("ignoring invalid settings in {}: {err}", path.display());
+        let mut wrong = Vec::new();
+        let settings = match serde_json::from_str(&text) {
+            Ok(Value::Object(mut fields)) => {
+                let version = fields.remove("version").and_then(|v| v.as_u64());
+                if let Some(version) = version.filter(|version| *version > VERSION) {
+                    wrong.push(format!("it's from a later Plays (version {version})"));
+                }
+                let (settings, unread) = leniently(fields);
+                wrong.extend(unread.iter().map(|at| format!("{at} can't be read")));
+                settings
+            }
+            Ok(_) => {
+                wrong.push("it isn't settings".into());
                 Self::default()
-            }),
-            Err(_) => Self::default(),
+            }
+            Err(err) => {
+                wrong.push(err.to_string());
+                Self::default()
+            }
+        };
+        if !wrong.is_empty() {
+            let aside = files::with_suffix(path, ".bad");
+            log::warn!(
+                "{}: {}; it's kept as {}",
+                path.display(),
+                wrong.join(", "),
+                aside.display()
+            );
+            if let Err(err) = files::write_whole(&aside, text.as_bytes()) {
+                log::warn!("could not keep {}: {err}", aside.display());
+            }
         }
+        settings
     }
 
     pub fn save(&self) {
         let Some(path) = Self::path() else {
             return;
         };
-        let result = path
-            .parent()
-            .map_or(Ok(()), fs::create_dir_all)
-            .and_then(|()| fs::write(&path, self.to_json()));
-        if let Err(err) = result {
+        if let Err(err) = files::write_whole(&path, self.to_json().as_bytes()) {
             log::warn!("could not save settings to {}: {err}", path.display());
         }
     }
 
-    /// The settings as their file holds them.
+    /// The settings as their file holds them, this Plays' version first.
     pub fn to_json(&self) -> String {
-        serde_json::to_string_pretty(self).unwrap_or_default()
+        #[derive(Serialize)]
+        struct File<'a> {
+            version: u64,
+            #[serde(flatten)]
+            settings: &'a Settings,
+        }
+        let file = File {
+            version: VERSION,
+            settings: self,
+        };
+        serde_json::to_string_pretty(&file).unwrap_or_default()
     }
 
     /// Settings from a file someone picked, such as one exported: a JSON
@@ -532,9 +579,149 @@ impl Settings {
     }
 }
 
+/// `fields` laid over `T` as it starts out, a value at a time, each kept
+/// only if `T` still reads with it; and where those it couldn't keep were.
+fn leniently<T: Default + Serialize + DeserializeOwned>(
+    fields: Map<String, Value>,
+) -> (T, Vec<String>) {
+    let mut read = serde_json::to_value(T::default()).unwrap_or_default();
+    let mut unread = Vec::new();
+    lay_over::<T>(&mut read, &mut Vec::new(), fields, &mut unread);
+    (serde_json::from_value(read).unwrap_or_default(), unread)
+}
+
+/// Lay `fields` over the object at `path` in `root`, into objects there
+/// too, putting back what was there wherever `T` can't read the whole with
+/// the value laid over it.
+fn lay_over<T: DeserializeOwned>(
+    root: &mut Value,
+    path: &mut Vec<String>,
+    fields: Map<String, Value>,
+    unread: &mut Vec<String>,
+) {
+    for (key, value) in fields {
+        let Some(here) = object_at(root, path) else {
+            return;
+        };
+        let into = matches!(here.get(&key), Some(Value::Object(_)));
+        match value {
+            Value::Object(inner) if into => {
+                path.push(key);
+                lay_over::<T>(root, path, inner, unread);
+                path.pop();
+            }
+            value => {
+                let before = here.insert(key.clone(), value);
+                if serde_json::from_value::<T>(root.clone()).is_ok() {
+                    continue;
+                }
+                if let Some(here) = object_at(root, path) {
+                    match before {
+                        Some(before) => here.insert(key.clone(), before),
+                        None => here.remove(&key),
+                    };
+                }
+                let mut at = path.join(".");
+                if !at.is_empty() {
+                    at.push('.');
+                }
+                unread.push(at + &key);
+            }
+        }
+    }
+}
+
+fn object_at<'a>(root: &'a mut Value, path: &[String]) -> Option<&'a mut Map<String, Value>> {
+    path.iter()
+        .try_fold(root, |value, key| value.get_mut(key))?
+        .as_object_mut()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::hotkeys::Command;
+
+    /// A settings file of a test's own, holding `text`.
+    fn file(name: &str, text: &str) -> PathBuf {
+        let folder = std::env::temp_dir()
+            .join("plays-tests")
+            .join(format!("settings-{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&folder);
+        let path = folder.join("settings.json");
+        files::write_whole(&path, text.as_bytes()).unwrap();
+        path
+    }
+
+    /// What was kept of a settings file read with something wrong in it.
+    fn kept_aside(path: &Path) -> Option<String> {
+        fs::read_to_string(files::with_suffix(path, ".bad")).ok()
+    }
+
+    #[test]
+    fn a_bad_value_costs_only_itself() {
+        let text = r#"{
+            "master_volume": 0.5,
+            "theme": "purple",
+            "subtitles": { "color": "red", "size": 1.5 },
+            "hotkeys": { "play_pause": 7, "loop": ["cmd-l"] }
+        }"#;
+        let path = file("bad-value", text);
+        let settings = Settings::load_from(&path);
+        let default = Settings::default();
+        assert_eq!(settings.master_volume, 0.5);
+        assert_eq!(settings.theme, default.theme);
+        assert_eq!(settings.subtitles.color, default.subtitles.color);
+        assert_eq!(settings.subtitles.size, 1.5);
+        assert_eq!(
+            settings.hotkeys.keys(Command::PlayPause),
+            default.hotkeys.keys(Command::PlayPause)
+        );
+        assert_eq!(settings.hotkeys.keys(Command::Loop), ["cmd-l"]);
+        assert_eq!(kept_aside(&path).as_deref(), Some(text), "the file kept");
+        let Ok(Value::Object(fields)) = serde_json::from_str(text) else {
+            panic!("an object");
+        };
+        let (_, mut unread) = leniently::<Settings>(fields);
+        unread.sort();
+        assert_eq!(unread, ["hotkeys.play_pause", "subtitles.color", "theme"]);
+    }
+
+    #[test]
+    fn a_file_half_written_is_kept_aside() {
+        let text = r#"{ "master_volume": 0.5, "the"#;
+        let path = file("half", text);
+        assert_eq!(Settings::load_from(&path), Settings::default());
+        assert_eq!(kept_aside(&path).as_deref(), Some(text));
+    }
+
+    #[test]
+    fn a_file_from_a_later_plays_is_kept_aside() {
+        let text = r#"{ "version": 99, "master_volume": 0.5 }"#;
+        let path = file("later", text);
+        assert_eq!(Settings::load_from(&path).master_volume, 0.5);
+        assert_eq!(kept_aside(&path).as_deref(), Some(text));
+    }
+
+    #[test]
+    fn a_good_file_is_read_as_it_is() {
+        let settings = Settings {
+            master_volume: 0.25,
+            ..Settings::default()
+        };
+        let json = settings.to_json();
+        assert!(
+            json.starts_with(&format!("{{\n  \"version\": {VERSION},")),
+            "{json}"
+        );
+        let path = file("good", &json);
+        assert_eq!(Settings::load_from(&path), settings);
+        assert_eq!(kept_aside(&path), None);
+        // As are ones from before there was a version.
+        let path = file("first", r#"{ "master_volume": 0.25 }"#);
+        assert_eq!(Settings::load_from(&path), settings);
+        assert_eq!(kept_aside(&path), None);
+    }
 
     #[test]
     fn exported_settings_import_as_they_were() {

@@ -3,6 +3,7 @@
 mod app;
 mod assets;
 mod cast;
+mod files;
 mod hotkeys;
 mod media;
 mod progress;

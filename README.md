@@ -528,9 +528,11 @@ build day in a small window of its own.
 
 Settings are saved as JSON in the user config folder:
 `~/Library/Application Support/plays/settings.json` on macOS,
-`~/.config/plays/settings.json` on Linux. Settings File, at the foot of
-the sidebar, opens its folder, exports a copy, imports settings from one,
-or resets every setting to its default (after asking).
+`~/.config/plays/settings.json` on Linux. A value in it Plays can't read
+leaves only that setting at its default, and the file as it was is kept
+beside it as `settings.json.bad`. Settings File, at the foot of the
+sidebar, opens its folder, exports a copy, imports settings from one, or
+resets every setting to its default (after asking).
 
 ## Limitations
 

@@ -136,6 +136,7 @@ Inside `src/`:
 | `cast/` | Casting tiles to TVs and speakers. |
 | `settings.rs` | The settings, saved as `plays/settings.json` in the user's config folder. |
 | `progress.rs` | Where each file was when it last played, kept for 30 days in `plays/progress.json`, so it starts there again. |
+| `files.rs` | Writing those two files whole, so a crash never leaves one half written. |
 | `hotkeys.rs` | The commands shortcuts run, and their keys. |
 | `assets.rs` | Icons compiled into the binary, so the app needs no files next to it. |
 
@@ -393,7 +394,13 @@ flowchart LR
   single keys such as space don't fire while typing elsewhere. The keymap
   is rebuilt from them whenever they change, and the menus show them.
 - `src/settings.rs`: the settings, saved as JSON in the user's config
-  folder.
+  folder with the version of Plays they're from. Each value is read on
+  its own, so one a setting can't take (typed wrong, or from a later
+  Plays) leaves only that setting as it starts out; a file not read
+  whole, or from a later Plays, is kept beside it as `settings.json.bad`.
+- `src/files.rs`: writing the settings and progress whole: to a file
+  beside first, on the disk, then renamed over the old one, so a crash or
+  losing power midway leaves the old one as it was.
 - `src/progress.rs`: where each file was when it last played, by its
   whole path, kept for 30 days in `progress.json` beside the settings.
   Tiles note it as they close or open another file, every 10 seconds
