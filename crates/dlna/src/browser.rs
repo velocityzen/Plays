@@ -463,6 +463,7 @@ impl Drop for Browser {
 mod tests {
     use super::*;
     use crate::device::Service;
+    use crate::ssdp::LONGEST_AGE;
 
     fn advert(udn: &str, kind: &str) -> Advert {
         Advert {
@@ -561,6 +562,24 @@ mod tests {
             Some(Found::Removed(device("Renamed")))
         );
         assert_eq!(directory.byebye("uuid:tv"), None);
+    }
+
+    #[test]
+    fn an_advert_lasting_for_ever_lasts_a_day() {
+        let notify = b"NOTIFY * HTTP/1.1\r\nHOST: 239.255.255.250:1900\r\n\
+            CACHE-CONTROL: max-age=18446744073709551615\r\n\
+            LOCATION: http://192.0.2.10/tv.xml\r\nNT: urn:schemas-upnp-org:device:MediaRenderer:1\r\n\
+            NTS: ssdp:alive\r\nUSN: uuid:tv::urn:schemas-upnp-org:device:MediaRenderer:1\r\n\r\n";
+        let Some(Message::Alive(tv)) = Message::parse(notify) else {
+            panic!("an advert")
+        };
+        let mut directory = Directory::default();
+        let now = Instant::now();
+        assert!(directory.alive(&tv, now).is_some());
+        directory.described("uuid:tv", &tv.location, Ok(device("TV")));
+        let day = now + LONGEST_AGE;
+        assert!(directory.expire(day - Duration::from_secs(1)).is_empty());
+        assert_eq!(directory.expire(day), [Found::Removed(device("TV"))]);
     }
 
     #[test]

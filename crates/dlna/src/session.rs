@@ -38,6 +38,13 @@ const VOLUME_EVERY: u32 = 5;
 /// doesn't say.
 const SUBSCRIBE_FOR: &str = "Second-300";
 const SUBSCRIBED: Duration = Duration::from_secs(300);
+/// How long a subscription is taken to last, whatever the renderer says;
+/// the fake renderer's last a second, to be renewed in a test.
+#[cfg(not(test))]
+const SHORTEST_SUBSCRIPTION: Duration = Duration::from_secs(30);
+#[cfg(test)]
+const SHORTEST_SUBSCRIPTION: Duration = Duration::from_secs(1);
+const LONGEST_SUBSCRIPTION: Duration = Duration::from_secs(3600);
 /// How long an event or an unsubscribing has.
 const BRIEF: Duration = Duration::from_secs(2);
 
@@ -140,14 +147,16 @@ fn subscribed_for(timeout: Option<&str>) -> Duration {
         return SUBSCRIBED;
     };
     if timeout.trim().eq_ignore_ascii_case("infinite") {
-        return Duration::from_secs(3600);
+        return LONGEST_SUBSCRIPTION;
     }
     let seconds = timeout
         .trim()
         .get(..7)
         .filter(|prefix| prefix.eq_ignore_ascii_case("Second-"))
         .and_then(|_| timeout.trim()[7..].parse().ok());
-    seconds.map_or(SUBSCRIBED, Duration::from_secs)
+    seconds.map_or(SUBSCRIBED, |seconds| {
+        Duration::from_secs(seconds).clamp(SHORTEST_SUBSCRIPTION, LONGEST_SUBSCRIPTION)
+    })
 }
 
 impl Inner {
@@ -829,6 +838,16 @@ mod tests {
         assert_eq!(subscribed_for(Some("infinite")), Duration::from_secs(3600));
         assert_eq!(subscribed_for(Some("Second-x")), SUBSCRIBED);
         assert_eq!(subscribed_for(None), SUBSCRIBED);
+        assert_eq!(
+            subscribed_for(Some("Second-18446744073709551615")),
+            LONGEST_SUBSCRIPTION,
+            "an hour at most"
+        );
+        assert_eq!(
+            subscribed_for(Some("Second-0")),
+            SHORTEST_SUBSCRIPTION,
+            "not renewed on every poll"
+        );
     }
 
     #[test]

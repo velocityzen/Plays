@@ -15,6 +15,8 @@ pub const MEDIA_RENDERER: &str = "urn:schemas-upnp-org:device:MediaRenderer:1";
 
 /// How long an advert lasts when it doesn't say.
 const MAX_AGE: Duration = Duration::from_secs(1800);
+/// The longest an advert lasts, whatever it says.
+pub(crate) const LONGEST_AGE: Duration = Duration::from_secs(24 * 3600);
 
 /// A device there: a NOTIFY `ssdp:alive`, or an answer to a search.
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -70,7 +72,9 @@ fn max_age(head: &Head) -> Duration {
             }
             value.trim().trim_matches('"').parse().ok()
         })
-        .map_or(MAX_AGE, Duration::from_secs)
+        .map_or(MAX_AGE, |seconds| {
+            Duration::from_secs(seconds).min(LONGEST_AGE)
+        })
 }
 
 impl Message {
@@ -233,6 +237,11 @@ mod tests {
         assert_eq!(
             max_age(&Head::parse("X\r\nCache-Control: no-cache, max-age=\"60\"\r\n").unwrap()),
             Duration::from_secs(60)
+        );
+        assert_eq!(
+            max_age(&Head::parse("X\r\nCache-Control: max-age=18446744073709551615\r\n").unwrap()),
+            LONGEST_AGE,
+            "a day at most"
         );
     }
 
