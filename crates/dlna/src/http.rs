@@ -68,7 +68,10 @@ impl Url {
     /// this one.
     pub fn join(&self, reference: &str) -> Option<Self> {
         let reference = reference.trim();
-        if reference.len() >= 7 && reference[..7].eq_ignore_ascii_case("http://") {
+        if reference
+            .get(..7)
+            .is_some_and(|scheme| scheme.eq_ignore_ascii_case("http://"))
+        {
             return Self::parse(reference);
         }
         if let Some(rest) = reference.strip_prefix("//") {
@@ -360,6 +363,11 @@ mod tests {
         assert_eq!(
             deep.join("http://192.0.2.8/other").unwrap().to_string(),
             "http://192.0.2.8:80/other"
+        );
+        assert_eq!(
+            url.join("/aaaa€").unwrap().path,
+            "/aaaa€",
+            "a character across the seventh byte"
         );
         assert_eq!(
             Url::parse("http://[fe80::1]:8080").unwrap().authority(),
