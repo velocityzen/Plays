@@ -205,7 +205,9 @@ the sound being heard. A file with no sound plays on wall time.
   picking an audio or video track opens a decoder for it and seeks to the
   playhead, so the new track starts where playback is. The other subtitle
   tracks' packets are kept for a few seconds, so a subtitle track picked
-  starts with them, without a seek.
+  starts with them, without a seek. Either thread failing, by an error or
+  a panic, says why for the tile to show, the first to fail standing, and
+  the player stops waiting for more.
 - `src/media/player.rs`: the UI-side handle: play/pause/seek, frame
   selection, buffering after seeks (and, for streams, until a second is
   read ahead or when the network runs dry), end-of-file and looping, and

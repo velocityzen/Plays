@@ -44,6 +44,26 @@ fn media(name: &str, args: &[&str]) -> Option<PathBuf> {
     status.success().then_some(path)
 }
 
+/// A decoder thread failing as a bug would, once the file is open: the tile
+/// says it can't play it, and stops waiting for more.
+#[test]
+fn a_decoder_thread_failing_says_so_and_stops_waiting() {
+    let dir = std::env::temp_dir().join("plays-tests");
+    std::fs::create_dir_all(&dir).unwrap();
+    let fixtures = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    let path = dir.join(format!("{}.mp4", super::decoder::PANICS_IN_DEMUX));
+    std::fs::copy(fixtures.join("clip.mp4"), &path).unwrap();
+    let mut player = Player::open(Source::File(path), None, options(true, false));
+    assert!(
+        wait_until(Duration::from_secs(5), || player.error().is_some()),
+        "no error said"
+    );
+    assert!(player.info().is_some(), "it had opened");
+    assert!(player.error().unwrap().contains("as the test asked"));
+    assert!(!player.is_buffering());
+    assert!(!player.tick().animate, "nothing more to draw");
+}
+
 fn wait_until(timeout: Duration, mut done: impl FnMut() -> bool) -> bool {
     let start = Instant::now();
     while start.elapsed() < timeout {

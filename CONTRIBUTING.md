@@ -152,13 +152,14 @@ cargo test plays_through_the_devices_here -- --ignored --nocapture
 The engine tests check opening, accurate seeking, where skips land,
 scrubbing (the frames it queues and nothing past them, no sound, decoding
 on or going back to a keyframe), audio resampling through the mixer, end
-of file, looping, keeping up when frames are consumed rarely, and hardware
-decoding (VideoToolbox is required on macOS). On macOS, zero-copy frames
-are read back and run through the surface shader's math, and must match
-the software path's colors for SD and HD video, tagged or not, limited or
-full range. HDR10 and HLG clips (needs `libx265`) must come out as tagged
-10-bit surfaces whose HDR shader math, for an SDR screen, matches the CPU
-tone mapping.
+of file, looping, keeping up when frames are consumed rarely, a decoder
+thread panicking (saying so and waiting no more), and hardware decoding
+(VideoToolbox is required on macOS); a unit test reads timestamps at the
+ends of what they can be. On macOS, zero-copy frames are read back and run
+through the surface shader's math, and must match the software path's
+colors for SD and HD video, tagged or not, limited or full range. HDR10
+and HLG clips (needs `libx265`) must come out as tagged 10-bit surfaces
+whose HDR shader math, for an SDR screen, matches the CPU tone mapping.
 
 A Matroska file with two audio and two SRT tracks checks that tracks are
 listed and named, that switching audio while playing brings in the other

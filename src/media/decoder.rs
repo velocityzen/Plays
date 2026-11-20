@@ -21,6 +21,8 @@
 
 use std::collections::VecDeque;
 use std::ffi::c_int;
+use std::fmt::Display;
+use std::panic::{self, AssertUnwindSafe};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -250,16 +252,35 @@ pub fn spawn(
     thread::Builder::new()
         .name(format!("decode {}", source.name()))
         .spawn(move || {
-            if let Err(err) = run(&source, &shared, options, &commands) {
-                if shared.stop.load(Ordering::Relaxed) {
-                    // Closed while opening; nobody is looking.
-                    return;
-                }
-                log::error!("{source}: {err:#}");
-                *shared.error.lock() = Some(format!("{err:#}"));
-            }
+            guarded(&shared, &source, || {
+                run(&source, &shared, options, &commands)
+            });
         })
         .expect("spawning a decoder thread")
+}
+
+/// Run a decoder thread's `body`, saying why it failed, a panic as much
+/// as an error, so the tile says it can't play rather than waiting for
+/// ever. The first thread to fail says why.
+fn guarded(shared: &Shared, source: &impl Display, body: impl FnOnce() -> Result<()>) {
+    let failed = match panic::catch_unwind(AssertUnwindSafe(body)) {
+        Ok(Ok(())) => return,
+        Ok(Err(err)) => format!("{err:#}"),
+        Err(panic) => {
+            let what = panic
+                .downcast_ref::<&str>()
+                .copied()
+                .or_else(|| panic.downcast_ref::<String>().map(String::as_str))
+                .unwrap_or("for no reason it gave");
+            format!("the decoder stopped: {what}")
+        }
+    };
+    if shared.stop.load(Ordering::Relaxed) {
+        // Closed meanwhile; nobody is looking.
+        return;
+    }
+    log::error!("{source}: {failed}");
+    shared.error.lock().get_or_insert(failed);
 }
 
 /// How a seek lands.
@@ -723,7 +744,12 @@ fn run(
         let name = name.clone();
         thread::Builder::new()
             .name(format!("demux {name}"))
-            .spawn(move || demux(input, &demuxer, &name))
+            .spawn(move || {
+                guarded(&demuxer.shared, &name, || {
+                    demux(input, &demuxer, &name);
+                    Ok(())
+                });
+            })
             .context("starting the demux thread")?;
     }
     // Stops the demux thread however this function returns.
@@ -963,10 +989,9 @@ impl PacketQueue {
     /// Forget the packets over before `time`, and the oldest past `max`.
     fn keep_from(&mut self, time: f64, max: usize) {
         while let Some(packet) = self.packets.front() {
-            let end = packet
-                .pts()
-                .or(packet.dts())
-                .map(|start| (start + packet.duration().max(0)) as f64 * self.time_base);
+            let end = packet.pts().or(packet.dts()).map(|start| {
+                start.saturating_add(packet.duration().max(0)) as f64 * self.time_base
+            });
             if self.packets.len() > max || end.is_some_and(|end| end < time) {
                 self.packets.pop_front();
             } else {
@@ -982,7 +1007,7 @@ impl PacketQueue {
             self.packets.front().and_then(time),
             self.packets.back().and_then(time),
         ) {
-            (Some(first), Some(last)) => (last - first).max(0) as f64 * self.time_base,
+            (Some(first), Some(last)) => last.saturating_sub(first).max(0) as f64 * self.time_base,
             // No timestamps: guess from the count.
             _ => self.packets.len() as f64 / 50.0,
         }
@@ -1204,9 +1229,18 @@ impl Drop for StopOnDrop {
     }
 }
 
+/// A file whose name starts so has its demux thread panic once it's open,
+/// as a bug would make it: the tests' only way to have one.
+#[cfg(test)]
+pub const PANICS_IN_DEMUX: &str = "panics-in-demux";
+
 /// The demux thread: reads packets until the queues are full enough, and
 /// carries out seeks.
 fn demux(mut input: ffmpeg::format::context::Input, demuxer: &Demuxer, name: &str) {
+    #[cfg(test)]
+    if name.starts_with(PANICS_IN_DEMUX) {
+        panic!("the demux thread failing, as the test asked");
+    }
     let stopping = || demuxer.shared.stop.load(Ordering::Relaxed);
     loop {
         let seek = {
@@ -2095,5 +2129,31 @@ impl AudioDecoder {
             });
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn packet(stream: usize, time: i64, duration: i64) -> Packet {
+        let mut packet = Packet::empty();
+        packet.set_stream(stream);
+        packet.set_pts(Some(time));
+        packet.set_dts(Some(time));
+        packet.set_duration(duration);
+        packet
+    }
+
+    #[test]
+    fn timestamps_at_the_ends_of_what_they_can_be_are_no_trouble() {
+        let mut queue = PacketQueue::new(0, 1.0 / 1000.0);
+        queue.packets.push_back(packet(0, i64::MIN + 1, 0));
+        queue.packets.push_back(packet(0, i64::MAX - 1, 100));
+        assert!(queue.span() > 0.0, "the first to the last");
+        queue.keep_from(0.0, 10);
+        assert_eq!(queue.packets.len(), 1, "the one ending before is gone");
+        queue.keep_from(f64::MAX, 10);
+        assert!(queue.packets.is_empty(), "and the last, ending before then");
     }
 }

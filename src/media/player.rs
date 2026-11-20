@@ -564,6 +564,10 @@ impl Player {
             tick.animate = self.error().is_none();
             return tick;
         };
+        // The decoder stopped on an error: nothing more comes.
+        if self.error().is_some() {
+            return tick;
+        }
         let serial = self.shared.serial.load(Ordering::Acquire);
         // A skip landed on a keyframe away from where it was asked to.
         let landed = self.shared.landed.lock().take();
