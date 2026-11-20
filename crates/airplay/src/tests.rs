@@ -7,6 +7,7 @@ use std::time::{Duration, Instant};
 use futures_channel::mpsc::UnboundedReceiver;
 
 use crate::audio::LATENCY;
+use crate::connection::REPLY_TIMEOUT;
 use crate::fake::{FakeReceiver, Kind};
 use crate::rtp::{CHANNELS, FRAMES_PER_PACKET};
 use crate::*;
@@ -288,6 +289,58 @@ fn a_session_failing_after_it_connects_lets_go_of_the_receiver() {
         "the receiver is still held"
     );
     assert!(!fake.tells_the_time(), "its clock still answers");
+}
+
+/// A request answered too late fails, and the connection goes with it: the
+/// late answer isn't taken for the next request's, which fails at once,
+/// and the session ends.
+#[test]
+fn a_late_answer_isnt_taken_for_the_next_requests() {
+    let fake = FakeReceiver::start(Kind::Tv { pin: PIN });
+    let credentials = pair(&fake);
+    let (mut session, mut events) =
+        VideoSession::connect(&fake.device(), Some(&credentials), &sender()).unwrap();
+    fake.state().slow = Some(("/scrub", REPLY_TIMEOUT * 2));
+    assert!(session.seek(30.0).is_err());
+    fake.state().slow = None;
+    let asked = Instant::now();
+    let info = session.playback_info();
+    assert!(info.is_err(), "{info:?}");
+    assert!(asked.elapsed() < REPLY_TIMEOUT / 2);
+    assert!(
+        fake.wait_for(|state| state.closed == state.connections),
+        "the connection is still open"
+    );
+    assert_eq!(
+        next_event(&mut events, Duration::from_secs(3)),
+        Some(Event::Gone)
+    );
+    session.stop();
+}
+
+/// Once the receiver has ended the session, stopping it asks nothing more
+/// of it, which could wait on a receiver that's gone.
+#[test]
+fn a_session_the_receiver_ended_is_stopped_without_asking_it() {
+    let fake = FakeReceiver::start(Kind::Tv { pin: PIN });
+    let credentials = pair(&fake);
+    let (session, mut events) =
+        VideoSession::connect(&fake.device(), Some(&credentials), &sender()).unwrap();
+    assert!(fake.wait_for(|state| state.event_reply.is_some()));
+    fake.end_session();
+    assert_eq!(
+        next_event(&mut events, Duration::from_secs(1)),
+        Some(Event::Gone)
+    );
+    session.stop();
+    let state = fake.state();
+    assert!(state.requests("POST", "/stop").is_empty());
+    assert!(
+        !state
+            .requests
+            .iter()
+            .any(|request| request.method == "TEARDOWN")
+    );
 }
 
 #[test]

@@ -193,9 +193,12 @@ impl VideoSession {
         Ok(info)
     }
 
-    /// Stop playing, and end the session.
+    /// Stop playing, and end the session, asking nothing of a receiver
+    /// that's gone or ended it.
     pub fn stop(self) {
-        if let Err(err) = self.post("/stop".into()) {
+        if !self.control.gone()
+            && let Err(err) = self.post("/stop".into())
+        {
             log::debug!("airplay: stop: {err}");
         }
         self.control.stop();

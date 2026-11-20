@@ -489,15 +489,19 @@ for; volume and a flush; sound to an AirPlay 1 speaker, plain, with the
 delay it adds; sound to one that takes it only encrypted, which it
 decrypts with the key it unwraps from the ANNOUNCE back to what was sent,
 and one that takes only FairPlay refused; a receiver that goes away or
-refuses feedback ending the session; and a session dropped without being
-stopped, or failing once connected (a speaker busy with another sender
-refusing RECORD), letting go of the receiver: its connections closed and
-its clock no longer answering. Unit tests check SRP against RFC 5054's
-vectors, both sides of pairing, the encrypted frames, AES-128 CBC against
-NIST's vectors, RSA-OAEP both ways, base64, TLV8, records and their
-features, RTP packets and playback info. The key wrapped with the
-AirPort's public key has been checked to unwrap with its private one. Each
-has been checked to fail when what it covers is broken.
+refuses feedback ending the session; a request answered too late failing,
+its connection closed, and the late answer not taken for the next
+request's, which fails at once; a session the receiver ended stopped
+without asking it anything; and a session dropped without being stopped,
+or failing once connected (a speaker busy with another sender refusing
+RECORD), letting go of the receiver: its connections closed and its clock
+no longer answering. Unit tests check SRP against RFC 5054's vectors, both
+sides of pairing, the encrypted frames, AES-128 CBC against NIST's
+vectors, RSA-OAEP both ways, base64, TLV8, records and their features, RTP
+packets and playback info, and that an answer with another request's CSeq
+is refused and the connection closed. The key wrapped with the AirPort's
+public key has been checked to unwrap with its private one. Each has been
+checked to fail when what it covers is broken.
 
 The Chromecast crate's tests cast to the fake device over TLS: connecting
 launches the Default Media Receiver and connects to it, the heartbeat goes

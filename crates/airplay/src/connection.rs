@@ -2,7 +2,7 @@
 //! TCP connection, encrypted once paired.
 
 use std::io::{Read, Write};
-use std::net::{IpAddr, SocketAddr, TcpStream};
+use std::net::{IpAddr, Shutdown, SocketAddr, TcpStream};
 use std::time::Duration;
 
 use crate::channel::{Keys, Sealed};
@@ -12,8 +12,12 @@ use crate::pairing::{Credentials, Setup, Verify};
 
 /// How long each address has to take the connection.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
-/// How long a receiver has to answer a request.
-const REPLY_TIMEOUT: Duration = Duration::from_secs(10);
+/// How long a receiver has to answer a request (less in tests, which wait
+/// it out).
+#[cfg(not(test))]
+pub(crate) const REPLY_TIMEOUT: Duration = Duration::from_secs(10);
+#[cfg(test)]
+pub(crate) const REPLY_TIMEOUT: Duration = Duration::from_secs(1);
 const USER_AGENT: &str = "AirPlay/550.10";
 
 pub(crate) enum Link {
@@ -130,6 +134,7 @@ impl Message {
 }
 
 pub(crate) struct Connection {
+    /// Gone once a request fails on it.
     link: Option<Link>,
     reader: Reader,
     cseq: u32,
@@ -176,12 +181,16 @@ impl Connection {
         })
     }
 
-    fn link(&mut self) -> &mut Link {
-        self.link.as_mut().expect("a connection has its link")
+    pub fn tcp(&self) -> Option<&TcpStream> {
+        self.link.as_ref().map(Link::tcp)
     }
 
-    pub fn tcp(&self) -> &TcpStream {
-        self.link.as_ref().expect("a connection has its link").tcp()
+    /// Let the link go, and shut the connection, which the session may
+    /// hold a clone of, so the receiver sees it go too.
+    fn close(&mut self) {
+        if let Some(link) = self.link.take() {
+            let _ = link.tcp().shutdown(Shutdown::Both);
+        }
     }
 
     /// Encrypt from now on.
@@ -197,8 +206,14 @@ impl Connection {
         format!("rtsp://{}/{}", self.local, self.session)
     }
 
-    /// Send `request`, and wait for its answer, whatever its status.
+    /// Send `request`, and wait for its answer, whatever its status. The
+    /// connection goes if it fails or the answer is to another request:
+    /// what came next could be this one's answer, late, or the rest of a
+    /// frame cut short. Later requests fail at once.
     pub fn send(&mut self, request: Request) -> Result<Response> {
+        let Some(link) = self.link.as_mut() else {
+            return Err(std::io::Error::from(std::io::ErrorKind::NotConnected).into());
+        };
         self.cseq += 1;
         let mut headers = vec![
             ("CSeq".to_owned(), self.cseq.to_string()),
@@ -223,12 +238,18 @@ impl Connection {
             body: request.body.clone(),
         };
         log::trace!("airplay: {}", request.describe());
-        self.link().write_all(&message.encode())?;
-        let link = self.link.as_mut().expect("a connection has its link");
-        let response = self
-            .reader
-            .read(link)?
-            .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::UnexpectedEof))?;
+        let answered = round_trip(link, &mut self.reader, &message.encode());
+        let cseq = self.cseq.to_string();
+        let response = answered.and_then(|response| match response.header("CSeq") {
+            Some(theirs) if theirs != cseq => Err(Error::protocol(format!(
+                "the answer to request {theirs}, waiting for {cseq}'s"
+            ))),
+            _ => Ok(response),
+        });
+        if response.is_err() {
+            self.close();
+        }
+        let response = response?;
         log::trace!("airplay: {} → {}", request.describe(), response.status());
         Ok(response)
     }
@@ -290,11 +311,46 @@ impl Connection {
     }
 }
 
+/// Write a request, and read what comes back.
+fn round_trip(link: &mut Link, reader: &mut Reader, request: &[u8]) -> Result<Response> {
+    link.write_all(request)?;
+    let response = reader
+        .read(link)?
+        .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::UnexpectedEof))?;
+    Ok(response)
+}
+
 #[cfg(test)]
 mod tests {
     use std::net::{Ipv4Addr, TcpListener};
 
     use super::*;
+
+    #[test]
+    fn an_answer_to_another_request_is_refused_and_the_connection_let_go() {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let address = listener.local_addr().unwrap();
+        let receiver = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut reader = Reader::default();
+            reader.read(&mut stream).unwrap().unwrap();
+            stream
+                .write_all(b"RTSP/1.0 200 OK\r\nCSeq: 7\r\nContent-Length: 0\r\n\r\n")
+                .unwrap();
+            // Whether the sender closed the connection.
+            reader.read(&mut stream).is_ok_and(|next| next.is_none())
+        });
+        let mut connection = Connection::open(&[address]).unwrap();
+        assert!(matches!(
+            connection.send(Request::rtsp("OPTIONS", "*")),
+            Err(Error::Protocol(_))
+        ));
+        assert!(matches!(
+            connection.send(Request::rtsp("OPTIONS", "*")),
+            Err(Error::Io(err)) if err.kind() == std::io::ErrorKind::NotConnected
+        ));
+        assert!(receiver.join().unwrap(), "the connection is still open");
+    }
 
     #[test]
     fn connects_at_the_first_address_that_takes_it() {

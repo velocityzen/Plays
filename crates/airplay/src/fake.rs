@@ -147,6 +147,8 @@ pub struct State {
     pub refuse_feedback: bool,
     /// Whether it refuses RECORD, as one busy with another sender does.
     pub refuse_record: bool,
+    /// Requests for this path that it answers this late.
+    pub slow: Option<(&'static str, Duration)>,
     /// Control connections taken, and those the sender closed since.
     pub connections: usize,
     pub closed: usize,
@@ -185,6 +187,8 @@ struct Shared {
     gone: AtomicBool,
     /// Its connections, to close when it goes away.
     streams: Mutex<Vec<TcpStream>>,
+    /// The event connection, once the sender's on it.
+    events: Mutex<Option<TcpStream>>,
 }
 
 impl Shared {
@@ -246,6 +250,7 @@ impl FakeReceiver {
                 event_reply: None,
                 refuse_feedback: false,
                 refuse_record: false,
+                slow: None,
                 connections: 0,
                 closed: 0,
                 events_closed: false,
@@ -256,6 +261,7 @@ impl FakeReceiver {
             accessory: Mutex::new(Accessory::new(id(kind), pin)),
             gone: AtomicBool::new(false),
             streams: Mutex::default(),
+            events: Mutex::default(),
         });
         let accepting = Arc::clone(&shared);
         thread::spawn(move || {
@@ -351,6 +357,13 @@ impl FakeReceiver {
     pub fn go_away(&self) {
         self.shared.gone.store(true, Ordering::Relaxed);
         for stream in lock(&self.shared.streams).drain(..) {
+            let _ = stream.shutdown(Shutdown::Both);
+        }
+    }
+
+    /// End the session, as a receiver does by closing the event connection.
+    pub fn end_session(&self) {
+        if let Some(stream) = lock(&self.shared.events).take() {
             let _ = stream.shutdown(Shutdown::Both);
         }
     }
@@ -456,6 +469,10 @@ fn serve(stream: TcpStream, shared: &Arc<Shared>) {
         };
         shared.state().requests.push(received.clone());
         let reply = answer(shared, &received, secret.as_deref());
+        let slow = shared.state().slow;
+        if let Some((_, late)) = slow.filter(|(path, _)| *path == received.path()) {
+            thread::sleep(late);
+        }
         let mut headers = vec![("Content-Length".to_owned(), reply.body.len().to_string())];
         if let Some(cseq) = request.header("CSeq") {
             headers.push(("CSeq".into(), cseq.into()));
@@ -703,6 +720,7 @@ fn talk_back(shared: &Arc<Shared>, keys: Keys) -> u16 {
         };
         let _ = stream.set_nonblocking(false);
         shared.keep(&stream);
+        *lock(&shared.events) = stream.try_clone().ok();
         let mut sealed = Sealed::new(stream, keys);
         let request = Message {
             start: "POST /command RTSP/1.0".into(),

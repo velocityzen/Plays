@@ -849,14 +849,18 @@ channel. Plays doesn't cast with it yet.
   RTSP and HTTP requests on one TCP connection, encrypted once paired in
   frames of up to 1024 bytes. A receiver on more than one network has an
   address on each, and not all reach it from here, so each is tried in
-  turn.
+  turn. An answer must carry its request's CSeq. A request that fails, or
+  gets the answer to another, closes the connection, as what comes next on
+  it could be a late answer or the rest of a frame cut short; later
+  requests fail at once.
 - `session.rs`: AirPlay 2's session. SETUP says where our clock is, which
   the receiver asks the time; the receiver talks back on an event
   connection; feedback goes every two seconds. Feedback refused or the
-  event connection closed is the receiver gone. Dropped, a session stops
-  its threads (the clock's, feedback, events, resends) and closes its
-  connections, whether it was stopped first, let go, or failed partway
-  through setting up.
+  event connection closed is the receiver gone, and stopping the session
+  then asks nothing more of it (no `/stop` or TEARDOWN, which could wait
+  on a receiver that's gone). Dropped, a session stops its threads (the
+  clock's, feedback, events, resends) and closes its connections, whether
+  it was stopped first, let go, or failed partway through setting up.
 - `video.rs`: `/play` with the URL and where to start, `/rate`, `/scrub`
   and `/stop`, and `/playback-info` read as loading, playing, paused or
   ended.

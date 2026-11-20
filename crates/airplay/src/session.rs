@@ -62,6 +62,9 @@ pub(crate) struct Control {
     /// Where we answer the receiver's clock requests.
     pub timing_port: u16,
     stop: Arc<AtomicBool>,
+    /// Whether the session's threads saw the receiver go, or end the
+    /// session.
+    gone: Arc<AtomicBool>,
     threads: Vec<JoinHandle<()>>,
     /// To unblock the event thread.
     event_stream: Option<TcpStream>,
@@ -97,7 +100,7 @@ impl Control {
         let (events, receiver) = unbounded();
         let control = Self {
             remote: connection.remote,
-            control_stream: connection.tcp().try_clone().ok(),
+            control_stream: connection.tcp().and_then(|tcp| tcp.try_clone().ok()),
             connection: Arc::new(Mutex::new(connection)),
             secret,
             rtsp_session: None,
@@ -107,6 +110,7 @@ impl Control {
                 answer_timing(timing, Arc::clone(&stop)),
             )?],
             stop,
+            gone: Arc::default(),
             event_stream: None,
             events,
         };
@@ -115,6 +119,12 @@ impl Control {
 
     pub fn connection(&self) -> MutexGuard<'_, Connection> {
         lock(&self.connection)
+    }
+
+    /// Whether the receiver went away or ended the session, as far as the
+    /// session's threads saw.
+    pub fn gone(&self) -> bool {
+        self.gone.load(Ordering::Relaxed)
     }
 
     /// The session's URI, for its RTSP requests.
@@ -191,10 +201,10 @@ impl Control {
             .map(Keys::events)
             .ok_or_else(|| Error::protocol("an event connection without pairing"))?;
         self.event_stream = Some(stream.try_clone()?);
-        let stop = Arc::clone(&self.stop);
+        let (stop, gone) = (Arc::clone(&self.stop), Arc::clone(&self.gone));
         let events = self.events.clone();
         self.threads.push(spawn("airplay events", move || {
-            answer_events(Sealed::new(stream, keys), &stop, &events);
+            answer_events(Sealed::new(stream, keys), &stop, &gone, &events);
         })?);
         Ok(())
     }
@@ -203,7 +213,7 @@ impl Control {
     /// receiver is gone.
     fn keep_alive(&mut self) -> Result<()> {
         let connection = Arc::clone(&self.connection);
-        let stop = Arc::clone(&self.stop);
+        let (stop, gone) = (Arc::clone(&self.stop), Arc::clone(&self.gone));
         let events = self.events.clone();
         self.threads.push(spawn("airplay feedback", move || {
             let mut last = Instant::now();
@@ -217,7 +227,7 @@ impl Control {
                 if let Err(err) = sent {
                     if !stop.load(Ordering::Relaxed) {
                         log::info!("airplay: feedback went unanswered: {err}");
-                        let _ = events.unbounded_send(Event::Gone);
+                        went(&gone, &events);
                     }
                     break;
                 }
@@ -226,10 +236,14 @@ impl Control {
         Ok(())
     }
 
-    /// End the session: TEARDOWN, then what dropping it does.
+    /// End the session: TEARDOWN, unless the receiver is gone or ended it,
+    /// then what dropping it does.
     pub fn stop(self) {
         // Its threads are to take the connection closing as asked for.
         self.stop.store(true, Ordering::Relaxed);
+        if self.gone() {
+            return;
+        }
         let uri = self.uri();
         if let Err(err) = self.exchange(Request::rtsp("TEARDOWN", uri)) {
             log::debug!("airplay: teardown: {err}");
@@ -264,6 +278,12 @@ impl Drop for Control {
             let _ = thread.join();
         }
     }
+}
+
+/// Say the receiver went away or ended the session.
+fn went(gone: &AtomicBool, events: &UnboundedSender<Event>) {
+    gone.store(true, Ordering::Relaxed);
+    let _ = events.unbounded_send(Event::Gone);
 }
 
 fn spawn(name: &str, work: impl FnOnce() + Send + 'static) -> Result<JoinHandle<()>> {
@@ -310,6 +330,7 @@ fn answer_timing(socket: UdpSocket, stop: Arc<AtomicBool>) -> impl FnOnce() + Se
 fn answer_events(
     mut stream: Sealed<TcpStream>,
     stop: &AtomicBool,
+    gone: &AtomicBool,
     events: &UnboundedSender<Event>,
 ) {
     let mut reader = Reader::default();
@@ -330,6 +351,6 @@ fn answer_events(
     }
     if !stop.load(Ordering::Relaxed) {
         log::info!("airplay: the receiver closed the event connection");
-        let _ = events.unbounded_send(Event::Gone);
+        went(gone, events);
     }
 }
