@@ -73,6 +73,15 @@ fn service<'a>(device: &'a Element, name: &str) -> Option<&'a Element> {
         })
 }
 
+/// Whether `kind` reads as a UPnP type, `urn:schemas-upnp-org:service:…`,
+/// and so goes into a request as it is.
+fn is_type(kind: &str) -> bool {
+    !kind.is_empty()
+        && kind
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || ":.-_".contains(c))
+}
+
 fn text(element: &Element, name: &str) -> String {
     element.child_text(name).unwrap_or_default().to_owned()
 }
@@ -97,11 +106,12 @@ impl Device {
     /// device inside another, as a Sonos speaker's is.
     pub fn from_description(description: &str, location: &str) -> Result<Self> {
         let root = Element::parse(description).map_err(Error::protocol)?;
+        let origin = Url::parse(location)
+            .ok_or_else(|| Error::protocol(format!("a location {location:?}")))?;
         let base = root
             .child_text("URLBase")
             .and_then(Url::parse)
-            .or_else(|| Url::parse(location))
-            .ok_or_else(|| Error::protocol(format!("a location {location:?}")))?;
+            .unwrap_or_else(|| origin.clone());
         let mut all = Vec::new();
         devices(
             root.child("device")
@@ -120,13 +130,19 @@ impl Device {
                     .find(|device| service(device, "AVTransport").is_some())
             })
             .ok_or_else(|| Error::protocol("not a media renderer"))?;
-        let url = |reference: &str| base.join(reference).map(|url| url.to_string());
+        // Only the device the description came from is asked anything: a
+        // URL to elsewhere, on this computer say, is no URL of its own.
+        let url = |reference: &str| {
+            base.join(reference)
+                .filter(|url| url.same_host(&origin))
+                .map(|url| url.to_string())
+        };
         // The renderer's own, or failing that, any device's.
         let find = |name: &str| {
             let found = service(renderer, name)
                 .or_else(|| all.iter().find_map(|device| service(device, name)))?;
             Some(Service {
-                kind: text(found, "serviceType"),
+                kind: Some(text(found, "serviceType")).filter(|kind| is_type(kind))?,
                 control: url(found.child_text("controlURL")?)?,
                 events: found
                     .child_text("eventSubURL")
@@ -223,6 +239,42 @@ mod tests {
             .iter()
             .find(|icon| icon.mime == "image/png" && icon.width == 120);
         assert_eq!(icon.unwrap().url, "http://192.0.2.10:9197/dmr/icon_LRG.png");
+    }
+
+    #[test]
+    fn a_description_is_kept_to_the_device_it_came_from() {
+        let samsung = include_str!("../fixtures/samsung.xml");
+        let location = "http://192.0.2.10:9197/dmr";
+        let control = "<controlURL>/upnp/control/AVTransport1</controlURL>";
+        for elsewhere in [
+            "<controlURL>http://127.0.0.1:8080/x</controlURL>",
+            "<controlURL>//198.51.100.1/x</controlURL>",
+            "<controlURL>/x&#13;&#10;X-Evil: 1</controlURL>",
+        ] {
+            let tv = Device::from_description(&samsung.replace(control, elsewhere), location);
+            assert!(tv.is_err(), "{elsewhere} taken: {tv:?}");
+        }
+        let based = samsung.replace(
+            "<device>",
+            "<URLBase>http://127.0.0.1:8080/</URLBase><device>",
+        );
+        assert!(Device::from_description(&based, location).is_err());
+        let odd = samsung.replace(
+            "urn:schemas-upnp-org:service:AVTransport:1<",
+            "urn:schemas-upnp-org:service:AVTransport:1&quot; x=&quot;<",
+        );
+        assert!(Device::from_description(&odd, location).is_err());
+        // Another port on the same host is the device's own.
+        let port = samsung.replace(control, "<controlURL>http://192.0.2.10:7676/x</controlURL>");
+        let tv = Device::from_description(&port, location).unwrap();
+        assert_eq!(tv.av_transport.control, "http://192.0.2.10:7676/x");
+        // An icon elsewhere is left out.
+        let icon = samsung.replace(
+            "<url>/dmr/icon_SML.jpg</url>",
+            "<url>http://198.51.100.1/icon.jpg</url>",
+        );
+        let tv = Device::from_description(&icon, location).unwrap();
+        assert_eq!(tv.icons.len(), 3);
     }
 
     #[test]
@@ -324,7 +376,7 @@ mod tests {
 
     #[test]
     fn an_address_is_where_its_transport_is_and_never_looked_up() {
-        let at = |control: &str| {
+        let at = |location: &str, control: &str| {
             let description = format!(
                 "<root><device>\
                  <deviceType>urn:schemas-upnp-org:device:MediaRenderer:1</deviceType>\
@@ -332,16 +384,23 @@ mod tests {
                  <serviceType>urn:schemas-upnp-org:service:AVTransport:1</serviceType>\
                  <controlURL>{control}</controlURL></service></serviceList></device></root>"
             );
-            Device::from_description(&description, "http://192.0.2.13/dd.xml")
+            Device::from_description(&description, location)
                 .unwrap()
                 .address()
         };
-        assert_eq!(at("/control"), Some([192, 0, 2, 13].into()));
+        let location = "http://192.0.2.13/dd.xml";
+        assert_eq!(at(location, "/control"), Some([192, 0, 2, 13].into()));
         assert_eq!(
-            at("http://[2001:db8::1]:8080/control"),
+            at(
+                "http://[2001:db8::1]/dd.xml",
+                "http://[2001:db8::1]:8080/control"
+            ),
             Some("2001:db8::1".parse().unwrap())
         );
-        assert_eq!(at("http://tv.local:8080/control"), None);
+        assert_eq!(
+            at("http://tv.local/dd.xml", "http://tv.local:8080/control"),
+            None
+        );
     }
 
     #[test]

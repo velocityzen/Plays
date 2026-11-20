@@ -5,7 +5,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::io;
-use std::net::{Ipv4Addr, SocketAddr, UdpSocket};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -17,6 +17,7 @@ use socket2::{Domain, Protocol, SockRef, Socket, Type};
 
 use crate::device::Device;
 use crate::error::Result;
+use crate::http::Url;
 use crate::ssdp::{self, Advert, GROUP, MEDIA_RENDERER, Message};
 
 /// When to search again: soon after the first, as datagrams get lost, then
@@ -316,6 +317,18 @@ impl Browsing {
     }
 }
 
+/// Whether `message` came from where it says the device is: a description
+/// is fetched only from the address the advert came from, not wherever it
+/// points.
+fn from_its_device(message: &Message, from: IpAddr) -> bool {
+    match message {
+        Message::Alive(advert) => Url::parse(&advert.location)
+            .and_then(|url| url.host.parse::<IpAddr>().ok())
+            .is_some_and(|host| host == from),
+        _ => true,
+    }
+}
+
 /// Read datagrams off `socket` until `stop`.
 fn hear(socket: &UdpSocket, stop: &AtomicBool, inputs: &mpsc::Sender<Input>) {
     let mut buffer = [0; 8 * 1024];
@@ -324,6 +337,10 @@ fn hear(socket: &UdpSocket, stop: &AtomicBool, inputs: &mpsc::Sender<Input>) {
             Ok((n, from)) => {
                 if let Some(message) = Message::parse(&buffer[..n]) {
                     log::trace!("dlna: from {from}: {message:?}");
+                    if !from_its_device(&message, from.ip()) {
+                        log::debug!("dlna: {from} told of a description elsewhere");
+                        continue;
+                    }
                     if inputs.send(Input::Heard(message)).is_err() {
                         return;
                     }
@@ -562,6 +579,26 @@ mod tests {
             Some(Found::Removed(device("Renamed")))
         );
         assert_eq!(directory.byebye("uuid:tv"), None);
+    }
+
+    #[test]
+    fn a_description_is_fetched_only_from_where_its_advert_came_from() {
+        let notify = b"NOTIFY * HTTP/1.1\r\nHOST: 239.255.255.250:1900\r\n\
+            CACHE-CONTROL: max-age=1800\r\n\
+            LOCATION: http://192.0.2.10:9197/dmr\r\nNT: urn:schemas-upnp-org:device:MediaRenderer:1\r\n\
+            NTS: ssdp:alive\r\nUSN: uuid:tv::urn:schemas-upnp-org:device:MediaRenderer:1\r\n\r\n";
+        let advert = Message::parse(notify).expect("an advert");
+        let tv = IpAddr::V4(Ipv4Addr::new(192, 0, 2, 10));
+        assert!(from_its_device(&advert, tv));
+        assert!(!from_its_device(
+            &advert,
+            IpAddr::V4(Ipv4Addr::new(192, 0, 2, 66))
+        ));
+        let byebye = b"NOTIFY * HTTP/1.1\r\nHOST: 239.255.255.250:1900\r\n\
+            NT: urn:schemas-upnp-org:device:MediaRenderer:1\r\nNTS: ssdp:byebye\r\n\
+            USN: uuid:tv::urn:schemas-upnp-org:device:MediaRenderer:1\r\n\r\n";
+        let byebye = Message::parse(byebye).expect("a goodbye");
+        assert!(from_its_device(&byebye, IpAddr::V4(Ipv4Addr::LOCALHOST)));
     }
 
     #[test]

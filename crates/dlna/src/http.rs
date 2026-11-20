@@ -24,9 +24,18 @@ pub struct Url {
     pub path: String,
 }
 
+/// Whether `text` can go into a request line or header as it is: with no
+/// space or control character, which would end it or start another.
+pub fn is_clean(text: &str) -> bool {
+    !text.chars().any(|c| c.is_control() || c.is_whitespace())
+}
+
 impl Url {
     pub fn parse(text: &str) -> Option<Self> {
         let rest = text.trim();
+        if !is_clean(rest) {
+            return None;
+        }
         let scheme = rest.get(..7)?;
         if !scheme.eq_ignore_ascii_case("http://") {
             return None;
@@ -68,6 +77,9 @@ impl Url {
     /// this one.
     pub fn join(&self, reference: &str) -> Option<Self> {
         let reference = reference.trim();
+        if !is_clean(reference) {
+            return None;
+        }
         if reference
             .get(..7)
             .is_some_and(|scheme| scheme.eq_ignore_ascii_case("http://"))
@@ -88,6 +100,11 @@ impl Url {
             path,
             ..self.clone()
         })
+    }
+
+    /// Whether it's on the same host as `other`, on whatever port.
+    pub fn same_host(&self, other: &Url) -> bool {
+        self.host.eq_ignore_ascii_case(&other.host)
     }
 
     /// `host:port`, with brackets for IPv6.
@@ -378,6 +395,18 @@ mod tests {
         assert!(Url::parse("https://host/").is_none());
         assert!(Url::parse("http://:80/").is_none());
         assert!(Url::parse("http://host:port/").is_none());
+    }
+
+    #[test]
+    fn urls_with_spaces_or_line_breaks_are_refused() {
+        assert_eq!(Url::parse("http://192.0.2.1/a\r\nX-Evil: 1"), None);
+        assert_eq!(Url::parse("http://192.0.2.1/a b"), None);
+        assert_eq!(Url::parse("http://192.0.2.1/a\tb"), None);
+        let url = Url::parse("  http://192.0.2.1/dmr  ").unwrap();
+        assert_eq!(url.path, "/dmr", "only what's around it is trimmed");
+        assert_eq!(url.join("/x\r\nHost: elsewhere"), None);
+        assert_eq!(url.join("x y"), None);
+        assert_eq!(url.join("/upnp/control").unwrap().path, "/upnp/control");
     }
 
     #[test]

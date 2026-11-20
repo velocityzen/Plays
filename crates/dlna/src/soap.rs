@@ -123,7 +123,7 @@ pub fn call(
         .ok_or_else(|| Error::protocol(format!("a control URL {:?}", service.control)))?;
     let body = envelope(&format!(
         "<u:{action} xmlns:u=\"{}\">{}</u:{action}>",
-        service.kind,
+        escape(&service.kind),
         arguments(args)
     ));
     let soap_action = format!("\"{}#{action}\"", service.kind);

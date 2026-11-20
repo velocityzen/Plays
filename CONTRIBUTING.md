@@ -482,8 +482,11 @@ protocol info in the forms Samsung, LG and Sonos give them and as a
 Devialet speaker gave them (ids changed), SSDP's messages, DIDL-Lite,
 times, URLs and HTTP, and refuse what a hostile device could send: XML
 nested too deep, an advert or a subscription lasting for ever, a chunk
-too long to count, and a URL with a character across where `http://`
-would end. Each has been checked to fail when what it covers is broken.
+too long to count, a URL with a character across where `http://` would
+end, URLs with spaces or line breaks, a description whose services or
+icons are on another host or whose service type isn't one, and an advert
+for a description somewhere other than where it came from. Each has been
+checked to fail when what it covers is broken.
 
 Each protocol crate has an example that talks to real devices on the
 network; see [ARCHITECTURE.md](ARCHITECTURE.md#the-chromecast-crate) for

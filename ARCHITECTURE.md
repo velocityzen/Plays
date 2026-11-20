@@ -697,13 +697,16 @@ happens over a channel.
   datagrams get lost, and every two minutes after; renderers' NOTIFYs are
   heard on SSDP's port, shared with whatever else listens there. A
   renderer is dropped when it says byebye or isn't heard from within the
-  max-age it gave. Renderers are found over IPv4 only.
+  max-age it gave. Renderers are found over IPv4 only, and a description
+  is fetched only from the address its advert came from.
 - `device.rs`, `xml.rs`: the device description, read for the name,
   maker, model, icons and where AVTransport, RenderingControl and
   ConnectionManager are, of any version. The renderer may be a device
-  inside another, as a Sonos speaker's is. ConnectionManager's protocol
-  info is read into capabilities: the protocol, MIME type and DLNA profile
-  of each.
+  inside another, as a Sonos speaker's is. Only URLs on the host the
+  description came from are taken, and none with spaces or line breaks,
+  so a device can't have Plays ask anything of another. ConnectionManager's
+  protocol info is read into capabilities: the protocol, MIME type and
+  DLNA profile of each.
 - `http.rs`, `soap.rs`: just enough HTTP/1.1, and SOAP actions on it. A
   refusal's `UPnPError` becomes a typed fault, as each service numbers
   them.
