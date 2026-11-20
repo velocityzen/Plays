@@ -166,7 +166,8 @@ track, and that subtitles show, change track and turn off, at the right
 times. A clip with an English SRT and a Windows-1251 Russian one beside it
 checks that they are listed and named, that the first shows from the start,
 that seeking back lands in a cue already showing, and that the Russian one
-reads right. Unit tests cover finding files for a video, reading their
+reads right. DVD subtitles drawn as a clip plays are dropped from the GPU
+once they are off screen. Unit tests cover finding files for a video, reading their
 names and telling encodings, and the shortcuts: no default key used twice,
 a key moving to the command it is given, reading and writing them in the
 settings file, staying out of text fields, and how they are shown. The

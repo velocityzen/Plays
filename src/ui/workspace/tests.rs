@@ -16,6 +16,7 @@ use super::place::Place;
 use super::{TOOLBAR_SPACE, Workspace};
 use crate::app::ShowOnDisplay;
 use crate::hotkeys::{ToggleFloatOnTop, ToggleFloatOnTopWhilePlaying};
+use crate::media::tracks::TrackKind;
 use crate::settings::{FloatOnTop, FullScreen, PanelLook, Settings};
 use crate::ui::pip::PipEvent;
 use crate::ui::settings::SettingsView;
@@ -917,4 +918,54 @@ fn a_tile_alone_expands_to_full_screen_while_it_floats(cx: &mut TestAppContext) 
     assert!(full_screen(&mut cx), "so does the button");
     click(&mut cx, "maximize");
     assert!(!full_screen(&mut cx));
+}
+
+#[gpui::test]
+fn bitmap_subtitles_leave_the_gpu_once_they_are_off_screen(cx: &mut TestAppContext) {
+    let (window, mut cx) = testing::start(cx);
+    open(window, &mut cx, &["clip-dvdsub.mkv"], false);
+    let view = window
+        .read_with(&cx, |workspace, _| workspace.tiles[0].view.clone())
+        .unwrap();
+    let dropped = |cx: &mut TestAppContext| {
+        window
+            .read_with(cx, |workspace, _| workspace.graveyard.dropped())
+            .unwrap()
+    };
+    let showing = |cx: &mut TestAppContext| {
+        view.read_with(cx, |view, _| {
+            view.player()
+                .subtitles()
+                .iter()
+                .flat_map(|cue| &cue.bitmaps)
+                .map(|bitmap| bitmap.image.id)
+                .collect::<Vec<_>>()
+        })
+    };
+    view.update(&mut cx, |view, cx| {
+        view.select_track(TrackKind::Subtitle, Some(2), cx);
+        view.play();
+        cx.notify();
+    });
+
+    // Drawn as it plays, then gone when it ends.
+    let mut drawn = Vec::new();
+    let ended = wait_until(&mut cx, |cx| {
+        window.update(cx, |_, window, _| window.refresh()).unwrap();
+        cx.run_until_parked();
+        let showing = showing(cx);
+        for id in showing {
+            if !drawn.contains(&id) {
+                drawn.push(id);
+            }
+        }
+        let dropped = dropped(cx);
+        !drawn.is_empty() && drawn.iter().all(|id| dropped.contains(id))
+    });
+    assert!(!drawn.is_empty(), "a DVD subtitle showed");
+    assert!(
+        ended,
+        "{drawn:?} drawn, but only {:?} dropped",
+        dropped(&mut cx)
+    );
 }

@@ -230,8 +230,9 @@ gpui's Linux renderer can't draw GPU surfaces such as DMA-BUFs, which is
 why hardware-decoded frames are copied back there. Either way the tile
 paints them itself, framed. Replaced frames are kept a
 few display frames in case the GPU is still reading them, then released
-(images with `Window::drop_image`, from `src/ui/player/graveyard.rs`), so
-GPU memory stays flat during playback.
+(images with `Window::drop_image`, from `src/ui/player/graveyard.rs`), and
+so are the pictures of DVD, Blu-ray and DVB subtitles once they are off
+screen, so GPU memory stays flat during playback.
 
 Playing four 4K H.264 files at once on an Apple silicon Mac takes about 20%
 of one core with zero-copy, against about 100% when hardware frames are
