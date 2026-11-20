@@ -201,17 +201,13 @@ impl TextInput {
 
     fn copy(&mut self, _: &Copy, _: &mut Window, cx: &mut Context<Self>) {
         if !self.selected_range.is_empty() {
-            cx.write_to_clipboard(ClipboardItem::new_string(
-                self.content[self.selected_range.clone()].to_string(),
-            ));
+            cx.write_to_clipboard(ClipboardItem::new_string(self.selected_text().to_owned()));
         }
     }
 
     fn cut(&mut self, _: &Cut, window: &mut Window, cx: &mut Context<Self>) {
         if !self.selected_range.is_empty() {
-            cx.write_to_clipboard(ClipboardItem::new_string(
-                self.content[self.selected_range.clone()].to_string(),
-            ));
+            cx.write_to_clipboard(ClipboardItem::new_string(self.selected_text().to_owned()));
             self.replace_text_in_range(None, "", window, cx)
         }
     }
@@ -259,30 +255,8 @@ impl TextInput {
         cx.notify()
     }
 
-    fn offset_from_utf16(&self, offset: usize) -> usize {
-        let mut utf8_offset = 0;
-        let mut utf16_count = 0;
-        for ch in self.content.chars() {
-            if utf16_count >= offset {
-                break;
-            }
-            utf16_count += ch.len_utf16();
-            utf8_offset += ch.len_utf8();
-        }
-        utf8_offset
-    }
-
     fn offset_to_utf16(&self, offset: usize) -> usize {
-        let mut utf16_offset = 0;
-        let mut utf8_count = 0;
-        for ch in self.content.chars() {
-            if utf8_count >= offset {
-                break;
-            }
-            utf8_count += ch.len_utf8();
-            utf16_offset += ch.len_utf16();
-        }
-        utf16_offset
+        utf16_offset(&self.content, offset)
     }
 
     fn range_to_utf16(&self, range: &Range<usize>) -> Range<usize> {
@@ -290,7 +264,21 @@ impl TextInput {
     }
 
     fn range_from_utf16(&self, range_utf16: &Range<usize>) -> Range<usize> {
-        self.offset_from_utf16(range_utf16.start)..self.offset_from_utf16(range_utf16.end)
+        utf8_range(&self.content, range_utf16)
+    }
+
+    /// The range IME or editing is to replace: the one given, else what's
+    /// being composed, else the selection, made safe to slice the text with.
+    fn range_to_replace(&self, range_utf16: Option<&Range<usize>>) -> Range<usize> {
+        let range = range_utf16
+            .map(|range_utf16| self.range_from_utf16(range_utf16))
+            .or(self.marked_range.clone())
+            .unwrap_or(self.selected_range.clone());
+        within(&self.content, range)
+    }
+
+    fn selected_text(&self) -> &str {
+        &self.content[within(&self.content, self.selected_range.clone())]
     }
 
     fn previous_boundary(&self, offset: usize) -> usize {
@@ -351,11 +339,7 @@ impl EntityInputHandler for TextInput {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let range = range_utf16
-            .as_ref()
-            .map(|range_utf16| self.range_from_utf16(range_utf16))
-            .or(self.marked_range.clone())
-            .unwrap_or(self.selected_range.clone());
+        let range = self.range_to_replace(range_utf16.as_ref());
         self.content =
             (self.content[0..range.start].to_owned() + new_text + &self.content[range.end..])
                 .into();
@@ -372,20 +356,17 @@ impl EntityInputHandler for TextInput {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let range = range_utf16
-            .as_ref()
-            .map(|range_utf16| self.range_from_utf16(range_utf16))
-            .or(self.marked_range.clone())
-            .unwrap_or(self.selected_range.clone());
+        let range = self.range_to_replace(range_utf16.as_ref());
         self.content =
             (self.content[0..range.start].to_owned() + new_text + &self.content[range.end..])
                 .into();
         self.marked_range =
             (!new_text.is_empty()).then(|| range.start..range.start + new_text.len());
+        // IME counts the selection within what it's composing.
         self.selected_range = new_selected_range_utf16
             .as_ref()
-            .map(|range_utf16| self.range_from_utf16(range_utf16))
-            .map(|new_range| new_range.start + range.start..new_range.end + range.end)
+            .map(|selected| utf8_range(new_text, selected))
+            .map(|selected| range.start + selected.start..range.start + selected.end)
             .unwrap_or_else(|| range.start + new_text.len()..range.start + new_text.len());
         cx.notify();
     }
@@ -417,6 +398,50 @@ impl EntityInputHandler for TextInput {
         let utf8_index = last_layout.index_for_x(point.x - bounds.left() + self.scroll_x)?;
         Some(self.offset_to_utf16(utf8_index))
     }
+}
+
+/// Where in `text` UTF-16 `offset` is, as a byte offset, and no further
+/// than its end.
+fn utf8_offset(text: &str, offset: usize) -> usize {
+    let mut utf8_offset = 0;
+    let mut utf16_count = 0;
+    for ch in text.chars() {
+        if utf16_count >= offset {
+            break;
+        }
+        utf16_count += ch.len_utf16();
+        utf8_offset += ch.len_utf8();
+    }
+    utf8_offset
+}
+
+fn utf16_offset(text: &str, offset: usize) -> usize {
+    let mut utf16_offset = 0;
+    let mut utf8_count = 0;
+    for ch in text.chars() {
+        if utf8_count >= offset {
+            break;
+        }
+        utf8_count += ch.len_utf8();
+        utf16_offset += ch.len_utf16();
+    }
+    utf16_offset
+}
+
+/// A UTF-16 range of `text` as bytes, in order and within it.
+fn utf8_range(text: &str, range_utf16: &Range<usize>) -> Range<usize> {
+    within(
+        text,
+        utf8_offset(text, range_utf16.start)..utf8_offset(text, range_utf16.end),
+    )
+}
+
+/// `range` made safe to slice `text` with: in order, no further than its
+/// end, and on character boundaries.
+fn within(text: &str, range: Range<usize>) -> Range<usize> {
+    let start = text.floor_char_boundary(range.start);
+    let end = text.floor_char_boundary(range.end);
+    start.min(end)..start.max(end)
 }
 
 /// Lays out and paints the text, selection and cursor of a [`TextInput`].
@@ -657,5 +682,102 @@ impl Render for TextInput {
 impl Focusable for TextInput {
     fn focus_handle(&self, _: &App) -> FocusHandle {
         self.focus_handle.clone()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use gpui::{Entity, TestAppContext, VisualTestContext};
+
+    use super::*;
+
+    fn new_input(cx: &mut TestAppContext) -> (Entity<TextInput>, &mut VisualTestContext) {
+        let cx = cx.add_empty_window();
+        let input = cx.update(|_, cx| cx.new(|cx| TextInput::new("", cx)));
+        (input, cx)
+    }
+
+    /// What IME's `setMarkedText:selectedRange:` does.
+    fn compose(
+        cx: &mut VisualTestContext,
+        input: &Entity<TextInput>,
+        text: &str,
+        selected: Range<usize>,
+    ) {
+        cx.update(|window, cx| {
+            input.update(cx, |input, cx| {
+                input.replace_and_mark_text_in_range(None, text, Some(selected), window, cx);
+            });
+        });
+    }
+
+    fn type_text(cx: &mut VisualTestContext, input: &Entity<TextInput>, text: &str) {
+        cx.update(|window, cx| {
+            input.update(cx, |input, cx| {
+                input.replace_text_in_range(None, text, window, cx);
+            });
+        });
+    }
+
+    fn state(cx: &mut VisualTestContext, input: &Entity<TextInput>) -> (String, Range<usize>) {
+        cx.update(|_, cx| {
+            let input = input.read(cx);
+            (input.content.to_string(), input.selected_range.clone())
+        })
+    }
+
+    #[gpui::test]
+    fn composing_keeps_the_cursor_in_what_is_composed(cx: &mut TestAppContext) {
+        let (input, cx) = new_input(cx);
+        compose(cx, &input, "n", 1..1);
+        assert_eq!(state(cx, &input), ("n".to_owned(), 1..1));
+        compose(cx, &input, "ni", 2..2);
+        assert_eq!(state(cx, &input), ("ni".to_owned(), 2..2));
+        compose(cx, &input, "你", 1..1);
+        assert_eq!(state(cx, &input), ("你".to_owned(), 3..3));
+        type_text(cx, &input, "你");
+        assert_eq!(state(cx, &input), ("你".to_owned(), 3..3));
+    }
+
+    #[gpui::test]
+    fn deleting_what_is_composed_leaves_the_text_to_type_into(cx: &mut TestAppContext) {
+        let (input, cx) = new_input(cx);
+        compose(cx, &input, "n", 1..1);
+        compose(cx, &input, "ni", 2..2);
+        compose(cx, &input, "", 0..0);
+        assert_eq!(state(cx, &input), (String::new(), 0..0));
+        type_text(cx, &input, "x");
+        assert_eq!(state(cx, &input), ("x".to_owned(), 1..1));
+    }
+
+    #[gpui::test]
+    fn the_selection_counts_within_what_is_composed_after_other_text(cx: &mut TestAppContext) {
+        let (input, cx) = new_input(cx);
+        type_text(cx, &input, "abc");
+        compose(cx, &input, "中", 1..1);
+        assert_eq!(state(cx, &input), ("abc中".to_owned(), 6..6));
+        compose(cx, &input, "中文", 1..1);
+        assert_eq!(state(cx, &input), ("abc中文".to_owned(), 6..6));
+        type_text(cx, &input, "中文");
+        assert_eq!(state(cx, &input), ("abc中文".to_owned(), 9..9));
+    }
+
+    #[gpui::test]
+    fn ranges_out_of_the_text_are_kept_in_it(cx: &mut TestAppContext) {
+        let (input, cx) = new_input(cx);
+        type_text(cx, &input, "aé");
+        cx.update(|window, cx| {
+            input.update(cx, |input, cx| {
+                let mut actual = None;
+                // IME may ask for a range backwards.
+                let backwards = Range { start: 2, end: 0 };
+                let text = input.text_for_range(backwards, &mut actual, window, cx);
+                assert_eq!(text.as_deref(), Some("aé"));
+                assert_eq!(actual, Some(0..2));
+                input.selected_range = 2..9;
+                input.replace_text_in_range(None, "!", window, cx);
+            });
+        });
+        assert_eq!(state(cx, &input), ("a!".to_owned(), 2..2));
     }
 }
