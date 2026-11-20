@@ -13,6 +13,7 @@ mod graveyard;
 mod header;
 mod osd;
 mod pip;
+mod playback;
 mod screenshot;
 mod sync;
 mod tracks;
@@ -39,10 +40,11 @@ use super::theme::motion::LEVEL_FALLOFF;
 use crate::media::decoder::MediaInfo;
 use crate::media::picture::PictureId;
 use crate::media::subtitles::CueContent;
-use crate::media::{Mixer, Neighbors, Picture, Player, PlayerOptions, Source};
+use crate::media::{Mixer, Neighbors, Picture, PlayerOptions, Source};
 use crate::progress::{self, Note};
 use crate::settings::{AudioDevice, ControlsVisibility, Settings, VideoFit};
 use osd::Osd;
+use playback::Playback;
 
 pub enum PlayerEvent {
     Close,
@@ -55,8 +57,30 @@ pub enum PlayerEvent {
     PopOut,
 }
 
+/// Where a tile is in its window, and where the mouse is, as the window
+/// last said (`PlayerView::set_layout`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TileLayout {
+    /// Shortcuts go to this tile: the one the mouse was last over, or
+    /// clicked.
+    pub active: bool,
+    /// It fills the grid, the other tiles hidden.
+    pub maximized: bool,
+    /// The only tile in its window: there is nowhere to expand it to, and
+    /// popping it out would leave the window empty.
+    pub alone: bool,
+    /// In its window's top-left corner, where the macOS traffic lights are.
+    pub top_left: bool,
+    /// The controls show only while the mouse is over the tile, which needs
+    /// the mouse in the window, and not resting (`mouse_idle`) unless it is
+    /// on the header or controls.
+    pub mouse_in_window: bool,
+    pub mouse_idle: bool,
+}
+
 pub struct PlayerView {
-    player: Player,
+    /// The player here, and the device it plays on instead while it casts.
+    playback: Playback,
     title: SharedString,
     /// The files before and after this one in its folder, for the previous
     /// and next buttons; `None` while the folder is being listed.
@@ -68,7 +92,6 @@ pub struct PlayerView {
     volume_drag: Rc<Cell<bool>>,
     /// Position shown while the seek slider is being dragged.
     scrub: Option<f64>,
-    resume_after_scrub: bool,
     level: f32,
     /// The frame handed to gpui in the last render (and so maybe in use on the GPU).
     drawn: Option<PictureId>,
@@ -87,29 +110,12 @@ pub struct PlayerView {
     picture_bounds: Rc<Cell<Option<Bounds<Pixels>>>>,
     /// Picture in Picture, while it is open or opening.
     pip: Option<pip::PipSession>,
-    /// Shortcuts go to this tile: the one the mouse was last over, or
-    /// clicked.
-    pub active: bool,
-    pub maximized: bool,
-    /// The only tile in its window: there is nowhere to expand it to, and
-    /// popping it out would leave the window empty.
-    pub alone: bool,
-    /// In its window's top-left corner, where the macOS traffic lights are.
-    pub top_left: bool,
-    /// The controls show only while the mouse is over the tile, which needs
-    /// the mouse in the window, and not resting (`mouse_idle`) unless it is
-    /// on the header or controls.
-    pub mouse_in_window: bool,
-    pub mouse_idle: bool,
+    /// Where it is in its window, as the window last said.
+    layout: TileLayout,
     over_header: bool,
     over_controls: bool,
     /// The console, while it shows: what keeps it up to date.
     console: Option<Task<()>>,
-    /// The device it plays on instead, while it casts.
-    cast: Option<cast::Cast>,
-    /// The device it goes on casting to once the file just opened is
-    /// known.
-    next_cast: Option<cast::NextCast>,
     /// The menu of devices to cast to is open.
     cast_open: bool,
     /// The device its window plays through instead of the app's output,
@@ -132,7 +138,7 @@ impl PlayerView {
         graveyard: Graveyard,
     ) -> Self {
         let title = source.name().into();
-        let player = Player::open(
+        let playback = Playback::open(
             source,
             mixer,
             PlayerOptions {
@@ -144,7 +150,7 @@ impl PlayerView {
             },
         );
         Self {
-            player,
+            playback,
             title,
             neighbors: None,
             finding_neighbors: Task::ready(()),
@@ -152,7 +158,6 @@ impl PlayerView {
             seek_drag: Rc::default(),
             volume_drag: Rc::default(),
             scrub: None,
-            resume_after_scrub: false,
             level: 0.0,
             drawn: None,
             cues: Vec::new(),
@@ -162,17 +167,17 @@ impl PlayerView {
             adjustments: Adjustments::default(),
             picture_bounds: Rc::default(),
             pip: None,
-            active: false,
-            maximized: false,
-            alone: true,
-            top_left: false,
-            mouse_in_window: true,
-            mouse_idle: false,
+            layout: TileLayout {
+                active: false,
+                maximized: false,
+                alone: true,
+                top_left: false,
+                mouse_in_window: true,
+                mouse_idle: false,
+            },
             over_header: false,
             over_controls: false,
             console: None,
-            cast: None,
-            next_cast: None,
             cast_open: false,
             window_sound: None,
             window_press: None,
@@ -185,7 +190,7 @@ impl PlayerView {
     /// background: the folder may be on a network drive.
     pub fn find_neighbors(&mut self, cx: &mut Context<Self>) {
         self.neighbors = None;
-        let source = self.player.source().clone();
+        let source = self.playback.local().source().clone();
         let listing = cx.background_spawn(async move { source.neighbors() });
         self.finding_neighbors = cx.spawn(async move |this, cx| {
             let neighbors = listing.await;
@@ -229,23 +234,23 @@ impl PlayerView {
         // A cast goes on with the new file, which waits here meanwhile.
         let casting = self.casting().cloned();
         let playing = self.is_playing();
-        self.cast = None;
         let settings = cx.global::<Settings>();
         let autoplay = playing || settings.autoplay;
+        let player = self.playback.local();
         let options = PlayerOptions {
             autoplay: autoplay && casting.is_none(),
-            looping: self.player.is_looping(),
-            volume: self.player.volume(),
+            looping: player.is_looping(),
+            volume: player.volume(),
             max_short_side: settings.max_resolution.short_side(),
             hardware_decoding: settings.hardware_decoding,
         };
-        let muted = self.player.is_muted();
+        let muted = player.is_muted();
         self.release_pictures();
         self.title = source.name().into();
-        self.player = Player::open(source, self.player.mixer(), options);
+        self.playback.reopen(source, options);
         self.resume(cx);
         self.find_neighbors(cx);
-        self.player.set_muted(muted);
+        self.playback.set_muted(muted);
         self.drawn = None;
         self.scrub = None;
         self.level = 0.0;
@@ -259,21 +264,32 @@ impl PlayerView {
         cx.notify();
     }
 
-    pub fn player(&self) -> &Player {
-        &self.player
+    /// Take where the tile is in its window, and where the mouse is, as
+    /// the window says; it redraws if that changed.
+    pub fn set_layout(&mut self, layout: TileLayout, cx: &mut Context<Self>) {
+        if self.layout != layout {
+            self.layout = layout;
+            cx.notify();
+        }
+    }
+
+    /// Where the tile is in its window, as the window last said.
+    #[cfg(test)]
+    pub fn layout(&self) -> TileLayout {
+        self.layout
     }
 
     /// How the video shows, once its size is known: turned as the file
     /// says, then as adjusted here.
     pub fn framing(&self) -> Option<Framing> {
-        self.framing_for(self.player.info().as_deref())
+        self.framing_for(self.playback.local().info().as_deref())
     }
 
     fn framing_for(&self, info: Option<&MediaInfo>) -> Option<Framing> {
         let info = info?;
         let size = info
             .video_size
-            .or_else(|| self.player.frame().map(|frame| frame.size()))?;
+            .or_else(|| self.playback.local().frame().map(|frame| frame.size()))?;
         Framing::new(size, info.orientation, &self.adjustments)
     }
 
@@ -281,9 +297,7 @@ impl PlayerView {
     /// drawn and new frames as they are converted, so only a paused video
     /// showing a converted image needs its frame decoded again.
     pub fn picture_settings_changed(&mut self) {
-        if !self.player.is_playing() && matches!(self.player.frame(), Some(Picture::Image(_))) {
-            self.player.refresh();
-        }
+        self.playback.refresh_picture();
     }
 
     /// Release a frame that is no longer current. Only frames that were rendered
@@ -314,13 +328,13 @@ impl PlayerView {
     /// Keeps playback moving (frame queues, end of file, looping) while the
     /// window isn't drawing, for example when it is minimized.
     pub fn background_tick(&mut self, cx: &mut Context<Self>) {
-        let was_playing = self.player.is_playing();
-        let tick = self.player.tick();
+        let was_playing = self.playback.local().is_playing();
+        let tick = self.playback.tick();
         let advanced = tick.retired.is_some();
         if let Some(picture) = tick.retired {
             self.retire(picture);
         }
-        if advanced || was_playing != self.player.is_playing() {
+        if advanced || was_playing != self.playback.local().is_playing() {
             cx.notify();
         }
     }
@@ -328,7 +342,7 @@ impl PlayerView {
     /// Where its file is, of how long, once it has opened: to resume it
     /// there. Only files, not streams.
     pub fn progress(&self) -> Option<Note> {
-        let Source::File(path) = self.player.source() else {
+        let Source::File(path) = self.playback.local().source() else {
             return None;
         };
         let duration = self.duration()?;
@@ -338,13 +352,13 @@ impl PlayerView {
     /// Start its file where it was left, if Settings say to and it played
     /// lately (`progress::KEEP_DAYS`).
     pub fn resume(&mut self, cx: &mut Context<Self>) {
-        let Source::File(path) = self.player.source() else {
+        let Source::File(path) = self.playback.local().source() else {
             return;
         };
         let Some(position) = progress::recall(path, cx) else {
             return;
         };
-        self.player.seek(position);
+        self.playback.seek(position);
         self.note(
             format!("Resumed at {}", controls::format_time(position)),
             cx,
@@ -354,7 +368,7 @@ impl PlayerView {
     /// Play into `mixer` from now on, its window's, which plays through
     /// `device` instead of the app's output, if any.
     pub fn play_into(&mut self, mixer: Option<Arc<Mixer>>, device: Option<AudioDevice>) {
-        self.player.set_mixer(mixer);
+        self.playback.set_mixer(mixer);
         self.window_sound = device;
     }
 
@@ -365,21 +379,21 @@ impl PlayerView {
         self.close_picture_in_picture();
         // Pictures drawn so far are in the old window's texture atlas, so the
         // old window releases them; the new one uploads its own copies.
-        let cover = self.player.cover().map(Picture::Image);
-        for picture in self.player.frame().into_iter().chain(cover) {
+        let player = self.playback.local();
+        let cover = player.cover().map(Picture::Image);
+        for picture in player.frame().into_iter().chain(cover) {
             self.graveyard.bury(picture);
         }
         for cue in std::mem::take(&mut self.cues) {
             self.bury_cue(&cue);
         }
         self.graveyard = graveyard;
-        self.maximized = false;
     }
 
     /// Hand every frame this tile drew to the graveyard; call before dropping it.
     pub fn release_pictures(&mut self) {
         self.close_picture_in_picture();
-        for picture in self.player.take_pictures() {
+        for picture in self.playback.take_pictures() {
             self.graveyard.bury(picture);
         }
         for cue in std::mem::take(&mut self.cues) {
@@ -404,7 +418,7 @@ impl PlayerView {
     /// Expand the tile to fill its window, or the window to fill the screen
     /// when the tile is all it shows; or undo that.
     fn toggle_expanded(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.alone {
+        if self.layout.alone {
             window.toggle_fullscreen();
         } else {
             cx.emit(PlayerEvent::ToggleMaximize);
@@ -442,14 +456,14 @@ impl Reveal {
 
 impl Render for PlayerView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let tick = self.player.tick();
+        let tick = self.playback.tick();
         if let Some(picture) = tick.retired {
             self.retire(picture);
         }
-        self.drawn = self.player.frame().map(|frame| frame.id());
-        let cues = self.player.subtitles();
+        self.drawn = self.playback.local().frame().map(|frame| frame.id());
+        let cues = self.playback.local().subtitles();
         self.show_cues(cues);
-        let level = self.player.level();
+        let level = self.playback.local().level();
         self.level = if level > self.level {
             level
         } else {
@@ -464,9 +478,10 @@ impl Render for PlayerView {
         let cover = settings.video_fit == VideoFit::Cover;
         let subtitle_style = settings.subtitles.clone();
         let show_titles = settings.show_titles;
-        let info = self.player.info();
+        let player = self.playback.local();
+        let info = player.info();
         let framing = self.framing_for(info.as_deref());
-        let has_video = self.player.frame().is_some();
+        let has_video = player.frame().is_some();
         let dragging = self.seek_drag.get() || self.volume_drag.get();
         let casting = self.casts_picture();
         let pinned = settings.controls == ControlsVisibility::Always
@@ -474,16 +489,18 @@ impl Render for PlayerView {
             || self.tracks_open
             || self.cast_open
             || !self.is_playing()
-            || self.player.error().is_some();
+            || player.error().is_some();
         // A resting mouse counts as gone, unless it rests on the bars; and
         // the pointer hides over the picture until it moves.
-        let mouse_in_window = self.mouse_in_window && (!self.mouse_idle || self.over_bars());
-        let hide_pointer = self.mouse_in_window && self.mouse_idle && !self.over_bars() && !pinned;
+        let layout = self.layout;
+        let mouse_in_window = layout.mouse_in_window && (!layout.mouse_idle || self.over_bars());
+        let hide_pointer =
+            layout.mouse_in_window && layout.mouse_idle && !self.over_bars() && !pinned;
         let live = info.as_ref().is_some_and(|i| i.live);
         // A stream that has started and then stalls; opening has its own message.
         let stalled = !casting
-            && self.player.is_buffering()
-            && self.player.is_network()
+            && player.is_buffering()
+            && player.is_network()
             && (has_video || info.as_ref().is_some_and(|i| !i.has_video));
         let reveal = Reveal {
             pinned,
@@ -516,14 +533,14 @@ impl Render for PlayerView {
             .size_full()
             .overflow_hidden()
             .capture_any_mouse_down(cx.listener(|this, _, _, cx| {
-                if !this.active {
+                if !this.layout.active {
                     cx.emit(PlayerEvent::Activate);
                 }
             }))
             // Shortcuts go to the tile the mouse is over, as its controls
             // show there; not while it drags something of another tile's.
             .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, _, cx| {
-                if !this.active && event.pressed_button.is_none() {
+                if !this.layout.active && event.pressed_button.is_none() {
                     cx.emit(PlayerEvent::Activate);
                 }
             }))

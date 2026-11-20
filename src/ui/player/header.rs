@@ -21,14 +21,14 @@ impl PlayerView {
         window: &Window,
         cx: &mut Context<Self>,
     ) -> Div {
-        let expanded = if self.alone {
+        let expanded = if self.layout.alone {
             window.is_fullscreen()
         } else {
-            self.maximized
+            self.layout.maximized
         };
         // Full screen hides the traffic lights.
         let under_traffic_lights =
-            cfg!(target_os = "macos") && self.top_left && !window.is_fullscreen();
+            cfg!(target_os = "macos") && self.layout.top_left && !window.is_fullscreen();
         let details = info.map(details);
 
         reveal
@@ -82,7 +82,9 @@ impl PlayerView {
                     }),
             )
             .when(
-                pip::supported() && self.player.frame().is_some() && !self.casts_picture(),
+                pip::supported()
+                    && self.playback.local().frame().is_some()
+                    && !self.casts_picture(),
                 |this| {
                     this.child(
                         Button::icon("pip", "pip")
@@ -94,7 +96,7 @@ impl PlayerView {
                     )
                 },
             )
-            .when(!self.alone, |this| {
+            .when(!self.layout.alone, |this| {
                 this.child(
                     Button::icon("pop-out", "pop-out")
                         .overlay()

@@ -10,7 +10,7 @@ use crate::media::tracks::TrackKind;
 impl PlayerView {
     /// Hear the sound `step` seconds later (negative: earlier).
     pub fn shift_audio(&mut self, step: f64, cx: &mut Context<Self>) {
-        self.set_audio_delay(self.player.audio_delay() + step, cx);
+        self.set_audio_delay(self.playback.local().audio_delay() + step, cx);
     }
 
     /// Hear the sound `delay` seconds after the picture (negative: before).
@@ -18,18 +18,21 @@ impl PlayerView {
         if self.no_delays_while_cast(cx) {
             return;
         }
-        if !self.player.has_audio() {
+        if !self.playback.local().has_audio() {
             self.note("No audio", cx);
             return;
         }
-        self.player.set_audio_delay(to_milliseconds(delay));
-        let note = format!("Audio delay {}", delay_text(self.player.audio_delay()));
+        self.playback.set_audio_delay(to_milliseconds(delay));
+        let note = format!(
+            "Audio delay {}",
+            delay_text(self.playback.local().audio_delay())
+        );
         self.note(note, cx);
     }
 
     /// Show subtitles `step` seconds later (negative: earlier).
     pub fn shift_subtitles(&mut self, step: f64, cx: &mut Context<Self>) {
-        self.set_subtitle_delay(self.player.subtitle_delay() + step, cx);
+        self.set_subtitle_delay(self.playback.local().subtitle_delay() + step, cx);
     }
 
     /// Show subtitles `delay` seconds after their times (negative: before).
@@ -38,17 +41,18 @@ impl PlayerView {
             return;
         }
         let has_subtitles = self
-            .player
+            .playback
+            .local()
             .info()
             .is_some_and(|info| info.tracks(TrackKind::Subtitle).next().is_some());
         if !has_subtitles {
             self.note("No subtitles", cx);
             return;
         }
-        self.player.set_subtitle_delay(to_milliseconds(delay));
+        self.playback.set_subtitle_delay(to_milliseconds(delay));
         let note = format!(
             "Subtitle delay {}",
-            delay_text(self.player.subtitle_delay())
+            delay_text(self.playback.local().subtitle_delay())
         );
         self.note(note, cx);
     }

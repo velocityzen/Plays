@@ -70,7 +70,7 @@ impl PlayerView {
         window: &Window,
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
-        if !self.alone && !self.maximized {
+        if !self.layout.alone && !self.layout.maximized {
             let title = self.title.clone();
             return surface.on_drag(DraggedTile(cx.entity_id()), move |_, pressed, _, cx| {
                 cx.new(|_| DraggedTitle {

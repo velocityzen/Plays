@@ -7,6 +7,9 @@ mod casting_to_dlna;
 mod dragging;
 mod sound;
 
+use std::cell::Cell;
+use std::rc::Rc;
+
 use gpui::{
     AnyWindowHandle, AppContext, Bounds, EntityId, FullscreenStyle, Modifiers, MouseButton, Pixels,
     TestAppContext, VisualTestContext, WindowHandle, point, px, size,
@@ -983,12 +986,44 @@ fn files_opened_while_a_tile_is_maximized_show_beside_it(cx: &mut TestAppContext
             let flagged = workspace
                 .tiles
                 .iter()
-                .any(|tile| tile.view.read(cx).maximized);
+                .any(|tile| tile.view.read(cx).layout().maximized);
             (workspace.maximized, flagged)
         })
         .unwrap();
     assert_eq!(maximized, None);
     assert!(!flagged, "no tile says it's maximized");
+}
+
+#[gpui::test]
+fn a_tile_redraws_as_it_is_maximized_and_put_back(cx: &mut TestAppContext) {
+    let (window, mut cx) = testing::start(cx);
+    open(window, &mut cx, &["clip.mp4", "clip-ip.mkv"], false);
+    // The first tile is the one in front and in the top-left corner
+    // either way, so only being maximized changes for it.
+    let first = window
+        .read_with(&cx, |workspace, _| workspace.tiles[0].view.clone())
+        .unwrap();
+    let redraws = Rc::new(Cell::new(0));
+    let _observing = cx.update(|_, cx| {
+        let redraws = redraws.clone();
+        cx.observe(&first, move |_, _| redraws.set(redraws.get() + 1))
+    });
+
+    for maximized in [true, false] {
+        cx.run_until_parked();
+        redraws.set(0);
+        first.update(&mut cx, |_, cx| cx.emit(PlayerEvent::ToggleMaximize));
+        cx.run_until_parked();
+        assert_eq!(
+            first.read_with(&cx, |view, _| view.layout().maximized),
+            maximized
+        );
+        assert!(
+            redraws.get() > 0,
+            "the tile redraws as it is {}",
+            if maximized { "maximized" } else { "put back" }
+        );
+    }
 }
 
 #[gpui::test]

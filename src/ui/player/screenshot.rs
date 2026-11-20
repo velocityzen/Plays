@@ -15,7 +15,7 @@ impl PlayerView {
     /// Save the frame showing as a file, in the background, and say where
     /// it went once it's there.
     pub fn take_screenshot(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(info) = self.player.info().filter(|info| info.has_video) else {
+        let Some(info) = self.playback.local().info().filter(|info| info.has_video) else {
             self.note("No video", cx);
             return;
         };
@@ -25,8 +25,8 @@ impl PlayerView {
         }
         let (Some(stream), Some(timestamp), Some(position)) = (
             info.video_track,
-            self.player.frame_timestamp(),
-            self.player.frame_pts(),
+            self.playback.local().frame_timestamp(),
+            self.playback.local().frame_pts(),
         ) else {
             self.note("No picture yet", cx);
             return;
@@ -53,7 +53,7 @@ impl PlayerView {
             overlay::text_overlay(&cues, &style, &font, framing.size, window)
         });
         let request = Request {
-            source: self.player.source().clone(),
+            source: self.playback.local().source().clone(),
             stream,
             timestamp,
             position,

@@ -37,19 +37,20 @@ impl PlayerView {
 
     pub(super) fn render_console(&self) -> Option<Div> {
         self.console.as_ref()?;
-        let info = self.player.info();
+        let player = self.playback.local();
+        let info = player.info();
         let facts = Facts {
-            source: self.player.source().to_string(),
+            source: player.source().to_string(),
             info: info.as_deref(),
-            stats: self.player.stats(),
-            position: self.player.position(),
-            duration: self.player.duration().filter(|_| !self.player.is_live()),
-            picture: self.player.frame().map(|frame| describe(&frame)),
-            output_rate: self.player.mixer().map(|mixer| mixer.sample_rate()),
-            audio_delay: self.player.audio_delay(),
-            subtitle_delay: self.player.subtitle_delay(),
-            buffering: self.player.is_buffering(),
-            network: self.player.is_network(),
+            stats: player.stats(),
+            position: player.position(),
+            duration: player.duration().filter(|_| !player.is_live()),
+            picture: player.frame().map(|frame| describe(&frame)),
+            output_rate: player.mixer().map(|mixer| mixer.sample_rate()),
+            audio_delay: player.audio_delay(),
+            subtitle_delay: player.subtitle_delay(),
+            buffering: player.is_buffering(),
+            network: player.is_network(),
         };
         let sections = sections(&facts).into_iter().map(|rows| {
             div()

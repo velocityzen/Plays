@@ -53,7 +53,7 @@ impl Workspace {
             self.add_tile(view, cx);
         }
         // What's opened shows, with the tiles there already.
-        self.set_maximized(None, cx);
+        self.maximized = None;
         self.tiles_changed(cx);
         self.fit_when_known(opened, cx);
     }

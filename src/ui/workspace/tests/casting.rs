@@ -219,6 +219,53 @@ fn the_tiles_controls_reach_the_device_and_its_status_moves_the_bar(cx: &mut Tes
     });
 }
 
+#[gpui::test]
+fn the_slider_frame_steps_and_delays_leave_the_player_here_alone_while_it_casts(
+    cx: &mut TestAppContext,
+) {
+    let (window, mut cx, fake, tv) = start(cx, "clip-subs.mkv", false);
+    let view = tile(window, &cx);
+    cast(window, &mut cx, &fake, &tv);
+    let here = |cx: &mut VisualTestContext| {
+        view.read_with(cx, |view, _| {
+            let player = view.player();
+            (
+                player.position(),
+                player.is_playing(),
+                player.audio_delay(),
+                player.subtitle_delay(),
+            )
+        })
+    };
+    let before = here(&mut cx);
+
+    // The device seeks once the slider is let go; meanwhile only the bar
+    // moves.
+    let bar = find(&mut cx, "seek");
+    let at = |fraction: f32| point(bar.left() + bar.size.width * fraction, bar.center().y);
+    cx.simulate_mouse_move(at(0.5), None, Modifiers::none());
+    cx.simulate_mouse_down(at(0.5), MouseButton::Left, Modifiers::none());
+    cx.simulate_mouse_move(at(0.8), MouseButton::Left, Modifiers::none());
+    assert_eq!(here(&mut cx), before, "the slider doesn't scrub here");
+    cx.simulate_mouse_up(at(0.8), MouseButton::Left, Modifiers::none());
+    wait(&mut cx, "the device to seek", |_| {
+        calls(&fake, &tv)
+            .iter()
+            .any(|call| matches!(call, Call::Seek(_)))
+    });
+
+    view.update(&mut cx, |view, cx| {
+        view.step_frame(1.0, cx);
+        view.shift_audio(0.05, cx);
+        view.shift_subtitles(0.1, cx);
+    });
+    assert_eq!(
+        here(&mut cx),
+        before,
+        "nothing of it reaches the player here"
+    );
+}
+
 /// What a Picture in Picture window's button asks of `view`.
 fn pip_button(cx: &mut VisualTestContext, view: &Entity<PlayerView>, event: PipEvent) {
     view.update_in(cx, |view, window, cx| view.on_pip_event(event, window, cx));

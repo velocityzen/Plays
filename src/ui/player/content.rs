@@ -27,7 +27,7 @@ impl PlayerView {
         framing: Option<Framing>,
         cover: bool,
     ) -> AnyElement {
-        if let Some(error) = self.player.error() {
+        if let Some(error) = self.playback.local().error() {
             return div()
                 .flex()
                 .flex_col()
@@ -37,7 +37,7 @@ impl PlayerView {
                 .px_4()
                 .text_center()
                 .child(div().text_sm().text_color(theme.danger).child(
-                    if self.player.is_network() {
+                    if self.playback.local().is_network() {
                         "Can't play this stream"
                     } else {
                         "Can't play this file"
@@ -55,15 +55,15 @@ impl PlayerView {
                 .child(Icon::new("pip").size(PIP_ICON).color(theme.text_muted))
                 .into_any_element();
         }
-        if let Some(frame) = self.player.frame() {
+        if let Some(frame) = self.playback.local().frame() {
             return picture(frame, framing, cover, self.picture_bounds.clone());
         }
-        match self.player.info() {
+        match self.playback.local().info() {
             Some(info) if !info.has_video => self.render_audio(theme),
             _ => div()
                 .text_sm()
                 .text_color(theme.text_muted)
-                .child(if self.player.is_network() {
+                .child(if self.playback.local().is_network() {
                     "Connecting…"
                 } else {
                     "Opening…"
@@ -74,7 +74,7 @@ impl PlayerView {
 
     /// Audio-only files get their cover art (or a note) and a level meter.
     fn render_audio(&self, theme: &Theme) -> AnyElement {
-        let artwork = match self.player.cover() {
+        let artwork = match self.playback.local().cover() {
             Some(cover) => img(cover)
                 .size(COVER_SIZE)
                 .object_fit(ObjectFit::Contain)
@@ -91,7 +91,8 @@ impl PlayerView {
                 .into_any_element(),
         };
         let title = self
-            .player
+            .playback
+            .local()
             .info()
             .and_then(|i| i.title.clone())
             .map(SharedString::from)

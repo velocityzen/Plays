@@ -490,10 +490,20 @@ flowchart LR
   onto another tile, or the window with `Window::start_window_move` when
   no other tile shows), and the graveyard frames wait in before they are
   released.
-  While a tile casts, its play, pause, seek, volume, loop and track changes
-  go to the device, Picture in Picture's buttons too, and what it shows
-  (position, playing, the end) comes from it. Picture in Picture closes,
-  and isn't offered, while the picture plays on the device.
+  `playback` holds the tile's player and the device it casts to, and every
+  command the tile sends goes through it: only that file can command the
+  player, the rest of the tile reading it. While a tile casts, its play,
+  pause, seek, volume, loop and track changes go to the device, Picture in
+  Picture's buttons too, and what it shows (position, playing, the end)
+  comes from it; the slider seeks the device once it's let go, and frame
+  steps and delays do nothing. Where the player here is commanded while
+  the tile casts, its method says so: the picture following sound heard
+  elsewhere, and the player taking over again when the cast ends. Picture
+  in Picture closes, and isn't offered, while the picture plays on the
+  device.
+  The window tells each tile where it is, in one `TileLayout`: in front,
+  maximized, alone, in the top-left corner, and whether the mouse is in
+  the window and resting. The tile redraws when that changes.
 - `src/ui/pip/` (macOS): Picture in Picture. The tile's frames go, as they
   are due, to an `AVSampleBufferDisplayLayer` hidden over the tile, which
   AVKit's `AVPictureInPictureController` shows in the system's window; a
@@ -537,7 +547,7 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-    tile["Tile<br/>src/ui/player/cast.rs"] -->|"play, pause, seek,<br/>volume, tracks"| link["Link<br/>a thread of its own"]
+    tile["Tile<br/>src/ui/player/playback.rs"] -->|"play, pause, seek,<br/>volume, tracks"| link["Link<br/>a thread of its own"]
     link -->|"what the device does"| tile
     casting["Casting<br/>asks the targets every second"] --> target["Target<br/>each protocol Settings have on"]
     target -->|"finds"| device(["TV or speaker"])

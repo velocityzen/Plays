@@ -23,11 +23,7 @@ impl PlayerView {
     }
 
     pub fn seek_by(&mut self, seconds: f64, cx: &mut Context<Self>) {
-        if self.casting().is_some() {
-            self.seek(self.position() + seconds);
-        } else {
-            self.player.seek_by(seconds);
-        }
+        self.playback.seek_by(seconds);
         cx.notify();
     }
 
@@ -38,7 +34,8 @@ impl PlayerView {
 
     /// The file's chapters, once it's open.
     pub fn chapters(&self) -> Vec<Chapter> {
-        self.player
+        self.playback
+            .local()
             .info()
             .map(|info| info.chapters.clone())
             .unwrap_or_default()
@@ -92,45 +89,28 @@ impl PlayerView {
             self.note(note, cx);
             return;
         }
-        let frame = 1.0
-            / self
-                .player
-                .info()
-                .and_then(|info| info.frame_rate)
-                .filter(|fps| *fps > 0.0)
-                .unwrap_or(25.0);
-        let Some(pts) = self.player.frame_pts() else {
-            return;
-        };
-        self.player.pause();
-        // A seek shows the first frame that hasn't ended by its target, so
-        // aim into the middle of the frame wanted.
-        let target = if direction > 0.0 {
-            pts + 1.5 * frame
-        } else {
-            pts - 0.5 * frame
-        };
-        self.player.seek(target.max(0.0));
-        cx.notify();
+        if self.playback.step_frame(direction) {
+            cx.notify();
+        }
     }
 
     pub fn change_volume(&mut self, delta: f32, cx: &mut Context<Self>) {
-        let volume = (self.player.volume() + delta).clamp(0.0, 1.0);
+        let volume = (self.playback.local().volume() + delta).clamp(0.0, 1.0);
         self.set_volume(volume);
-        if delta > 0.0 && self.player.is_muted() {
+        if delta > 0.0 && self.playback.local().is_muted() {
             self.set_muted(false);
         }
         self.note(format!("Volume {}%", (volume * 100.0).round()), cx);
     }
 
     pub fn toggle_mute(&mut self, cx: &mut Context<Self>) {
-        let muted = !self.player.is_muted();
+        let muted = !self.playback.local().is_muted();
         self.set_muted(muted);
         self.note(if muted { "Muted" } else { "Unmuted" }, cx);
     }
 
     pub fn toggle_loop(&mut self, cx: &mut Context<Self>) {
-        let looping = !self.player.is_looping();
+        let looping = !self.playback.local().is_looping();
         self.set_looping(looping);
         self.note(if looping { "Loop on" } else { "Loop off" }, cx);
     }
@@ -138,7 +118,7 @@ impl PlayerView {
     /// Play the next track of a kind, after the last one going back to the
     /// first (and, for subtitles, to none), and roll the reel to it.
     pub fn next_track(&mut self, kind: TrackKind, cx: &mut Context<Self>) {
-        let Some(info) = self.player.info() else {
+        let Some(info) = self.playback.local().info() else {
             return;
         };
         let choices = track_choices(&info, kind);
@@ -167,7 +147,7 @@ impl PlayerView {
 
     /// Hide the subtitles showing, or show the ones hidden (or the first).
     pub fn toggle_subtitles(&mut self, cx: &mut Context<Self>) {
-        let Some(info) = self.player.info() else {
+        let Some(info) = self.playback.local().info() else {
             return;
         };
         if let Some(index) = info.subtitle_track {

@@ -62,7 +62,8 @@ impl PlayerView {
         } else {
             "play"
         };
-        let volume_icon = if self.player.is_muted() || self.player.volume() == 0.0 {
+        let player = self.playback.local();
+        let volume_icon = if player.is_muted() || player.volume() == 0.0 {
             "mute"
         } else {
             "volume"
@@ -71,7 +72,7 @@ impl PlayerView {
         let cast = self.render_cast_button(info, theme, window, cx);
         let tracks = info.filter(|info| has_track_choice(info));
         let subtitles_on = info.is_some_and(|i| i.subtitle_track.is_some());
-        let looping = self.player.is_looping();
+        let looping = player.is_looping();
 
         // The controls float on a panel over the bottom of the tile. Its
         // corners are less round than other panels', as it is short and
@@ -164,7 +165,8 @@ impl PlayerView {
                                                 .icon_color(overlay::text_muted())
                                                 .selected(looping)
                                                 .on_click(cx.listener(|this, _, _, cx| {
-                                                    let looping = !this.player.is_looping();
+                                                    let looping =
+                                                        !this.playback.local().is_looping();
                                                     this.set_looping(looping);
                                                     cx.notify();
                                                 })),
@@ -174,7 +176,7 @@ impl PlayerView {
                                         this.child(
                                             Button::icon("mute", volume_icon).overlay().on_click(
                                                 cx.listener(|this, _, _, cx| {
-                                                    let muted = !this.player.is_muted();
+                                                    let muted = !this.playback.local().is_muted();
                                                     this.set_muted(muted);
                                                     cx.notify();
                                                 }),
@@ -184,10 +186,10 @@ impl PlayerView {
                                             div().w(VOLUME_WIDTH).pr_1().child(
                                                 Slider::new(
                                                     "volume",
-                                                    if self.player.is_muted() {
+                                                    if player.is_muted() {
                                                         0.0
                                                     } else {
-                                                        self.player.volume()
+                                                        player.volume()
                                                     },
                                                     self.volume_drag.clone(),
                                                 )
@@ -254,45 +256,17 @@ impl PlayerView {
             return;
         };
         let time = event.value as f64 * duration;
-        // A device seeks once the slider lets go: it is too far away to
-        // follow it. A picture here, following its sound, shows the way.
-        if self.casting().is_some() {
-            self.scrub = (event.slide != Slide::End).then_some(time);
-            if self.casts_sound_only() && event.slide != Slide::End {
-                self.player.scrub(time);
-            }
-            if event.slide == Slide::End {
-                self.seek(time);
-            }
-            cx.notify();
-            return;
-        }
-        match event.slide {
-            Slide::Start => {
-                self.resume_after_scrub = self.player.is_playing();
-                self.player.pause();
-                self.scrub = Some(time);
-                self.player.scrub(time);
-            }
-            Slide::Move => {
-                self.scrub = Some(time);
-                self.player.scrub(time);
-            }
-            Slide::End => {
-                self.scrub = None;
-                self.player.seek(time);
-                if self.resume_after_scrub {
-                    self.player.play();
-                }
-            }
-        }
+        // The bar shows where the slider is until it's let go, wherever it
+        // plays.
+        self.scrub = (event.slide != Slide::End).then_some(time);
+        self.playback.scrub(event.slide, time);
         cx.notify();
     }
 
     fn on_volume(&mut self, event: &SliderEvent, _: &mut Window, cx: &mut Context<Self>) {
         let value = event.value;
         self.set_volume(value);
-        if value > 0.0 && self.player.is_muted() {
+        if value > 0.0 && self.playback.local().is_muted() {
             self.set_muted(false);
         }
         cx.notify();

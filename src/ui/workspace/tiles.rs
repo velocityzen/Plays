@@ -11,7 +11,7 @@ use crate::progress::{self, Note};
 use crate::settings::AudioDevice;
 use crate::ui::displays;
 use crate::ui::framing::Adjustments;
-use crate::ui::player::{PlayerEvent, PlayerView};
+use crate::ui::player::{PlayerEvent, PlayerView, TileLayout};
 use crate::ui::theme::layout::{
     AUDIO_WINDOW_SIZE, VIDEO_WINDOW_SIZE, WINDOW_MIN_SIZE, WINDOW_SIZE,
 };
@@ -40,29 +40,21 @@ impl Workspace {
     /// The one in the top-left corner is under the traffic lights.
     pub(super) fn tiles_changed(&mut self, cx: &mut Context<Self>) {
         let alone = self.tiles.len() == 1;
-        let (mouse_in_window, mouse_idle) = (self.mouse_inside, self.mouse_idle);
         let top_left = self
             .maximized
             .or_else(|| self.tiles.first().map(|t| t.view.entity_id()));
         let active = self.active_view().map(|view| view.entity_id());
         for tile in &self.tiles {
-            let is_top_left = top_left == Some(tile.view.entity_id());
-            let is_active = active == Some(tile.view.entity_id());
-            tile.view.update(cx, |view, cx| {
-                if view.alone != alone
-                    || view.top_left != is_top_left
-                    || view.mouse_in_window != mouse_in_window
-                    || view.mouse_idle != mouse_idle
-                    || view.active != is_active
-                {
-                    view.alone = alone;
-                    view.top_left = is_top_left;
-                    view.mouse_in_window = mouse_in_window;
-                    view.mouse_idle = mouse_idle;
-                    view.active = is_active;
-                    cx.notify();
-                }
-            });
+            let id = Some(tile.view.entity_id());
+            let layout = TileLayout {
+                active: active == id,
+                maximized: self.maximized == id,
+                alone,
+                top_left: top_left == id,
+                mouse_in_window: self.mouse_inside,
+                mouse_idle: self.mouse_idle,
+            };
+            tile.view.update(cx, |view, cx| view.set_layout(layout, cx));
         }
         cx.notify();
     }
@@ -176,19 +168,10 @@ impl Workspace {
         }
     }
 
+    /// Show the tile `id` alone, or every tile again if it is.
     fn toggle_maximize(&mut self, id: EntityId, cx: &mut Context<Self>) {
-        let maximized = (self.maximized != Some(id)).then_some(id);
-        self.set_maximized(maximized, cx);
+        self.maximized = (self.maximized != Some(id)).then_some(id);
         self.tiles_changed(cx);
-    }
-
-    /// Show the tile `maximized` alone, or with none, every tile.
-    pub(super) fn set_maximized(&mut self, maximized: Option<EntityId>, cx: &mut Context<Self>) {
-        self.maximized = maximized;
-        for tile in &self.tiles {
-            let maximized = maximized == Some(tile.view.entity_id());
-            tile.view.update(cx, |view, _| view.maximized = maximized);
-        }
     }
 
     /// The tile shortcuts go to: the maximized one, else the one the mouse

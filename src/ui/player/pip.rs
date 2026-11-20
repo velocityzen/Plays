@@ -81,7 +81,7 @@ impl PlayerView {
             self.note("The picture plays on the device it casts to", cx);
             return;
         }
-        let Some(frame) = self.player.frame() else {
+        let Some(frame) = self.playback.local().frame() else {
             self.note("No picture for Picture in Picture", cx);
             return;
         };
@@ -94,7 +94,7 @@ impl PlayerView {
             .get()
             .unwrap_or_else(|| Bounds::new(Point::default(), window.viewport_size()));
         let (events, mut received) = unbounded();
-        let pip = match Pip::new(window, bounds, self.player.is_live(), events) {
+        let pip = match Pip::new(window, bounds, self.playback.local().is_live(), events) {
             Ok(pip) => pip,
             Err(err) => {
                 log::warn!("Picture in Picture: {err:#}");
@@ -146,9 +146,9 @@ impl PlayerView {
     fn pump_pip(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Option<Duration> {
         self.pip.as_ref()?;
         self.background_tick(cx);
-        let cues = self.player.subtitles();
+        let cues = self.playback.local().subtitles();
         self.show_cues(cues);
-        let frame = self.player.frame();
+        let frame = self.playback.local().frame();
         let orientation = self
             .framing()
             .map_or(Orientation::UPRIGHT, |framing| framing.orientation());
@@ -157,7 +157,7 @@ impl PlayerView {
         let playback = Playback {
             playing,
             position: self.position(),
-            duration: self.duration().filter(|_| !self.player.is_live()),
+            duration: self.duration().filter(|_| !self.playback.local().is_live()),
         };
         let session = self.pip.as_mut()?;
         if session.started {
@@ -179,8 +179,8 @@ impl PlayerView {
         }
         Some(pump_wait(
             playing,
-            self.player.has_video(),
-            self.player.until_next_frame(),
+            self.playback.local().has_video(),
+            self.playback.local().until_next_frame(),
         ))
     }
 
