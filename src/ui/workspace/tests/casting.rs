@@ -692,7 +692,12 @@ fn the_picture_here_shows_where_the_slider_is_dragged_and_the_speaker_goes_there
 #[gpui::test]
 fn quitting_stops_the_device(cx: &mut TestAppContext) {
     let (window, mut cx, fake, tv) = start(cx, "clip.mp4", false);
+    let view = tile(window, &cx);
     cast(window, &mut cx, &fake, &tv);
+    say(&fake, &tv, State::Playing, 1.5);
+    wait(&mut cx, "the bar to follow the device", |cx| {
+        view.read_with(cx, |view, _| (view.position() - 1.5).abs() < 1e-9)
+    });
     let stopping = window
         .update(&mut cx, |workspace, _, cx| workspace.stop_casts(cx))
         .unwrap();
@@ -701,4 +706,12 @@ fn quitting_stops_the_device(cx: &mut TestAppContext) {
         thread.join().unwrap();
     }
     assert_eq!(calls(&fake, &tv).last(), Some(&Call::Stop));
+    // Where to resume is where the device was, not where the cast began.
+    let kept = window
+        .update(&mut cx, |workspace, _, cx| workspace.progress(cx))
+        .unwrap();
+    let [(_, position, _)] = kept.as_slice() else {
+        panic!("one file's progress, not {kept:?}");
+    };
+    assert!((position - 1.5).abs() < 0.05, "kept {position}");
 }

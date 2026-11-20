@@ -204,9 +204,14 @@ impl PlayerView {
     }
 
     /// Stop the device as the app quits, handing back the thread stopping
-    /// it, to wait for.
+    /// it, to wait for. The player here is left where the device was, so
+    /// that's where it resumes.
     pub fn stop_cast(&mut self) -> Option<std::thread::JoinHandle<()>> {
-        self.cast.take().and_then(|cast| cast.link.stop())
+        let cast = self.cast.take()?;
+        if !self.player.is_live() {
+            self.player.seek(cast.link.position());
+        }
+        cast.link.stop()
     }
 
     /// Show what the device does, say what went wrong, and end the cast

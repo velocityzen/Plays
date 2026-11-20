@@ -101,8 +101,10 @@ pub fn run(cx: &mut App, sources: Vec<Source>, opened: UnboundedReceiver<Vec<Str
     }
     open_from_system(cx, opened);
 
-    stop_casts_on_quit(cx);
+    // Progress is noted as the app quits before casts stop, while each
+    // knows where its device is.
     keep_progress(cx);
+    stop_casts_on_quit(cx);
 
     // Closing the last workspace window quits, even if the settings window is
     // still open.

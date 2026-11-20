@@ -540,8 +540,9 @@ sequenceDiagram
   unheard, playing and pausing as the speaker is seen to and following
   where it says it is, the time it said it at moved on to now; its clock
   eases there, and seeks where it is far off. Dropping the link stops the
-  device and the stream server lets the file go; as the app quits, it waits
-  a moment for the devices to stop.
+  device and the stream server lets the file go; as the app quits, where
+  each device was is kept to resume from, and the app waits a moment for
+  the devices to stop.
 - `src/cast/dlna.rs` adapts the DLNA crate: it asks each renderer found
   what it plays (its protocol info), which decides whether it shows video
   and how the stream server serves it (the files it lists, else a stream of
