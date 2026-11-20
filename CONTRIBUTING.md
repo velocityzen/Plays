@@ -485,7 +485,9 @@ nested too deep, an advert or a subscription lasting for ever, a chunk
 too long to count, a URL with a character across where `http://` would
 end, URLs with spaces or line breaks, a description whose services or
 icons are on another host or whose service type isn't one, and an advert
-for a description somewhere other than where it came from. Each has been
+for a description somewhere other than where it came from; and no more
+than 256 renderers are kept, with a description that can't wait to be
+read asked for again when its renderer is next heard. Each has been
 checked to fail when what it covers is broken.
 
 Each protocol crate has an example that talks to real devices on the

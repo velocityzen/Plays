@@ -698,7 +698,8 @@ happens over a channel.
   heard on SSDP's port, shared with whatever else listens there. A
   renderer is dropped when it says byebye or isn't heard from within the
   max-age it gave. Renderers are found over IPv4 only, and a description
-  is fetched only from the address its advert came from.
+  is fetched only from the address its advert came from, by one of four
+  threads, at most 64 waiting for them. At most 256 renderers are kept.
 - `device.rs`, `xml.rs`: the device description, read for the name,
   maker, model, icons and where AVTransport, RenderingControl and
   ConnectionManager are, of any version. The renderer may be a device

@@ -35,6 +35,12 @@ const TICK: Duration = Duration::from_millis(250);
 #[cfg(test)]
 const TICK: Duration = Duration::from_millis(10);
 
+/// The most renderers kept; adverts for others are let be until some go.
+const MOST_KEPT: usize = 256;
+/// How many descriptions are read at once, and how many more may wait.
+const DESCRIBERS: usize = 4;
+const WAITING: usize = 64;
+
 /// A change in what's found.
 #[derive(Clone, PartialEq, Debug)]
 pub enum Found {
@@ -62,6 +68,7 @@ impl Directory {
     /// needed.
     fn alive(&mut self, advert: &Advert, now: Instant) -> Option<String> {
         let expires = now + advert.max_age;
+        let full = self.entries.len() >= MOST_KEPT;
         match self.entries.get_mut(&advert.udn) {
             Some(entry) => {
                 entry.expires = entry.expires.max(expires);
@@ -70,6 +77,10 @@ impl Directory {
                     entry.location.clone_from(&advert.location);
                     advert.location.clone()
                 })
+            }
+            None if advert.is_renderer() && full => {
+                log::debug!("dlna: {MOST_KEPT} renderers kept; not {}", advert.udn);
+                None
             }
             None if advert.is_renderer() => {
                 self.entries.insert(
@@ -114,6 +125,18 @@ impl Directory {
         }
     }
 
+    /// Its description couldn't be asked for: it is asked for again when
+    /// it's next heard from.
+    fn forget(&mut self, udn: &str) {
+        match self.entries.get_mut(udn) {
+            Some(entry) if entry.device.is_some() => entry.location.clear(),
+            Some(_) => {
+                self.entries.remove(udn);
+            }
+            None => {}
+        }
+    }
+
     fn byebye(&mut self, udn: &str) -> Option<Found> {
         self.entries.remove(udn)?.device.map(Found::Removed)
     }
@@ -139,8 +162,8 @@ impl Directory {
     }
 }
 
-fn lock(directory: &Mutex<Directory>) -> MutexGuard<'_, Directory> {
-    directory
+fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
@@ -201,8 +224,55 @@ struct Browsing {
     /// The interfaces the group was joined on.
     joined: HashSet<Ipv4Addr>,
     directory: Arc<Mutex<Directory>>,
-    inputs: mpsc::Sender<Input>,
+    /// Where the describers take the descriptions to read from.
+    describe: mpsc::SyncSender<Described>,
     found: UnboundedSender<Found>,
+}
+
+/// A renderer's UDN, and where its description is.
+type Described = (String, String);
+
+/// `DESCRIBERS` threads reading the descriptions asked for, at most
+/// `WAITING` of them waiting, each read told to `inputs`. They end once
+/// what's asked of them is dropped.
+fn describers(inputs: &mpsc::Sender<Input>) -> io::Result<mpsc::SyncSender<Described>> {
+    let (asks, asked) = mpsc::sync_channel::<Described>(WAITING);
+    let asked = Arc::new(Mutex::new(asked));
+    for _ in 0..DESCRIBERS {
+        let asked = Arc::clone(&asked);
+        let inputs = inputs.clone();
+        thread::Builder::new()
+            .name("dlna describe".into())
+            .spawn(move || {
+                loop {
+                    let Ok((udn, location)) = lock(&asked).recv() else {
+                        return;
+                    };
+                    let device = Box::new(Device::describe(&location));
+                    let described = Input::Described {
+                        udn,
+                        location,
+                        device,
+                    };
+                    if inputs.send(described).is_err() {
+                        return;
+                    }
+                }
+            })?;
+    }
+    Ok(asks)
+}
+
+/// Have `advert`'s description read if it needs to be, or, with too many
+/// waiting already, forget it until it's heard from again.
+fn ask_for(directory: &mut Directory, describe: &mpsc::SyncSender<Described>, advert: &Advert) {
+    let Some(location) = directory.alive(advert, Instant::now()) else {
+        return;
+    };
+    if let Err(err) = describe.try_send((advert.udn.clone(), location)) {
+        log::debug!("dlna: {} not described now: {err}", advert.udn);
+        directory.forget(&advert.udn);
+    }
 }
 
 impl Browsing {
@@ -247,26 +317,7 @@ impl Browsing {
     fn heard(&self, message: Message) {
         let mut directory = lock(&self.directory);
         match message {
-            Message::Alive(advert) => {
-                if let Some(location) = directory.alive(&advert, Instant::now()) {
-                    let inputs = self.inputs.clone();
-                    let udn = advert.udn;
-                    let spawned =
-                        thread::Builder::new()
-                            .name("dlna describe".into())
-                            .spawn(move || {
-                                let device = Box::new(Device::describe(&location));
-                                let _ = inputs.send(Input::Described {
-                                    udn,
-                                    location,
-                                    device,
-                                });
-                            });
-                    if let Err(err) = spawned {
-                        log::warn!("dlna: {err}");
-                    }
-                }
-            }
+            Message::Alive(advert) => ask_for(&mut directory, &self.describe, &advert),
             Message::Byebye { udn, .. } => {
                 if let Some(found) = directory.byebye(&udn) {
                     drop(directory);
@@ -434,7 +485,7 @@ impl Browser {
             listen,
             joined: HashSet::new(),
             directory: Arc::clone(&directory),
-            inputs: inputs.clone(),
+            describe: describers(&inputs)?,
             found,
         };
         threads.push(
@@ -507,6 +558,61 @@ mod tests {
             rendering_control: None,
             connection_manager: None,
         }
+    }
+
+    #[test]
+    fn no_more_renderers_are_kept_than_the_most() {
+        let mut directory = Directory::default();
+        let now = Instant::now();
+        let tvs: Vec<_> = (0..=MOST_KEPT)
+            .map(|n| advert(&format!("uuid:tv-{n}"), MEDIA_RENDERER))
+            .collect();
+        for tv in &tvs[..MOST_KEPT] {
+            assert!(directory.alive(tv, now).is_some());
+        }
+        let one_more = &tvs[MOST_KEPT];
+        assert_eq!(directory.alive(one_more, now), None, "one too many");
+        assert_eq!(directory.entries.len(), MOST_KEPT);
+        directory.byebye("uuid:tv-0");
+        assert!(directory.alive(one_more, now).is_some(), "once one goes");
+    }
+
+    #[test]
+    fn a_description_too_many_wait_for_is_asked_for_when_next_heard() {
+        let mut directory = Directory::default();
+        let (describe, asked) = mpsc::sync_channel(1);
+        let tv = advert("uuid:tv", MEDIA_RENDERER);
+        let speaker = advert("uuid:speaker", MEDIA_RENDERER);
+        ask_for(&mut directory, &describe, &tv);
+        ask_for(&mut directory, &describe, &speaker);
+        assert_eq!(
+            asked.try_recv(),
+            Ok(("uuid:tv".to_owned(), tv.location.clone()))
+        );
+        assert!(asked.try_recv().is_err(), "no room for the speaker's");
+        ask_for(&mut directory, &describe, &speaker);
+        assert_eq!(
+            asked.try_recv(),
+            Ok(("uuid:speaker".to_owned(), speaker.location.clone())),
+            "asked for again once heard again"
+        );
+
+        // One described already, moving while there's no room, is asked
+        // for again too, and kept meanwhile.
+        directory.described("uuid:tv", &tv.location, Ok(device("TV")));
+        let moved = Advert {
+            location: "http://192.0.2.10/moved.xml".into(),
+            ..tv.clone()
+        };
+        describe.try_send(("busy".into(), String::new())).unwrap();
+        ask_for(&mut directory, &describe, &moved);
+        assert_eq!(directory.devices(), [device("TV")]);
+        asked.try_recv().unwrap();
+        ask_for(&mut directory, &describe, &moved);
+        assert_eq!(
+            asked.try_recv(),
+            Ok(("uuid:tv".to_owned(), moved.location.clone()))
+        );
     }
 
     #[test]
