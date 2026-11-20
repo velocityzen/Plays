@@ -467,8 +467,9 @@ played before or a track that lags. Unit tests read descriptions and
 protocol info in the forms Samsung, LG and Sonos give them and as a
 Devialet speaker gave them (ids changed), SSDP's messages, DIDL-Lite,
 times, URLs and HTTP, and refuse what a hostile device could send: XML
-nested too deep, and an advert or a subscription lasting for ever. Each
-has been checked to fail when what it covers is broken.
+nested too deep, an advert or a subscription lasting for ever, and a
+chunk too long to count. Each has been checked to fail when what it
+covers is broken.
 
 Each protocol crate has an example that talks to real devices on the
 network; see [ARCHITECTURE.md](ARCHITECTURE.md#the-chromecast-crate) for

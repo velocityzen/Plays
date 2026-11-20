@@ -241,7 +241,8 @@ fn read_chunks(reader: &mut impl BufRead, body: &mut Vec<u8>) -> io::Result<()> 
                 }
             }
         }
-        if body.len() + size > MAX_BODY {
+        // Not `body.len() + size`, which a chunk size could overflow.
+        if size > MAX_BODY - body.len() {
             return Err(io::Error::other("a body too long"));
         }
         let start = body.len();
@@ -430,6 +431,22 @@ mod tests {
         let (url, _server) = serve_once(b"HTTP/1.0 200 OK\r\n\r\nuntil it closes");
         let response = request("GET", &url, &[], &[], Duration::from_secs(2)).unwrap();
         assert_eq!(response.text(), "until it closes");
+    }
+
+    #[test]
+    fn chunks_too_long_are_errors() {
+        let mut body = Vec::new();
+        let mut huge = &b"5\r\nhello\r\nfffffffffffffffc\r\n"[..];
+        assert!(
+            read_chunks(&mut huge, &mut body).is_err(),
+            "past what counts"
+        );
+        let mut over = format!("{:x}\r\n", MAX_BODY + 1).into_bytes();
+        over.extend([0; 64]);
+        assert!(
+            read_chunks(&mut over.as_slice(), &mut Vec::new()).is_err(),
+            "a byte past the most a body may be"
+        );
     }
 
     #[test]
