@@ -130,7 +130,11 @@ impl AudioStream {
                 control.setup(sender)?;
                 setup_stream(&control, control_port, *key)?
             }
-            _ => announce_and_setup(&mut control, control_port, &encryption)?,
+            _ => {
+                let ports = announce_and_setup(&mut control, control_port, &encryption)?;
+                control.keep_alive(|| Request::rtsp("OPTIONS", "*"))?;
+                ports
+            }
         };
         let remote = control.remote.ip();
         let data = UdpSocket::bind((local, 0))?;

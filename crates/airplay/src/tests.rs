@@ -358,6 +358,23 @@ fn a_receiver_refusing_feedback_ends_the_session() {
     session.stop();
 }
 
+/// An AirPlay 1 speaker has no event connection and takes no feedback, so
+/// it's asked something every so often, and going away while it plays (or
+/// closing the connection, as for another sender) ends the session.
+#[test]
+fn an_airplay_1_speaker_going_away_ends_the_session() {
+    let fake = FakeReceiver::start(Kind::OldSpeaker);
+    let (mut stream, mut events) = AudioStream::connect(&fake.device(), None, &sender()).unwrap();
+    stream.write(&sound(3 * FRAMES_PER_PACKET)).unwrap();
+    assert!(fake.wait_for(|state| state.packets.len() == 3));
+    fake.go_away();
+    assert_eq!(
+        next_event(&mut events, Duration::from_secs(3)),
+        Some(Event::Gone)
+    );
+    stream.stop();
+}
+
 #[test]
 fn an_airplay_1_speaker_gets_plain_sound_and_says_its_delay() {
     let fake = FakeReceiver::start(Kind::OldSpeaker);

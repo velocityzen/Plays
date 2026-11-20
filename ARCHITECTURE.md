@@ -855,12 +855,14 @@ channel. Plays doesn't cast with it yet.
   requests fail at once.
 - `session.rs`: AirPlay 2's session. SETUP says where our clock is, which
   the receiver asks the time; the receiver talks back on an event
-  connection; feedback goes every two seconds. Feedback refused or the
-  event connection closed is the receiver gone, and stopping the session
-  then asks nothing more of it (no `/stop` or TEARDOWN, which could wait
-  on a receiver that's gone). Dropped, a session stops its threads (the
-  clock's, feedback, events, resends) and closes its connections, whether
-  it was stopped first, let go, or failed partway through setting up.
+  connection; feedback goes every two seconds. An AirPlay 1 speaker, which
+  has neither, is sent OPTIONS every two seconds instead. Feedback or
+  OPTIONS refused or unanswered, or the event connection closed, is the
+  receiver gone, and stopping the session then asks nothing more of it (no
+  `/stop` or TEARDOWN, which could wait on a receiver that's gone).
+  Dropped, a session stops its threads (the clock's, feedback or OPTIONS,
+  events, resends) and closes its connections, whether it was stopped
+  first, let go, or failed partway through setting up.
 - `video.rs`: `/play` with the URL and where to start, `/rate`, `/scrub`
   and `/stop`, and `/playback-info` read as loading, playing, paused or
   ended.

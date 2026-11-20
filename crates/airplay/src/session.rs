@@ -1,8 +1,8 @@
 //! What sound and video sessions share: the control connection, paired
 //! and encrypted; with AirPlay 2, the session set up on it, the event
 //! connection the receiver talks back on, and feedback every two seconds
-//! that keeps it all alive. Also the answers to the receiver's clock
-//! requests.
+//! that keeps it all alive, which AirPlay 1 has in OPTIONS instead. Also
+//! the answers to the receiver's clock requests.
 
 use std::io::Write;
 use std::net::{Shutdown, SocketAddr, TcpStream, UdpSocket};
@@ -176,7 +176,7 @@ impl Control {
         if let Some(port) = unsigned(answer.get("eventPort")).filter(|port| *port != 0) {
             self.listen_for_events(port as u16)?;
         }
-        self.keep_alive()
+        self.keep_alive(|| Request::rtsp("POST", "/feedback"))
     }
 
     /// Connect to where the receiver talks back, and answer it.
@@ -209,13 +209,14 @@ impl Control {
         Ok(())
     }
 
-    /// Send feedback every two seconds; it going unanswered means the
-    /// receiver is gone.
-    fn keep_alive(&mut self) -> Result<()> {
+    /// Send `ask` every two seconds, as feedback (AirPlay 2) or OPTIONS
+    /// (AirPlay 1, which has no event connection either); it going
+    /// unanswered means the receiver is gone.
+    pub fn keep_alive(&mut self, ask: fn() -> Request) -> Result<()> {
         let connection = Arc::clone(&self.connection);
         let (stop, gone) = (Arc::clone(&self.stop), Arc::clone(&self.gone));
         let events = self.events.clone();
-        self.threads.push(spawn("airplay feedback", move || {
+        self.threads.push(spawn("airplay keepalive", move || {
             let mut last = Instant::now();
             while !stop.load(Ordering::Relaxed) {
                 thread::sleep(POLL);
@@ -223,10 +224,10 @@ impl Control {
                     continue;
                 }
                 last = Instant::now();
-                let sent = lock(&connection).exchange(Request::rtsp("POST", "/feedback"));
+                let sent = lock(&connection).exchange(ask());
                 if let Err(err) = sent {
                     if !stop.load(Ordering::Relaxed) {
-                        log::info!("airplay: feedback went unanswered: {err}");
+                        log::info!("airplay: the receiver stopped answering: {err}");
                         went(&gone, &events);
                     }
                     break;
