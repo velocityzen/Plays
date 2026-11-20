@@ -5,7 +5,8 @@
 //! it is every second, which also tells when it's gone; both are told over
 //! a channel.
 
-use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::io;
+use std::net::TcpListener;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -47,6 +48,12 @@ const SHORTEST_SUBSCRIPTION: Duration = Duration::from_secs(1);
 const LONGEST_SUBSCRIPTION: Duration = Duration::from_secs(3600);
 /// How long an event or an unsubscribing has.
 const BRIEF: Duration = Duration::from_secs(2);
+/// How often the events listener looks for one, and to stop: a renderer
+/// waits up to this for its event to be taken.
+#[cfg(not(test))]
+const TICK: Duration = Duration::from_millis(50);
+#[cfg(test)]
+const TICK: Duration = Duration::from_millis(1);
 
 /// What a session says as it goes.
 #[derive(Clone, PartialEq, Debug)]
@@ -486,6 +493,11 @@ impl Inner {
             due
         };
         for mut subscription in due {
+            if self.ended.load(Ordering::Relaxed) {
+                // Left for the session's end to end.
+                self.state().subscriptions.push(subscription);
+                continue;
+            }
             let renewed = self.renew(&mut subscription).or_else(|err| {
                 log::debug!("dlna: renewing: {err}");
                 let events = subscription.url.to_string();
@@ -533,13 +545,30 @@ fn listen(inner: &Inner, listener: &TcpListener, closing: &AtomicBool) {
     let path = |of: Evented| format!("{base}/{}", of.path());
     let transport = path(Evented::AvTransport);
     let rendering = path(Evented::RenderingControl);
-    for stream in listener.incoming() {
-        if closing.load(Ordering::Relaxed) {
-            return;
-        }
-        let Ok(stream) = stream else {
-            continue;
+    // Not waiting in accept, which nothing may wake: once the Mac changes
+    // network, nothing can connect to the address it listens at.
+    if let Err(err) = listener.set_nonblocking(true) {
+        log::info!("dlna: no events: {err}");
+        return;
+    }
+    while !closing.load(Ordering::Relaxed) {
+        let stream = match listener.accept() {
+            Ok((stream, _)) => stream,
+            Err(err) => {
+                if !matches!(
+                    err.kind(),
+                    io::ErrorKind::WouldBlock | io::ErrorKind::Interrupted
+                ) {
+                    log::debug!("dlna: events: {err}");
+                }
+                thread::sleep(TICK);
+                continue;
+            }
         };
+        // Taken as the listener is, on macOS.
+        if stream.set_nonblocking(false).is_err() {
+            continue;
+        }
         // Events are heard one at a time, so each has BRIEF as a whole:
         // one sent a byte at a time would hold up the rest.
         let _ = stream.set_write_timeout(Some(BRIEF));
@@ -598,11 +627,11 @@ fn poll(inner: &Inner, wake: &mpsc::Receiver<()>) {
 /// A session with a renderer.
 pub struct Session {
     inner: Arc<Inner>,
-    listening: SocketAddr,
     closing: Arc<AtomicBool>,
     /// Wakes the polling thread, which stops once it's dropped.
     polling: Option<mpsc::Sender<()>>,
-    threads: Vec<JoinHandle<()>>,
+    listener: Option<JoinHandle<()>>,
+    poller: Option<JoinHandle<()>>,
 }
 
 impl Session {
@@ -630,14 +659,11 @@ impl Session {
             poll_every: AtomicU64::new(POLL.as_millis() as u64),
         });
         let closing = Arc::new(AtomicBool::new(false));
-        let mut threads = Vec::new();
         let listened = Arc::clone(&inner);
         let closed = Arc::clone(&closing);
-        threads.push(
-            thread::Builder::new()
-                .name("dlna events".into())
-                .spawn(move || listen(&listened, &listener, &closed))?,
-        );
+        let listener = thread::Builder::new()
+            .name("dlna events".into())
+            .spawn(move || listen(&listened, &listener, &closed))?;
         let services = [
             (Evented::AvTransport, Some(&device.av_transport)),
             (Evented::RenderingControl, device.rendering_control.as_ref()),
@@ -653,18 +679,25 @@ impl Session {
         }
         let (polling, wake) = mpsc::channel();
         let polled = Arc::clone(&inner);
-        threads.push(
-            thread::Builder::new()
-                .name("dlna poll".into())
-                .spawn(move || poll(&polled, &wake))?,
-        );
+        let poller = thread::Builder::new()
+            .name("dlna poll".into())
+            .spawn(move || poll(&polled, &wake));
+        let poller = match poller {
+            Ok(poller) => poller,
+            Err(err) => {
+                closing.store(true, Ordering::Relaxed);
+                let _ = listener.join();
+                inner.unsubscribe();
+                return Err(err.into());
+            }
+        };
         Ok((
             Self {
                 inner,
-                listening,
                 closing,
                 polling: Some(polling),
-                threads,
+                listener: Some(listener),
+                poller: Some(poller),
             },
             receiver,
         ))
@@ -811,16 +844,19 @@ impl Drop for Session {
     /// Leave the renderer as it is, unsubscribed.
     fn drop(&mut self) {
         self.inner.ended.store(true, Ordering::Relaxed);
+        self.closing.store(true, Ordering::Relaxed);
         drop(self.polling.take());
+        // A renewal under way puts its subscription back when answered, so
+        // the polling thread is done before they're ended.
+        if let Some(poller) = self.poller.take() {
+            let _ = poller.join();
+        }
         // One gone can't be told.
         if self.inner.state().ended != Some(Ended::Gone) {
             self.inner.unsubscribe();
         }
-        self.closing.store(true, Ordering::Relaxed);
-        // Wakes the listener to see it's closing.
-        let _ = TcpStream::connect_timeout(&self.listening, BRIEF);
-        for thread in self.threads.drain(..) {
-            let _ = thread.join();
+        if let Some(listener) = self.listener.take() {
+            let _ = listener.join();
         }
     }
 }
@@ -854,5 +890,36 @@ mod tests {
     #[test]
     fn tokens_differ() {
         assert_ne!(token(), token());
+    }
+
+    /// The events listener stops once the session closes, with nothing
+    /// connecting to it: when the Mac changes network, the address it
+    /// listens at goes, and nothing can.
+    #[test]
+    fn the_events_listener_stops_without_being_woken() {
+        let fake = crate::fake::FakeRenderer::start(crate::fake::Kind::Tv);
+        let (events, _events) = unbounded();
+        let inner = Arc::new(Inner {
+            device: fake.device(),
+            state: Mutex::default(),
+            events,
+            callback: format!("http://127.0.0.1:1/{}", token()),
+            ended: AtomicBool::new(false),
+            poll_every: AtomicU64::new(POLL.as_millis() as u64),
+        });
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let closing = Arc::new(AtomicBool::new(false));
+        let (stopped, stops) = mpsc::channel();
+        let closed = Arc::clone(&closing);
+        thread::spawn(move || {
+            listen(&inner, &listener, &closed);
+            let _ = stopped.send(());
+        });
+        thread::sleep(Duration::from_millis(50));
+        closing.store(true, Ordering::Relaxed);
+        assert!(
+            stops.recv_timeout(Duration::from_secs(2)).is_ok(),
+            "the listener still waits"
+        );
     }
 }

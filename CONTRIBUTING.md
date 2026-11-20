@@ -516,21 +516,23 @@ loading while it plays stops it first when it must; events tell what a TV
 does and asking tells what a speaker does, its position taken as heard
 when it first came, halfway between the asking and a slow answer, and
 asked again at once and then as often as told; subscriptions are renewed,
-made again when the renderer forgot them, and ended; and the session ends
-when the renderer goes away or plays something else, but not for what
-played before or a track that lags. Unit tests read descriptions and
-protocol info in the forms Samsung, LG and Sonos give them and as a
-Devialet speaker gave them (ids changed), SSDP's messages, DIDL-Lite,
-times, URLs and HTTP, and refuse what a hostile device could send: XML
-nested too deep, an advert or a subscription lasting for ever, a chunk
-too long to count, a URL with a character across where `http://` would
-end, URLs with spaces or line breaks, a description whose services or
-icons are on another host or whose service type isn't one, and an advert
-for a description somewhere other than where it came from; an answer sent
-a byte at a time is cut off when a whole one would be; and no more than
-256 renderers are kept, with a description that can't wait to be read
-asked for again when its renderer is next heard. Each has been checked to
-fail when what it covers is broken.
+made again when the renderer forgot them, and ended, one being renewed as
+the session ends too; and the session ends when the renderer goes away or
+plays something else, but not for what played before or a track that lags.
+Unit tests read descriptions and protocol info in the forms Samsung, LG
+and Sonos give them and as a Devialet speaker gave them (ids changed),
+SSDP's messages, DIDL-Lite, times, URLs and HTTP, check the events
+listener stops with nothing connecting to wake it, and refuse what a
+hostile device could send: XML nested too deep, an advert or a
+subscription lasting for ever, a chunk too long to count, a URL with a
+character across where `http://` would end, URLs with spaces or line
+breaks, a description whose services or icons are on another host or whose
+service type isn't one, and an advert for a description somewhere other
+than where it came from; an answer sent a byte at a time is cut off when a
+whole one would be; and no more than 256 renderers are kept, with a
+description that can't wait to be read asked for again when its renderer
+is next heard. Each has been checked to fail when what it covers is
+broken.
 
 Each protocol crate has an example that talks to real devices on the
 network; see [ARCHITECTURE.md](ARCHITECTURE.md#the-chromecast-crate) for

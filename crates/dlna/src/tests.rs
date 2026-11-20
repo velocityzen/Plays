@@ -412,6 +412,31 @@ fn subscriptions_are_renewed_and_ended() {
     assert_eq!(state.unsubscribed, sids);
 }
 
+/// A subscription being renewed as the session ends is ended too, once
+/// the renewal's answered, not left to run on.
+#[test]
+fn a_subscription_being_renewed_as_the_session_ends_is_ended() {
+    let fake = FakeRenderer::start(Renderer::Tv);
+    {
+        let mut state = fake.state();
+        state.subscription = 1;
+        state.renew_after = Duration::from_millis(500);
+    }
+    let (session, _events) = Session::connect(&fake.device()).unwrap();
+    assert!(fake.wait_for(|state| state.subscribers.iter().any(|it| it.renewals >= 1)));
+    let sids: Vec<String> = fake
+        .state()
+        .subscribers
+        .iter()
+        .map(|it| it.sid.clone())
+        .collect();
+    drop(session);
+    let mut state = fake.state();
+    assert!(state.subscribers.is_empty(), "{:?}", state.subscribers);
+    state.unsubscribed.sort();
+    assert_eq!(state.unsubscribed, sids);
+}
+
 #[test]
 fn a_subscription_that_cant_be_renewed_is_made_again() {
     let fake = FakeRenderer::start(Renderer::Tv);

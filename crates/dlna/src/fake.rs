@@ -86,6 +86,8 @@ pub struct State {
     pub locked_while_playing: bool,
     /// How long it takes to answer an action, after it's done it.
     pub answer_after: Duration,
+    /// How long it takes to answer a renewal, after it's counted it.
+    pub renew_after: Duration,
     /// How long a subscription lasts, in seconds.
     pub subscription: u64,
     /// The max-age its adverts and answers give, in seconds.
@@ -225,6 +227,7 @@ impl FakeRenderer {
             rel_time: kind == Kind::Tv,
             locked_while_playing: false,
             answer_after: Duration::ZERO,
+            renew_after: Duration::ZERO,
             subscription: 300,
             max_age: 1800,
             answers: true,
@@ -494,7 +497,14 @@ fn serve(kind: Kind, udn: &str, state: &Shared, stream: &TcpStream) {
             thread::sleep(after);
             reply
         }
-        ("SUBSCRIBE", "event") if kind == Kind::Tv => subscribe(service, state, &message),
+        ("SUBSCRIBE", "event") if kind == Kind::Tv => {
+            let reply = subscribe(service, state, &message);
+            if message.header("SID").is_some() {
+                let after = lock(state).renew_after;
+                thread::sleep(after);
+            }
+            reply
+        }
         ("UNSUBSCRIBE", "event") => {
             let mut state = lock(state);
             let sid = message.header("SID").unwrap_or_default();
