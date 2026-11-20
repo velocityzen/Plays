@@ -25,9 +25,8 @@ use crate::cast::{self, Casting, Device, Protocol};
 use crate::media::{Source, picture};
 use crate::settings::{AudioDevice, Settings};
 use crate::ui::framing::Ratio;
-use crate::ui::theme::layout::WINDOW_SIZE;
 use crate::ui::theme::{UiFont, pick_ui_font, refresh_system_colors};
-use crate::ui::workspace::Workspace;
+use crate::ui::workspace::{Workspace, save_place_on_quit};
 
 /// How often quitting looks whether the devices cast to have stopped.
 const STOP_POLL: Duration = Duration::from_millis(5);
@@ -82,7 +81,8 @@ pub fn run(cx: &mut App, sources: Vec<Source>, opened: UnboundedReceiver<Vec<Str
     set_up(cx, Settings::load(), AudioEngine::start, cast::protocols);
     awake::watch(cx);
 
-    let window = Workspace::open_window(WINDOW_SIZE, cx).expect("opening the first window");
+    let window = Workspace::open_first_window(cx).expect("opening the first window");
+    save_place_on_quit(cx);
 
     if !sources.is_empty() {
         window

@@ -24,6 +24,7 @@ impl Workspace {
             }
             return;
         }
+        self.leave_home();
         self.moving_to = Some(id);
         if window.is_fullscreen() {
             window.toggle_fullscreen();
@@ -34,14 +35,17 @@ impl Workspace {
     }
 
     /// Move to the display picked and go full screen there, once the window
-    /// is out of full screen. Runs on every render and tick.
+    /// is out of full screen; and back where it was once out of full screen
+    /// there (`come_home`). Runs on every render and tick.
     pub(super) fn finish_moving(&mut self, window: &mut Window) {
-        if window.is_fullscreen() {
-            return;
-        }
-        if let Some(id) = self.moving_to.take() {
+        let mut moved = false;
+        if !window.is_fullscreen()
+            && let Some(id) = self.moving_to.take()
+        {
             displays::move_to(window, id);
             window.toggle_fullscreen();
+            moved = true;
         }
+        self.come_home(window, moved);
     }
 }

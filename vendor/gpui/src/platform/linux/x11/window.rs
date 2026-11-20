@@ -17,7 +17,7 @@ use x11rb::{
     connection::Connection,
     cookie::{Cookie, VoidCookie},
     errors::ConnectionError,
-    properties::WmSizeHints,
+    properties::{WmSizeHints, WmSizeHintsSpecification},
     protocol::{
         sync,
         xinput::{self, ConnectionExt as _},
@@ -452,6 +452,8 @@ impl X11WindowState {
             bounds.size.height = 600.into();
         }
 
+        // Plays: a window kept where it is asked to be opens right there.
+        let nudge = if params.keep_position { 0 } else { 2 };
         check_reply(
             || {
                 format!(
@@ -459,7 +461,7 @@ impl X11WindowState {
                     visual.depth,
                     x_window,
                     visual_set.root,
-                    bounds.origin.x.0 + 2,
+                    bounds.origin.x.0 + nudge,
                     bounds.origin.y.0,
                     bounds.size.width.0,
                     bounds.size.height.0
@@ -469,7 +471,7 @@ impl X11WindowState {
                 visual.depth,
                 x_window,
                 visual_set.root,
-                (bounds.origin.x.0 + 2) as i16,
+                (bounds.origin.x.0 + nudge) as i16,
                 bounds.origin.y.0 as i16,
                 bounds.size.width.0 as u16,
                 bounds.size.height.0 as u16,
@@ -494,23 +496,31 @@ impl X11WindowState {
                 ),
             )?;
 
-            if let Some(size) = params.window_min_size {
+            // Plays: a position to keep is the user's, which window managers
+            // keep where they would otherwise place the window themselves;
+            // static gravity has it be the window's own, inside the frame
+            // they put around it, which is where gpui says it is after.
+            if params.window_min_size.is_some() || params.keep_position {
                 let mut size_hints = WmSizeHints::new();
-                let min_size = (size.width.0 as i32, size.height.0 as i32);
-                size_hints.min_size = Some(min_size);
+                size_hints.min_size = params
+                    .window_min_size
+                    .map(|size| (size.width.0 as i32, size.height.0 as i32));
+                if params.keep_position {
+                    size_hints.position = Some((
+                        WmSizeHintsSpecification::UserSpecified,
+                        bounds.origin.x.0,
+                        bounds.origin.y.0,
+                    ));
+                    size_hints.win_gravity = Some(xproto::Gravity::STATIC);
+                }
                 check_reply(
-                    || {
-                        format!(
-                            "X11 change of WM_SIZE_HINTS failed. min_size: {:?}",
-                            min_size
-                        )
-                    },
+                    || format!("X11 change of WM_SIZE_HINTS failed. {:?}", size_hints),
                     size_hints.set_normal_hints(xcb, x_window),
                 )?;
             }
 
             let reply = get_reply(|| "X11 GetGeometry failed.", xcb.get_geometry(x_window))?;
-            if reply.x == 0 && reply.y == 0 {
+            if !params.keep_position && reply.x == 0 && reply.y == 0 {
                 bounds.origin.x.0 += 2;
                 // Work around a bug where our rendered content appears
                 // outside the window bounds when opened at the default position
@@ -1081,7 +1091,20 @@ impl X11WindowStatePtr {
         bounds.map(|b| b.scale(scale_factor))
     }
 
-    pub fn set_bounds(&self, bounds: Bounds<i32>) -> anyhow::Result<()> {
+    pub fn set_bounds(&self, mut bounds: Bounds<i32>) -> anyhow::Result<()> {
+        // Plays: where the window is on the screen, asked of the server. A
+        // window manager's frame around the window makes the position the
+        // events carry relative to that frame instead.
+        let root = self.state.borrow().x_root_window;
+        let on_screen = get_reply(
+            || "X11 TranslateCoordinates failed.",
+            self.xcb.translate_coordinates(self.x_window, root, 0, 0),
+        )
+        .log_err();
+        if let Some(reply) = &on_screen {
+            bounds.origin = Point::new(reply.dst_x.into(), reply.dst_y.into());
+        }
+
         let mut resize_args = None;
         let is_resize;
         {
@@ -1092,8 +1115,9 @@ impl X11WindowStatePtr {
                 || bounds.size.height != state.bounds.size.height;
 
             // If it's a resize event (only width/height changed), we ignore `bounds.origin`
-            // because it contains wrong values.
-            if is_resize {
+            // because it contains wrong values. Plays: unless the server said
+            // where the window is.
+            if is_resize && on_screen.is_none() {
                 state.bounds.size = bounds.size;
             } else {
                 state.bounds = bounds;

@@ -1124,6 +1124,11 @@ pub struct WindowOptions {
     /// the window will be created on the main display
     pub display_id: Option<DisplayId>,
 
+    /// Plays: open the window at its bounds' origin and ask the window
+    /// manager to keep it there rather than place the window itself (X11's
+    /// USPosition). macOS always keeps it; Wayland never does.
+    pub keep_position: bool,
+
     /// The appearance of the window background.
     pub window_background: WindowBackgroundAppearance,
 
@@ -1186,6 +1191,13 @@ pub(crate) struct WindowParams {
     pub display_id: Option<DisplayId>,
 
     pub window_min_size: Option<Size<Pixels>>,
+
+    #[cfg_attr(
+        not(all(any(target_os = "linux", target_os = "freebsd"), feature = "x11")),
+        allow(dead_code)
+    )]
+    pub keep_position: bool,
+
     #[cfg(target_os = "macos")]
     pub tabbing_identifier: Option<String>,
 }
@@ -1241,6 +1253,7 @@ impl Default for WindowOptions {
             is_resizable: true,
             is_minimizable: true,
             display_id: None,
+            keep_position: false,
             window_background: WindowBackgroundAppearance::default(),
             app_id: None,
             window_min_size: None,

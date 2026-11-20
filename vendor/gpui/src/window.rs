@@ -947,6 +947,7 @@ impl Window {
             is_resizable,
             is_minimizable,
             display_id,
+            keep_position,
             window_background,
             app_id,
             window_min_size,
@@ -971,6 +972,7 @@ impl Window {
                 show,
                 display_id,
                 window_min_size,
+                keep_position,
                 #[cfg(target_os = "macos")]
                 tabbing_identifier,
             },

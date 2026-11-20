@@ -58,11 +58,17 @@ GPU-accelerated UI framework.
   shows it, or kept as HDR in a 16-bit PNG. Files are named after the video
   and the time, `Movie 01-23-45.678.png`, in Pictures or a folder you pick,
   and never replace another.
-- Any tile can pop out into a new window, where it keeps playing. Every
-  window works the same: drop more files on it and they play side by side.
+- Any tile can pop out into a new window, beside the one it left, where it
+  keeps playing. Every window works the same: drop more files on it and
+  they play side by side.
 - As files open, their window takes the size of the video, or of a grid
   with room for each video at its own size, scaled down to fit the screen.
   After that the window keeps the size you give it.
+- Windows open where you are working. Plays opens where its last window
+  closed, on the same display, at the same size. Without a saved place, or
+  when that display is gone, it opens on the display with the mouse (on
+  macOS). Settings and About open on the display of the window in front. On
+  Wayland, the compositor places windows.
 - On macOS 12 and later, a tile can play in macOS's own Picture in Picture
   window, over every app and Space, with its play/pause and skip buttons:
   `⌃⌘P`, Video → Picture in Picture, or the button on the tile. The sound
@@ -77,6 +83,7 @@ GPU-accelerated UI framework.
   and floats again after.
 - On macOS, Video → Output Device lists the displays by name and puts the
   player window full screen on the one picked, picture, subtitles and all.
+  Out of full screen, the window goes back where it was.
   An AirPlay TV or projector is one of them once it's connected as a
   separate display, and macOS sends the sound there with it. AirPlay
   speakers play the sound alone once macOS has them, and the picture is

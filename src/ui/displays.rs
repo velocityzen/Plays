@@ -56,6 +56,15 @@ pub fn move_to(window: &Window, id: u32) {
     let _ = (window, id);
 }
 
+/// Put `window` at `bounds` on display `id`, relative to it, as gpui opens
+/// windows there. Only on macOS, and not for a window that is full screen.
+pub fn put(window: &Window, id: u32, bounds: Bounds<Pixels>) {
+    #[cfg(target_os = "macos")]
+    mac::put(window, id, bounds);
+    #[cfg(not(target_os = "macos"))]
+    let _ = (window, id, bounds);
+}
+
 /// The display a new window opens on: the one with Plays' window in front,
 /// or else, on macOS, the one with the mouse. `None` leaves it to the
 /// system, which opens it on the main display. Ask it once whatever asked
@@ -101,8 +110,21 @@ pub fn beside(from: Bounds<Pixels>, size: Size<Pixels>, room: Bounds<Pixels>) ->
     } else {
         room.center().x - size.width / 2.
     };
-    let x = x.min(room.right() - size.width).max(room.left());
-    let y = from.top().min(room.bottom() - size.height).max(room.top());
+    inside(Bounds::new(point(x, from.top()), size), room)
+}
+
+/// `bounds` moved onto a display of `room`, and made smaller where it is
+/// bigger than that.
+pub fn inside(bounds: Bounds<Pixels>, room: Bounds<Pixels>) -> Bounds<Pixels> {
+    let size = bounds.size.min(&room.size);
+    let x = bounds
+        .left()
+        .min(room.right() - size.width)
+        .max(room.left());
+    let y = bounds
+        .top()
+        .min(room.bottom() - size.height)
+        .max(room.top());
     Bounds::new(point(x, y), size)
 }
 
@@ -112,7 +134,7 @@ pub fn beside(from: Bounds<Pixels>, size: Size<Pixels>, room: Bounds<Pixels>) ->
 mod mac {
     use std::ffi::{CStr, c_char};
 
-    use gpui::Window;
+    use gpui::{Bounds, Pixels, Window};
     use objc::runtime::{BOOL, Object, YES};
     use objc::{class, msg_send, sel, sel_impl};
     use raw_window_handle::{HasWindowHandle, RawWindowHandle};
@@ -209,30 +231,38 @@ mod mac {
         }
     }
 
-    pub fn move_to(window: &Window, id: u32) {
+    /// The NSWindow of `window`.
+    fn ns_window(window: &Window) -> Option<*mut Object> {
         // gpui's own `Window::window_handle` returns something else.
-        let Ok(handle) = HasWindowHandle::window_handle(window) else {
-            return;
-        };
+        let handle = HasWindowHandle::window_handle(window).ok()?;
         let RawWindowHandle::AppKit(handle) = handle.as_raw() else {
-            return;
+            return None;
         };
         let view = handle.ns_view.as_ptr().cast::<Object>();
         // SAFETY: `view` is the window's NSView, alive as long as `window`,
         // on the main thread.
+        let ns_window: *mut Object = unsafe { msg_send![view, window] };
+        (!ns_window.is_null()).then_some(ns_window)
+    }
+
+    /// The NSScreen of display `id`.
+    fn screen(id: u32) -> Option<*mut Object> {
+        // SAFETY: as in `names`.
         unsafe {
-            let ns_window: *mut Object = msg_send![view, window];
-            if ns_window.is_null() {
-                return;
-            }
             let screens: *mut Object = msg_send![class!(NSScreen), screens];
             let count: usize = msg_send![screens, count];
-            let Some(screen) = (0..count)
+            (0..count)
                 .map(|index| -> *mut Object { msg_send![screens, objectAtIndex: index] })
                 .find(|&screen| number(screen) == Some(id))
-            else {
-                return;
-            };
+        }
+    }
+
+    pub fn move_to(window: &Window, id: u32) {
+        let (Some(ns_window), Some(screen)) = (ns_window(window), screen(id)) else {
+            return;
+        };
+        // SAFETY: both are alive while `window` is, on the main thread.
+        unsafe {
             let area: Rect = msg_send![screen, visibleFrame];
             let frame: Rect = msg_send![ns_window, frame];
             let (width, height) = (frame.width.min(area.width), frame.height.min(area.height));
@@ -243,6 +273,25 @@ mod mac {
                 height,
             };
             let _: () = msg_send![ns_window, setFrame: moved display: YES];
+        }
+    }
+
+    pub fn put(window: &Window, id: u32, bounds: Bounds<Pixels>) {
+        let (Some(ns_window), Some(screen)) = (ns_window(window), screen(id)) else {
+            return;
+        };
+        // SAFETY: as in `move_to`. AppKit's frames start at the bottom left
+        // of the main screen; gpui's bounds at the top left of their own.
+        unsafe {
+            let display: Rect = msg_send![screen, frame];
+            let (width, height) = (f64::from(bounds.size.width), f64::from(bounds.size.height));
+            let frame = Rect {
+                x: display.x + f64::from(bounds.origin.x),
+                y: display.y + display.height - f64::from(bounds.origin.y) - height,
+                width,
+                height,
+            };
+            let _: () = msg_send![ns_window, setFrame: frame display: YES];
         }
     }
 }

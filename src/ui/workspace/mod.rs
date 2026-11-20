@@ -9,6 +9,7 @@ mod grid;
 mod mouse;
 mod on_top;
 mod opening;
+mod place;
 #[cfg(test)]
 mod tests;
 mod tiles;
@@ -35,6 +36,7 @@ use crate::media::picture;
 use crate::settings::Settings;
 
 pub use on_top::float_with_players;
+pub use place::save_place_on_quit;
 
 /// macOS has the menu bar for what the toolbar does, so its windows show
 /// just the video, with the traffic lights over it like other video players.
@@ -85,33 +87,49 @@ pub struct Workspace {
     /// The display it is moving to, full screen, once out of full screen
     /// where it is.
     moving_to: Option<u32>,
+    /// Where it is, out of full screen.
+    place: Option<place::Place>,
+    /// Where it was before Output Device put it full screen elsewhere.
+    home: Option<place::Home>,
     _settings_subscription: Subscription,
     /// Tiles show a cast button while there are devices to cast to.
     _casting_subscription: Subscription,
     _activation_subscription: Subscription,
+    _bounds_subscription: Subscription,
     _url_form_events: Subscription,
 }
 
 impl Workspace {
     /// Open an empty window of the given size, centered on the display in
-    /// use.
+    /// use. On X11, where one display spans every monitor, the window
+    /// manager places it.
     pub fn open_window(window_size: Size<Pixels>, cx: &mut App) -> Result<WindowHandle<Self>> {
         let display = displays::in_use(cx);
         let bounds = Bounds::centered(display, window_size, cx);
-        Self::open_window_at(display, bounds, cx)
+        Self::open(display, bounds, false, cx)
     }
 
-    /// Open an empty window at `bounds` on `display`, relative to it; the
-    /// main display when `None`.
+    /// Open an empty window at `bounds` on `display`, relative to it (the
+    /// main display when `None`), and keep it there, X11 too.
     pub(crate) fn open_window_at(
         display: Option<DisplayId>,
         bounds: Bounds<Pixels>,
+        cx: &mut App,
+    ) -> Result<WindowHandle<Self>> {
+        Self::open(display, bounds, true, cx)
+    }
+
+    fn open(
+        display: Option<DisplayId>,
+        bounds: Bounds<Pixels>,
+        keep_position: bool,
         cx: &mut App,
     ) -> Result<WindowHandle<Self>> {
         cx.open_window(
             WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
                 display_id: display,
+                keep_position,
                 titlebar: Some(TitlebarOptions {
                     title: Some("Plays".into()),
                     appears_transparent: true,
@@ -147,11 +165,16 @@ impl Workspace {
         });
         let casting_subscription = cx.observe_global::<Casting>(|_, cx| cx.notify());
         // Picks up an accent color changed in System Settings meanwhile.
-        let activation_subscription = cx.observe_window_activation(window, |_, window, cx| {
+        // The one in front is where the next launch opens.
+        let activation_subscription = cx.observe_window_activation(window, |this, window, cx| {
             if window.is_window_active() {
                 theme::refresh_system_colors(cx);
+                this.note_place(window, cx);
             }
         });
+        let bounds_subscription =
+            cx.observe_window_bounds(window, |this, window, cx| this.note_place(window, cx));
+        cx.on_release(|this, cx| this.closed(cx)).detach();
         let url_form = cx.new(|cx| UrlForm::new(cx).centered());
         let url_form_events =
             cx.subscribe_in(&url_form, window, |this, form, event, window, cx| {
@@ -201,10 +224,13 @@ impl Workspace {
             traffic_lights_shown: true,
             on_top: false,
             moving_to: None,
+            place: place::Place::of(window, cx),
+            home: None,
             gamma: cx.global::<Settings>().gamma(),
             _settings_subscription: settings_subscription,
             _casting_subscription: casting_subscription,
             _activation_subscription: activation_subscription,
+            _bounds_subscription: bounds_subscription,
             _url_form_events: url_form_events,
         }
     }

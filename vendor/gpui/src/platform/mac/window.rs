@@ -586,6 +586,8 @@ impl MacWindow {
             show,
             display_id,
             window_min_size,
+            // Plays: windows open where they are asked to here anyway.
+            keep_position: _,
             tabbing_identifier,
         }: WindowParams,
         executor: ForegroundExecutor,

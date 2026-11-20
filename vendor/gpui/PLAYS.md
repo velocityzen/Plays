@@ -198,6 +198,19 @@ after. On X11 it asks the window manager for `_NET_WM_STATE_ABOVE` and
 reads it back from `_NET_WM_STATE`. The test window keeps the flag;
 Wayland has no protocol for it, so there it does nothing.
 
+`src/platform.rs`, `src/window.rs` and the X11 window:
+`WindowOptions::keep_position` opens a window where its bounds say and
+asks the window manager to keep it there: on X11 the window's size hints
+carry its position as the user's (`USPosition`), which window managers
+keep rather than place the window themselves, with static gravity, so the
+position is the window's own inside their frame, as gpui reports it; and
+the window opens there without the 2 px nudge to the right gpui gives
+other windows. The X11 window asks the server where it is on the screen
+whenever it is moved or resized: a window manager's frame around it makes
+the position in the events relative to the frame, so windows reported
+where they are inside it, and opened there again, crept down and right. macOS always opens windows
+where they are asked to; Wayland lets the compositor place them.
+
 `src/taffy.rs`: two float literals are typed as `f32`, which newer Rust
 warns about otherwise.
 

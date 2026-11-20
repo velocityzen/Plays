@@ -6,10 +6,11 @@ mod casting_to_chromecast;
 mod casting_to_dlna;
 
 use gpui::{
-    AnyWindowHandle, AppContext, Bounds, EntityId, Modifiers, MouseButton, TestAppContext,
+    AnyWindowHandle, AppContext, Bounds, EntityId, Modifiers, MouseButton, Pixels, TestAppContext,
     VisualTestContext, WindowHandle, point, px, size,
 };
 
+use super::place::Place;
 use super::{TOOLBAR_SPACE, Workspace};
 use crate::app::ShowOnDisplay;
 use crate::hotkeys::{ToggleFloatOnTop, ToggleFloatOnTopWhilePlaying};
@@ -583,6 +584,135 @@ fn new_windows_open_on_the_display_in_use(cx: &mut TestAppContext) {
         point(from.right() + WINDOW_GAP, from.top()),
         "to its right, the tops level"
     );
+}
+
+/// A place on display `display`, by its id and name.
+fn place_on(display: u32, name: Option<&str>, at: (f32, f32), size: (f32, f32)) -> Place {
+    Place {
+        display,
+        name: name.map(str::to_owned),
+        x: at.0,
+        y: at.1,
+        width: size.0,
+        height: size.1,
+    }
+}
+
+/// Open a window at `place`, in front, and where it went.
+fn open_at(place: Option<Place>, cx: &mut VisualTestContext) -> (Option<u32>, Bounds<Pixels>) {
+    let window = cx
+        .update(|_, cx| Workspace::open_window_where(place, cx))
+        .unwrap();
+    let mut window_cx = VisualTestContext::from_window(window.into(), cx);
+    window_cx.update(|window, _| window.activate_window());
+    window_cx.run_until_parked();
+    window_cx.update(|window, cx| (displays::of(window, cx), window.bounds()))
+}
+
+#[gpui::test]
+fn the_first_window_opens_where_the_last_one_closed(cx: &mut TestAppContext) {
+    let (_, mut cx) = testing::start(cx);
+    let main = cx.update(|window, cx| displays::of(window, cx));
+    let second = u32::from(cx.add_display(size(px(2560.), px(1440.))));
+    let bounds = |x: f32, y: f32, width: f32, height: f32| {
+        Bounds::new(point(px(x), px(y)), size(px(width), px(height)))
+    };
+
+    let there = place_on(second, None, (100., 200.), (800., 600.));
+    assert_eq!(
+        open_at(Some(there), &mut cx),
+        (Some(second), bounds(100., 200., 800., 600.)),
+        "on its display, at its place and size"
+    );
+
+    let renumbered = place_on(second + 7, Some("Display 2"), (100., 200.), (800., 600.));
+    assert_eq!(
+        open_at(Some(renumbered), &mut cx).0,
+        Some(second),
+        "a display numbered anew is known by its name"
+    );
+
+    let off_the_edge = place_on(second, None, (2400., 1300.), (800., 600.));
+    assert_eq!(
+        open_at(Some(off_the_edge), &mut cx).1,
+        bounds(1760., 840., 800., 600.),
+        "on the display, as far as it fits"
+    );
+
+    // The window in front is on the second display now; the main one is
+    // where the next goes when its own is gone.
+    cx.update(|window, _| window.activate_window());
+    cx.run_until_parked();
+    let gone = place_on(second + 7, Some("Gone"), (100., 200.), (800., 600.));
+    let (display, at) = open_at(Some(gone), &mut cx);
+    assert_eq!(display, main, "where a new window opens, when it is gone");
+    assert_eq!(at.size, size(px(800.), px(600.)), "at its size");
+}
+
+#[gpui::test]
+fn the_window_in_front_or_closed_last_is_where_the_next_launch_opens(cx: &mut TestAppContext) {
+    let (first, mut cx) = testing::start(cx);
+    let second = u32::from(cx.add_display(size(px(2560.), px(1440.))));
+    let last = |cx: &mut VisualTestContext| cx.update(|_, cx| Workspace::last_place(cx));
+    let main = cx.update(|window, cx| displays::of(window, cx)).unwrap();
+    assert_eq!(last(&mut cx).map(|place| place.display), Some(main));
+
+    let there = place_on(second, None, (100., 200.), (800., 600.));
+    let window = cx
+        .update(|_, cx| Workspace::open_window_where(Some(there), cx))
+        .unwrap();
+    let mut there_cx = VisualTestContext::from_window(window.into(), &cx);
+    there_cx.update(|window, _| window.activate_window());
+    there_cx.run_until_parked();
+    there_cx.simulate_resize(size(px(900.), px(700.)));
+    there_cx.run_until_parked();
+    assert_eq!(
+        last(&mut cx),
+        Some(place_on(second, None, (100., 200.), (900., 700.))),
+        "the window in front, as it was resized"
+    );
+
+    first
+        .update(&mut cx, |_, window, _| window.activate_window())
+        .unwrap();
+    cx.run_until_parked();
+    assert_eq!(last(&mut cx).map(|place| place.display), Some(main));
+
+    there_cx.update(|window, _| window.remove_window());
+    cx.run_until_parked();
+    assert_eq!(
+        last(&mut cx),
+        Some(place_on(
+            second,
+            Some("Display 2"),
+            (100., 200.),
+            (900., 700.)
+        )),
+        "the window closed last, with its display's name"
+    );
+}
+
+#[gpui::test]
+fn leaving_full_screen_on_another_display_goes_back_where_it_was(cx: &mut TestAppContext) {
+    let (window, mut cx) = testing::start(cx);
+    open(window, &mut cx, &["clip.mp4"], false);
+    let second = u32::from(cx.add_display(size(px(2560.), px(1440.))));
+    let away = |cx: &mut VisualTestContext| {
+        cx.update(|window, _| window.refresh());
+        cx.run_until_parked();
+        window
+            .read_with(cx, |workspace, _| workspace.is_away())
+            .unwrap()
+    };
+    let here = cx.update(|_, cx| Workspace::last_place(cx));
+
+    cx.dispatch_action(ShowOnDisplay(second));
+    assert!(away(&mut cx), "full screen on the other display");
+    assert!(cx.update(|window, _| window.is_fullscreen()));
+
+    cx.update(|window, _| window.toggle_fullscreen());
+    assert!(!away(&mut cx), "back, out of full screen");
+    assert_eq!(cx.update(|_, cx| Workspace::last_place(cx)), here);
 }
 
 #[gpui::test]
