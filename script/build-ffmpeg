@@ -12,7 +12,7 @@
 # On macOS FFmpeg uses VideoToolbox and AudioToolbox, and macOS's TLS
 # (Secure Transport), so the app needs nothing beyond macOS. On Linux it
 # uses the system's OpenSSL for TLS, and VA-API, NVDEC and VDPAU when their
-# development packages are installed (see README.md).
+# development packages are installed (see CONTRIBUTING.md).
 #
 # Needs a C compiler, make, pkg-config, ninja and python3 (for meson, which
 # builds dav1d and is downloaded here), and nasm on x86_64.
@@ -63,7 +63,7 @@ if [ ${#missing[@]} -gt 0 ]; then
     if [ "$(uname -s)" = Darwin ]; then
         echo "Install them with Xcode's command line tools and Homebrew: brew install pkgconf ninja" >&2
     else
-        echo "README.md lists the packages to install." >&2
+        echo "CONTRIBUTING.md lists the packages to install." >&2
     fi
     exit 1
 fi

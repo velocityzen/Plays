@@ -62,7 +62,8 @@ x11rb = "0.13"
 
 [features]
 # Scripted runs of the real app, for what headless tests can't reach:
-# `script/smoke` (see README). Its settings are the defaults, never saved.
+# `script/smoke` (see CONTRIBUTING.md). Its settings are the defaults,
+# never saved.
 smoke = []
 
 [build-dependencies]
