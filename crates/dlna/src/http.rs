@@ -5,13 +5,14 @@
 
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::net::{IpAddr, SocketAddr, TcpStream, ToSocketAddrs, UdpSocket};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// How long each address has to take a connection.
 const CONNECT: Duration = Duration::from_secs(3);
-/// The most of a head or a body taken.
+/// The most of a head or a body taken: a description, an answer or an
+/// event is a few kilobytes.
 const MAX_HEAD: usize = 64 * 1024;
-const MAX_BODY: usize = 8 * 1024 * 1024;
+const MAX_BODY: usize = 1024 * 1024;
 
 pub const USER_AGENT: &str = "dlna/0.1 UPnP/1.0 DLNADOC/1.50";
 
@@ -285,7 +286,37 @@ fn connect(url: &Url) -> io::Result<TcpStream> {
     Err(refused.unwrap_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no address")))
 }
 
-/// Send a request and wait up to `timeout` for the response.
+/// Reads from a stream until a deadline, each read waiting only as long
+/// as is left: a device sending a byte at a time takes no longer.
+pub struct Deadline<'a> {
+    stream: &'a TcpStream,
+    until: Instant,
+}
+
+impl<'a> Deadline<'a> {
+    pub fn new(stream: &'a TcpStream, within: Duration) -> Self {
+        Self {
+            stream,
+            until: Instant::now() + within,
+        }
+    }
+}
+
+impl Read for Deadline<'_> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let left = self.until.saturating_duration_since(Instant::now());
+        if left.is_zero() {
+            return Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "no whole message in time",
+            ));
+        }
+        self.stream.set_read_timeout(Some(left))?;
+        self.stream.read(buf)
+    }
+}
+
+/// Send a request and wait up to `timeout` for the whole response.
 pub fn request(
     method: &str,
     url: &Url,
@@ -311,7 +342,7 @@ pub fn request(
     let mut bytes = request.into_bytes();
     bytes.extend_from_slice(body);
     stream.write_all(&bytes)?;
-    Message::read(&stream, true)
+    Message::read(Deadline::new(&stream, timeout), true)
 }
 
 /// Write a response; the connection is closed after.
@@ -468,6 +499,29 @@ mod tests {
         let (url, _server) = serve_once(b"HTTP/1.0 200 OK\r\n\r\nuntil it closes");
         let response = request("GET", &url, &[], &[], Duration::from_secs(2)).unwrap();
         assert_eq!(response.text(), "until it closes");
+    }
+
+    #[test]
+    fn an_answer_sent_a_byte_at_a_time_takes_no_longer_than_a_whole_one_may() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = Url::parse(&format!("http://{}/path", listener.local_addr().unwrap())).unwrap();
+        thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let _ = Message::read(&stream, false);
+            let _ = stream.write_all(b"HTTP/1.1 200 OK\r\n");
+            // Each byte well within the wait, but never the whole head.
+            for _ in 0..200 {
+                thread::sleep(Duration::from_millis(50));
+                if stream.write_all(b"X").is_err() {
+                    return;
+                }
+            }
+        });
+        let started = Instant::now();
+        let answer = request("GET", &url, &[], &[], Duration::from_millis(500));
+        let took = started.elapsed();
+        assert!(answer.is_err(), "no whole answer came");
+        assert!(took < Duration::from_secs(2), "it took {took:?}");
     }
 
     #[test]

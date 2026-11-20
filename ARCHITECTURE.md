@@ -666,7 +666,8 @@ a session's own, and says what happens over a channel.
   its own certificate, so any is taken, though the handshake is checked
   against it), and on it Chromium's `CastMessage` protobufs, each after its
   length, carrying JSON. Whatever comes after the device closes TLS is
-  dropped.
+  dropped, and a device that takes nothing of a write for ten seconds is
+  gone: the connection closes, which ends the cast.
 - `session.rs`: a cast. It connects to the device, launches the Default
   Media Receiver (or joins it) and connects to that; requests wait for the
   answer with their request id. A thread reads everything the device says:
@@ -709,8 +710,9 @@ happens over a channel.
   protocol info is read into capabilities: the protocol, MIME type and
   DLNA profile of each.
 - `http.rs`, `soap.rs`: just enough HTTP/1.1, and SOAP actions on it. A
-  refusal's `UPnPError` becomes a typed fault, as each service numbers
-  them.
+  response has its time as a whole, however slowly it comes, and is at
+  most a megabyte after its head. A refusal's `UPnPError` becomes a typed
+  fault, as each service numbers them.
 - `media.rs`: the DIDL-Lite that goes with a URL (title, class, `res`
   with its protocol info, duration and size), with subtitles both as a
   second `res` and as Samsung's `sec:CaptionInfoEx`, as DLNA has no

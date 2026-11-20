@@ -17,6 +17,12 @@ use crate::proto::{self, CastMessage};
 /// How long each address has to take the connection.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
+/// How long a write waits for the device to take it: one that takes
+/// nothing for that long is gone.
+#[cfg(not(test))]
+const WRITE_TIMEOUT: Duration = Duration::from_secs(10);
+#[cfg(test)]
+const WRITE_TIMEOUT: Duration = Duration::from_millis(500);
 
 pub(crate) fn provider() -> Arc<CryptoProvider> {
     Arc::new(rustls::crypto::ring::default_provider())
@@ -136,6 +142,7 @@ impl Channel {
     pub fn start(mut tcp: TcpStream, mut tls: Connection) -> io::Result<(Self, Incoming)> {
         tcp.set_nodelay(true)?;
         tcp.set_read_timeout(Some(HANDSHAKE_TIMEOUT))?;
+        tcp.set_write_timeout(Some(WRITE_TIMEOUT))?;
         while tls.is_handshaking() {
             tls.complete_io(&mut tcp)?;
         }
@@ -154,10 +161,16 @@ impl Channel {
         Ok((channel, incoming))
     }
 
+    /// Send a message; if the device won't take it in time, the
+    /// connection is closed, which ends the reading half.
     pub fn send(&self, message: &CastMessage) -> io::Result<()> {
         let mut tls = lock(&self.tls);
         tls.writer().write_all(&message.frame())?;
-        flush(&mut tls, &self.tcp)
+        let flushed = flush(&mut tls, &self.tcp);
+        if flushed.is_err() {
+            let _ = self.tcp.shutdown(Shutdown::Both);
+        }
+        flushed
     }
 
     /// Say goodbye and close the connection, which ends the reading half.
@@ -280,5 +293,55 @@ mod tests {
         let wait = Duration::from_secs(5);
         assert_eq!(reads.recv_timeout(wait), Ok(Ok(Some(ping))));
         assert_eq!(reads.recv_timeout(wait), Ok(Ok(None)));
+    }
+
+    #[test]
+    fn a_device_that_takes_nothing_more_is_given_up_on() {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("a port");
+        let address = listener.local_addr().expect("its address");
+        let (shaken, hands) = mpsc::channel();
+        thread::spawn(move || {
+            let (mut tcp, _) = listener.accept().expect("the sender");
+            let mut tls = ServerConnection::new(server_config()).expect("TLS");
+            while tls.is_handshaking() {
+                tls.complete_io(&mut tcp).expect("the handshake");
+            }
+            // Read nothing more, but keep the connection open.
+            shaken.send(tcp).expect("the test");
+        });
+        let (channel, mut incoming) = Channel::connect(&[address]).expect("a connection");
+        let _tcp = hands.recv().expect("the handshake");
+        let padding = "x".repeat(60_000);
+        let big = CastMessage::json(
+            "sender-0",
+            PLATFORM,
+            HEARTBEAT,
+            &json!({"type": "PING", "padding": padding}),
+        );
+        let (sent, sends) = mpsc::channel();
+        thread::spawn(move || {
+            // Far more than the sockets between hold.
+            for _ in 0..4000 {
+                if channel.send(&big).is_err() {
+                    let _ = sent.send(true);
+                    return;
+                }
+            }
+            let _ = sent.send(false);
+        });
+        assert_eq!(
+            sends.recv_timeout(Duration::from_secs(10)),
+            Ok(true),
+            "a write gave up"
+        );
+        let (read, reads) = mpsc::channel();
+        thread::spawn(move || {
+            let _ = read.send(matches!(incoming.next(), Ok(None) | Err(_)));
+        });
+        assert_eq!(
+            reads.recv_timeout(Duration::from_secs(5)),
+            Ok(true),
+            "the reading half ended"
+        );
     }
 }

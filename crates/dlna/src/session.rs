@@ -16,7 +16,7 @@ use futures_channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
 
 use crate::device::{Device, Service};
 use crate::error::{Error, Result};
-use crate::http::{self, Message, Url};
+use crate::http::{self, Deadline, Message, Url};
 use crate::media::{self, Media, Position, Status, TransportState, Volume};
 use crate::soap::{self, Answer, Fault};
 use crate::xml::Element;
@@ -540,9 +540,10 @@ fn listen(inner: &Inner, listener: &TcpListener, closing: &AtomicBool) {
         let Ok(stream) = stream else {
             continue;
         };
-        let _ = stream.set_read_timeout(Some(BRIEF));
+        // Events are heard one at a time, so each has BRIEF as a whole:
+        // one sent a byte at a time would hold up the rest.
         let _ = stream.set_write_timeout(Some(BRIEF));
-        let Ok(message) = Message::read(&stream, false) else {
+        let Ok(message) = Message::read(Deadline::new(&stream, BRIEF), false) else {
             continue;
         };
         let of = match message.head.request() {

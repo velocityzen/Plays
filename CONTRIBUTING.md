@@ -462,8 +462,9 @@ answering, when the app closes or another launches, and when another
 sender plays something else. Unit tests check the protobuf framing, the
 JSON LOAD sends and the status read back, records from a Google TV, a
 Nest speaker and a group, and that what a device sends after closing TLS
-is dropped rather than read for ever. Each has been checked to fail when what it
-covers is broken.
+is dropped rather than read for ever, and that a device which takes
+nothing more of what's sent is given up on. Each has been checked to fail
+when what it covers is broken.
 
 The DLNA crate's tests use the fake renderer over HTTP and SSDP on this
 computer: it's found by searching and by its advert, and dropped on byebye
@@ -485,10 +486,11 @@ nested too deep, an advert or a subscription lasting for ever, a chunk
 too long to count, a URL with a character across where `http://` would
 end, URLs with spaces or line breaks, a description whose services or
 icons are on another host or whose service type isn't one, and an advert
-for a description somewhere other than where it came from; and no more
-than 256 renderers are kept, with a description that can't wait to be
-read asked for again when its renderer is next heard. Each has been
-checked to fail when what it covers is broken.
+for a description somewhere other than where it came from; an answer sent
+a byte at a time is cut off when a whole one would be; and no more than
+256 renderers are kept, with a description that can't wait to be read
+asked for again when its renderer is next heard. Each has been checked to
+fail when what it covers is broken.
 
 Each protocol crate has an example that talks to real devices on the
 network; see [ARCHITECTURE.md](ARCHITECTURE.md#the-chromecast-crate) for
