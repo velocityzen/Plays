@@ -24,6 +24,7 @@ use std::ffi::c_int;
 use std::fmt::Display;
 use std::panic::{self, AssertUnwindSafe};
 use std::path::PathBuf;
+use std::ptr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, TryRecvError};
@@ -1935,49 +1936,82 @@ pub(super) fn convert_pixels(
         });
     }
     let scaler = scaler.as_mut().expect("scaler was just created");
-    scaler.context.run(frame, &mut scaler.output)?;
     let gamma = picture::gamma(light != Light::Sdr);
-    if let Some(mapper) = &mut scaler.tone_mapper {
-        mapper.set_gamma(gamma);
-    }
-
     let (width, height) = (scaler.width, scaler.height);
+    let Some(mapper) = &mut scaler.tone_mapper else {
+        // SDR is scaled straight into the picture's own pixels.
+        let mut pixels = scale_to_bgra(&mut scaler.context, frame, width, height)?;
+        if gamma != 1.0 {
+            let table = picture::gamma_table(gamma);
+            picture::in_rows(&mut pixels, width as usize * 4, |_, row| {
+                for pixel in row.as_chunks_mut::<4>().0 {
+                    let [b, g, r, a] = *pixel;
+                    *pixel = [table[b as usize], table[g as usize], table[r as usize], a];
+                }
+            });
+        }
+        return Ok((width, height, pixels));
+    };
+    mapper.set_gamma(gamma);
+    scaler.context.run(frame, &mut scaler.output)?;
     let output = &scaler.output;
-    let pixels = match (&scaler.tone_mapper, &reshaping) {
-        (Some(mapper), Some(reshaping)) => reshaping.render(
+    let pixels = match &reshaping {
+        Some(reshaping) => reshaping.render(
             mapper,
             [0, 1, 2].map(|plane| (output.data(plane), output.stride(plane))),
             width as usize,
             height as usize,
         ),
-        (Some(mapper), None) => mapper.run(
+        None => mapper.run(
             output.data(0),
             output.stride(0),
             width as usize,
             height as usize,
         ),
-        (None, _) if gamma == 1.0 => {
-            let (stride, data) = (output.stride(0), output.data(0));
-            let row = width as usize * 4;
-            let mut pixels = Vec::with_capacity(row * height as usize);
-            for y in 0..height as usize {
-                pixels.extend_from_slice(&data[y * stride..y * stride + row]);
-            }
-            pixels
-        }
-        (None, _) => {
-            let (stride, data) = (output.stride(0), output.data(0));
-            let table = picture::gamma_table(gamma);
-            picture::bgra_rows(width as usize, height as usize, |y, out| {
-                let (row, _) = data[y * stride..][..out.len()].as_chunks::<4>();
-                let (out, _) = out.as_chunks_mut::<4>();
-                for (out, &[b, g, r, a]) in out.iter_mut().zip(row) {
-                    *out = [table[b as usize], table[g as usize], table[r as usize], a];
-                }
-            })
-        }
     };
     Ok((width, height, pixels))
+}
+
+/// Scale `frame` with `context`, made for its format and size, into
+/// `width` x `height` tightly packed BGRA, with no frame in between.
+fn scale_to_bgra(
+    context: &mut scaling::Context,
+    frame: &frame::Video,
+    width: u32,
+    height: u32,
+) -> Result<Vec<u8>> {
+    let stride = width as usize * 4;
+    let len = stride * height as usize;
+    let mut pixels = Vec::<u8>::with_capacity(len);
+    let planes = [
+        pixels.as_mut_ptr(),
+        ptr::null_mut(),
+        ptr::null_mut(),
+        ptr::null_mut(),
+    ];
+    let strides = [c_int::try_from(stride)?, 0, 0, 0];
+    // SAFETY: the context reads `frame`'s planes, as long as their strides
+    // say, for the format and size it was made for, which its key holds
+    // `frame` to; and writes `height` rows of `stride` bytes into the one
+    // plane of packed BGRA it was made for, which `pixels` has room for.
+    let made = unsafe {
+        ffmpeg::ffi::sws_scale(
+            context.as_mut_ptr(),
+            (*frame.as_ptr()).data.as_ptr() as *const *const u8,
+            (*frame.as_ptr()).linesize.as_ptr(),
+            0,
+            frame.height() as c_int,
+            planes.as_ptr(),
+            strides.as_ptr(),
+        )
+    };
+    if made != height as c_int {
+        bail!("the pixel converter made {made} rows of {height}");
+    }
+    // SAFETY: each of those rows is `stride` bytes, every pixel written:
+    // all of `len`.
+    unsafe { pixels.set_len(len) };
+    Ok(pixels)
 }
 
 /// Size to convert a frame to: corrects non-square pixels and applies the
@@ -2202,6 +2236,62 @@ impl AudioDecoder {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A `width` x `height` frame of 4:2:0 Y'CbCr, each sample telling
+    /// where it is.
+    fn pattern(width: u32, height: u32) -> frame::Video {
+        let mut frame = frame::Video::new(Pixel::YUV420P, width, height);
+        for plane in 0..3 {
+            let stride = frame.stride(plane);
+            for (y, row) in frame.data_mut(plane).chunks_mut(stride).enumerate() {
+                for (x, sample) in row.iter_mut().enumerate() {
+                    *sample = (x * 3 + y * 5 + plane * 64) as u8;
+                }
+            }
+        }
+        frame
+    }
+
+    #[test]
+    fn sdr_is_scaled_straight_into_the_pictures_pixels() {
+        ffmpeg::init().unwrap();
+        // 162 is not a multiple of 4: rows that don't end on 16 bytes.
+        for (width, height) in [(160, 90), (162, 91), (2, 2)] {
+            let frame = pattern(width, height);
+            let mut scaler = None;
+            let (w, h, pixels) = convert_pixels(&mut scaler, None, &frame).unwrap();
+            assert_eq!((w, h), (width, height & !1));
+
+            // As swscale makes it in a frame of its own.
+            let mut context = scaling::Context::get(
+                Pixel::YUV420P,
+                width,
+                height,
+                Pixel::BGRA,
+                w,
+                h,
+                scaling::Flags::BILINEAR,
+            )
+            .unwrap();
+            set_colorspace(&mut context, &frame);
+            let mut own = frame::Video::empty();
+            context.run(&frame, &mut own).unwrap();
+            let row = w as usize * 4;
+            let expected: Vec<u8> = own
+                .data(0)
+                .chunks(own.stride(0))
+                .take(h as usize)
+                .flat_map(|line| &line[..row])
+                .copied()
+                .collect();
+            assert!(pixels == expected, "{width}x{height}: other pixels");
+            assert_eq!(
+                scaler.unwrap().output.format(),
+                Pixel::None,
+                "{width}x{height}: a frame in between"
+            );
+        }
+    }
 
     fn packet(stream: usize, time: i64, duration: i64) -> Packet {
         let mut packet = Packet::empty();

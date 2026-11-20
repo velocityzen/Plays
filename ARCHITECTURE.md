@@ -275,9 +275,12 @@ copied back and converted on the CPU.
   CPU from 16-bit 4:4:4 planes; for zero-copy surfaces, the curves are
   packed for gpui's Dolby Vision shader instead.
 - `src/media/picture.rs`: the forms a decoded picture takes, and the gamma
-  for SDR and HDR video that every player shares. Converted frames get it on
-  the CPU; surfaces carry it to gpui's shaders each time they are drawn, so a
-  change shows at once, even on paused video.
+  for SDR and HDR video that every player shares. Converted frames get it
+  on the CPU; surfaces carry it to gpui's shaders each time they are
+  drawn, so a change shows at once, even on paused video. Frames converted
+  on the CPU share out their rows among up to eight threads kept for it (a
+  rayon pool), rather than threads started for each frame; swscale writes
+  an SDR frame straight into the picture's own pixels.
 - `src/media/orientation.rs`: the eight ways to turn and mirror a picture,
   and the one a video's display matrix asks for.
 

@@ -1,11 +1,12 @@
 //! Decoded pictures in the forms gpui can draw, and the gamma every picture
 //! is shown with.
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::{Arc, OnceLock};
 use std::thread;
 
 use gpui::{ImageId, RenderImage};
+use rayon::prelude::*;
 
 #[cfg(target_os = "macos")]
 pub use super::videotoolbox::Surface;
@@ -117,33 +118,87 @@ pub fn rows<T: Clone + Default + Send>(
     height: usize,
     row: impl Fn(usize, &mut [T]) + Sync,
 ) -> Vec<T> {
+    // Zeros are asked of the system (calloc), whose fresh pages are.
     let mut out = vec![T::default(); row_len * height];
-    if out.is_empty() {
-        return out;
-    }
-    let threads = thread::available_parallelism()
-        .map_or(1, |n| n.get())
-        .min(8)
-        .min(height.div_ceil(64))
-        .max(1);
-    let rows_per_thread = height.div_ceil(threads);
-    let row = &row;
-    thread::scope(|scope| {
-        for (chunk, out) in out.chunks_mut(rows_per_thread * row_len).enumerate() {
-            let first_row = chunk * rows_per_thread;
-            scope.spawn(move || {
-                for (y, out) in out.chunks_exact_mut(row_len).enumerate() {
-                    row(first_row + y, out);
-                }
-            });
-        }
-    });
+    in_rows(&mut out, row_len, row);
     out
+}
+
+/// Threads at most that share out a picture's rows.
+const MOST_BANDS: usize = 8;
+/// Rows at least that are worth a thread.
+const BAND_ROWS: usize = 64;
+
+/// The threads that convert pictures, kept from one frame to the next;
+/// none, should the system refuse them.
+fn pool() -> Option<&'static rayon::ThreadPool> {
+    static POOL: OnceLock<Option<rayon::ThreadPool>> = OnceLock::new();
+    POOL.get_or_init(|| {
+        let threads = thread::available_parallelism().map_or(1, |n| n.get());
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(threads.min(MOST_BANDS))
+            .thread_name(|n| format!("pictures {n}"))
+            .build()
+            .inspect_err(|err| log::warn!("converting pictures on one thread: {err}"))
+            .ok()
+    })
+    .as_ref()
+}
+
+/// Run `row` over each of the rows of `row_len` items `pixels` holds, in
+/// bands of them spread over the cores.
+pub fn in_rows<T: Send>(pixels: &mut [T], row_len: usize, row: impl Fn(usize, &mut [T]) + Sync) {
+    if row_len == 0 || pixels.is_empty() {
+        return;
+    }
+    let height = pixels.len() / row_len;
+    let band = |(band, out): (usize, &mut [T]), band_rows: usize| {
+        for (y, out) in out.chunks_exact_mut(row_len).enumerate() {
+            row(band * band_rows + y, out);
+        }
+    };
+    let Some(pool) = pool() else {
+        band((0, pixels), height);
+        return;
+    };
+    let bands = pool
+        .current_num_threads()
+        .min(height.div_ceil(BAND_ROWS))
+        .max(1);
+    let band_rows = height.div_ceil(bands);
+    pool.install(|| {
+        pixels
+            .par_chunks_mut(band_rows * row_len)
+            .enumerate()
+            .for_each(|out| band(out, band_rows));
+    });
 }
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+    use std::sync::Mutex;
+
     use super::*;
+
+    #[test]
+    fn rows_are_made_by_threads_kept_for_them() {
+        let seen = Mutex::new(HashSet::new());
+        for _ in 0..20 {
+            let made = rows(4, 1024, |y, out: &mut [u8]| {
+                seen.lock().unwrap().insert(thread::current().id());
+                out.fill(y as u8);
+            });
+            assert!(
+                made.chunks(4)
+                    .enumerate()
+                    .all(|(y, row)| row == [y as u8; 4])
+            );
+        }
+        let threads = seen.into_inner().unwrap().len();
+        let kept = pool().map_or(0, rayon::ThreadPool::current_num_threads);
+        assert!(threads <= kept + 1, "{threads} threads for 20 frames");
+    }
 
     #[test]
     fn gamma_keeps_black_and_white() {
