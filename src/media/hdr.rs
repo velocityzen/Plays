@@ -18,6 +18,7 @@ use ffmpeg::frame;
 use ffmpeg::util::color::TransferCharacteristic;
 use ffmpeg_next as ffmpeg;
 
+use super::colors::Colors;
 use super::picture::{apply_gamma, bgra_rows};
 
 /// HDR reference white (BT.2408), shown as SDR white.
@@ -56,7 +57,7 @@ pub enum Transfer {
 impl Transfer {
     /// The frame's HDR transfer function, or `None` for SDR.
     pub fn of(frame: &frame::Video) -> Option<Self> {
-        match frame.color_transfer_characteristic() {
+        match Colors::of_frame(frame).transfer {
             TransferCharacteristic::SMPTE2084 => Some(Self::Pq),
             TransferCharacteristic::ARIB_STD_B67 => Some(Self::Hlg),
             _ => None,

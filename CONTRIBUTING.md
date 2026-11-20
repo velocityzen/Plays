@@ -157,18 +157,19 @@ cargo test plays_through_the_devices_here -- --ignored --nocapture
 The engine tests check opening, accurate seeking, where skips land,
 scrubbing (the frames it queues and nothing past them, no sound, decoding
 on or going back to a keyframe), audio resampling through the mixer, end
-of file, looping, keeping up when frames are consumed rarely, a decoder
-thread panicking (saying so and waiting no more), a paused player's
-decoder sleeping, and hardware decoding (VideoToolbox is required on
-macOS); a unit test reads timestamps at the ends of what they can be. The
-mixer's tests count, with an allocator of their own, that mixing neither
-allocates nor frees, and hold its locks and the clock's on another thread
-to see it doesn't wait for them. On macOS, zero-copy frames are read back
-and run through the surface shader's math, and must match the software
-path's colors for SD and HD video, tagged or not, limited or full range.
-HDR10 and HLG clips (needs `libx265`) must come out as tagged 10-bit
-surfaces whose HDR shader math, for an SDR screen, matches the CPU tone
-mapping.
+of file, looping, a file whose colors FFmpeg has no names for (played to
+the end, with them unknown), keeping up when frames are consumed rarely, a
+decoder thread panicking (saying so and waiting no more), a paused
+player's decoder sleeping, and hardware decoding (VideoToolbox is required
+on macOS); unit tests read timestamps at the ends of what they can be, and
+take colors FFmpeg has no names for as unspecified. The mixer's tests
+count, with an allocator of their own, that mixing neither allocates nor
+frees, and hold its locks and the clock's on another thread to see it
+doesn't wait for them. On macOS, zero-copy frames are read back and run
+through the surface shader's math, and must match the software path's
+colors for SD and HD video, tagged or not, limited or full range. HDR10
+and HLG clips (needs `libx265`) must come out as tagged 10-bit surfaces
+whose HDR shader math, for an SDR screen, matches the CPU tone mapping.
 
 A Matroska file with two audio and two SRT tracks checks that tracks are
 listed and named, that switching audio while playing brings in the other
@@ -556,9 +557,9 @@ cargo run -p airplay --example airplay -- list
 
 ### Fixtures
 
-The window, casting and stream server tests open the small files in
-`tests/fixtures`, committed so they run without the `ffmpeg` tool.
-`script/make-fixtures` makes them again (writing the DVD subtitles'
+The window, media engine, casting and stream server tests open the small
+files in `tests/fixtures`, committed so they run without the `ffmpeg`
+tool. `script/make-fixtures` makes them again (writing the DVD subtitles'
 pictures itself, as FFmpeg makes picture subtitles only from pictures, and
 the colors FFmpeg has no names for into `clip-odd-colors.mkv`, as it won't
 write them). It takes `ffmpeg` with `libx264`; run it only to change them.

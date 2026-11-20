@@ -7,6 +7,8 @@ use ffmpeg::ffi;
 use ffmpeg::util::{color, format::Pixel, format::Sample};
 use ffmpeg_next as ffmpeg;
 
+use super::colors::Colors;
+
 /// The file or stream as a whole.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct ContainerDetails {
@@ -58,7 +60,8 @@ impl ContainerDetails {
 
 impl VideoDetails {
     pub(super) fn of(decoder: &ffmpeg::decoder::Video) -> Self {
-        let full_range = match decoder.color_range() {
+        let colors = Colors::of_decoder(decoder);
+        let full_range = match colors.range {
             color::Range::JPEG => Some(true),
             color::Range::MPEG => Some(false),
             color::Range::Unspecified => None,
@@ -70,13 +73,13 @@ impl VideoDetails {
                 .filter(|format| *format != Pixel::None)
                 .and_then(Pixel::descriptor)
                 .map(|descriptor| descriptor.name()),
-            matrix: Some(decoder.color_space())
+            matrix: Some(colors.space)
                 .filter(|space| *space != color::Space::Unspecified)
                 .and_then(|space| space.name()),
-            primaries: Some(decoder.color_primaries())
+            primaries: Some(colors.primaries)
                 .filter(|primaries| *primaries != color::Primaries::Unspecified)
                 .and_then(|primaries| primaries.name()),
-            transfer: Some(decoder.color_transfer_characteristic())
+            transfer: Some(colors.transfer)
                 .filter(|transfer| *transfer != color::TransferCharacteristic::Unspecified)
                 .and_then(|transfer| transfer.name()),
             full_range,

@@ -3,6 +3,7 @@
 pub mod audio;
 pub mod chapters;
 pub mod clock;
+mod colors;
 pub mod decoder;
 pub mod details;
 pub mod dovi;

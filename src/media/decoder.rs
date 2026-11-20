@@ -44,6 +44,7 @@ use parking_lot::{Condvar, Mutex};
 use super::audio::{AudioChunk, AudioSource, SOURCE_CHANNELS};
 use super::chapters::Chapter;
 use super::clock::Clock;
+use super::colors::Colors;
 use super::details::{AudioDetails, ContainerDetails, VideoDetails};
 use super::dovi;
 use super::external::{self, Reading, SubtitleFile};
@@ -2109,7 +2110,8 @@ pub(crate) fn output_size(
 /// Use the right YUV matrix and range so colors match other players.
 pub(super) fn set_colorspace(context: &mut scaling::Context, frame: &frame::Video) {
     use ffmpeg::ffi;
-    let matrix = match frame.color_space() {
+    let colors = Colors::of_frame(frame);
+    let matrix = match colors.space {
         color::Space::BT709 => ffi::SWS_CS_ITU709,
         color::Space::FCC => ffi::SWS_CS_FCC,
         color::Space::SMPTE240M => ffi::SWS_CS_SMPTE240M,
@@ -2117,7 +2119,7 @@ pub(super) fn set_colorspace(context: &mut scaling::Context, frame: &frame::Vide
         color::Space::Unspecified if frame.height() >= 720 => ffi::SWS_CS_ITU709,
         _ => ffi::SWS_CS_DEFAULT,
     };
-    let full_range = matches!(frame.color_range(), color::Range::JPEG) as c_int;
+    let full_range = matches!(colors.range, color::Range::JPEG) as c_int;
     // SAFETY: the context pointer is valid for the lifetime of `context`, and
     // sws_getCoefficients returns pointers to static tables.
     unsafe {

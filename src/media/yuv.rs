@@ -12,6 +12,7 @@ use ffmpeg::util::{chroma, color};
 use ffmpeg_next as ffmpeg;
 use gpui::{YuvColor, YuvFrame, YuvLayout, YuvTransfer};
 
+use super::colors::Colors;
 use super::decoder::output_size;
 use super::{dovi, hdr};
 
@@ -167,12 +168,13 @@ fn planes(
         })
         .collect();
     let transfer = hdr::Transfer::of(tags);
-    let full_range = tags.color_range() == color::Range::JPEG
+    let colors = Colors::of_frame(tags);
+    let full_range = colors.range == color::Range::JPEG
         || tags.format() == Pixel::YUVJ420P
         || samples_frame.format() == Pixel::YUVJ420P;
     let color = YuvColor {
         ycbcr_to_rgb: ycbcr_to_rgb(
-            luma_weights(tags.color_space(), tags.height()),
+            luma_weights(colors.space, tags.height()),
             full_range,
             format.depth,
             format.to_code,

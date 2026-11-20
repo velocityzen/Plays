@@ -243,6 +243,35 @@ fn reports_the_streams_as_the_file_has_them() {
     assert!(read_on, "{:?}", player.stats());
 }
 
+/// A file whose colors FFmpeg has no names for, as a Matroska Colour element
+/// can give them (primaries 15, transfer 40 and matrix 30, which the
+/// demuxer passes on as they are), plays to the end with them unknown.
+#[test]
+fn plays_video_whose_colors_ffmpeg_has_no_names_for() {
+    ffmpeg_next::init().unwrap();
+    let fixtures = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    let source = Source::File(fixtures.join("clip-odd-colors.mkv"));
+    let mut player = Player::open(source, None, options(true, false));
+    let start = Instant::now();
+    let mut last = None;
+    while player.is_playing() && start.elapsed() < Duration::from_secs(10) {
+        player.tick();
+        last = player.frame_pts().or(last);
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert!(player.error().is_none(), "{:?}", player.error());
+    assert!(!player.is_playing(), "the player should get to the end");
+    assert!(player.frame().is_some());
+    assert!(last.is_some_and(|pts| pts > 1.5), "last frame at {last:?}");
+    let info = player.info().unwrap();
+    let video = info.video_details.as_ref().unwrap();
+    assert_eq!(video.pixel_format, Some("yuv420p10le"));
+    assert_eq!(
+        (video.matrix, video.primaries, video.transfer),
+        (None, None, None)
+    );
+}
+
 /// Pull audio through a mixer until the player stops; returns non-silent frames heard.
 fn drain_audio(
     player: &mut Player,

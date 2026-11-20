@@ -389,6 +389,12 @@ flowchart LR
   may be on a network drive, and by name without looking at each file.
 - `src/media/details.rs`: what the console shows of the file's format and
   the streams playing, read from their decoders before they decode.
+- `src/media/colors.rs`: a video's range, matrix, primaries and transfer,
+  read from its decoder and frames as numbers. ffmpeg-next reads them as
+  enums with gaps, which a file's numbers can fall in (Matroska's demuxer
+  passes them on unchecked), and that is undefined behavior; a number
+  FFmpeg has no name for is unspecified here instead. `clippy.toml` keeps
+  ffmpeg-next's own getters for them out of the code.
 - `src/media/tracks.rs`: the tracks a file has, and their names for the
   menu (language, title, forced and SDH, codec, channels).
 - `src/media/chapters.rs`: a file's chapters, read with its info (their
