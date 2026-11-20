@@ -12,7 +12,7 @@
 use std::collections::{BTreeMap, VecDeque};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, SyncSender, sync_channel};
-use std::sync::{Arc, Condvar, Mutex, MutexGuard};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -26,6 +26,7 @@ use crate::media::{self, MediaInfo, Source};
 use crate::mux::{Format, Muxer, OutStream};
 use crate::overlay::{Coding, Overlay};
 use crate::plan::{AudioPlan, Plan, VideoPlan};
+use crate::playlist;
 use crate::profile::Segments;
 use crate::segments::{Domain, Timeline, set_discard_all_but};
 
@@ -826,6 +827,9 @@ fn make_segments(
 pub(crate) struct Vod {
     media: Arc<Media>,
     timeline: Timeline,
+    /// The media playlist and the subtitles', made when first asked for.
+    playlist: OnceLock<Arc<Vec<u8>>>,
+    subtitles: OnceLock<Arc<Vec<u8>>>,
     state: Mutex<VodState>,
     changed: Condvar,
 }
@@ -858,6 +862,8 @@ impl Vod {
         Arc::new(Self {
             media,
             timeline,
+            playlist: OnceLock::new(),
+            subtitles: OnceLock::new(),
             state: Mutex::default(),
             changed: Condvar::new(),
         })
@@ -865,6 +871,22 @@ impl Vod {
 
     pub fn timeline(&self) -> &Timeline {
         &self.timeline
+    }
+
+    /// The media playlist, every segment in it, made once.
+    pub fn playlist(&self) -> Arc<Vec<u8>> {
+        let made = self
+            .playlist
+            .get_or_init(|| Arc::new(playlist::vod(&self.timeline, self.media.kind).into_bytes()));
+        Arc::clone(made)
+    }
+
+    /// The subtitles' playlist, a WebVTT file for each segment, made once.
+    pub fn subtitles_playlist(&self) -> Arc<Vec<u8>> {
+        let made = self
+            .subtitles
+            .get_or_init(|| Arc::new(playlist::subtitles(&self.timeline).into_bytes()));
+        Arc::clone(made)
     }
 
     /// The init segment, for MP4 segments.
@@ -1415,6 +1437,20 @@ mod tests {
             segment: 0.1,
         };
         Vod::new(Arc::new(media), timeline)
+    }
+
+    #[test]
+    fn its_playlists_are_made_once() {
+        let vod = tone();
+        let playlist = vod.playlist();
+        assert!(playlist.ends_with(b"9.ts\n#EXT-X-ENDLIST\n"));
+        assert!(Arc::ptr_eq(&playlist, &vod.playlist()), "made again");
+        let subtitles = vod.subtitles_playlist();
+        assert!(subtitles.ends_with(b"s9.vtt\n#EXT-X-ENDLIST\n"));
+        assert!(
+            Arc::ptr_eq(&subtitles, &vod.subtitles_playlist()),
+            "made again"
+        );
     }
 
     /// The segments kept once the job has stopped for now, and where the

@@ -12,6 +12,10 @@ use crate::media::MediaInfo;
 use crate::plan::{Plan, VideoPlan};
 use crate::profile::Container;
 
+/// The most segments a file is cut into, a week of six-second ones: a
+/// broken or crafted file can claim to last for ever.
+pub(crate) const MOST_SEGMENTS: usize = 100_000;
+
 /// Which timestamp a keyframe is known by: MP4's index holds decoding
 /// times, Matroska's (and a scan) presentation times.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -61,7 +65,8 @@ impl Timeline {
 /// The segments for `plan`, each about `target` seconds long.
 pub(crate) fn timeline(input: &mut Input, media: &MediaInfo, plan: &Plan, target: f64) -> Timeline {
     let start = media.start;
-    let end = start + media.duration.unwrap_or(0.0);
+    let claimed = media.duration.unwrap_or(0.0);
+    let end = start + claimed.min(MOST_SEGMENTS as f64 * target).max(0.0);
     if let Some(VideoPlan::Copy { stream, .. }) = plan.video {
         let time_base = f64::from(
             input
@@ -83,6 +88,9 @@ pub(crate) fn timeline(input: &mut Input, media: &MediaInfo, plan: &Plan, target
             let mut starts = Vec::new();
             let mut kept = Vec::new();
             for key in keyframes {
+                if starts.len() == MOST_SEGMENTS {
+                    break;
+                }
                 let time = key as f64 * time_base;
                 if starts
                     .last()
@@ -171,6 +179,55 @@ pub(crate) fn set_discard_all_but(input: &mut Input, keep: &[usize], none: bool)
             } else {
                 ffi::AVDiscard::AVDISCARD_ALL
             };
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+    use std::sync::Arc;
+
+    use super::*;
+    use crate::media::{self, Source};
+    use crate::plan::Delivery;
+    use crate::profile::{Segments, VideoCodec};
+
+    fn opened(name: &str) -> (Input, MediaInfo) {
+        crate::init();
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/fixtures")
+            .join(name);
+        let source = Source::File(path);
+        let input = media::open(&source, Arc::default()).expect("the fixture");
+        let info = MediaInfo::read(&input, &source.location());
+        (input, info)
+    }
+
+    #[test]
+    fn a_file_claiming_to_last_for_ever_has_no_more_than_the_most_segments() {
+        let target = 6.0;
+        let most = MOST_SEGMENTS as f64 * target;
+        let sound = Plan {
+            delivery: Delivery::Hls(Segments::Ts),
+            video: None,
+            audio: None,
+            subtitles: None,
+        };
+        let copied = Plan {
+            video: Some(VideoPlan::Copy {
+                stream: 0,
+                codec: VideoCodec::H264,
+            }),
+            ..sound.clone()
+        };
+        // Cut every target length, and at the video's keyframes.
+        for (name, plan) in [("clip.mp4", copied), ("tone.m4a", sound)] {
+            let (mut input, mut info) = opened(name);
+            info.duration = Some(10.0 * most);
+            let cut = timeline(&mut input, &info, &plan, target);
+            assert!(cut.len() <= MOST_SEGMENTS, "{name}: {} segments", cut.len());
+            assert!(cut.end - info.start <= most, "{name}: ends at {}", cut.end);
         }
     }
 }

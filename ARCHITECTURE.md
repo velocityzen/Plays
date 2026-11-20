@@ -611,7 +611,8 @@ flowchart LR
 - `segments.rs`: where a file's segments start. Copied video can be cut
   only at its own keyframes, read from the file's index (or, with none, by
   reading the file); re-encoded video and sound alone are cut every six
-  seconds, with a keyframe made there.
+  seconds, with a keyframe made there. A file is at most 100,000 segments
+  long, about a week: one claiming to last longer is taken to end there.
 - `mux.rs`: fragmented MP4, MPEG-TS, ADTS or FLAC written in memory, cut
   into segments where told. Every timestamp is moved ten seconds later, so
   none is negative and segments made by different jobs line up.
@@ -638,7 +639,7 @@ flowchart LR
   italics and bold.
 - `playlist.rs`: the master playlist (bandwidth, size, frame rate,
   subtitles, and codec names read from each stream's parameter sets) and
-  the media and subtitle playlists.
+  the media and subtitle playlists, each made once for a file.
 - `http.rs`, `server.rs`: a small HTTP/1.1 server with a thread for each
   connection, at most 64 at once, kept open between requests for 30
   seconds, in which the next request's head must all come: GET, HEAD and

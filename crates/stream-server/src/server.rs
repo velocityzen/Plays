@@ -543,7 +543,7 @@ impl CastState {
         let kind = self.media.kind;
         match name {
             "master.m3u8" => self.master(),
-            "video.m3u8" => Response::text(HLS_MIME, playlist::vod(vod.timeline(), kind)),
+            "video.m3u8" => Response::bytes(HLS_MIME, vod.playlist()),
             "init.mp4" if kind == Segments::Fmp4 => answer(vod.init(), "video/mp4"),
             _ => match segment_number(name, kind) {
                 Some(segment) if segment < vod.timeline().len() => {
@@ -625,7 +625,7 @@ impl CastState {
         };
         if name == "subs.m3u8" {
             return Some(match vod {
-                Some(vod) => Response::text(HLS_MIME, playlist::subtitles(vod.timeline())),
+                Some(vod) => Response::bytes(HLS_MIME, vod.subtitles_playlist()),
                 None => Response::status(404),
             });
         }
