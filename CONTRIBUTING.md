@@ -318,6 +318,11 @@ What the window tests check:
   toolbar, and another puts the grid back, as opening more files does; the
   tile redraws each time; ⌘W closes the tile in front, then the empty
   window; four tiles sit in two even rows.
+- A window that fitted its files keeps a size given it after, till ⌘1 or
+  Video → Match Video Size fits it to them again; zoomed, it isn't fitted
+  to files opening, but ⌘1 fits it; empty (only the menu reaches it), or
+  in full screen, it stays as it is. Unit tests check the grid's size and when a window may be
+  fitted; the Video menu has the item.
 - An empty window shows the app's logo in the middle, at its largest,
   and smaller in the smallest window, where all of it fits; under it,
   Open and Open URL side by side, the same size, in the middle, which

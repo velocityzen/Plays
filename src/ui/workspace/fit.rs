@@ -1,8 +1,8 @@
 //! Sizing a window to the videos opened in it: each at its own size, in the
-//! grid's rows, but no bigger than the screen. Only as files open, however
-//! long that takes (a network drive can take a while), and not if the
-//! window was resized meanwhile; after that the window is the user's to
-//! size.
+//! grid's rows, but no bigger than the screen. As files open, however long
+//! that takes (a network drive can take a while), and not if the window
+//! was resized meanwhile; after that the window is the user's to size, or
+//! to have sized so again with Video → Match Video Size.
 
 use std::time::Instant;
 
@@ -14,6 +14,21 @@ use crate::settings::Settings;
 use crate::ui::player::PlayerView;
 use crate::ui::theme::layout::{AUDIO_WINDOW_SIZE, SCREEN_MARGIN, TILE_GAP, WINDOW_MIN_SIZE};
 use crate::ui::theme::motion::{FIT_POLL, FIT_WAIT};
+
+/// Who has the window sized for its videos.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Sizing {
+    /// Files opening into it, which leave a window the user zoomed be.
+    Opening,
+    /// The user, with Video → Match Video Size: zoomed or not.
+    Asked,
+}
+
+/// Whether the window may be sized for its videos: never in full screen,
+/// and zoomed only when asked to.
+fn may_size(sizing: Sizing, full_screen: bool, zoomed: bool) -> bool {
+    !full_screen && (sizing == Sizing::Asked || !zoomed)
+}
 
 /// Files opened into a window whose sizes it waits for.
 pub(super) struct Fitting {
@@ -58,7 +73,7 @@ impl Workspace {
                         if resized {
                             log::debug!("not sizing the window for its videos: it was resized");
                         } else {
-                            this.fit_window(window, cx);
+                            this.fit_window(window, Sizing::Opening, cx);
                         }
                         true
                     })
@@ -88,10 +103,18 @@ impl Workspace {
                 })
     }
 
+    /// Size the window for its videos now, as far as their sizes are
+    /// known, as Video → Match Video Size does. Zoomed too, but not in full
+    /// screen.
+    pub fn match_video_size(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.fit_window(window, Sizing::Asked, cx);
+    }
+
     /// Size the window so every tile shows its video at its own size, or
-    /// as near as the screen allows. Not in full screen or zoomed.
-    fn fit_window(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if window.is_fullscreen() || window.is_maximized() || self.tiles.is_empty() {
+    /// as near as the screen allows, if `sizing` may.
+    fn fit_window(&mut self, window: &mut Window, sizing: Sizing, cx: &mut Context<Self>) {
+        let may = may_size(sizing, window.is_fullscreen(), window.is_maximized());
+        if !may || self.tiles.is_empty() {
             return;
         }
         let count = self.tiles.len();
@@ -328,6 +351,17 @@ mod tests {
         // Four in two rows, one size unknown yet.
         let four = grid_size(&cells, 4, 2, ROOM).unwrap();
         assert_eq!(four.height, px(720.) + TILE_GAP);
+    }
+
+    #[test]
+    fn asked_a_zoomed_window_is_sized_too_but_never_one_in_full_screen() {
+        use Sizing::{Asked, Opening};
+        assert!(may_size(Opening, false, false));
+        assert!(!may_size(Opening, false, true), "a zoomed window is let be");
+        assert!(may_size(Asked, false, false));
+        assert!(may_size(Asked, false, true), "asked, a zoomed one is sized");
+        assert!(!may_size(Asked, true, false));
+        assert!(!may_size(Opening, true, false));
     }
 
     #[test]

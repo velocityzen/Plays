@@ -87,7 +87,8 @@ GPU-accelerated UI framework.
   the same way. A ring shows which tile the keys went to.
 - Windows take the size of the video as files open, or of a grid with room
   for each video at its own size, scaled down to fit the screen. After
-  that a window keeps the size you give it.
+  that a window keeps the size you give it, till Video → Match Video Size
+  (⌘1) sizes it for its videos again.
 - Windows open where you are working: where the last one closed, on the
   same display, at the same size.
 - Player windows can float above other apps' windows, always or only while
@@ -238,6 +239,7 @@ plays path/to/video.mp4 path/to/song.mp3 https://example.com/live.m3u8
 | Picture as the file has it | `⌘0` / `Ctrl+0` |
 | Take a screenshot | `S` |
 | Full screen | `F`, or `⌃⌘F` / `F11`; `Esc` leaves it |
+| Window to its videos' size | `⌘1` / `Ctrl+1` |
 | Picture in Picture (macOS) | `⌃⌘P` |
 | Console | `~` or `` ` `` |
 | Play/pause, seek, restart, mute all | `⇧Space`, `⇧←` `⇧→`, `⇧Home`, `⇧M` |
@@ -328,8 +330,10 @@ only tile; an empty window moves by anywhere but the buttons and the URL
 form under its logo. Closing the last window quits.
 
 As files open, their window takes the size of the video, or of a grid with
-room for each video at its own size, scaled down to fit the screen. After
-that the window keeps the size you give it.
+room for each video at its own size, scaled down to fit the screen; a
+window you zoomed stays zoomed. After that the window keeps the size you
+give it, till Video → Match Video Size (`⌘1` / `Ctrl+1`) sizes it for its
+videos again, zoomed or not. In full screen, it does nothing.
 
 Plays opens where its last window closed, on the same display, at the same
 size. Without a saved place, or when that display is gone, it opens on the

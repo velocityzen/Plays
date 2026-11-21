@@ -512,7 +512,9 @@ flowchart LR
 - `src/ui/workspace/`: a window, one per window, a file per part: opening
   files, folders and streams (`opening`), the tiles, putting one in
   another's place and moving one to its own window (`tiles`), sizing the
-  window for the videos opened in it (`fit`), the grid, where a tile
+  window for its videos (`fit`: as they open, unless the window was
+  resized meanwhile or is zoomed, and when Video → Match Video Size asks,
+  zoomed or not; never in full screen), the grid, where a tile
   dragged onto another lands (`grid`), going from tile to tile and moving
   them about the grid from the keyboard (`focus`: the tile beside, above
   or below the one in front, as the grid lays them out, or the one before

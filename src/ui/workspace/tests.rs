@@ -22,7 +22,7 @@ use gpui::{
 use super::place::Place;
 use super::{TOOLBAR_SPACE, Workspace};
 use crate::app::ShowOnDisplay;
-use crate::hotkeys::{ToggleFloatOnTop, ToggleFloatOnTopWhilePlaying};
+use crate::hotkeys::{MatchVideoSize, ToggleFloatOnTop, ToggleFloatOnTopWhilePlaying};
 use crate::media::tracks::TrackKind;
 use crate::settings::{FloatOnTop, FullScreen, PanelLook, Settings};
 use crate::ui::pip::PipEvent;
@@ -32,7 +32,9 @@ use crate::ui::testing::{
     self, OPEN_WAIT, click, double_click, find, fixture, hover, press, shows, wait_until,
 };
 use crate::ui::theme::backdrop;
-use crate::ui::theme::layout::{LOGO_MAX, WINDOW_GAP, WINDOW_MIN_SIZE, WINDOW_SIZE};
+use crate::ui::theme::layout::{
+    AUDIO_WINDOW_SIZE, LOGO_MAX, TILE_GAP, WINDOW_GAP, WINDOW_MIN_SIZE, WINDOW_SIZE,
+};
 use crate::ui::theme::motion::FIT_POLL;
 use crate::ui::{blackout, displays};
 
@@ -107,6 +109,81 @@ fn opens_a_file_in_a_tile_and_fits_the_window_to_it(cx: &mut TestAppContext) {
             (px(120.) + TOOLBAR_SPACE).max(WINDOW_MIN_SIZE.height)
         )
     );
+}
+
+#[gpui::test]
+fn the_window_takes_its_videos_size_again_from_the_keys_or_the_menu(cx: &mut TestAppContext) {
+    let (window, mut cx) = testing::start(cx);
+    let size_now = |cx: &mut VisualTestContext| cx.update(|window, _| window.bounds().size);
+    // Empty, it has no videos to match; only the menu reaches it.
+    cx.dispatch_action(MatchVideoSize);
+    cx.run_until_parked();
+    assert_eq!(size_now(&mut cx), WINDOW_SIZE, "empty as it was");
+
+    // A video beside a song, in a cell the song's size, the bigger.
+    open(window, &mut cx, &["clip.mp4", "tone.m4a"], false);
+    cx.executor().advance_clock(FIT_POLL);
+    cx.run_until_parked();
+    let fitted = size(
+        AUDIO_WINDOW_SIZE.width * 2. + TILE_GAP,
+        AUDIO_WINDOW_SIZE.height + TOOLBAR_SPACE,
+    );
+    assert_eq!(size_now(&mut cx), fitted, "as the files opened");
+
+    // Resized, the window keeps its size, till asked to match its videos.
+    let resized = size(px(1000.), px(700.));
+    cx.simulate_resize(resized);
+    cx.executor().advance_clock(FIT_POLL);
+    cx.run_until_parked();
+    assert_eq!(size_now(&mut cx), resized);
+    press(&mut cx, "secondary-1");
+    cx.run_until_parked();
+    assert_eq!(size_now(&mut cx), fitted, "from the keys");
+
+    cx.simulate_resize(resized);
+    cx.dispatch_action(MatchVideoSize);
+    cx.run_until_parked();
+    assert_eq!(size_now(&mut cx), fitted, "from the menu");
+
+    // Zoomed, files opening leave it be, but asked, it's sized.
+    cx.simulate_resize(resized);
+    cx.update(|window, _| window.zoom_window());
+    window
+        .update(&mut cx, |workspace, _, cx| {
+            workspace.open_paths(vec![fixture("clip.mp4")], cx);
+        })
+        .unwrap();
+    let opened = wait_until(&mut cx, |cx| {
+        window
+            .read_with(cx, |workspace, cx| {
+                workspace.tiles.len() == 3
+                    && workspace
+                        .tiles
+                        .iter()
+                        .all(|tile| tile.view.read(cx).player().is_known())
+            })
+            .unwrap()
+    });
+    assert!(opened, "a third file didn't open in {OPEN_WAIT:?}");
+    cx.executor().advance_clock(FIT_POLL);
+    cx.run_until_parked();
+    assert_eq!(size_now(&mut cx), resized, "zoomed as it was");
+    // Three in two rows.
+    let three = size(
+        AUDIO_WINDOW_SIZE.width * 2. + TILE_GAP,
+        AUDIO_WINDOW_SIZE.height * 2. + TILE_GAP + TOOLBAR_SPACE,
+    );
+    press(&mut cx, "secondary-1");
+    cx.run_until_parked();
+    assert_eq!(size_now(&mut cx), three, "zoomed, from the keys");
+    cx.update(|window, _| window.zoom_window());
+
+    // Not in full screen.
+    cx.simulate_resize(resized);
+    cx.update(|window, _| window.toggle_fullscreen());
+    press(&mut cx, "secondary-1");
+    cx.run_until_parked();
+    assert_eq!(size_now(&mut cx), resized, "full screen as it was");
 }
 
 #[gpui::test]

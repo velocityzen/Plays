@@ -172,7 +172,9 @@ platforms keep the flag and show nothing.
 
 `src/platform/test/window.rs`: a test window's `window_handle` returns
 `HandleError::Unavailable` instead of panicking, so Plays' views, whose
-native helpers give up on errors, can run in `#[gpui::test]`s.
+native helpers give up on errors, can run in `#[gpui::test]`s. Its
+`zoom` zooms it or puts it back, nothing moved, and `is_maximized` says
+which, so a test can tell what a zoomed window does.
 `src/window.rs`: `Frame::clear` clears `debug_bounds` (test builds only),
 so they hold what the last frame drew, and a test can tell an element is
 gone rather than finding where it was.

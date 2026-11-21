@@ -108,6 +108,7 @@ commands! {
     Window {
         FullScreen => ToggleFullScreen, "full_screen", "Full screen";
         ExitFullScreen => ExitFullScreen, "exit_full_screen", "Exit full screen";
+        MatchVideoSize => MatchVideoSize, "match_video_size", "Match video size";
         PictureInPicture => TogglePictureInPicture, "picture_in_picture", "Picture in Picture";
         FloatOnTop => ToggleFloatOnTop, "float_on_top", "Float on top";
         FloatOnTopWhilePlaying => ToggleFloatOnTopWhilePlaying,
@@ -243,6 +244,7 @@ impl Command {
             Self::FullScreen if mac => &["ctrl-cmd-f", "f"],
             Self::FullScreen => &["f11", "f"],
             Self::ExitFullScreen => &["escape"],
+            Self::MatchVideoSize => &["secondary-1"],
             Self::PictureInPicture if mac => &["ctrl-cmd-p"],
             // Picture in Picture is macOS's.
             Self::PictureInPicture => &[],

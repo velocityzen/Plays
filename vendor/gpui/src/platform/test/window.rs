@@ -32,6 +32,8 @@ pub(crate) struct TestWindowState {
     fullscreen_style: crate::FullscreenStyle,
     // Plays.
     on_top: bool,
+    // Plays: zoomed by `zoom`, unzoomed by it again.
+    zoomed: bool,
 }
 
 #[derive(Clone)]
@@ -80,6 +82,7 @@ impl TestWindow {
             is_fullscreen: false,
             fullscreen_style: Default::default(),
             on_top: false,
+            zoomed: false,
         })))
     }
 
@@ -126,8 +129,9 @@ impl PlatformWindow for TestWindow {
         WindowBounds::Windowed(self.bounds())
     }
 
+    // Plays: as `zoom` left it.
     fn is_maximized(&self) -> bool {
-        false
+        self.0.lock().zoomed
     }
 
     fn content_size(&self) -> Size<Pixels> {
@@ -225,8 +229,10 @@ impl PlatformWindow for TestWindow {
         unimplemented!()
     }
 
+    // Plays: zoomed, or back, with nothing moved.
     fn zoom(&self) {
-        unimplemented!()
+        let mut lock = self.0.lock();
+        lock.zoomed = !lock.zoomed;
     }
 
     fn toggle_fullscreen(&self) {

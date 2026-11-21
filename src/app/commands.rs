@@ -158,6 +158,9 @@ fn register_tile_view(cx: &mut App) {
         toggle_float_on_top(FloatOnTop::WhilePlaying, cx)
     });
     cx.on_action(|_: &ToggleConsole, cx| with_active(cx, |p, cx| p.toggle_console(cx)));
+    cx.on_action(|_: &MatchVideoSize, cx| {
+        with_workspace(cx, |w, window, cx| w.match_video_size(window, cx))
+    });
     cx.on_action(|_: &ExitFullScreen, cx| {
         with_workspace(cx, |_, window, _| {
             if window.is_fullscreen() {

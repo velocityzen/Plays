@@ -119,6 +119,7 @@ fn video_menu(float_on_top: FloatOnTop, state: &MenuState) -> Menu {
         name: "Video".into(),
         items: vec![
             MenuItem::action("Full Screen", ToggleFullScreen),
+            MenuItem::action("Match Video Size", MatchVideoSize),
             MenuItem::action("Picture in Picture", TogglePictureInPicture),
             MenuItem::action("Float on Top", ToggleFloatOnTop)
                 .checked(float_on_top == FloatOnTop::Always),
@@ -590,6 +591,18 @@ mod tests {
         cx.run_until_parked();
         let shown = cx.update(|_, cx| cx.try_global::<MenuState>().and_then(|state| state.chapter));
         assert_eq!(shown, Some(2), "at once");
+    }
+
+    #[test]
+    fn the_video_menu_sizes_the_window_for_its_videos() {
+        let menu = video_menu(FloatOnTop::Off, &MenuState::default());
+        let matches = menu.items.iter().any(|item| match item {
+            MenuItem::Action { name, action, .. } => {
+                name == "Match Video Size" && action.partial_eq(&MatchVideoSize)
+            }
+            _ => false,
+        });
+        assert!(matches, "no Match Video Size in the Video menu");
     }
 
     #[test]
