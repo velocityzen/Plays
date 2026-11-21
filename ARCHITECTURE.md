@@ -533,7 +533,9 @@ flowchart LR
   rested, let go whenever the window is drawn unable to rest), the toolbar
   (`toolbar`), the mouse coming, going and resting, and the traffic
   lights (`mouse`), floating on top (`on_top`), where windows open and come
-  back to (`place`), going full screen on another display (`display`: out
+  back to (`place`: the player window in front or closed last, in
+  `window.json`, and Settings as it moves, saved in `settings-window.json`
+  as it closes, which quitting does too), going full screen on another display (`display`: out
   of full screen, across, and in again), the window's sound (`sound`), and
   what the Playback commands do to every tile (`commands`).
 - `src/ui/player/`: a player's tile, a file per part: what fills it

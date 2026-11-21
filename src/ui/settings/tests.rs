@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 use airplay::PinPairing;
 use airplay::fake::{FakeReceiver, Kind};
-use gpui::{TestAppContext, VisualTestContext, point, px};
+use gpui::{Bounds, Pixels, TestAppContext, VisualTestContext, point, px, size};
 use parking_lot::Mutex;
 
 use super::SettingsView;
@@ -17,8 +17,12 @@ use crate::app::SetAudioDevice;
 use crate::cast::fake::{FakeTarget, KIND};
 use crate::cast::target::{Device, Error, Session};
 use crate::cast::{AppPairings, Casting, Looking, Protocol, Shows, Target};
+use crate::files::Folder;
 use crate::settings::{AudioDevice, PanelLook, Settings};
+use crate::ui::about::AboutView;
 use crate::ui::testing::{self, click, scroll, shows, wait_until};
+use crate::ui::theme::layout::SETTINGS_WINDOW_SIZE;
+use crate::ui::workspace::forget_settings_place;
 
 /// Open the Settings window and bring it to the front.
 fn open_settings(cx: &mut VisualTestContext) -> VisualTestContext {
@@ -33,6 +37,110 @@ fn open_settings(cx: &mut VisualTestContext) -> VisualTestContext {
     settings.update(|window, _| window.activate_window());
     settings.run_until_parked();
     settings
+}
+
+/// Open the About window and bring it to the front.
+fn open_about(cx: &mut VisualTestContext) -> VisualTestContext {
+    cx.update(|_, cx| AboutView::open_window(cx));
+    cx.run_until_parked();
+    let handle = cx
+        .windows()
+        .into_iter()
+        .find_map(|window| window.downcast::<AboutView>())
+        .expect("an About window");
+    let mut about = VisualTestContext::from_window(handle.into(), cx);
+    about.update(|window, _| window.activate_window());
+    about.run_until_parked();
+    about
+}
+
+/// Move and resize the window to `bounds`, as someone dragging it would.
+fn drag_to(window: &mut VisualTestContext, bounds: Bounds<Pixels>) {
+    window.update(|window, _| window.set_frame(bounds));
+    window.simulate_resize(bounds.size);
+    window.run_until_parked();
+}
+
+fn close(window: &mut VisualTestContext) {
+    window.update(|window, _| window.remove_window());
+    window.run_until_parked();
+}
+
+fn bounds_of(window: &mut VisualTestContext) -> Bounds<Pixels> {
+    window.update(|window, _| window.bounds())
+}
+
+#[gpui::test]
+fn settings_opens_where_it_was_left_this_launch_or_the_last(cx: &mut TestAppContext) {
+    let (_, mut cx) = testing::start(cx);
+    let folder = Folder::for_test("settings-window");
+    cx.update(|_, cx| cx.set_global(folder.clone()));
+    let main = cx.update(|window, cx| window.display(cx).unwrap().bounds());
+
+    // The first time, in the middle of the display, at its own size.
+    let mut settings = open_settings(&mut cx);
+    let first = bounds_of(&mut settings);
+    assert_eq!(first.size, SETTINGS_WINDOW_SIZE);
+    assert_eq!(first.center(), main.center(), "in the middle");
+
+    let left = Bounds::new(point(px(60.), px(80.)), size(px(900.), px(640.)));
+    drag_to(&mut settings, left);
+    close(&mut settings);
+    let mut settings = open_settings(&mut cx);
+    assert_eq!(bounds_of(&mut settings), left, "where it was left");
+
+    // Saved as it closes, the next launch opens it there too.
+    let elsewhere = Bounds::new(point(px(300.), px(200.)), size(px(800.), px(600.)));
+    drag_to(&mut settings, elsewhere);
+    close(&mut settings);
+    assert!(
+        folder.file("settings-window.json").unwrap().exists(),
+        "saved beside the settings"
+    );
+    cx.update(|_, cx| forget_settings_place(cx));
+    let mut settings = open_settings(&mut cx);
+    assert_eq!(bounds_of(&mut settings), elsewhere, "the next launch");
+    close(&mut settings);
+
+    // Left on a display since gone: in the middle of the one in use, at
+    // the size it had.
+    let gone = r#"{"display": 99, "name": "Gone", "x": 10, "y": 10, "width": 700, "height": 500}"#;
+    std::fs::write(folder.file("settings-window.json").unwrap(), gone).unwrap();
+    cx.update(|_, cx| forget_settings_place(cx));
+    let mut settings = open_settings(&mut cx);
+    let centered = bounds_of(&mut settings);
+    assert_eq!(centered.size, size(px(700.), px(500.)));
+    assert_eq!(centered.center(), main.center());
+
+    // Still open as the app quits, where it is is saved.
+    let quitting = Bounds::new(point(px(120.), px(140.)), size(px(760.), px(560.)));
+    drag_to(&mut settings, quitting);
+    TestAppContext::update(&cx, |cx| cx.shutdown());
+    let saved = std::fs::read_to_string(folder.file("settings-window.json").unwrap()).unwrap();
+    let saved: serde_json::Value = serde_json::from_str(&saved).unwrap();
+    let at = ["x", "y", "width", "height"].map(|key| saved[key].as_f64());
+    assert_eq!(
+        at,
+        [120., 140., 760., 560.].map(Some),
+        "saved as the app quit"
+    );
+}
+
+#[gpui::test]
+fn about_opens_in_the_middle_wherever_it_was_left(cx: &mut TestAppContext) {
+    let (_, mut cx) = testing::start(cx);
+    let main = cx.update(|window, cx| window.display(cx).unwrap().bounds());
+    let mut about = open_about(&mut cx);
+    let middle = bounds_of(&mut about);
+    assert_eq!(middle.center(), main.center());
+
+    drag_to(
+        &mut about,
+        Bounds::new(point(px(40.), px(40.)), middle.size),
+    );
+    close(&mut about);
+    let mut about = open_about(&mut cx);
+    assert_eq!(bounds_of(&mut about), middle, "back in the middle");
 }
 
 fn autoplay(cx: &mut VisualTestContext) -> bool {

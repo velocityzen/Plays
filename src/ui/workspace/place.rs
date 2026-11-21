@@ -1,18 +1,20 @@
 //! Where windows are: the first window of a launch opens where the last
-//! one closed was, on its display and at its size; a display the system
-//! numbered anew is known by its name. A window Output Device put
-//! full screen on another display comes back where it was once out of
-//! full screen, unless its display has gone. Wayland places windows
-//! itself, whatever is asked.
+//! one closed was, on its display and at its size, and Settings where it
+//! was last, this launch or one before; a display the system numbered anew
+//! is known by its name. A window Output Device put full screen on another
+//! display comes back where it was once out of full screen, unless its
+//! display has gone. Wayland places windows itself, whatever is asked.
 
 use std::fs;
-use std::path::PathBuf;
 
 use anyhow::Result;
-use gpui::{App, Bounds, Context, Global, Pixels, Window, WindowHandle, point, px, size};
+use gpui::{
+    App, Bounds, Context, DisplayId, Global, Pixels, Window, WindowHandle, point, px, size,
+};
 use serde::{Deserialize, Serialize};
 
 use super::Workspace;
+use crate::files::{self, Folder};
 use crate::settings::AudioDevice;
 use crate::ui::displays::{self, DisplayInfo};
 use crate::ui::theme::layout::WINDOW_SIZE;
@@ -34,7 +36,7 @@ pub struct Place {
 
 impl Place {
     /// Where `window` is, out of full screen.
-    pub(super) fn of(window: &Window, cx: &App) -> Option<Self> {
+    pub(crate) fn of(window: &Window, cx: &App) -> Option<Self> {
         let display = displays::of(window, cx)?;
         let bounds = window.window_bounds().get_bounds();
         Some(Self {
@@ -52,6 +54,18 @@ impl Place {
             point(px(self.x), px(self.y)),
             size(px(self.width), px(self.height)),
         )
+    }
+
+    /// Where a window opens at this place: on its display, or the one with
+    /// its name, as much of it as fits; `None` with that display gone.
+    pub(crate) fn on_its_display(&self, cx: &App) -> Option<(DisplayId, Bounds<Pixels>)> {
+        let id = self.find(&displays::list(cx))?;
+        let display = cx
+            .displays()
+            .into_iter()
+            .find(|display| u32::from(display.id()) == id)?;
+        let bounds = displays::inside(self.bounds(), display.bounds());
+        Some((display.id(), bounds))
     }
 
     /// Its display among those connected: the one with its id, or else the
@@ -87,43 +101,93 @@ pub(super) struct Home {
 struct LastPlace(Option<Place>);
 impl Global for LastPlace {}
 
-/// Where the last place is saved; nowhere in tests and smoke runs, as with
-/// the settings.
-fn path() -> Option<PathBuf> {
-    if cfg!(any(test, feature = "smoke")) {
-        return None;
-    }
-    dirs::config_dir().map(|dir| dir.join("plays").join("window.json"))
-}
+/// The file the player window's last place is saved in.
+const PLAYER_FILE: &str = "window.json";
+/// The file Settings' place is saved in.
+const SETTINGS_FILE: &str = "settings-window.json";
 
-fn load() -> Option<Place> {
-    let path = path()?;
+/// Where Settings was last, this launch or one before: where it opens
+/// next. Read from its file the first time it's asked for.
+struct SettingsPlace(Option<Place>);
+impl Global for SettingsPlace {}
+
+/// The place saved in `file`, in the app's folder (none in tests and smoke
+/// runs, as with the settings, unless a test gives one).
+fn load(file: &str, cx: &App) -> Option<Place> {
+    let path = Folder::of(cx).file(file)?;
     let text = fs::read_to_string(&path).ok()?;
     serde_json::from_str(&text)
         .inspect_err(|err| log::warn!("ignoring {}: {err}", path.display()))
         .ok()
 }
 
-/// Keep `place` as the last, with its display's name, and save it.
-fn keep(place: Place, cx: &mut App) {
+fn save(file: &str, place: &Place, cx: &App) {
+    let Some(path) = Folder::of(cx).file(file) else {
+        return;
+    };
+    let result = serde_json::to_vec_pretty(place)
+        .map_err(std::io::Error::other)
+        .and_then(|text| files::write_whole(&path, &text));
+    if let Err(err) = result {
+        log::warn!("could not save {}: {err}", path.display());
+    }
+}
+
+/// `place` with its display's name, to know the display by when the
+/// system numbers it anew.
+fn named(place: Place, cx: &App) -> Place {
     let name = displays::list(cx)
         .into_iter()
         .find(|display| display.id == place.display)
         .map(|display| display.name);
-    let place = Place { name, ..place };
-    if let Some(path) = path() {
-        let result = path
-            .parent()
-            .map_or(Ok(()), fs::create_dir_all)
-            .and_then(|()| fs::write(&path, serde_json::to_string_pretty(&place)?));
-        if let Err(err) = result {
-            log::warn!("could not save {}: {err}", path.display());
-        }
-    }
+    Place { name, ..place }
+}
+
+/// Keep `place` as the last, with its display's name, and save it.
+fn keep(place: Place, cx: &mut App) {
+    let place = named(place, cx);
+    save(PLAYER_FILE, &place, cx);
     cx.set_global(LastPlace(Some(place)));
 }
 
-/// Save the last place as the app quits.
+/// Where Settings opens: where it was last, if it has been open before.
+pub fn settings_place(cx: &mut App) -> Option<Place> {
+    if !cx.has_global::<SettingsPlace>() {
+        let saved = load(SETTINGS_FILE, cx);
+        cx.set_global(SettingsPlace(saved));
+    }
+    cx.global::<SettingsPlace>().0.clone()
+}
+
+/// Note where the Settings `window` is, for it to open there next.
+pub fn note_settings_place(window: &Window, cx: &mut App) {
+    if let Some(place) = Place::of(window, cx) {
+        let place = named(place, cx);
+        cx.set_global(SettingsPlace(Some(place)));
+    }
+}
+
+/// Save where Settings was last, for the next launch: as it closes.
+pub fn save_settings_place(cx: &App) {
+    if let Some(place) = cx
+        .try_global::<SettingsPlace>()
+        .and_then(|kept| kept.0.as_ref())
+    {
+        save(SETTINGS_FILE, place, cx);
+    }
+}
+
+/// Forget where Settings was this launch, as the next launch starts: it
+/// reads its file again.
+#[cfg(test)]
+pub fn forget_settings_place(cx: &mut App) {
+    if cx.has_global::<SettingsPlace>() {
+        cx.remove_global::<SettingsPlace>();
+    }
+}
+
+/// Save the last place as the app quits. (Settings saves its own as its
+/// window closes, which quitting does too.)
 pub fn save_place_on_quit(cx: &mut App) {
     cx.on_app_quit(|cx| {
         if let Some(place) = cx.try_global::<LastPlace>().and_then(|last| last.0.clone()) {
@@ -139,7 +203,7 @@ impl Workspace {
     /// (`load`), or as a new window opens when there's none or its display
     /// is gone, at its size.
     pub fn open_first_window(cx: &mut App) -> Result<WindowHandle<Self>> {
-        Self::open_window_where(load(), cx)
+        Self::open_window_where(load(PLAYER_FILE, cx), cx)
     }
 
     /// Open a window at `place`, on its display and as much of it as fits;
@@ -152,16 +216,8 @@ impl Workspace {
         let Some(place) = place else {
             return Self::open_window(WINDOW_SIZE, cx);
         };
-        let display = place.find(&displays::list(cx)).and_then(|id| {
-            cx.displays()
-                .into_iter()
-                .find(|display| u32::from(display.id()) == id)
-        });
-        match display {
-            Some(display) => {
-                let bounds = displays::inside(place.bounds(), display.bounds());
-                Self::open_window_at(Some(display.id()), bounds, cx)
-            }
+        match place.on_its_display(cx) {
+            Some((display, bounds)) => Self::open_window_at(Some(display), bounds, cx),
             None => Self::open_window(place.bounds().size, cx),
         }
     }

@@ -34,7 +34,9 @@ use super::theme::settings::{
 };
 use super::theme::text::TextStyle;
 use super::theme::{Theme, radius};
-use super::workspace::float_with_players;
+use super::workspace::{
+    float_with_players, note_settings_place, save_settings_place, settings_place,
+};
 use crate::cast::Casting;
 use crate::settings::Settings;
 
@@ -119,6 +121,9 @@ pub struct SettingsView {
     credits: Option<about::Credits>,
     /// Shows the protocols and devices in Casting as they change.
     _casting: Subscription,
+    /// Notes where the window is as it moves and is resized, and saves it
+    /// once it closes.
+    _place: [Subscription; 2],
 }
 
 /// The Settings window, once it has been opened.
@@ -126,8 +131,9 @@ struct SettingsWindow(WindowHandle<SettingsView>);
 impl Global for SettingsWindow {}
 
 impl SettingsView {
-    /// Bring the Settings window to the front, opening it if it isn't open,
-    /// on the display in use (`displays::in_use`).
+    /// Bring the Settings window to the front, opening it if it isn't open:
+    /// where it was last, at its size, or centered on the display in use
+    /// (`displays::in_use`) the first time, or with its display gone.
     pub fn open_window(cx: &mut App) {
         if let Some(handle) = cx.try_global::<SettingsWindow>().map(|open| open.0)
             && handle
@@ -136,8 +142,15 @@ impl SettingsView {
         {
             return;
         }
-        let display = displays::in_use(cx);
-        let bounds = Bounds::centered(display, SETTINGS_WINDOW_SIZE, cx);
+        let last = settings_place(cx);
+        let (display, bounds, kept) = match last.as_ref().and_then(|last| last.on_its_display(cx)) {
+            Some((display, bounds)) => (Some(display), bounds, true),
+            None => {
+                let display = displays::in_use(cx);
+                let size = last.map_or(SETTINGS_WINDOW_SIZE, |last| last.bounds().size);
+                (display, Bounds::centered(display, size, cx), false)
+            }
+        };
         // On macOS the sidebar runs up under the traffic lights, as in System
         // Settings.
         let mac = cfg!(target_os = "macos");
@@ -145,6 +158,7 @@ impl SettingsView {
             WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
                 display_id: display,
+                keep_position: kept,
                 titlebar: Some(TitlebarOptions {
                     title: Some("Plays Settings".into()),
                     appears_transparent: mac,
@@ -180,6 +194,10 @@ impl SettingsView {
             license: None,
             credits: None,
             _casting: cx.observe_global::<Casting>(|_, cx| cx.notify()),
+            _place: [
+                cx.observe_window_bounds(window, |_, window, cx| note_settings_place(window, cx)),
+                cx.on_release(|_, cx| save_settings_place(cx)),
+            ],
         }
     }
 

@@ -43,7 +43,9 @@ use crate::settings::{AudioDevice, Settings};
 
 pub use focus::Toward;
 pub use on_top::float_with_players;
-pub use place::save_place_on_quit;
+#[cfg(test)]
+pub use place::forget_settings_place;
+pub use place::{note_settings_place, save_place_on_quit, save_settings_place, settings_place};
 
 /// macOS has the menu bar for what the toolbar does, so its windows show
 /// just the video, with the traffic lights over it like other video players.

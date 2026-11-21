@@ -90,7 +90,7 @@ GPU-accelerated UI framework.
   that a window keeps the size you give it, till Video → Match Video Size
   (⌘1) sizes it for its videos again.
 - Windows open where you are working: where the last one closed, on the
-  same display, at the same size.
+  same display, at the same size, and Settings where you left it.
 - Player windows can float above other apps' windows, always or only while
   something in them plays.
 - While a tile plays, its header and controls fade when the mouse leaves
@@ -337,8 +337,11 @@ videos again, zoomed or not. In full screen, it does nothing.
 
 Plays opens where its last window closed, on the same display, at the same
 size. Without a saved place, or when that display is gone, it opens on the
-display with the mouse (on macOS). Settings and About open on the display
-of the window in front. On Wayland, the compositor places windows.
+display with the mouse (on macOS). Settings opens where you left it, at
+the size you gave it, this launch or the last; the first time, or when its
+display is gone, it opens in the middle of the display of the window in
+front. About always opens there. On Wayland, the compositor places
+windows.
 
 Player windows float above other apps' windows with Video → Float on Top
 or Float on Top While Playing, or Settings → Appearance. Settings and

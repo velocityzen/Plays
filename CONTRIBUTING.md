@@ -377,6 +377,11 @@ What the window tests check:
   front is in, and follows the tile the mouse is over.
 - Settings' Reset to Defaults asks first and changes nothing on Cancel,
   and picking an output in the Audio menu sets it.
+- Settings opens in the middle of the display the first time, then where
+  it was left and at its size, the next launch too (from a folder of the
+  test's own), saved as it closes and as the app quits; left on a display
+  since gone, it opens in the middle at its size. About opens in the
+  middle wherever it was left.
 - A window playing through an output of its own: with one output the
   tile's menu offers none; with two, picking one plays the tile there, a
   file opened in the window plays there too, a tile popped out takes the
