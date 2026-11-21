@@ -158,6 +158,7 @@ fn what_menus_and_controls_send_is_what_their_commands_take() {
         output::set_window_device(None),
         cast::to(Some(&tv)),
         cast::to(None),
+        cast::pair(&tv),
     ];
     for Run(invocation) in sent {
         let command = &invocation.command;
@@ -173,6 +174,7 @@ fn what_menus_and_controls_send_is_what_their_commands_take() {
         json!({"device": "living-room", "kind": "Chromecast"})
     );
     assert_eq!(cast::to(None).0.command, "cast.stop");
+    assert_eq!(cast::pair(&tv).0.args, cast::to(Some(&tv)).0.args);
     assert_eq!(
         video::set_crop(None).0.args,
         json!({"crop": null}),

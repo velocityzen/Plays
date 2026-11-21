@@ -1,10 +1,13 @@
 //! The tiles: adding and closing them, telling them where they are,
-//! putting one in another's place, maximizing one, and moving one to a
-//! window of its own.
+//! putting one in another's place, maximizing one, and moving one to
+//! another window or one of its own.
 
-use gpui::{App, Context, Entity, EntityId, Pixels, Size, px, size};
+use anyhow::Result;
+use gpui::{App, Context, Entity, EntityId, Pixels, Size, Window, WindowHandle, px, size};
+use serde_json::Value;
 
 use super::{TOOLBAR_SPACE, Tile, Workspace};
+use crate::api::{self, Invocation};
 use crate::app::{Awake, refresh_menus};
 use crate::cast::Device;
 use crate::progress::{self, Note};
@@ -19,7 +22,6 @@ impl Workspace {
     pub(super) fn add_tile(&mut self, view: Entity<PlayerView>, cx: &mut Context<Self>) {
         self.play_here(&view, cx);
         let subscription = cx.subscribe(&view, |this, view, event, cx| match event {
-            PlayerEvent::Close => this.close(view.entity_id(), cx),
             PlayerEvent::Activate => {
                 this.active = Some(view.entity_id());
                 this.keyboard_focus = false;
@@ -27,9 +29,6 @@ impl Workspace {
                 // Video → Aspect Ratio and Crop check this one's now.
                 refresh_menus(cx);
             }
-            PlayerEvent::ToggleMaximize => this.toggle_maximize(view.entity_id(), cx),
-            PlayerEvent::PopOut => this.pop_out(view.entity_id(), cx),
-            PlayerEvent::Pair(device) => this.pair(&view, device.clone(), cx),
         });
         self.tiles.push(Tile {
             view,
@@ -80,21 +79,39 @@ impl Workspace {
         self.tiles_changed(cx);
     }
 
-    /// Move a tile to a new window, sized for it, where it keeps playing:
-    /// beside this one, on its display.
-    fn pop_out(&mut self, id: EntityId, cx: &mut Context<Self>) {
-        let Some(index) = self.tiles.iter().position(|t| t.view.entity_id() == id) else {
+    /// Run `command` on the tile `id`, given `args` (null for none), once
+    /// the event is handled: what the window does to its tiles, a drop say.
+    pub(super) fn send_to_tile(&self, id: EntityId, command: &str, args: Value, cx: &mut App) {
+        let Some(tile) = self.tiles.iter().find(|tile| tile.view.entity_id() == id) else {
             return;
         };
-        let view = self.tiles[index].view.clone();
-        let window_size = window_size_for(view.read(cx));
-        let here = self
-            .window
-            .update(cx, |_, window, cx| {
-                Some((window.display(cx)?, window.bounds()))
-            })
-            .ok()
-            .flatten();
+        let name = tile.view.read(cx).id().to_string();
+        api::dispatch(Invocation::new(command).with_args(args).on_tile(name), cx);
+    }
+
+    /// Run `command` in this window, given `args` (null for none), once the
+    /// event is handled: what its controls do.
+    pub(super) fn send(&self, command: &str, args: Value, cx: &mut App) {
+        let invocation = Invocation::new(command)
+            .with_args(args)
+            .in_window(self.id().to_string());
+        api::dispatch(invocation, cx);
+    }
+
+    /// Move the tile `id` to a new window, sized for it, where it keeps
+    /// playing through what this one plays through: beside this one, on
+    /// its display. The window, or why none opened.
+    pub fn move_to_new_window(
+        &mut self,
+        id: EntityId,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) -> Result<Option<WindowHandle<Self>>> {
+        let Some(tile) = self.tiles.iter().find(|t| t.view.entity_id() == id) else {
+            return Ok(None);
+        };
+        let window_size = window_size_for(tile.view.read(cx));
+        let here = window.display(cx).map(|display| (display, window.bounds()));
         let opened = match here {
             Some((display, from)) => {
                 let bounds = displays::beside(from, window_size, display.bounds());
@@ -102,14 +119,23 @@ impl Workspace {
             }
             None => Self::open_window(window_size, cx),
         };
-        let window = match opened {
-            Ok(window) => window,
-            Err(err) => {
-                log::error!("could not open a window: {err:#}");
-                return;
-            }
+        let opened = opened?;
+        let Some(view) = self.release_tile(id, cx) else {
+            return Ok(None);
         };
-        self.tiles.remove(index);
+        let sound = self.sound_device().cloned();
+        opened.update(cx, |workspace, _, cx| workspace.adopt(view, sound, cx))?;
+        Ok(Some(opened))
+    }
+
+    /// Let go of the tile `id`, for another window to take in (`take_tile`).
+    pub fn release_tile(
+        &mut self,
+        id: EntityId,
+        cx: &mut Context<Self>,
+    ) -> Option<Entity<PlayerView>> {
+        let index = self.tiles.iter().position(|t| t.view.entity_id() == id)?;
+        let tile = self.tiles.remove(index);
         if self.maximized == Some(id) {
             self.maximized = None;
         }
@@ -117,10 +143,18 @@ impl Workspace {
             self.active = None;
         }
         self.tiles_changed(cx);
-        let sound = self.sound_device().cloned();
-        window
-            .update(cx, |workspace, _, cx| workspace.adopt(view, sound, cx))
-            .ok();
+        Some(tile.view)
+    }
+
+    /// Take in a tile another window let go of, playing on through what
+    /// this one plays through, last among them; keys go to it.
+    pub fn take_tile(&mut self, view: Entity<PlayerView>, cx: &mut Context<Self>) {
+        let graveyard = self.graveyard.clone();
+        view.update(cx, |view, _| view.move_to_window(graveyard));
+        self.active = Some(view.entity_id());
+        self.add_tile(view, cx);
+        self.tiles_changed(cx);
+        refresh_menus(cx);
     }
 
     /// Take in a tile from another window, with the device that window
@@ -132,10 +166,7 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) {
         self.set_sound_device(sound, cx);
-        let graveyard = self.graveyard.clone();
-        view.update(cx, |view, _| view.move_to_window(graveyard));
-        self.add_tile(view, cx);
-        self.tiles_changed(cx);
+        self.take_tile(view, cx);
     }
 
     pub fn close_all(&mut self, cx: &mut Context<Self>) {
@@ -149,14 +180,15 @@ impl Workspace {
         self.tiles_changed(cx);
     }
 
-    /// Put the tile `id` where the tile `onto` is, the tiles between
-    /// moving over, as a tile dragged onto another goes. Shortcuts go to it
-    /// there, under the mouse.
-    pub(super) fn move_tile(&mut self, id: EntityId, onto: EntityId, cx: &mut Context<Self>) {
-        let place = |id| self.tiles.iter().position(|t| t.view.entity_id() == id);
-        if let (Some(from), Some(to)) = (place(id), place(onto))
-            && from != to
-        {
+    /// Put the tile `id` at `place` among them, from 0, the tiles between
+    /// moving over, as a tile dragged onto another goes; past the last is
+    /// last. Shortcuts go to it there.
+    pub fn move_tile_to(&mut self, id: EntityId, place: usize, cx: &mut Context<Self>) {
+        let Some(from) = self.tiles.iter().position(|t| t.view.entity_id() == id) else {
+            return;
+        };
+        let to = place.min(self.tiles.len() - 1);
+        if from != to {
             let tile = self.tiles.remove(from);
             self.tiles.insert(to, tile);
             self.active = Some(id);
@@ -165,10 +197,20 @@ impl Workspace {
         }
     }
 
-    /// Show the tile `id` alone, or every tile again if it is.
-    fn toggle_maximize(&mut self, id: EntityId, cx: &mut Context<Self>) {
-        self.maximized = (self.maximized != Some(id)).then_some(id);
-        self.tiles_changed(cx);
+    /// Show the tile `id` alone, or every tile again if it is; a window's
+    /// only tile fills the screen instead, or no longer does.
+    pub fn zoom(&mut self, id: EntityId, window: &mut Window, cx: &mut Context<Self>) {
+        if self.tiles.len() == 1 {
+            window.toggle_fullscreen();
+        } else {
+            self.maximized = (self.maximized != Some(id)).then_some(id);
+            self.tiles_changed(cx);
+        }
+    }
+
+    /// How many tiles it has.
+    pub fn tile_count(&self) -> usize {
+        self.tiles.len()
     }
 
     /// The tile shortcuts go to: the maximized one, else the one the mouse

@@ -1,44 +1,35 @@
 //! `cast`: playing a tile on a TV or speaker found on the network.
 
+use gpui::App;
 use serde::Deserialize;
 use serde_json::json;
 
 use super::done;
 use crate::api::args::{Arg, Kind};
-use crate::api::registry::Spec;
-use crate::api::target;
+use crate::api::registry::{Args, Outcome, Scope, Spec};
+use crate::api::target::{self, Target};
 use crate::api::{Error, Run};
 use crate::cast::{Casting, Device};
+
+/// Which device: its id, and how it's reached for an id two share.
+const DEVICE: &[Arg] = &[
+    Arg::required("device", Kind::Text, "The device's id."),
+    Arg::optional(
+        "kind",
+        Kind::Text,
+        "How it's reached, such as Chromecast, AirPlay or DLNA, for an id two share.",
+    ),
+];
 
 pub const COMMANDS: &[Spec] = &[
     Spec::tile_with(
         "cast.to",
         "Play On",
         "Play the tile on a TV or speaker found on the network, from where it is.",
-        &[
-            Arg::required("device", Kind::Text, "The device's id."),
-            Arg::optional(
-                "kind",
-                Kind::Text,
-                "How it's reached, such as Chromecast, AirPlay or DLNA, for an id two share.",
-            ),
-        ],
+        DEVICE,
         |args, player, _, cx| {
-            let To { device, kind } = args.read()?;
-            let is = |found: &&Device| {
-                found.id == device
-                    && kind
-                        .as_deref()
-                        .is_none_or(|kind| kind.eq_ignore_ascii_case(found.kind))
-            };
-            // What it casts to stays one while it isn't found.
-            let found = Casting::devices(cx)
-                .iter()
-                .chain(player.casting())
-                .find(is)
-                .cloned()
-                .ok_or_else(|| Error::not_found("device", device.clone()))?;
-            player.cast_to(Some(found), cx);
+            let device = find(args, player.casting(), cx)?;
+            player.cast_to(Some(device), cx);
             done()
         },
     )
@@ -68,6 +59,16 @@ pub const COMMANDS: &[Spec] = &[
         |player, _, cx| player.cast_to(None, cx),
     )
     .keywords(&["cast", "stop casting", "disconnect", "this computer"]),
+    Spec::custom_with(
+        "cast.pair",
+        "Pair and Play On",
+        "Pair with a TV that shows a PIN to type, such as an Apple TV, then play the \
+         tile on it.",
+        Scope::Tile,
+        DEVICE,
+        pair_with,
+    )
+    .keywords(&["cast", "pin", "code", "apple tv", "airplay"]),
 ];
 
 #[derive(Deserialize)]
@@ -76,10 +77,47 @@ struct To {
     kind: Option<String>,
 }
 
+/// The device `args` name, among those found and the one the tile casts
+/// to, `casting`, which stays one while it isn't found.
+fn find(args: Args, casting: Option<&Device>, cx: &App) -> Result<Device, Error> {
+    let To { device, kind } = args.read()?;
+    let is = |found: &&Device| {
+        found.id == device
+            && kind
+                .as_deref()
+                .is_none_or(|kind| kind.eq_ignore_ascii_case(found.kind))
+    };
+    Casting::devices(cx)
+        .iter()
+        .chain(casting)
+        .find(is)
+        .cloned()
+        .ok_or_else(|| Error::not_found("device", device.clone()))
+}
+
+/// Ask for the PIN the device shows, over the tile's window, then cast the
+/// tile there.
+fn pair_with(args: Args, target: &Target, cx: &mut App) -> Outcome {
+    let (window, tile) = target::tile(target, cx)?;
+    let device = find(args, tile.read(cx).casting(), cx)?;
+    window
+        .update(cx, |workspace, _, cx| workspace.pair(&tile, device, cx))
+        .map_err(|_| Error::failed("the window has closed"))?;
+    done()
+}
+
 /// Cast the tile in front to `device`, or play it here again.
 pub fn to(device: Option<&Device>) -> Run {
     match device {
         Some(device) => Run::with("cast.to", json!({"device": device.id, "kind": device.kind})),
         None => Run::command("cast.stop"),
     }
+}
+
+/// Pair with `device`, then cast the tile in front to it.
+pub fn pair(device: &Device) -> Run {
+    Run::with(
+        "cast.pair",
+        json!({"device": device.id, "kind": device.kind}),
+    )
 }

@@ -19,8 +19,8 @@ use gpui::{
     AnyWindowHandle, App, AsyncApp, Entity, Global, Keystroke, Pixels, Size, WindowHandle, px, size,
 };
 
-use super::dispatch::first_workspace;
 use super::{AudioEngine, Route};
+use crate::api;
 use crate::media::Source;
 use crate::media::tracks::TrackKind;
 use crate::settings::{FloatOnTop, Settings};
@@ -677,7 +677,7 @@ fn with_player<R>(
 }
 
 fn workspace(cx: &App) -> Result<WindowHandle<Workspace>, String> {
-    first_workspace(cx.windows()).ok_or_else(|| "no window".to_string())
+    api::front_window(cx).ok_or_else(|| "no window".to_string())
 }
 
 /// The window's tiles' players, in order.

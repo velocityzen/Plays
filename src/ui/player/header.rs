@@ -4,8 +4,9 @@
 
 use gpui::prelude::*;
 use gpui::{Context, Div, Window, div, linear_color_stop, linear_gradient};
+use serde_json::Value;
 
-use super::{PlayerEvent, PlayerView, Reveal};
+use super::{PlayerView, Reveal};
 use crate::media::decoder::MediaInfo;
 use crate::ui::components::Button;
 use crate::ui::pip;
@@ -90,8 +91,8 @@ impl PlayerView {
                         Button::icon("pip", "pip")
                             .overlay()
                             .selected(self.pip.is_some())
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.toggle_picture_in_picture(window, cx)
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.send("tile.toggle_picture_in_picture", Value::Null, cx);
                             })),
                     )
                 },
@@ -100,18 +101,24 @@ impl PlayerView {
                 this.child(
                     Button::icon("pop-out", "pop-out")
                         .overlay()
-                        .on_click(cx.listener(|_, _, _, cx| cx.emit(PlayerEvent::PopOut))),
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.send("tile.move_to_new_window", Value::Null, cx);
+                        })),
                 )
             })
             .child(
                 Button::icon("maximize", if expanded { "minimize" } else { "maximize" })
                     .overlay()
-                    .on_click(cx.listener(|this, _, window, cx| this.toggle_expanded(window, cx))),
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.send("tile.zoom", Value::Null, cx);
+                    })),
             )
             .child(
                 Button::icon("close", "close")
                     .overlay()
-                    .on_click(cx.listener(|_, _, _, cx| cx.emit(PlayerEvent::Close))),
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.send("tile.close", Value::Null, cx);
+                    })),
             )
     }
 }

@@ -5,6 +5,8 @@ mod casting;
 mod casting_to_airplay;
 mod casting_to_chromecast;
 mod casting_to_dlna;
+mod commands;
+mod controls;
 mod dragging;
 mod screensaver;
 mod sound;
@@ -16,8 +18,8 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use gpui::{
-    AnyWindowHandle, AppContext, Bounds, EntityId, FullscreenStyle, Modifiers, MouseButton, Pixels,
-    TestAppContext, VisualTestContext, WindowHandle, point, px, size,
+    AnyWindowHandle, AppContext, Bounds, Entity, EntityId, FullscreenStyle, Modifiers, MouseButton,
+    Pixels, TestAppContext, VisualTestContext, WindowHandle, point, px, size,
 };
 
 use super::place::Place;
@@ -28,7 +30,7 @@ use crate::api::{self, Invocation};
 use crate::media::tracks::TrackKind;
 use crate::settings::{FloatOnTop, FullScreen, PanelLook, Settings};
 use crate::ui::pip::PipEvent;
-use crate::ui::player::PlayerEvent;
+use crate::ui::player::PlayerView;
 use crate::ui::settings::SettingsView;
 use crate::ui::testing::{
     self, OPEN_WAIT, click, double_click, find, fixture, hover, press, shows, wait_until,
@@ -64,6 +66,17 @@ fn open(
             .unwrap()
     });
     assert!(ready, "{files:?} didn't open (and play) in {OPEN_WAIT:?}");
+}
+
+/// Maximize `tile`, or put it back, as its maximize button does
+/// (`tile.zoom`).
+fn zoom(tile: &Entity<PlayerView>, cx: &mut VisualTestContext) {
+    let name = tile.read_with(cx, |view, _| view.id().to_string());
+    // Outside the window's update, as a deferred command runs.
+    TestAppContext::update(cx, |cx| {
+        api::run(Invocation::new("tile.zoom").on_tile(name), cx)
+    })
+    .unwrap();
 }
 
 /// The tiles' players, in order: (tile, playing, muted).
@@ -1082,7 +1095,7 @@ fn files_opened_while_a_tile_is_maximized_show_beside_it(cx: &mut TestAppContext
     let first = window
         .read_with(&cx, |workspace, _| workspace.tiles[0].view.clone())
         .unwrap();
-    first.update(&mut cx, |_, cx| cx.emit(PlayerEvent::ToggleMaximize));
+    zoom(&first, &mut cx);
     cx.run_until_parked();
     assert!(!shows(&mut cx, "tile-1"), "the maximized tile alone");
 
@@ -1131,7 +1144,7 @@ fn a_tile_redraws_as_it_is_maximized_and_put_back(cx: &mut TestAppContext) {
     for maximized in [true, false] {
         cx.run_until_parked();
         redraws.set(0);
-        first.update(&mut cx, |_, cx| cx.emit(PlayerEvent::ToggleMaximize));
+        zoom(&first, &mut cx);
         cx.run_until_parked();
         assert_eq!(
             first.read_with(&cx, |view, _| view.layout().maximized),

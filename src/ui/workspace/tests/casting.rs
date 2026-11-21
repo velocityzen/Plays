@@ -211,12 +211,21 @@ fn picking_a_device_plays_the_file_there_from_where_it_is_and_pauses_the_tile(
 ) {
     let (window, mut cx, fake, tv) = start(cx, "clip.mp4", true);
     let view = tile(window, &cx);
+    let name = view.read_with(&cx, |view, _| view.id().to_string());
+    cx.update(|_, cx| api::record(cx));
 
     click(&mut cx, "cast");
     click(&mut cx, "cast-0");
     wait(&mut cx, "the device to load it", |_| {
         !loads(&fake, &tv).is_empty()
     });
+    assert_eq!(
+        cx.update(|_, cx| api::recorded(cx)),
+        [Invocation::new("cast.to")
+            .with_args(json!({"device": tv.id, "kind": KIND}))
+            .on_tile(name)],
+        "the menu casts the tile with cast.to"
+    );
 
     let load = loads(&fake, &tv).remove(0);
     let (casting, playing_here, position_here) = view.read_with(&cx, |view, _| {
@@ -404,7 +413,14 @@ fn ending_the_cast_plays_on_here_from_where_the_device_was(cx: &mut TestAppConte
     wait(&mut cx, "the tile to say where it plays", |cx| {
         shows(cx, "play-here")
     });
+    let name = view.read_with(&cx, |view, _| view.id().to_string());
+    cx.update(|_, cx| api::record(cx));
     click(&mut cx, "play-here");
+    cx.run_until_parked();
+    assert_eq!(
+        cx.update(|_, cx| api::recorded(cx)),
+        [Invocation::new("cast.stop").on_tile(name)]
+    );
 
     let (casting, position, playing) = view.read_with(&cx, |view, _| {
         (

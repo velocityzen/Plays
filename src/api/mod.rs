@@ -16,13 +16,15 @@ mod error;
 mod registry;
 mod target;
 
-use gpui::App;
+use gpui::{App, Context, Window};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 pub use error::Error;
 pub use registry::{Reach, Spec, all, find};
 pub use target::{Id, Target, front_window};
+
+use crate::ui::workspace::Workspace;
 
 /// What keys, menu items and the controls that send actions send: run
 /// this. One action for every command, so a command needs nothing more
@@ -106,10 +108,6 @@ impl Invocation {
     }
 
     /// Aimed at the tile `name` names.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "for the command line and palette to come")
-    )]
     pub fn on_tile(mut self, name: impl Into<String>) -> Self {
         self.target.tile = Some(name.into());
         self
@@ -127,6 +125,14 @@ impl Invocation {
 /// listener, where gpui holds the window the event came to, which the
 /// command may need. `dispatch` runs it once the event is handled.
 pub fn run(invocation: Invocation, cx: &mut App) -> Result<Value, Error> {
+    #[cfg(test)]
+    if cx.has_global::<Recorder>() {
+        let recorder = cx.global_mut::<Recorder>();
+        recorder.seen.push(invocation.clone());
+        if !recorder.runs {
+            return Ok(Value::Null);
+        }
+    }
     let Invocation {
         command,
         args,
@@ -172,6 +178,42 @@ pub fn run(invocation: Invocation, cx: &mut App) -> Result<Value, Error> {
     }
 }
 
+/// Every invocation run while it's set, as tests see what controls send.
+#[cfg(test)]
+struct Recorder {
+    seen: Vec<Invocation>,
+    /// Whether they run, or are only noted.
+    runs: bool,
+}
+
+#[cfg(test)]
+impl gpui::Global for Recorder {}
+
+/// Note every invocation run from now on, for `recorded`, and run it.
+#[cfg(test)]
+pub fn record(cx: &mut App) {
+    cx.set_global(Recorder {
+        seen: Vec::new(),
+        runs: true,
+    });
+}
+
+/// Note every invocation from now on, for `recorded`, but run none: what
+/// controls send, without what it does.
+#[cfg(test)]
+pub fn intercept(cx: &mut App) {
+    cx.set_global(Recorder {
+        seen: Vec::new(),
+        runs: false,
+    });
+}
+
+/// The invocations since `record` or `intercept`, or since last asked.
+#[cfg(test)]
+pub fn recorded(cx: &mut App) -> Vec<Invocation> {
+    std::mem::take(&mut cx.global_mut::<Recorder>().seen)
+}
+
 /// Check `args` against what `spec` takes.
 #[cfg(test)]
 pub fn check_args(spec: &registry::Spec, args: &Value) -> Result<(), Error> {
@@ -191,6 +233,25 @@ pub fn dispatch(invocation: Invocation, cx: &mut App) {
             Err(err) => log::warn!("{command}: {err}"),
         }
         crate::app::refresh_menus(cx);
+    });
+}
+
+/// Run `f` on the window `target` names, or the one in front, once the
+/// current event is handled, as `dispatch` runs a command: for what the app
+/// does there that is no command, asking for an output's PIN, say.
+pub fn in_window_later(
+    target: Target,
+    cx: &mut App,
+    f: impl FnOnce(&mut Workspace, &mut Window, &mut Context<Workspace>) + 'static,
+) {
+    cx.defer(move |cx| {
+        let done = target::in_window(&target, cx, |workspace, window, cx| {
+            f(workspace, window, cx);
+            Ok(())
+        });
+        if let Err(err) = done {
+            log::warn!("can't reach the window: {err}");
+        }
     });
 }
 

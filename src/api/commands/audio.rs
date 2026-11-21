@@ -1,7 +1,10 @@
 //! `audio`: a tile's sound and its tracks, and every tile's in a window.
 
+use serde::Deserialize;
 use serde_json::json;
 
+use super::{done, select_track};
+use crate::api::args::{Arg, Kind};
 use crate::api::registry::{Spec, on_mac};
 use crate::api::target;
 use crate::media::tracks::TrackKind;
@@ -30,6 +33,26 @@ pub const COMMANDS: &[Spec] = &[
     .keywords(&["quieter", "softer", "sound"])
     .setting("volume_down")
     .keys(&["down"]),
+    Spec::tile_with(
+        "audio.set_volume",
+        "Set Volume",
+        "Set the tile's volume, unmuting it unless it's none.",
+        &[Arg::required(
+            "volume",
+            Kind::Number {
+                min: 0.0,
+                max: Some(100.0),
+            },
+            "How loud, from 0 to 100.",
+        )],
+        |args, player, _, cx| {
+            let Volume { volume } = args.read()?;
+            #[expect(clippy::cast_possible_truncation, reason = "0 to 1")]
+            player.set_volume_to((volume / 100.0) as f32, cx);
+            done()
+        },
+    )
+    .keywords(&["loudness", "sound", "level"]),
     Spec::tile(
         "audio.toggle_mute",
         "Mute/Unmute",
@@ -51,6 +74,18 @@ pub const COMMANDS: &[Spec] = &[
     .keywords(&["language", "dub", "commentary"])
     .setting("next_audio_track")
     .keys(on_mac(&["ctrl-cmd-a"], &["ctrl-alt-a"])),
+    Spec::tile_with(
+        "audio.select_track",
+        "Pick Audio Track",
+        "Play one of the file's audio tracks.",
+        &[Arg::required(
+            "number",
+            Kind::Integer { min: 1 },
+            "Which, from 1, as the tracks menu lists them.",
+        )],
+        |args, player, _, cx| select_track(args, TrackKind::Audio, player, cx),
+    )
+    .keywords(&["language", "dub", "commentary"]),
     Spec::tile(
         "audio.earlier",
         "Audio Earlier",
@@ -106,3 +141,8 @@ pub const COMMANDS: &[Spec] = &[
     .setting("mute_all")
     .keys(&["shift-m"]),
 ];
+
+#[derive(Deserialize)]
+struct Volume {
+    volume: f64,
+}

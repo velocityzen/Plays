@@ -37,8 +37,7 @@ use super::framing::{Adjustments, Framing};
 use super::subtitles;
 use super::theme::Theme;
 use super::theme::motion::LEVEL_FALLOFF;
-use crate::api::Id;
-use crate::cast::Device;
+use crate::api::{self, Id, Invocation, Run};
 use crate::media::decoder::MediaInfo;
 use crate::media::picture::PictureId;
 use crate::media::subtitles::CueContent;
@@ -48,18 +47,12 @@ use crate::settings::{AudioDevice, ControlsVisibility, Settings, SubtitleStyle, 
 use osd::Osd;
 use playback::Playback;
 
+/// What a tile tells its window. What its controls do, they run as
+/// commands (`send`).
 pub enum PlayerEvent {
-    Close,
     /// The mouse came over it, or it was clicked: shortcuts go to this
     /// tile now.
     Activate,
-    /// Fill the grid with this tile.
-    ToggleMaximize,
-    /// Move to a new window.
-    PopOut,
-    /// Pair with this TV, which it was cast to and asks for the PIN it
-    /// shows; then cast there again.
-    Pair(Device),
 }
 
 /// Where a tile is in its window, and where the mouse is, as the window
@@ -146,6 +139,21 @@ impl EventEmitter<PlayerEvent> for PlayerView {}
 impl PlayerView {
     pub fn id(&self) -> Id {
         self.id
+    }
+
+    /// Run `command` on this tile, given `args` (null for none), once the
+    /// event is handled: what its controls do.
+    pub(super) fn send(&self, command: &str, args: serde_json::Value, cx: &mut gpui::App) {
+        let invocation = Invocation::new(command)
+            .with_args(args)
+            .on_tile(self.id.to_string());
+        api::dispatch(invocation, cx);
+    }
+
+    /// Run on this tile what `run` runs on the tile in front, as a menu
+    /// item does.
+    pub(super) fn send_run(&self, Run(invocation): Run, cx: &mut gpui::App) {
+        self.send(&invocation.command, invocation.args, cx);
     }
 
     pub fn label(&self) -> Option<&str> {
@@ -427,27 +435,11 @@ impl PlayerView {
         }
     }
 
-    fn on_surface_click(
-        &mut self,
-        event: &ClickEvent,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    fn on_surface_click(&mut self, event: &ClickEvent, _: &mut Window, cx: &mut Context<Self>) {
         // A single click only makes the tile the one shortcuts go to (on
         // mouse down); a double click expands it.
         if event.click_count() == 2 {
-            self.toggle_expanded(window, cx);
-            cx.notify();
-        }
-    }
-
-    /// Expand the tile to fill its window, or the window to fill the screen
-    /// when the tile is all it shows; or undo that.
-    fn toggle_expanded(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.layout.alone {
-            window.toggle_fullscreen();
-        } else {
-            cx.emit(PlayerEvent::ToggleMaximize);
+            self.send("tile.zoom", serde_json::Value::Null, cx);
         }
     }
 

@@ -5,6 +5,7 @@ use std::path::PathBuf;
 
 use gpui::prelude::*;
 use gpui::{Context, PathPromptOptions, Window};
+use serde_json::json;
 
 use super::Workspace;
 use crate::media::Source;
@@ -89,7 +90,7 @@ impl Workspace {
         let dialog = cx.new(|cx| OpenUrlDialog::new(window, cx));
         let subscription = cx.subscribe_in(&dialog, window, |this, _, event, window, cx| {
             if let OpenUrlEvent::Open(source) = event {
-                this.open_sources(vec![source.clone()], cx);
+                this.send("app.open", json!({"urls": [source.address()]}), cx);
             }
             this.open_url = None;
             window.focus(&this.focus_handle);

@@ -273,8 +273,8 @@ step them all, each by its own frame rate.
 Where keyframes are far apart, a skip lands on the nearest one its way, so
 it shows at once.
 
-A short note on the tile says what a shortcut changed; switching tracks
-rolls a reel, like a slot machine's, to the track picked, with the ones
+A short note on the tile says what a shortcut, or the mute or loop
+button, changed; switching tracks rolls a reel, like a slot machine's, to the track picked, with the ones
 before and after it faded above and below.
 
 To change shortcuts, open Settings → Hotkeys, click + by a command and
@@ -284,7 +284,7 @@ card for each part of the app, the app's own (⌘O, ⌘W and so on) too. A
 key moves only from a command that works where it does: given to a
 player window's command, ⌘W leaves the window's Close to the other
 windows. Some commands have no keys until given some there, such as
-Float on Top. The menus show each command's first key, and are enabled
+Float on Top, Maximize Tile and Move Tile to New Window. The menus show each command's first key, and are enabled
 only when their commands can run.
 
 ### Tiles

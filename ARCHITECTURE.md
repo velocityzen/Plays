@@ -219,7 +219,7 @@ the sound being heard. A file with no sound plays on wall time.
   or so, then the frame asked for, decoding nothing past it and no sound,
   so nothing waits on buffering. A move up to two seconds past the frame
   decoded last decodes on from there rather than going back to a keyframe.
-  Letting go seeks exactly. It plays one track of each kind; picking an
+  Letting go seeks exactly (`playback.seek`), playing on if it played. It plays one track of each kind; picking an
   audio or video track opens a decoder for it and seeks to the playhead,
   so the new track starts where playback is. The other subtitle tracks'
   packets are kept for a few seconds, so a subtitle track picked starts
@@ -492,15 +492,25 @@ flowchart LR
   wrong: no such command, arguments it doesn't take, nothing by that name
   or more than one, or that it failed. It updates the window it acts on,
   so it's called outside any window's update; `api::dispatch` runs it once
-  the event is handled. Keys, menu items and the controls that send
-  actions all send one gpui action, `api::Run`, which carries the
-  invocation: `api::register` handles it with `dispatch`, and enables a
-  menu item only when its command can run (`api::can_run`), through the
-  menu validator Plays adds to gpui. A command needs nothing more to take
-  keys or be in a menu.
-- `src/app/`: starting the app (`mod.rs`), the shared audio outputs
-  (`audio`, above), running something on the window in front once the
-  event is handled (`dispatch`), the keymap (`keymap`: every command's
+  the event is handled. Keys and menu items send one gpui action,
+  `api::Run`, which carries the invocation: `api::register` handles it
+  with `dispatch`, and enables a menu item only when its command can run
+  (`api::can_run`), through the menu validator Plays adds to gpui. A
+  command needs nothing more to take keys or be in a menu. A window's
+  controls run their commands too, aimed at their own tile
+  (`PlayerView::send`) or window (`Workspace::send`): the buttons, the
+  tracks and cast menus, the toolbar, the empty window's buttons, the
+  Open URL form (`app.open`), a tile dropped on another (`tile.move`) and
+  a tile asking to pair (`cast.pair`), and casting there again once
+  paired. Dragged, the seek bar and the volume slider follow the mouse
+  in the tile, and send `playback.seek` or `audio.set_volume` once let
+  go. What the app does in a window that is no command, asking for an
+  output's PIN, goes through the same target resolution once the event is
+  handled (`api::in_window_later`). In tests, `api::record` notes every
+  invocation run, and `api::intercept` notes them without running them.
+- `src/app/`: starting the app (`mod.rs`; files and links the system
+  opens it with run `app.open`), the shared audio outputs (`audio`,
+  above), the keymap (`keymap`: every command's
   keys from Settings, and ⌘1 to ⌘9, bound again whenever they change) and
   the menu bar (`menus`: commands by id, each item titled as its command,
   sending its `Run`, checked when its state is on and enabled when it can
@@ -575,7 +585,8 @@ flowchart LR
     AppKit. `about` is the About window.
 - `src/ui/workspace/`: a window, one per window, a file per part: opening
   files, folders and streams (`opening`), the tiles, putting one in
-  another's place and moving one to its own window (`tiles`), sizing the
+  another's place, maximizing one, and moving one to another window or
+  one of its own, where it plays on (`tiles`), sizing the
   window for its videos (`fit`: as they open, unless the window was
   resized meanwhile or is zoomed, and when Video → Match Video Size asks,
   zoomed or not; never in full screen), the grid, where a tile
@@ -798,13 +809,13 @@ sequenceDiagram
   one. Tests and smoke runs keep them in memory only.
 - `src/ui/pairing.rs`, `src/ui/workspace/pairing.rs`: the pairing sheet. A
   tile whose cast was turned down for want of a PIN ends its cast and asks
-  its window to pair, and the audio engine asks the window in front for an
-  output's speaker that wants one, unless a sheet is up already. The
+  to pair (`cast.pair`), and the audio engine asks the window in front for
+  an output's speaker that wants one, unless a sheet is up already. The
   window puts a sheet over itself, which pairs on a thread of its own, as
   each step waits on the network, and looks at how it goes ten times a
   second. A wrong PIN has the TV show another, which the sheet asks for.
-  Paired, the tile casts to it again, or the outputs that want the speaker
-  play through it. Closed without pairing, cancelled or failed, the tile
+  Paired, the tile casts to it again (`cast.to`), or the outputs that want
+  the speaker play through it. Closed without pairing, cancelled or failed, the tile
   plays on here, and what picked the speaker picks it no longer
   (`AudioEngine::not_paired`, once the window is done updating): the
   app's output goes back to the system's default, and a window's to the

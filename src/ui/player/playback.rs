@@ -19,7 +19,6 @@ use crate::cast::Device;
 use crate::media::player::Tick;
 use crate::media::tracks::TrackKind;
 use crate::media::{Mixer, Picture, Player, PlayerOptions, Source};
-use crate::ui::components::Slide;
 use crate::ui::theme::motion::END_FOLLOW_SEEK;
 
 /// A tile's playback, here or on the device it casts to.
@@ -145,7 +144,13 @@ impl Playback {
                     self.player.seek(time);
                 }
             }
-            None => self.player.seek(time),
+            None => {
+                self.player.seek(time);
+                // The seek bar let go: it plays on if it played.
+                if std::mem::take(&mut self.resume_after_scrub) {
+                    self.player.play();
+                }
+            }
         }
     }
 
@@ -160,33 +165,23 @@ impl Playback {
         }
     }
 
-    /// Show `time` as the seek slider is dragged, and seek there once it
-    /// is let go. Here playback holds while it's dragged, and plays on
-    /// after if it played. A device seeks only once the slider lets go:
-    /// it is too far away to follow it. A picture here, following its
-    /// sound, shows the way.
-    pub fn scrub(&mut self, slide: Slide, time: f64) {
-        if self.casting().is_some() {
-            if slide == Slide::End {
-                self.seek(time);
-            } else if self.casts_sound_only() {
-                self.player.scrub(time);
-            }
-            return;
+    /// The seek slider is pressed at `time`. Here playback holds while
+    /// it's dragged (`scrub`), and plays on if it played once it's let go
+    /// and seeks there (`seek`).
+    pub fn begin_scrub(&mut self, time: f64) {
+        if self.casting().is_none() {
+            self.resume_after_scrub = self.player.is_playing();
+            self.player.pause();
         }
-        match slide {
-            Slide::Start => {
-                self.resume_after_scrub = self.player.is_playing();
-                self.player.pause();
-                self.player.scrub(time);
-            }
-            Slide::Move => self.player.scrub(time),
-            Slide::End => {
-                self.player.seek(time);
-                if self.resume_after_scrub {
-                    self.player.play();
-                }
-            }
+        self.scrub(time);
+    }
+
+    /// Show `time` as the seek slider is dragged. A device seeks only once
+    /// it's let go: it is too far away to follow it. A picture here,
+    /// following its sound, shows the way.
+    pub fn scrub(&mut self, time: f64) {
+        if self.casting().is_none() || self.casts_sound_only() {
+            self.player.scrub(time);
         }
     }
 
@@ -441,6 +436,12 @@ impl PlayerView {
 
     pub fn duration(&self) -> Option<f64> {
         self.playback.duration()
+    }
+
+    /// Where the seek bar is: where it's dragged to, until it plays from
+    /// there, else where it plays.
+    pub fn bar_position(&self) -> f64 {
+        self.scrub.unwrap_or_else(|| self.position())
     }
 
     /// Played to the end, here or there.

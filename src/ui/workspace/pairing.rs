@@ -8,6 +8,8 @@ use std::sync::Arc;
 use gpui::{AppContext as _, Context, Entity, EntityId, Subscription};
 
 use super::Workspace;
+use crate::api::Run;
+use crate::api::commands::cast;
 use crate::app::AudioEngine;
 use crate::cast::{Casting, Device};
 use crate::settings::AudioDevice;
@@ -32,14 +34,9 @@ enum Then {
 
 impl Workspace {
     /// Pair with `device`, which the tile `view` was cast to; it's cast
-    /// there again, from where it is then, once paired. Another TV asked
-    /// for meanwhile takes the sheet's place.
-    pub(super) fn pair(
-        &mut self,
-        view: &Entity<PlayerView>,
-        device: Device,
-        cx: &mut Context<Self>,
-    ) {
+    /// there again (`cast.to`), from where it is then, once paired. Another
+    /// TV asked for meanwhile takes the sheet's place.
+    pub fn pair(&mut self, view: &Entity<PlayerView>, device: Device, cx: &mut Context<Self>) {
         let target = match Casting::target(cx, &device) {
             Ok(target) => target,
             Err(why) => {
@@ -84,14 +81,8 @@ impl Workspace {
             };
             match (event, pairing.then) {
                 (PairingEvent::Paired, Then::Cast { tile, device }) => {
-                    let tile = this
-                        .tiles
-                        .iter()
-                        .find(|found| found.view.entity_id() == tile)
-                        .map(|found| found.view.clone());
-                    if let Some(tile) = tile {
-                        tile.update(cx, |view, cx| view.cast_to(Some(device), cx));
-                    }
+                    let Run(cast) = cast::to(Some(&device));
+                    this.send_to_tile(tile, &cast.command, cast.args, cx);
                 }
                 (PairingEvent::Paired, Then::Play(_)) => AudioEngine::paired(cx),
                 // Not paired with: the sound doesn't wait for it, silent.

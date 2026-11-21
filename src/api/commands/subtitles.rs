@@ -2,6 +2,8 @@
 
 use gpui::Context;
 
+use super::select_track;
+use crate::api::args::{Arg, Kind};
 use crate::api::registry::{Spec, on_mac};
 use crate::media::tracks::TrackKind;
 use crate::settings::{SUBTITLE_POSITION_RANGE, SUBTITLE_SIZE_RANGE, Settings, SubtitleStyle};
@@ -24,6 +26,18 @@ pub const COMMANDS: &[Spec] = &[
     .keywords(&["captions", "language", "track"])
     .setting("next_subtitle_track")
     .keys(on_mac(&["ctrl-cmd-s"], &["ctrl-alt-s"])),
+    Spec::tile_with(
+        "subtitles.select_track",
+        "Pick Subtitles",
+        "Show one of the file's subtitles, or none.",
+        &[Arg::optional(
+            "number",
+            Kind::Integer { min: 1 },
+            "Which, from 1, as the tracks menu lists them; none for no subtitles.",
+        )],
+        |args, player, _, cx| select_track(args, TrackKind::Subtitle, player, cx),
+    )
+    .keywords(&["captions", "language", "track", "off"]),
     Spec::tile(
         "subtitles.toggle",
         "Show/Hide Subtitles",

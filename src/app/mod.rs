@@ -1,12 +1,10 @@
 //! The app: starting it. Its commands are the API's (`crate::api`), whose
-//! keys are bound in `keymap` and which the menu bar (`menus`) runs;
-//! `dispatch` gets something to the window in front, and going from window
-//! to window is in `windows`.
+//! keys are bound in `keymap` and which the menu bar (`menus`) runs; going
+//! from window to window is in `windows`.
 
 mod audio;
 mod awake;
 mod bluetooth;
-mod dispatch;
 mod keymap;
 mod menus;
 #[cfg(feature = "smoke")]
@@ -20,6 +18,7 @@ use std::time::Duration;
 use futures::StreamExt as _;
 use futures::channel::mpsc::UnboundedReceiver;
 use gpui::App;
+use serde_json::json;
 
 pub use audio::{AudioEngine, Route};
 #[cfg(test)]
@@ -33,6 +32,7 @@ pub(crate) use speakers::Speakers;
 pub use speakers::{airplay_id, output_kind};
 pub(crate) use windows::{players as player_windows, step as step_window};
 
+use crate::api::{self, Invocation};
 use crate::cast::{self, AppPairings, Casting, Pairings, Protocol};
 use crate::files::Folder;
 use crate::media::{Source, picture};
@@ -77,7 +77,7 @@ pub fn run(cx: &mut App, sources: Vec<Source>, opened: UnboundedReceiver<Vec<Str
     // Closing the last workspace window quits, even if the settings window is
     // still open.
     cx.on_window_closed(|cx| {
-        if dispatch::first_workspace(cx.windows()).is_none() {
+        if api::front_window(cx).is_none() {
             cx.quit();
         }
     })
@@ -187,30 +187,25 @@ pub(crate) fn stop_all_casts(cx: &mut App) -> Vec<std::thread::JoinHandle<()>> {
 }
 
 /// Open what the system sends, files from Finder and links, in the
-/// workspace window in front.
+/// workspace window in front (`app.open`).
 fn open_from_system(cx: &mut App, mut opened: UnboundedReceiver<Vec<String>>) {
     cx.spawn(async move |cx| {
         while let Some(urls) = opened.next().await {
-            let sources: Vec<Source> = urls
-                .iter()
-                .filter_map(|url| {
-                    let source = Source::from_open_url(url);
-                    if source.is_none() {
+            let urls: Vec<String> = urls
+                .into_iter()
+                .filter(|url| {
+                    let opens = Source::from_open_url(url).is_some();
+                    if !opens {
                         log::warn!("can't open a URL the system sent");
                     }
-                    source
+                    opens
                 })
                 .collect();
-            if sources.is_empty() {
+            if urls.is_empty() {
                 continue;
             }
-            cx.update(|cx| {
-                dispatch::with_workspace(cx, |workspace, window, cx| {
-                    window.activate_window();
-                    workspace.open_sources(sources, cx);
-                })
-            })
-            .ok();
+            let open = Invocation::new("app.open").with_args(json!({"urls": urls}));
+            cx.update(|cx| api::dispatch(open, cx)).ok();
         }
     })
     .detach();

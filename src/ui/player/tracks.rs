@@ -3,6 +3,7 @@
 
 use gpui::prelude::*;
 use gpui::{AnyElement, Context, Div, ElementId, MouseDownEvent, Window, div};
+use serde_json::json;
 
 use super::PlayerView;
 use crate::media::decoder::MediaInfo;
@@ -16,6 +17,9 @@ use crate::ui::theme::text::TextStyle;
 pub(super) struct TrackChoice {
     /// `None` for no subtitles.
     pub(super) index: Option<usize>,
+    /// Which of its kind it is, from 1, as the track commands count them;
+    /// `None` for no subtitles.
+    number: Option<usize>,
     label: String,
     /// Its codec and format.
     detail: Option<String>,
@@ -33,12 +37,14 @@ fn track_heading(kind: TrackKind) -> &'static str {
 pub(super) fn track_choices(info: &MediaInfo, kind: TrackKind) -> Vec<TrackChoice> {
     let off = (kind == TrackKind::Subtitle).then(|| TrackChoice {
         index: None,
+        number: None,
         label: "Off".to_owned(),
         detail: None,
     });
     off.into_iter()
         .chain(info.tracks(kind).enumerate().map(|(i, track)| TrackChoice {
             index: Some(track.index),
+            number: Some(i + 1),
             label: track.label(i + 1),
             detail: Some(track.detail()),
         }))
@@ -83,7 +89,7 @@ impl PlayerView {
                 .overflow_y_scroll()
                 .pb_1();
             for choice in &choices {
-                let index = choice.index;
+                let (index, number) = (choice.index, choice.number);
                 list = list.child(
                     track_row(
                         ("track", index.map_or(0, |i| i + 1)),
@@ -92,9 +98,9 @@ impl PlayerView {
                     )
                     .mx_1()
                     .on_click(cx.listener(move |this, _, _, cx| {
-                        this.select_track(kind, index, cx);
                         this.tracks_open = false;
                         cx.notify();
+                        this.send(select_command(kind), json!({"number": number}), cx);
                     })),
                 );
             }
@@ -110,6 +116,15 @@ impl PlayerView {
             first = false;
         }
         menu.into_any_element()
+    }
+}
+
+/// The command that plays a track of `kind`.
+fn select_command(kind: TrackKind) -> &'static str {
+    match kind {
+        TrackKind::Video => "video.select_track",
+        TrackKind::Audio => "audio.select_track",
+        TrackKind::Subtitle => "subtitles.select_track",
     }
 }
 

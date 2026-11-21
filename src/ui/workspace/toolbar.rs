@@ -3,6 +3,7 @@
 
 use gpui::prelude::*;
 use gpui::{AnyElement, App, ClickEvent, Context, Decorations, MouseButton, Window, div};
+use serde_json::Value;
 
 use super::Workspace;
 use crate::api::Run;
@@ -38,14 +39,14 @@ impl Workspace {
                 "open",
                 "plus",
                 "Open…",
-                cx.listener(|this, _, window, cx| this.prompt_open(window, cx)),
+                cx.listener(|this, _, _, cx| this.send("window.open_files", Value::Null, cx)),
             ))
             .child(tool(
                 compact,
                 "open-url",
                 "link",
                 "Open URL…",
-                cx.listener(|this, _, window, cx| this.show_open_url(window, cx)),
+                cx.listener(|this, _, _, cx| this.send("window.open_url", Value::Null, cx)),
             ))
             .when(count > 0, |this| {
                 this.child(tool(
@@ -53,21 +54,25 @@ impl Workspace {
                     "play-pause-all",
                     if playing { "pause" } else { "play" },
                     if playing { "Pause all" } else { "Play all" },
-                    cx.listener(|this, _, _, cx| this.toggle_all(cx)),
+                    cx.listener(|this, _, _, cx| {
+                        this.send("playback.play_pause_all", Value::Null, cx);
+                    }),
                 ))
                 .child(tool(
                     compact,
                     "restart-all",
                     "replay",
                     "Restart all",
-                    cx.listener(|this, _, _, cx| this.restart_all(cx)),
+                    cx.listener(|this, _, _, cx| {
+                        this.send("playback.restart_all", Value::Null, cx);
+                    }),
                 ))
                 .child(tool(
                     compact,
                     "close-all",
                     "close",
                     "Close all",
-                    cx.listener(|this, _, _, cx| this.close_all(cx)),
+                    cx.listener(|this, _, _, cx| this.send("tile.close_all", Value::Null, cx)),
                 ))
             })
             .child(
@@ -110,7 +115,9 @@ impl Workspace {
                 .child(
                     Button::icon("close-window", "close")
                         .icon_color(theme.text_muted)
-                        .on_click(|_, window, _| window.remove_window()),
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.send("window.close", Value::Null, cx);
+                        })),
                 )
             })
     }

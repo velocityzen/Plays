@@ -9,6 +9,8 @@ use gpui::{
     div, svg,
 };
 
+use serde_json::Value;
+
 use super::screensaver::{measure, note_home, note_room};
 use super::{CONTENT_GROUP, TOOLBAR_SPACE, Workspace};
 use crate::assets::LOGO;
@@ -89,7 +91,9 @@ impl Workspace {
                         .shortcut(open_shortcut)
                         .flex_1()
                         .justify_center()
-                        .on_click(cx.listener(|this, _, window, cx| this.prompt_open(window, cx))),
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.send("window.open_files", Value::Null, cx);
+                        })),
                 )
                 .child(
                     Button::new("open-url-empty", "Open URL")
@@ -97,9 +101,9 @@ impl Workspace {
                         .shortcut(url_shortcut)
                         .flex_1()
                         .justify_center()
-                        .on_click(
-                            cx.listener(|this, _, window, cx| this.show_open_url(window, cx)),
-                        ),
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.send("window.open_url", Value::Null, cx);
+                        })),
                 )
         };
 

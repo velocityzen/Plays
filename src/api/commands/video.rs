@@ -4,7 +4,7 @@
 use serde::Deserialize;
 use serde_json::json;
 
-use super::done;
+use super::{done, select_track};
 use crate::api::Run;
 use crate::api::args::{Arg, Kind};
 use crate::api::registry::{Spec, on_mac};
@@ -22,6 +22,18 @@ pub const COMMANDS: &[Spec] = &[
     .keywords(&["angle", "stream"])
     .setting("next_video_track")
     .keys(on_mac(&["ctrl-cmd-v"], &["ctrl-alt-v"])),
+    Spec::tile_with(
+        "video.select_track",
+        "Pick Video Track",
+        "Show one of the file's video tracks.",
+        &[Arg::required(
+            "number",
+            Kind::Integer { min: 1 },
+            "Which, from 1, as the tracks menu lists them.",
+        )],
+        |args, player, _, cx| select_track(args, TrackKind::Video, player, cx),
+    )
+    .keywords(&["angle", "stream"]),
     Spec::tile(
         "video.rotate_right",
         "Rotate Right",

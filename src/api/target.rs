@@ -126,16 +126,24 @@ pub fn windows(cx: &App) -> Vec<WindowHandle<Workspace>> {
 }
 
 /// The player window in front: the one active, else the frontmost of
-/// them, else any.
+/// them, else any. One the system still says is in front once it has
+/// closed isn't.
 pub fn front_window(cx: &App) -> Option<WindowHandle<Workspace>> {
-    fn first(
-        windows: impl IntoIterator<Item = AnyWindowHandle>,
-    ) -> Option<WindowHandle<Workspace>> {
-        windows.into_iter().find_map(|window| window.downcast())
-    }
-    first(cx.active_window())
-        .or_else(|| first(cx.window_stack().unwrap_or_default()))
-        .or_else(|| first(cx.windows()))
+    let open = cx.windows();
+    let player = |window: AnyWindowHandle| {
+        open.contains(&window)
+            .then(|| window.downcast::<Workspace>())
+            .flatten()
+    };
+    cx.active_window()
+        .and_then(player)
+        .or_else(|| {
+            cx.window_stack()
+                .unwrap_or_default()
+                .into_iter()
+                .find_map(player)
+        })
+        .or_else(|| open.iter().copied().find_map(player))
 }
 
 /// The window `target` names, or the one in front.

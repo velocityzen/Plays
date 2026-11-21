@@ -3,7 +3,8 @@
 //! forward and the next file, and tracks, loop and volume.
 
 use gpui::prelude::*;
-use gpui::{AnyElement, ClickEvent, Context, Corner, Div, Pixels, Window, div, px};
+use gpui::{AnyElement, Context, Corner, Div, Pixels, Window, div, px};
+use serde_json::{Value, json};
 
 use super::tracks::{close_tracks, has_track_choice};
 use super::{PlayerView, Reveal};
@@ -45,7 +46,7 @@ impl PlayerView {
     ) -> Div {
         let live = info.is_some_and(|i| i.live);
         let duration = self.duration();
-        let position = self.scrub.unwrap_or_else(|| self.position());
+        let position = self.bar_position();
         let progress = duration
             .filter(|d| *d > 0.0)
             .map_or(0.0, |d| (position / d) as f32);
@@ -151,9 +152,7 @@ impl PlayerView {
                         .icon_color(overlay::text_muted())
                         .selected(looping)
                         .on_click(cx.listener(|this, _, _, cx| {
-                            let looping = !this.playback.local().is_looping();
-                            this.set_looping(looping);
-                            cx.notify();
+                            this.send("playback.toggle_loop", Value::Null, cx);
                         })),
                 )
             })
@@ -162,25 +161,27 @@ impl PlayerView {
                     Button::icon("mute", volume_icon)
                         .overlay()
                         .on_click(cx.listener(|this, _, _, cx| {
-                            let muted = !this.playback.local().is_muted();
-                            this.set_muted(muted);
-                            cx.notify();
+                            this.send("audio.toggle_mute", Value::Null, cx);
                         })),
                 )
                 .child(
-                    div().w(VOLUME_WIDTH).pr_1().child(
-                        Slider::new(
-                            "volume",
-                            if player.is_muted() {
-                                0.0
-                            } else {
-                                player.volume()
-                            },
-                            self.volume_drag.clone(),
-                        )
-                        .overlay()
-                        .on_change(cx.listener(Self::on_volume)),
-                    ),
+                    div()
+                        .w(VOLUME_WIDTH)
+                        .pr_1()
+                        .debug_selector(|| "volume".into())
+                        .child(
+                            Slider::new(
+                                "volume",
+                                if player.is_muted() {
+                                    0.0
+                                } else {
+                                    player.volume()
+                                },
+                                self.volume_drag.clone(),
+                            )
+                            .overlay()
+                            .on_change(cx.listener(Self::on_volume)),
+                        ),
                 )
             })
     }
@@ -226,24 +227,32 @@ impl PlayerView {
                             .as_ref()
                             .is_none_or(|neighbors| neighbors.previous.is_none()),
                     )
-                    .on_click(cx.listener(|this, _, _, cx| this.open_neighbor(-1, cx))),
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.send("playback.previous_file", Value::Null, cx);
+                    })),
             )
             .child(
                 Button::icon("skip-back", "skip-back")
                     .overlay()
                     .disabled(live)
-                    .on_click(cx.listener(skip(-1.0))),
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.send("playback.seek_backward", Value::Null, cx);
+                    })),
             )
             .child(
                 Button::icon("play", play_icon)
                     .overlay()
-                    .on_click(cx.listener(|this, _, _, cx| this.play_pause(cx))),
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.send("playback.play_pause", Value::Null, cx);
+                    })),
             )
             .child(
                 Button::icon("skip-forward", "skip-forward")
                     .overlay()
                     .disabled(live)
-                    .on_click(cx.listener(skip(1.0))),
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.send("playback.seek_forward", Value::Null, cx);
+                    })),
             )
             .child(
                 Button::icon("next", "next")
@@ -253,7 +262,9 @@ impl PlayerView {
                             .as_ref()
                             .is_none_or(|neighbors| neighbors.next.is_none()),
                     )
-                    .on_click(cx.listener(|this, _, _, cx| this.open_neighbor(1, cx))),
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.send("playback.next_file", Value::Null, cx);
+                    })),
             )
     }
 
@@ -261,31 +272,27 @@ impl PlayerView {
         let Some(duration) = self.duration() else {
             return;
         };
-        let time = event.value as f64 * duration;
-        // The bar shows where the slider is until it's let go, wherever it
-        // plays.
-        self.scrub = (event.slide != Slide::End).then_some(time);
-        self.playback.scrub(event.slide, time);
-        cx.notify();
-    }
-
-    fn on_volume(&mut self, event: &SliderEvent, _: &mut Window, cx: &mut Context<Self>) {
-        let value = event.value;
-        self.set_volume(value);
-        if value > 0.0 && self.playback.local().is_muted() {
-            self.set_muted(false);
+        let time = f64::from(event.value) * duration;
+        // The bar shows where the slider is until it plays from there,
+        // wherever it plays: dragged, it follows here; let go, it seeks.
+        self.scrub = Some(time);
+        match event.slide {
+            Slide::Start => self.playback.begin_scrub(time),
+            Slide::Move => self.playback.scrub(time),
+            Slide::End => self.send("playback.seek", json!({"time": time}), cx),
         }
         cx.notify();
     }
-}
 
-/// Skip back (`-1`) or forward (`1`) by the seek step.
-fn skip(
-    direction: f64,
-) -> impl Fn(&mut PlayerView, &ClickEvent, &mut Window, &mut Context<PlayerView>) + 'static {
-    move |this, _, _, cx| {
-        let step = f64::from(cx.global::<Settings>().seek_step_seconds);
-        this.seek_by(step * direction, cx);
+    /// Dragged, the volume follows; let go, it's set.
+    fn on_volume(&mut self, event: &SliderEvent, _: &mut Window, cx: &mut Context<Self>) {
+        match event.slide {
+            Slide::End => {
+                let volume = f64::from(event.value) * 100.0;
+                self.send("audio.set_volume", json!({"volume": volume}), cx);
+            }
+            _ => self.set_volume_to(event.value, cx),
+        }
     }
 }
 

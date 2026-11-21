@@ -19,8 +19,12 @@ pub struct Arg {
 pub enum Kind {
     /// A whole number, at least `min`.
     Integer { min: i64 },
+    /// A number, fractions too, from `min` to `max` if there is one.
+    Number { min: f64, max: Option<f64> },
     /// Any text.
     Text,
+    /// A list of text, at least one.
+    Texts,
     /// One of these words.
     Choice(fn() -> Vec<&'static str>),
 }
@@ -57,8 +61,18 @@ impl Arg {
                 fields.insert("type".into(), "integer".into());
                 fields.insert("min".into(), (*min).into());
             }
+            Kind::Number { min, max } => {
+                fields.insert("type".into(), "number".into());
+                fields.insert("min".into(), (*min).into());
+                if let Some(max) = max {
+                    fields.insert("max".into(), (*max).into());
+                }
+            }
             Kind::Text => {
                 fields.insert("type".into(), "text".into());
+            }
+            Kind::Texts => {
+                fields.insert("type".into(), "texts".into());
             }
             Kind::Choice(choices) => {
                 fields.insert("type".into(), "choice".into());
@@ -80,8 +94,23 @@ impl Arg {
                 None => Err(format!("{name} is a whole number")),
             },
             (Kind::Integer { .. }, _) => Err(format!("{name} is a whole number")),
+            (Kind::Number { min, max }, Value::Number(number)) => {
+                let n = number.as_f64().unwrap_or(f64::NAN);
+                match max {
+                    _ if n < *min => Err(format!("{name} is at least {min}")),
+                    Some(max) if n > *max => Err(format!("{name} is at most {max}")),
+                    _ => Ok(()),
+                }
+            }
+            (Kind::Number { .. }, _) => Err(format!("{name} is a number")),
             (Kind::Text, Value::String(_)) => Ok(()),
             (Kind::Text, _) => Err(format!("{name} is text")),
+            (Kind::Texts, Value::Array(items))
+                if !items.is_empty() && items.iter().all(Value::is_string) =>
+            {
+                Ok(())
+            }
+            (Kind::Texts, _) => Err(format!("{name} is a list of text, at least one")),
             (Kind::Choice(choices), value) => {
                 let choices = choices();
                 match value.as_str() {
@@ -218,6 +247,52 @@ mod tests {
             checked(json!({"number": 1, "shape": "oval"})),
             bad("shape is one of round, square")
         );
+    }
+
+    #[test]
+    fn takes_numbers_and_lists_of_text() {
+        let takes = [
+            Arg::optional(
+                "at",
+                Kind::Number {
+                    min: 0.0,
+                    max: None,
+                },
+                "When.",
+            ),
+            Arg::optional(
+                "level",
+                Kind::Number {
+                    min: 0.0,
+                    max: Some(100.0),
+                },
+                "How loud.",
+            ),
+            Arg::optional("urls", Kind::Texts, "What."),
+        ];
+        let checked = |args: Value| check("go", &takes, &args);
+        assert_eq!(checked(json!({"at": 12.5, "level": 100})), Ok(()));
+        assert_eq!(checked(json!({"at": 0, "level": 0.5})), Ok(()));
+        assert_eq!(checked(json!({"at": -0.5})), bad("at is at least 0"));
+        assert_eq!(
+            checked(json!({"level": 100.5})),
+            bad("level is at most 100")
+        );
+        assert_eq!(checked(json!({"at": "1:00"})), bad("at is a number"));
+        assert_eq!(checked(json!({"urls": ["a", "b"]})), Ok(()));
+        for urls in [json!([]), json!("a"), json!(["a", 1])] {
+            assert_eq!(
+                checked(json!({ "urls": urls })),
+                bad("urls is a list of text, at least one"),
+                "{urls}"
+            );
+        }
+        assert_eq!(
+            takes[1].describe(),
+            json!({"name": "level", "type": "number", "min": 0.0, "max": 100.0, "required": false, "description": "How loud."})
+        );
+        assert_eq!(takes[0].describe()["max"], Value::Null, "none");
+        assert_eq!(takes[2].describe()["type"], "texts");
     }
 
     #[test]

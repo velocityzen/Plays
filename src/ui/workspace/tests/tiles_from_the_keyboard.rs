@@ -4,8 +4,7 @@
 
 use gpui::{EntityId, Modifiers, TestAppContext, VisualTestContext, WindowHandle};
 
-use super::{open, players};
-use crate::ui::player::PlayerEvent;
+use super::{open, players, zoom};
 use crate::ui::testing::{self, find, hover, press, shows};
 use crate::ui::workspace::Workspace;
 
@@ -212,7 +211,7 @@ fn with_a_tile_maximized_the_keys_show_another_and_move_none(cx: &mut TestAppCon
     let first = window
         .read_with(&cx, |workspace, _| workspace.tiles[0].view.clone())
         .unwrap();
-    first.update(&mut cx, |_, cx| cx.emit(PlayerEvent::ToggleMaximize));
+    zoom(&first, &mut cx);
     cx.run_until_parked();
     let maximized = |cx: &VisualTestContext| {
         window

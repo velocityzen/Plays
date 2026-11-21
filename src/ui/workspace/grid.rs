@@ -2,7 +2,8 @@
 //! A tile dragged by its picture onto another takes its place.
 
 use gpui::prelude::*;
-use gpui::{App, Context, Hsla, div};
+use gpui::{App, Context, EntityId, Hsla, div};
+use serde_json::json;
 
 use super::{Tile, Workspace};
 use crate::settings::Settings;
@@ -66,7 +67,7 @@ impl Workspace {
                                         })
                                         .on_drop(cx.listener(
                                             move |this, dragged: &DraggedTile, _, cx| {
-                                                this.move_tile(dragged.0, id, cx);
+                                                this.drop_tile(dragged.0, id, cx);
                                             },
                                         )),
                                 )
@@ -74,6 +75,18 @@ impl Workspace {
                     }))
                     .children((row.len()..columns).map(|_| div().flex_1().min_w_0()))
             }))
+    }
+}
+
+impl Workspace {
+    /// Move the tile `id`, dropped on the tile `onto`, to its place.
+    fn drop_tile(&self, id: EntityId, onto: EntityId, cx: &mut App) {
+        let place = self.tiles.iter().position(|t| t.view.entity_id() == onto);
+        if let Some(place) = place
+            && id != onto
+        {
+            self.send_to_tile(id, "tile.move", json!({"position": place + 1}), cx);
+        }
     }
 }
 

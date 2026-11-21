@@ -27,6 +27,14 @@ impl PlayerView {
         cx.notify();
     }
 
+    /// Play from `time`, in seconds, here or there (each stops at the
+    /// end): where the seek bar was let go, say, which shows it until then.
+    pub fn seek_to(&mut self, time: f64, cx: &mut Context<Self>) {
+        self.scrub = None;
+        self.playback.seek(time);
+        cx.notify();
+    }
+
     pub fn restart(&mut self, cx: &mut Context<Self>) {
         self.seek(0.0);
         cx.notify();
@@ -103,6 +111,15 @@ impl PlayerView {
         self.note(format!("Volume {}%", (volume * 100.0).round()), cx);
     }
 
+    /// Set the volume, from 0 to 1; above none, it's no longer muted.
+    pub fn set_volume_to(&mut self, volume: f32, cx: &mut Context<Self>) {
+        self.set_volume(volume);
+        if volume > 0.0 && self.playback.local().is_muted() {
+            self.set_muted(false);
+        }
+        cx.notify();
+    }
+
     pub fn toggle_mute(&mut self, cx: &mut Context<Self>) {
         let muted = !self.playback.local().is_muted();
         self.set_muted(muted);
@@ -143,6 +160,34 @@ impl PlayerView {
         let reel = TrackReel { choices, at };
         self.osd = Some((Osd::Reel(reel), Instant::now()));
         cx.notify();
+    }
+
+    /// Play track `number` (from 1) of a kind, as the tracks menu numbers
+    /// them, or no subtitles (`None`). Whether the file has that track.
+    pub fn select_track_number(
+        &mut self,
+        kind: TrackKind,
+        number: Option<usize>,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let index = match number {
+            None if kind == TrackKind::Subtitle => None,
+            None => return false,
+            Some(number) => {
+                let info = self.playback.local().info();
+                let track = info.as_ref().and_then(|info| {
+                    let at = number.checked_sub(1)?;
+                    info.tracks(kind).nth(at).map(|track| track.index)
+                });
+                match track {
+                    Some(index) => Some(index),
+                    None => return false,
+                }
+            }
+        };
+        self.select_track(kind, index, cx);
+        cx.notify();
+        true
     }
 
     /// Hide the subtitles showing, or show the ones hidden (or the first).

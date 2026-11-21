@@ -8,10 +8,12 @@ use airplay::PinPairing;
 use airplay::fake::{FakeReceiver, Kind};
 use gpui::{TestAppContext, VisualTestContext, WindowHandle};
 use plist::{Dictionary, Value};
+use serde_json::json;
 
 use super::casting::{get, tile, wait};
 use super::open;
-use crate::cast::airplay::AirPlayTarget;
+use crate::api::{self, Invocation};
+use crate::cast::airplay::{AirPlayTarget, KIND};
 use crate::cast::{AppPairings, Casting, Pairings};
 use crate::media::tracks::TrackKind;
 use crate::ui::testing::{self, click, press, shows};
@@ -158,10 +160,23 @@ fn a_tv_asks_for_the_pin_it_shows_once_and_a_wrong_one_has_it_show_another(
 ) {
     let tv = tv();
     let (window, mut cx) = start(cx, &tv, "clip.mp4", false);
+    let name = tile(window, &cx).read_with(&cx, |view, _| view.id().to_string());
+    let device = tv.device();
+    let on_tile = |command: &str| {
+        Invocation::new(command)
+            .with_args(json!({"device": device.id, "kind": KIND}))
+            .on_tile(name.clone())
+    };
+    cx.update(|_, cx| api::record(cx));
     pick(&mut cx);
     wait(&mut cx, "a sheet to ask for the PIN", |cx| {
         wants_pin(window, cx)
     });
+    assert_eq!(
+        cx.update(|_, cx| api::recorded(cx)),
+        [on_tile("cast.to"), on_tile("cast.pair")],
+        "the menu casts; the TV wanting its PIN, the tile asks to pair"
+    );
     assert!(tv.state().pin_shown, "the TV shows it");
     assert!(shows(&mut cx, "pairing"));
     let says = sheet_says(window, &mut cx);
@@ -186,6 +201,11 @@ fn a_tv_asks_for_the_pin_it_shows_once_and_a_wrong_one_has_it_show_another(
     wait(&mut cx, "it to play once paired", |_| {
         !plays(&tv).is_empty()
     });
+    assert_eq!(
+        cx.update(|_, cx| api::recorded(cx)),
+        [on_tile("cast.to")],
+        "paired, it's cast there again"
+    );
     assert!(!shows(&mut cx, "pairing"), "the sheet goes");
     assert_eq!(
         view.read_with(&cx, |view, _| view

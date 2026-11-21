@@ -226,6 +226,18 @@ impl Spec {
         Self::new(id, title, description, scope, Run::Custom(run))
     }
 
+    /// One that finds what it acts on, a `scope`, itself, given `args`.
+    pub const fn custom_with(
+        id: &'static str,
+        title: &'static str,
+        description: &'static str,
+        scope: Scope,
+        args: &'static [Arg],
+        run: CustomFn,
+    ) -> Self {
+        Self::new(id, title, description, scope, Run::Custom(run)).args(args)
+    }
+
     pub const fn keywords(mut self, keywords: &'static [&'static str]) -> Self {
         self.keywords = keywords;
         self

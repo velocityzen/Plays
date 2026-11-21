@@ -22,6 +22,25 @@ pub const COMMANDS: &[Spec] = &[
     .keywords(&["play", "pause", "resume", "stop"])
     .setting("play_pause")
     .keys(&["space", "p"]),
+    Spec::tile_with(
+        "playback.seek",
+        "Seek To",
+        "Play from a time in the file, here or on the device it's cast to.",
+        &[Arg::required(
+            "time",
+            Kind::Number {
+                min: 0.0,
+                max: None,
+            },
+            "Seconds from the start; past the end is the end.",
+        )],
+        |args, player, _, cx| {
+            let Seek { time } = args.read()?;
+            player.seek_to(time, cx);
+            done()
+        },
+    )
+    .keywords(&["jump", "position", "time", "go to", "scrub"]),
     Spec::tile(
         "playback.seek_forward",
         "Seek Forward",
@@ -231,6 +250,11 @@ pub const COMMANDS: &[Spec] = &[
 #[derive(Deserialize)]
 struct Chapter {
     number: usize,
+}
+
+#[derive(Deserialize)]
+struct Seek {
+    time: f64,
 }
 
 /// How far the seek commands skip.

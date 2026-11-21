@@ -15,8 +15,8 @@ use gpui::prelude::*;
 use gpui::{AnyElement, App, Context, Corner, Div, ElementId, MouseDownEvent, Task, Window, div};
 use stream_server::{Pick, SubtitleSource};
 
-use super::{PlayerEvent, PlayerView};
-use crate::api::commands::{output, window as windows};
+use super::PlayerView;
+use crate::api::commands::{cast, output, window as windows};
 use crate::app::{AudioEngine, output_kind};
 use crate::cast::target::FOLLOW_POLL;
 use crate::cast::{Casting, Device, Error, Link, Phase, Request, Shows, SubtitleChoice};
@@ -87,6 +87,14 @@ impl PlayerView {
             autoplay,
             _wait: wait,
         });
+    }
+
+    /// Close the menu, and cast to `device` (`cast.to`), or play here again
+    /// (`cast.stop`).
+    fn send_cast(&mut self, device: Option<&Device>, cx: &mut Context<Self>) {
+        self.cast_open = false;
+        cx.notify();
+        self.send_run(cast::to(device), cx);
     }
 
     /// Cast to `device` from where the tile is, playing if it plays; or
@@ -245,7 +253,7 @@ impl PlayerView {
             Phase::Over(Error::NeedsPin) => {
                 let device = cast.link.device().clone();
                 self.end_cast(cx);
-                cx.emit(PlayerEvent::Pair(device));
+                self.send_run(cast::pair(&device), cx);
                 return false;
             }
             Phase::Over(err) => {
@@ -345,7 +353,7 @@ impl PlayerView {
                 .child(
                     Button::new("play-here", "Play Here")
                         .mt_1()
-                        .on_click(cx.listener(|this, _, _, cx| this.cast_to(None, cx))),
+                        .on_click(cx.listener(|this, _, _, cx| this.send_cast(None, cx))),
                 )
                 .into_any_element(),
         )
@@ -432,7 +440,7 @@ impl PlayerView {
             MenuRow::new("cast-here", "This Computer")
                 .checked(casting.is_none())
                 .mx_1()
-                .on_click(cx.listener(|this, _, _, cx| this.cast_to(None, cx)))
+                .on_click(cx.listener(|this, _, _, cx| this.send_cast(None, cx)))
         });
         let wayland = !screens.is_empty() && displays::placed_by_compositor();
         let screens = screens.into_iter().enumerate().map(|(i, screen)| {
@@ -463,7 +471,7 @@ impl PlayerView {
             .checked(checked)
             .detail(div().text_xs().child(detail))
             .mx_1()
-            .on_click(cx.listener(move |this, _, _, cx| this.cast_to(Some(device.clone()), cx)))
+            .on_click(cx.listener(move |this, _, _, cx| this.send_cast(Some(&device), cx)))
         });
         Panel::new()
             .occlude()

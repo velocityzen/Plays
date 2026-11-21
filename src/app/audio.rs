@@ -22,9 +22,10 @@ use futures::channel::mpsc::{UnboundedSender, unbounded};
 use gpui::{App, AppContext as _, Global};
 
 use super::bluetooth::{self, Paired};
+use super::menus;
 use super::speakers::Speakers;
-use super::{dispatch, menus};
 
+use crate::api::{self, Target};
 use crate::cast::AppPairings;
 use crate::cast::target::{Error as PairingError, Pairing};
 use crate::media::output::{self, DeviceEvent, DeviceInfo, OpenError, Playing};
@@ -560,7 +561,7 @@ impl AudioEngine {
     fn ask_for_pin(device: AudioDevice, devices: Arc<Devices>, cx: &mut App) {
         let id = device.id.clone();
         let start: StartPairing = Arc::new(move || devices.pair(&id));
-        dispatch::with_workspace(cx, move |workspace, _, cx| {
+        api::in_window_later(Target::default(), cx, move |workspace, _, cx| {
             workspace.pair_output(device, start, cx);
         });
     }

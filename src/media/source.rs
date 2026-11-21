@@ -111,6 +111,15 @@ impl Source {
         }
     }
 
+    /// What opens it again (`app.open`): the file's path, or the URL as
+    /// given, with any user and password in it, which showing it leaves out.
+    pub fn address(&self) -> String {
+        match self {
+            Self::File(path) => path.display().to_string(),
+            Self::Url(url) => url.clone(),
+        }
+    }
+
     pub fn is_network(&self) -> bool {
         matches!(self, Self::Url(_))
     }

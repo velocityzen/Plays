@@ -29,6 +29,7 @@ use gpui::{
     KeyDownEvent, Pixels, Size, Subscription, TitlebarOptions, Window, WindowBounds, WindowHandle,
     WindowOptions, black, div, px,
 };
+use serde_json::json;
 
 use super::displays;
 use super::open_url::{OpenUrlDialog, OpenUrlEvent, UrlForm};
@@ -221,7 +222,7 @@ impl Workspace {
         let url_form_events =
             cx.subscribe_in(&url_form, window, |this, form, event, window, cx| {
                 if let OpenUrlEvent::Open(source) = event {
-                    this.open_sources(vec![source.clone()], cx);
+                    this.send("app.open", json!({"urls": [source.address()]}), cx);
                 }
                 form.update(cx, |form, cx| form.clear(cx));
                 this.url_form_open = false;

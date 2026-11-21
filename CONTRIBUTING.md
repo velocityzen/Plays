@@ -470,8 +470,8 @@ check:
   its arguments named once; each that takes keys is saved under a name
   of its own, and its keys are keys; one that takes none has none.
 - What menus and controls send (a window's number, a display, a chapter,
-  an aspect ratio, a crop, a device to play through or cast to) is a
-  command given arguments it takes, aimed as it may be. Every menu item
+  an aspect ratio, a crop, a device to play through, cast to or pair
+  with) is a command given arguments it takes, aimed as it may be. Every menu item
   runs a command, titled as it is, each once but those given arguments;
   items are checked as their commands' state says, at once after one
   runs, and enabled only when their commands can run (`menus`).
@@ -492,6 +492,27 @@ check:
 - Casting to a device by its id and kind, the one cast to still found
   once its protocol is off (`casting`), and picking an output by its id
   alone (`sound_to_bluetooth`).
+- Each of a window's controls sends its command, aimed at its own tile
+  or window (`controls`): a tile's buttons, a double click, the seek bar
+  and the volume slider once let go, the tracks menu's rows, Pop Out and
+  a tile dropped on another; the empty window's buttons, and the Open URL
+  form and sheet, a URL's user and password kept. `api::intercept` notes
+  what's sent without running it, so one tile can have every control
+  clicked. Picking a device and Play Here (`casting`), and a TV wanting
+  its PIN asking to pair, then cast there again once paired
+  (`casting_to_airplay`), are noted as they run (`api::record`). The
+  toolbar is drawn only where there's no menu bar, so it isn't tested on
+  macOS.
+- What those commands do (`commands`): Seek To plays from the time given,
+  no later than the end, and the seek bar holds while dragged, sends
+  nothing, and plays on once let go; Set Volume takes percent and
+  unmutes unless it's none; tracks are picked by number from 1, and
+  subtitles by none too; Maximize Tile, and full screen for a window's
+  only tile; Move Tile To a place from 1, none past the last; Move Tile
+  to Window, last there with keys going to it, playing on, and staying
+  put in its own; Move Tile to New Window, which says the window; and
+  Open Paths or URLs in the window named, in a new one with none open,
+  or why a path or URL won't open.
 
 Unit tests check finding a name among ids, labels, positions and the ends
 of ids (an id first, positions only among those given, several matching
