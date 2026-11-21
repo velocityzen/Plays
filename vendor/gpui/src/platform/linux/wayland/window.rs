@@ -383,7 +383,7 @@ impl WaylandWindowStatePtr {
                 let mut state = self.state.borrow_mut();
 
                 if let Some(mut configure) = state.in_progress_configure.take() {
-                    let got_unmaximized = state.maximized && !configure.maximized;
+                    let (was_fullscreen, was_maximized) = (state.fullscreen, state.maximized);
                     state.fullscreen = configure.fullscreen;
                     state.maximized = configure.maximized;
                     state.tiling = configure.tiling;
@@ -394,11 +394,13 @@ impl WaylandWindowStatePtr {
                         state.resize_throttle = true;
                     }
                     if !configure.fullscreen && !configure.maximized {
-                        configure.size = if got_unmaximized {
-                            Some(state.window_bounds.size)
-                        } else {
-                            compute_outer_size(state.inset(), configure.size, state.tiling)
-                        };
+                        configure.size = floating_size(
+                            &configure,
+                            was_fullscreen,
+                            was_maximized,
+                            state.window_bounds.size,
+                            state.inset(),
+                        );
                         if let Some(size) = configure.size {
                             state.window_bounds = Bounds {
                                 origin: Point::default(),
@@ -1209,6 +1211,26 @@ fn compute_outer_size(
     })
 }
 
+// Plays: the size a configure gives a window that is neither full screen
+// nor maximized, if any, its inset around it: the size from before when it
+// leaves maximized, as gpui had it, and when it leaves full screen with no
+// size from the compositor (Weston's 0×0), which leaves it to the window.
+fn floating_size(
+    configure: &InProgressConfigure,
+    was_fullscreen: bool,
+    was_maximized: bool,
+    before: Size<Pixels>,
+    inset: Pixels,
+) -> Option<Size<Pixels>> {
+    let left_maximized = was_maximized && !configure.maximized;
+    let left_fullscreen = was_fullscreen && !configure.fullscreen;
+    if left_maximized || (left_fullscreen && configure.size.is_none()) {
+        Some(before)
+    } else {
+        compute_outer_size(inset, configure.size, configure.tiling)
+    }
+}
+
 fn inset_by_tiling(mut bounds: Bounds<Pixels>, inset: Pixels, tiling: Tiling) -> Bounds<Pixels> {
     if !tiling.top {
         bounds.origin.y += inset;
@@ -1226,4 +1248,88 @@ fn inset_by_tiling(mut bounds: Bounds<Pixels>, inset: Pixels, tiling: Tiling) ->
     }
 
     bounds
+}
+
+// Plays
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const BEFORE: Size<Pixels> = size(px(480.), px(320.));
+    const OUTPUT: Size<Pixels> = size(px(1920.), px(1080.));
+    const INSET: Pixels = px(10.);
+
+    /// A configure for a window neither full screen nor maximized, with
+    /// the size the compositor gives, if any.
+    fn floating(size: Option<Size<Pixels>>) -> InProgressConfigure {
+        InProgressConfigure {
+            size,
+            fullscreen: false,
+            maximized: false,
+            resizing: false,
+            tiling: Tiling::default(),
+        }
+    }
+
+    /// `size` with the inset on each side.
+    fn outer(size: Size<Pixels>) -> Size<Pixels> {
+        size + crate::size(INSET * 2., INSET * 2.)
+    }
+
+    #[test]
+    fn leaving_full_screen_with_no_size_takes_back_the_size_from_before() {
+        assert_eq!(
+            floating_size(&floating(None), true, false, BEFORE, INSET),
+            Some(BEFORE)
+        );
+    }
+
+    #[test]
+    fn leaving_full_screen_with_a_size_takes_that_size() {
+        let given = size(px(800.), px(600.));
+        assert_eq!(
+            floating_size(&floating(Some(given)), true, false, BEFORE, INSET),
+            Some(outer(given))
+        );
+    }
+
+    #[test]
+    fn leaving_maximized_takes_back_the_size_from_before_whatever_is_given() {
+        for given in [None, Some(OUTPUT)] {
+            assert_eq!(
+                floating_size(&floating(given), false, true, BEFORE, INSET),
+                Some(BEFORE)
+            );
+        }
+    }
+
+    #[test]
+    fn a_window_staying_out_of_full_screen_takes_the_size_given_if_any() {
+        let given = size(px(800.), px(600.));
+        assert_eq!(
+            floating_size(&floating(Some(given)), false, false, BEFORE, INSET),
+            Some(outer(given))
+        );
+        assert_eq!(
+            floating_size(&floating(None), false, false, BEFORE, INSET),
+            None,
+            "it stays the size it is"
+        );
+    }
+
+    #[test]
+    fn edges_that_are_tiled_have_no_inset() {
+        let given = size(px(800.), px(600.));
+        let configure = InProgressConfigure {
+            tiling: Tiling {
+                left: true,
+                ..Tiling::default()
+            },
+            ..floating(Some(given))
+        };
+        assert_eq!(
+            floating_size(&configure, false, false, BEFORE, INSET),
+            Some(size(given.width + INSET, given.height + INSET * 2.))
+        );
+    }
 }

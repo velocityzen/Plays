@@ -1002,10 +1002,11 @@ control over displays and full screen, and test support. Everything Plays change
   did on Linux.
 - Displays have names, and on X11 each RandR monitor is a display rather
   than the whole X screen. A window can go full screen on a display picked
-  (X11 moves it there first; Wayland asks the compositor, which may
-  ignore it), go full screen over just its own display instead of in a
-  Space of its own (macOS), and open where it is asked and stay there
-  (X11).
+  (X11 moves it there first; Wayland asks the compositor, which may ignore
+  it), go full screen over just its own display instead of in a Space of
+  its own (macOS), and open where it is asked and stay there (X11). On
+  Wayland, a window out of full screen takes back the size it had when the
+  compositor leaves the size to it.
 - Text can be laid out and rasterized into memory, for subtitles in
   screenshots.
 - Its test platform takes the system's own text system, extra displays,

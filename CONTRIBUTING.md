@@ -685,7 +685,12 @@ in real time; Vulkan can be software (lavapipe). It uses `Xvfb`,
   crates nothing of FFmpeg either), and are built and tested on their own.
 - Everything Plays changes in `vendor/gpui` is marked "Plays" in the code
   and described in `vendor/gpui/PLAYS.md`, which also says how to update
-  gpui; `vendor/xattr/PLAYS.md` does the same for xattr.
+  gpui; `vendor/xattr/PLAYS.md` does the same for xattr. gpui isn't in the
+  workspace, so cargo doesn't run gpui's own tests, such as the Wayland
+  window's sizes; they were checked to fail as other tests are, copied
+  into Plays' tests on macOS, and the code under them is checked to build
+  for Linux with `cargo check -p gpui --target aarch64-unknown-linux-gnu
+  --tests`, given a C compiler for that target.
 - When the dependencies change, run `script/attributions` so Settings →
   About lists them.
 - The test fixtures are committed; change them with

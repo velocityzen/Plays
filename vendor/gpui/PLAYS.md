@@ -254,6 +254,14 @@ say a window is full screen only after they have moved it. The Wayland
 client forgets an output once the compositor removes its global, and
 releases it, so a display unplugged leaves `displays()` too.
 
+`src/platform/linux/wayland/window.rs`: a window leaving full screen takes
+back the size it had before when the compositor gives it no size: Weston
+gives none (0×0) after `unset_fullscreen`, leaving the size to the window,
+and it stayed as big as the output. Given a size, it takes that, as from
+any configure. Leaving maximized, it already took back its size from
+before, whatever it was given. `floating_size` decides, and its tests are
+gpui's own, which cargo doesn't run, gpui being outside Plays' workspace.
+
 The macOS and test windows: `Window::start_window_move` moves a macOS
 window with the mouse while its button is down, as its title bar does
 (`performWindowDragWithEvent` with the event being handled, once it is
