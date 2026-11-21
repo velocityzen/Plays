@@ -196,10 +196,17 @@ Play All and Pause All) having something that does it. The text field's
 tests compose as an IME does: the cursor stays in what is composed,
 counted within it even after other text and wider characters, deleting it
 leaves an empty field to type into, and ranges outside the text are kept
-inside it. The settings file is read a value at a time, so one that's
-wrong leaves only its setting as Plays starts it out; a file not read
-whole, half written or from a later Plays, is kept beside it as
-`settings.json.bad`, and a good one, or one from before there was a
+inside it. With characters of one to four bytes and of one or two UTF-16
+units (é, 中, 😀), they also check: offsets between UTF-16 and bytes both
+ways, landing on a character whatever the offset (a property test); IME
+composing, committing and reading back by UTF-16 ranges, into empty text
+too; where IME is told a range is drawn; backspace and delete taking a
+whole grapheme (an accent written apart, a family emoji joined of three);
+and a selection turning round past its anchor; each has been checked to
+fail when what it covers is broken. The settings file is read a value at a
+time, so one that's wrong leaves only its setting as Plays starts it out;
+a file not read whole, half written or from a later Plays, is kept beside
+it as `settings.json.bad`, and a good one, or one from before there was a
 version, is read as it is; and saving replaces a file whole rather than
 writing over it.
 

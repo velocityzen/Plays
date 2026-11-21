@@ -4651,6 +4651,7 @@ dependencies = [
  "objc",
  "parking_lot",
  "png 0.18.1",
+ "proptest",
  "raw-window-handle",
  "rayon",
  "serde",
