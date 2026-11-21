@@ -318,9 +318,9 @@ What the window tests check:
   toolbar, and another puts the grid back, as opening more files does; the
   tile redraws each time; ⌘W closes the tile in front, then the empty
   window; four tiles sit in two even rows.
-- A window that fitted its files keeps a size given it after, till ⌘1 or
+- A window that fitted its files keeps a size given it after, till ⌥⌘0 or
   Video → Match Video Size fits it to them again; zoomed, it isn't fitted
-  to files opening, but ⌘1 fits it; empty (only the menu reaches it), or
+  to files opening, but ⌥⌘0 fits it; empty (only the menu reaches it), or
   in full screen, it stays as it is. Unit tests check the grid's size and when a window may be
   fitted; the Video menu has the item.
 - An empty window shows the app's logo in the middle, at its largest,
@@ -364,6 +364,15 @@ What the window tests check:
   maximize the one they go to, without a ring, and move none. Unit tests
   check where each key goes from each place in a full grid, one with a
   short last row, one row and one tile.
+- Windows from the keyboard: with three player windows, ⌘2 and ⌘3 bring
+  those to the front and ⌘9 nothing; Ctrl+Tab and Ctrl+Shift+Tab go round
+  them both ways; from Settings, they go to the first and the last, and ⌘2
+  to the second. With the second closed, the third is ⌘2, one opened next
+  is ⌘3, and Ctrl+Tab skips the closed one. The keymap test checks the
+  keys are these in a player window and in Settings, with the default
+  playback shortcuts bound too (none of which may take them); a unit test
+  checks the stepping round, and the Window menu has Next and Previous
+  Window.
 - A file closed partway in opens there again; one barely begun starts
   over, and so does every file with Settings' resuming off.
 - `⇧S` puts every tile where the one clicked is, paused as it is, and
@@ -764,7 +773,10 @@ names), and the script exits non-zero if any failed:
 - `float-on-top` floats the window while it plays, as the system has it
   (the window's level on macOS, `_NET_WM_STATE_ABOVE` on X11), still in
   Mission Control (macOS), brings it down when paused, and floats Settings
-  with it, in Mission Control too.
+  with it, in Mission Control too;
+- `windows` opens a second player window, which must come to the front,
+  then ⌘1, Ctrl+Tab and Ctrl+Shift+Tab must each bring the one they go to
+  to the front, as the system has it.
 
 Throughout, a window that has fitted its files must be laid out at the
 size it really is, every playing video must show at least 15 of its 25

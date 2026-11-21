@@ -4,8 +4,9 @@ use gpui::App;
 
 use super::dispatch::{with_active, with_active_in_window, with_workspace};
 use super::{
-    About, CastTo, CloseAll, CloseFile, CloseWindow, GoToChapter, OpenFiles, OpenSettings, OpenUrl,
-    Quit, SetAspectRatio, SetAudioDevice, SetCrop, SetWindowAudioDevice, ShowOnDisplay,
+    About, CastTo, CloseAll, CloseFile, CloseWindow, GoToChapter, GoToWindow, NextWindow,
+    OpenFiles, OpenSettings, OpenUrl, PreviousWindow, Quit, SetAspectRatio, SetAudioDevice,
+    SetCrop, SetWindowAudioDevice, ShowOnDisplay, windows,
 };
 use crate::hotkeys::*;
 use crate::media::tracks::TrackKind;
@@ -58,6 +59,14 @@ fn register_app(cx: &mut App) {
     });
     cx.on_action(|_: &CloseFile, cx| with_workspace(cx, |w, _, cx| w.close_active(cx)));
     cx.on_action(|_: &CloseAll, cx| with_workspace(cx, |w, _, cx| w.close_all(cx)));
+    // Deferred too: the window the keys were pressed in is busy with them
+    // until then, and may be the one to bring to the front.
+    cx.on_action(|go: &GoToWindow, cx| {
+        let nth = go.0;
+        cx.defer(move |cx| windows::go_to(nth, cx))
+    });
+    cx.on_action(|_: &NextWindow, cx| cx.defer(|cx| windows::step(1, cx)));
+    cx.on_action(|_: &PreviousWindow, cx| cx.defer(|cx| windows::step(-1, cx)));
 }
 
 /// The tile in front: playing it, its sound, and its tracks and subtitles.
@@ -266,7 +275,13 @@ mod tests {
                     "nothing does {command:?}"
                 );
             }
-            let menu_only: [&dyn Action; 2] = [&PlayAll, &PauseAll];
+            let menu_only: [&dyn Action; 5] = [
+                &PlayAll,
+                &PauseAll,
+                &GoToWindow(0),
+                &NextWindow,
+                &PreviousWindow,
+            ];
             for action in menu_only {
                 assert!(
                     cx.is_action_available(action),

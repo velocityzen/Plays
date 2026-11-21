@@ -136,7 +136,7 @@ fn the_window_takes_its_videos_size_again_from_the_keys_or_the_menu(cx: &mut Tes
     cx.executor().advance_clock(FIT_POLL);
     cx.run_until_parked();
     assert_eq!(size_now(&mut cx), resized);
-    press(&mut cx, "secondary-1");
+    press(&mut cx, "secondary-alt-0");
     cx.run_until_parked();
     assert_eq!(size_now(&mut cx), fitted, "from the keys");
 
@@ -173,7 +173,7 @@ fn the_window_takes_its_videos_size_again_from_the_keys_or_the_menu(cx: &mut Tes
         AUDIO_WINDOW_SIZE.width * 2. + TILE_GAP,
         AUDIO_WINDOW_SIZE.height * 2. + TILE_GAP + TOOLBAR_SPACE,
     );
-    press(&mut cx, "secondary-1");
+    press(&mut cx, "secondary-alt-0");
     cx.run_until_parked();
     assert_eq!(size_now(&mut cx), three, "zoomed, from the keys");
     cx.update(|window, _| window.zoom_window());
@@ -181,7 +181,7 @@ fn the_window_takes_its_videos_size_again_from_the_keys_or_the_menu(cx: &mut Tes
     // Not in full screen.
     cx.simulate_resize(resized);
     cx.update(|window, _| window.toggle_fullscreen());
-    press(&mut cx, "secondary-1");
+    press(&mut cx, "secondary-alt-0");
     cx.run_until_parked();
     assert_eq!(size_now(&mut cx), resized, "full screen as it was");
 }

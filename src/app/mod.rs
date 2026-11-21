@@ -1,6 +1,7 @@
 //! The app: starting it, and its own actions. What actions do is in
 //! `commands`, how they reach the window and tile in front in `dispatch`,
-//! their keys in `keymap` and the menu bar in `menus`.
+//! their keys in `keymap` and the menu bar in `menus`; going from window to
+//! window is in `windows`.
 
 mod audio;
 mod awake;
@@ -11,6 +12,7 @@ mod menus;
 #[cfg(feature = "smoke")]
 pub mod smoke;
 mod speakers;
+mod windows;
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -51,9 +53,16 @@ actions!(
         Quit,
         CloseFile,
         CloseWindow,
-        CloseAll
+        CloseAll,
+        NextWindow,
+        PreviousWindow
     ]
 );
+
+/// Bring player window `n`, from 0 in the order they opened, to the front.
+#[derive(Clone, PartialEq, Debug, gpui::Action)]
+#[action(namespace = plays, no_json)]
+pub struct GoToWindow(pub usize);
 
 /// Show the picture in front at this aspect ratio, or its own.
 #[derive(Clone, PartialEq, Debug, gpui::Action)]
@@ -155,6 +164,7 @@ fn set_up(
     cx.set_global(UiFont(font));
     refresh_system_colors(cx);
 
+    windows::number(cx);
     commands::register(cx);
     keymap::bind_keys(cx);
     keymap::watch_hotkeys(cx);

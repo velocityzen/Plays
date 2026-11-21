@@ -88,9 +88,11 @@ GPU-accelerated UI framework.
 - Windows take the size of the video as files open, or of a grid with room
   for each video at its own size, scaled down to fit the screen. After
   that a window keeps the size you give it, till Video → Match Video Size
-  (⌘1) sizes it for its videos again.
+  (⌥⌘0) sizes it for its videos again.
 - Windows open where you are working: where the last one closed, on the
   same display, at the same size, and Settings where you left it.
+- Go from window to window from the keyboard: ⌘1 to ⌘9 by the order they
+  opened, Ctrl+Tab and Ctrl+Shift+Tab to the next or the one before.
 - Player windows can float above other apps' windows, always or only while
   something in them plays.
 - While a tile plays, its header and controls fade when the mouse leaves
@@ -239,7 +241,7 @@ plays path/to/video.mp4 path/to/song.mp3 https://example.com/live.m3u8
 | Picture as the file has it | `⌘0` / `Ctrl+0` |
 | Take a screenshot | `S` |
 | Full screen | `F`, or `⌃⌘F` / `F11`; `Esc` leaves it |
-| Window to its videos' size | `⌘1` / `Ctrl+1` |
+| Window to its videos' size | `⌥⌘0` / `Ctrl+Alt+0` |
 | Picture in Picture (macOS) | `⌃⌘P` |
 | Console | `~` or `` ` `` |
 | Play/pause, seek, restart, mute all | `⇧Space`, `⇧←` `⇧→`, `⇧Home`, `⇧M` |
@@ -252,6 +254,8 @@ plays path/to/video.mp4 path/to/song.mp3 https://example.com/live.m3u8
 | Close the file in front | `⌘W` / `Ctrl+W` (in an empty window, it closes the window) |
 | Close all | `⌘⇧W` / `Ctrl+Shift+W` |
 | Close the window | `⌥⌘W` / `Ctrl+Alt+W` |
+| Player window 1 to 9 | `⌘1` … `⌘9` / `Ctrl+1` … `Ctrl+9` |
+| Next/previous window | `⌃⇥` `⌃⇧⇥` / `Ctrl+Tab` `Ctrl+Shift+Tab` |
 | Settings | `⌘,` / `Ctrl+,` |
 
 Shortcuts act on the active tile: the one the mouse is over (or was last
@@ -332,7 +336,7 @@ form under its logo. Closing the last window quits.
 As files open, their window takes the size of the video, or of a grid with
 room for each video at its own size, scaled down to fit the screen; a
 window you zoomed stays zoomed. After that the window keeps the size you
-give it, till Video → Match Video Size (`⌘1` / `Ctrl+1`) sizes it for its
+give it, till Video → Match Video Size (`⌥⌘0` / `Ctrl+Alt+0`) sizes it for its
 videos again, zoomed or not. In full screen, it does nothing.
 
 Plays opens where its last window closed, on the same display, at the same
@@ -342,6 +346,14 @@ the size you gave it, this launch or the last; the first time, or when its
 display is gone, it opens in the middle of the display of the window in
 front. About always opens there. On Wayland, the compositor places
 windows.
+
+`⌘1` to `⌘9` (`Ctrl+1` to `Ctrl+9` on Linux) bring player window 1 to 9 to
+the front, numbered in the order they opened; when one closes, those
+after it move up a number. `Ctrl+Tab` and `Ctrl+Shift+Tab` bring the next
+player window or the one before to the front, from the last round to the
+first and back; from Settings or About, they go to the first or the last.
+They work in every window, Settings and About too. On macOS the Window
+menu has Next Window and Previous Window.
 
 Player windows float above other apps' windows with Video → Float on Top
 or Float on Top While Playing, or Settings → Appearance. Settings and

@@ -450,7 +450,12 @@ flowchart LR
   as outputs, displays or devices to cast to come and go, another is
   picked, or the tile in front casts, turns out to have no sound, is shaped
   or cropped, or another tile is in front; a menu named Window, which
-  macOS adds its own window items to, goes from tile to tile). `awake` keeps the screen awake
+  macOS adds its own window items to, goes from tile to tile and window to
+  window). `windows` numbers the player windows in the order they open, as
+  each `Workspace` is made, for ⌘1 to ⌘9, and steps from the window in
+  front to the next or the one before for Ctrl+Tab and Ctrl+Shift+Tab;
+  those keys are app shortcuts, bound in no key context, so they work in
+  Settings and About too. `awake` keeps the screen awake
   while a video plays, and the computer while only sound does: a power
   assertion on macOS, the desktop portal's Inhibit on Linux. `smoke` runs
   the real app through scripted scenarios (see

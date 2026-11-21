@@ -75,16 +75,19 @@ pub enum Scenario {
     StepBack,
     /// Floating on top while playing, as the system sees the windows.
     FloatOnTop,
+    /// ⌘1 and Ctrl+Tab bringing player windows to the front.
+    Windows,
 }
 
 impl Scenario {
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 7] = [
         Self::FirstOpen,
         Self::Several,
         Self::Close,
         Self::Subtitles,
         Self::StepBack,
         Self::FloatOnTop,
+        Self::Windows,
     ];
 
     pub fn name(self) -> &'static str {
@@ -95,6 +98,7 @@ impl Scenario {
             Self::Subtitles => "subtitles",
             Self::StepBack => "step-back",
             Self::FloatOnTop => "float-on-top",
+            Self::Windows => "windows",
         }
     }
 }
@@ -202,6 +206,7 @@ pub fn start(scenario: Scenario, cx: &mut App) {
             Scenario::Subtitles => subtitles(cx).await,
             Scenario::StepBack => step_back(cx).await,
             Scenario::FloatOnTop => float_on_top(cx).await,
+            Scenario::Windows => windows(cx).await,
         };
         finish(scenario, started, result)
     })
@@ -392,6 +397,46 @@ async fn float_on_top(cx: &mut AsyncApp) -> Result<(), String> {
         !is_on_top(cx, false) && !is_on_top(cx, true)
     })
     .await?;
+    check_route(cx)
+}
+
+async fn windows(cx: &mut AsyncApp) -> Result<(), String> {
+    open(cx, &["clip.mp4"]).await?;
+    settle(cx).await?;
+    let first = cx
+        .update(|cx| workspace(cx))
+        .map_err(|_| "the app went away")??
+        .window_id();
+    let second = cx
+        .update(|cx| Workspace::open_window(WINDOW_SIZE, cx))
+        .map_err(|_| "the app went away")?
+        .map_err(|err| format!("can't open a second window: {err:#}"))?
+        .window_id();
+    let front_is = |id| move |cx: &mut App| cx.active_window().map(|w| w.window_id()) == Some(id);
+    wait_for(cx, "the second window to open in front", front_is(second)).await?;
+
+    press_in_front(cx, "secondary-1")?;
+    wait_for(
+        cx,
+        "⌘1 to bring the first window to the front",
+        front_is(first),
+    )
+    .await?;
+    press_in_front(cx, "ctrl-tab")?;
+    wait_for(
+        cx,
+        "Ctrl+Tab to bring the second to the front",
+        front_is(second),
+    )
+    .await?;
+    press_in_front(cx, "ctrl-shift-tab")?;
+    wait_for(
+        cx,
+        "Ctrl+Shift+Tab to bring the first back",
+        front_is(first),
+    )
+    .await?;
+    check_playing(cx).await?;
     check_route(cx)
 }
 
@@ -647,15 +692,28 @@ fn players(cx: &App) -> Vec<Entity<PlayerView>> {
 /// Press `key` in the window, as typed on the keyboard. Through the
 /// window, not its root view, which the key's action may update.
 fn press(cx: &mut AsyncApp, key: &str) -> Result<(), String> {
+    let window = cx
+        .update(|cx| workspace(cx))
+        .map_err(|_| "the app went away")??;
+    press_in(cx, window.into(), key)
+}
+
+/// Press `key` in the window in front, which may not be the player's.
+fn press_in_front(cx: &mut AsyncApp, key: &str) -> Result<(), String> {
+    let window = cx
+        .update(|cx| cx.active_window())
+        .map_err(|_| "the app went away")?
+        .ok_or("no window is in front")?;
+    press_in(cx, window, key)
+}
+
+fn press_in(cx: &mut AsyncApp, window: AnyWindowHandle, key: &str) -> Result<(), String> {
     let keystroke = Keystroke::parse(key).map_err(|err| format!("the key {key}: {err}"))?;
-    cx.update(|cx| {
-        AnyWindowHandle::from(workspace(cx)?)
-            .update(cx, |_, window, cx| {
-                window.dispatch_keystroke(keystroke, cx);
-            })
-            .map_err(|_| "the window went away".to_string())
-    })
-    .map_err(|_| "the app went away")?
+    window
+        .update(cx, |_, window, cx| {
+            window.dispatch_keystroke(keystroke, cx);
+        })
+        .map_err(|_| "the window went away".to_string())
 }
 
 /// Press the first key Settings give `command`.

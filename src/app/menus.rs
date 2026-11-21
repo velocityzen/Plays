@@ -11,9 +11,9 @@ use gpui::{App, Global, Menu, MenuItem, SystemMenuType};
 
 use super::dispatch::first_workspace;
 use super::{
-    About, AudioEngine, CastTo, CloseAll, CloseFile, CloseWindow, GoToChapter, OpenFiles,
-    OpenSettings, OpenUrl, Quit, SetAspectRatio, SetAudioDevice, SetCrop, SetWindowAudioDevice,
-    ShowOnDisplay,
+    About, AudioEngine, CastTo, CloseAll, CloseFile, CloseWindow, GoToChapter, NextWindow,
+    OpenFiles, OpenSettings, OpenUrl, PreviousWindow, Quit, SetAspectRatio, SetAudioDevice,
+    SetCrop, SetWindowAudioDevice, ShowOnDisplay,
 };
 use crate::cast::{Casting, Device, Shows};
 use crate::hotkeys::*;
@@ -208,6 +208,11 @@ fn window_menu() -> Menu {
             MenuItem::action("Move Tile Right", MoveTileRight),
             MenuItem::action("Move Tile Up", MoveTileUp),
             MenuItem::action("Move Tile Down", MoveTileDown),
+            MenuItem::separator(),
+            // ⌘1 to ⌘9 go to a window by its number; macOS lists the
+            // windows below.
+            MenuItem::action("Next Window", NextWindow),
+            MenuItem::action("Previous Window", PreviousWindow),
         ],
     }
 }
@@ -603,6 +608,22 @@ mod tests {
             _ => false,
         });
         assert!(matches, "no Match Video Size in the Video menu");
+    }
+
+    #[test]
+    fn the_window_menu_goes_to_the_next_window_or_the_one_before() {
+        let menu = window_menu();
+        let has = |title: &str, wanted: &dyn gpui::Action| {
+            menu.items.iter().any(|item| match item {
+                MenuItem::Action { name, action, .. } => name == title && action.partial_eq(wanted),
+                _ => false,
+            })
+        };
+        assert!(has("Next Window", &NextWindow), "no Next Window");
+        assert!(
+            has("Previous Window", &PreviousWindow),
+            "no Previous Window"
+        );
     }
 
     #[test]

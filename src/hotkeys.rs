@@ -244,7 +244,7 @@ impl Command {
             Self::FullScreen if mac => &["ctrl-cmd-f", "f"],
             Self::FullScreen => &["f11", "f"],
             Self::ExitFullScreen => &["escape"],
-            Self::MatchVideoSize => &["secondary-1"],
+            Self::MatchVideoSize => &["secondary-alt-0"],
             Self::PictureInPicture if mac => &["ctrl-cmd-p"],
             // Picture in Picture is macOS's.
             Self::PictureInPicture => &[],
