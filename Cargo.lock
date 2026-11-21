@@ -70,6 +70,7 @@ dependencies = [
  "ed25519-dalek",
  "futures-channel",
  "hkdf",
+ "if-addrs",
  "log",
  "network",
  "num-bigint",

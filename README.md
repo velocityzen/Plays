@@ -437,7 +437,8 @@ Audio → Play on the display's speakers turns this off.
 AirPlay speakers on the network, and Apple TVs and TVs with AirPlay for
 their sound, are outputs too, on macOS and Linux. Plays finds them and
 connects to them itself, without Control Center, and lists them with this
-computer's outputs as they come and go: in Settings → Audio, Audio →
+computer's outputs as they come and go (but this computer itself, which
+macOS's AirPlay Receiver offers as one): in Settings → Audio, Audio →
 Output Device and a tile's Window Sound. The sound of everything playing
 through one goes straight to it, uncompressed, while the pictures stay
 here. AirPlay plays it a second and a half after it's sent, and later on

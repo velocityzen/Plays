@@ -1,7 +1,7 @@
 //! A receiver, as its mDNS records describe it: `_airplay._tcp` for what
 //! it is and does, `_raop._tcp` for how it takes sound.
 
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 
 pub use network::mdns::Record;
 
@@ -156,6 +156,13 @@ impl Device {
         })
     }
 
+    /// Whether it takes AirPlay at one of `ips`.
+    pub fn is_at(&self, ips: &[IpAddr]) -> bool {
+        self.addresses
+            .iter()
+            .any(|address| ips.contains(&address.ip()))
+    }
+
     /// Whether it shows pictures: a TV, or a box on one.
     pub fn shows_video(&self) -> bool {
         self.features.has(Features::VIDEO)
@@ -191,7 +198,11 @@ pub(crate) mod tests {
     fn record(instance: &str, port: u16, txt: &str) -> Record {
         Record {
             instance: instance.into(),
-            addresses: vec!["fe80::1".parse().unwrap(), "192.168.1.20".parse().unwrap()],
+            // Documentation's, which no computer the tests run on has.
+            addresses: vec![
+                "2001:db8::20".parse().unwrap(),
+                "192.0.2.20".parse().unwrap(),
+            ],
             port,
             txt: txt
                 .split(' ')
@@ -258,7 +269,7 @@ pub(crate) mod tests {
         assert_eq!(tv.id, "021122334455");
         assert_eq!(tv.name, "Living Room");
         assert_eq!(tv.model, "AppleTV11,1");
-        let addresses: Vec<SocketAddr> = ["192.168.1.20:7000", "[fe80::1]:7000"]
+        let addresses: Vec<SocketAddr> = ["192.0.2.20:7000", "[2001:db8::20]:7000"]
             .iter()
             .map(|address| address.parse().unwrap())
             .collect();
@@ -314,5 +325,16 @@ pub(crate) mod tests {
         let (mut airplay, _) = apple_tv();
         airplay.txt.remove("features");
         assert_eq!(Device::from_records(Some(&airplay), None), None);
+    }
+
+    #[test]
+    fn a_receiver_is_at_any_of_its_addresses() {
+        let (airplay, raop) = apple_tv();
+        let tv = Device::from_records(Some(&airplay), Some(&raop)).unwrap();
+        let ip = |text: &str| text.parse::<IpAddr>().unwrap();
+        assert!(tv.is_at(&[ip("10.0.0.1"), ip("192.0.2.20")]));
+        assert!(tv.is_at(&[ip("2001:db8::20")]));
+        assert!(!tv.is_at(&[ip("192.0.2.21"), ip("2001:db8::21")]));
+        assert!(!tv.is_at(&[]));
     }
 }

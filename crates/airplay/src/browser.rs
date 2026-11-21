@@ -1,5 +1,8 @@
 //! Finding receivers: mDNS for `_airplay._tcp` and `_raop._tcp`, a
-//! receiver's two records put together by its id.
+//! receiver's two records put together by its id. This computer's own
+//! AirPlay Receiver, which macOS has on, is left out.
+
+use std::net::IpAddr;
 
 use futures_channel::mpsc::UnboundedReceiver;
 use network::mdns::{self, Protocol};
@@ -37,8 +40,21 @@ impl Protocol for AirPlay {
     }
 
     fn device(records: &[Option<&Record>]) -> Option<Device> {
-        Device::from_records(*records.get(AIRPLAY)?, *records.get(RAOP)?)
+        let device = Device::from_records(*records.get(AIRPLAY)?, *records.get(RAOP)?)?;
+        // This computer itself: what plays here would play here again.
+        (!device.is_at(&this_computer())).then_some(device)
     }
+}
+
+/// This computer's addresses on its networks, where its own AirPlay
+/// Receiver is found; looked up each time, as they change.
+fn this_computer() -> Vec<IpAddr> {
+    if_addrs::get_if_addrs()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|interface| !interface.is_loopback())
+        .map(|interface| interface.ip())
+        .collect()
 }
 
 /// Finds receivers in the background, as they come and go.
@@ -111,6 +127,28 @@ mod tests {
         };
         assert_eq!(gone.name, "Kitchen");
         assert_eq!(directory.removed(RAOP, "raop.kitchen"), None);
+        assert_eq!(directory.devices().len(), 1);
+    }
+
+    #[test]
+    fn this_computers_own_receiver_is_left_out() {
+        let here = this_computer();
+        assert!(!here.is_empty(), "this computer is on a network");
+        assert!(here.iter().all(|ip| !ip.is_loopback()), "{here:?}");
+        let mut directory = Directory::<AirPlay>::default();
+        let (mut airplay, mut raop) = apple_tv();
+        for record in [&mut airplay, &mut raop] {
+            record.addresses.push(here[0]);
+        }
+        assert_eq!(
+            directory.resolved(AIRPLAY, "airplay.mac".into(), airplay),
+            None
+        );
+        assert_eq!(directory.resolved(RAOP, "raop.mac".into(), raop), None);
+        assert!(directory.devices().is_empty());
+        // Another receiver is found as ever.
+        let (airplay, _) = speaker();
+        directory.resolved(AIRPLAY, "airplay.kitchen".into(), airplay);
         assert_eq!(directory.devices().len(), 1);
     }
 

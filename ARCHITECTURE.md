@@ -976,7 +976,9 @@ through speakers (`src/app/speakers.rs`, `src/media/output.rs`).
   id, and read for whether it shows video, plays sound and speaks AirPlay
   2, and how it pairs: once with a PIN it shows, for each session only, or
   not at all. An AirPlay 1 speaker that doesn't say its features, as older
-  ones don't, plays sound.
+  ones don't, plays sound. A receiver at one of this computer's own
+  addresses (but loopback's) is its own AirPlay Receiver, which macOS has
+  on, and is left out.
 - `tlv8.rs`, `srp.rs`, `pairing.rs`: HomeKit pairing. With the PIN (SRP-6a
   with SHA-512 and the 3072-bit group, then long-term Ed25519 keys swapped
   under ChaCha20-Poly1305), which leaves credentials to keep; transient,

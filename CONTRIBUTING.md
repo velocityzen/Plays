@@ -598,7 +598,10 @@ a number or is past the most, and a stream ending partway through a
 message. A message sent a byte at a time through `Deadline` is cut off
 when a whole one would be, and a deadline started again counts from then.
 The mDNS directory's tests take a type's newest record, move a device off
-a record that now names another, and put addresses IPv4 first.
+a record that now names another, and put addresses IPv4 first. AirPlay's
+leaves out a receiver at one of this computer's own addresses, its own
+AirPlay Receiver, and finds another beside it; its test receivers are at
+documentation addresses, which no computer has.
 
 The AirPlay crate's tests talk to the fake receiver as to a real one: a TV
 paired once with its PIN, its credentials kept as text and verified for

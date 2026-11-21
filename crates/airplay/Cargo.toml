@@ -20,6 +20,8 @@ chacha20poly1305 = "0.10"
 ed25519-dalek = { version = "2", features = ["rand_core"] }
 futures-channel = "0.3.34"
 hkdf = "0.12"
+# This computer's own addresses, where its own AirPlay Receiver is found.
+if-addrs = "0.15"
 log = "0.4"
 network = { path = "../network", features = ["mdns"] }
 num-bigint = "0.4"
