@@ -8,12 +8,14 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-use crate::files;
+use crate::files::{self, Folder};
 use crate::hotkeys::Hotkeys;
 
 /// Which Plays' settings a file holds, written in it as `version`. Files
 /// from before there was one are the first.
 pub const VERSION: u64 = 1;
+/// The settings' file, in the app's folder.
+const FILE: &str = "settings.json";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -455,26 +457,26 @@ impl Settings {
     /// Change the settings, re-render every window and optionally write
     /// them to disk.
     pub fn update(cx: &mut App, save: bool, change: impl FnOnce(&mut Settings)) {
-        cx.update_global::<Settings, _>(|settings, _| {
+        cx.update_global::<Settings, _>(|settings, cx| {
             change(settings);
             if save {
-                settings.save();
+                settings.save(cx);
             }
         });
         cx.refresh_windows();
     }
 
-    /// Where the settings are saved; nowhere in tests and smoke runs,
-    /// which must never read or write the real ones.
-    pub fn path() -> Option<PathBuf> {
-        if cfg!(any(test, feature = "smoke")) {
-            return None;
-        }
-        dirs::config_dir().map(|dir| dir.join("plays").join("settings.json"))
+    /// Where the settings are saved: in the app's folder, so nowhere in
+    /// tests and smoke runs, which must never read or write the real ones.
+    pub fn path(cx: &App) -> Option<PathBuf> {
+        Folder::of(cx).file(FILE)
     }
 
-    pub fn load() -> Self {
-        Self::path().map_or_else(Self::default, |path| Self::load_from(&path))
+    /// The settings saved in `folder`, or the defaults.
+    pub fn load(folder: &Folder) -> Self {
+        folder
+            .file(FILE)
+            .map_or_else(Self::default, |path| Self::load_from(&path))
     }
 
     /// The settings in `path`, each value read on its own: one a setting
@@ -520,8 +522,9 @@ impl Settings {
         settings
     }
 
-    pub fn save(&self) {
-        let Some(path) = Self::path() else {
+    /// Save them in the app's folder.
+    pub fn save(&self, cx: &App) {
+        let Some(path) = Self::path(cx) else {
             return;
         };
         if let Err(err) = files::write_whole(&path, self.to_json().as_bytes()) {
@@ -639,6 +642,8 @@ fn object_at<'a>(root: &'a mut Value, path: &[String]) -> Option<&'a mut Map<Str
 
 #[cfg(test)]
 mod tests {
+    use gpui::TestAppContext;
+
     use super::*;
     use crate::hotkeys::Command;
 
@@ -840,5 +845,46 @@ mod tests {
             ..Settings::default()
         };
         assert_eq!(fixed.columns_for(2), 4);
+    }
+
+    #[gpui::test]
+    fn tests_keep_no_settings_without_a_folder_of_their_own(cx: &mut TestAppContext) {
+        assert_eq!(Folder::app(), Folder::default());
+        assert_eq!(Settings::load(&Folder::app()), Settings::default());
+        cx.update(|cx| assert_eq!(Settings::path(cx), None));
+    }
+
+    #[gpui::test]
+    fn settings_changed_are_saved_in_the_apps_folder_and_read_back(cx: &mut TestAppContext) {
+        let folder = Folder::for_test("settings-saved");
+        let path = folder.file(FILE).unwrap();
+        cx.update(|cx| {
+            cx.set_global(folder.clone());
+            cx.set_global(Settings::default());
+            assert_eq!(Settings::path(cx).as_ref(), Some(&path));
+            Settings::update(cx, false, |settings| settings.master_volume = 0.5);
+            assert!(!path.exists(), "not saved unless asked");
+            Settings::update(cx, true, |settings| settings.resume_files = false);
+            let saved = Settings::load(&folder);
+            assert_eq!(&saved, cx.global::<Settings>());
+            assert_eq!((saved.master_volume, saved.resume_files), (0.5, false));
+        });
+    }
+
+    #[gpui::test]
+    fn a_broken_file_is_kept_aside_and_saved_over_whole(cx: &mut TestAppContext) {
+        let folder = Folder::for_test("settings-broken");
+        let path = folder.file(FILE).unwrap();
+        let half = r#"{ "master_volume": 0.5, "the"#;
+        files::write_whole(&path, half.as_bytes()).unwrap();
+        let settings = Settings::load(&folder);
+        assert_eq!(settings, Settings::default());
+        cx.update(|cx| {
+            cx.set_global(folder.clone());
+            cx.set_global(settings);
+            Settings::update(cx, true, |settings| settings.master_volume = 0.75);
+        });
+        assert_eq!(Settings::load(&folder).master_volume, 0.75);
+        assert_eq!(kept_aside(&path).as_deref(), Some(half));
     }
 }

@@ -74,7 +74,7 @@ fn menu(theme: &Theme, cx: &mut Context<SettingsView>) -> impl IntoElement {
     Panel::new().occlude().w(FILE_MENU_WIDTH).child(
         div()
             .py_1()
-            .when_some(Settings::path(), |this, path| {
+            .when_some(Settings::path(cx), |this, path| {
                 this.child(
                     MenuRow::new("settings-file-show", "Open Folder")
                         .mx_1()
@@ -120,7 +120,7 @@ fn menu(theme: &Theme, cx: &mut Context<SettingsView>) -> impl IntoElement {
 /// changed yet to write it.
 fn show(path: &Path, cx: &mut App) {
     if !path.exists() {
-        cx.global::<Settings>().save();
+        cx.global::<Settings>().save(cx);
     }
     cx.reveal_path(path);
 }

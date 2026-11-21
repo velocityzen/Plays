@@ -1,8 +1,49 @@
-//! Writing the app's own files: settings and where files were left.
+//! The app's own files, settings and where files were left: the folder
+//! they are kept in, and writing them.
 
 use std::fs::{self, File};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+
+use gpui::{App, Global};
+
+/// The folder the app keeps its files in: `plays` in the system's config
+/// folder. Tests and smoke runs have none, so they never read or write the
+/// real files, unless a test gives a folder of its own.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Folder(Option<PathBuf>);
+
+impl Global for Folder {}
+
+impl Folder {
+    /// The app's: none in tests and smoke runs.
+    pub fn app() -> Self {
+        if cfg!(any(test, feature = "smoke")) {
+            return Self(None);
+        }
+        Self(dirs::config_dir().map(|dir| dir.join("plays")))
+    }
+
+    /// An empty folder of a test's own, named for it.
+    #[cfg(test)]
+    pub fn for_test(name: &str) -> Self {
+        let dir = std::env::temp_dir()
+            .join("plays-tests")
+            .join(format!("{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        Self(Some(dir))
+    }
+
+    /// The folder set for the app, or else the app's.
+    pub fn of(cx: &App) -> Self {
+        cx.try_global::<Self>().cloned().unwrap_or_else(Self::app)
+    }
+
+    /// Where the file `name` is kept.
+    pub fn file(&self, name: &str) -> Option<PathBuf> {
+        self.0.as_ref().map(|dir| dir.join(name))
+    }
+}
 
 /// Write `contents` to `path`, making its folder if need be. It goes to a
 /// file beside it first, on the disk before it takes the name, so a crash

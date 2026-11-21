@@ -22,6 +22,7 @@ pub use awake::Awake;
 pub use menus::refresh as refresh_menus;
 
 use crate::cast::{self, Casting, Device, Protocol};
+use crate::files::Folder;
 use crate::media::{Source, picture};
 use crate::progress::{self, Progress};
 use crate::settings::{AudioDevice, Settings};
@@ -86,7 +87,14 @@ pub struct CastTo(pub Option<Device>);
 
 /// `opened` brings the URLs the system asks the app to open.
 pub fn run(cx: &mut App, sources: Vec<Source>, opened: UnboundedReceiver<Vec<String>>) {
-    set_up(cx, Settings::load(), AudioEngine::start, cast::protocols);
+    let folder = Folder::app();
+    cx.set_global(folder.clone());
+    set_up(
+        cx,
+        Settings::load(&folder),
+        AudioEngine::start,
+        cast::protocols,
+    );
     awake::watch(cx);
     blackout::watch(cx);
     displays::watch(cx);
@@ -124,7 +132,7 @@ fn set_up(cx: &mut App, settings: Settings, audio: fn(&mut App), protocols: fn()
     let [sdr_gamma, hdr_gamma] = settings.gamma();
     picture::set_gamma(sdr_gamma, hdr_gamma);
     cx.set_global(settings);
-    cx.set_global(Progress::load());
+    cx.set_global(Progress::load(&Folder::of(cx)));
     audio(cx);
     cx.set_global(Casting::new(protocols()));
     Casting::watch(cx);

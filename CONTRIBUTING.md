@@ -208,7 +208,12 @@ time, so one that's wrong leaves only its setting as Plays starts it out;
 a file not read whole, half written or from a later Plays, is kept beside
 it as `settings.json.bad`, and a good one, or one from before there was a
 version, is read as it is; and saving replaces a file whole rather than
-writing over it.
+writing over it. Settings changed and saved are read back from a folder of
+the test's own, and a broken file is kept aside and saved over whole. The
+places files were left are saved there and read back, those over 30 days
+old left out of the file, a broken file read as no places and saved over,
+none kept when Settings say not to, and forgetting them all removes the
+file; each has been checked to fail when what it covers is broken.
 
 A clip remuxed with a display matrix must report its turn and flip; unit
 tests check that orientations compose like their matrices, read FFmpeg's
@@ -685,7 +690,9 @@ in real time; Vulkan can be software (lavapipe). It uses `Xvfb`,
   About lists them.
 - The test fixtures are committed; change them with
   `script/make-fixtures`.
-- Tests never read or write the real settings file, and debug selectors
-  exist only in test builds.
+- Tests never read or write the real settings or progress files: the app's
+  folder for them (`files::Folder`) is none in tests and smoke runs, and a
+  test of them gives a folder of its own (`Folder::for_test`). Debug
+  selectors exist only in test builds.
 - Each test has been checked to fail when what it covers is broken, and
   expected values for color math are worked out apart from Plays' code.

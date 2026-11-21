@@ -13,6 +13,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use gpui::{App, Global};
 use serde::{Deserialize, Serialize};
 
+use crate::files::Folder;
 use crate::settings::Settings;
 
 /// How long a file's place is kept since it last played.
@@ -49,14 +50,8 @@ impl Global for Progress {}
 /// is.
 pub type Note = (PathBuf, f64, f64);
 
-/// Where the places are saved; nowhere in tests and smoke runs, as with the
-/// settings.
-fn path() -> Option<PathBuf> {
-    if cfg!(any(test, feature = "smoke")) {
-        return None;
-    }
-    dirs::config_dir().map(|dir| dir.join("plays").join("progress.json"))
-}
+/// The places' file, in the app's folder beside the settings.
+const FILE: &str = "progress.json";
 
 fn now() -> u64 {
     SystemTime::now()
@@ -86,9 +81,10 @@ fn worth_resuming(position: f64, duration: f64) -> bool {
 }
 
 impl Progress {
-    /// The places saved, but those too old.
-    pub fn load() -> Self {
-        let files = path()
+    /// The places saved in `folder`, but those too old.
+    pub fn load(folder: &Folder) -> Self {
+        let files = folder
+            .file(FILE)
             .and_then(|path| {
                 let text = fs::read_to_string(&path).ok()?;
                 serde_json::from_str(&text)
@@ -141,13 +137,14 @@ impl Progress {
         self.changed |= self.files.len() != before;
     }
 
-    fn save(&mut self) {
+    /// Save the places in `folder`, if they changed.
+    fn save(&mut self, folder: &Folder) {
         if !self.changed {
             return;
         }
         self.forget_old(now());
         self.changed = false;
-        let Some(path) = path() else {
+        let Some(path) = folder.file(FILE) else {
             return;
         };
         let result = serde_json::to_string(&self.files)
@@ -165,13 +162,14 @@ pub fn note(notes: impl IntoIterator<Item = Note>, save: bool, cx: &mut App) {
     if !cx.global::<Settings>().resume_files {
         return;
     }
+    let folder = Folder::of(cx);
     let progress = cx.default_global::<Progress>();
     let now = now();
     for (file, position, duration) in notes {
         progress.note(&file, position, duration, now);
     }
     if save {
-        progress.save();
+        progress.save(&folder);
     }
 }
 
@@ -188,16 +186,34 @@ pub fn recall(file: &Path, cx: &App) -> Option<f64> {
 /// them.
 pub fn forget_all(cx: &mut App) {
     cx.set_global(Progress::default());
-    if let Some(path) = path() {
+    if let Some(path) = Folder::of(cx).file(FILE) {
         fs::remove_file(&path).ok();
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use gpui::TestAppContext;
+
     use super::*;
+    use crate::files;
 
     const DAY: u64 = 24 * 60 * 60;
+
+    /// The app, as far as places go: Settings as they start out, which
+    /// resume files, and the places loaded from `folder`, kept there.
+    fn start(cx: &mut TestAppContext, folder: &Folder) {
+        cx.update(|cx| {
+            cx.set_global(folder.clone());
+            cx.set_global(Settings::default());
+            cx.set_global(Progress::load(folder));
+        });
+    }
+
+    /// Save the places, noting none.
+    fn save_now(cx: &mut App) {
+        note(std::iter::empty(), true, cx);
+    }
 
     #[test]
     fn a_file_barely_begun_or_nearly_over_starts_over() {
@@ -250,5 +266,92 @@ mod tests {
         progress.note(relative, 60.0, 7200.0, 7);
         assert!(progress.files.contains_key(&key(relative)));
         assert!(Path::new(&key(relative)).is_absolute());
+    }
+
+    #[gpui::test]
+    fn places_are_saved_in_the_apps_folder_and_read_back(cx: &mut TestAppContext) {
+        let folder = Folder::for_test("progress-saved");
+        let path = folder.file(FILE).unwrap();
+        start(cx, &folder);
+        let movie = Path::new("/videos/movie.mkv");
+        cx.update(|cx| {
+            note([(movie.to_owned(), 600.0, 7200.0)], false, cx);
+            assert!(!path.exists(), "not saved unless asked");
+            save_now(cx);
+        });
+        let loaded = Progress::load(&folder);
+        assert_eq!(loaded.recall(movie, now()), Some(600.0));
+        assert!(!loaded.changed);
+    }
+
+    #[gpui::test]
+    fn places_too_old_are_left_out_of_the_file(cx: &mut TestAppContext) {
+        let folder = Folder::for_test("progress-old");
+        let path = folder.file(FILE).unwrap();
+        let now = now();
+        let json = format!(
+            r#"{{"/videos/old.mkv":{{"position":60.0,"played":{}}},"/videos/new.mkv":{{"position":90.0,"played":{}}}}}"#,
+            now - 31 * DAY,
+            now - DAY
+        );
+        files::write_whole(&path, json.as_bytes()).unwrap();
+        start(cx, &folder);
+        cx.update(|cx| {
+            assert_eq!(recall(Path::new("/videos/old.mkv"), cx), None);
+            assert_eq!(recall(Path::new("/videos/new.mkv"), cx), Some(90.0));
+            save_now(cx);
+        });
+        let saved = fs::read_to_string(&path).unwrap();
+        assert!(
+            !saved.contains("old.mkv") && saved.contains("new.mkv"),
+            "{saved}"
+        );
+    }
+
+    #[gpui::test]
+    fn a_broken_file_is_no_places_and_is_saved_over(cx: &mut TestAppContext) {
+        for (name, text) in [
+            ("half", r#"{"/videos/movie.mkv":{"position":6"#),
+            ("other", "[1, 2]"),
+            ("empty", ""),
+        ] {
+            let folder = Folder::for_test(&format!("progress-{name}"));
+            files::write_whole(&folder.file(FILE).unwrap(), text.as_bytes()).unwrap();
+            assert!(Progress::load(&folder).files.is_empty(), "{name}");
+        }
+        let folder = Folder::for_test("progress-half");
+        start(cx, &folder);
+        let movie = Path::new("/videos/movie.mkv");
+        cx.update(|cx| note([(movie.to_owned(), 600.0, 7200.0)], true, cx));
+        assert_eq!(Progress::load(&folder).recall(movie, now()), Some(600.0));
+    }
+
+    #[gpui::test]
+    fn forgetting_every_place_removes_the_file(cx: &mut TestAppContext) {
+        let folder = Folder::for_test("progress-forget");
+        let path = folder.file(FILE).unwrap();
+        start(cx, &folder);
+        let movie = Path::new("/videos/movie.mkv");
+        cx.update(|cx| {
+            note([(movie.to_owned(), 600.0, 7200.0)], true, cx);
+            assert!(path.exists());
+            forget_all(cx);
+            assert_eq!(recall(movie, cx), None);
+        });
+        assert!(!path.exists());
+        assert!(Progress::load(&folder).files.is_empty());
+    }
+
+    #[gpui::test]
+    fn no_places_are_kept_when_settings_say_not_to(cx: &mut TestAppContext) {
+        let folder = Folder::for_test("progress-off");
+        start(cx, &folder);
+        let movie = Path::new("/videos/movie.mkv");
+        cx.update(|cx| {
+            Settings::update(cx, false, |settings| settings.resume_files = false);
+            note([(movie.to_owned(), 600.0, 7200.0)], true, cx);
+            assert_eq!(recall(movie, cx), None);
+        });
+        assert!(!folder.file(FILE).unwrap().exists());
     }
 }
