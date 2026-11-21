@@ -85,6 +85,8 @@ GPU-accelerated UI framework.
 - Go from tile to tile with the keyboard, to the one beside, above or
   below, or to each in turn, and move the tile in front about the grid
   the same way. A ring shows which tile the keys went to.
+- Go back to the tile you clicked before, name a tile, and copy a file's
+  path or where it is.
 - Windows take the size of the video as files open, or of a grid with room
   for each video at its own size, scaled down to fit the screen. After
   that a window keeps the size you give it, till Video → Match Video Size
@@ -255,6 +257,8 @@ plays path/to/video.mp4 path/to/song.mp3 https://example.com/live.m3u8
 | Focus the tile left, right, above, below | `⌥⌘←` `⌥⌘→` `⌥⌘↑` `⌥⌘↓` / `Ctrl+Alt+` arrows |
 | Focus the previous/next tile | `⌘[` `⌘]` / `Ctrl+[` `Ctrl+]` |
 | Move the tile in front left, right, up, down | `⌥⇧⌘` and an arrow / `Ctrl+Alt+Shift+` arrows |
+| Maximize the tile in front, or show them all | `⇧⌘↩` / `Ctrl+Shift+Enter` |
+| Copy the file's path | `⌥⌘C` / `Ctrl+Alt+C` |
 | Close the file in front | `⌘W` / `Ctrl+W` (in an empty window, it closes the window) |
 | Close all | `⌘⇧W` / `Ctrl+Shift+W` |
 | Close the window | `⌥⌘W` / `Ctrl+Alt+W` |
@@ -287,14 +291,14 @@ card for each part of the app, the app's own (⌘O, ⌘W and so on) too. A
 key moves only from a command that works where it does: given to a
 player window's command, ⌘W leaves the window's Close to the other
 windows. Some commands have no keys until given some there, such as
-Float on Top, Maximize Tile, Move Tile to New Window and Go Back One
+Float on Top, Go Back One Tile, Move Tile to New Window and Go Back One
 Window. The menus show each command's first key, and are enabled
 only when their commands can run.
 
 ### Tiles
 
 Click the picture to make it the tile shortcuts go to; double-click it (or
-the corner button) to maximize it; opening more files puts the grid back,
+the corner button, or `⇧⌘↩`) to maximize it; opening more files puts the grid back,
 with them in it. For the only tile in a window, both toggle full screen
 instead. Drag the picture onto another tile to put the tile there, the
 tiles between moving over; its title follows the pointer, and the tile it
@@ -316,6 +320,22 @@ clicks: the tile under it is in front then. While a tile is maximized,
 the keys maximize the tile they go to instead, and no tile moves. On
 macOS the Window menu has them all; Settings → Hotkeys changes their
 keys, under Tiles in a window.
+
+Window → Go to Recent Tile sends the keys to the tile you clicked or went
+to before the one in front; again, back to this one. Go Back One Tile
+goes further back each time, to a tile it hasn't been to yet, until you
+do something else. Only clicks and the keys count: the mouse passing over
+a tile on its way to another puts it in front, but it isn't gone back
+to. Window → Rename Tile… names the tile in front: its header shows the
+name in place of the file's, even with titles off, and the command line
+can name the tile by it. No two tiles share a name, in whichever window;
+a blank one takes it away. Move Tile To puts it at another place in the
+grid, and Move Tile to Window in another window.
+
+File → Close Other Files closes every file in the window but the one in
+front. Copy File Path (`⌥⌘C` / `Ctrl+Alt+C`) copies its file's path, or
+its stream's URL as you opened it, and Copy Current Time where it is, as
+the bar shows it, such as 1:23:45.
 
 The track button (next to loop, on files that have subtitles or more than
 one audio or video track) opens the track menu: a column each for audio,

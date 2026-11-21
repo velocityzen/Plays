@@ -39,13 +39,14 @@ use super::player::{Graveyard, PlayerView};
 use super::theme::layout::{DROP_INSET, TOOLBAR_HEIGHT, TRAFFIC_LIGHTS, WINDOW_MIN_SIZE};
 use super::theme::{self, Theme};
 use crate::api::Id;
-use crate::app::{AudioEngine, note_front, refresh_menus};
+use crate::app::{AudioEngine, FocusHistory, note_front, refresh_menus};
 use crate::cast::{self, Casting};
 use crate::media::{Mixer, picture};
 use crate::progress;
 use crate::settings::{AudioDevice, Settings};
 
 pub use focus::Toward;
+pub use naming::tile_label_taken;
 pub use on_top::float_with_players;
 #[cfg(test)]
 pub use place::forget_settings_place;
@@ -92,6 +93,8 @@ pub struct Workspace {
     /// It was put in front from the keyboard, and the mouse hasn't moved
     /// since: it shows a ring.
     keyboard_focus: bool,
+    /// When each tile was last clicked or put in front from the keyboard.
+    tile_history: FocusHistory<EntityId>,
     graveyard: Graveyard,
     open_url: Option<(Entity<OpenUrlDialog>, Subscription)>,
     /// The sheet asking what to call the window.
@@ -251,6 +254,7 @@ impl Workspace {
             maximized: None,
             active: None,
             keyboard_focus: false,
+            tile_history: FocusHistory::default(),
             graveyard: Graveyard::default(),
             open_url: None,
             naming: None,

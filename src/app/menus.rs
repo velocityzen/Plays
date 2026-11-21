@@ -15,7 +15,7 @@ use serde_json::{Value, json};
 
 use super::speakers::output_kind;
 use super::{AudioEngine, player_windows};
-use crate::api::commands::{cast, output, playback, video, window};
+use crate::api::commands::{cast, output, playback, tile, video, window};
 use crate::api::{self, Run, Target, front_window};
 use crate::cast::{Casting, Device, Shows};
 use crate::media::output::DeviceInfo;
@@ -23,6 +23,7 @@ use crate::settings::{AudioDevice, Settings};
 use crate::ui::displays::{self, DisplayInfo};
 use crate::ui::framing::{ASPECT_RATIOS, CROPS, Ratio};
 use crate::ui::theme::motion::DISPLAYS_POLL;
+use crate::ui::workspace::Workspace;
 
 /// Set the menu bar as things are now.
 pub(super) fn set_menus(cx: &mut App) {
@@ -100,8 +101,12 @@ fn file_menu(state: &MenuState) -> Menu {
                 "window.open_url",
                 "",
                 "tile.close",
+                "tile.close_others",
                 "tile.close_all",
                 "window.close",
+                "",
+                "tile.copy_path",
+                "tile.copy_time",
             ],
             state,
         ),
@@ -252,9 +257,10 @@ fn subtitles_menu(state: &MenuState) -> Menu {
     }
 }
 
-/// Opening, naming and closing windows, going from tile to tile in the
-/// window in front and moving them about, and going from window to window
-/// and numbering them. Named so, macOS adds its own window items to it.
+/// Opening, naming and closing windows; maximizing, naming and moving the
+/// tile in front, going from tile to tile in the window in front and back,
+/// and moving them about; and going from window to window and back, and
+/// numbering them. Named so, macOS adds its own window items to it.
 fn window_menu(state: &MenuState) -> Menu {
     let mut items = items(
         &[
@@ -262,12 +268,25 @@ fn window_menu(state: &MenuState) -> Menu {
             "window.rename",
             "window.close_others",
             "",
+            "tile.zoom",
+            "tile.rename",
+            "tile.move_to_new_window",
+        ],
+        state,
+    );
+    items.extend(place_menu(state).map(MenuItem::submenu));
+    items.extend(other_window_menu(state).map(MenuItem::submenu));
+    items.extend(self::items(
+        &[
+            "",
             "tile.focus.left",
             "tile.focus.right",
             "tile.focus.up",
             "tile.focus.down",
             "tile.focus.previous",
             "tile.focus.next",
+            "tile.back",
+            "tile.recent",
             "",
             "tile.move.left",
             "tile.move.right",
@@ -285,7 +304,7 @@ fn window_menu(state: &MenuState) -> Menu {
             "window.move.forward",
         ],
         state,
-    );
+    ));
     items.extend(number_menu(state).map(MenuItem::submenu));
     Menu {
         name: "Window".into(),
@@ -304,6 +323,34 @@ fn number_menu(state: &MenuState) -> Option<Menu> {
                 let checked = front == u64::try_from(number).ok();
                 MenuItem::action(number.to_string(), window::move_to(number)).checked(checked)
             })
+            .collect(),
+    })
+}
+
+/// A place for each tile in the window in front, the tile in front's
+/// checked, to put it there instead; none for a tile alone.
+fn place_menu(state: &MenuState) -> Option<Menu> {
+    let front = state.state("tile.move").as_u64();
+    (state.tiles > 1).then(|| Menu {
+        name: title("tile.move").into(),
+        items: (1..=state.tiles)
+            .map(|place| {
+                let checked = front == u64::try_from(place).ok();
+                MenuItem::action(place.to_string(), tile::move_to(place)).checked(checked)
+            })
+            .collect(),
+    })
+}
+
+/// Each other player window, by its label or number, to move the tile in
+/// front to; none without one or the other.
+fn other_window_menu(state: &MenuState) -> Option<Menu> {
+    (state.tiles > 0 && !state.others.is_empty()).then(|| Menu {
+        name: title("tile.move_to_window").into(),
+        items: state
+            .others
+            .iter()
+            .map(|(name, title)| MenuItem::action(title.clone(), tile::move_to_window(name)))
             .collect(),
     })
 }
@@ -332,6 +379,11 @@ struct MenuState {
     chapters: Vec<String>,
     /// How many player windows are open, each a number to move one to.
     windows: usize,
+    /// How many tiles the window in front has, each a place to put one.
+    tiles: usize,
+    /// The other player windows, to move the tile in front to: the API's
+    /// name for each, and its label, else its number, to show.
+    others: Vec<(String, String)>,
     /// The state of each command that has one, as it is for the window
     /// and tile in front.
     states: BTreeMap<&'static str, Value>,
@@ -342,7 +394,7 @@ impl Global for MenuState {}
 impl MenuState {
     fn now(cx: &mut App) -> Self {
         let window = front_window(cx);
-        let (front, casting, has_audio, chapters) = window
+        let (front, casting, has_audio, chapters, tiles) = window
             .and_then(|handle| {
                 handle
                     .update(cx, |workspace, window, cx| {
@@ -351,11 +403,24 @@ impl MenuState {
                             workspace.active_casting(cx),
                             workspace.active_has_audio(cx),
                             workspace.active_chapters(cx).0,
+                            workspace.tile_count(),
                         )
                     })
                     .ok()
             })
-            .unwrap_or((None, None, true, Vec::new()));
+            .unwrap_or((None, None, true, Vec::new(), 0));
+        let others = player_windows(cx)
+            .into_iter()
+            .enumerate()
+            .filter(|(_, other)| window.is_none_or(|front| front.window_id() != other.window_id()))
+            .filter_map(|(at, other)| {
+                let workspace = other.downcast::<Workspace>()?.read(cx).ok()?;
+                let title = workspace
+                    .label()
+                    .map_or_else(|| format!("Window {}", at + 1), str::to_owned);
+                Some((workspace.id().to_string(), title))
+            })
+            .collect();
         let (devices, speakers) = Casting::devices_for(cx, has_audio)
             .into_iter()
             .partition(|device| device.shows == Shows::Video);
@@ -376,6 +441,8 @@ impl MenuState {
             casting,
             chapters,
             windows: player_windows(cx).len(),
+            tiles,
+            others,
             states,
         }
     }
@@ -649,7 +716,7 @@ mod tests {
     use std::sync::Arc;
     use std::time::{Duration, Instant};
 
-    use gpui::{Bounds, TestAppContext, VisualTestContext};
+    use gpui::{Bounds, TestAppContext, VisualTestContext, WindowHandle};
 
     use super::*;
     use crate::cast::fake::FakeTarget;
@@ -840,6 +907,98 @@ mod tests {
     }
 
     #[test]
+    fn the_menus_close_copy_maximize_name_and_move_the_tile_in_front() {
+        let state = MenuState {
+            tiles: 3,
+            others: vec![
+                ("a1".into(), "Window 1".into()),
+                ("c3".into(), "Stage".into()),
+            ],
+            states: BTreeMap::from([("tile.move", json!(3))]),
+            ..MenuState::default()
+        };
+        let has = |menu: &Menu, title: &str, command: &str| {
+            menu.items.iter().any(|item| match item {
+                MenuItem::Action { name, action, .. } => {
+                    name == title && action.partial_eq(&Run::command(command))
+                }
+                _ => false,
+            })
+        };
+        let file = file_menu(&state);
+        for (title, command) in [
+            ("Close Other Files", "tile.close_others"),
+            ("Copy File Path", "tile.copy_path"),
+            ("Copy Current Time", "tile.copy_time"),
+        ] {
+            assert!(has(&file, title, command), "no {title}");
+        }
+        let window = window_menu(&state);
+        for (title, command) in [
+            ("Maximize Tile", "tile.zoom"),
+            ("Rename Tile…", "tile.rename"),
+            ("Move Tile to New Window", "tile.move_to_new_window"),
+            ("Go Back One Tile", "tile.back"),
+            ("Go to Recent Tile", "tile.recent"),
+        ] {
+            assert!(has(&window, title, command), "no {title}");
+        }
+
+        let submenu = |menu: &Menu, title: &str| -> Option<Vec<(String, bool, Run)>> {
+            menu.items.iter().find_map(|item| match item {
+                MenuItem::Submenu(menu) if menu.name == title => Some(
+                    menu.items
+                        .iter()
+                        .map(|item| match item {
+                            MenuItem::Action {
+                                name,
+                                action,
+                                checked,
+                                ..
+                            } => {
+                                let run = action.as_any().downcast_ref::<Run>().expect("a Run");
+                                (name.to_string(), *checked, run.clone())
+                            }
+                            _ => panic!("an item"),
+                        })
+                        .collect(),
+                ),
+                _ => None,
+            })
+        };
+        // A place for each tile, the one in front's checked.
+        let places = submenu(&window, "Move Tile To").expect("no Move Tile To");
+        let expected: Vec<(String, bool, Run)> = [(1, false), (2, false), (3, true)]
+            .into_iter()
+            .map(|(place, checked)| (place.to_string(), checked, tile::move_to(place)))
+            .collect();
+        assert_eq!(places, expected);
+        // The other windows, by label or number.
+        let others = submenu(&window, "Move Tile to Window").expect("no Move Tile to Window");
+        let expected = vec![
+            ("Window 1".to_owned(), false, tile::move_to_window("a1")),
+            ("Stage".to_owned(), false, tile::move_to_window("c3")),
+        ];
+        assert_eq!(others, expected);
+
+        // A tile alone has nowhere else to go in its window; a window alone,
+        // no other window; and none in front, nothing to move.
+        let alone = window_menu(&MenuState {
+            tiles: 1,
+            ..state.clone()
+        });
+        assert!(submenu(&alone, "Move Tile To").is_none());
+        assert!(submenu(&alone, "Move Tile to Window").is_some());
+        let one_window = window_menu(&MenuState {
+            others: Vec::new(),
+            ..state.clone()
+        });
+        assert!(submenu(&one_window, "Move Tile to Window").is_none());
+        let empty = window_menu(&MenuState { tiles: 0, ..state });
+        assert!(submenu(&empty, "Move Tile to Window").is_none());
+    }
+
+    #[test]
     fn checks_the_aspect_ratio_and_crop_of_the_tile_in_front() {
         let state = MenuState::default();
         assert_eq!(
@@ -851,6 +1010,48 @@ mod tests {
         assert_eq!(checked(&crop_menu(&Value::Null, &state)), ["None"]);
         let crop = CROPS[CROPS.len() - 1];
         assert_eq!(checked(&crop_menu(&json!(crop.name), &state)), [crop.name]);
+    }
+
+    #[gpui::test]
+    fn the_menus_know_the_tiles_in_front_and_the_other_windows(cx: &mut TestAppContext) {
+        let (first, mut cx) = testing::start(cx);
+        let now = |cx: &VisualTestContext| TestAppContext::update(cx, MenuState::now);
+        let open = |cx: &mut VisualTestContext| {
+            TestAppContext::update(cx, |cx| Workspace::open_window(WINDOW_SIZE, cx)).unwrap()
+        };
+        let name = |window: WindowHandle<Workspace>, cx: &VisualTestContext| {
+            window
+                .read_with(cx, |workspace, _| workspace.id().to_string())
+                .unwrap()
+        };
+        let second = open(&mut cx);
+        let third = open(&mut cx);
+        first
+            .update(&mut cx, |workspace, _, cx| {
+                workspace.open_paths(vec![testing::fixture("clip.mp4")], cx);
+            })
+            .unwrap();
+        cx.run_until_parked();
+
+        let state = now(&cx);
+        assert_eq!(state.tiles, 1, "the window in front's");
+        let others = |names: [(WindowHandle<Workspace>, &str); 2], cx: &VisualTestContext| {
+            names.map(|(window, title)| (name(window, cx), title.to_owned()))
+        };
+        let expected = others([(second, "Window 2"), (third, "Window 3")], &cx);
+        assert_eq!(
+            state.others, expected,
+            "by number, the one in front left out"
+        );
+
+        second
+            .update(&mut cx, |workspace, window, cx| {
+                workspace.set_label("Stage", window, cx)
+            })
+            .unwrap()
+            .unwrap();
+        let expected = others([(second, "Stage"), (third, "Window 3")], &cx);
+        assert_eq!(now(&cx).others, expected, "by label");
     }
 
     #[gpui::test]

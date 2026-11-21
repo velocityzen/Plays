@@ -5,6 +5,7 @@
 mod audio;
 mod awake;
 mod bluetooth;
+mod history;
 mod keymap;
 mod menus;
 #[cfg(feature = "smoke")]
@@ -26,12 +27,13 @@ pub(crate) use audio::{Bluetooth, Devices, Local};
 pub use awake::Awake;
 #[cfg(test)]
 pub(crate) use bluetooth::Paired;
+pub(crate) use history::FocusHistory;
 pub use menus::refresh as refresh_menus;
 #[cfg(test)]
 pub(crate) use speakers::Speakers;
 pub use speakers::{airplay_id, output_kind};
 pub(crate) use windows::{
-    back as back_window, end_walk, move_to as move_window, note_front, players as player_windows,
+    back as back_window, move_to as move_window, note_front, players as player_windows,
     recent as recent_window, step as step_window,
 };
 

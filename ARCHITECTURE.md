@@ -517,17 +517,22 @@ flowchart LR
   run; set again after a command runs, as settings change, and as
   outputs, displays, devices to cast to or player windows come and go; a
   menu named Window, which macOS adds its own window items to, opens,
-  names and closes windows, goes from tile to tile and window to window,
-  and numbers windows, Move Window To a number for each). `windows`
+  names and closes windows, maximizes, names and moves the tile in front,
+  goes from tile to tile and window to window, and back, and numbers
+  windows; Move Tile To has a place for each tile in the window in front,
+  Move Tile to Window each other window, by label or number, and Move
+  Window To a number for each window). `windows`
   numbers the player windows in the order they open, as each `Workspace`
   is made, for ⌘1 to ⌘9, unless `window.move` puts one at another number;
   steps from the window in front to the next or the one before for
   Ctrl+Tab and Ctrl+Shift+Tab; and keeps when each was last in front, as
-  each comes to the front. From that, `window.recent` (⌘') brings back the
-  newest before the one in front, so twice comes back, and `window.back`
-  walks back: each step goes only to windows in front before the one it
-  last went to, until another window comes to the front otherwise or
-  another command runs (`api::run` ends the walk). Those keys work in
+  each comes to the front, in a `history::FocusHistory`, which each
+  window's tiles have one of too. From that, `window.recent` (⌘') brings
+  back the newest before the one in front, so twice comes back, and
+  `window.back` walks back: each step goes only to windows in front
+  before the one it last went to, until another window comes to the front
+  otherwise or another command runs (`api::ran_before` says which command
+  ran before this one). Those keys work in
   every window, Settings and About too, but while Settings records a
   shortcut. `awake` keeps the screen awake
   while a video plays, and the computer while only sound does: a power
@@ -570,9 +575,11 @@ flowchart LR
   text field based on gpui's input example (`text_input`). `name_sheet`
   asks what to call something, holding its name: Return names it, blank
   for none, and what it names can refuse a name, the sheet saying why;
-  `window.rename` with no label shows it, and the window's label
-  (`workspace/naming`) is its title and a name the API knows it by, no
-  two windows' the same.
+  `window.rename` and `tile.rename` with no label show it. A window's
+  label (`workspace/naming`) is its title, a tile's shows in its header in
+  place of its file's name, titles off or on, and each is a name the API
+  knows it by, no two windows' the same and no two tiles', in whichever
+  windows.
   - `displays` lists the displays by the names macOS gives them (on X11,
     each monitor by its product's name; on Wayland, each output by the
     compositor's description) and moves a window onto one, which gpui
@@ -606,7 +613,10 @@ flowchart LR
   dragged onto another lands (`grid`), going from tile to tile and moving
   them about the grid from the keyboard (`focus`: the tile beside, above
   or below the one in front, as the grid lays them out, or the one before
-  or after it in turn), the empty window (`empty`: the app's logo, from
+  or after it in turn; and back to one in front before, by `tile.recent`
+  and `tile.back`, as for windows, from when each was clicked, gone to
+  from the keys or moved in from another window, but not as the mouse
+  passes over it, which only puts it in front), the empty window (`empty`: the app's logo, from
   `assets/icon.svg`, with the open buttons or the URL form under it;
   pressed anywhere but those, which keep their presses, and dragged, it
   moves the window as a lone tile's picture does), its screensaver

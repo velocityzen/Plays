@@ -16,7 +16,7 @@ mod error;
 mod registry;
 mod target;
 
-use gpui::{App, Context, Window};
+use gpui::{App, Context, Global, Window};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -119,6 +119,21 @@ impl Invocation {
     }
 }
 
+/// The command run last, and the one run before it.
+#[derive(Default)]
+struct Ran {
+    last: Option<&'static str>,
+    before: Option<&'static str>,
+}
+impl Global for Ran {}
+
+/// The command run before the one running now, for one that goes on
+/// from where it left off when run again with nothing run between, as Go
+/// Back One Window walks back.
+pub fn ran_before(cx: &App) -> Option<&'static str> {
+    cx.try_global::<Ran>().and_then(|ran| ran.before)
+}
+
 /// Run `invocation` now, handing back what the command does.
 ///
 /// Not while a window is being updated: not from an action's or a view's
@@ -140,10 +155,6 @@ pub fn run(invocation: Invocation, cx: &mut App) -> Result<Value, Error> {
         ..
     } = invocation;
     let spec = find(&command).ok_or(Error::NoSuchCommand { command })?;
-    // Going back a window more ends once something else is done.
-    if spec.id != "window.back" {
-        crate::app::end_walk(cx);
-    }
     args::check(spec.id, spec.args, &args)?;
     spec.check_target(&target)?;
     if !(spec.available)() {
@@ -152,6 +163,8 @@ pub fn run(invocation: Invocation, cx: &mut App) -> Result<Value, Error> {
             spec.title
         )));
     }
+    let ran = cx.default_global::<Ran>();
+    ran.before = ran.last.replace(spec.id);
     let args = registry::Args {
         command: spec.id,
         value: &args,

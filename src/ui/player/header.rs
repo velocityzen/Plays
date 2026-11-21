@@ -62,14 +62,16 @@ impl PlayerView {
                     .flex()
                     .items_baseline()
                     .gap_2()
-                    .when(show_titles, |this| {
+                    // A label shows though titles don't: it was given.
+                    .when(show_titles || self.label.is_some(), |this| {
                         this.child(
                             div()
+                                .debug_selector(|| "tile-title".into())
                                 .min_w_0()
                                 .truncate()
                                 .text_sm()
                                 .text_color(overlay::text())
-                                .child(self.title.clone()),
+                                .child(self.header_title()),
                         )
                     })
                     .when_some(details.filter(|d| !d.is_empty()), |this, details| {

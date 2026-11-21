@@ -53,6 +53,8 @@ pub enum PlayerEvent {
     /// The mouse came over it, or it was clicked: shortcuts go to this
     /// tile now.
     Activate,
+    /// It was clicked: it's the tile Go Back One Tile comes back to.
+    Pressed,
 }
 
 /// Where a tile is in its window, and where the mouse is, as the window
@@ -158,6 +160,20 @@ impl PlayerView {
 
     pub fn label(&self) -> Option<&str> {
         self.label.as_deref()
+    }
+
+    /// Label the tile, or take its label away: its header shows the label
+    /// in place of the file's name.
+    pub fn set_label(&mut self, label: Option<String>, cx: &mut Context<Self>) {
+        self.label = label;
+        cx.notify();
+    }
+
+    /// What its header calls it: its label, else its file's name.
+    pub fn header_title(&self) -> SharedString {
+        self.label
+            .clone()
+            .map_or_else(|| self.title.clone(), SharedString::from)
     }
 }
 
@@ -523,6 +539,7 @@ impl Render for PlayerView {
                 if !this.layout.active {
                     cx.emit(PlayerEvent::Activate);
                 }
+                cx.emit(PlayerEvent::Pressed);
             }))
             // Shortcuts go to the tile the mouse is over, as its controls
             // show there; not while it drags something of another tile's.

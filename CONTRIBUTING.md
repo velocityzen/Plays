@@ -524,6 +524,19 @@ check:
   last, ⌘1 going to it, and Backward and Forward, stopping at the ends.
   The Window menu has them, Move Window To a number for each window, the
   one in front's checked, and follows windows opening and closing.
+- The tile commands (`tiles`): Close Other Files, another window's left
+  open; Go to Recent Tile and Go Back One Tile, going to tiles clicked or
+  gone to from the keys but not those the mouse passed over, the walk
+  starting again after a click or another command, past one closed;
+  Rename Tile, trimmed, the header showing it (with titles off too),
+  named by it, none shared in whichever window and blank for none, and
+  with no label the sheet asking, holding the label, refusing a name
+  taken and put away by Escape; Copy File Path and Copy Current Time,
+  handing back what they copied, and ⌥⌘C; ⇧⌘↩ maximizing the tile in
+  front and back; and Move Tile To's state, its place from 1. The File
+  and Window menus have them, Move Tile To a place for each tile, the
+  one in front's checked, and Move Tile to Window each other window, by
+  label or number.
 
 Unit tests check finding a name among ids, labels, positions and the ends
 of ids (an id first, positions only among those given, several matching

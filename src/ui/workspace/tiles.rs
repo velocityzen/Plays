@@ -29,6 +29,7 @@ impl Workspace {
                 // Video → Aspect Ratio and Crop check this one's now.
                 refresh_menus(cx);
             }
+            PlayerEvent::Pressed => this.note_front_tile(view.entity_id()),
         });
         self.tiles.push(Tile {
             view,
@@ -152,6 +153,7 @@ impl Workspace {
         let graveyard = self.graveyard.clone();
         view.update(cx, |view, _| view.move_to_window(graveyard));
         self.active = Some(view.entity_id());
+        self.note_front_tile(view.entity_id());
         self.add_tile(view, cx);
         self.tiles_changed(cx);
         refresh_menus(cx);
@@ -167,6 +169,19 @@ impl Workspace {
     ) {
         self.set_sound_device(sound, cx);
         self.take_tile(view, cx);
+    }
+
+    /// Close every tile but `id`.
+    pub fn close_others(&mut self, id: EntityId, cx: &mut Context<Self>) {
+        let others: Vec<EntityId> = self
+            .tiles
+            .iter()
+            .map(|tile| tile.view.entity_id())
+            .filter(|&other| other != id)
+            .collect();
+        for other in others {
+            self.close(other, cx);
+        }
     }
 
     pub fn close_all(&mut self, cx: &mut Context<Self>) {

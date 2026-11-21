@@ -6,11 +6,11 @@ use serde::Deserialize;
 use serde_json::json;
 
 use super::done;
-use crate::api::Error;
 use crate::api::args::{Arg, Kind};
 use crate::api::registry::{Args, Outcome, Reach, Scope, Spec, on_mac};
 use crate::api::target::{self, Target};
-use crate::ui::workspace::Toward;
+use crate::api::{Error, Run};
+use crate::ui::workspace::{Toward, tile_label_taken};
 
 pub const COMMANDS: &[Spec] = &[
     Spec::custom(
@@ -34,6 +34,14 @@ pub const COMMANDS: &[Spec] = &[
     .keywords(&["clear", "remove", "stop"])
     .keys(&["secondary-shift-w"])
     .reach(Reach::Files),
+    Spec::custom(
+        "tile.close_others",
+        "Close Other Files",
+        "Close every file in the window but the tile's.",
+        Scope::Tile,
+        close_others,
+    )
+    .keywords(&["close all", "others", "keep", "remove"]),
     Spec::window(
         "tile.focus.left",
         "Focus Tile to the Left",
@@ -83,6 +91,22 @@ pub const COMMANDS: &[Spec] = &[
     .setting("focus_next_tile")
     .keys(&["secondary-]"]),
     Spec::window(
+        "tile.back",
+        "Go Back One Tile",
+        "Send keys to the tile clicked or gone to before the one they go to; again, the \
+         one before that, and so on, until something else is done.",
+        |workspace, _, cx| workspace.back_tile(cx),
+    )
+    .keywords(&["history", "previous", "last", "return", "focus"]),
+    Spec::window(
+        "tile.recent",
+        "Go to Recent Tile",
+        "Send keys to the tile clicked or gone to last but the one they go to; again, \
+         back to that one.",
+        |workspace, _, cx| workspace.recent_tile(cx),
+    )
+    .keywords(&["history", "last", "toggle", "alternate", "switch", "focus"]),
+    Spec::window(
         "tile.move.left",
         "Move Tile Left",
         "Swap the tile keys go to with the one to its left.",
@@ -122,7 +146,23 @@ pub const COMMANDS: &[Spec] = &[
         Scope::Tile,
         zoom,
     )
-    .keywords(&["expand", "enlarge", "full", "restore"]),
+    .keywords(&["expand", "enlarge", "full", "restore"])
+    .keys(&["secondary-shift-enter"]),
+    Spec::custom_with(
+        "tile.rename",
+        "Rename Tile…",
+        "Label the tile: its header shows the label in place of the file's name, and it \
+         can be named by it. A blank one takes the label away; with none given, the \
+         window asks for one.",
+        Scope::Tile,
+        &[Arg::optional(
+            "label",
+            Kind::Text,
+            "What to call it; no two tiles are called the same, in whichever windows.",
+        )],
+        rename,
+    )
+    .keywords(&["name", "label", "title"]),
     Spec::custom_with(
         "tile.move",
         "Move Tile To",
@@ -134,9 +174,10 @@ pub const COMMANDS: &[Spec] = &[
             Kind::Integer { min: 1 },
             "Where, from 1, the first tile's place.",
         )],
-        move_to,
+        put,
     )
-    .keywords(&["reorder", "place", "drag", "swap"]),
+    .keywords(&["reorder", "place", "drag", "swap"])
+    .state(position),
     Spec::custom_with(
         "tile.move_to_window",
         "Move Tile to Window",
@@ -147,7 +188,7 @@ pub const COMMANDS: &[Spec] = &[
             Kind::Text,
             "The window's id, its label, or its number, from 1.",
         )],
-        move_to_window,
+        send_to_window,
     )
     .keywords(&["send", "other window"]),
     Spec::custom(
@@ -158,6 +199,25 @@ pub const COMMANDS: &[Spec] = &[
         move_to_new_window,
     )
     .keywords(&["pop out", "detach", "separate", "own window"]),
+    Spec::tile_with(
+        "tile.copy_path",
+        "Copy File Path",
+        "Copy the path of the tile's file, or the URL of its stream; hands back what was \
+         copied.",
+        &[],
+        |_, player, _, cx| Ok(json!(player.copy_path(cx))),
+    )
+    .keywords(&["clipboard", "url", "location", "address"])
+    .keys(&["secondary-alt-c"]),
+    Spec::tile_with(
+        "tile.copy_time",
+        "Copy Current Time",
+        "Copy where the tile's file is, as its bar shows it, such as 1:23:45; hands back \
+         what was copied.",
+        &[],
+        |_, player, _, cx| Ok(json!(player.copy_time(cx))),
+    )
+    .keywords(&["clipboard", "position", "timestamp"]),
     Spec::tile(
         "tile.toggle_picture_in_picture",
         "Picture in Picture",
@@ -190,6 +250,60 @@ fn close(_: Args, target: &Target, cx: &mut App) -> Outcome {
     done()
 }
 
+/// Close every tile in the window of the tile named, or the one keys go
+/// to, but that one.
+fn close_others(_: Args, target: &Target, cx: &mut App) -> Outcome {
+    let (window, tile) = target::tile(target, cx)?;
+    let id = Entity::entity_id(&tile);
+    window
+        .update(cx, |workspace, _, cx| workspace.close_others(id, cx))
+        .map_err(|_| closed())?;
+    done()
+}
+
+#[derive(Deserialize)]
+struct Rename {
+    #[serde(default)]
+    label: Option<String>,
+}
+
+/// Label the tile named, or the one keys go to, with the label `args`
+/// give, trimmed; with none, ask for one.
+fn rename(args: Args, target: &Target, cx: &mut App) -> Outcome {
+    let Rename { label } = args.read()?;
+    let (window, tile) = target::tile(target, cx)?;
+    let id = Entity::entity_id(&tile);
+    let Some(label) = label else {
+        window
+            .update(cx, |workspace, window, cx| {
+                window.activate_window();
+                workspace.ask_for_tile_label(id, window, cx);
+            })
+            .map_err(|_| closed())?;
+        return done();
+    };
+    let label = label.trim();
+    if tile_label_taken(label, id, cx) {
+        let message = format!("another tile is called {label}");
+        return Err(Error::bad_args(args.command, message));
+    }
+    let label = (!label.is_empty()).then(|| label.to_owned());
+    tile.update(cx, |player, cx| player.set_label(label, cx));
+    done()
+}
+
+/// Where the tile named, or the one keys go to, is in its window's grid,
+/// from 1.
+fn position(target: &Target, cx: &mut App) -> Outcome {
+    let (window, tile) = target::tile(target, cx)?;
+    let at = target::read(window, cx)?
+        .players()
+        .iter()
+        .position(|other| *other == tile)
+        .ok_or_else(closed)?;
+    Ok(json!(at + 1))
+}
+
 /// Fill the window with the tile named, or the one keys go to, or show
 /// every tile again.
 fn zoom(_: Args, target: &Target, cx: &mut App) -> Outcome {
@@ -207,7 +321,7 @@ struct Place {
 }
 
 /// Put the tile at the place `args` give, from 1.
-fn move_to(args: Args, target: &Target, cx: &mut App) -> Outcome {
+fn put(args: Args, target: &Target, cx: &mut App) -> Outcome {
     let Place { position } = args.read()?;
     let (window, tile) = target::tile(target, cx)?;
     let count = target::read(window, cx)?.tile_count();
@@ -231,7 +345,7 @@ struct ToWindow {
 
 /// Move the tile to the window `args` name; it's there already if it's
 /// its own.
-fn move_to_window(args: Args, target: &Target, cx: &mut App) -> Outcome {
+fn send_to_window(args: Args, target: &Target, cx: &mut App) -> Outcome {
     let ToWindow { window: name } = args.read()?;
     let (from, tile) = target::tile(target, cx)?;
     let named = Target {
@@ -267,6 +381,16 @@ fn move_to_new_window(_: Args, target: &Target, cx: &mut App) -> Outcome {
         Some(opened) => Ok(json!({"window": target::read(opened, cx)?.id().to_string()})),
         None => done(),
     }
+}
+
+/// Put the tile in front at place `position` in its window's grid, from 1.
+pub fn move_to(position: usize) -> Run {
+    Run::with("tile.move", json!({"position": position}))
+}
+
+/// Move the tile in front to the window `name` names.
+pub fn move_to_window(name: &str) -> Run {
+    Run::with("tile.move_to_window", json!({"window": name}))
 }
 
 /// Why a window couldn't be updated.

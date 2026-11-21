@@ -2,9 +2,10 @@
 
 use std::time::Instant;
 
-use gpui::Context;
+use gpui::{App, ClipboardItem, Context};
 
 use super::PlayerView;
+use super::controls::format_time;
 use super::osd::{Osd, TrackReel};
 use super::tracks::track_choices;
 use crate::app::refresh_menus;
@@ -33,6 +34,21 @@ impl PlayerView {
         self.scrub = None;
         self.playback.seek(time);
         cx.notify();
+    }
+
+    /// Copy the file's path, or the stream's URL as it was opened, its
+    /// user and password too; what was copied.
+    pub fn copy_path(&self, cx: &mut App) -> String {
+        let address = self.playback.local().source().address();
+        cx.write_to_clipboard(ClipboardItem::new_string(address.clone()));
+        address
+    }
+
+    /// Copy where it is, as its bar says, such as 1:23:45; what was copied.
+    pub fn copy_time(&self, cx: &mut App) -> String {
+        let time = format_time(self.position());
+        cx.write_to_clipboard(ClipboardItem::new_string(time.clone()));
+        time
     }
 
     pub fn restart(&mut self, cx: &mut Context<Self>) {
