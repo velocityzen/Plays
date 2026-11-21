@@ -13,6 +13,7 @@ mod sound;
 mod sound_to_airplay;
 mod sound_to_bluetooth;
 mod tiles_from_the_keyboard;
+mod windows;
 
 use std::cell::Cell;
 use std::rc::Rc;

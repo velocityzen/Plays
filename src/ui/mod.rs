@@ -3,6 +3,7 @@ pub mod blackout;
 pub mod components;
 pub mod displays;
 pub mod framing;
+pub mod name_sheet;
 pub mod open_url;
 mod overlay;
 pub mod pairing;

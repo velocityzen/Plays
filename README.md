@@ -91,8 +91,9 @@ GPU-accelerated UI framework.
   (⌥⌘0) sizes it for its videos again.
 - Windows open where you are working: where the last one closed, on the
   same display, at the same size, and Settings where you left it.
-- Go from window to window from the keyboard: ⌘1 to ⌘9 by the order they
-  opened, Ctrl+Tab and Ctrl+Shift+Tab to the next or the one before.
+- Go from window to window from the keyboard: ⌘1 to ⌘9 by number,
+  Ctrl+Tab and Ctrl+Shift+Tab to the next or the one before, and ⌘' back
+  to the one in front before. Name a window, and number them as you like.
 - Player windows can float above other apps' windows, always or only while
   something in them plays.
 - While a tile plays, its header and controls fade when the mouse leaves
@@ -257,8 +258,10 @@ plays path/to/video.mp4 path/to/song.mp3 https://example.com/live.m3u8
 | Close the file in front | `⌘W` / `Ctrl+W` (in an empty window, it closes the window) |
 | Close all | `⌘⇧W` / `Ctrl+Shift+W` |
 | Close the window | `⌥⌘W` / `Ctrl+Alt+W` |
+| New window | `⌘N` / `Ctrl+N` |
 | Player window 1 to 9 | `⌘1` … `⌘9` / `Ctrl+1` … `Ctrl+9` |
 | Next/previous window | `⌃⇥` `⌃⇧⇥` / `Ctrl+Tab` `Ctrl+Shift+Tab` |
+| The window in front before | `⌘'` / `Ctrl+'` |
 | Settings | `⌘,` / `Ctrl+,` |
 
 Shortcuts act on the active tile: the one the mouse is over (or was last
@@ -284,7 +287,8 @@ card for each part of the app, the app's own (⌘O, ⌘W and so on) too. A
 key moves only from a command that works where it does: given to a
 player window's command, ⌘W leaves the window's Close to the other
 windows. Some commands have no keys until given some there, such as
-Float on Top, Maximize Tile and Move Tile to New Window. The menus show each command's first key, and are enabled
+Float on Top, Maximize Tile, Move Tile to New Window and Go Back One
+Window. The menus show each command's first key, and are enabled
 only when their commands can run.
 
 ### Tiles
@@ -354,13 +358,23 @@ display is gone, it opens in the middle of the display of the window in
 front. About always opens there. On Wayland, the compositor places
 windows.
 
-`⌘1` to `⌘9` (`Ctrl+1` to `Ctrl+9` on Linux) bring player window 1 to 9 to
-the front, numbered in the order they opened; when one closes, those
-after it move up a number. `Ctrl+Tab` and `Ctrl+Shift+Tab` bring the next
-player window or the one before to the front, from the last round to the
-first and back; from Settings or About, they go to the first or the last.
-They work in every window, Settings and About too. On macOS the Window
-menu has Next Window and Previous Window.
+`⌘N` (`Ctrl+N` on Linux) opens an empty player window. `⌘1` to `⌘9`
+(`Ctrl+1` to `Ctrl+9`) bring player window 1 to 9 to the front, numbered
+in the order they opened; when one closes, those after it move up a
+number. Window → Move Window Backward and Move Window Forward give the
+window in front the number before or after its own, and Move Window To
+any number. `Ctrl+Tab` and `Ctrl+Shift+Tab` bring the next player window
+or the one before to the front, from the last round to the first and
+back; from Settings or About, they go to the first or the last. `⌘'`
+(Go to Recent Window) brings back the player window that was in front
+before this one; again, it comes back to this one. Go Back One Window
+goes further back each time, to a window it hasn't been to yet, until
+you do something else. They work in every window, Settings and About too.
+
+Window → Rename Window… names the window in front: its title shows the
+name, the Window menu lists it so, and the command line can name the
+window by it. No two windows share a name; a blank one takes it away.
+Close Other Windows closes every player window but the one in front.
 
 Player windows float above other apps' windows with Video → Float on Top
 or Float on Top While Playing, or Settings → Appearance. Settings and

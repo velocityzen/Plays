@@ -140,6 +140,10 @@ pub fn run(invocation: Invocation, cx: &mut App) -> Result<Value, Error> {
         ..
     } = invocation;
     let spec = find(&command).ok_or(Error::NoSuchCommand { command })?;
+    // Going back a window more ends once something else is done.
+    if spec.id != "window.back" {
+        crate::app::end_walk(cx);
+    }
     args::check(spec.id, spec.args, &args)?;
     spec.check_target(&target)?;
     if !(spec.available)() {

@@ -513,6 +513,17 @@ check:
   put in its own; Move Tile to New Window, which says the window; and
   Open Paths or URLs in the window named, in a new one with none open,
   or why a path or URL won't open.
+- The window commands (`windows`): New Window, empty, in front and
+  numbered last, and ⌘N; Close Other Windows, Settings left open; Rename
+  Window, trimmed, the title showing it, named by it, none shared and
+  blank for none, and with no label the sheet asking, refusing a name
+  taken and put away by Escape; Go Back One Window walking back past
+  windows it has been to, starting again once another comes to the front
+  or another command runs, and Go to Recent Window (⌘') going back and
+  forth, past one closed; Move Window To a number from 1, none past the
+  last, ⌘1 going to it, and Backward and Forward, stopping at the ends.
+  The Window menu has them, Move Window To a number for each window, the
+  one in front's checked, and follows windows opening and closing.
 
 Unit tests check finding a name among ids, labels, positions and the ends
 of ids (an id first, positions only among those given, several matching

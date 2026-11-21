@@ -13,8 +13,8 @@ use std::collections::BTreeMap;
 use gpui::{App, Global, Menu, MenuItem, SystemMenuType};
 use serde_json::{Value, json};
 
-use super::AudioEngine;
 use super::speakers::output_kind;
+use super::{AudioEngine, player_windows};
 use crate::api::commands::{cast, output, playback, video, window};
 use crate::api::{self, Run, Target, front_window};
 use crate::cast::{Casting, Device, Shows};
@@ -252,33 +252,60 @@ fn subtitles_menu(state: &MenuState) -> Menu {
     }
 }
 
-/// Going from tile to tile in the window in front, and moving them about.
-/// Named so, macOS adds its own window items to it.
+/// Opening, naming and closing windows, going from tile to tile in the
+/// window in front and moving them about, and going from window to window
+/// and numbering them. Named so, macOS adds its own window items to it.
 fn window_menu(state: &MenuState) -> Menu {
+    let mut items = items(
+        &[
+            "window.new",
+            "window.rename",
+            "window.close_others",
+            "",
+            "tile.focus.left",
+            "tile.focus.right",
+            "tile.focus.up",
+            "tile.focus.down",
+            "tile.focus.previous",
+            "tile.focus.next",
+            "",
+            "tile.move.left",
+            "tile.move.right",
+            "tile.move.up",
+            "tile.move.down",
+            "",
+            // ⌘1 to ⌘9 go to a window by its number; macOS lists the
+            // windows below.
+            "window.next",
+            "window.previous",
+            "window.back",
+            "window.recent",
+            "",
+            "window.move.backward",
+            "window.move.forward",
+        ],
+        state,
+    );
+    items.extend(number_menu(state).map(MenuItem::submenu));
     Menu {
         name: "Window".into(),
-        items: items(
-            &[
-                "tile.focus.left",
-                "tile.focus.right",
-                "tile.focus.up",
-                "tile.focus.down",
-                "tile.focus.previous",
-                "tile.focus.next",
-                "",
-                "tile.move.left",
-                "tile.move.right",
-                "tile.move.up",
-                "tile.move.down",
-                "",
-                // ⌘1 to ⌘9 go to a window by its number; macOS lists the
-                // windows below.
-                "window.next",
-                "window.previous",
-            ],
-            state,
-        ),
+        items,
     }
+}
+
+/// A number for each player window, the one in front's checked, to give
+/// it that number instead; none for a window alone.
+fn number_menu(state: &MenuState) -> Option<Menu> {
+    let front = state.state("window.move").as_u64();
+    (state.windows > 1).then(|| Menu {
+        name: title("window.move").into(),
+        items: (1..=state.windows)
+            .map(|number| {
+                let checked = front == u64::try_from(number).ok();
+                MenuItem::action(number.to_string(), window::move_to(number)).checked(checked)
+            })
+            .collect(),
+    })
 }
 
 /// Check the menus again when Settings change: floating on top, and the
@@ -303,6 +330,8 @@ struct MenuState {
     casting: Option<Device>,
     /// The tile in front's chapters, by name.
     chapters: Vec<String>,
+    /// How many player windows are open, each a number to move one to.
+    windows: usize,
     /// The state of each command that has one, as it is for the window
     /// and tile in front.
     states: BTreeMap<&'static str, Value>,
@@ -346,6 +375,7 @@ impl MenuState {
             speakers,
             casting,
             chapters,
+            windows: player_windows(cx).len(),
             states,
         }
     }
@@ -624,6 +654,8 @@ mod tests {
     use super::*;
     use crate::cast::fake::FakeTarget;
     use crate::ui::testing::{self, OPEN_WAIT};
+    use crate::ui::theme::layout::WINDOW_SIZE;
+    use crate::ui::workspace::Workspace;
 
     /// Each action item's name and whether it is checked.
     fn listed(menu: &Menu) -> Vec<(String, bool)> {
@@ -743,6 +775,71 @@ mod tests {
     }
 
     #[test]
+    fn the_window_menu_opens_names_closes_goes_back_to_and_moves_windows() {
+        let state = MenuState {
+            windows: 3,
+            states: BTreeMap::from([("window.move", json!(2))]),
+            ..MenuState::default()
+        };
+        let menu = window_menu(&state);
+        let has = |title: &str, command: &str| {
+            menu.items.iter().any(|item| match item {
+                MenuItem::Action { name, action, .. } => {
+                    name == title && action.partial_eq(&Run::command(command))
+                }
+                _ => false,
+            })
+        };
+        for (title, command) in [
+            ("New Window", "window.new"),
+            ("Rename Window…", "window.rename"),
+            ("Close Other Windows", "window.close_others"),
+            ("Go Back One Window", "window.back"),
+            ("Go to Recent Window", "window.recent"),
+            ("Move Window Backward", "window.move.backward"),
+            ("Move Window Forward", "window.move.forward"),
+        ] {
+            assert!(has(title, command), "no {title}");
+        }
+
+        // A number for each window, the one in front's checked.
+        let numbers = menu.items.iter().find_map(|item| match item {
+            MenuItem::Submenu(menu) if menu.name == "Move Window To" => Some(menu),
+            _ => None,
+        });
+        let numbers = numbers.expect("no Move Window To");
+        let items: Vec<(String, bool)> = numbers
+            .items
+            .iter()
+            .map(|item| match item {
+                MenuItem::Action {
+                    name,
+                    action,
+                    checked,
+                    ..
+                } => {
+                    let number: usize = name.parse().expect("a number");
+                    assert!(action.partial_eq(&window::move_to(number)), "{name}");
+                    (name.to_string(), *checked)
+                }
+                _ => panic!("a number"),
+            })
+            .collect();
+        let expected = [("1", false), ("2", true), ("3", false)].map(|(n, c)| (n.to_owned(), c));
+        assert_eq!(items, expected);
+
+        let alone = window_menu(&MenuState {
+            windows: 1,
+            ..MenuState::default()
+        });
+        let numbered = alone
+            .items
+            .iter()
+            .any(|item| matches!(item, MenuItem::Submenu(menu) if menu.name == "Move Window To"));
+        assert!(!numbered, "nowhere to move one alone");
+    }
+
+    #[test]
     fn checks_the_aspect_ratio_and_crop_of_the_tile_in_front() {
         let state = MenuState::default();
         assert_eq!(
@@ -754,6 +851,29 @@ mod tests {
         assert_eq!(checked(&crop_menu(&Value::Null, &state)), ["None"]);
         let crop = CROPS[CROPS.len() - 1];
         assert_eq!(checked(&crop_menu(&json!(crop.name), &state)), [crop.name]);
+    }
+
+    #[gpui::test]
+    fn the_menus_number_the_windows_as_they_open_and_close(cx: &mut TestAppContext) {
+        let (_, mut cx) = testing::start(cx);
+        let shown = |cx: &mut VisualTestContext| {
+            cx.run_until_parked();
+            cx.update(|_, cx| {
+                let state = cx.try_global::<MenuState>().cloned().unwrap_or_default();
+                (state.windows, state.state("window.move").clone())
+            })
+        };
+        let open = |cx: &mut VisualTestContext| {
+            TestAppContext::update(cx, |cx| Workspace::open_window(WINDOW_SIZE, cx)).unwrap()
+        };
+
+        open(&mut cx);
+        let third = open(&mut cx);
+        assert_eq!(shown(&mut cx), (3, json!(1)), "the first in front");
+        third
+            .update(&mut cx, |_, window, _| window.remove_window())
+            .unwrap();
+        assert_eq!(shown(&mut cx).0, 2, "one closed");
     }
 
     #[gpui::test]

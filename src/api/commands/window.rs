@@ -1,6 +1,6 @@
-//! `window`: player windows: opening files into one, going from one to
-//! another, closing one, full screen and the display it's on, and floating
-//! them on top.
+//! `window`: player windows: opening one, or files into one, naming one,
+//! going from one to another and back, numbering them, closing one or the
+//! others, full screen and the display it's on, and floating them on top.
 
 use gpui::{AnyWindowHandle, App};
 use serde::Deserialize;
@@ -11,10 +11,21 @@ use crate::api::args::{Arg, Kind};
 use crate::api::registry::{Args, Outcome, Reach, Scope, Spec, on_mac};
 use crate::api::target::{self, Target};
 use crate::api::{Error, Invocation, Run, Source};
-use crate::app::step_window;
+use crate::app::{back_window, move_window, player_windows, recent_window, step_window};
 use crate::settings::{FloatOnTop, Settings};
+use crate::ui::theme::layout::WINDOW_SIZE;
+use crate::ui::workspace::Workspace;
 
 pub const COMMANDS: &[Spec] = &[
+    Spec::app_with(
+        "window.new",
+        "New Window",
+        "Open an empty player window, in front, numbered after the others.",
+        &[],
+        new_window,
+    )
+    .keywords(&["open", "empty", "another", "create"])
+    .keys(&["secondary-n"]),
     Spec::window(
         "window.open_files",
         "Open…",
@@ -50,11 +61,44 @@ pub const COMMANDS: &[Spec] = &[
     )
     // ⌘W closes the file in front, and this where there's none.
     .keys(&["secondary-alt-w", "secondary-w"]),
+    Spec::custom(
+        "window.close_others",
+        "Close Other Windows",
+        "Close every player window but this one, and the files in them.",
+        Scope::Window,
+        close_others,
+    )
+    .keywords(&["close all", "others", "keep"]),
+    Spec::window_with(
+        "window.rename",
+        "Rename Window…",
+        "Label the window: its title shows the label, and it can be named by it. A blank \
+         one takes the label away; with none given, the window asks for one.",
+        &[Arg::optional(
+            "label",
+            Kind::Text,
+            "What to call it; no two windows are called the same.",
+        )],
+        |args, workspace, window, cx| {
+            let Rename { label } = args.read()?;
+            match label {
+                Some(label) => workspace
+                    .set_label(&label, window, cx)
+                    .map_err(|why| Error::bad_args(args.command, why))?,
+                None => {
+                    window.activate_window();
+                    workspace.ask_for_label(window, cx);
+                }
+            }
+            done()
+        },
+    )
+    .keywords(&["name", "label", "title"]),
     Spec::window(
         "window.focus",
         "Go to Window",
-        "Bring the window to the front. ⌘1 to ⌘9 go to the first nine, in the order \
-         they opened.",
+        "Bring the window to the front. ⌘1 to ⌘9 go to the first nine, by their \
+         numbers.",
         |_, window, _| window.activate_window(),
     )
     .keywords(&["switch", "show", "raise"])
@@ -76,6 +120,53 @@ pub const COMMANDS: &[Spec] = &[
     )
     .keywords(&["switch", "cycle"])
     .keys(&["ctrl-shift-tab"]),
+    Spec::app(
+        "window.back",
+        "Go Back One Window",
+        "Bring back the player window in front before this one; again, the one before \
+         that, and so on, until something else is done.",
+        back_window,
+    )
+    .keywords(&["history", "previous", "last", "return"]),
+    Spec::app(
+        "window.recent",
+        "Go to Recent Window",
+        "Bring back the player window in front last; again, the one in front first.",
+        recent_window,
+    )
+    .keywords(&["history", "last", "toggle", "alternate", "switch"])
+    .keys(&["secondary-'"]),
+    Spec::custom_with(
+        "window.move",
+        "Move Window To",
+        "Give the window another number, from 1, which ⌘1 to ⌘9 go to it by: the windows \
+         between move up or down one.",
+        Scope::Window,
+        &[Arg::required(
+            "position",
+            Kind::Integer { min: 1 },
+            "Its number.",
+        )],
+        move_to_number,
+    )
+    .keywords(&["reorder", "number", "renumber", "order"])
+    .state(number),
+    Spec::custom(
+        "window.move.backward",
+        "Move Window Backward",
+        "Give the window the number before its own, the window there taking its own.",
+        Scope::Window,
+        |_, target, cx| step_number(target, -1, cx),
+    )
+    .keywords(&["reorder", "number", "earlier"]),
+    Spec::custom(
+        "window.move.forward",
+        "Move Window Forward",
+        "Give the window the number after its own, the window there taking its own.",
+        Scope::Window,
+        |_, target, cx| step_number(target, 1, cx),
+    )
+    .keywords(&["reorder", "number", "later"]),
     Spec::window(
         "window.toggle_full_screen",
         "Full Screen",
@@ -152,6 +243,85 @@ struct OnDisplay {
     display: u32,
 }
 
+#[derive(Deserialize)]
+struct Rename {
+    #[serde(default)]
+    label: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct Position {
+    position: usize,
+}
+
+/// Open an empty player window, in front.
+fn new_window(_: Args, cx: &mut App) -> Outcome {
+    let window = Workspace::open_window(WINDOW_SIZE, cx)
+        .map_err(|err| Error::failed(format!("can't open a window: {err:#}")))?;
+    let id = window
+        .update(cx, |workspace, window, _| {
+            window.activate_window();
+            workspace.id()
+        })
+        .map_err(|_| Error::failed("the window has closed"))?;
+    Ok(json!({"window": id.to_string()}))
+}
+
+/// Close the player windows but the one named, or the one in front.
+fn close_others(_: Args, target: &Target, cx: &mut App) -> Outcome {
+    let keep = target::window(target, cx)?;
+    for window in target::windows(cx) {
+        if window != keep {
+            // One closing as it's asked to closes anyway.
+            window
+                .update(cx, |_, window, _| window.remove_window())
+                .ok();
+        }
+    }
+    done()
+}
+
+/// Where the window named, or in front, is among the player windows, from
+/// 0, and how many there are.
+fn place(target: &Target, cx: &App) -> Result<(AnyWindowHandle, usize, usize), Error> {
+    let window: AnyWindowHandle = target::window(target, cx)?.into();
+    let windows = player_windows(cx);
+    let at = windows
+        .iter()
+        .position(|&open| open == window)
+        .ok_or_else(|| Error::failed("the window has closed"))?;
+    Ok((window, at, windows.len()))
+}
+
+/// The number of the window named, or in front, from 1.
+fn number(target: &Target, cx: &mut App) -> Outcome {
+    let (_, at, _) = place(target, cx)?;
+    Ok(json!(at + 1))
+}
+
+fn move_to_number(args: Args, target: &Target, cx: &mut App) -> Outcome {
+    let Position { position } = args.read()?;
+    let (window, _, count) = place(target, cx)?;
+    if position > count {
+        return Err(Error::bad_args(
+            args.command,
+            format!("position is at most {count}, as many as there are windows"),
+        ));
+    }
+    move_window(window, position - 1, cx);
+    done()
+}
+
+/// Move the window named, or in front, `step` places in the numbering, if
+/// that's a place: the first stays first, the last last.
+fn step_number(target: &Target, step: isize, cx: &mut App) -> Outcome {
+    let (window, at, _) = place(target, cx)?;
+    if let Some(to) = at.checked_add_signed(step) {
+        move_window(window, to, cx);
+    }
+    done()
+}
+
 /// Close the player window named, else the window in front, whatever it
 /// is, else the player window in front.
 fn close(_: Args, target: &Target, cx: &mut App) -> Outcome {
@@ -182,6 +352,11 @@ pub fn focus(number: usize) -> Run {
     Run(Invocation::new("window.focus")
         .in_window(number.to_string())
         .from(Source::Action))
+}
+
+/// Give the window in front the number `number`, from 1.
+pub fn move_to(number: usize) -> Run {
+    Run::with("window.move", json!({"position": number}))
 }
 
 /// Show the window in front full screen on the display `id`.

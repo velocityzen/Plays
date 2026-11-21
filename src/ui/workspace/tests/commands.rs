@@ -162,6 +162,15 @@ fn tracks_are_picked_by_number_and_subtitles_by_none_too(cx: &mut TestAppContext
             view.player().info().and_then(|info| info.selected(kind))
         })
     };
+    // The decoder says what plays once it has switched: of two picked one
+    // after the other, the first may show for a moment.
+    let settles = |cx: &mut VisualTestContext, kind, track: Option<usize>| {
+        wait_until(cx, |cx| {
+            tile.read_with(cx, |view, _| {
+                view.player().info().and_then(|info| info.selected(kind))
+            }) == track
+        })
+    };
 
     run_on(
         &mut cx,
@@ -176,7 +185,7 @@ fn tracks_are_picked_by_number_and_subtitles_by_none_too(cx: &mut TestAppContext
         "stream 2, its first"
     );
     run_on(&mut cx, &tile, "subtitles.select_track", Value::Null).unwrap();
-    assert_eq!(selected(&cx, TrackKind::Subtitle), None, "none, none");
+    assert!(settles(&mut cx, TrackKind::Subtitle, None), "none, none");
     run_on(
         &mut cx,
         &tile,
@@ -191,7 +200,7 @@ fn tracks_are_picked_by_number_and_subtitles_by_none_too(cx: &mut TestAppContext
         json!({"number": null}),
     )
     .unwrap();
-    assert_eq!(selected(&cx, TrackKind::Subtitle), None, "null, none");
+    assert!(settles(&mut cx, TrackKind::Subtitle, None), "null, none");
 
     run_on(&mut cx, &tile, "audio.select_track", json!({"number": 1})).unwrap();
     assert_eq!(selected(&cx, TrackKind::Audio), Some(1));

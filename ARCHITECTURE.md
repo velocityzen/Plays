@@ -515,13 +515,21 @@ flowchart LR
   the menu bar (`menus`: commands by id, each item titled as its command,
   sending its `Run`, checked when its state is on and enabled when it can
   run; set again after a command runs, as settings change, and as
-  outputs, displays or devices to cast to come and go; a menu named
-  Window, which macOS adds its own window items to, goes from tile to
-  tile and window to window). `windows` numbers the player windows in the
-  order they open, as each `Workspace` is made, for ⌘1 to ⌘9, and steps
-  from the window in front to the next or the one before for Ctrl+Tab and
-  Ctrl+Shift+Tab; those keys work in every window, Settings and About too,
-  but while Settings records a shortcut. `awake` keeps the screen awake
+  outputs, displays, devices to cast to or player windows come and go; a
+  menu named Window, which macOS adds its own window items to, opens,
+  names and closes windows, goes from tile to tile and window to window,
+  and numbers windows, Move Window To a number for each). `windows`
+  numbers the player windows in the order they open, as each `Workspace`
+  is made, for ⌘1 to ⌘9, unless `window.move` puts one at another number;
+  steps from the window in front to the next or the one before for
+  Ctrl+Tab and Ctrl+Shift+Tab; and keeps when each was last in front, as
+  each comes to the front. From that, `window.recent` (⌘') brings back the
+  newest before the one in front, so twice comes back, and `window.back`
+  walks back: each step goes only to windows in front before the one it
+  last went to, until another window comes to the front otherwise or
+  another command runs (`api::run` ends the walk). Those keys work in
+  every window, Settings and About too, but while Settings records a
+  shortcut. `awake` keeps the screen awake
   while a video plays, and the computer while only sound does: a power
   assertion on macOS, the desktop portal's Inhibit on Linux. `smoke` runs
   the real app through scripted scenarios (see
@@ -559,7 +567,12 @@ flowchart LR
   while files are open, and as the app quits; a tile opening a file seeks
   to it. A file barely begun, or played nearly to its end, isn't kept.
 - `src/ui/`: gpui views (`open_url`, the player and Settings below) and a
-  text field based on gpui's input example (`text_input`).
+  text field based on gpui's input example (`text_input`). `name_sheet`
+  asks what to call something, holding its name: Return names it, blank
+  for none, and what it names can refuse a name, the sheet saying why;
+  `window.rename` with no label shows it, and the window's label
+  (`workspace/naming`) is its title and a name the API knows it by, no
+  two windows' the same.
   - `displays` lists the displays by the names macOS gives them (on X11,
     each monitor by its product's name; on Wayland, each output by the
     compositor's description) and moves a window onto one, which gpui

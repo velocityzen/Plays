@@ -8,6 +8,7 @@ mod fit;
 mod focus;
 mod grid;
 mod mouse;
+mod naming;
 mod on_top;
 mod opening;
 mod pairing;
@@ -32,12 +33,13 @@ use gpui::{
 use serde_json::json;
 
 use super::displays;
+use super::name_sheet::NameSheet;
 use super::open_url::{OpenUrlDialog, OpenUrlEvent, UrlForm};
 use super::player::{Graveyard, PlayerView};
 use super::theme::layout::{DROP_INSET, TOOLBAR_HEIGHT, TRAFFIC_LIGHTS, WINDOW_MIN_SIZE};
 use super::theme::{self, Theme};
 use crate::api::Id;
-use crate::app::AudioEngine;
+use crate::app::{AudioEngine, note_front, refresh_menus};
 use crate::cast::{self, Casting};
 use crate::media::{Mixer, picture};
 use crate::progress;
@@ -48,6 +50,9 @@ pub use on_top::float_with_players;
 #[cfg(test)]
 pub use place::forget_settings_place;
 pub use place::{note_settings_place, save_place_on_quit, save_settings_place, settings_place};
+
+/// A window's title, until it's given a label.
+const TITLE: &str = "Plays";
 
 /// macOS has the menu bar for what the toolbar does, so its windows show
 /// just the video, with the traffic lights over it like other video players.
@@ -89,6 +94,8 @@ pub struct Workspace {
     keyboard_focus: bool,
     graveyard: Graveyard,
     open_url: Option<(Entity<OpenUrlDialog>, Subscription)>,
+    /// The sheet asking what to call the window.
+    naming: Option<(Entity<NameSheet>, Subscription)>,
     /// The sheet asking for the PIN a TV a tile was cast to shows.
     pairing: Option<pairing::Pairing>,
     /// A sheet closed: the window takes the keys back when next drawn.
@@ -164,7 +171,7 @@ impl Workspace {
                 display_id: display,
                 keep_position,
                 titlebar: Some(TitlebarOptions {
-                    title: Some("Plays".into()),
+                    title: Some(TITLE.into()),
                     appears_transparent: true,
                     traffic_light_position: Some(TRAFFIC_LIGHTS),
                 }),
@@ -199,11 +206,13 @@ impl Workspace {
         });
         let casting_subscription = cx.observe_global::<Casting>(|_, cx| cx.notify());
         // Picks up an accent color changed in System Settings meanwhile.
-        // The one in front is where the next launch opens.
+        // The one in front is where the next launch opens, and where
+        // Window → Go Back One Window comes back to.
         let activation_subscription = cx.observe_window_activation(window, |this, window, cx| {
             if window.is_window_active() {
                 theme::refresh_system_colors(cx);
                 this.note_place(window, cx);
+                note_front(window.window_handle(), cx);
             }
         });
         let bounds_subscription =
@@ -216,6 +225,8 @@ impl Workspace {
             // Closing the last window quits, which waits for these.
             let stopping = this.stop_casts(cx);
             cast::Stopping::add(stopping, cx);
+            // Window → Move Window To has a number fewer.
+            refresh_menus(cx);
         })
         .detach();
         let url_form = cx.new(|cx| UrlForm::new(cx).centered());
@@ -242,6 +253,7 @@ impl Workspace {
             keyboard_focus: false,
             graveyard: Graveyard::default(),
             open_url: None,
+            naming: None,
             pairing: None,
             refocus: false,
             url_form,
@@ -395,6 +407,9 @@ impl Render for Workspace {
             .child(workspace)
             .when_some(self.open_url.as_ref(), |this, (dialog, _)| {
                 this.child(dialog.clone())
+            })
+            .when_some(self.naming.as_ref(), |this, (sheet, _)| {
+                this.child(sheet.clone())
             })
             .when_some(self.pairing.as_ref(), |this, pairing| {
                 this.child(pairing.dialog.clone())
