@@ -22,3 +22,6 @@ network = { path = "../network" }
 quick-xml = "0.42"
 # Multicast on a chosen interface, and sharing SSDP's port.
 socket2 = { version = "0.6", features = ["all"] }
+
+[dev-dependencies]
+proptest = { version = "1", default-features = false, features = ["std"] }

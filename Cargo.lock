@@ -74,6 +74,7 @@ dependencies = [
  "network",
  "num-bigint",
  "plist",
+ "proptest",
  "rand 0.8.8",
  "sha1",
  "sha2 0.10.9",
@@ -1062,6 +1063,7 @@ dependencies = [
  "futures-channel",
  "log",
  "network",
+ "proptest",
  "prost",
  "rcgen",
  "rustls",
@@ -1791,6 +1793,7 @@ dependencies = [
  "if-addrs",
  "log",
  "network",
+ "proptest",
  "quick-xml 0.42.0",
  "socket2",
 ]
@@ -3976,6 +3979,7 @@ dependencies = [
  "futures-channel",
  "log",
  "mdns-sd",
+ "proptest",
 ]
 
 [[package]]
@@ -4853,6 +4857,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "proptest"
+version = "1.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b8530004ccb15eae51c7e40009fbe317f341f804db54dc033eec1c50be28cfa0"
+dependencies = [
+ "bitflags 2.13.2",
+ "chacha20 0.10.2",
+ "core_detect",
+ "num-traits",
+ "rand 0.10.4",
+ "rand_xorshift",
+ "regex-syntax",
+ "unarray",
+]
+
+[[package]]
 name = "prost"
 version = "0.14.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5082,6 +5102,15 @@ name = "rand_pcg"
 version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "caa0f4137e1c0a72f4c651489402276c8e8e1cf081f3b0ba156d2cbeef09e86a"
+dependencies = [
+ "rand_core 0.10.1",
+]
+
+[[package]]
+name = "rand_xorshift"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "60aa6af80be32871323012e02e6e65f8a7cc7890931ae421d217ad8fe0df2ccf"
 dependencies = [
  "rand_core 0.10.1",
 ]
@@ -6048,6 +6077,7 @@ dependencies = [
  "ffmpeg-link",
  "ffmpeg-next",
  "log",
+ "proptest",
 ]
 
 [[package]]
@@ -6775,6 +6805,12 @@ dependencies = [
  "tempfile",
  "windows-sys 0.61.2",
 ]
+
+[[package]]
+name = "unarray"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eaea85b334db583fe3274d12b4cd1880032beab409c0d774be044d4480ab9a94"
 
 [[package]]
 name = "unicase"

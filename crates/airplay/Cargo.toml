@@ -30,3 +30,6 @@ sha2 = "0.10"
 # Comparing pairing proofs in constant time.
 subtle = "2.6.1"
 x25519-dalek = { version = "2", features = ["static_secrets"] }
+
+[dev-dependencies]
+proptest = { version = "1", default-features = false, features = ["std"] }

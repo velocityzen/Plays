@@ -573,6 +573,28 @@ renderers are kept, with a description that can't wait to be read asked
 for again when its renderer is next heard. Each has been checked to fail
 when what it covers is broken.
 
+Property tests, with proptest, throw what a hostile device or client might
+send at each crate's parsers: generated text with line breaks, non-ASCII
+and numbers past what a number can be among it, and messages cut into
+pieces any which way. Whatever comes, nothing panics, and: the network
+crate reads a message back as it was sent however the stream cuts it,
+refuses a body past the most before reading it and a head that never ends
+within the most, and holds no more than its bounds of an endless stream;
+DLNA's XML is never nested deeper than the most, an advert and a
+subscription last within their bounds, a URL read or joined goes into a
+request whole, and a description reaches only its own device whatever its
+URLs say; Cast's framing gives messages back whole however they arrive,
+refuses a length past the most before waiting for it, and takes a message
+that isn't one out whole, keeping what follows; AirPlay's TLV8 gives
+values back whole however long, and its reader reads messages one after
+another and refuses a body past a mebibyte; and the stream server keeps a
+byte range within what there is, reads a request as it was sent and the
+next after it, and refuses a head that never ends having read little past
+the most. Each tries 256 cases (`PROPTEST_CASES` sets more), and a failure
+is shrunk to the smallest input that fails, which proptest saves in the
+crate's `proptest-regressions/` to try first next time: commit it with the
+fix. Each has been checked to fail when what it covers is broken.
+
 Each protocol crate has an example that talks to real devices on the
 network; see [ARCHITECTURE.md](ARCHITECTURE.md#the-chromecast-crate) for
 what they do.
