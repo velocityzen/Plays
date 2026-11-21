@@ -6,6 +6,7 @@ pub mod cast;
 mod display;
 pub mod output;
 pub mod playback;
+mod settings;
 mod subtitles;
 pub mod tile;
 pub mod video;
@@ -21,7 +22,7 @@ use crate::media::tracks::TrackKind;
 use crate::ui::player::PlayerView;
 
 /// Every namespace's commands.
-pub const ALL: [&[Spec]; 10] = [
+pub const ALL: [&[Spec]; 11] = [
     app::COMMANDS,
     window::COMMANDS,
     tile::COMMANDS,
@@ -32,11 +33,12 @@ pub const ALL: [&[Spec]; 10] = [
     cast::COMMANDS,
     output::COMMANDS,
     display::COMMANDS,
+    settings::COMMANDS,
 ];
 
 /// The namespaces, in the order Settings → Hotkeys lists their commands,
 /// each with its title there.
-pub const NAMESPACES: [(&str, &str); 9] = [
+pub const NAMESPACES: [(&str, &str); 10] = [
     ("playback", "Playback"),
     ("audio", "Audio"),
     ("subtitles", "Subtitles"),
@@ -45,6 +47,7 @@ pub const NAMESPACES: [(&str, &str); 9] = [
     ("tile", "Tiles in a window"),
     ("cast", "Casting"),
     ("output", "Output"),
+    ("settings", "Settings"),
     ("app", "Plays"),
 ];
 

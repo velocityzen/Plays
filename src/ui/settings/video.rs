@@ -2,10 +2,10 @@
 
 use gpui::{AnyElement, Context, Window};
 
-use super::form::{group, labeled_slider, row, update_settings};
+use super::form::{group, labeled_slider, row, set, slide};
 use super::{Pane, SettingsView};
-use crate::settings::{GAMMA_RANGE, MaxResolution, Settings, VideoFit};
-use crate::ui::components::{Segmented, Slide, Slider, Switch};
+use crate::settings::{GAMMA_RANGE, Settings, fields};
+use crate::ui::components::{Segmented, Slider, Switch};
 use crate::ui::theme::Theme;
 use crate::ui::theme::settings::VIDEO_COLOR;
 
@@ -42,12 +42,8 @@ impl Pane for VideoPane {
                         "Scaling",
                         None,
                         theme,
-                        Segmented::new(
-                            "fit",
-                            &[(VideoFit::Contain, "Fit"), (VideoFit::Cover, "Fill")],
-                            s.video_fit,
-                        )
-                        .on_select(|&v, _, cx| update_settings(cx, true, |s| s.video_fit = v)),
+                        Segmented::new("fit", &fields::FITS, s.video_fit)
+                            .on_select(|&v, _, cx| set("video_fit", v, cx)),
                     ),
                     row(
                         "SDR gamma",
@@ -57,13 +53,13 @@ impl Pane for VideoPane {
                                 .into(),
                         ),
                         theme,
-                        gamma_slider(view, "sdr-gamma", sdr_gamma, theme, |s, v| s.sdr_gamma = v),
+                        gamma_slider(view, "sdr-gamma", "sdr_gamma", sdr_gamma, theme),
                     ),
                     row(
                         "HDR gamma",
                         Some("The same for HDR10, HLG and Dolby Vision video.".into()),
                         theme,
-                        gamma_slider(view, "hdr-gamma", hdr_gamma, theme, |s, v| s.hdr_gamma = v),
+                        gamma_slider(view, "hdr-gamma", "hdr_gamma", hdr_gamma, theme),
                     ),
                 ],
             ),
@@ -79,18 +75,8 @@ impl Pane for VideoPane {
                                 .into(),
                         ),
                         theme,
-                        Segmented::new(
-                            "max-resolution",
-                            &[
-                                (MaxResolution::Original, "Full"),
-                                (MaxResolution::P2160, "2160p"),
-                                (MaxResolution::P1080, "1080p"),
-                                (MaxResolution::P720, "720p"),
-                                (MaxResolution::P480, "480p"),
-                            ],
-                            s.max_resolution,
-                        )
-                        .on_select(|&v, _, cx| update_settings(cx, true, |s| s.max_resolution = v)),
+                        Segmented::new("max-resolution", &fields::RESOLUTIONS, s.max_resolution)
+                            .on_select(|&v, _, cx| set("max_resolution", v, cx)),
                     ),
                     row(
                         "Hardware decoding",
@@ -105,9 +91,8 @@ impl Pane for VideoPane {
                             .into(),
                         ),
                         theme,
-                        Switch::new("hardware", s.hardware_decoding).on_toggle(|&on, _, cx| {
-                            update_settings(cx, true, |s| s.hardware_decoding = on)
-                        }),
+                        Switch::new("hardware", s.hardware_decoding)
+                            .on_toggle(|&on, _, cx| set("hardware_decoding", on, cx)),
                     ),
                 ],
             ),
@@ -120,9 +105,9 @@ impl Pane for VideoPane {
 fn gamma_slider(
     view: &mut SettingsView,
     id: &'static str,
+    key: &'static str,
     value: f32,
     theme: &Theme,
-    apply: impl Fn(&mut Settings, f32) + Copy + 'static,
 ) -> AnyElement {
     let (low, high) = (GAMMA_RANGE.start().log2(), GAMMA_RANGE.end().log2());
     let position = (value.log2() - low) / (high - low);
@@ -130,7 +115,7 @@ fn gamma_slider(
         Slider::new(id, position, view.drag(id)).on_change(move |event, _, cx| {
             let gamma = (low + event.value * (high - low)).exp2();
             let gamma = (gamma * 20.0).round() / 20.0;
-            update_settings(cx, event.slide == Slide::End, |s| apply(s, gamma));
+            slide(key, gamma, event.slide, cx);
         }),
         format!("{value:.2}"),
         theme,

@@ -3,9 +3,9 @@
 
 use gpui::{AnyElement, Context, Window};
 
-use super::form::{group, row, update_settings};
+use super::form::{group, row, set};
 use super::{Pane, SettingsView};
-use crate::settings::{ControlsVisibility, FloatOnTop, FullScreen, PanelLook, Settings, ThemeMode};
+use crate::settings::{Settings, fields};
 use crate::ui::components::{Segmented, Switch};
 use crate::ui::theme::Theme;
 use crate::ui::theme::settings::APPEARANCE_COLOR;
@@ -41,16 +41,8 @@ impl Pane for AppearancePane {
                     "Theme",
                     None,
                     theme,
-                    Segmented::new(
-                        "theme",
-                        &[
-                            (ThemeMode::System, "System"),
-                            (ThemeMode::Dark, "Dark"),
-                            (ThemeMode::Light, "Light"),
-                        ],
-                        s.theme,
-                    )
-                    .on_select(|&v, _, cx| update_settings(cx, true, |s| s.theme = v)),
+                    Segmented::new("theme", &fields::THEMES, s.theme)
+                        .on_select(|&v, _, cx| set("theme", v, cx)),
                 )],
             ),
             group(
@@ -61,26 +53,15 @@ impl Pane for AppearancePane {
                         "Columns",
                         None,
                         theme,
-                        Segmented::new(
-                            "columns",
-                            &[(0, "Auto"), (1, "1"), (2, "2"), (3, "3"), (4, "4")],
-                            s.columns,
-                        )
-                        .on_select(|&v, _, cx| update_settings(cx, true, |s| s.columns = v)),
+                        Segmented::new("columns", &fields::COLUMNS, s.columns)
+                            .on_select(|&v, _, cx| set("columns", v, cx)),
                     ),
                     row(
                         "Player controls",
                         None,
                         theme,
-                        Segmented::new(
-                            "controls",
-                            &[
-                                (ControlsVisibility::OnHover, "On hover"),
-                                (ControlsVisibility::Always, "Always"),
-                            ],
-                            s.controls,
-                        )
-                        .on_select(|&v, _, cx| update_settings(cx, true, |s| s.controls = v)),
+                        Segmented::new("controls", &fields::CONTROLS, s.controls)
+                            .on_select(|&v, _, cx| set("controls", v, cx)),
                     ),
                     row(
                         "Panels over the video",
@@ -89,41 +70,22 @@ impl Pane for AppearancePane {
                                 .into(),
                         ),
                         theme,
-                        Segmented::new(
-                            "panels",
-                            &[
-                                (PanelLook::Plain, "Plain"),
-                                (PanelLook::Frosted, "Frosted"),
-                                (PanelLook::Glass, "Glass"),
-                                (PanelLook::Glow, "Glow"),
-                                (PanelLook::Tint, "Tint"),
-                            ],
-                            s.panels,
-                        )
-                        .on_select(|&v, _, cx| update_settings(cx, true, |s| s.panels = v)),
+                        Segmented::new("panels", &fields::PANELS, s.panels)
+                            .on_select(|&v, _, cx| set("panels", v, cx)),
                     ),
                     row(
                         "Show file names",
                         None,
                         theme,
-                        Switch::new("titles", s.show_titles).on_toggle(|&on, _, cx| {
-                            update_settings(cx, true, |s| s.show_titles = on)
-                        }),
+                        Switch::new("titles", s.show_titles)
+                            .on_toggle(|&on, _, cx| set("show_titles", on, cx)),
                     ),
                     row(
                         "Float on top",
                         None,
                         theme,
-                        Segmented::new(
-                            "float-on-top",
-                            &[
-                                (FloatOnTop::Off, "Off"),
-                                (FloatOnTop::Always, "Always"),
-                                (FloatOnTop::WhilePlaying, "While playing"),
-                            ],
-                            s.float_on_top,
-                        )
-                        .on_select(|&v, _, cx| update_settings(cx, true, |s| s.float_on_top = v)),
+                        Segmented::new("float-on-top", &fields::FLOATING, s.float_on_top)
+                            .on_select(|&v, _, cx| set("float_on_top", v, cx)),
                     ),
                 ]
                 .into_iter()
@@ -147,7 +109,7 @@ fn screensaver_rows(s: &Settings, theme: &Theme) -> Vec<AnyElement> {
         ),
         theme,
         Switch::new("screensaver", s.screensaver)
-            .on_toggle(|&on, _, cx| update_settings(cx, true, |s| s.screensaver = on)),
+            .on_toggle(|&on, _, cx| set("screensaver", on, cx)),
     );
     let after = s.screensaver.then(|| {
         row(
@@ -156,17 +118,10 @@ fn screensaver_rows(s: &Settings, theme: &Theme) -> Vec<AnyElement> {
             theme,
             Segmented::new(
                 "screensaver-minutes",
-                &[
-                    (1, "1 min"),
-                    (2, "2 min"),
-                    (5, "5 min"),
-                    (10, "10 min"),
-                    (15, "15 min"),
-                    (30, "30 min"),
-                ],
+                &fields::SCREENSAVER_MINUTES,
                 s.screensaver_minutes,
             )
-            .on_select(|&v, _, cx| update_settings(cx, true, |s| s.screensaver_minutes = v)),
+            .on_select(|&v, _, cx| set("screensaver_minutes", v, cx)),
         )
     });
     [switch].into_iter().chain(after).collect()
@@ -183,7 +138,7 @@ fn black_out_row(s: &Settings, theme: &Theme) -> AnyElement {
         ),
         theme,
         Switch::new("black-out", s.black_out_displays)
-            .on_toggle(|&on, _, cx| update_settings(cx, true, |s| s.black_out_displays = on)),
+            .on_toggle(|&on, _, cx| set("black_out_displays", on, cx)),
     )
 }
 
@@ -198,14 +153,7 @@ fn full_screen_row(s: &Settings, theme: &Theme) -> AnyElement {
                 .into(),
         ),
         theme,
-        Segmented::new(
-            "full-screen",
-            &[
-                (FullScreen::OwnSpace, "Own Space"),
-                (FullScreen::OverDisplay, "Over the display"),
-            ],
-            s.full_screen,
-        )
-        .on_select(|&v, _, cx| update_settings(cx, true, |s| s.full_screen = v)),
+        Segmented::new("full-screen", &fields::FULL_SCREENS, s.full_screen)
+            .on_select(|&v, _, cx| set("full_screen", v, cx)),
     )
 }

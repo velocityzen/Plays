@@ -537,6 +537,18 @@ check:
   and Window menus have them, Move Tile To a place for each tile, the
   one in front's checked, and Move Tile to Window each other window, by
   label or number.
+- The settings as commands (`ui::settings::tests::commands`): a switch
+  clicked in Settings and `settings.set` saving the same file; a choice, a
+  protocol's switch and Restore sending `settings.set` or
+  `settings.reset`, and a slider showing its setting as dragged, sending
+  nothing and saving nothing till let go; a value Settings doesn't offer,
+  a key that isn't one, and no value, turned away; `settings.ls` saying
+  what each takes, and get, set and reset; a reload picking up the file,
+  saying which settings changed, without saving over it, and refusing with
+  no file; showing the file, saved first; and Copy Version Info and Copy
+  Debug Info. Unit tests check every setting the file keeps has a key,
+  and each kind taken and turned away, saying what it takes
+  (`settings::fields`).
 - What the queries hand back (`inspect`), as whole JSON: List Windows
   and Inspect Window (the number, the window in front, its bounds and
   display, full screen, floating on top, its own output and its tiles);

@@ -462,7 +462,7 @@ fn item(
 }
 
 /// The version of the FFmpeg the app runs with, which is built into it.
-fn ffmpeg_version() -> SharedString {
+pub fn ffmpeg_version() -> SharedString {
     // SAFETY: av_version_info returns a static, NUL-terminated string.
     let version = unsafe { CStr::from_ptr(ffmpeg::ffi::av_version_info()) };
     version.to_string_lossy().into_owned().into()

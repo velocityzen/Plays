@@ -4,10 +4,10 @@
 use gpui::prelude::*;
 use gpui::{AnyElement, Context, KeyDownEvent, Keystroke, SharedString, Window, div};
 
-use super::form::{group, row, update_settings};
+use super::form::{group, reset, row, set};
 use super::{Pane, SettingsView};
 use crate::api::{self, commands::NAMESPACES};
-use crate::hotkeys::{self, Hotkeys};
+use crate::hotkeys;
 use crate::settings::Settings;
 use crate::ui::components::{Button, ComponentSize, ControlFrame, Icon, Sizable};
 use crate::ui::theme::Theme;
@@ -63,9 +63,7 @@ impl Pane for HotkeysPane {
                         .into(),
                 ),
                 theme,
-                Button::new("restore-hotkeys", "Restore").on_click(|_, _, cx| {
-                    update_settings(cx, true, |s| s.hotkeys = Hotkeys::default())
-                }),
+                Button::new("restore-hotkeys", "Restore").on_click(|_, _, cx| reset("hotkeys", cx)),
             )],
         );
         let mut groups = vec![intro];
@@ -122,8 +120,9 @@ impl Pane for HotkeysPane {
             key_char: None,
         }
         .unparse();
-        let mut taken = None;
-        update_settings(cx, true, |s| taken = s.hotkeys.add(command, &key));
+        let mut hotkeys = cx.global::<Settings>().hotkeys.clone();
+        let taken = hotkeys.add(command, &key);
+        set("hotkeys", &hotkeys, cx);
         view.recording.note = taken.map(|from| {
             let title = api::find(from).map_or(from, |spec| spec.title);
             let note = format!("{} was for “{}”", hotkeys::display(&key), title);
@@ -176,7 +175,9 @@ fn key_chips(
                         .small()
                         .icon_color(theme.text_muted)
                         .on_click(move |_, _, cx| {
-                            update_settings(cx, true, |s| s.hotkeys.remove(command, &removed))
+                            let mut hotkeys = cx.global::<Settings>().hotkeys.clone();
+                            hotkeys.remove(command, &removed);
+                            set("hotkeys", &hotkeys, cx);
                         }),
                 )
         }))

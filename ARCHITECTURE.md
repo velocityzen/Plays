@@ -471,9 +471,9 @@ flowchart LR
 - `src/api/`: every command Plays has, which every action runs by name,
   as a command line and a command palette are to. Each namespace
   (`app`, `window`, `tile`, `playback`, `audio`, `subtitles`, `video`,
-  `cast`, `output`, `display`) is a file in `commands/`, a list of
-  `Spec`s: the command's id (`playback.toggle_loop`), title, description
-  and keywords,
+  `cast`, `output`, `display`, `settings`) is a file in `commands/`, a
+  list of `Spec`s: the command's id (`playback.toggle_loop`), title,
+  description and keywords,
   what it acts on (the app, a window, every tile in one, or a tile), the
   arguments it takes, the keys it starts out with and where they work
   (`Reach`: anywhere, in a window with files, or there but not while
@@ -567,6 +567,17 @@ flowchart LR
   its own, so one a setting can't take (typed wrong, or from a later
   Plays) leaves only that setting as it starts out; a file not read
   whole, or from a later Plays, is kept beside it as `settings.json.bad`.
+  `settings::fields` lists every setting by its key, the path to it in
+  the file (`subtitles.size`), with what the Settings window calls it, its
+  pane, and what it takes: on or off, one of the choices the window offers
+  (which the panes draw from the same lists), a number in the window's
+  range, a font the system has, a folder, an output, or the shortcuts
+  changed; and whether each protocol looks for devices
+  (`casting.look_with.Chromecast`), for the protocols there are. `with`
+  sets one, checked so, by laying the value into the settings as JSON and
+  reading them back, which the type checks too. The `settings` commands
+  read, set, reset and list them through it, read the file again
+  (`settings.reload`, saying which changed) and show it.
 - `src/files.rs`: the folder the settings and progress are kept in, a gpui
   global the app sets to `plays` in the user's config folder; tests and
   smoke runs have none, so they never read or write the real files, and a
@@ -696,8 +707,13 @@ flowchart LR
   Video, Subtitles, Casting, Screenshots, Hotkeys, Appearance, About) is a
   file of its own with its name and icon for the sidebar; `form` has the
   cards, rows and sliders they are made of, and `file` the settings file's
-  menu at the sidebar's foot. Hotkeys lists every command that takes keys,
-  a card for each namespace; while it waits for keys to record, its key
+  menu at the sidebar's foot. Each control sets its setting with
+  `settings.set` (`form::set`), once the event is handled; a slider shows
+  its setting as it's dragged, unsaved, and sets it once let go, and
+  Hotkeys sets the shortcuts changed, or resets them. Importing a file and
+  resetting every setting replace them whole. Hotkeys lists every command
+  that takes keys, a card for each namespace; while it waits for keys to
+  record, its key
   context has `Recording`, which the keys that work anywhere stay out of.
   About shows the version and the credits,
   each of which opens to its license; there are hundreds, so they are in a

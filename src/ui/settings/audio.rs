@@ -4,7 +4,7 @@
 use gpui::prelude::*;
 use gpui::{AnyElement, ClickEvent, Context, Corner, SharedString, Window, div, point};
 
-use super::form::{group, percent_slider, row, update_settings};
+use super::form::{group, percent_slider, row, set};
 use super::{Pane, SettingsView};
 use crate::api::commands::output;
 use crate::app::{AudioEngine, Route};
@@ -45,9 +45,13 @@ impl Pane for AudioPane {
                 "Master volume",
                 None,
                 theme,
-                percent_slider(view, "master-volume", s.master_volume, theme, |s, v| {
-                    s.master_volume = v
-                }),
+                percent_slider(
+                    view,
+                    "master-volume",
+                    "master_volume",
+                    s.master_volume,
+                    theme,
+                ),
             ),
             row("Output", None, theme, device_picker(view, s, theme, cx)),
         ];
@@ -63,9 +67,8 @@ impl Pane for AudioPane {
                     .into(),
                 ),
                 theme,
-                Switch::new("wait-for-device", output.wait_for_device).on_toggle(|&on, _, cx| {
-                    update_settings(cx, true, |s| s.audio_output.wait_for_device = on)
-                }),
+                Switch::new("wait-for-device", output.wait_for_device)
+                    .on_toggle(|&on, _, cx| set("audio_output.wait_for_device", on, cx)),
             ));
         }
         let standing_in = match AudioEngine::route(cx) {
@@ -95,9 +98,8 @@ impl Pane for AudioPane {
                     .into(),
             ),
             theme,
-            Switch::new("sound-follows-display", s.sound_follows_display).on_toggle(
-                |&on, _, cx| update_settings(cx, true, |s| s.sound_follows_display = on),
-            ),
+            Switch::new("sound-follows-display", s.sound_follows_display)
+                .on_toggle(|&on, _, cx| set("sound_follows_display", on, cx)),
         ));
         vec![group(None, theme, rows)]
     }

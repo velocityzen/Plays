@@ -15,6 +15,9 @@ mod subtitles;
 mod tests;
 mod video;
 
+pub use about::ffmpeg_version;
+pub use subtitles::installed_fonts;
+
 use std::cell::Cell;
 use std::collections::HashMap;
 use std::rc::Rc;

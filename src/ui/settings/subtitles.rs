@@ -12,13 +12,13 @@ use gpui::{
     linear_gradient, point, px, rgb, size, transparent_black, uniform_list,
 };
 
-use super::form::{group, percent_slider, range_slider, row, update_settings};
+use super::form::{group, percent_slider, range_slider, row, set};
 use super::{Pane, SettingsView};
 use crate::media::Orientation;
 use crate::media::subtitles::{CueContent, parse_ass};
 use crate::settings::{
-    Rgb, SUBTITLE_COLORS, SUBTITLE_POSITION_RANGE, SUBTITLE_SIZE_RANGE, Settings, SubtitleArea,
-    SubtitleEdge, SubtitleStyle, SubtitleWeight,
+    Rgb, SUBTITLE_COLORS, SUBTITLE_POSITION_RANGE, SUBTITLE_SIZE_RANGE, Settings, SubtitleStyle,
+    fields,
 };
 use crate::ui::components::{Button, Card, ComponentSize, MenuRow, Panel, Popover, Segmented};
 use crate::ui::framing::{self, Adjustments, Framing};
@@ -101,16 +101,8 @@ fn text_group(
                 "Weight",
                 None,
                 theme,
-                Segmented::new(
-                    "subtitle-weight",
-                    &[
-                        (SubtitleWeight::Regular, "Regular"),
-                        (SubtitleWeight::Medium, "Medium"),
-                        (SubtitleWeight::Bold, "Bold"),
-                    ],
-                    style.weight,
-                )
-                .on_select(|&v, _, cx| update_settings(cx, true, |s| s.subtitles.weight = v)),
+                Segmented::new("subtitle-weight", &fields::WEIGHTS, style.weight)
+                    .on_select(|&v, _, cx| set("subtitles.weight", v, cx)),
             ),
             row(
                 "Size",
@@ -119,18 +111,18 @@ fn text_group(
                 range_slider(
                     view,
                     "subtitle-size",
+                    "subtitles.size",
                     style.size,
                     SUBTITLE_SIZE_RANGE,
                     20.0,
                     theme,
-                    |s, v| s.subtitles.size = v,
                 ),
             ),
             row(
                 "Color",
                 None,
                 theme,
-                swatches("subtitle-color", style.color, theme, |s, c| s.color = c),
+                swatches("subtitle-color", "subtitles.color", style.color, theme),
             ),
         ],
     )
@@ -146,24 +138,19 @@ fn edges_group(view: &mut SettingsView, style: &SubtitleStyle, theme: &Theme) ->
                 "Edge",
                 None,
                 theme,
-                Segmented::new(
-                    "subtitle-edge",
-                    &[
-                        (SubtitleEdge::None, "None"),
-                        (SubtitleEdge::Outline, "Outline"),
-                        (SubtitleEdge::Shadow, "Shadow"),
-                    ],
-                    style.edge,
-                )
-                .on_select(|&v, _, cx| update_settings(cx, true, |s| s.subtitles.edge = v)),
+                Segmented::new("subtitle-edge", &fields::EDGES, style.edge)
+                    .on_select(|&v, _, cx| set("subtitles.edge", v, cx)),
             ),
             row(
                 "Edge color",
                 None,
                 theme,
-                swatches("subtitle-edge-color", style.edge_color, theme, |s, c| {
-                    s.edge_color = c
-                }),
+                swatches(
+                    "subtitle-edge-color",
+                    "subtitles.edge_color",
+                    style.edge_color,
+                    theme,
+                ),
             ),
             row(
                 "Background",
@@ -172,9 +159,9 @@ fn edges_group(view: &mut SettingsView, style: &SubtitleStyle, theme: &Theme) ->
                 percent_slider(
                     view,
                     "subtitle-background",
+                    "subtitles.background_opacity",
                     style.background_opacity,
                     theme,
-                    |s, v| s.subtitles.background_opacity = v,
                 ),
             ),
             row(
@@ -183,9 +170,9 @@ fn edges_group(view: &mut SettingsView, style: &SubtitleStyle, theme: &Theme) ->
                 theme,
                 swatches(
                     "subtitle-background-color",
+                    "subtitles.background",
                     style.background,
                     theme,
-                    |s, c| s.background = c,
                 ),
             ),
         ],
@@ -206,15 +193,8 @@ fn position_group(view: &mut SettingsView, style: &SubtitleStyle, theme: &Theme)
                         .into(),
                 ),
                 theme,
-                Segmented::new(
-                    "subtitle-area",
-                    &[
-                        (SubtitleArea::Picture, "Picture"),
-                        (SubtitleArea::Tile, "Tile"),
-                    ],
-                    style.area,
-                )
-                .on_select(|&v, _, cx| update_settings(cx, true, |s| s.subtitles.area = v)),
+                Segmented::new("subtitle-area", &fields::AREAS, style.area)
+                    .on_select(|&v, _, cx| set("subtitles.area", v, cx)),
             ),
             row(
                 "Height",
@@ -223,11 +203,11 @@ fn position_group(view: &mut SettingsView, style: &SubtitleStyle, theme: &Theme)
                 range_slider(
                     view,
                     "subtitle-position",
+                    "subtitles.position",
                     style.position,
                     SUBTITLE_POSITION_RANGE,
                     100.0,
                     theme,
-                    |s, v| s.subtitles.position = v,
                 ),
             ),
         ],
@@ -236,12 +216,7 @@ fn position_group(view: &mut SettingsView, style: &SubtitleStyle, theme: &Theme)
 
 /// A row of colors to pick one from, for the subtitle style's color that
 /// `apply` sets.
-fn swatches(
-    id: &'static str,
-    selected: Rgb,
-    theme: &Theme,
-    apply: impl Fn(&mut SubtitleStyle, Rgb) + Copy + 'static,
-) -> AnyElement {
+fn swatches(id: &'static str, key: &'static str, selected: Rgb, theme: &Theme) -> AnyElement {
     div()
         .flex()
         .flex_none()
@@ -272,9 +247,7 @@ fn swatches(
                                 .border_color(theme.border)
                                 .bg(rgb(color.0)),
                         )
-                        .on_click(move |_, _, cx| {
-                            update_settings(cx, true, |s| apply(&mut s.subtitles, color))
-                        })
+                        .on_click(move |_, _, cx| set(key, color, cx))
                 }),
         )
         .into_any_element()
@@ -417,7 +390,7 @@ fn font_menu(
                         .on_click(cx.listener(move |this, _, _, cx| {
                             this.font_menu.open = false;
                             let font = family.as_ref().map_or_else(String::new, |f| f.to_string());
-                            update_settings(cx, true, |s| s.subtitles.font = font);
+                            set("subtitles.font", font, cx);
                             cx.notify();
                         }))
                 })
@@ -467,7 +440,7 @@ fn close_fonts(
 /// The font families installed, for the subtitle font menu, sorted. It
 /// leaves out the system's hidden fonts, and the fonts gpui falls back to
 /// on other systems, which it lists whether they are installed or not.
-fn installed_fonts(cx: &App) -> Vec<SharedString> {
+pub fn installed_fonts(cx: &App) -> Vec<SharedString> {
     const FALLBACKS: &[&str] = &[
         "Helvetica",
         "Segoe UI",

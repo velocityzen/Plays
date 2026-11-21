@@ -26,6 +26,8 @@ use crate::ui::testing::{self, click, press, scroll, shows, wait_until};
 use crate::ui::theme::layout::SETTINGS_WINDOW_SIZE;
 use crate::ui::workspace::forget_settings_place;
 
+mod commands;
+
 /// Open the Settings window and bring it to the front.
 fn open_settings(cx: &mut VisualTestContext) -> VisualTestContext {
     cx.update(|_, cx| SettingsView::open_window(cx));

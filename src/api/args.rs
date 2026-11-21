@@ -27,6 +27,8 @@ pub enum Kind {
     Texts,
     /// One of these words.
     Choice(fn() -> Vec<&'static str>),
+    /// Any value, null too, which the command checks itself.
+    Any,
 }
 
 impl Arg {
@@ -78,6 +80,9 @@ impl Arg {
                 fields.insert("type".into(), "choice".into());
                 fields.insert("choices".into(), choices().into());
             }
+            Kind::Any => {
+                fields.insert("type".into(), "any".into());
+            }
         }
         described
     }
@@ -111,6 +116,7 @@ impl Arg {
                 Ok(())
             }
             (Kind::Texts, _) => Err(format!("{name} is a list of text, at least one")),
+            (Kind::Any, _) => Ok(()),
             (Kind::Choice(choices), value) => {
                 let choices = choices();
                 match value.as_str() {
@@ -293,6 +299,26 @@ mod tests {
         );
         assert_eq!(takes[0].describe()["max"], Value::Null, "none");
         assert_eq!(takes[2].describe()["type"], "texts");
+    }
+
+    #[test]
+    fn takes_any_value_null_too_for_the_command_to_check() {
+        let takes = [Arg::required("value", Kind::Any, "What to set.")];
+        let checked = |args: Value| check("go", &takes, &args);
+        for value in [
+            json!(null),
+            json!(true),
+            json!(0.5),
+            json!("dark"),
+            json!({"id": "a"}),
+        ] {
+            assert_eq!(checked(json!({ "value": value })), Ok(()), "{value}");
+        }
+        assert_eq!(checked(json!({})), bad("needs value"), "but there");
+        assert_eq!(
+            takes[0].describe(),
+            json!({"name": "value", "type": "any", "required": true, "description": "What to set."})
+        );
     }
 
     #[test]

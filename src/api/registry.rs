@@ -263,6 +263,19 @@ impl Spec {
         spec
     }
 
+    /// A query given `args`: reading one setting, say.
+    pub const fn query_with(
+        id: &'static str,
+        title: &'static str,
+        description: &'static str,
+        scope: Scope,
+        args: &'static [Arg],
+        returns: &'static str,
+        run: CustomFn,
+    ) -> Self {
+        Self::query(id, title, description, scope, returns, run).args(args)
+    }
+
     pub const fn returns(mut self, returns: &'static str) -> Self {
         self.returns = Some(returns);
         self

@@ -7,12 +7,12 @@ use std::sync::Arc;
 use gpui::prelude::*;
 use gpui::{AnyElement, Context, SharedString, Window, div};
 
-use super::form::{group, row, update_settings};
+use super::form::{group, row, set};
 use super::{Pane, SettingsView};
 use crate::app::{AudioEngine, airplay_id};
 use crate::cast::{AppPairings, Casting, Device, Looking, Shows, airplay};
 use crate::media::output::DeviceInfo;
-use crate::settings::Settings;
+use crate::settings::{Settings, fields};
 use crate::ui::components::{Button, Switch};
 use crate::ui::theme::Theme;
 use crate::ui::theme::settings::CASTING_COLOR;
@@ -57,13 +57,10 @@ impl Pane for CastingPane {
                     theme,
                     div()
                         .debug_selector(move || format!("look-with-{kind}"))
-                        .child(Switch::new(kind, s.casting.looks_with(kind)).on_toggle(
-                            move |&on, _, cx| {
-                                update_settings(cx, true, |s| {
-                                    s.casting.look_with.insert(kind.to_owned(), on);
-                                })
-                            },
-                        )),
+                        .child(
+                            Switch::new(kind, s.casting.looks_with(kind))
+                                .on_toggle(move |&on, _, cx| set(fields::look_with(kind), on, cx)),
+                        ),
                 )
             })
             .collect();

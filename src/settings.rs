@@ -12,6 +12,8 @@ use serde_json::{Map, Value};
 use crate::files::{self, Folder};
 use crate::hotkeys::Hotkeys;
 
+pub mod fields;
+
 /// Which Plays' settings a file holds, written in it as `version`. Files
 /// from before there was one are the first.
 pub const VERSION: u64 = 1;

@@ -128,8 +128,11 @@ impl RenderOnce for Slider {
             SLIDER_KNOB
         });
 
+        // Tests find a slider by its id.
+        let selector = self.id.clone();
         div()
             .id(self.id)
+            .debug_selector(move || selector.to_string())
             .relative()
             .flex()
             .items_center()

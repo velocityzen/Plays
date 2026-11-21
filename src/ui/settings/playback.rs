@@ -2,10 +2,10 @@
 
 use gpui::{AnyElement, Context, Window};
 
-use super::form::{group, percent_slider, row, update_settings};
+use super::form::{group, percent_slider, row, set};
 use super::{Pane, SettingsView};
 use crate::progress::{self, KEEP_DAYS};
-use crate::settings::Settings;
+use crate::settings::{Settings, fields};
 use crate::ui::components::{Segmented, Switch};
 use crate::ui::theme::Theme;
 use crate::ui::theme::settings::PLAYBACK_COLOR;
@@ -42,15 +42,14 @@ impl Pane for PlaybackPane {
                     None,
                     theme,
                     Switch::new("autoplay", s.autoplay)
-                        .on_toggle(|&on, _, cx| update_settings(cx, true, |s| s.autoplay = on)),
+                        .on_toggle(|&on, _, cx| set("autoplay", on, cx)),
                 ),
                 row(
                     "Loop new files",
                     None,
                     theme,
-                    Switch::new("loop", s.loop_by_default).on_toggle(|&on, _, cx| {
-                        update_settings(cx, true, |s| s.loop_by_default = on)
-                    }),
+                    Switch::new("loop", s.loop_by_default)
+                        .on_toggle(|&on, _, cx| set("loop_by_default", on, cx)),
                 ),
                 row(
                     "Resume files where they were left",
@@ -62,7 +61,7 @@ impl Pane for PlaybackPane {
                     ),
                     theme,
                     Switch::new("resume", s.resume_files).on_toggle(|&on, _, cx| {
-                        update_settings(cx, true, |s| s.resume_files = on);
+                        set("resume_files", on, cx);
                         // Stopping keeps no places behind.
                         if !on {
                             progress::forget_all(cx);
@@ -73,28 +72,27 @@ impl Pane for PlaybackPane {
                     "Show chapters on the seek bar",
                     Some("Where each part of a file with chapters starts".into()),
                     theme,
-                    Switch::new("chapter-marks", s.chapter_marks).on_toggle(|&on, _, cx| {
-                        update_settings(cx, true, |s| s.chapter_marks = on)
-                    }),
+                    Switch::new("chapter-marks", s.chapter_marks)
+                        .on_toggle(|&on, _, cx| set("chapter_marks", on, cx)),
                 ),
                 row(
                     "Volume for new files",
                     None,
                     theme,
-                    percent_slider(view, "default-volume", s.default_volume, theme, |s, v| {
-                        s.default_volume = v
-                    }),
+                    percent_slider(
+                        view,
+                        "default-volume",
+                        "default_volume",
+                        s.default_volume,
+                        theme,
+                    ),
                 ),
                 row(
                     "Seek step",
                     Some("How far the seek shortcuts move, ← and → at first".into()),
                     theme,
-                    Segmented::new(
-                        "seek-step",
-                        &[(5, "5 s"), (10, "10 s"), (30, "30 s"), (60, "60 s")],
-                        s.seek_step_seconds,
-                    )
-                    .on_select(|&v, _, cx| update_settings(cx, true, |s| s.seek_step_seconds = v)),
+                    Segmented::new("seek-step", &fields::SEEK_STEPS, s.seek_step_seconds)
+                        .on_select(|&v, _, cx| set("seek_step_seconds", v, cx)),
                 ),
             ],
         )]

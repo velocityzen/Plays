@@ -2,18 +2,19 @@
 
 use std::path::Path;
 
-use gpui::App;
+use gpui::{App, ClipboardItem};
 use serde::Deserialize;
 use serde_json::json;
 
-use super::{output, window};
+use super::{output, settings, window};
 use crate::api::Error;
 use crate::api::args::{Arg, Kind};
 use crate::api::registry::{Args, Outcome, Scope, Spec};
 use crate::api::target::{self, Target};
+use crate::app::AudioEngine;
 use crate::media::Source;
-use crate::ui::about::AboutView;
-use crate::ui::settings::SettingsView;
+use crate::ui::about::{self, AboutView};
+use crate::ui::settings::{SettingsView, ffmpeg_version};
 use crate::ui::theme::layout::WINDOW_SIZE;
 use crate::ui::workspace::Workspace;
 
@@ -63,6 +64,28 @@ pub const COMMANDS: &[Spec] = &[
     )
     .keywords(&["preferences", "options", "shortcuts", "hotkeys"])
     .keys(&["secondary-,"]),
+    Spec::app_with(
+        "app.copy_version_info",
+        "Copy Version Info",
+        "Copy Plays' version and the day it was built.",
+        &[],
+        |_, cx| Ok(json!(copy(version_info(), cx))),
+    )
+    .keywords(&["version", "about", "clipboard"])
+    .returns("What it copied, such as Plays 0.1.0 (18 November 2026)."),
+    Spec::app_with(
+        "app.copy_debug_info",
+        "Copy Debug Info",
+        "Copy what a bug report needs: Plays' version, the system, FFmpeg's version, \
+         where the sound goes, the windows and tiles, and the settings changed.",
+        &[],
+        |_, cx| {
+            let info = debug_info(cx)?;
+            Ok(json!(copy(info, cx)))
+        },
+    )
+    .keywords(&["bug", "report", "diagnostics", "clipboard", "system"])
+    .returns("What it copied, a line for each thing."),
     Spec::app(
         "app.quit",
         "Quit Plays",
@@ -72,6 +95,54 @@ pub const COMMANDS: &[Spec] = &[
     .keywords(&["exit"])
     .keys(&["secondary-q"]),
 ];
+
+/// Put `text` on the clipboard, handing it back.
+fn copy(text: String, cx: &mut App) -> String {
+    cx.write_to_clipboard(ClipboardItem::new_string(text.clone()));
+    text
+}
+
+/// "Plays 0.1.0 (18 November 2026)".
+fn version_info() -> String {
+    format!(
+        "Plays {} ({})",
+        env!("CARGO_PKG_VERSION"),
+        about::release_date()
+    )
+}
+
+/// The version, the system, FFmpeg's version, where the sound goes, how
+/// many windows and tiles there are, and each setting changed.
+fn debug_info(cx: &App) -> Result<String, Error> {
+    let windows = window::summaries(cx)?;
+    let tiles: u64 = windows
+        .iter()
+        .filter_map(|window| window["tiles"].as_u64())
+        .sum();
+    let mut lines = vec![
+        version_info(),
+        format!(
+            "System: {} {}",
+            std::env::consts::OS,
+            std::env::consts::ARCH
+        ),
+        format!("FFmpeg: {}", ffmpeg_version()),
+        format!("Sound: {}", AudioEngine::device_description(cx)),
+        format!("Windows: {}, tiles: {tiles}", windows.len()),
+    ];
+    let changed = settings::changed(cx);
+    if changed.is_empty() {
+        lines.push("Settings: as Plays starts them out".to_owned());
+    } else {
+        lines.push("Settings changed:".to_owned());
+        lines.extend(
+            changed
+                .iter()
+                .map(|(key, value)| format!("  {key}: {value}")),
+        );
+    }
+    Ok(lines.join("\n"))
+}
 
 #[derive(Deserialize)]
 struct Open {

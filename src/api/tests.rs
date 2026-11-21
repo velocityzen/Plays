@@ -102,6 +102,8 @@ fn queries_say_what_they_hand_back_and_take_no_keys() {
             "cast.ls",
             "output.ls",
             "display.ls",
+            "settings.ls",
+            "settings.get",
         ]
     );
     for spec in registry::all().filter(|spec| spec.query) {

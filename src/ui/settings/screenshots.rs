@@ -5,12 +5,12 @@ use std::path::Path;
 use gpui::prelude::*;
 use gpui::{AnyElement, App, Context, PathPromptOptions, SharedString, Window, div};
 
-use super::form::{group, labeled_slider, row, update_settings};
+use super::form::{group, labeled_slider, row, set, slide};
 use super::{Pane, SettingsView};
 use crate::settings::{
-    JPEG_QUALITY_RANGE, ScreenshotFormat, ScreenshotHdr, ScreenshotSettings, Settings,
+    JPEG_QUALITY_RANGE, ScreenshotFormat, ScreenshotHdr, ScreenshotSettings, Settings, fields,
 };
-use crate::ui::components::{Button, Segmented, Slide, Slider, Switch};
+use crate::ui::components::{Button, Segmented, Slider, Switch};
 use crate::ui::theme::Theme;
 use crate::ui::theme::settings::SCREENSHOTS_COLOR;
 
@@ -50,15 +50,8 @@ impl Pane for ScreenshotsPane {
                 "Format",
                 None,
                 theme,
-                Segmented::new(
-                    "screenshot-format",
-                    &[
-                        (ScreenshotFormat::Png, "PNG"),
-                        (ScreenshotFormat::Jpeg, "JPEG"),
-                    ],
-                    shots.format,
-                )
-                .on_select(|&v, _, cx| update_settings(cx, true, |s| s.screenshots.format = v)),
+                Segmented::new("screenshot-format", &fields::FORMATS, shots.format)
+                    .on_select(|&v, _, cx| set("screenshots.format", v, cx)),
             ),
         ];
         if jpeg {
@@ -79,11 +72,8 @@ impl Pane for ScreenshotsPane {
                         "Subtitles",
                         Some("Draw in the subtitles showing.".into()),
                         theme,
-                        Switch::new("screenshot-subtitles", shots.subtitles).on_toggle(
-                            |&on, _, cx| {
-                                update_settings(cx, true, |s| s.screenshots.subtitles = on)
-                            },
-                        ),
+                        Switch::new("screenshot-subtitles", shots.subtitles)
+                            .on_toggle(|&on, _, cx| set("screenshots.subtitles", on, cx)),
                     ),
                     row(
                         "HDR video",
@@ -101,13 +91,11 @@ impl Pane for ScreenshotsPane {
                         theme,
                         Segmented::new(
                             "screenshot-hdr",
-                            &[(ScreenshotHdr::Sdr, "SDR"), (ScreenshotHdr::Keep, "HDR")],
+                            &fields::HDRS,
                             if jpeg { ScreenshotHdr::Sdr } else { shots.hdr },
                         )
                         .disabled(jpeg)
-                        .on_select(|&v, _, cx| {
-                            update_settings(cx, true, |s| s.screenshots.hdr = v)
-                        }),
+                        .on_select(|&v, _, cx| set("screenshots.hdr", v, cx)),
                     ),
                 ],
             ),
@@ -151,9 +139,8 @@ fn folder_buttons(shots: &ScreenshotSettings) -> impl IntoElement {
         })
         .when(chosen, |this| {
             this.child(
-                Button::new("screenshot-folder-default", "Use Pictures").on_click(|_, _, cx| {
-                    update_settings(cx, true, |s| s.screenshots.folder = None)
-                }),
+                Button::new("screenshot-folder-default", "Use Pictures")
+                    .on_click(|_, _, cx| set("screenshots.folder", serde_json::Value::Null, cx)),
             )
         })
         .child(
@@ -174,8 +161,7 @@ fn choose_folder(cx: &mut App) {
         if let Ok(Ok(Some(paths))) = picked.await
             && let Some(folder) = paths.into_iter().next()
         {
-            cx.update(|cx| update_settings(cx, true, |s| s.screenshots.folder = Some(folder)))
-                .ok();
+            cx.update(|cx| set("screenshots.folder", folder, cx)).ok();
         }
     })
     .detach();
@@ -192,9 +178,7 @@ fn quality_slider(view: &mut SettingsView, value: u8, theme: &Theme) -> AnyEleme
     labeled_slider(
         Slider::new(id, position, view.drag(id)).on_change(move |event, _, cx| {
             let quality = (low + event.value * (high - low)).round() as u8;
-            update_settings(cx, event.slide == Slide::End, |s| {
-                s.screenshots.jpeg_quality = quality
-            });
+            slide("screenshots.jpeg_quality", quality, event.slide, cx);
         }),
         value.to_string(),
         theme,

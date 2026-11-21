@@ -723,6 +723,15 @@ beside it as `settings.json.bad`. Settings File, at the foot of the
 sidebar, opens its folder, exports a copy, imports settings from one, or
 resets every setting to its default (after asking).
 
+Each setting is also a command, by its key, the path to it in the
+settings file: `settings.set` with `subtitles.size` and `1.5` does what
+the Size slider does, taking only what Settings offers, and saves it;
+`settings.get`, `settings.reset` and `settings.ls` read one, put it back,
+and list them all with what each takes. Reload Settings reads the file
+again after it's been changed by hand, and Show Settings File shows it;
+Copy Version Info and Copy Debug Info copy the version, or what a bug
+report needs; Settings → Hotkeys can give those four keys.
+
 ## Limitations
 
 - On Linux, frames decoded on the GPU are copied back to memory and
