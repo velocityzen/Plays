@@ -419,6 +419,16 @@ pub fn get(settings: &Settings, key: &str) -> Value {
     }
 }
 
+/// The keys of the settings `new` has otherwise than `old`, in the order
+/// Settings has them, with whether each of `protocols` looks for devices.
+pub fn changed(old: &Settings, new: &Settings, protocols: &[&'static str]) -> Vec<String> {
+    all(protocols)
+        .into_iter()
+        .filter(|field| get(old, &field.key) != get(new, &field.key))
+        .map(|field| field.key.into_owned())
+        .collect()
+}
+
 /// `settings` with `field` set to `value`, if it's one the Settings window
 /// could set: else what it takes instead. A font is checked against
 /// `fonts`, those the system has.
@@ -667,5 +677,24 @@ mod tests {
             .look_with
             .insert("Chromecast".into(), false);
         assert_eq!(get(&settings, "casting.look_with.Chromecast"), json!(false));
+    }
+
+    #[test]
+    fn tells_which_settings_differ_in_their_order() {
+        let old = Settings::default();
+        let mut new = old.clone();
+        assert!(changed(&old, &new, &["Chromecast"]).is_empty());
+        new.subtitles.size += 1.0;
+        new.autoplay = !new.autoplay;
+        new.casting.look_with.insert("Chromecast".into(), false);
+        assert_eq!(
+            changed(&old, &new, &["Chromecast"]),
+            ["autoplay", "subtitles.size", "casting.look_with.Chromecast"]
+        );
+        assert_eq!(
+            changed(&old, &new, &[]),
+            ["autoplay", "subtitles.size"],
+            "a protocol not looked with isn't a setting"
+        );
     }
 }

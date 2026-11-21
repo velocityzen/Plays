@@ -95,7 +95,7 @@ pub const COMMANDS: &[Spec] = &[
 ];
 
 /// The protocols that look for devices to cast to, each a setting.
-fn protocols(cx: &App) -> Vec<&'static str> {
+pub fn protocols(cx: &App) -> Vec<&'static str> {
     Casting::protocols(cx)
         .into_iter()
         .map(|(kind, _, _)| kind)
@@ -217,12 +217,7 @@ fn reload(_: Args, cx: &mut App) -> Outcome {
         ));
     }
     let loaded = Settings::load(&Folder::of(cx));
-    let before = cx.global::<Settings>();
-    let changed: Vec<String> = fields::all(&protocols(cx))
-        .into_iter()
-        .filter(|field| fields::get(before, &field.key) != fields::get(&loaded, &field.key))
-        .map(|field| field.key.into_owned())
-        .collect();
+    let changed = fields::changed(cx.global::<Settings>(), &loaded, &protocols(cx));
     // Read from the file, so not saved over it.
     Settings::update(cx, false, |settings| *settings = loaded);
     Ok(json!(changed))

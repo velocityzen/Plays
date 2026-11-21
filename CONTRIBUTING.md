@@ -561,6 +561,28 @@ check:
   say. A query between two Go Back One Tile doesn't start the walk
   again. Every query says what it hands back and takes no keys
   (`api::tests`).
+- Events (`ui::workspace::tests::events`), each once and in order: a tile
+  opened (created, the layout, the tile keys go to, opened, playing),
+  renamed, and its window renamed and full screen, each after its
+  `command_run`, the app hearing commands and windows' names; a tile moved
+  to a window of its own (the window created, the one left hearing it go),
+  that window brought to the front and closed, the one before in front
+  again; a tile maximized and back; how a file plays, by command and by
+  its play button: paused, playing, sought, a step back and a frame on,
+  volume and mute, a chapter, and played to its end (ended, not paused),
+  another window's listeners hearing none of it; positions, only to those
+  who ask, a second apart at most on the app's clock, and one more at most
+  once paused; subtitles picked, and the next file opened in the same
+  tile, told once, its tracks as it has them, and the one before, opened
+  by no command and known before the app looks; a file that can't open;
+  and the outputs, devices to cast to, and a cast started and stopped. The
+  app's clock moves only as a test advances it: a file plays on only as
+  its tile ticks, so those tests advance it a step at a time
+  (`play_until`). Unit tests check what each change of what was seen
+  tells, and who hears it, a tile moved out of a window closing as it goes
+  told moved, not closed (`api::events::seen`); settings told by key and
+  shortcuts by command, a command before what it changes and a query not
+  at all, and looking only while someone listens (`api::events`).
 
 Unit tests check finding a name among ids, labels, positions and the ends
 of ids (an id first, positions only among those given, several matching

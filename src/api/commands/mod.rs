@@ -6,7 +6,7 @@ pub mod cast;
 mod display;
 pub mod output;
 pub mod playback;
-mod settings;
+pub mod settings;
 mod subtitles;
 pub mod tile;
 pub mod video;

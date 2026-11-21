@@ -1,10 +1,11 @@
 //! What `window.ls`, `window.inspect`, `tile.ls` and `tile.inspect` say
-//! of a window and its tiles, as JSON.
+//! of a window and its tiles, as JSON; and what events see of them.
 
 use gpui::{App, Entity, Window};
 use serde_json::{Map, Value, json};
 
 use super::Workspace;
+use crate::api::events::WindowSeen;
 use crate::ui::displays;
 use crate::ui::player::PlayerView;
 
@@ -67,6 +68,32 @@ impl Workspace {
                 Value::Object(placed(view.summary(), at, front))
             })
             .collect()
+    }
+
+    /// What events see of it: its label, full screen, its tiles, the one
+    /// filling it and the one keys go to.
+    pub fn seen(&self, window: &Window, cx: &App) -> WindowSeen {
+        let id = |view: Entity<PlayerView>| view.read(cx).id();
+        let maximized = self
+            .maximized
+            .and_then(|maximized| {
+                self.tiles
+                    .iter()
+                    .find(|tile| tile.view.entity_id() == maximized)
+            })
+            .map(|tile| id(tile.view.clone()));
+        WindowSeen {
+            id: self.id(),
+            label: self.label.clone(),
+            full_screen: window.is_fullscreen(),
+            tiles: self
+                .tiles
+                .iter()
+                .map(|tile| tile.view.read(cx).seen())
+                .collect(),
+            maximized,
+            active: self.active_view().map(id),
+        }
     }
 
     /// All `tile.inspect` says of `tile`, as `tile.ls` does and more, with

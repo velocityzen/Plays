@@ -9,10 +9,14 @@
 //! a window, every tile in a window, or a tile, by default the window in
 //! front and the tile in it that keys go to, or as an invocation names
 //! them (`target`). It hands back a JSON value, or an `Error`.
+//!
+//! What a command, or anything else, changes is told to whoever listens
+//! (`events`), with each command run.
 
 mod args;
 pub mod commands;
 mod error;
+pub mod events;
 mod registry;
 mod target;
 
@@ -50,8 +54,9 @@ impl Run {
 }
 
 /// Run every `Run` sent, and enable a menu item only when its command can
-/// run.
+/// run; tell what settings change to whoever listens.
 pub fn register(cx: &mut App) {
+    events::register(cx);
     cx.on_action(|run: &Run, cx| dispatch(run.0.clone(), cx));
     cx.validate_menu_actions_with(|action, cx| {
         let run = action.as_any().downcast_ref::<Run>()?;
@@ -134,7 +139,9 @@ pub fn ran_before(cx: &App) -> Option<&'static str> {
     cx.try_global::<Ran>().and_then(|ran| ran.before)
 }
 
-/// Run `invocation` now, handing back what the command does.
+/// Run `invocation` now, handing back what the command does. One that
+/// changes something is told to whoever listens as it runs, and what it
+/// changed once that has settled.
 ///
 /// Not while a window is being updated: not from an action's or a view's
 /// listener, where gpui holds the window the event came to, which the
@@ -148,25 +155,31 @@ pub fn run(invocation: Invocation, cx: &mut App) -> Result<Value, Error> {
             return Ok(Value::Null);
         }
     }
-    let Invocation {
-        command,
-        args,
-        target,
-        ..
-    } = invocation;
-    let spec = find(&command).ok_or(Error::NoSuchCommand { command })?;
-    args::check(spec.id, spec.args, &args)?;
-    spec.check_target(&target)?;
+    let spec = find(&invocation.command).ok_or_else(|| Error::NoSuchCommand {
+        command: invocation.command.clone(),
+    })?;
+    args::check(spec.id, spec.args, &invocation.args)?;
+    spec.check_target(&invocation.target)?;
     if !(spec.available)() {
         return Err(Error::failed(format!(
             "{} isn't on this system",
             spec.title
         )));
     }
-    if !spec.query {
-        let ran = cx.default_global::<Ran>();
-        ran.before = ran.last.replace(spec.id);
+    if spec.query {
+        return run_spec(spec, invocation, cx);
     }
+    let ran = cx.default_global::<Ran>();
+    ran.before = ran.last.replace(spec.id);
+    events::command_run(&invocation, spec.id, cx);
+    let done = run_spec(spec, invocation, cx);
+    events::command_done(cx);
+    done
+}
+
+/// Run `spec`, checked, as `invocation` asks.
+fn run_spec(spec: &Spec, invocation: Invocation, cx: &mut App) -> Result<Value, Error> {
+    let Invocation { args, target, .. } = invocation;
     let args = registry::Args {
         command: spec.id,
         value: &args,

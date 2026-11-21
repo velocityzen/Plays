@@ -95,7 +95,7 @@ pub const COMMANDS: &[Spec] = &[
 ];
 
 /// The devices found, by protocol, each protocol's by name.
-fn found(cx: &App) -> Value {
+pub fn found(cx: &App) -> Value {
     // `Casting` keeps them by name, so each protocol's are too.
     let mut found: BTreeMap<&str, Vec<&Device>> = BTreeMap::new();
     for device in Casting::devices(cx) {

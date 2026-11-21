@@ -34,6 +34,12 @@ pub(super) struct Playback {
     /// It played as the seek slider was pressed, so it plays on once the
     /// slider is let go.
     resume_after_scrub: bool,
+    /// Counts the files opened in place of the first, to tell them apart.
+    openings: u64,
+    /// Counts the seeks, here or there.
+    seeks: u64,
+    /// Where the last seek went.
+    sought: f64,
 }
 
 impl Playback {
@@ -43,6 +49,9 @@ impl Playback {
             cast: None,
             next_cast: None,
             resume_after_scrub: false,
+            openings: 0,
+            seeks: 0,
+            sought: 0.0,
         }
     }
 
@@ -53,6 +62,24 @@ impl Playback {
         self.cast = None;
         self.next_cast = None;
         self.player = Player::open(source, self.player.mixer(), options);
+        self.openings += 1;
+    }
+
+    /// Counts the files opened in place of the first: one opened since was
+    /// read as another number.
+    pub fn openings(&self) -> u64 {
+        self.openings
+    }
+
+    /// How many times it was sought, here or there, and where to last.
+    pub fn seeks(&self) -> (u64, f64) {
+        (self.seeks, self.sought)
+    }
+
+    /// Note a seek to `time`.
+    fn sought(&mut self, time: f64) {
+        self.seeks += 1;
+        self.sought = time;
     }
 
     /// The player here, to read: what plays, what is in it, the picture,
@@ -137,6 +164,7 @@ impl Playback {
     /// Seek to exactly `time`, here or there: a picture following the
     /// sound goes there too, and waits for the device.
     pub fn seek(&mut self, time: f64) {
+        self.sought(time);
         match &mut self.cast {
             Some(cast) => {
                 cast.link.seek(time);
@@ -161,6 +189,12 @@ impl Playback {
         if self.casting().is_some() {
             self.seek(self.position() + seconds);
         } else {
+            // About there: it lands on a keyframe.
+            let mut time = (self.position() + seconds).max(0.0);
+            if let Some(duration) = self.duration() {
+                time = time.min(duration);
+            }
+            self.sought(time);
             self.player.seek_by(seconds);
         }
     }
@@ -210,7 +244,9 @@ impl Playback {
         } else {
             pts - 0.5 * frame
         };
-        self.player.seek(target.max(0.0));
+        let target = target.max(0.0);
+        self.sought(target);
+        self.player.seek(target);
         true
     }
 

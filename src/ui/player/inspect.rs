@@ -1,9 +1,11 @@
 //! What `tile.ls` and `tile.inspect` say of a tile, as JSON: what it plays,
-//! where it is, and how it's set to play.
+//! where it is, and how it's set to play; and what events see of it.
 
 use serde_json::{Map, Value, json};
 
 use super::PlayerView;
+use crate::api::events::{TRACKS, TileSeen};
+use crate::cast::Device;
 use crate::media::Source;
 use crate::media::tracks::{Track, TrackKind};
 
@@ -50,13 +52,6 @@ impl PlayerView {
                 .map(|info| info.tracks(kind).collect())
                 .unwrap_or_default()
         };
-        let picked = |kind| {
-            let selected = info.as_deref()?.selected(kind)?;
-            let at = tracks(kind)
-                .iter()
-                .position(|track| track.index == selected)?;
-            Some(at + 1)
-        };
         let adjustments = self.adjustments();
         let chapters: Vec<Value> = self
             .chapters()
@@ -93,7 +88,7 @@ impl PlayerView {
                 .collect::<Map<_, _>>(),
             "picked": KINDS
                 .iter()
-                .map(|&(kind, name)| (name.to_owned(), json!(picked(kind))))
+                .map(|&(kind, name)| (name.to_owned(), json!(self.picked(kind))))
                 .collect::<Map<_, _>>(),
             "delays": {
                 "audio": milliseconds(player.audio_delay()),
@@ -107,17 +102,71 @@ impl PlayerView {
             },
             "chapter": self.chapter().map(|at| at + 1),
             "chapters": chapters,
-            "casting": self.casting().map(|device| json!({
-                "id": device.id,
-                "kind": device.kind,
-                "name": device.name,
-            })),
+            "casting": self.casting().map(device_json),
         });
         if let Value::Object(more) = more {
             inspected.extend(more);
         }
         inspected
     }
+
+    /// The track of `kind` it plays, numbered from 1 among those of its
+    /// kind.
+    fn picked(&self, kind: TrackKind) -> Option<usize> {
+        let info = self.player().info()?;
+        let selected = info.selected(kind)?;
+        let at = info
+            .tracks(kind)
+            .position(|track| track.index == selected)?;
+        Some(at + 1)
+    }
+
+    /// What events see of it: what it plays, once it has opened, and how.
+    pub fn seen(&self) -> TileSeen {
+        let player = self.player();
+        let summary = self.summary();
+        let opened = player.is_known().then(|| {
+            json!({
+                "title": summary["title"],
+                "file": summary["file"],
+                "url": summary["url"],
+                "duration": self.duration(),
+            })
+        });
+        let (seeks, sought) = self.playback.seeks();
+        let track = |name| {
+            let &(kind, _) = KINDS.iter().find(|&&(_, kind)| kind == name)?;
+            self.picked(kind)
+        };
+        TileSeen {
+            id: self.id(),
+            label: self.label().map(str::to_owned),
+            opening: self.playback.openings(),
+            opened,
+            failed: player.error(),
+            playing: self.is_playing(),
+            ended: self.has_ended(),
+            seeks,
+            sought,
+            position: self.position(),
+            duration: self.duration(),
+            volume: (f64::from(player.volume()) * 100.0).round(),
+            muted: player.is_muted(),
+            tracks: TRACKS.map(track),
+            chapter: self.chapter().map(|at| at + 1),
+            casting: self.casting().map(device_json),
+            picture_in_picture: self.in_picture_in_picture(),
+        }
+    }
+}
+
+/// A device it casts to, as `tile.inspect` and events say.
+fn device_json(device: &Device) -> Value {
+    json!({
+        "id": device.id,
+        "kind": device.kind,
+        "name": device.name,
+    })
 }
 
 /// `seconds`, to the millisecond: a delay kept as `f32` shows as it was

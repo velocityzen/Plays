@@ -8,6 +8,7 @@ mod casting_to_dlna;
 mod commands;
 mod controls;
 mod dragging;
+mod events;
 mod inspect;
 mod screensaver;
 mod sound;

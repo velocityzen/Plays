@@ -143,7 +143,7 @@ Inside `src/`:
 | Path | What it is |
 | --- | --- |
 | `main.rs` | Starts the app. |
-| `api/` | Every command Plays has, by name: what each does and takes, and running one on the window or tile named. Every action goes through it. |
+| `api/` | Every command Plays has, by name: what each does and takes, and running one on the window or tile named. Every action goes through it. The events it tells whoever listens. |
 | `app/` | Starting the app, its menus, keymap, audio outputs and the AirPlay speakers and Bluetooth devices among them, keeping the computer awake, smoke runs. |
 | `media/` | The playback engine: FFmpeg decoding, the mixers, clocks, subtitles, HDR. |
 | `ui/` | gpui views: windows, tiles, Settings, Picture in Picture, components and theme. |
@@ -518,6 +518,39 @@ flowchart LR
   output's PIN, goes through the same target resolution once the event is
   handled (`api::in_window_later`). In tests, `api::record` notes every
   invocation run, and `api::intercept` notes them without running them.
+
+  `api::events` tells whoever listens what changes, each a JSON object,
+  `{type, payload}`, as the socket is to pass on to the command line. A
+  listener hears the app's (windows opening, closing, renamed and coming
+  to the front; the outputs, where the sound goes and the devices to cast
+  to; settings by key and shortcuts by command; and each command run, from
+  where), one window's (its label and full screen; its tiles coming, moving
+  in from another window or going; its layout, the tile filling it and the
+  one keys go to; and how each tile plays: opened, or not, playing, paused,
+  ended, sought, its volume, tracks and chapter, casting and Picture in
+  Picture), or all of them (`Scope`). A payload about a window or a tile
+  starts with its `window_id`, and `tile_id`; readers ignore what they
+  don't know. Where each tile is goes only to those who ask, at most once
+  a second (`POSITION_EVERY`), and only once it has moved.
+
+  What changed is found by looking: `events::look` reads the app, every
+  window (`Workspace::seen`) and tile (`PlayerView::seen`) into a `Seen`
+  and tells what differs from the last look (`seen::changes`), in order:
+  the app's, the windows opened, each window's own, then its tiles coming
+  and going, its layout, then how each tile plays, the windows closed,
+  and the one in front. So each change is told once, whatever made it: a
+  command, a click, a file opening or reaching its end. It looks once a
+  command has run and what it set off has settled (`api::run` defers it:
+  a window a command opens is numbered only once it's made), and every
+  `LOOK_EVERY` while anyone listens; no one listening, it doesn't look,
+  and forgets what it saw. A command is told before it runs, aimed where
+  and from where; a query, which only reads, isn't. Settings, kept apart
+  from the windows, are told from an observer as they change
+  (`fields::changed` says which). A tile tells the file opened in place of
+  another apart by `Playback`'s count of openings, and a seek, here or on
+  the device it casts to, by its count of seeks; a file opened starts out
+  paused, as its `opened` says the rest, so one that plays tells
+  `playing` and no more.
 - `src/app/`: starting the app (`mod.rs`; files and links the system
   opens it with run `app.open`), the shared audio outputs (`audio`,
   above), the keymap (`keymap`: every command's
