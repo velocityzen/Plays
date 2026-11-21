@@ -130,7 +130,7 @@ fn cast(cx: &mut VisualTestContext, tv: &FakeReceiver) {
 }
 
 /// Whether the pairing sheet waits for the PIN the TV shows.
-fn wants_pin(window: WindowHandle<Workspace>, cx: &mut VisualTestContext) -> bool {
+pub(super) fn wants_pin(window: WindowHandle<Workspace>, cx: &mut VisualTestContext) -> bool {
     window
         .read_with(cx, |workspace, cx| {
             workspace
@@ -141,7 +141,7 @@ fn wants_pin(window: WindowHandle<Workspace>, cx: &mut VisualTestContext) -> boo
 }
 
 /// What the pairing sheet says.
-fn sheet_says(window: WindowHandle<Workspace>, cx: &mut VisualTestContext) -> String {
+pub(super) fn sheet_says(window: WindowHandle<Workspace>, cx: &mut VisualTestContext) -> String {
     window
         .read_with(cx, |workspace, cx| {
             workspace

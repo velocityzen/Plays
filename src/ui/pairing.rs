@@ -1,8 +1,9 @@
-//! Pairing with a TV that asks for the PIN it shows, as an AirPlay TV does
-//! the first time: a modal sheet over the window whose tile was cast to it.
-//! The TV shows a PIN once the sheet opens; a wrong one has it show
-//! another. Each step waits on the network, so pairing goes on on a thread
-//! of its own, which the sheet looks at as it goes.
+//! Pairing with a TV or speaker that asks for the PIN it shows, as an
+//! AirPlay receiver does the first time: a modal sheet over the window
+//! whose tile was cast to it, or in front as it's played through. It shows
+//! a PIN once the sheet opens; a wrong one has it show another. Each step
+//! waits on the network, so pairing goes on on a thread of its own, which
+//! the sheet looks at as it goes.
 
 use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -20,7 +21,8 @@ use super::text_input::TextInput;
 use super::theme::motion::PAIRING_POLL;
 use super::theme::text::TextStyle;
 use super::theme::{Theme, dialog, radius};
-use crate::cast::{Device, Error, Target};
+use crate::cast::Error;
+use crate::cast::target::Pairing;
 
 actions!(pairing, [Confirm, Cancel]);
 
@@ -33,10 +35,13 @@ pub fn bind_keys(cx: &mut App) {
     ]);
 }
 
+/// Starts pairing, having the device show a PIN; waits on the network.
+pub type StartPairing = Arc<dyn Fn() -> Result<Box<dyn Pairing>, Error> + Send + Sync>;
+
 #[derive(Clone, Debug)]
 pub enum PairingEvent {
-    /// Paired: casting to it goes on.
-    Paired(Device),
+    /// Paired: what wanted it goes on.
+    Paired,
     Dismiss,
 }
 
@@ -57,7 +62,8 @@ enum Step {
 }
 
 pub struct PairingDialog {
-    device: Device,
+    /// What it pairs with is called.
+    name: String,
     input: Entity<TextInput>,
     step: Step,
     /// What the pairing thread last said.
@@ -73,16 +79,16 @@ pub struct PairingDialog {
 impl EventEmitter<PairingEvent> for PairingDialog {}
 
 impl PairingDialog {
-    /// Pair with `device`, which `target` found.
-    pub fn new(device: Device, target: Arc<dyn Target>, cx: &mut Context<Self>) -> Self {
+    /// Pair with what's called `name`, starting with `start`.
+    pub fn new(name: String, start: StartPairing, cx: &mut Context<Self>) -> Self {
         let (pins, typed) = mpsc::channel();
         let going = Arc::new(Mutex::new(Step::Asking));
         let spawned = {
-            let device = device.clone();
+            let name = name.clone();
             let going = Arc::clone(&going);
             thread::Builder::new()
-                .name(format!("pair with {}", device.name))
-                .spawn(move || pair(&*target, &device, &typed, &going))
+                .name(format!("pair with {name}"))
+                .spawn(move || pair(&*start, &name, &typed, &going))
         };
         if let Err(err) = spawned {
             *going.lock() = Step::Failed(err.to_string());
@@ -97,7 +103,7 @@ impl PairingDialog {
             }
         });
         Self {
-            device,
+            name,
             input: cx.new(|cx| TextInput::new("PIN", cx).large()),
             step: Step::Asking,
             going,
@@ -134,7 +140,7 @@ impl PairingDialog {
         }
         match &self.step {
             Step::Paired => {
-                cx.emit(PairingEvent::Paired(self.device.clone()));
+                cx.emit(PairingEvent::Paired);
                 false
             }
             Step::Failed(_) => false,
@@ -166,7 +172,7 @@ impl PairingDialog {
 
     /// What the sheet says, and whether it's a failure.
     fn message(&self) -> (SharedString, bool) {
-        let name = &self.device.name;
+        let name = &self.name;
         match &self.step {
             Step::Asking => (format!("Asking {name} for a PIN…").into(), false),
             Step::Showing { wrong: None } => (format!("Enter the PIN {name} shows.").into(), false),
@@ -180,13 +186,18 @@ impl PairingDialog {
     }
 }
 
-/// Pair on the pairing thread: have the TV show a PIN, and check what's
-/// typed with it, until one pairs, the TV can't be reached, or the sheet
-/// lets go.
-fn pair(target: &dyn Target, device: &Device, typed: &Receiver<String>, going: &Mutex<Step>) {
+/// Pair on the pairing thread with what's called `name`: have it show a
+/// PIN (`start`), and check what's typed with it, until one pairs, it
+/// can't be reached, or the sheet lets go.
+fn pair(
+    start: &(dyn Fn() -> Result<Box<dyn Pairing>, Error> + Send + Sync),
+    name: &str,
+    typed: &Receiver<String>,
+    going: &Mutex<Step>,
+) {
     let mut wrong = None;
     loop {
-        let pairing = match target.pair(device) {
+        let pairing = match start() {
             Ok(pairing) => pairing,
             Err(err) => {
                 *going.lock() = Step::Failed(err.to_string());
@@ -209,7 +220,7 @@ fn pair(target: &dyn Target, device: &Device, typed: &Receiver<String>, going: &
                 return;
             }
             Err(err) => {
-                log::info!("pairing with {}: {err}", device.name);
+                log::info!("pairing with {name}: {err}");
                 wrong = Some(err.to_string());
                 *going.lock() = Step::Asking;
             }
@@ -268,11 +279,7 @@ impl Render for PairingDialog {
                     .items_center()
                     .gap_2()
                     .child(Icon::new("cast").color(theme.accent))
-                    .child(
-                        div()
-                            .text_title()
-                            .child(format!("Pair with {}", self.device.name)),
-                    ),
+                    .child(div().text_title().child(format!("Pair with {}", self.name))),
             )
             .child(
                 div()

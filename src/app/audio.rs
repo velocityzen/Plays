@@ -6,6 +6,9 @@
 //! silently) or goes through the system's default, as settings say; either
 //! way it goes back to the device as soon as it's there. Each output
 //! opens its devices on a thread of its own, as that can take a while.
+//! AirPlay speakers are outputs like the rest (`speakers.rs`); one that
+//! wants its PIN has a window ask for it, and is played through once
+//! paired.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -16,11 +19,15 @@ use futures::StreamExt as _;
 use futures::channel::mpsc::{UnboundedSender, unbounded};
 use gpui::{App, AppContext as _, Global};
 
-use super::menus;
+use super::speakers::Speakers;
+use super::{dispatch, menus};
 
+use crate::cast::AppPairings;
+use crate::cast::target::{Error as PairingError, Pairing};
 use crate::media::output::{self, DeviceEvent, DeviceInfo, OpenError, Playing};
 use crate::media::{AudioOutput, Mixer};
 use crate::settings::{AudioDevice, AudioOutputSettings, Settings};
+use crate::ui::pairing::StartPairing;
 
 /// How often a device that isn't connected is looked for.
 const LOOK_EVERY: Duration = Duration::from_secs(2);
@@ -62,12 +69,12 @@ enum Event {
 
 /// What an output's device thread is asked to do.
 enum Request {
-    /// Play through `wanted`, or as near as there is, opening devices with
-    /// `open`, as routing `generation`.
+    /// Play through `wanted`, or as near as there is, opening devices from
+    /// `devices`, as routing `generation`.
     Route {
         wanted: AudioOutputSettings,
         generation: u64,
-        open: Open,
+        devices: Arc<Devices>,
     },
     /// The system's default output changed, and the stream with it, while
     /// routed as `generation`.
@@ -79,6 +86,9 @@ struct Routed {
     route: Route,
     /// The device to look for while it can't be played through.
     watch: Option<WatchFor>,
+    /// The device wanted, which wants to be paired with the PIN it shows
+    /// before it plays.
+    needs_pin: Option<AudioDevice>,
 }
 
 /// A device that couldn't be played through: `id`, or with `None` the
@@ -125,10 +135,10 @@ fn device_thread(mixer: Arc<Mixer>, requests: Receiver<Request>, events: Unbound
                 Request::Route {
                     wanted,
                     generation,
-                    open,
+                    devices,
                 } => Event::Routed(
                     generation,
-                    route(&mut output, &wanted, generation, open, &events),
+                    route(&mut output, &wanted, generation, &devices, &events),
                 ),
                 Request::FollowDefault(generation) => {
                     output.followed_default();
@@ -146,12 +156,12 @@ fn device_thread(mixer: Arc<Mixer>, requests: Receiver<Request>, events: Unbound
 }
 
 /// Play `output` through `wanted`, or as near as there is, opening devices
-/// with `open`, as routing `generation`, which events about it name.
+/// from `devices`, as routing `generation`, which events about it name.
 fn route(
     output: &mut AudioOutput,
     wanted: &AudioOutputSettings,
     generation: u64,
-    open: Open,
+    devices: &Devices,
     events: &UnboundedSender<Event>,
 ) -> Routed {
     let on_event = || -> OnEvent {
@@ -162,7 +172,7 @@ fn route(
     };
     let picked = wanted.device.as_ref();
     match (
-        open(output, picked.map(|d| d.id.as_str()), on_event()),
+        devices.open(output, picked.map(|d| d.id.as_str()), on_event()),
         picked,
     ) {
         (Ok(playing), _) => Routed {
@@ -171,21 +181,23 @@ fn route(
                 missing: None,
             },
             watch: None,
+            needs_pin: None,
         },
         (Err(err), Some(device)) => {
             log::info!("audio output {}: {err}", device.name);
             let missing = matches!(err, OpenError::Missing);
+            let needs_pin = matches!(err, OpenError::NeedsPin);
             // Trying one that is there but wouldn't play again would break
             // the sound standing in for it each time: only while nothing
-            // is heard.
-            let watch = (missing || wanted.wait_for_device).then(|| WatchFor {
+            // is heard. One that wants its PIN is tried again once paired.
+            let watch = (missing || (wanted.wait_for_device && !needs_pin)).then(|| WatchFor {
                 id: Some(device.id.clone()),
                 missing,
             });
             let route = if wanted.wait_for_device {
                 Route::Waiting(device.name.clone())
             } else {
-                match open(output, None, on_event()) {
+                match devices.open(output, None, on_event()) {
                     Ok(playing) => Route::Device {
                         playing,
                         missing: Some(device.name.clone()),
@@ -193,7 +205,11 @@ fn route(
                     Err(err) => Route::Unavailable(unavailable(&err)),
                 }
             };
-            Routed { route, watch }
+            Routed {
+                route,
+                watch,
+                needs_pin: needs_pin.then(|| device.clone()),
+            }
         }
         (Err(err), None) => {
             log::warn!("no audio output: {err}");
@@ -203,6 +219,7 @@ fn route(
                     id: None,
                     missing: matches!(err, OpenError::Missing),
                 }),
+                needs_pin: None,
             }
         }
     }
@@ -211,8 +228,7 @@ fn route(
 /// What happens to the device an output plays through, as it happens.
 type OnEvent = Box<dyn Fn(DeviceEvent) + Send>;
 
-/// Opens device `id` (`None`: the system's default) for an output:
-/// `play_through`, or in tests one that answers as they say.
+/// Opens device `id` (`None`: the system's default) for an output.
 type Open = fn(&mut AudioOutput, Option<&str>, OnEvent) -> Result<Playing, OpenError>;
 
 fn play_through(
@@ -221,6 +237,90 @@ fn play_through(
     on_event: OnEvent,
 ) -> Result<Playing, OpenError> {
     output.play_through(id, on_event).cloned()
+}
+
+/// This computer's outputs: the system's, through cpal, or in tests, as
+/// they say.
+#[derive(Clone, Copy)]
+pub(crate) struct Local {
+    /// Every one there now; slow.
+    pub list: fn() -> Vec<DeviceInfo>,
+    /// Whether one is there now (`None`: whether there is a default).
+    pub is_connected: fn(Option<&str>) -> bool,
+    pub open: Open,
+    /// Calls back whenever one comes or goes, where the system says.
+    pub watch: fn(Box<dyn Fn() + Send + Sync>),
+}
+
+impl Local {
+    const SYSTEM: Self = Self {
+        list: output::devices,
+        is_connected: output::is_connected,
+        open: play_through,
+        watch: output::watch_devices,
+    };
+}
+
+/// Where outputs find and open their devices: this computer's, and the
+/// AirPlay speakers on the network.
+pub(crate) struct Devices {
+    pub local: Local,
+    pub speakers: Option<Arc<Speakers>>,
+}
+
+impl Devices {
+    /// The speakers, if output `id` is one of them.
+    fn speakers(&self, id: Option<&str>) -> Option<&Speakers> {
+        self.speakers
+            .as_deref()
+            .filter(|_| id.is_some_and(Speakers::owns))
+    }
+
+    /// Every one there now. Slow, so not for the UI thread.
+    fn list(&self) -> Vec<DeviceInfo> {
+        let mut all = (self.local.list)();
+        if let Some(speakers) = &self.speakers {
+            all.extend(speakers.list());
+        }
+        all
+    }
+
+    fn is_connected(&self, id: Option<&str>) -> bool {
+        match (self.speakers(id), id) {
+            (Some(speakers), Some(id)) => speakers.is_there(id),
+            _ => (self.local.is_connected)(id),
+        }
+    }
+
+    /// Play `output` through device `id`, or the system's default with
+    /// `None`. Waits on the device, so not for the UI thread.
+    fn open(
+        &self,
+        output: &mut AudioOutput,
+        id: Option<&str>,
+        on_event: OnEvent,
+    ) -> Result<Playing, OpenError> {
+        match (self.speakers(id), id) {
+            (Some(speakers), Some(id)) => speakers.open(output, id, on_event),
+            _ => (self.local.open)(output, id, on_event),
+        }
+    }
+
+    /// Start pairing with device `id`, which wants the PIN it shows.
+    fn pair(&self, id: &str) -> Result<Box<dyn Pairing>, PairingError> {
+        match self.speakers(Some(id)) {
+            Some(speakers) => speakers.pair(id),
+            None => Err(PairingError::Failed(format!("{id} doesn't pair"))),
+        }
+    }
+
+    /// Call `changed` whenever one comes or goes.
+    fn watch(&self, changed: impl Fn() + Clone + Send + Sync + 'static) {
+        (self.local.watch)(Box::new(changed.clone()));
+        if let Some(speakers) = &self.speakers {
+            speakers.watch(Box::new(changed));
+        }
+    }
 }
 
 /// The output of a device windows play through instead of the app's.
@@ -240,13 +340,11 @@ pub struct AudioEngine {
     /// Counts routings, to tell what an event is about.
     generation: u64,
     /// The output devices, as last listed.
-    devices: Vec<DeviceInfo>,
+    listed: Vec<DeviceInfo>,
     events: UnboundedSender<Event>,
-    /// How its outputs open devices: `None` in tests where they play
-    /// nowhere, and are never routed.
-    open: Option<Open>,
-    /// Whether it lists the output devices: not in tests.
-    lists_devices: bool,
+    /// Where its outputs find and open devices: `None` in tests where they
+    /// play nowhere, are never routed, and list none.
+    devices: Option<Arc<Devices>>,
 }
 
 impl Global for AudioEngine {}
@@ -267,22 +365,26 @@ impl AudioEngine {
             ),
             windows: Vec::new(),
             generation: 0,
-            devices: Vec::new(),
+            listed: Vec::new(),
             events,
-            open: None,
-            lists_devices: false,
+            devices: None,
         });
     }
 
     /// Start the audio, play through the output settings ask for, and follow
-    /// settings and devices from then on.
+    /// settings and devices from then on: this computer's outputs, and the
+    /// AirPlay speakers found, connected as the app's pairings say.
     pub(super) fn start(cx: &mut App) {
-        Self::start_with(play_through, true, cx);
+        let pairings = Arc::clone(&cx.global::<AppPairings>().0);
+        let devices = Devices {
+            local: Local::SYSTEM,
+            speakers: Speakers::start(pairings).map(Arc::new),
+        };
+        Self::start_with(devices, cx);
     }
 
-    /// `start`, opening devices with `open`, and listing them if
-    /// `lists_devices`.
-    fn start_with(open: Open, lists_devices: bool, cx: &mut App) {
+    /// `start`, with outputs from `devices`.
+    pub(crate) fn start_with(devices: Devices, cx: &mut App) {
         let settings = cx.global::<Settings>();
         let (events, mut received) = unbounded();
         let engine = Self {
@@ -294,19 +396,17 @@ impl AudioEngine {
             ),
             windows: Vec::new(),
             generation: 0,
-            devices: Vec::new(),
-            events,
-            open: Some(open),
-            lists_devices,
+            listed: Vec::new(),
+            events: events.clone(),
+            devices: Some(Arc::new(devices)),
         };
         cx.set_global(engine);
         Self::reroute(cx);
-        if lists_devices {
-            Self::list_devices(cx);
-            let events = cx.global::<Self>().events.clone();
-            output::watch_devices(Box::new(move || {
+        Self::list_devices(cx);
+        if let Some(devices) = &cx.global::<Self>().devices {
+            devices.watch(move || {
                 events.unbounded_send(Event::Devices).ok();
-            }));
+            });
         }
 
         cx.spawn(async move |cx| {
@@ -350,9 +450,15 @@ impl AudioEngine {
             Event::Routed(generation, routed) => {
                 let engine = cx.global_mut::<Self>();
                 let events = engine.events.clone();
+                let Some(devices) = engine.devices.clone() else {
+                    return;
+                };
                 if let Some(output) = engine.output_mut(generation) {
-                    output.routed(routed, &events);
+                    let needs_pin = output.routed(routed, &devices, &events);
                     cx.refresh_windows();
+                    if let Some(device) = needs_pin {
+                        Self::ask_for_pin(device, devices, cx);
+                    }
                 }
                 return;
             }
@@ -393,6 +499,36 @@ impl AudioEngine {
         Self::list_devices(cx);
     }
 
+    /// Output device `device`, among `devices`, wants the PIN it shows:
+    /// the window in front asks for it.
+    fn ask_for_pin(device: AudioDevice, devices: Arc<Devices>, cx: &mut App) {
+        let id = device.id.clone();
+        let start: StartPairing = Arc::new(move || devices.pair(&id));
+        dispatch::with_workspace(cx, move |workspace, _, cx| {
+            workspace.pair_output(device.name, start, cx);
+        });
+    }
+
+    /// An output device that wanted its PIN was paired with: the outputs
+    /// not playing through what they want try it again.
+    pub fn paired(cx: &mut App) {
+        let engine = cx.global::<Self>();
+        if !matches!(engine.main.route, Route::Device { missing: None, .. }) {
+            Self::reroute(cx);
+        }
+        let engine = cx.global_mut::<Self>();
+        let wait = engine.main.wanted.wait_for_device;
+        for index in 0..engine.windows.len() {
+            if !matches!(
+                engine.windows[index].output.route,
+                Route::Device { missing: None, .. }
+            ) {
+                engine.route_window(index, wait);
+            }
+        }
+        cx.refresh_windows();
+    }
+
     /// The output routed as `generation`, as it is still.
     fn output_mut(&mut self, generation: u64) -> Option<&mut Output> {
         std::iter::once(&mut self.main)
@@ -405,18 +541,18 @@ impl AudioEngine {
     fn reroute(cx: &mut App) {
         let wanted = cx.global::<Settings>().audio_output.clone();
         let engine = cx.global_mut::<Self>();
-        let Some(open) = engine.open else {
+        let Some(devices) = engine.devices.clone() else {
             return;
         };
         engine.generation += 1;
-        engine.main.route_to(wanted, engine.generation, open);
+        engine.main.route_to(wanted, engine.generation, devices);
         cx.refresh_windows();
     }
 
     /// Play the output of window device `index` through it, or as near as
     /// there is, waiting for it while it isn't connected if `wait`.
     fn route_window(&mut self, index: usize, wait: bool) {
-        let Some(open) = self.open else {
+        let Some(devices) = self.devices.clone() else {
             return;
         };
         self.generation += 1;
@@ -425,7 +561,7 @@ impl AudioEngine {
             device: Some(window.device.clone()),
             wait_for_device: wait,
         };
-        window.output.route_to(wanted, self.generation, open);
+        window.output.route_to(wanted, self.generation, devices);
     }
 
     /// Settings say whether to wait for a device now: windows' outputs not
@@ -461,7 +597,7 @@ impl AudioEngine {
                     device: Some(device.clone()),
                     ..settings.audio_output.clone()
                 };
-                let why = if engine.open.is_none() {
+                let why = if engine.devices.is_none() {
                     "Silent in tests"
                 } else {
                     "Not started"
@@ -517,18 +653,18 @@ impl AudioEngine {
     /// List the output devices again, in the background, for Settings,
     /// the Audio menu and the Play On menu.
     pub fn list_devices(cx: &mut App) {
-        if cx
+        let Some(devices) = cx
             .try_global::<Self>()
-            .is_none_or(|engine| !engine.lists_devices)
-        {
+            .and_then(|engine| engine.devices.clone())
+        else {
             return;
-        }
-        let task = cx.background_spawn(async { output::devices() });
+        };
+        let task = cx.background_spawn(async move { devices.list() });
         cx.spawn(async move |cx| {
             let devices = task.await;
             cx.update(|cx| {
-                if cx.global::<Self>().devices != devices {
-                    cx.global_mut::<Self>().devices = devices;
+                if cx.global::<Self>().listed != devices {
+                    cx.global_mut::<Self>().listed = devices;
                     cx.refresh_windows();
                     menus::set_menus(cx);
                 }
@@ -545,14 +681,13 @@ impl AudioEngine {
 
     /// The output devices, as last listed.
     pub fn devices(cx: &App) -> &[DeviceInfo] {
-        cx.try_global::<Self>()
-            .map_or(&[], |engine| &engine.devices)
+        cx.try_global::<Self>().map_or(&[], |engine| &engine.listed)
     }
 
     /// For tests: list `devices` as the outputs connected.
     #[cfg(test)]
     pub fn set_devices(devices: Vec<DeviceInfo>, cx: &mut App) {
-        cx.global_mut::<Self>().devices = devices;
+        cx.global_mut::<Self>().listed = devices;
     }
 
     /// For tests: how many outputs windows play through of their own.
@@ -564,6 +699,13 @@ impl AudioEngine {
     /// Where the app's sound goes.
     pub fn route(cx: &App) -> Option<&Route> {
         cx.try_global::<Self>().map(|engine| &engine.main.route)
+    }
+
+    /// For tests: whether the app's output looks for the device it wants
+    /// to be back, or to try it again.
+    #[cfg(test)]
+    pub fn looks_for_device(cx: &App) -> bool {
+        cx.global::<Self>().main.watch.is_some()
     }
 
     /// Where the app's sound goes, in a few words.
@@ -612,11 +754,11 @@ impl Output {
         }
     }
 
-    /// Play through `wanted`, or as near as there is, opening devices with
-    /// `open`, as routing `generation`, which events about it name. Its
+    /// Play through `wanted`, or as near as there is, opening devices from
+    /// `devices`, as routing `generation`, which events about it name. Its
     /// device thread opens them, and until it says where it routed it
     /// (`routed`), it plays nowhere.
-    fn route_to(&mut self, wanted: AudioOutputSettings, generation: u64, open: Open) {
+    fn route_to(&mut self, wanted: AudioOutputSettings, generation: u64, devices: Arc<Devices>) {
         self.generation = generation;
         self.watch = None;
         let name = wanted
@@ -626,7 +768,7 @@ impl Output {
         let asked = self.device.send(Request::Route {
             wanted: wanted.clone(),
             generation,
-            open,
+            devices,
         });
         self.route = match asked {
             Ok(()) => Route::Opening(name),
@@ -635,13 +777,20 @@ impl Output {
         self.wanted = wanted;
     }
 
-    /// Its device thread routed it, as `routed`: it looks for the device
-    /// wanted, telling `events` once it is back, if it must.
-    fn routed(&mut self, routed: Routed, events: &UnboundedSender<Event>) {
+    /// Its device thread routed it, as `routed`: it looks among `devices`
+    /// for the device wanted, telling `events` once it is back, if it must.
+    /// The device wanted, if it wants its PIN.
+    fn routed(
+        &mut self,
+        routed: Routed,
+        devices: &Arc<Devices>,
+        events: &UnboundedSender<Event>,
+    ) -> Option<AudioDevice> {
         self.route = routed.route;
         self.watch = routed
             .watch
-            .map(|watch| Watch::start(watch, self.generation, events.clone()));
+            .map(|watch| Watch::start(watch, self.generation, Arc::clone(devices), events.clone()));
+        routed.needs_pin
     }
 
     /// The system's default output changed, and the stream with it: its
@@ -654,6 +803,7 @@ impl Output {
 fn unavailable(err: &OpenError) -> String {
     match err {
         OpenError::Missing => "no audio output".into(),
+        OpenError::NeedsPin => err.to_string(),
         OpenError::Failed(err) => format!("{err:#}"),
     }
 }
@@ -666,7 +816,12 @@ struct Watch {
 }
 
 impl Watch {
-    fn start(watch: WatchFor, generation: u64, events: UnboundedSender<Event>) -> Self {
+    fn start(
+        watch: WatchFor,
+        generation: u64,
+        devices: Arc<Devices>,
+        events: UnboundedSender<Event>,
+    ) -> Self {
         let stop = Arc::new(AtomicBool::new(false));
         // One that is there but wouldn't play is only tried again later.
         let WatchFor { id, missing } = watch;
@@ -682,7 +837,7 @@ impl Watch {
                     }
                     waited += LOOK_EVERY;
                     let back = if missing {
-                        output::is_connected(id.as_deref())
+                        devices.is_connected(id.as_deref())
                     } else {
                         waited >= RETRY_AFTER
                     };
@@ -756,7 +911,18 @@ mod tests {
     fn opens_devices_without_the_app_waiting_for_them(cx: &mut TestAppContext) {
         cx.update(|cx| {
             cx.set_global(Settings::default());
-            AudioEngine::start_with(open_slowly, false, cx);
+            AudioEngine::start_with(
+                Devices {
+                    local: Local {
+                        list: Vec::new,
+                        is_connected: |_| true,
+                        open: open_slowly,
+                        watch: drop,
+                    },
+                    speakers: None,
+                },
+                cx,
+            );
         });
         assert_eq!(playing(cx), None, "the app went on while it opened");
         set_ready(true);

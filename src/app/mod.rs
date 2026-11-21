@@ -10,6 +10,7 @@ mod keymap;
 mod menus;
 #[cfg(feature = "smoke")]
 pub mod smoke;
+mod speakers;
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -19,8 +20,12 @@ use futures::channel::mpsc::UnboundedReceiver;
 use gpui::{App, actions};
 
 pub use audio::{AudioEngine, Route};
+#[cfg(test)]
+pub(crate) use audio::{Devices, Local};
 pub use awake::Awake;
 pub use menus::refresh as refresh_menus;
+#[cfg(test)]
+pub(crate) use speakers::Speakers;
 
 use crate::cast::{self, AppPairings, Casting, Device, Pairings, Protocol};
 use crate::files::Folder;
@@ -140,9 +145,10 @@ fn set_up(
     cx.set_global(settings);
     let folder = Folder::of(cx);
     cx.set_global(Progress::load(&folder));
-    audio(cx);
+    // Speakers are paired with as TVs are.
     let pairings = Arc::new(Pairings::load(&folder));
     cx.set_global(AppPairings(Arc::clone(&pairings)));
+    audio(cx);
     cx.set_global(Casting::new(protocols(pairings)));
     Casting::watch(cx);
     let font = pick_ui_font(cx);

@@ -235,7 +235,12 @@ where it originally ended. With no audio device, a player must still play
 in real time; unit tests check that what is queued follows the mixer to
 another sample rate, from where it was. A unit test opens devices that
 take their time to open, and the app must go on meanwhile, at first and
-when Settings pick another, then play through each once it's open.
+when Settings pick another, then play through each once it's open. An
+AirPlay 1 fake speaker that says it adds a second is sent the mix as
+16-bit samples, and the clock is held back by the crate's latency and that
+second, and once the output lets it go, it's told the session ends and its
+connections close; another going away (its session ended) is heard as the
+device lost, and one let go of isn't.
 
 Stream tests serve the clips from a small HTTP server on localhost:
 HTTP files, HLS (normal and live), a connection that stalls mid-way,
@@ -339,6 +344,22 @@ What the window tests check:
   speakers, and goes back to the app's output when it comes back; full
   screen where it is, a device picked for it before or while away, and
   Settings saying not to, keep the sound where it is.
+- Sound through the AirPlay crate's fake speakers, given to the engine
+  beside one output of this computer's: one found is listed under an id of
+  its own, and once picked in the Audio menu, and not before, the tone
+  playing is heard through it at 44.1 kHz; System Default lets it go.
+  Going away, it has this computer stand in for it with Wait for it off,
+  and is played through again once found again; with it on, the sound
+  waits for it. A fake Apple TV picked for the app's sound, or a window's,
+  has a sheet ask for the PIN it shows, and is sent nothing meanwhile,
+  this computer standing in for it as the app's; once paired, it plays the
+  sound. Routed again while the sheet asks, the same sheet stays and the
+  TV shows no other PIN; cancelled, it isn't tried again, to ask again,
+  until it's picked again. Unit tests check that only receivers that play
+  sound are listed, a TV among them; that a speaker's own volume is set
+  once, to where it was, and the mixer goes to its rate; that one not
+  found is missing; that a TV wants its PIN until paired; and that
+  credentials it turns down are forgotten.
 - Floating on top while playing lifts the window, and Settings with it,
   only while its file plays, and the menu items turn their mode on and off.
 - Video → Output Device checks the display the window in front is on, and

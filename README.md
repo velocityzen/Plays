@@ -114,8 +114,10 @@ GPU-accelerated UI framework.
   it comes back.
 - While the device picked isn't connected, the sound waits for it, or goes
   through the system's default, and goes back to it as soon as it's there.
-- AirPlay speakers play the sound once macOS has them, with the picture
-  held back as long as AirPlay delays the sound, so the two stay in step.
+- AirPlay speakers, and Apple TVs for their sound, are outputs like the
+  rest, found on the network by Plays itself, on macOS and Linux. The
+  picture is held back as long as AirPlay delays the sound, so the two
+  stay in step. One that wants a PIN is paired with once.
 
 ### Casting
 
@@ -393,6 +395,21 @@ it is. So does an output picked for the window; picking one, or "Same as
 the App", while it is there keeps that when it comes back. Settings →
 Audio → Play on the display's speakers turns this off.
 
+AirPlay speakers on the network, and Apple TVs and TVs with AirPlay for
+their sound, are outputs too, on macOS and Linux. Plays finds them and
+connects to them itself, without Control Center, and lists them with this
+computer's outputs as they come and go: in Settings → Audio, Audio →
+Output Device and a tile's Window Sound. The sound of everything playing
+through one goes straight to it, uncompressed, while the pictures stay
+here. AirPlay plays it a second and a half after it's sent, and later on
+a speaker that says it adds some; the picture is held back by as much, so
+the two stay in step. The speaker's own volume stays where it was, and
+Plays' volume sets the level. One that wants a PIN, as an Apple TV does,
+has a sheet over the window ask for the one it shows the first time, as
+casting to it does, and plays once paired. While one is away, its sound
+waits for it or goes through the system's default, as for any other
+device, and goes back to it once it's found again.
+
 On Linux, audio goes through ALSA (PipeWire and PulseAudio provide an ALSA
 device), so Settings → Audio lists ALSA's outputs: `default` and
 `pipewire` or `pulse` go through the sound server, which picks the
@@ -426,11 +443,11 @@ To show exactly the picture Plays draws on an AirPlay TV or projector,
 connect it first from Control Center → Screen Mirroring and use it as a
 separate display: it then shows in Video → Output Device (by the name
 macOS gives it), and macOS sends the sound there with it. For sound alone,
-pick AirPlay speakers in Control Center → Sound: they become the system's
-default, which Plays follows, and show in Audio → Output Device and
-Settings → Audio like any other output. AirPlay sound comes out late, by
-up to a couple of seconds; the picture waits for it. To have an Apple TV
-play the file itself, cast to it instead (Casting, below).
+pick the speakers as an output ([Sound](#sound), above); speakers picked
+in Control Center → Sound instead become the system's default, which
+Plays follows. Either way, AirPlay sound comes out late, by up to a couple
+of seconds, and the picture waits for it. To have an Apple TV play the
+file itself, cast to it instead (Casting, below).
 
 ### Picture in Picture
 
@@ -450,9 +467,9 @@ Output Device the speakers under this computer's outputs, checking the one
 the tile in front casts to. Devices on the same network are found by
 themselves, in a second or two. Settings → Casting turns each protocol on
 or off and lists the devices found, with what each shows: video, or sound
-only. AirPlay speakers aren't cast to yet; see [Displays, full screen and
-AirPlay](#displays-full-screen-and-airplay) for them and for AirPlay
-displays.
+only. AirPlay speakers aren't cast to: they're outputs, which play the
+sound of everything ([Sound](#sound)); see [Displays, full screen and
+AirPlay](#displays-full-screen-and-airplay) for AirPlay displays.
 
 While a tile casts, it says where it plays and how the file gets there (as
 it is, repackaged, or re-encoded), and its bar, buttons and shortcuts drive
@@ -542,11 +559,11 @@ speakers, default volume, autoplay, loop, resuming files where they were
 left, seek step, chapter notches on the bar, fit/fill scaling, gamma for
 SDR and for HDR video (applied to every open video as you drag), decode
 resolution limit, hardware decoding, subtitle style, the protocols that
-look for devices to cast to, what they found and the AirPlay TVs paired
-with, where screenshots go and what they are like, the keys for every
-shortcut, grid columns, controls visibility, how the panels over the video
-look, and file names. Settings → About lists the version, the day it was
-built, and the credits, each of which opens to its license; on macOS,
+look for devices to cast to, what they found and the AirPlay receivers
+paired with, where screenshots go and what they are like, the keys for
+every shortcut, grid columns, controls visibility, how the panels over the
+video look, and file names. Settings → About lists the version, the day it
+was built, and the credits, each of which opens to its license; on macOS,
 About Plays in the app menu shows the icon, version and build day in a
 small window of its own.
 
@@ -626,10 +643,18 @@ resets every setting to its default (after asking).
   and the sound; gamma, crop, rotation, flips, aspect ratio, and picture
   subtitles where the video isn't re-encoded, stay on this computer (the
   tile says so), and frames can't be stepped.
-- AirPlay speakers aren't cast to yet: macOS plays through them once
-  picked in Control Center → Sound. Mirrored, an AirPlay display shows the
-  whole screen; as a separate display, just the window. The Output Device
-  menus are macOS only.
+- AirPlay speakers aren't cast to: they're outputs, playing the sound of
+  everything, or a window's. Mirrored, an AirPlay display shows the whole
+  screen; as a separate display, just the window. The Output Device menus
+  are macOS only.
+- Playing through AirPlay speakers hasn't been checked with real ones
+  yet, only pretend ones: none was on hand, so how well the sound keeps
+  in step with the picture on a real speaker is unknown. The sound goes
+  uncompressed, which a busy Wi-Fi network may not keep up with. One
+  output plays through one speaker; several aren't played through in
+  step as a group. A speaker with a password set, an AirPlay 1 speaker
+  that takes sound only in FairPlay or MFi encryption, and a HomePod that
+  lets only people in the same home play to it can't be played through.
 - Casting to AirPlay hasn't been checked with a real Apple TV yet, only a
   pretend one: none was on hand. AirPlay is Apple's own and unpublished,
   and Plays speaks it as others have worked it out, so a tvOS update can

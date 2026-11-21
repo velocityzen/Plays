@@ -1,16 +1,18 @@
-//! Where the mixer's sound goes: an output device, through cpal, or nowhere.
-//! With no device to play through (none connected, or the one wanted
-//! isn't), the mixer is still run in time, so players keep playing,
-//! silently, and pick up where they are once a device is back.
+//! Where the mixer's sound goes: an output device, through cpal, an AirPlay
+//! speaker, or nowhere. With no device to play through (none connected, or
+//! the one wanted isn't), the mixer is still run in time, so players keep
+//! playing, silently, and pick up where they are once a device is back.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
+use airplay::{AudioStream, Event as ReceiverEvent};
 use anyhow::{Context as _, Result, anyhow};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use cpal::{DeviceId, ErrorKind, FromSample, SampleFormat, SizedSample};
+use cpal::{DeviceId, ErrorKind, FromSample, Sample as _, SampleFormat, SizedSample};
+use futures::channel::mpsc::UnboundedReceiver;
 
 use super::audio::{Mixer, SOURCE_CHANNELS};
 
@@ -22,6 +24,10 @@ const SILENT_PERIOD: Duration = Duration::from_millis(10);
 /// Frames an output callback has room for from the start: more than a
 /// device asks for at once.
 const MOST_CALLBACK_FRAMES: usize = 8192;
+/// The rate AirPlay speakers play at.
+const SPEAKER_RATE: u32 = 44_100;
+/// Frames in each packet sent to an AirPlay speaker, mixed at a time.
+const SPEAKER_FRAMES: usize = 352;
 
 /// An output device, as the system names it.
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -325,6 +331,9 @@ pub enum DeviceEvent {
 pub enum OpenError {
     /// It isn't connected (or, for the default, there is no output at all).
     Missing,
+    /// It is there, but wants to be paired with the PIN it shows first, as
+    /// an AirPlay receiver may.
+    NeedsPin,
     /// It is there but wouldn't play.
     Failed(anyhow::Error),
 }
@@ -333,6 +342,7 @@ impl std::fmt::Display for OpenError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Missing => f.write_str("not connected"),
+            Self::NeedsPin => f.write_str("it needs to be paired with the PIN it shows"),
             Self::Failed(err) => write!(f, "{err:#}"),
         }
     }
@@ -355,6 +365,7 @@ enum Sink {
         /// works out when what it mixes is heard.
         stream_latency: Arc<AtomicU32>,
     },
+    Speaker(Speaker),
     Silent(Silent),
 }
 
@@ -370,6 +381,7 @@ impl AudioOutput {
     pub fn playing(&self) -> Option<&Playing> {
         match &self.sink {
             Sink::Device { playing, .. } => Some(playing),
+            Sink::Speaker(speaker) => Some(&speaker.playing),
             Sink::Silent(_) => None,
         }
     }
@@ -414,9 +426,54 @@ impl AudioOutput {
         Ok(self.playing().expect("it was just set"))
     }
 
+    /// Play through an AirPlay speaker, connected as `stream`, which says
+    /// through `events` if it goes; as device `id`, called `name`. The
+    /// mixer changes rate to the speaker's 44.1 kHz, and mixes a packet at a
+    /// time as each is due. `on_event` hears it go.
+    pub fn play_to_speaker(
+        &mut self,
+        stream: AudioStream,
+        events: UnboundedReceiver<ReceiverEvent>,
+        id: String,
+        name: String,
+        on_event: impl Fn(DeviceEvent) + Send + 'static,
+    ) -> Result<&Playing, OpenError> {
+        self.play_nowhere();
+        let playing = Playing {
+            id: Some(id),
+            name,
+            rate: SPEAKER_RATE,
+            channels: SOURCE_CHANNELS as u16,
+        };
+        self.mixer.set_sample_rate(SPEAKER_RATE);
+        // Two can't mix at once: each would take sound from the other.
+        if let Sink::Silent(silent) = &mut self.sink {
+            silent.stop();
+        }
+        match Speaker::start(self.mixer.clone(), stream, events, playing, on_event) {
+            Ok(speaker) => {
+                log::info!(
+                    "audio output: AirPlay speaker {} @ {SPEAKER_RATE} Hz",
+                    speaker.playing.name
+                );
+                self.sink = Sink::Speaker(speaker);
+                Ok(self.playing().expect("it was just set"))
+            }
+            Err(err) => {
+                self.sink = Sink::Silent(Silent::start(self.mixer.clone()));
+                Err(OpenError::Failed(
+                    anyhow::Error::new(err).context("starting to send to the speaker"),
+                ))
+            }
+        }
+    }
+
     /// Play nowhere, keeping time, until told where.
     pub fn play_nowhere(&mut self) {
-        if matches!(self.sink, Sink::Device { .. }) {
+        if !matches!(self.sink, Sink::Silent(_)) {
+            // The old one stops before the new one starts, so the two
+            // never mix at once.
+            self.sink = Sink::Silent(Silent::stopped());
             self.sink = Sink::Silent(Silent::start(self.mixer.clone()));
         }
     }
@@ -543,6 +600,88 @@ where
     Ok(stream)
 }
 
+/// Mixes into an AirPlay speaker's stream on a thread of its own, a
+/// packet at a time as each is due, telling the mixer when what it mixes
+/// is heard; stops when dropped, ending the stream.
+struct Speaker {
+    playing: Playing,
+    stop: Arc<AtomicBool>,
+    thread: Option<JoinHandle<()>>,
+}
+
+impl Speaker {
+    fn start(
+        mixer: Arc<Mixer>,
+        mut stream: AudioStream,
+        mut events: UnboundedReceiver<ReceiverEvent>,
+        playing: Playing,
+        on_event: impl Fn(DeviceEvent) + Send + 'static,
+    ) -> std::io::Result<Self> {
+        let stop = Arc::new(AtomicBool::new(false));
+        let name = playing.name.clone();
+        let thread = std::thread::Builder::new()
+            .name("airplay speaker".into())
+            .spawn({
+                let stop = stop.clone();
+                move || {
+                    if let Err(why) = speak(&mixer, &mut stream, &mut events, &stop) {
+                        log::warn!("audio output lost: AirPlay speaker {name}: {why}");
+                        on_event(DeviceEvent::Lost);
+                    }
+                    stream.stop();
+                }
+            })?;
+        Ok(Self {
+            playing,
+            stop,
+            thread: Some(thread),
+        })
+    }
+}
+
+impl Drop for Speaker {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::Relaxed);
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
+    }
+}
+
+/// Mix into `stream` until `stop`: each packet as it's due, which `write`
+/// waits for, so the mixer keeps the speaker's time. Why it went, if it
+/// did.
+fn speak(
+    mixer: &Mixer,
+    stream: &mut AudioStream,
+    events: &mut UnboundedReceiver<ReceiverEvent>,
+    stop: &AtomicBool,
+) -> Result<(), String> {
+    let mut mix = vec![0.0f32; SPEAKER_FRAMES * SOURCE_CHANNELS];
+    let mut samples = vec![0i16; SPEAKER_FRAMES * SOURCE_CHANNELS];
+    while !stop.load(Ordering::Relaxed) {
+        if let Ok(ReceiverEvent::Gone) = events.try_recv() {
+            return Err("it went away".into());
+        }
+        let now = Instant::now();
+        // Mixed now, it's heard as the next frame written is: the
+        // speaker's latency, and what it says it adds, from when it's due.
+        let heard = stream
+            .heard_at(stream.frames())
+            .unwrap_or_else(|| now + stream.latency());
+        mixer.mix(
+            &mut mix,
+            heard.saturating_duration_since(now).as_secs_f64(),
+            now,
+        );
+        for (sample, mixed) in samples.iter_mut().zip(&mix) {
+            *sample = i16::from_sample(mixed.clamp(-1.0, 1.0));
+        }
+        stream.write(&samples).map_err(|err| err.to_string())?;
+    }
+    Ok(())
+}
+
 /// Runs a mixer in time with nothing to hear it, so its players keep
 /// playing; stops when dropped.
 struct Silent {
@@ -582,6 +721,15 @@ impl Silent {
 }
 
 impl Silent {
+    /// One that doesn't run: what an output plays through while the last
+    /// is stopped and the next not started.
+    fn stopped() -> Self {
+        Self {
+            stop: Arc::new(AtomicBool::new(true)),
+            thread: None,
+        }
+    }
+
     /// Stop mixing, once it has.
     fn stop(&mut self) {
         self.stop.store(true, Ordering::Relaxed);
@@ -599,7 +747,139 @@ impl Drop for Silent {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::AtomicU64;
+    use std::sync::mpsc;
+
+    use airplay::Sender;
+    use airplay::fake::{FakeReceiver, Kind};
+
     use super::*;
+    use crate::media::audio::{AudioChunk, AudioSource};
+    use crate::media::clock::Clock;
+
+    /// A player in `mixer` playing two seconds of `level` from `pts`, at
+    /// 48 kHz.
+    fn playing_in(mixer: &Mixer, level: f32, pts: f64) -> Arc<AudioSource> {
+        let clock = Arc::new(Clock::new());
+        clock.set(pts);
+        clock.start();
+        let source = Arc::new(AudioSource::new(
+            clock,
+            Arc::new(AtomicU64::new(0)),
+            48_000,
+            1.0,
+        ));
+        source.push(AudioChunk {
+            pts,
+            samples: vec![level; 96_000 * SOURCE_CHANNELS],
+            pos: 0,
+            rate: 48_000,
+        });
+        source.playing.store(true, Ordering::Relaxed);
+        mixer.add_source(source.clone());
+        source
+    }
+
+    /// `speaker`, connected to for sound.
+    fn connect(speaker: &FakeReceiver) -> (AudioStream, UnboundedReceiver<ReceiverEvent>) {
+        AudioStream::connect(&speaker.device(), None, &Sender::new("Plays"))
+            .expect("connected to the fake")
+    }
+
+    #[test]
+    fn a_speaker_plays_the_mix_and_what_it_says_it_adds_holds_the_clock_back() {
+        let speaker = FakeReceiver::start(Kind::OldSpeaker);
+        // A second of its own, on top of AirPlay's second and a half.
+        speaker.state().audio_latency = 44_100;
+        let (stream, events) = connect(&speaker);
+        let mixer = Mixer::new(48_000, 1.0);
+        let source = playing_in(&mixer, 0.25, 10.0);
+        let mut output = AudioOutput::with_mixer(mixer.clone());
+        let playing = output
+            .play_to_speaker(stream, events, "airplay:old".into(), "Old".into(), |_| {})
+            .cloned()
+            .expect("playing through it");
+        assert_eq!(playing.rate, 44_100);
+        assert_eq!(mixer.sample_rate(), 44_100, "the speaker's rate");
+
+        assert!(speaker.wait_for(|state| state.packets.len() >= 10));
+        let heard = source.clock.now();
+        // Sent from 10 s a moment ago, heard 2.5 s after it's sent.
+        assert!(
+            (heard - 7.5).abs() < 0.3,
+            "the clock is at {heard}, not 2.5 s behind what's sent"
+        );
+        let samples = speaker.state().samples();
+        let level = i16::from_sample(0.25f32);
+        assert!(
+            samples[..4000].iter().all(|&sample| sample == level),
+            "the mix, as it is: {:?}",
+            &samples[..8]
+        );
+        drop(output);
+        assert!(
+            speaker.wait_for(|state| state.closed == state.connections),
+            "the stream ends with the output"
+        );
+        let state = speaker.state();
+        assert!(
+            state
+                .requests
+                .iter()
+                .any(|request| request.method == "TEARDOWN"),
+            "it's told the session ends"
+        );
+    }
+
+    #[test]
+    fn a_speaker_going_away_is_heard_and_one_let_go_is_not() {
+        let speaker = FakeReceiver::start(Kind::Speaker);
+        let (stream, events) = connect(&speaker);
+        let mut output = AudioOutput::with_mixer(Mixer::new(48_000, 1.0));
+        let (told, heard) = mpsc::channel();
+        output
+            .play_to_speaker(
+                stream,
+                events,
+                "airplay:s".into(),
+                "S".into(),
+                move |event| {
+                    let _ = told.send(event);
+                },
+            )
+            .expect("playing through it");
+        // On the event connection too, which the session's end comes by.
+        assert!(
+            speaker.wait_for(|state| { !state.packets.is_empty() && state.event_reply.is_some() })
+        );
+        speaker.end_session();
+        assert_eq!(
+            heard.recv_timeout(Duration::from_secs(5)),
+            Ok(DeviceEvent::Lost)
+        );
+
+        let again = FakeReceiver::start(Kind::Speaker);
+        let (stream, events) = connect(&again);
+        let (told, heard) = mpsc::channel();
+        output
+            .play_to_speaker(
+                stream,
+                events,
+                "airplay:s".into(),
+                "S".into(),
+                move |event| {
+                    let _ = told.send(event);
+                },
+            )
+            .expect("playing through it");
+        assert!(again.wait_for(|state| !state.packets.is_empty()));
+        output.play_nowhere();
+        assert!(output.playing().is_none());
+        assert!(
+            heard.recv_timeout(Duration::from_millis(500)).is_err(),
+            "let go, it isn't lost"
+        );
+    }
 
     #[test]
     #[cfg(target_os = "macos")]

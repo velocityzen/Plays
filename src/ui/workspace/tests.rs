@@ -7,6 +7,7 @@ mod casting_to_chromecast;
 mod casting_to_dlna;
 mod dragging;
 mod sound;
+mod sound_to_airplay;
 
 use std::cell::Cell;
 use std::rc::Rc;

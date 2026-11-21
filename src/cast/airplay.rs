@@ -121,13 +121,7 @@ impl Target for AirPlayTarget {
     }
 
     fn pair(&self, device: &Device) -> Result<Box<dyn Pairing>, Error> {
-        let receiver = self.receiver(device)?;
-        let pairing = PinPairing::start(&receiver).map_err(|err| failed(&err))?;
-        Ok(Box::new(AirPlayPairing {
-            pairing,
-            receiver,
-            pairings: Arc::clone(&self.pairings),
-        }))
+        AirPlayPairing::start(self.receiver(device)?, Arc::clone(&self.pairings))
     }
 }
 
@@ -192,11 +186,28 @@ fn apple_tv(model: &str) -> Option<u32> {
     generation.parse().ok()
 }
 
-/// Pairing with the PIN a receiver shows, kept once it's done.
-struct AirPlayPairing {
+/// Pairing with the PIN a receiver shows, kept once it's done: a TV cast
+/// to, or a speaker played through.
+pub(crate) struct AirPlayPairing {
     pairing: PinPairing,
     receiver: ::airplay::Device,
     pairings: Arc<Pairings>,
+}
+
+impl AirPlayPairing {
+    /// Have `receiver` show a PIN, to finish pairing with, kept in
+    /// `pairings`. Waits on the network.
+    pub(crate) fn start(
+        receiver: ::airplay::Device,
+        pairings: Arc<Pairings>,
+    ) -> Result<Box<dyn Pairing>, Error> {
+        let pairing = PinPairing::start(&receiver).map_err(|err| failed(&err))?;
+        Ok(Box::new(Self {
+            pairing,
+            receiver,
+            pairings,
+        }))
+    }
 }
 
 impl Pairing for AirPlayPairing {

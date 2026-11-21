@@ -99,8 +99,10 @@ The threads, then:
 - the UI thread, where gpui runs everything in `src/app` and `src/ui`;
 - two per player, `demux` and `decode` (`src/media/decoder/`);
 - two per audio output: one that holds it and opens its devices
-  (`src/app/audio.rs`), and cpal's callback, or a thread that runs the
-  mixer in time when there is no device (`src/media/output.rs`);
+  (`src/app/audio.rs`), and cpal's callback, a thread that mixes for an
+  AirPlay speaker, or one that runs the mixer in time when there is no
+  device (`src/media/output.rs`), with an AirPlay session's own while it
+  plays through a speaker;
 - while a video opens or a subtitle file is picked, a few that open and
   read its subtitle files (`src/media/external.rs`);
 - one per casting tile (`src/cast/link.rs`), and the threads each protocol's
@@ -135,7 +137,7 @@ Inside `src/`:
 | Path | What it is |
 | --- | --- |
 | `main.rs` | Starts the app. |
-| `app/` | Starting the app, its actions, menus, keymap, audio outputs, keeping the computer awake, smoke runs. |
+| `app/` | Starting the app, its actions, menus, keymap, audio outputs and the AirPlay speakers among them, keeping the computer awake, smoke runs. |
 | `media/` | The playback engine: FFmpeg decoding, the mixers, clocks, subtitles, HDR. |
 | `ui/` | gpui views: windows, tiles, Settings, Picture in Picture, components and theme. |
 | `cast/` | Casting tiles to TVs and speakers. |
@@ -338,7 +340,20 @@ flowchart LR
   out and AirPlay makes long, to how late what is mixed will be heard, and
   CoreAudio says when outputs come and go. Elsewhere the list is read
   again when it is shown. An output isn't `Send` (a cpal stream isn't
-  everywhere), so it stays on the thread that made it.
+  everywhere), so it stays on the thread that made it. An AirPlay speaker
+  connected is played through by a thread that mixes a packet of 352
+  frames at a time, at 44.1 kHz, as each is due, telling the mixer when
+  it will be heard: the crate's latency, and what an AirPlay 1 speaker
+  says it adds, so the picture is held back that much. The speaker going
+  away, or ending the session, is heard as the device lost; let go of, it
+  is stopped first.
+- `src/app/speakers.rs`: AirPlay speakers, and TVs for their sound, as
+  outputs, found by the crate's browser on every network and listed
+  beside this computer's under ids of their own (`airplay:` and the
+  receiver's). One is connected with what pairing with it left, kept in
+  the same `Pairings` as a TV cast to, and its own volume is set once, to
+  where it says it is. One that wants its PIN says so
+  (`OpenError::NeedsPin`); credentials it turns down are forgotten first.
 - `src/app/audio.rs`: the `AudioEngine`, which keeps the outputs and which
   device each plays through. The app's output plays through the device
   picked in Settings → Audio, or the system's default. A window may play
@@ -353,8 +368,14 @@ flowchart LR
   can take longer than the UI thread can wait: the UI thread asks it to
   route the output, and it says where it did once it has, which the UI
   thread takes if nothing was asked since. The output plays nowhere until
-  then, and Settings say which device it is opening. In tests, the outputs
-  play nowhere and no device is listed or opened.
+  then, and Settings say which device it is opening. Outputs find and open
+  devices through `Devices`: this computer's (`Local`, the system's
+  through cpal) and the AirPlay speakers. A device that wants its PIN
+  isn't looked for; the engine has the window in front ask for it, and
+  once it's paired every output not playing through what it wants is
+  routed again. In most tests the outputs play nowhere and no device is
+  listed or opened; those for speakers give the engine one output of this
+  computer's, which plays nowhere, and fake speakers.
 - `src/ui/workspace/sound.rs`: a window's sound, through the app's output
   or a device of its own. Its tiles play there, and a tile moved to a new
   window takes the device along. A window Output Device sends full screen
@@ -663,7 +684,9 @@ sequenceDiagram
   going idle stopped, or unable to play, ends the cast, as the crate's ways
   of ending do.
 - `src/cast/airplay.rs` adapts the AirPlay crate: receivers that show
-  video are offered for video, and speakers aren't cast to. It connects
+  video are offered for video, and speakers aren't cast to, as they're
+  outputs (`src/app/speakers.rs`), paired with through it too
+  (`AirPlayPairing`). It connects
   with the credentials kept for the receiver, which says it needs its PIN
   when there are none; credentials it turns down, as after it was reset,
   are forgotten and it's paired again. The model it says it is decides how
@@ -678,16 +701,19 @@ sequenceDiagram
 - `src/cast/pairings.rs`: what pairing with AirPlay receivers left, kept
   in `plays/airplay.json` in the user's config folder, readable by its
   owner alone, with the id they know this computer by, made once.
-  `AppPairings`, a global, shares it between the AirPlay target and
-  Settings → Casting, which lists the receivers paired with and forgets
+  `AppPairings`, a global, shares it between the AirPlay target, the
+  speakers and Settings → Casting, which lists the receivers paired with and forgets
   one. Tests and smoke runs keep them in memory only.
 - `src/ui/pairing.rs`, `src/ui/workspace/pairing.rs`: the pairing sheet. A
   tile whose cast was turned down for want of a PIN ends its cast and asks
-  its window to pair; the window puts a sheet over itself, which pairs on
-  a thread of its own, as each step waits on the network, and looks at how
-  it goes ten times a second. A wrong PIN has the TV show another, which
-  the sheet asks for. Paired, the tile casts to it again; cancelled, it
-  plays on here.
+  its window to pair, and the audio engine asks the window in front for an
+  output's speaker that wants one, unless a sheet is up already. The
+  window puts a sheet over itself, which pairs on a thread of its own, as
+  each step waits on the network, and looks at how it goes ten times a
+  second. A wrong PIN has the TV show another, which the sheet asks for.
+  Paired, the tile casts to it again, or the outputs that want the speaker
+  play through it; cancelled, the tile plays on here, and the outputs as
+  they were.
 - `src/cast/fake.rs` is a protocol for tests: devices the test adds and
   takes away, which do as they are told, keep what they were told, and say
   what the test has them say.
@@ -921,7 +947,8 @@ them: a TV is told to play a URL (one the stream server makes) and driven
 while it does, and a speaker is sent live sound. Like the other two it
 knows nothing of Plays, gpui or FFmpeg. It blocks, on the caller's thread
 or a session's own, and what a session says as it goes comes over a
-channel. Plays casts to TVs with it (`src/cast/airplay.rs`).
+channel. Plays casts to TVs with it (`src/cast/airplay.rs`) and plays
+through speakers (`src/app/speakers.rs`, `src/media/output.rs`).
 
 - `browser.rs`, `device.rs`: mDNS for `_airplay._tcp` and `_raop._tcp`,
   with `network`'s browser, a receiver's two records put together by its

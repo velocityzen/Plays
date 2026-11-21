@@ -1,19 +1,30 @@
-//! Pairing with the TV a tile was cast to, which asked for the PIN it
-//! shows: a sheet over the window, and the tile cast there again once it's
-//! paired.
+//! Pairing with what asked for the PIN it shows: the TV a tile was cast
+//! to, cast there again once it's paired, or a speaker the sound was to
+//! play through, played through then. A sheet over the window.
+
+use std::sync::Arc;
 
 use gpui::{AppContext as _, Context, Entity, EntityId, Subscription};
 
 use super::Workspace;
+use crate::app::AudioEngine;
 use crate::cast::{Casting, Device};
-use crate::ui::pairing::{PairingDialog, PairingEvent};
+use crate::ui::pairing::{PairingDialog, PairingEvent, StartPairing};
 use crate::ui::player::PlayerView;
 
-/// The sheet, and the tile to cast once paired.
+/// The sheet, and what's done once paired.
 pub(super) struct Pairing {
     pub(super) dialog: Entity<PairingDialog>,
-    tile: EntityId,
+    then: Then,
     _events: Subscription,
+}
+
+/// What's done once paired.
+enum Then {
+    /// Cast the tile to the device again.
+    Cast { tile: EntityId, device: Device },
+    /// Play the audio outputs that want it through it.
+    Play,
 }
 
 impl Workspace {
@@ -34,32 +45,62 @@ impl Workspace {
                 return;
             }
         };
-        let dialog = cx.new(|cx| PairingDialog::new(device, target, cx));
+        let start: StartPairing = {
+            let device = device.clone();
+            Arc::new(move || target.pair(&device))
+        };
+        let tile = view.entity_id();
+        self.ask_for_pin(device.name.clone(), start, Then::Cast { tile, device }, cx);
+    }
+
+    /// Pair with the audio output called `name`, which wants the PIN it
+    /// shows, starting with `start`; the outputs that want it play through
+    /// it once paired. Not while another sheet is up.
+    pub fn pair_output(&mut self, name: String, start: StartPairing, cx: &mut Context<Self>) {
+        if self.pairing.is_none() {
+            self.ask_for_pin(name, start, Then::Play, cx);
+        }
+    }
+
+    fn ask_for_pin(
+        &mut self,
+        name: String,
+        start: StartPairing,
+        then: Then,
+        cx: &mut Context<Self>,
+    ) {
+        let dialog = cx.new(|cx| PairingDialog::new(name, start, cx));
         let events = cx.subscribe(&dialog, |this, _, event: &PairingEvent, cx| {
             let Some(pairing) = this.pairing.take() else {
                 return;
             };
-            let tile = this
-                .tiles
-                .iter()
-                .find(|tile| tile.view.entity_id() == pairing.tile)
-                .map(|tile| tile.view.clone());
-            if let (PairingEvent::Paired(device), Some(tile)) = (event, tile) {
-                let device = device.clone();
-                tile.update(cx, |view, cx| view.cast_to(Some(device), cx));
+            if let PairingEvent::Paired = event {
+                match pairing.then {
+                    Then::Cast { tile, device } => {
+                        let tile = this
+                            .tiles
+                            .iter()
+                            .find(|found| found.view.entity_id() == tile)
+                            .map(|found| found.view.clone());
+                        if let Some(tile) = tile {
+                            tile.update(cx, |view, cx| view.cast_to(Some(device), cx));
+                        }
+                    }
+                    Then::Play => AudioEngine::paired(cx),
+                }
             }
             this.refocus = true;
             cx.notify();
         });
         self.pairing = Some(Pairing {
             dialog,
-            tile: view.entity_id(),
+            then,
             _events: events,
         });
         cx.notify();
     }
 
-    /// The sheet asking for a TV's PIN, while it's up.
+    /// The sheet asking for a PIN, while it's up.
     #[cfg(test)]
     pub fn pairing(&self) -> Option<Entity<PairingDialog>> {
         self.pairing.as_ref().map(|pairing| pairing.dialog.clone())
