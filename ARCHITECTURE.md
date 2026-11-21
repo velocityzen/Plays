@@ -449,7 +449,8 @@ flowchart LR
   bound again whenever they change) and the menu bar (`menus`, set again
   as outputs, displays or devices to cast to come and go, another is
   picked, or the tile in front casts, turns out to have no sound, is shaped
-  or cropped, or another tile is in front). `awake` keeps the screen awake
+  or cropped, or another tile is in front; a menu named Window, which
+  macOS adds its own window items to, goes from tile to tile). `awake` keeps the screen awake
   while a video plays, and the computer while only sound does: a power
   assertion on macOS, the desktop portal's Inhibit on Linux. `smoke` runs
   the real app through scripted scenarios (see
@@ -512,7 +513,10 @@ flowchart LR
   files, folders and streams (`opening`), the tiles, putting one in
   another's place and moving one to its own window (`tiles`), sizing the
   window for the videos opened in it (`fit`), the grid, where a tile
-  dragged onto another lands (`grid`), the empty window's ring (`empty`), the
+  dragged onto another lands (`grid`), going from tile to tile and moving
+  them about the grid from the keyboard (`focus`: the tile beside, above
+  or below the one in front, as the grid lays them out, or the one before
+  or after it in turn), the empty window's ring (`empty`), the
   toolbar (`toolbar`), the mouse coming, going and resting, and the traffic
   lights (`mouse`), floating on top (`on_top`), where windows open and come
   back to (`place`), going full screen on another display (`display`: out
@@ -539,8 +543,9 @@ flowchart LR
   in Picture closes, and isn't offered, while the picture plays on the
   device.
   The window tells each tile where it is, in one `TileLayout`: in front,
-  maximized, alone, in the top-left corner, and whether the mouse is in
-  the window and resting. The tile redraws when that changes.
+  with a ring round it (put in front from the keyboard, among other tiles,
+  until the mouse moves or clicks), maximized, alone, in the top-left
+  corner, and whether the mouse is in the window and resting. The tile redraws when that changes.
 - `src/ui/pip/` (macOS): Picture in Picture. The tile's frames go, as they
   are due, to an `AVSampleBufferDisplayLayer` hidden over the tile, which
   AVKit's `AVPictureInPictureController` shows in the system's window; a

@@ -23,6 +23,7 @@ impl Workspace {
             PlayerEvent::Close => this.close(view.entity_id(), cx),
             PlayerEvent::Activate => {
                 this.active = Some(view.entity_id());
+                this.keyboard_focus = false;
                 this.tiles_changed(cx);
                 // Video → Aspect Ratio and Crop check this one's now.
                 refresh_menus(cx);
@@ -45,10 +46,13 @@ impl Workspace {
             .maximized
             .or_else(|| self.tiles.first().map(|t| t.view.entity_id()));
         let active = self.active_view().map(|view| view.entity_id());
+        // A ring tells which tile the keys went to, among others.
+        let ring = self.keyboard_focus && self.maximized.is_none() && !alone;
         for tile in &self.tiles {
             let id = Some(tile.view.entity_id());
             let layout = TileLayout {
                 active: active == id,
+                focus_ring: ring && active == id,
                 maximized: self.maximized == id,
                 alone,
                 top_left: top_left == id,

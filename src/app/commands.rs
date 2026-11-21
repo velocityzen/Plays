@@ -14,6 +14,7 @@ use crate::settings::{
 };
 use crate::ui::about::AboutView;
 use crate::ui::settings::SettingsView;
+use crate::ui::workspace::Toward;
 
 /// How far the volume shortcuts change a tile's volume.
 const VOLUME_STEP: f32 = 0.05;
@@ -23,6 +24,7 @@ pub(super) fn register(cx: &mut App) {
     register_tile(cx);
     register_tile_view(cx);
     register_every_tile(cx);
+    register_tiles_in_a_window(cx);
 }
 
 /// Quitting, the app's own windows, and opening and closing files.
@@ -185,6 +187,26 @@ fn register_every_tile(cx: &mut App) {
         with_workspace(cx, |w, _, cx| w.change_volume_all(-VOLUME_STEP, cx))
     });
     cx.on_action(|_: &ToggleMuteAll, cx| with_workspace(cx, |w, _, cx| w.toggle_mute_all(cx)));
+}
+
+/// Going from tile to tile in the window in front, and moving them about.
+fn register_tiles_in_a_window(cx: &mut App) {
+    fn focus(toward: Toward, cx: &mut App) {
+        with_workspace(cx, move |w, _, cx| w.focus_tile(toward, cx));
+    }
+    fn move_tile(toward: Toward, cx: &mut App) {
+        with_workspace(cx, move |w, _, cx| w.move_front_tile(toward, cx));
+    }
+    cx.on_action(|_: &FocusLeft, cx| focus(Toward::Left, cx));
+    cx.on_action(|_: &FocusRight, cx| focus(Toward::Right, cx));
+    cx.on_action(|_: &FocusUp, cx| focus(Toward::Up, cx));
+    cx.on_action(|_: &FocusDown, cx| focus(Toward::Down, cx));
+    cx.on_action(|_: &FocusPreviousTile, cx| focus(Toward::Previous, cx));
+    cx.on_action(|_: &FocusNextTile, cx| focus(Toward::Next, cx));
+    cx.on_action(|_: &MoveTileLeft, cx| move_tile(Toward::Left, cx));
+    cx.on_action(|_: &MoveTileRight, cx| move_tile(Toward::Right, cx));
+    cx.on_action(|_: &MoveTileUp, cx| move_tile(Toward::Up, cx));
+    cx.on_action(|_: &MoveTileDown, cx| move_tile(Toward::Down, cx));
 }
 
 fn toggle_float_on_top(mode: FloatOnTop, cx: &mut App) {

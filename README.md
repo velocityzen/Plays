@@ -75,6 +75,9 @@ GPU-accelerated UI framework.
   they play side by side.
 - Drag a tile by its picture onto another to put it in that one's place.
   A window's only tile, or a maximized one, drags the whole window.
+- Go from tile to tile with the keyboard, to the one beside, above or
+  below, or to each in turn, and move the tile in front about the grid
+  the same way. A ring shows which tile the keys went to.
 - Windows take the size of the video as files open, or of a grid with room
   for each video at its own size, scaled down to fit the screen. After
   that a window keeps the size you give it.
@@ -151,10 +154,10 @@ GPU-accelerated UI framework.
 
 ### Keyboard shortcuts
 
-- Shortcuts go to the tile the mouse is over. With Shift, the playback
-  ones go to every file in the window, and Shift-S syncs them all to that
-  tile.
-- Change any playback shortcut in Settings → Hotkeys.
+- Shortcuts go to the tile the mouse is over, or the one the keys went
+  to. With Shift, the playback ones go to every file in the window, and
+  Shift-S syncs them all to that tile.
+- Change any playback or tile shortcut in Settings → Hotkeys.
 - The menu bar (a toolbar on Linux) has them too.
 
 ### Settings
@@ -234,13 +237,17 @@ plays path/to/video.mp4 path/to/song.mp3 https://example.com/live.m3u8
 | Volume down/up on all | `⇧↓` `⇧↑` |
 | Previous/next frame on all | `⌥⇧←` `⌥⇧→` / `Alt+Shift+←` `Alt+Shift+→` |
 | Sync all to the active tile | `⇧S` |
+| Focus the tile left, right, above, below | `⌥⌘←` `⌥⌘→` `⌥⌘↑` `⌥⌘↓` / `Ctrl+Alt+` arrows |
+| Focus the previous/next tile | `⌘[` `⌘]` / `Ctrl+[` `Ctrl+]` |
+| Move the tile in front left, right, up, down | `⌥⇧⌘` and an arrow / `Ctrl+Alt+Shift+` arrows |
 | Close the file in front | `⌘W` / `Ctrl+W` (in an empty window, it closes the window) |
 | Close all | `⌘⇧W` / `Ctrl+Shift+W` |
 | Close the window | `⌥⌘W` / `Ctrl+Alt+W` |
 | Settings | `⌘,` / `Ctrl+,` |
 
 Shortcuts act on the active tile: the one the mouse is over (or was last
-over, or clicked), or the maximized one, as its controls show. Those with
+over, or clicked), the one the keys went to, or the maximized one, as its
+controls show. Those with
 `⇧` act on every tile in the window: play/pause, seek, frame step, restart,
 volume (each tile's from its own) and mute. Sync all puts every tile where
 the active one is, playing or paused as it is, so files side by side go on
@@ -273,6 +280,18 @@ except in full screen. Drag the bar to scrub. In the middle under the bar,
 the previous and next buttons open the media file before or after this one
 in its folder, by name, in the same tile; between them, skip back and
 forward go by the seek step, around play/pause.
+
+From the keyboard, `⌥⌘` and an arrow (`Ctrl+Alt` on Linux) go to the tile
+beside, above or below the one in front, stopping at the grid's edges;
+down into a short last row, where there's no tile right below, goes to
+that row's last tile. `⌘[` and `⌘]` go to the previous and next tile in
+turn, from the last back to the first. With `⇧` as well, the arrows move
+the tile in front that way instead, swapping it with the one there. A
+ring round the tile shows where the keys went, until the mouse moves or
+clicks: the tile under it is in front then. While a tile is maximized,
+the keys maximize the tile they go to instead, and no tile moves. On
+macOS the Window menu has them all; Settings → Hotkeys changes their
+keys, under Tiles in a window.
 
 The track button (next to loop, on files that have subtitles or more than
 one audio or video track) opens the track menu: a column each for audio,

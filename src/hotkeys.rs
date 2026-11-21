@@ -114,6 +114,18 @@ commands! {
             "float_on_top_while_playing", "Float on top while playing";
         Console => ToggleConsole, "console", "Show/hide console";
     }
+    Tiles {
+        FocusLeft => FocusLeft, "focus_left", "Focus the tile to the left";
+        FocusRight => FocusRight, "focus_right", "Focus the tile to the right";
+        FocusUp => FocusUp, "focus_up", "Focus the tile above";
+        FocusDown => FocusDown, "focus_down", "Focus the tile below";
+        FocusPreviousTile => FocusPreviousTile, "focus_previous_tile", "Focus the previous tile";
+        FocusNextTile => FocusNextTile, "focus_next_tile", "Focus the next tile";
+        MoveTileLeft => MoveTileLeft, "move_tile_left", "Move the tile left";
+        MoveTileRight => MoveTileRight, "move_tile_right", "Move the tile right";
+        MoveTileUp => MoveTileUp, "move_tile_up", "Move the tile up";
+        MoveTileDown => MoveTileDown, "move_tile_down", "Move the tile down";
+    }
     AllFiles {
         PlayPauseAll => PlayPauseAll, "play_pause_all", "Play/pause all";
         SeekForwardAll => SeekForwardAll, "seek_forward_all", "Seek all forward";
@@ -145,16 +157,18 @@ pub enum Group {
     Subtitles,
     Video,
     Window,
+    Tiles,
     AllFiles,
 }
 
 impl Group {
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 7] = [
         Self::Playback,
         Self::Audio,
         Self::Subtitles,
         Self::Video,
         Self::Window,
+        Self::Tiles,
         Self::AllFiles,
     ];
 
@@ -165,6 +179,7 @@ impl Group {
             Self::Subtitles => "Subtitles",
             Self::Video => "Video",
             Self::Window => "Window",
+            Self::Tiles => "Tiles in a window",
             Self::AllFiles => "All files in a window",
         }
     }
@@ -234,6 +249,18 @@ impl Command {
             // Set in Settings or the Video menu, or given keys there.
             Self::FloatOnTop | Self::FloatOnTopWhilePlaying => &[],
             Self::Console => &["~", "`"],
+            // The tiles in the window, by where they are in its grid, or
+            // its order.
+            Self::FocusLeft => &["secondary-alt-left"],
+            Self::FocusRight => &["secondary-alt-right"],
+            Self::FocusUp => &["secondary-alt-up"],
+            Self::FocusDown => &["secondary-alt-down"],
+            Self::FocusPreviousTile => &["secondary-["],
+            Self::FocusNextTile => &["secondary-]"],
+            Self::MoveTileLeft => &["secondary-alt-shift-left"],
+            Self::MoveTileRight => &["secondary-alt-shift-right"],
+            Self::MoveTileUp => &["secondary-alt-shift-up"],
+            Self::MoveTileDown => &["secondary-alt-shift-down"],
             // Every file in the window.
             Self::PlayPauseAll => &["shift-space"],
             Self::RestartAll => &["shift-home"],

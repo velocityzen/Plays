@@ -320,6 +320,17 @@ What the window tests check:
   isn't maximized, and let go over itself, stays. The only tile in a
   window, and a maximized one, move the window instead; a press that
   barely moves doesn't, nor does any in full screen.
+- Tiles from the keyboard: in two rows of two, `⌥⌘` and the arrows go
+  from tile to tile and stop at the edges, a ring round the one gone to,
+  which shortcuts then go to; closed down to one tile, there's no ring.
+  `⌘]` and `⌘[` go round every tile. The ring goes once the mouse moves,
+  over that tile or another, or clicks where it rests, the tile under it
+  in front then. With `⌥⇧⌘`, the tile in front swaps with the one beside,
+  above or below it (in a short last row, its last tile), not past the
+  edges, staying in front, playing as it was. With a tile maximized, the keys
+  maximize the one they go to, without a ring, and move none. Unit tests
+  check where each key goes from each place in a full grid, one with a
+  short last row, one row and one tile.
 - A file closed partway in opens there again; one barely begun starts
   over, and so does every file with Settings' resuming off.
 - `⇧S` puts every tile where the one clicked is, paused as it is, and
@@ -370,7 +381,7 @@ What the window tests check:
   displays as last looked at rather than asking the system each time.
 - Video → Aspect Ratio and Crop check what the tile in front has (as the
   file is, and none, at first), as soon as it changes and as soon as the
-  mouse is over another tile.
+  mouse is over another tile, or the keys go to one.
 - Picking a look for the panels over the video in Settings → Appearance
   sets it, and the controls of a paused video then show it through them
   with that look's backdrop, and none when plain.

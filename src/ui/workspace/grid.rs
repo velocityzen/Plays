@@ -2,7 +2,7 @@
 //! A tile dragged by its picture onto another takes its place.
 
 use gpui::prelude::*;
-use gpui::{Context, Hsla, div};
+use gpui::{App, Context, Hsla, div};
 
 use super::{Tile, Workspace};
 use crate::settings::Settings;
@@ -22,10 +22,7 @@ impl Workspace {
             Some(tile) => vec![tile],
             None => self.tiles.iter().collect(),
         };
-        let columns = cx
-            .global::<Settings>()
-            .columns_for(visible.len())
-            .clamp(1, visible.len().max(1));
+        let columns = columns(visible.len(), cx);
         let reorder = visible.len() > 1;
 
         div()
@@ -78,4 +75,11 @@ impl Workspace {
                     .children((row.len()..columns).map(|_| div().flex_1().min_w_0()))
             }))
     }
+}
+
+/// How many columns `count` tiles are laid out in, as Settings say.
+pub(super) fn columns(count: usize, cx: &App) -> usize {
+    cx.global::<Settings>()
+        .columns_for(count)
+        .clamp(1, count.max(1))
 }

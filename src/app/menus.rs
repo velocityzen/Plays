@@ -42,6 +42,7 @@ pub(super) fn set_menus(cx: &mut App) {
         video_menu(float_on_top, &state),
         audio_menu(outputs, window_outputs),
         subtitles_menu(),
+        window_menu(),
     ]);
 }
 
@@ -185,6 +186,27 @@ fn subtitles_menu() -> Menu {
             MenuItem::action("Earlier", SubtitlesEarlier),
             MenuItem::action("Later", SubtitlesLater),
             MenuItem::action("Reset Delay", ResetSubtitleDelay),
+        ],
+    }
+}
+
+/// Going from tile to tile in the window in front, and moving them about.
+/// Named so, macOS adds its own window items to it.
+fn window_menu() -> Menu {
+    Menu {
+        name: "Window".into(),
+        items: vec![
+            MenuItem::action("Focus Left", FocusLeft),
+            MenuItem::action("Focus Right", FocusRight),
+            MenuItem::action("Focus Up", FocusUp),
+            MenuItem::action("Focus Down", FocusDown),
+            MenuItem::action("Focus Previous Tile", FocusPreviousTile),
+            MenuItem::action("Focus Next Tile", FocusNextTile),
+            MenuItem::separator(),
+            MenuItem::action("Move Tile Left", MoveTileLeft),
+            MenuItem::action("Move Tile Right", MoveTileRight),
+            MenuItem::action("Move Tile Up", MoveTileUp),
+            MenuItem::action("Move Tile Down", MoveTileDown),
         ],
     }
 }
@@ -625,6 +647,11 @@ mod tests {
 
         testing::hover(&mut cx, "tile-0");
         assert_eq!(shown(&mut cx), Some((None, Some(crop))));
+
+        // Gone to from the keyboard: the other tile's again.
+        cx.dispatch_action(FocusNextTile);
+        cx.run_until_parked();
+        assert_eq!(shown(&mut cx), Some((Some(ASPECT_RATIOS[0]), None)));
     }
 
     #[test]

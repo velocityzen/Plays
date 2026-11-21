@@ -14,9 +14,11 @@ use crate::ui::traffic_lights;
 impl Workspace {
     fn mouse_moved(&mut self, cx: &mut Context<Self>) {
         self.mouse_moved_at = Instant::now();
-        if !self.mouse_inside || self.mouse_idle {
+        if !self.mouse_inside || self.mouse_idle || self.keyboard_focus {
             self.mouse_inside = true;
             self.mouse_idle = false;
+            // The tile under it is in front now.
+            self.keyboard_focus = false;
             self.tiles_changed(cx);
         }
         if !self.watching_idle {

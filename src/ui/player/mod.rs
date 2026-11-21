@@ -25,7 +25,7 @@ use std::time::Instant;
 
 use gpui::prelude::*;
 use gpui::{
-    Bounds, ClickEvent, Context, CursorStyle, Div, EventEmitter, MouseButton, MouseMoveEvent,
+    Bounds, ClickEvent, Context, CursorStyle, Div, EventEmitter, Hsla, MouseButton, MouseMoveEvent,
     Pixels, Point, SharedString, Stateful, Task, Window, black, div,
 };
 
@@ -66,8 +66,11 @@ pub enum PlayerEvent {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct TileLayout {
     /// Shortcuts go to this tile: the one the mouse was last over, or
-    /// clicked.
+    /// clicked, or the keys went to.
     pub active: bool,
+    /// It was put in front from the keyboard, among other tiles, and the
+    /// mouse hasn't moved since: a ring shows which it is.
+    pub focus_ring: bool,
     /// It fills the grid, the other tiles hidden.
     pub maximized: bool,
     /// The only tile in its window: there is nowhere to expand it to, and
@@ -173,6 +176,7 @@ impl PlayerView {
             pip: None,
             layout: TileLayout {
                 active: false,
+                focus_ring: false,
                 maximized: false,
                 alone: true,
                 top_left: false,
@@ -568,6 +572,9 @@ impl Render for PlayerView {
                     }))
                     .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation()),
             )
+            .when(layout.focus_ring, |this| {
+                this.child(render_focus_ring(theme.accent))
+            })
     }
 }
 
@@ -647,6 +654,16 @@ impl PlayerView {
             },
         )
     }
+}
+
+/// A ring round the tile the keys went to, over everything in it.
+fn render_focus_ring(color: Hsla) -> Div {
+    div()
+        .debug_selector(|| "focus-ring".into())
+        .absolute()
+        .inset_0()
+        .border_2()
+        .border_color(color)
 }
 
 /// Says a stream is buffering, in the middle of the tile.

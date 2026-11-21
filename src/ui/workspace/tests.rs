@@ -8,6 +8,7 @@ mod casting_to_dlna;
 mod dragging;
 mod sound;
 mod sound_to_airplay;
+mod tiles_from_the_keyboard;
 
 use std::cell::Cell;
 use std::rc::Rc;

@@ -5,6 +5,7 @@ mod commands;
 mod display;
 mod empty;
 mod fit;
+mod focus;
 mod grid;
 mod mouse;
 mod on_top;
@@ -39,6 +40,7 @@ use crate::media::{Mixer, picture};
 use crate::progress;
 use crate::settings::{AudioDevice, Settings};
 
+pub use focus::Toward;
 pub use on_top::float_with_players;
 pub use place::save_place_on_quit;
 
@@ -70,8 +72,12 @@ pub struct Workspace {
     /// Gamma for SDR and HDR video, as last applied to the tiles.
     gamma: [f32; 2],
     maximized: Option<EntityId>,
-    /// The tile the mouse was last over, or clicked, which shortcuts go to.
+    /// The tile the mouse was last over, or clicked, or the keys went to,
+    /// which shortcuts go to.
     active: Option<EntityId>,
+    /// It was put in front from the keyboard, and the mouse hasn't moved
+    /// since: it shows a ring.
+    keyboard_focus: bool,
     graveyard: Graveyard,
     open_url: Option<(Entity<OpenUrlDialog>, Subscription)>,
     /// The sheet asking for the PIN a TV a tile was cast to shows.
@@ -233,6 +239,7 @@ impl Workspace {
             tiles: Vec::new(),
             maximized: None,
             active: None,
+            keyboard_focus: false,
             graveyard: Graveyard::default(),
             open_url: None,
             pairing: None,
