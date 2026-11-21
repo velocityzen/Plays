@@ -5,6 +5,7 @@
 
 mod audio;
 mod awake;
+mod bluetooth;
 mod commands;
 mod dispatch;
 mod keymap;
@@ -23,8 +24,10 @@ use gpui::{App, actions};
 
 pub use audio::{AudioEngine, Route};
 #[cfg(test)]
-pub(crate) use audio::{Devices, Local};
+pub(crate) use audio::{Bluetooth, Devices, Local};
 pub use awake::Awake;
+#[cfg(test)]
+pub(crate) use bluetooth::Paired;
 pub use menus::refresh as refresh_menus;
 #[cfg(test)]
 pub(crate) use speakers::Speakers;

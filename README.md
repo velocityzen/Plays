@@ -131,6 +131,8 @@ GPU-accelerated UI framework.
   rest, found on the network by Plays itself, on macOS and Linux. The
   picture is held back as long as AirPlay delays the sound, so the two
   stay in step. One that wants a PIN is paired with once.
+- Bluetooth headphones and speakers paired with the Mac are outputs even
+  while they aren't connected; picking one connects it.
 
 ### Casting
 
@@ -473,10 +475,41 @@ to the app's. While one is away, its sound waits for it or goes through
 the system's default, as for any other device, and goes back to it once
 it's found again.
 
+On macOS, the Bluetooth headphones and speakers paired with the Mac are
+outputs too, even while they aren't connected: they're listed with the
+rest, in Settings → Audio, Audio → Output Device and a tile's Window
+Sound, and picking one connects it, as Control Center would. The sound
+goes there once it's up, a few seconds later. Picking one picked already,
+but not connected, connects it too. Nothing else does: not starting Plays
+with one picked, nor one turned off or out of range, which is waited for,
+or played around, as any other device is. macOS asks once whether Plays
+may use Bluetooth; without it, only the ones connected are listed, as
+macOS lists them. Bluetooth devices that aren't for sound, such as
+keyboards, aren't listed.
+
 On Linux, audio goes through ALSA (PipeWire and PulseAudio provide an ALSA
 device), so Settings → Audio lists ALSA's outputs: `default` and
 `pipewire` or `pulse` go through the sound server, which picks the
-speakers.
+speakers. Bluetooth headphones are connected from the desktop's own
+Bluetooth settings there, and played through by the sound server.
+
+#### Auracast
+
+Auracast, Bluetooth LE Audio's broadcast, plays to any number of
+headphones, speakers and hearing aids nearby that join it. Plays doesn't
+broadcast it itself, and a Mac can't: macOS doesn't support it. To
+broadcast Plays' sound:
+
+- Plug in a USB Auracast transmitter. To the computer it's a USB sound
+  output, on macOS and Linux alike: pick it in Settings → Audio, or for
+  one window under Window Sound, and have the headphones join its
+  broadcast as the transmitter says.
+- On Linux, a Bluetooth adapter that supports LE Audio can broadcast
+  itself, with a recent BlueZ, PipeWire and WirePlumber set up for it
+  (the `bap_bcast_source` role among WirePlumber's `bluez5.roles`). The
+  broadcast is then a PipeWire output, which Plays plays through as
+  `default` or `pipewire` once it's the desktop's output. How to set it up
+  depends on their versions; their documentation says.
 
 ### Displays, full screen and AirPlay
 
@@ -723,6 +756,11 @@ resets every setting to its default (after asking).
   everything, or a window's. Mirrored, an AirPlay display shows the whole
   screen; as a separate display, just the window. The Output Device menus
   are macOS only.
+- Listing and connecting Bluetooth headphones hasn't been checked with
+  real ones yet, only pretend ones in tests: that a device's output takes
+  the id Plays lists it under (`coreaudio:`, its address, `:output`) is
+  what macOS showed for one pair of headphones. Linux lists and connects
+  none itself.
 - Playing through AirPlay speakers hasn't been checked with real ones
   yet, only pretend ones: none was on hand, so how well the sound keeps
   in step with the picture on a real speaker is unknown. The sound goes

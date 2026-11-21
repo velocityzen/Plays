@@ -29,6 +29,10 @@
 	<true/>
 	<key>NSSupportsAutomaticGraphicsSwitching</key>
 	<true/>
+	<!-- Without it, macOS stops Plays the moment it lists the Bluetooth
+	     devices paired (src/app/bluetooth.rs). -->
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Plays lists the Bluetooth headphones and speakers paired with this Mac as sound outputs, and connects the one you pick.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Plays connects to streams on your local network, such as cameras, and finds TVs and speakers to play files on.</string>
 	<!-- What casting looks for: Chromecast, AirPlay video, AirPlay audio. -->

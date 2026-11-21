@@ -9,6 +9,7 @@ mod dragging;
 mod screensaver;
 mod sound;
 mod sound_to_airplay;
+mod sound_to_bluetooth;
 mod tiles_from_the_keyboard;
 
 use std::cell::Cell;

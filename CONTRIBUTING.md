@@ -421,6 +421,17 @@ What the window tests check:
   its rate; that one not
   found is missing; that a TV wants its PIN until paired; and that
   credentials it turns down are forgotten.
+- Bluetooth headphones, from fakes of macOS's Bluetooth and outputs: ones
+  paired and not connected are listed, once each, with those connected,
+  under the id their output will have, and nothing is connected for
+  starting the app with them picked. Picked again in Settings → Audio,
+  they're connected and played through once their output is up, still
+  listed once; gone, they're waited for and not connected again. A window
+  picking ones connected already, or not paired, connects nothing; picking
+  them connects them, and the app's sound, waiting, plays through them
+  too. Unit tests check the id an address's output has and back, that
+  those connected aren't listed again, and which classes of device play
+  sound; and that outside the app, IOBluetooth isn't touched.
 - Floating on top while playing lifts the window, and Settings with it,
   only while its file plays, and the menu items turn their mode on and off.
 - Video → Output Device checks the display the window in front is on, and

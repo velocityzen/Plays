@@ -12,7 +12,7 @@ use super::casting::wait;
 use super::casting_to_airplay::{sheet_says, wants_pin};
 use super::open;
 use crate::app::{
-    AudioEngine, Devices, Local, Route, SetAudioDevice, SetWindowAudioDevice, Speakers,
+    AudioEngine, Bluetooth, Devices, Local, Route, SetAudioDevice, SetWindowAudioDevice, Speakers,
 };
 use crate::cast::AppPairings;
 use crate::media::AudioOutput;
@@ -59,6 +59,7 @@ fn start(
             open: |output, id, _| this_computer(output, id),
             watch: drop,
         },
+        bluetooth: Bluetooth::NONE,
         speakers: Some(Arc::clone(&speakers)),
     };
     cx.update(|_, cx| {

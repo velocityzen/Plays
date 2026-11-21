@@ -8,7 +8,9 @@
 //! opens its devices on a thread of its own, as that can take a while.
 //! AirPlay speakers are outputs like the rest (`speakers.rs`); one that
 //! wants its PIN has a window ask for it, and is played through once
-//! paired.
+//! paired. So are Bluetooth headphones and speakers paired with this
+//! computer while they aren't connected (`bluetooth.rs`): picking one
+//! connects it.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -19,6 +21,7 @@ use futures::StreamExt as _;
 use futures::channel::mpsc::{UnboundedSender, unbounded};
 use gpui::{App, AppContext as _, Global};
 
+use super::bluetooth::{self, Paired};
 use super::speakers::Speakers;
 use super::{dispatch, menus};
 
@@ -262,10 +265,35 @@ impl Local {
     };
 }
 
-/// Where outputs find and open their devices: this computer's, and the
-/// AirPlay speakers on the network.
+/// The Bluetooth devices paired with this computer: the system's, or in
+/// tests, as they say.
+#[derive(Clone, Copy)]
+pub(crate) struct Bluetooth {
+    /// Every one that plays sound; slow.
+    pub paired: fn() -> Vec<Paired>,
+    /// Connect the one at this address; waits for it.
+    pub connect: fn(&str) -> Result<(), String>,
+}
+
+impl Bluetooth {
+    const SYSTEM: Self = Self {
+        paired: bluetooth::paired,
+        connect: bluetooth::connect,
+    };
+
+    /// None paired.
+    #[cfg(test)]
+    pub const NONE: Self = Self {
+        paired: Vec::new,
+        connect: |address| Err(format!("{address} isn't paired")),
+    };
+}
+
+/// Where outputs find and open their devices: this computer's, the
+/// Bluetooth ones paired with it, and the AirPlay speakers on the network.
 pub(crate) struct Devices {
     pub local: Local,
+    pub bluetooth: Bluetooth,
     pub speakers: Option<Arc<Speakers>>,
 }
 
@@ -277,9 +305,12 @@ impl Devices {
             .filter(|_| id.is_some_and(Speakers::owns))
     }
 
-    /// Every one there now. Slow, so not for the UI thread.
+    /// Every one there now, and the Bluetooth ones paired that would be
+    /// once connected. Slow, so not for the UI thread.
     fn list(&self) -> Vec<DeviceInfo> {
         let mut all = (self.local.list)();
+        let paired = (self.bluetooth.paired)();
+        all.extend(bluetooth::not_connected(&paired, &all));
         if let Some(speakers) = &self.speakers {
             all.extend(speakers.list());
         }
@@ -304,6 +335,29 @@ impl Devices {
         match (self.speakers(id), id) {
             (Some(speakers), Some(id)) => speakers.open(output, id, on_event),
             _ => (self.local.open)(output, id, on_event),
+        }
+    }
+
+    /// Connect device `id`, picked, if it's a Bluetooth device paired with
+    /// this computer that isn't connected. Waits for it, so not for the UI
+    /// thread.
+    fn bring(&self, id: &str) {
+        let Some(address) = bluetooth::address(id) else {
+            return;
+        };
+        if (self.local.is_connected)(Some(id)) {
+            return;
+        }
+        let paired = (self.bluetooth.paired)();
+        let Some(device) = paired
+            .iter()
+            .find(|device| device.address.eq_ignore_ascii_case(address))
+        else {
+            return;
+        };
+        match (self.bluetooth.connect)(&device.address) {
+            Ok(()) => log::info!("connected {}", device.name),
+            Err(err) => log::warn!("can't connect {}: {err}", device.name),
         }
     }
 
@@ -379,6 +433,7 @@ impl AudioEngine {
         let pairings = Arc::clone(&cx.global::<AppPairings>().0);
         let devices = Devices {
             local: Local::SYSTEM,
+            bluetooth: Bluetooth::SYSTEM,
             speakers: Speakers::start(pairings).map(Arc::new),
         };
         Self::start_with(devices, cx);
@@ -595,6 +650,27 @@ impl AudioEngine {
                 self.route_window(index, wait);
             }
         }
+    }
+
+    /// Output device `device` was picked, for the app or a window, even
+    /// picked again: if it's a Bluetooth device paired with this computer
+    /// that isn't connected, connect it, in the background. What picked it
+    /// plays through it once it's up, as through any device picked that
+    /// comes back. Nothing else connects one: not starting the app, nor one
+    /// going away.
+    pub fn bring(device: &AudioDevice, cx: &App) {
+        let Some(devices) = cx
+            .try_global::<Self>()
+            .and_then(|engine| engine.devices.clone())
+        else {
+            return;
+        };
+        let id = device.id.clone();
+        std::thread::Builder::new()
+            .name("bluetooth connect".into())
+            .spawn(move || devices.bring(&id))
+            .inspect_err(|err| log::warn!("can't connect {}: {err}", device.name))
+            .ok();
     }
 
     /// The mixer of `device`'s output, for a window to play through instead
@@ -939,6 +1015,7 @@ mod tests {
                         open: open_slowly,
                         watch: drop,
                     },
+                    bluetooth: Bluetooth::NONE,
                     speakers: None,
                 },
                 cx,

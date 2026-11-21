@@ -4,9 +4,9 @@ use gpui::App;
 
 use super::dispatch::{with_active, with_active_in_window, with_workspace};
 use super::{
-    About, CastTo, CloseAll, CloseFile, CloseWindow, GoToChapter, GoToWindow, NextWindow,
-    OpenFiles, OpenSettings, OpenUrl, PreviousWindow, Quit, SetAspectRatio, SetAudioDevice,
-    SetCrop, SetWindowAudioDevice, ShowOnDisplay, windows,
+    About, AudioEngine, CastTo, CloseAll, CloseFile, CloseWindow, GoToChapter, GoToWindow,
+    NextWindow, OpenFiles, OpenSettings, OpenUrl, PreviousWindow, Quit, SetAspectRatio,
+    SetAudioDevice, SetCrop, SetWindowAudioDevice, ShowOnDisplay, windows,
 };
 use crate::hotkeys::*;
 use crate::media::tracks::TrackKind;
@@ -142,10 +142,16 @@ fn register_tile_view(cx: &mut App) {
     });
     cx.on_action(|action: &SetAudioDevice, cx| {
         let device = action.0.clone();
+        if let Some(device) = &device {
+            AudioEngine::bring(device, cx);
+        }
         Settings::update(cx, true, |s| s.audio_output.device = device);
     });
     cx.on_action(|action: &SetWindowAudioDevice, cx| {
         let device = action.0.clone();
+        if let Some(device) = &device {
+            AudioEngine::bring(device, cx);
+        }
         with_workspace(cx, move |w, _, cx| w.set_sound_device(device, cx))
     });
     cx.on_action(|action: &ShowOnDisplay, cx| {

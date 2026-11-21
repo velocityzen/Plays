@@ -137,7 +137,7 @@ Inside `src/`:
 | Path | What it is |
 | --- | --- |
 | `main.rs` | Starts the app. |
-| `app/` | Starting the app, its actions, menus, keymap, audio outputs and the AirPlay speakers among them, keeping the computer awake, smoke runs. |
+| `app/` | Starting the app, its actions, menus, keymap, audio outputs and the AirPlay speakers and Bluetooth devices among them, keeping the computer awake, smoke runs. |
 | `media/` | The playback engine: FFmpeg decoding, the mixers, clocks, subtitles, HDR. |
 | `ui/` | gpui views: windows, tiles, Settings, Picture in Picture, components and theme. |
 | `cast/` | Casting tiles to TVs and speakers. |
@@ -358,6 +358,20 @@ flowchart LR
   the cast button's Window Sound and Settings → Casting's devices found
   show, so a speaker also found by DLNA is told apart; the menu bar adds
   the protocol only where two items would share a name.
+- `src/app/bluetooth.rs`: the Bluetooth headphones and speakers paired
+  with the Mac (IOBluetooth's paired devices, of the Audio/Video class and
+  a minor class that plays sound), listed as outputs while they aren't
+  connected, under the id macOS gives their output once they are
+  (`coreaudio:`, the address in capitals, `:output`), so a device picked
+  is the same one before and after. Picking one, in Settings, the Audio
+  menu or for a window, connects it (`openConnection`, on a thread of its
+  own), if it's paired and its output isn't there; the engine plays
+  through it once it is, as through any device picked that comes back.
+  Routing never connects one, so starting the app or a device going away
+  doesn't. Only a process whose Info.plist says what it uses Bluetooth for
+  (`NSBluetoothAlwaysUsageDescription`, as Plays.app's does) touches
+  IOBluetooth: macOS stops one that doesn't, as tests and smoke runs would
+  be. Elsewhere, and on Linux, none is listed.
 - `src/app/audio.rs`: the `AudioEngine`, which keeps the outputs and which
   device each plays through. The app's output plays through the device
   picked in Settings → Audio, or the system's default. A window may play
@@ -374,7 +388,8 @@ flowchart LR
   thread takes if nothing was asked since. The output plays nowhere until
   then, and Settings say which device it is opening. Outputs find and open
   devices through `Devices`: this computer's (`Local`, the system's
-  through cpal) and the AirPlay speakers. A device that wants its PIN
+  through cpal), the Bluetooth ones paired with it (`Bluetooth`, listed
+  only) and the AirPlay speakers. A device that wants its PIN
   isn't looked for; the engine has the window in front ask for it, and
   once it's paired every output not playing through what it wants is
   routed again. In most tests the outputs play nowhere and no device is
