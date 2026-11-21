@@ -394,9 +394,12 @@ What the window tests check:
   this computer standing in for it as the app's; once paired, it plays the
   sound. Routed again while the sheet asks, the same sheet stays and the
   TV shows no other PIN; cancelled, it isn't tried again, to ask again,
-  until it's picked again. Unit tests check that only receivers that play
-  sound are listed, a TV among them; that a speaker's own volume is set
-  once, to where it was, and the mixer goes to its rate; that one not
+  until it's picked again. Cancelled, or turning this computer away, it's
+  picked no longer: the app's sound comes back here, and a window's to the
+  app's, which plays on through the speaker it picked. Unit tests check
+  that only receivers that play sound are listed, a TV among them; that a
+  speaker's own volume is set once, to where it was, and the mixer goes to
+  its rate; that one not
   found is missing; that a TV wants its PIN until paired; and that
   credentials it turns down are forgotten.
 - Floating on top while playing lifts the window, and Settings with it,

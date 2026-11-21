@@ -28,6 +28,7 @@ use crate::media::output::{self, DeviceEvent, DeviceInfo, OpenError, Playing};
 use crate::media::{AudioOutput, Mixer};
 use crate::settings::{AudioDevice, AudioOutputSettings, Settings};
 use crate::ui::pairing::StartPairing;
+use crate::ui::workspace::Workspace;
 
 /// How often a device that isn't connected is looked for.
 const LOOK_EVERY: Duration = Duration::from_secs(2);
@@ -505,7 +506,7 @@ impl AudioEngine {
         let id = device.id.clone();
         let start: StartPairing = Arc::new(move || devices.pair(&id));
         dispatch::with_workspace(cx, move |workspace, _, cx| {
-            workspace.pair_output(device.name, start, cx);
+            workspace.pair_output(device, start, cx);
         });
     }
 
@@ -527,6 +528,25 @@ impl AudioEngine {
             }
         }
         cx.refresh_windows();
+    }
+
+    /// Output device `device` wanted its PIN, and the sheet asking for it
+    /// closed without pairing: what picked it no longer does, rather than
+    /// wait for it, silent. The app's output goes back to the system's
+    /// default, and a window's to the app's output.
+    pub fn not_paired(device: &AudioDevice, cx: &mut App) {
+        let picked = |pick: Option<&AudioDevice>| pick.is_some_and(|pick| pick.id == device.id);
+        if picked(cx.global::<Settings>().audio_output.device.as_ref()) {
+            Settings::update(cx, true, |settings| settings.audio_output.device = None);
+        }
+        let windows = cx.windows().into_iter();
+        for window in windows.filter_map(|window| window.downcast::<Workspace>()) {
+            let _ = window.update(cx, |workspace, _, cx| {
+                if picked(workspace.sound_device()) {
+                    workspace.set_sound_device(None, cx);
+                }
+            });
+        }
     }
 
     /// The output routed as `generation`, as it is still.

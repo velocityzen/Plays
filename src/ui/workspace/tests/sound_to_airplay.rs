@@ -18,7 +18,7 @@ use crate::cast::AppPairings;
 use crate::media::AudioOutput;
 use crate::media::output::{OpenError, Playing};
 use crate::settings::{AudioDevice, Settings};
-use crate::ui::testing::{self, press, shows};
+use crate::ui::testing::{self, click, press, shows};
 use crate::ui::workspace::Workspace;
 
 const PIN: &str = "4321";
@@ -217,6 +217,62 @@ fn a_tv_a_window_plays_through_wants_its_pin_too(cx: &mut TestAppContext) {
         heard(&tv)
     });
     assert!(plays_through(&mut cx, HERE), "the app's sound stays here");
+}
+
+/// The device window `window` plays through of its own, by name.
+fn window_sound(window: WindowHandle<Workspace>, cx: &mut VisualTestContext) -> Option<String> {
+    window
+        .read_with(cx, |workspace, _| {
+            workspace.sound_device().map(|device| device.name.clone())
+        })
+        .unwrap()
+}
+
+#[gpui::test]
+fn a_tv_not_paired_with_is_picked_no_longer_and_the_sound_comes_back_here(cx: &mut TestAppContext) {
+    let tv = FakeReceiver::start(Kind::Tv { pin: PIN });
+    let speaker = FakeReceiver::start(Kind::Speaker);
+    let (window, mut cx, _) = start(cx, &[&tv, &speaker], true);
+    let device = output(&mut cx, &tv);
+    cx.dispatch_action(SetAudioDevice(Some(device.clone())));
+    wait(&mut cx, "a sheet to ask for the PIN", |cx| {
+        wants_pin(window, cx)
+    });
+    wait(&mut cx, "the sound to wait for it meanwhile", |cx| {
+        cx.update(|_, cx| AudioEngine::route(cx).cloned()) == Some(Route::Waiting("Fake TV".into()))
+    });
+    press(&mut cx, "escape");
+    wait(&mut cx, "the sound to come back here", |cx| {
+        plays_through(cx, HERE)
+    });
+    let picked = cx.update(|_, cx| cx.global::<Settings>().audio_output.device.clone());
+    assert_eq!(picked, None, "the system's default is picked again");
+
+    // Picked for the window, by one that turns this computer away: once
+    // the sheet saying so is closed, the window plays through the app's,
+    // which plays on through what it picked.
+    let other = output(&mut cx, &speaker);
+    cx.dispatch_action(SetAudioDevice(Some(other)));
+    wait(
+        &mut cx,
+        "the app's sound to play through the speaker",
+        |cx| plays_through(cx, "Fake Speaker"),
+    );
+    tv.state().refuse_pairing = true;
+    cx.dispatch_action(SetWindowAudioDevice(Some(device)));
+    wait(&mut cx, "the sheet to say why it can't pair", |cx| {
+        sheet_says(window, cx).starts_with("Can't pair")
+    });
+    assert_eq!(window_sound(window, &mut cx), Some("Fake TV".into()));
+    click(&mut cx, "pairing-cancel");
+    wait(&mut cx, "the window to play through the app's", |cx| {
+        window_sound(window, cx).is_none()
+    });
+    assert!(
+        plays_through(&mut cx, "Fake Speaker"),
+        "the app's own pick stays"
+    );
+    assert!(tv.state().packets.is_empty());
 }
 
 /// How many times `tv` was asked to show its PIN.

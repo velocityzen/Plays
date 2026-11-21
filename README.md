@@ -446,9 +446,12 @@ a speaker that says it adds some; the picture is held back by as much, so
 the two stay in step. The speaker's own volume stays where it was, and
 Plays' volume sets the level. One that wants a PIN, as an Apple TV does,
 has a sheet over the window ask for the one it shows the first time, as
-casting to it does, and plays once paired. While one is away, its sound
-waits for it or goes through the system's default, as for any other
-device, and goes back to it once it's found again.
+casting to it does, and plays once paired; the sheet closed without
+pairing, or saying the speaker turned Plays away, it's picked no longer,
+and the sound comes back: the app's to the system's default, a window's
+to the app's. While one is away, its sound waits for it or goes through
+the system's default, as for any other device, and goes back to it once
+it's found again.
 
 On Linux, audio goes through ALSA (PipeWire and PulseAudio provide an ALSA
 device), so Settings → Audio lists ALSA's outputs: `default` and

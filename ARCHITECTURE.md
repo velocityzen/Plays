@@ -733,8 +733,11 @@ sequenceDiagram
   each step waits on the network, and looks at how it goes ten times a
   second. A wrong PIN has the TV show another, which the sheet asks for.
   Paired, the tile casts to it again, or the outputs that want the speaker
-  play through it; cancelled, the tile plays on here, and the outputs as
-  they were.
+  play through it. Closed without pairing, cancelled or failed, the tile
+  plays on here, and what picked the speaker picks it no longer
+  (`AudioEngine::not_paired`, once the window is done updating): the
+  app's output goes back to the system's default, and a window's to the
+  app's, rather than wait, silent, for a speaker not paired with.
 - `src/cast/fake.rs` is a protocol for tests: devices the test adds and
   takes away, which do as they are told, keep what they were told, and say
   what the test has them say.

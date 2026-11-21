@@ -1,6 +1,7 @@
 //! Pairing with what asked for the PIN it shows: the TV a tile was cast
 //! to, cast there again once it's paired, or a speaker the sound was to
-//! play through, played through then. A sheet over the window.
+//! play through, played through then, and not paired with, no longer
+//! picked. A sheet over the window.
 
 use std::sync::Arc;
 
@@ -9,6 +10,7 @@ use gpui::{AppContext as _, Context, Entity, EntityId, Subscription};
 use super::Workspace;
 use crate::app::AudioEngine;
 use crate::cast::{Casting, Device};
+use crate::settings::AudioDevice;
 use crate::ui::pairing::{PairingDialog, PairingEvent, StartPairing};
 use crate::ui::player::PlayerView;
 
@@ -23,8 +25,9 @@ pub(super) struct Pairing {
 enum Then {
     /// Cast the tile to the device again.
     Cast { tile: EntityId, device: Device },
-    /// Play the audio outputs that want it through it.
-    Play,
+    /// Play the audio outputs that want this device through it; not
+    /// paired with, they no longer want it.
+    Play(AudioDevice),
 }
 
 impl Workspace {
@@ -53,12 +56,17 @@ impl Workspace {
         self.ask_for_pin(device.name.clone(), start, Then::Cast { tile, device }, cx);
     }
 
-    /// Pair with the audio output called `name`, which wants the PIN it
-    /// shows, starting with `start`; the outputs that want it play through
-    /// it once paired. Not while another sheet is up.
-    pub fn pair_output(&mut self, name: String, start: StartPairing, cx: &mut Context<Self>) {
+    /// Pair with audio output `device`, which wants the PIN it shows,
+    /// starting with `start`; the outputs that want it play through it once
+    /// paired. Not while another sheet is up.
+    pub fn pair_output(
+        &mut self,
+        device: AudioDevice,
+        start: StartPairing,
+        cx: &mut Context<Self>,
+    ) {
         if self.pairing.is_none() {
-            self.ask_for_pin(name, start, Then::Play, cx);
+            self.ask_for_pin(device.name.clone(), start, Then::Play(device), cx);
         }
     }
 
@@ -74,20 +82,24 @@ impl Workspace {
             let Some(pairing) = this.pairing.take() else {
                 return;
             };
-            if let PairingEvent::Paired = event {
-                match pairing.then {
-                    Then::Cast { tile, device } => {
-                        let tile = this
-                            .tiles
-                            .iter()
-                            .find(|found| found.view.entity_id() == tile)
-                            .map(|found| found.view.clone());
-                        if let Some(tile) = tile {
-                            tile.update(cx, |view, cx| view.cast_to(Some(device), cx));
-                        }
+            match (event, pairing.then) {
+                (PairingEvent::Paired, Then::Cast { tile, device }) => {
+                    let tile = this
+                        .tiles
+                        .iter()
+                        .find(|found| found.view.entity_id() == tile)
+                        .map(|found| found.view.clone());
+                    if let Some(tile) = tile {
+                        tile.update(cx, |view, cx| view.cast_to(Some(device), cx));
                     }
-                    Then::Play => AudioEngine::paired(cx),
                 }
+                (PairingEvent::Paired, Then::Play(_)) => AudioEngine::paired(cx),
+                // Not paired with: the sound doesn't wait for it, silent.
+                // Once this window is done updating, as it may be one.
+                (PairingEvent::Dismiss, Then::Play(device)) => {
+                    cx.defer(move |cx| AudioEngine::not_paired(&device, cx));
+                }
+                (PairingEvent::Dismiss, Then::Cast { .. }) => {}
             }
             this.refocus = true;
             cx.notify();
