@@ -16,7 +16,7 @@ use crate::ui::theme::layout::WINDOW_SIZE;
 use crate::ui::workspace::Workspace;
 
 /// The namespaces command ids start with.
-const NAMESPACES: [&str; 10] = [
+const NAMESPACES: [&str; 11] = [
     "app",
     "window",
     "tile",
@@ -26,6 +26,7 @@ const NAMESPACES: [&str; 10] = [
     "video",
     "cast",
     "output",
+    "display",
     "settings",
 ];
 
@@ -85,6 +86,44 @@ fn every_command_has_an_id_of_its_own_a_title_and_a_description() {
 }
 
 #[test]
+fn queries_say_what_they_hand_back_and_take_no_keys() {
+    let queries: Vec<&str> = registry::all()
+        .filter(|spec| spec.query)
+        .map(|spec| spec.id)
+        .collect();
+    assert_eq!(
+        queries,
+        [
+            "app.inspect",
+            "window.ls",
+            "window.inspect",
+            "tile.ls",
+            "tile.inspect",
+            "cast.ls",
+            "output.ls",
+            "display.ls",
+        ]
+    );
+    for spec in registry::all().filter(|spec| spec.query) {
+        let returns = spec.returns.unwrap_or_default();
+        assert!(
+            returns.ends_with('.'),
+            "{} says what it hands back",
+            spec.id
+        );
+        assert!(!spec.takes_keys(), "{} takes no keys", spec.id);
+    }
+    let ls = find("window.ls").unwrap();
+    let described = ls.describe();
+    assert_eq!(described["query"], true);
+    assert_eq!(described["returns"], json!(ls.returns));
+    assert_eq!(described["setting"], json!(null), "no keys to save");
+    let new = find("window.new").unwrap().describe();
+    assert_eq!(new["returns"], "{window}: the new window's id.");
+    assert_eq!(new["query"], false);
+}
+
+#[test]
 fn describes_each_command() {
     let chapter = find("playback.go_to_chapter").unwrap().describe();
     assert_eq!(
@@ -106,6 +145,8 @@ fn describes_each_command() {
                 "description": "Which chapter, from 1.",
             }],
             "state": true,
+            "returns": null,
+            "query": false,
             "available": true,
         })
     );

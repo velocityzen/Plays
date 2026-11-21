@@ -6,10 +6,10 @@ use serde_json::{Value, json};
 
 use super::done;
 use crate::api::args::{Arg, Kind};
-use crate::api::registry::{Args, Spec};
+use crate::api::registry::{Args, Scope, Spec};
 use crate::api::target;
 use crate::api::{Error, Run};
-use crate::app::AudioEngine;
+use crate::app::{AudioEngine, Route, output_kind};
 use crate::settings::{AudioDevice, Settings};
 
 /// What the output commands take: an output, or none.
@@ -27,6 +27,27 @@ const DEVICE: &[Arg] = &[
 ];
 
 pub const COMMANDS: &[Spec] = &[
+    Spec::query(
+        "output.ls",
+        "List Outputs",
+        "List the outputs connected, the one picked, and where the sound goes now.",
+        Scope::App,
+        "{outputs: [{id, name, kind}], device: {id, name} or null, route}: the outputs \
+         connected (kind AirPlay for a speaker on the network, else null), the one \
+         picked (null for the system's default), and the route: {playing: {device, \
+         rate, channels, instead_of}} (instead_of naming the one picked, when the \
+         system's default stands in for it), {waiting: name}, {opening: name} or \
+         {unavailable: why}.",
+        |_, _, cx| Ok(listing(cx)),
+    )
+    .keywords(&[
+        "list",
+        "ls",
+        "sound",
+        "speakers",
+        "headphones",
+        "audio device",
+    ]),
     Spec::app_with(
         "output.set_device",
         "Output Device",
@@ -82,6 +103,42 @@ pub const COMMANDS: &[Spec] = &[
     }),
 ];
 
+/// What `output.ls` says: the outputs, the one picked, and where the
+/// sound goes now.
+pub fn listing(cx: &App) -> Value {
+    let outputs: Vec<Value> = AudioEngine::devices(cx)
+        .iter()
+        .map(|device| {
+            json!({
+                "id": device.id,
+                "name": device.name,
+                "kind": output_kind(&device.id),
+            })
+        })
+        .collect();
+    json!({
+        "outputs": outputs,
+        "device": cx.global::<Settings>().audio_output.device,
+        "route": route(AudioEngine::route(cx)),
+    })
+}
+
+/// Where the sound goes, as `output.ls` says.
+fn route(route: Option<&Route>) -> Value {
+    match route {
+        Some(Route::Device { playing, missing }) => json!({"playing": {
+            "device": playing.name,
+            "rate": playing.rate,
+            "channels": playing.channels,
+            "instead_of": missing,
+        }}),
+        Some(Route::Waiting(name)) => json!({"waiting": name}),
+        Some(Route::Opening(name)) => json!({"opening": name}),
+        Some(Route::Unavailable(why)) => json!({"unavailable": why}),
+        None => json!({"unavailable": "there's no sound"}),
+    }
+}
+
 #[derive(Deserialize)]
 struct Pick {
     id: Option<String>,
@@ -125,4 +182,46 @@ fn output(device: Option<&AudioDevice>) -> Value {
         Value::Null,
         |device| json!({"id": device.id, "name": device.name}),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::route;
+    use crate::app::Route;
+    use crate::media::output::Playing;
+
+    #[test]
+    fn says_where_the_sound_goes() {
+        let playing = Playing {
+            id: None,
+            name: "Speakers".into(),
+            rate: 48_000,
+            channels: 2,
+        };
+        let device = Route::Device {
+            playing,
+            missing: Some("Headphones".into()),
+        };
+        assert_eq!(
+            route(Some(&device)),
+            json!({"playing": {
+                "device": "Speakers",
+                "rate": 48_000,
+                "channels": 2,
+                "instead_of": "Headphones",
+            }})
+        );
+        let waiting = Route::Waiting("Headphones".into());
+        assert_eq!(route(Some(&waiting)), json!({"waiting": "Headphones"}));
+        let opening = Route::Opening("Headphones".into());
+        assert_eq!(route(Some(&opening)), json!({"opening": "Headphones"}));
+        let unavailable = Route::Unavailable("no device".into());
+        assert_eq!(
+            route(Some(&unavailable)),
+            json!({"unavailable": "no device"})
+        );
+        assert_eq!(route(None), json!({"unavailable": "there's no sound"}));
+    }
 }

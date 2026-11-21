@@ -129,7 +129,7 @@ impl Global for Ran {}
 
 /// The command run before the one running now, for one that goes on
 /// from where it left off when run again with nothing run between, as Go
-/// Back One Window walks back.
+/// Back One Window walks back. Queries, which only read, don't count.
 pub fn ran_before(cx: &App) -> Option<&'static str> {
     cx.try_global::<Ran>().and_then(|ran| ran.before)
 }
@@ -163,8 +163,10 @@ pub fn run(invocation: Invocation, cx: &mut App) -> Result<Value, Error> {
             spec.title
         )));
     }
-    let ran = cx.default_global::<Ran>();
-    ran.before = ran.last.replace(spec.id);
+    if !spec.query {
+        let ran = cx.default_global::<Ran>();
+        ran.before = ran.last.replace(spec.id);
+    }
     let args = registry::Args {
         command: spec.id,
         value: &args,

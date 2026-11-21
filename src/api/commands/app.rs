@@ -6,6 +6,7 @@ use gpui::App;
 use serde::Deserialize;
 use serde_json::json;
 
+use super::{output, window};
 use crate::api::Error;
 use crate::api::args::{Arg, Kind};
 use crate::api::registry::{Args, Outcome, Scope, Spec};
@@ -17,6 +18,21 @@ use crate::ui::theme::layout::WINDOW_SIZE;
 use crate::ui::workspace::Workspace;
 
 pub const COMMANDS: &[Spec] = &[
+    Spec::query(
+        "app.inspect",
+        "Inspect Plays",
+        "Say what Plays is: its version, its player windows, and where the sound goes.",
+        Scope::App,
+        "{version, windows: [as window.ls], output: as output.ls}.",
+        |_, _, cx| {
+            Ok(json!({
+                "version": env!("CARGO_PKG_VERSION"),
+                "windows": window::summaries(cx)?,
+                "output": output::listing(cx),
+            }))
+        },
+    )
+    .keywords(&["info", "version", "about", "status"]),
     Spec::custom_with(
         "app.open",
         "Open Paths or URLs",
@@ -30,7 +46,8 @@ pub const COMMANDS: &[Spec] = &[
         )],
         open,
     )
-    .keywords(&["file", "folder", "stream", "url", "play", "add"]),
+    .keywords(&["file", "folder", "stream", "url", "play", "add"])
+    .returns("{window}: the id of the window they open in."),
     Spec::app(
         "app.about",
         "About Plays",

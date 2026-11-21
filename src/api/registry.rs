@@ -114,6 +114,13 @@ pub struct Spec {
     pub run: Run,
     /// What it changes, as it is now: whether Loop is on, say.
     pub state: Option<StateFn>,
+    /// What it hands back, as JSON, if anything: what the command reference
+    /// says of it.
+    pub returns: Option<&'static str>,
+    /// Whether it only reads, as `window.ls` does: such a command takes no
+    /// keys, and doesn't count as one run between two others, as Go Back
+    /// One Window's walk sees them.
+    pub query: bool,
     /// Whether this system has what it does.
     pub available: fn() -> bool,
 }
@@ -144,6 +151,8 @@ impl Spec {
             needs_target: false,
             run,
             state: None,
+            returns: None,
+            query: false,
             available: || true,
         }
     }
@@ -238,6 +247,27 @@ impl Spec {
         Self::new(id, title, description, scope, Run::Custom(run)).args(args)
     }
 
+    /// One that only reads what `scope` is, and hands back what `returns`
+    /// says: listing the windows, say.
+    pub const fn query(
+        id: &'static str,
+        title: &'static str,
+        description: &'static str,
+        scope: Scope,
+        returns: &'static str,
+        run: CustomFn,
+    ) -> Self {
+        let mut spec = Self::custom(id, title, description, scope, run);
+        spec.returns = Some(returns);
+        spec.query = true;
+        spec
+    }
+
+    pub const fn returns(mut self, returns: &'static str) -> Self {
+        self.returns = Some(returns);
+        self
+    }
+
     pub const fn keywords(mut self, keywords: &'static [&'static str]) -> Self {
         self.keywords = keywords;
         self
@@ -285,10 +315,10 @@ impl Spec {
             .map_or(self.id, |(namespace, _)| namespace)
     }
 
-    /// Whether it can be given keys: it needs no arguments or target, and
-    /// this system has what it does.
+    /// Whether it can be given keys: it changes something, needs no
+    /// arguments or target, and this system has what it does.
     pub fn takes_keys(&self) -> bool {
-        self.args.is_empty() && !self.needs_target && (self.available)()
+        !self.query && self.args.is_empty() && !self.needs_target && (self.available)()
     }
 
     /// The name the settings file keeps its keys under.
@@ -326,6 +356,8 @@ impl Spec {
             "setting": self.takes_keys().then(|| self.setting_name()),
             "args": self.args.iter().map(Arg::describe).collect::<Vec<_>>(),
             "state": self.state.is_some(),
+            "returns": self.returns,
+            "query": self.query,
             "available": (self.available)(),
         })
     }

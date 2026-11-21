@@ -7,6 +7,7 @@ mod empty;
 mod fit;
 mod focus;
 mod grid;
+mod inspect;
 mod mouse;
 mod naming;
 mod on_top;

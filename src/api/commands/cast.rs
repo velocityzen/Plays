@@ -1,15 +1,17 @@
 //! `cast`: playing a tile on a TV or speaker found on the network.
 
+use std::collections::BTreeMap;
+
 use gpui::App;
 use serde::Deserialize;
-use serde_json::json;
+use serde_json::{Map, Value, json};
 
 use super::done;
 use crate::api::args::{Arg, Kind};
 use crate::api::registry::{Args, Outcome, Scope, Spec};
 use crate::api::target::{self, Target};
 use crate::api::{Error, Run};
-use crate::cast::{Casting, Device};
+use crate::cast::{Casting, Device, Shows};
 
 /// Which device: its id, and how it's reached for an id two share.
 const DEVICE: &[Arg] = &[
@@ -22,6 +24,27 @@ const DEVICE: &[Arg] = &[
 ];
 
 pub const COMMANDS: &[Spec] = &[
+    Spec::query(
+        "cast.ls",
+        "List Devices",
+        "List the TVs and speakers found on the network to play on, by how they're \
+         reached.",
+        Scope::App,
+        "{Chromecast: [{id, name, shows}], AirPlay: […], DLNA: […]}: each protocol's \
+         devices found, by name, shows being video for a TV and sound for a speaker; a \
+         protocol with none found isn't there.",
+        |_, _, cx| Ok(found(cx)),
+    )
+    .keywords(&[
+        "list",
+        "ls",
+        "cast",
+        "tv",
+        "chromecast",
+        "airplay",
+        "dlna",
+        "speaker",
+    ]),
     Spec::tile_with(
         "cast.to",
         "Play On",
@@ -70,6 +93,32 @@ pub const COMMANDS: &[Spec] = &[
     )
     .keywords(&["cast", "pin", "code", "apple tv", "airplay"]),
 ];
+
+/// The devices found, by protocol, each protocol's by name.
+fn found(cx: &App) -> Value {
+    // `Casting` keeps them by name, so each protocol's are too.
+    let mut found: BTreeMap<&str, Vec<&Device>> = BTreeMap::new();
+    for device in Casting::devices(cx) {
+        found.entry(device.kind).or_default().push(device);
+    }
+    let found: Map<String, Value> = found
+        .into_iter()
+        .map(|(kind, devices)| {
+            let devices: Vec<Value> = devices
+                .into_iter()
+                .map(|device| {
+                    let shows = match device.shows {
+                        Shows::Video => "video",
+                        Shows::Sound => "sound",
+                    };
+                    json!({"id": device.id, "name": device.name, "shows": shows})
+                })
+                .collect();
+            (kind.to_owned(), Value::from(devices))
+        })
+        .collect();
+    Value::Object(found)
+}
 
 #[derive(Deserialize)]
 struct To {

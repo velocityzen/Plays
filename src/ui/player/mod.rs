@@ -11,6 +11,7 @@ mod controls;
 mod drag;
 mod graveyard;
 mod header;
+mod inspect;
 mod osd;
 mod pip;
 mod playback;

@@ -537,10 +537,24 @@ check:
   and Window menus have them, Move Tile To a place for each tile, the
   one in front's checked, and Move Tile to Window each other window, by
   label or number.
+- What the queries hand back (`inspect`), as whole JSON: List Windows
+  and Inspect Window (the number, the window in front, its bounds and
+  display, full screen, floating on top, its own output and its tiles);
+  List Tiles and Inspect Tile, before and after a tile is renamed,
+  sought, looped, its volume and mute, delays, track, picture and
+  chapter changed, past its end, and casting; a subtitle file's path; a
+  stream's URL without its user, password or query; List Outputs, List
+  Displays and List Devices to cast to, by protocol and name; and
+  Inspect Plays, the version with what List Windows and List Outputs
+  say. A query between two Go Back One Tile doesn't start the walk
+  again. Every query says what it hands back and takes no keys
+  (`api::tests`).
 
 Unit tests check finding a name among ids, labels, positions and the ends
 of ids (an id first, positions only among those given, several matching
-an error), and checking arguments.
+an error), checking arguments, and how List Outputs says where the sound
+goes (playing, in place of the output picked, waiting, opening or
+unavailable), which tests, with no sound, can't reach otherwise.
 
 A command updates the window it acts on, so a test runs one outside that
 window's update: with `TestAppContext::update(cx, |cx| api::run(..))`,

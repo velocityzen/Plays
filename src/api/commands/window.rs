@@ -4,7 +4,7 @@
 
 use gpui::{AnyWindowHandle, App};
 use serde::Deserialize;
-use serde_json::json;
+use serde_json::{Value, json};
 
 use super::done;
 use crate::api::args::{Arg, Kind};
@@ -17,6 +17,28 @@ use crate::ui::theme::layout::WINDOW_SIZE;
 use crate::ui::workspace::Workspace;
 
 pub const COMMANDS: &[Spec] = &[
+    Spec::query(
+        "window.ls",
+        "List Windows",
+        "List the player windows, in the order ⌘1 to ⌘9 number them.",
+        Scope::App,
+        "[{id, label, number, front, tiles}]: each window's id and label (or null), its \
+         number from 1, whether it's in front, and how many tiles it has.",
+        |_, _, cx| Ok(Value::from(summaries(cx)?)),
+    )
+    .keywords(&["list", "ls", "windows"]),
+    Spec::query(
+        "window.inspect",
+        "Inspect Window",
+        "Say all about the window: where it is, how it shows, its output and its tiles.",
+        Scope::Window,
+        "{id, label, number, front, tiles: [as tile.ls], bounds: {x, y, width, height}, \
+         display, full_screen, on_top, output: {id, name} or null}: as window.ls says, \
+         its tiles as tile.ls lists them, where it is in points, the id of the display \
+         it's on, whether it's full screen and floats on top, and its own output.",
+        inspect,
+    )
+    .keywords(&["info", "details", "describe"]),
     Spec::app_with(
         "window.new",
         "New Window",
@@ -25,7 +47,8 @@ pub const COMMANDS: &[Spec] = &[
         new_window,
     )
     .keywords(&["open", "empty", "another", "create"])
-    .keys(&["secondary-n"]),
+    .keys(&["secondary-n"])
+    .returns("{window}: the new window's id."),
     Spec::window(
         "window.open_files",
         "Open…",
@@ -252,6 +275,29 @@ struct Rename {
 #[derive(Deserialize)]
 struct Position {
     position: usize,
+}
+
+/// What `window.ls` says of each player window, in order.
+pub fn summaries(cx: &App) -> Result<Vec<Value>, Error> {
+    let front = target::front_window(cx);
+    target::windows(cx)
+        .into_iter()
+        .enumerate()
+        .map(|(at, window)| {
+            let summary = target::read(window, cx)?.summary(at + 1, front == Some(window));
+            Ok(Value::Object(summary))
+        })
+        .collect()
+}
+
+/// All about the window named, or the one in front.
+fn inspect(_: Args, target: &Target, cx: &mut App) -> Outcome {
+    let (window, at, _) = place(target, cx)?;
+    let front =
+        target::front_window(cx).is_some_and(|front| AnyWindowHandle::from(front) == window);
+    target::in_window(target, cx, |workspace, window, cx| {
+        Ok(Value::Object(workspace.inspect(at + 1, front, window, cx)))
+    })
 }
 
 /// Open an empty player window, in front.

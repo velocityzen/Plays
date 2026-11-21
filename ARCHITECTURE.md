@@ -471,13 +471,23 @@ flowchart LR
 - `src/api/`: every command Plays has, which every action runs by name,
   as a command line and a command palette are to. Each namespace
   (`app`, `window`, `tile`, `playback`, `audio`, `subtitles`, `video`,
-  `cast`, `output`) is a file in `commands/`, a list of `Spec`s: the
-  command's id (`playback.toggle_loop`), title, description and keywords,
+  `cast`, `output`, `display`) is a file in `commands/`, a list of
+  `Spec`s: the command's id (`playback.toggle_loop`), title, description
+  and keywords,
   what it acts on (the app, a window, every tile in one, or a tile), the
   arguments it takes, the keys it starts out with and where they work
   (`Reach`: anywhere, in a window with files, or there but not while
-  typing), what it does, and its state (on or off, the chapter) where it
-  has one.
+  typing), what it does, its state (on or off, the chapter) where it
+  has one, and what it hands back (`returns`), where it hands back
+  something: the JSON's shape, which `describe` gives with the rest. A
+  query (`Spec::query`: `app.inspect`, `window.ls` and `window.inspect`,
+  `tile.ls` and `tile.inspect`, `output.ls`, `display.ls`, `cast.ls`)
+  only reads: it takes no keys, and running one between two others
+  leaves `api::ran_before` as it was, so a walk back goes on. What they
+  say of a window and its tiles is in `workspace::inspect`, and of a
+  tile in `player::inspect`: tracks and chapters numbered from 1, the
+  volume in percent, the delays to the millisecond, and a stream's URL
+  as the tile shows it, without its user, password or query.
   `registry` finds them; `args` checks the arguments given against what
   the command takes before it runs, then reads them into a type of the
   command's own; `target` finds the window and tile named: by id, then by

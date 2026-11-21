@@ -3,7 +3,7 @@
 
 use gpui::{App, Entity};
 use serde::Deserialize;
-use serde_json::json;
+use serde_json::{Value, json};
 
 use super::done;
 use crate::api::args::{Arg, Kind};
@@ -13,6 +13,42 @@ use crate::api::{Error, Run};
 use crate::ui::workspace::{Toward, tile_label_taken};
 
 pub const COMMANDS: &[Spec] = &[
+    Spec::query(
+        "tile.ls",
+        "List Tiles",
+        "List the tiles in the window, in the grid's order.",
+        Scope::Window,
+        "[{id, label, title, file, url, playing, number, front}]: each tile's id and label \
+         (or null), its file's name, the file's path or the stream's URL (without a user, \
+         password or query; the other null), whether it plays, its place from 1, and \
+         whether keys go to it.",
+        |_, target, cx| {
+            let window = target::window(target, cx)?;
+            Ok(Value::from(target::read(window, cx)?.tiles_listed(cx)))
+        },
+    )
+    .keywords(&["list", "ls", "tiles", "files"]),
+    Spec::query(
+        "tile.inspect",
+        "Inspect Tile",
+        "Say all about the tile: what it plays, where it is, and how it's set to play.",
+        Scope::Tile,
+        "{as tile.ls, window, position, duration, ended, volume, muted, looping, \
+         tracks: {video, audio, subtitles: [{number, label, language, title, codec, \
+         format, default, forced, hearing_impaired, file}]}, picked: {video, audio, \
+         subtitles}, delays: {audio, subtitles}, picture: {turns, mirrored, \
+         aspect_ratio, crop}, chapter, chapters: [{number, name, start, end}], casting: \
+         {id, kind, name} or null}: times in seconds (duration null for a live stream), \
+         volume from 0 to 100, tracks and chapters numbered from 1, the tracks picked and \
+         the chapter by number or null, delays in seconds, and quarter turns clockwise.",
+        |_, target, cx| {
+            let (window, tile) = target::tile(target, cx)?;
+            target::read(window, cx)?
+                .inspect_tile(&tile, cx)
+                .ok_or_else(closed)
+        },
+    )
+    .keywords(&["info", "details", "describe", "tracks", "position"]),
     Spec::custom(
         "tile.close",
         "Close File",
@@ -198,7 +234,8 @@ pub const COMMANDS: &[Spec] = &[
         Scope::Tile,
         move_to_new_window,
     )
-    .keywords(&["pop out", "detach", "separate", "own window"]),
+    .keywords(&["pop out", "detach", "separate", "own window"])
+    .returns("{window}: the new window's id."),
     Spec::tile_with(
         "tile.copy_path",
         "Copy File Path",
@@ -208,6 +245,7 @@ pub const COMMANDS: &[Spec] = &[
         |_, player, _, cx| Ok(json!(player.copy_path(cx))),
     )
     .keywords(&["clipboard", "url", "location", "address"])
+    .returns("The path or URL copied.")
     .keys(&["secondary-alt-c"]),
     Spec::tile_with(
         "tile.copy_time",
@@ -217,7 +255,8 @@ pub const COMMANDS: &[Spec] = &[
         &[],
         |_, player, _, cx| Ok(json!(player.copy_time(cx))),
     )
-    .keywords(&["clipboard", "position", "timestamp"]),
+    .keywords(&["clipboard", "position", "timestamp"])
+    .returns("The time copied, such as 1:23:45."),
     Spec::tile(
         "tile.toggle_picture_in_picture",
         "Picture in Picture",
