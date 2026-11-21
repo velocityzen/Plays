@@ -5,7 +5,8 @@
 //!
 //! A listener hears the app's events (`Scope::App`: windows opening,
 //! closing, renamed and coming to the front, outputs, devices, settings,
-//! keys and commands run), one window's (`Scope::Window`: its own, its
+//! keys, commands run, and the socket's clients connecting and leaving),
+//! one window's (`Scope::Window`: its own, its
 //! tiles' and how they play), or all of them. A tile's position is told
 //! only to those who ask for it, at most once a second. Readers ignore
 //! events and fields they don't know, so later versions can add them.
@@ -130,10 +131,6 @@ fn with_ids(payload: Value, window: Id, tile: Option<Id>) -> Value {
 }
 
 /// Whose events a listener hears.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "the socket's to listen with, once there is one")
-)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Scope {
     /// The app's: windows opening, closing, renamed and coming to the
@@ -183,10 +180,6 @@ pub fn register(cx: &mut App) {
 
 /// Hear `scope`'s events from now on, and, with `positions`, where each
 /// tile is as it plays. Dropping what this hands back stops them.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "the socket's to listen with, once there is one")
-)]
 pub fn listen(scope: Scope, positions: bool, cx: &mut App) -> UnboundedReceiver<Event> {
     let (sender, receiver) = unbounded();
     if !listened(cx) {
@@ -350,6 +343,18 @@ pub fn command_run(invocation: &Invocation, command: &'static str, cx: &App) {
         payload["target"] = json!(invocation.target);
     }
     tell(&Event::app("command_run", payload), cx);
+}
+
+/// A client connected to the socket, numbered `client`: told to the
+/// app's listeners.
+pub fn client_connected(client: u64, cx: &App) {
+    let payload = json!({"client_id": client});
+    tell(&Event::app("client_connected", payload), cx);
+}
+
+/// The client numbered `client` went: told to the app's listeners.
+pub fn client_left(client: u64, cx: &App) {
+    tell(&Event::app("client_left", json!({"client_id": client})), cx);
 }
 
 /// A command has run: look for what it changed once what it set off has

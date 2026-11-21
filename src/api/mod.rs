@@ -12,12 +12,17 @@
 //!
 //! What a command, or anything else, changes is told to whoever listens
 //! (`events`), with each command run.
+//!
+//! One Plays runs, and the command line reaches it over a socket
+//! (`socket`), only this user's, which runs commands as keys do and tells
+//! events to those who ask for them.
 
 mod args;
 pub mod commands;
 mod error;
 pub mod events;
 mod registry;
+pub mod socket;
 mod target;
 
 use gpui::{App, Context, Global, Window};

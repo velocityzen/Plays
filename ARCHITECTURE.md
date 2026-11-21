@@ -142,8 +142,8 @@ Inside `src/`:
 
 | Path | What it is |
 | --- | --- |
-| `main.rs` | Starts the app. |
-| `api/` | Every command Plays has, by name: what each does and takes, and running one on the window or tile named. Every action goes through it. The events it tells whoever listens. |
+| `main.rs` | Starts the app, or hands what it was given to the Plays already running. |
+| `api/` | Every command Plays has, by name: what each does and takes, and running one on the window or tile named. Every action goes through it. The events it tells whoever listens, and the socket the command line reaches it over. |
 | `app/` | Starting the app, its menus, keymap, audio outputs and the AirPlay speakers and Bluetooth devices among them, keeping the computer awake, smoke runs. |
 | `media/` | The playback engine: FFmpeg decoding, the mixers, clocks, subtitles, HDR. |
 | `ui/` | gpui views: windows, tiles, Settings, Picture in Picture, components and theme. |
@@ -520,14 +520,15 @@ flowchart LR
   invocation run, and `api::intercept` notes them without running them.
 
   `api::events` tells whoever listens what changes, each a JSON object,
-  `{type, payload}`, as the socket is to pass on to the command line. A
+  `{type, payload}`, which the socket passes on to the command line. A
   listener hears the app's (windows opening, closing, renamed and coming
   to the front; the outputs, where the sound goes and the devices to cast
-  to; settings by key and shortcuts by command; and each command run, from
-  where), one window's (its label and full screen; its tiles coming, moving
-  in from another window or going; its layout, the tile filling it and the
-  one keys go to; and how each tile plays: opened, or not, playing, paused,
-  ended, sought, its volume, tracks and chapter, casting and Picture in
+  to; settings by key and shortcuts by command; each command run, from
+  where; and the socket's clients connecting and leaving), one window's
+  (its label and full screen; its tiles coming, moving in from another
+  window or going; its layout, the tile filling it and the one keys go
+  to; and how each tile plays: opened, or not, playing, paused, ended,
+  sought, its volume, tracks and chapter, casting and Picture in
   Picture), or all of them (`Scope`). A payload about a window or a tile
   starts with its `window_id`, and `tile_id`; readers ignore what they
   don't know. Where each tile is goes only to those who ask, at most once
@@ -551,6 +552,44 @@ flowchart LR
   the device it casts to, by its count of seeks; a file opened starts out
   paused, as its `opened` says the rest, so one that plays tells
   `playing` and no more.
+
+  `api::socket` is how the command line, and another Plays, reach the
+  one running. `main` takes the socket first (`socket::start`), before
+  FFmpeg or gpui start: it's in a folder only this user can open (0700,
+  made if it isn't there: the app's settings folder on macOS,
+  `$XDG_RUNTIME_DIR/plays` on Linux), and only they can connect to it
+  (0600). A lock file beside it (`plays.lock`) is held while it looks, so
+  two Plays starting at once take turns. If a Plays answers there, this
+  one hands it the files and URLs it was given and exits with the
+  answer's status (`client::hand_over`). Paths are made full first, as the
+  one running may have started in another folder; URLs go as given. A
+  socket no one answers, left by a Plays that crashed, is removed and
+  taken. Only a socket is removed: anything else there is an error, and
+  Plays runs without a socket. Tests and smoke runs have none. The
+  protocol (`protocol`) is JSON, an object a line. Each request has an id
+  and a method: `hello`, `call`, `commands`, `describe`, `subscribe`,
+  `unsubscribe` or `hand_over`. Each is answered in order, with its
+  `result` or an `api::Error` and a message (`bad_request` for one that
+  can't be read). Events come between answers, `{type, payload}`. The
+  server (`server`) takes clients on a thread and numbers them from 1;
+  two more threads each read from and write to a client. What a client
+  asks runs on the UI thread, in order: a call through `api::run` from
+  `Source::Cli`, with the menus checked after, as a key's command. A
+  hand-over runs `app.open`; with nothing to open it focuses the window
+  in front (`window.new` if there's none). Either way Plays comes forward
+  (`cx.activate`), in front of the terminal the files came from. A
+  subscriber's events come from `events::listen`, through a task that
+  sends each as it's told. Before an answer, those told and still
+  waiting are sent first, so a subscriber's own command's `command_run`
+  comes before the answer; what the command changes comes after, once it
+  has settled. A client is cut off if it stops reading with `OUTBOX`
+  lines waiting for it, or sends a line over a mebibyte.
+  `client_connected` and `client_left` are told to the app's listeners.
+  The socket is removed as Plays quits. `client` is the other end: one
+  request at a time, keeping the events that come meanwhile for
+  `next_event`. `connect_or_start`, for the command line, starts Plays
+  when none answers (`start_plays`, apart from the terminal) and waits up
+  to ten seconds for its socket.
 - `src/app/`: starting the app (`mod.rs`; files and links the system
   opens it with run `app.open`), the shared audio outputs (`audio`,
   above), the keymap (`keymap`: every command's

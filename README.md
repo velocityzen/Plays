@@ -218,6 +218,12 @@ Files and stream URLs can be given on the command line:
 plays path/to/video.mp4 path/to/song.mp3 https://example.com/live.m3u8
 ```
 
+One Plays runs at a time. With Plays already running, `plays` hands it
+what it was given, which opens in the window in front, and Plays comes to
+the front; given nothing, Plays just comes to the front. They talk over
+a socket that only you can use, kept with Plays' settings on macOS and in
+`$XDG_RUNTIME_DIR/plays` on Linux. Nothing goes over the network.
+
 ## Using it
 
 ### Shortcuts

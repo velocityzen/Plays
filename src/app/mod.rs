@@ -50,8 +50,14 @@ use crate::ui::{blackout, displays};
 /// How often quitting looks whether the devices cast to have stopped.
 const STOP_POLL: Duration = Duration::from_millis(5);
 
-/// `opened` brings the URLs the system asks the app to open.
-pub fn run(cx: &mut App, sources: Vec<Source>, opened: UnboundedReceiver<Vec<String>>) {
+/// `opened` brings the URLs the system asks the app to open; `listener`,
+/// if it has one, the command line's and other Plays' requests.
+pub fn run(
+    cx: &mut App,
+    sources: Vec<Source>,
+    opened: UnboundedReceiver<Vec<String>>,
+    listener: Option<api::socket::Listener>,
+) {
     let folder = Folder::app();
     cx.set_global(folder.clone());
     set_up(
@@ -73,6 +79,9 @@ pub fn run(cx: &mut App, sources: Vec<Source>, opened: UnboundedReceiver<Vec<Str
             .ok();
     }
     open_from_system(cx, opened);
+    if let Some(listener) = listener {
+        api::socket::serve(listener, cx);
+    }
 
     // Progress is noted as the app quits before casts stop, while each
     // knows where its device is.

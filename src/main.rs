@@ -30,6 +30,13 @@ fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("plays=info"))
         .init();
 
+    // One Plays runs: another, started with files, hands them to it and
+    // goes, before setting anything up.
+    let listener = match api::socket::start(&args) {
+        api::socket::Start::Runs(listener) => listener,
+        api::socket::Start::HandedOver(status) => std::process::exit(status.into()),
+    };
+
     ffmpeg::init().expect("initializing FFmpeg");
     ffmpeg::util::log::set_level(ffmpeg::util::log::Level::Error);
     // Sets up TLS libraries before any thread opens an https:// stream.
@@ -52,7 +59,7 @@ fn main() {
         opened.unbounded_send(urls).ok();
     });
     app.run(move |cx| {
-        app::run(cx, sources, opened_rx);
+        app::run(cx, sources, opened_rx, listener);
         #[cfg(feature = "smoke")]
         if let Some(scenario) = smoke {
             app::smoke::start(scenario, cx);

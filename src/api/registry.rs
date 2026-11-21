@@ -353,10 +353,6 @@ impl Spec {
     }
 
     /// All it is, as `plays api describe` says.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "for the command line and palette to come")
-    )]
     pub fn describe(&self) -> Value {
         json!({
             "id": self.id,

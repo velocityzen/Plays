@@ -99,6 +99,11 @@ gpui renders with Vulkan on Linux, so a working Vulkan driver is required
 to run it; see [README.md](README.md#linux) for the drivers for hardware
 decoding.
 
+One Plays runs at a time, on macOS and on Linux. With one already
+running, an installed one or another build, `cargo run -- FILE` hands
+`FILE` to it and exits, so quit it first to run your build. Builds with
+the `smoke` feature and tests take no socket, and run beside it.
+
 ### The macOS app
 
 To open files from Finder (**Open With**) or by dropping them on the Dock
@@ -583,6 +588,40 @@ check:
   told moved, not closed (`api::events::seen`); settings told by key and
   shortcuts by command, a command before what it changes and a query not
   at all, and looking only while someone listens (`api::events`).
+- The socket (`api::socket::tests`), each client on a thread of its own
+  as another process would be:
+  - Taking it: made only this user's, a Plays answering there kept, a
+    socket left by one that crashed taken over, anything else there left
+    alone (Plays then runs without one), and two starting at once taking
+    turns.
+  - Calls: answered with their results, or no such command, bad arguments
+    and no such window, with their exit statuses. Commands listed and
+    described. A request that can't be read answered so, blank lines
+    passed over, and a client sending too long a line cut off, others
+    answered on.
+  - Hand-overs: another Plays, a process of its own, started with a file
+    hands it to the one running and exits 0, or 2 for a stream it can't
+    play. That process is the test binary again, running only
+    `hand_over_as_another_process`, which is otherwise ignored. A file by
+    a relative path opens in the window in front by its full path, and
+    Plays comes forward; URLs are handed over as given. With nothing to
+    open, the window in front is focused, or one is opened.
+  - Events: a subscriber to everything hears a tile created, which one to
+    the app's doesn't. Both hear clients connecting and leaving and
+    commands run from the command line. A subscriber to one window hears
+    only that window's events. A subscriber running a command hears its
+    `command_run` before the answer. Positions go only to those who ask,
+    and nothing is heard after unsubscribing.
+  - The socket removed as the app quits.
+  - The client, against a Plays of the test's own: answers to other
+    requests passed over, events that come first kept, a Plays gone
+    unreachable. Autostart: a Plays answering isn't started again; with
+    none, it's started and waited for, or, with nothing to start, it says
+    so with exit status 4. A socket that can't be reached for another
+    reason, such as permissions, doesn't start one.
+  - In `protocol`, each request read with its defaults and written back,
+    and answers, errors (each with its own message) and events read by a
+    client. In `server`, a client too far behind cut off.
 
 Unit tests check finding a name among ids, labels, positions and the ends
 of ids (an id first, positions only among those given, several matching

@@ -49,10 +49,6 @@ impl Error {
     /// The exit status the command line gives it, as Rex's does: 1 for
     /// no such command or failed, 2 for bad arguments, 3 for a target
     /// not found or ambiguous.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "the command line's, once there is one")
-    )]
     pub fn exit_status(&self) -> u8 {
         match self {
             Self::NoSuchCommand { .. } | Self::Failed { .. } => 1,

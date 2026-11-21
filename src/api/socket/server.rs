@@ -1,0 +1,375 @@
+//! Answering on the socket. A thread takes each client that connects, and
+//! two more each read what it asks and write what it's told; the app
+//! answers on the UI thread, as a key's command runs, in the order asked.
+//! Events a client hears go out as they're told, those told as a request
+//! runs before its answer. A client that stops reading, with `OUTBOX`
+//! lines waiting for it, is cut off rather than kept in memory.
+
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::future::poll_fn;
+use std::io::{self, BufRead, BufReader, BufWriter, Read, Write};
+use std::net::Shutdown;
+use std::os::unix::net::{UnixListener, UnixStream};
+use std::rc::Rc;
+use std::sync::Arc;
+use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
+use std::thread;
+use std::time::Duration;
+
+use futures::StreamExt as _;
+use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
+use gpui::{App, Task};
+use serde_json::{Value, json};
+
+use super::Listener;
+use super::protocol::{self, Ask, Heard, Request};
+use crate::api::events::{self, Event, Scope};
+use crate::api::{self, Error, Invocation, Source, Spec, Target, target};
+
+/// How many lines may wait for a client before it's cut off.
+const OUTBOX: usize = 1024;
+
+/// The longest line a client may send, in bytes; one longer cuts it off.
+pub(super) const LONGEST: u64 = 1 << 20;
+
+/// How long to wait before taking the next client, as taking the last
+/// failed: with no file descriptors left, say.
+const ACCEPT_PAUSE: Duration = Duration::from_millis(100);
+
+/// A client's number, told with `client_connected` and `client_left`.
+type ClientId = u64;
+
+/// What the threads tell the app.
+enum Message {
+    /// A client connected, and how to write to it.
+    Connected(ClientId, Out),
+    /// A line from a client.
+    Line(ClientId, String),
+    /// A client went, or was cut off.
+    Left(ClientId),
+}
+
+/// Writing to a client.
+#[derive(Clone)]
+struct Out {
+    lines: SyncSender<String>,
+    stream: Arc<UnixStream>,
+}
+
+impl Out {
+    /// Send `line`, or cut the client off if too much waits for it.
+    fn send(&self, line: String) {
+        if let Err(TrySendError::Full(_)) = self.lines.try_send(line) {
+            log::warn!("cutting off a socket client that isn't reading");
+            self.stream.shutdown(Shutdown::Both).ok();
+        }
+    }
+}
+
+/// A client, as the app sees it.
+struct Client {
+    out: Out,
+    /// The events it hears, while it does.
+    hearing: Option<Hearing>,
+}
+
+/// The events a client hears, and the task sending each as it's told.
+struct Hearing {
+    told: Rc<RefCell<UnboundedReceiver<Event>>>,
+    _sending: Task<()>,
+}
+
+impl Hearing {
+    /// Send those told and still waiting to be, as before an answer: the
+    /// events told as its request ran, such as its `command_run`, come
+    /// first.
+    fn send_waiting(&self, out: &Out) {
+        while let Ok(event) = self.told.borrow_mut().try_recv() {
+            tell(out, &event);
+        }
+    }
+}
+
+/// Send `event` to a client.
+fn tell(out: &Out, event: &Event) {
+    match serde_json::to_string(event) {
+        Ok(line) => out.send(line),
+        Err(err) => log::warn!("can't tell {}: {err}", event.kind),
+    }
+}
+
+/// Answer what clients ask on `listener` from now on, and remove the
+/// socket as the app quits.
+pub fn serve(listener: Listener, cx: &mut App) {
+    let Listener { listener, path } = listener;
+    let (messages, mut received) = unbounded();
+    let accepting = thread::Builder::new()
+        .name("plays-socket".into())
+        .spawn(move || accept(&listener, &messages));
+    if let Err(err) = accepting {
+        log::warn!("can't answer on the socket: {err}");
+        return;
+    }
+    cx.spawn(async move |cx| {
+        let mut clients = HashMap::new();
+        while let Some(message) = received.next().await {
+            if cx.update(|cx| handle(message, &mut clients, cx)).is_err() {
+                break;
+            }
+        }
+    })
+    .detach();
+    cx.on_app_quit(move |_| {
+        super::remove(&path).ok();
+        async {}
+    })
+    .detach();
+}
+
+/// Take each client that connects, numbering them from 1, until the app
+/// stops listening.
+fn accept(listener: &UnixListener, messages: &UnboundedSender<Message>) {
+    let mut last: ClientId = 0;
+    for stream in listener.incoming() {
+        let stream = match stream {
+            Ok(stream) => stream,
+            Err(err) => {
+                log::warn!("can't take a socket client: {err}");
+                thread::sleep(ACCEPT_PAUSE);
+                continue;
+            }
+        };
+        last += 1;
+        match connect(last, stream, messages) {
+            Ok(()) => {}
+            Err(err) if messages.is_closed() => {
+                log::debug!("the app has stopped answering on the socket: {err}");
+                return;
+            }
+            Err(err) => log::warn!("can't answer a socket client: {err}"),
+        }
+    }
+}
+
+/// Start reading what `client` asks and writing what it's told.
+fn connect(
+    client: ClientId,
+    stream: UnixStream,
+    messages: &UnboundedSender<Message>,
+) -> io::Result<()> {
+    let stream = Arc::new(stream);
+    let (lines, outgoing) = mpsc::sync_channel(OUTBOX);
+    let writing = Arc::clone(&stream);
+    thread::Builder::new()
+        .name("plays-socket-out".into())
+        .spawn(move || write(&writing, &outgoing))?;
+    // Before anything it asks.
+    let out = Out {
+        lines,
+        stream: Arc::clone(&stream),
+    };
+    messages
+        .unbounded_send(Message::Connected(client, out))
+        .map_err(|_| io::Error::other("the app isn't answering"))?;
+    let messages = messages.clone();
+    thread::Builder::new()
+        .name("plays-socket-in".into())
+        .spawn(move || read(client, &stream, &messages))?;
+    Ok(())
+}
+
+/// Send what `client` asks, a line at a time, until it goes.
+fn read(client: ClientId, stream: &UnixStream, messages: &UnboundedSender<Message>) {
+    let mut reader = BufReader::new(stream);
+    loop {
+        let mut line = String::new();
+        match (&mut reader).take(LONGEST).read_line(&mut line) {
+            Ok(0) => break,
+            Ok(read) if read as u64 == LONGEST && !line.ends_with('\n') => {
+                log::warn!("cutting off a socket client that sent too long a line");
+                break;
+            }
+            Ok(_) => {
+                let line = line.trim_end_matches(['\n', '\r']);
+                if !line.trim().is_empty()
+                    && messages
+                        .unbounded_send(Message::Line(client, line.to_owned()))
+                        .is_err()
+                {
+                    break;
+                }
+            }
+            Err(err) => {
+                log::debug!("socket client {client} went: {err}");
+                break;
+            }
+        }
+    }
+    stream.shutdown(Shutdown::Both).ok();
+    messages.unbounded_send(Message::Left(client)).ok();
+}
+
+/// Write each line sent to the client, until it goes or is cut off.
+fn write(stream: &UnixStream, lines: &Receiver<String>) {
+    let mut out = BufWriter::new(stream);
+    while let Ok(line) = lines.recv() {
+        // Those waiting too, before flushing.
+        let written = std::iter::once(line)
+            .chain(lines.try_iter())
+            .try_for_each(|line| writeln!(out, "{line}"))
+            .and_then(|()| out.flush());
+        if written.is_err() {
+            break;
+        }
+    }
+    stream.shutdown(Shutdown::Both).ok();
+}
+
+/// Do what a thread tells.
+fn handle(message: Message, clients: &mut HashMap<ClientId, Client>, cx: &mut App) {
+    match message {
+        Message::Connected(client, out) => {
+            clients.insert(client, Client { out, hearing: None });
+            events::client_connected(client, cx);
+        }
+        Message::Line(id, line) => {
+            let Some(client) = clients.get_mut(&id) else {
+                return;
+            };
+            let answer = match protocol::read(&line) {
+                Ok(Request { id: asked, ask }) => {
+                    protocol::answer(&asked, answer(id, ask, client, cx))
+                }
+                Err((asked, why)) => protocol::bad_request(&asked, &why),
+            };
+            if let Some(hearing) = &client.hearing {
+                hearing.send_waiting(&client.out);
+            }
+            client.out.send(answer.to_string());
+        }
+        Message::Left(client) => {
+            if clients.remove(&client).is_some() {
+                events::client_left(client, cx);
+            }
+        }
+    }
+}
+
+/// What `ask` comes back with, for `client`, numbered `id`.
+fn answer(id: ClientId, ask: Ask, client: &mut Client, cx: &mut App) -> Result<Value, Error> {
+    match ask {
+        Ask::Hello => Ok(json!({
+            "version": env!("CARGO_PKG_VERSION"),
+            "pid": std::process::id(),
+            "client_id": id,
+        })),
+        Ask::Call {
+            command,
+            args,
+            target,
+        } => {
+            let query = api::find(&command).is_some_and(|spec| spec.query);
+            let invocation = Invocation {
+                command,
+                args,
+                target,
+                source: Source::Cli,
+            };
+            let done = api::run(invocation, cx);
+            if !query {
+                crate::app::refresh_menus(cx);
+            }
+            done
+        }
+        Ask::Commands => Ok(api::all().map(Spec::describe).collect()),
+        Ask::Describe { command } => api::find(&command)
+            .map(Spec::describe)
+            .ok_or(Error::NoSuchCommand { command }),
+        Ask::Subscribe { scope, positions } => subscribe(&scope, positions, client, cx),
+        Ask::Unsubscribe => {
+            client.hearing = None;
+            Ok(Value::Null)
+        }
+        Ask::HandOver { urls } => hand_over(urls, cx),
+    }
+}
+
+/// Send `client` the events `heard` names from now on, in place of those
+/// it heard: positions too with `positions`. Hands back the id of the
+/// window named, as names change.
+fn subscribe(
+    heard: &Heard,
+    positions: bool,
+    client: &mut Client,
+    cx: &mut App,
+) -> Result<Value, Error> {
+    let (scope, answer) = match heard {
+        Heard::App => (Scope::App, Value::Null),
+        Heard::All => (Scope::All, Value::Null),
+        Heard::Window(name) => {
+            let named = Target {
+                window: Some(name.clone()),
+                tile: None,
+            };
+            let id = target::read(target::window(&named, cx)?, cx)?.id();
+            (Scope::Window(id), json!({"window": id.to_string()}))
+        }
+    };
+    let told = Rc::new(RefCell::new(events::listen(scope, positions, cx)));
+    let out = client.out.clone();
+    let heard = Rc::clone(&told);
+    let sending = cx.spawn(async move |_| {
+        while let Some(event) = poll_fn(|cx| heard.borrow_mut().poll_next_unpin(cx)).await {
+            tell(&out, &event);
+        }
+    });
+    client.hearing = Some(Hearing {
+        told,
+        _sending: sending,
+    });
+    Ok(answer)
+}
+
+/// Open `urls`, handed over by a Plays started with them, as files opened
+/// from Finder are, and come to the front, in front of the terminal they
+/// may have come from; with none, bring the window in front forward, or
+/// open one.
+fn hand_over(urls: Vec<String>, cx: &mut App) -> Result<Value, Error> {
+    let invocation = if !urls.is_empty() {
+        Invocation::new("app.open").with_args(json!({"urls": urls}))
+    } else if let Some(window) = target::front_window(cx) {
+        Invocation::new("window.focus").in_window(target::read(window, cx)?.id().to_string())
+    } else {
+        Invocation::new("window.new")
+    };
+    let done = api::run(invocation.from(Source::Cli), cx);
+    crate::app::refresh_menus(cx);
+    cx.activate(true);
+    done
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_client_with_too_much_waiting_for_it_is_cut_off() {
+        let (ours, theirs) = UnixStream::pair().unwrap();
+        let (lines, waiting) = mpsc::sync_channel(1);
+        let out = Out {
+            lines,
+            stream: Arc::new(ours),
+        };
+        theirs.set_nonblocking(true).unwrap();
+        let mut read = String::new();
+        let open = |read: &mut String| BufReader::new(&theirs).read_line(read);
+
+        out.send("one".into());
+        let err = open(&mut read).expect_err("nothing written yet");
+        assert_eq!(err.kind(), io::ErrorKind::WouldBlock, "still connected");
+        out.send("two".into());
+        assert_eq!(waiting.try_iter().collect::<Vec<_>>(), ["one"]);
+        assert_eq!(open(&mut read).unwrap(), 0, "cut off");
+    }
+}
