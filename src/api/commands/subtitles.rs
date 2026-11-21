@@ -2,8 +2,7 @@
 
 use gpui::Context;
 
-use crate::api::registry::Spec;
-use crate::hotkeys::Command;
+use crate::api::registry::{Spec, on_mac};
 use crate::media::tracks::TrackKind;
 use crate::settings::{SUBTITLE_POSITION_RANGE, SUBTITLE_SIZE_RANGE, Settings, SubtitleStyle};
 use crate::ui::player::PlayerView;
@@ -23,7 +22,8 @@ pub const COMMANDS: &[Spec] = &[
         |player, _, cx| player.next_track(TrackKind::Subtitle, cx),
     )
     .keywords(&["captions", "language", "track"])
-    .hotkey(Command::NextSubtitleTrack),
+    .setting("next_subtitle_track")
+    .keys(on_mac(&["ctrl-cmd-s"], &["ctrl-alt-s"])),
     Spec::tile(
         "subtitles.toggle",
         "Show/Hide Subtitles",
@@ -31,7 +31,8 @@ pub const COMMANDS: &[Spec] = &[
         |player, _, cx| player.toggle_subtitles(cx),
     )
     .keywords(&["captions", "off", "on"])
-    .hotkey(Command::ToggleSubtitles),
+    .setting("toggle_subtitles")
+    .keys(&["v"]),
     Spec::tile(
         "subtitles.bigger",
         "Bigger Subtitles",
@@ -39,7 +40,8 @@ pub const COMMANDS: &[Spec] = &[
         |player, _, cx| change_size(player, SIZE_STEP, cx),
     )
     .keywords(&["captions", "size", "larger", "font"])
-    .hotkey(Command::BiggerSubtitles),
+    .setting("bigger_subtitles")
+    .keys(&["shift-g"]),
     Spec::tile(
         "subtitles.smaller",
         "Smaller Subtitles",
@@ -47,7 +49,8 @@ pub const COMMANDS: &[Spec] = &[
         |player, _, cx| change_size(player, -SIZE_STEP, cx),
     )
     .keywords(&["captions", "size", "font"])
-    .hotkey(Command::SmallerSubtitles),
+    .setting("smaller_subtitles")
+    .keys(&["shift-f"]),
     Spec::tile(
         "subtitles.up",
         "Move Subtitles Up",
@@ -55,7 +58,8 @@ pub const COMMANDS: &[Spec] = &[
         |player, _, cx| change_height(player, HEIGHT_STEP, cx),
     )
     .keywords(&["captions", "position", "raise"])
-    .hotkey(Command::SubtitlesUp),
+    .setting("subtitles_up")
+    .keys(&["r"]),
     Spec::tile(
         "subtitles.down",
         "Move Subtitles Down",
@@ -63,7 +67,8 @@ pub const COMMANDS: &[Spec] = &[
         |player, _, cx| change_height(player, -HEIGHT_STEP, cx),
     )
     .keywords(&["captions", "position", "lower"])
-    .hotkey(Command::SubtitlesDown),
+    .setting("subtitles_down")
+    .keys(&["shift-r", "t"]),
     Spec::tile(
         "subtitles.earlier",
         "Subtitles Earlier",
@@ -71,7 +76,8 @@ pub const COMMANDS: &[Spec] = &[
         |player, _, cx| player.shift_subtitles(-DELAY_STEP, cx),
     )
     .keywords(&["captions", "delay", "sync", "offset"])
-    .hotkey(Command::SubtitlesEarlier),
+    .setting("subtitles_earlier")
+    .keys(&["z"]),
     Spec::tile(
         "subtitles.later",
         "Subtitles Later",
@@ -79,7 +85,8 @@ pub const COMMANDS: &[Spec] = &[
         |player, _, cx| player.shift_subtitles(DELAY_STEP, cx),
     )
     .keywords(&["captions", "delay", "sync", "offset"])
-    .hotkey(Command::SubtitlesLater),
+    .setting("subtitles_later")
+    .keys(&["x"]),
     Spec::tile(
         "subtitles.reset_delay",
         "Reset Subtitle Delay",
@@ -87,7 +94,8 @@ pub const COMMANDS: &[Spec] = &[
         |player, _, cx| player.set_subtitle_delay(0.0, cx),
     )
     .keywords(&["captions", "sync", "offset"])
-    .hotkey(Command::ResetSubtitleDelay),
+    .setting("reset_subtitle_delay")
+    .keys(&["shift-backspace"]),
 ];
 
 /// Change how every file's subtitles look, and say so on `player`.

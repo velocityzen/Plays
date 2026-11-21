@@ -2,13 +2,13 @@
 
 use gpui::App;
 use serde::Deserialize;
-use serde_json::json;
+use serde_json::{Value, json};
 
 use super::done;
-use crate::api::Error;
 use crate::api::args::{Arg, Kind};
 use crate::api::registry::{Args, Spec};
 use crate::api::target;
+use crate::api::{Error, Run};
 use crate::app::AudioEngine;
 use crate::settings::{AudioDevice, Settings};
 
@@ -106,4 +106,23 @@ fn device(args: Args, cx: &App) -> Result<Option<AudioDevice>, Error> {
             .ok_or_else(|| Error::not_found("output", id.clone()))?,
     };
     Ok(Some(AudioDevice { id, name }))
+}
+
+/// Play through `device`, or the system's default.
+pub fn set_device(device: Option<&AudioDevice>) -> Run {
+    Run::with("output.set_device", output(device))
+}
+
+/// Play the window in front through `device`, or the app's output again.
+pub fn set_window_device(device: Option<&AudioDevice>) -> Run {
+    Run::with("output.set_window_device", output(device))
+}
+
+/// The arguments the output commands take for `device`: by id and name,
+/// as it may be one not connected now.
+fn output(device: Option<&AudioDevice>) -> Value {
+    device.map_or(
+        Value::Null,
+        |device| json!({"id": device.id, "name": device.name}),
+    )
 }

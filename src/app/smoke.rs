@@ -21,7 +21,6 @@ use gpui::{
 
 use super::dispatch::first_workspace;
 use super::{AudioEngine, Route};
-use crate::hotkeys::Command;
 use crate::media::Source;
 use crate::media::tracks::TrackKind;
 use crate::settings::{FloatOnTop, Settings};
@@ -302,7 +301,7 @@ async fn subtitles(cx: &mut AsyncApp) -> Result<(), String> {
     if !listed {
         return Err("clip.srt isn't listed beside clip.mp4".into());
     }
-    press_for(cx, Command::PlayPause)?;
+    press_for(cx, "playback.play_pause")?;
     wait_for(cx, "the video to pause", |cx| {
         player_state(cx, |view| !view.player().is_playing())
     })
@@ -316,12 +315,12 @@ async fn subtitles(cx: &mut AsyncApp) -> Result<(), String> {
     })
     .await?;
 
-    press_for(cx, Command::NextSubtitleTrack)?;
+    press_for(cx, "subtitles.next_track")?;
     wait_for(cx, "the subtitles to turn off", |cx| {
         selected_subtitles(cx).is_none() && showing(cx).is_empty()
     })
     .await?;
-    press_for(cx, Command::NextSubtitleTrack)?;
+    press_for(cx, "subtitles.next_track")?;
     wait_for(cx, "the subtitles to come back", |cx| {
         selected_subtitles(cx).is_some() && showing(cx) == ["First"]
     })
@@ -335,7 +334,7 @@ async fn step_back(cx: &mut AsyncApp) -> Result<(), String> {
     open(cx, &["clip.mp4"]).await?;
     settle(cx).await?;
     check_playing(cx).await?;
-    press_for(cx, Command::PlayPause)?;
+    press_for(cx, "playback.play_pause")?;
     wait_for(cx, "the video to pause", |cx| {
         player_state(cx, |view| !view.player().is_playing())
     })
@@ -346,9 +345,9 @@ async fn step_back(cx: &mut AsyncApp) -> Result<(), String> {
     })?;
     let mut at = wait_for_frame(cx, 1.0).await?;
     for (command, step) in [
-        (Command::NextFrame, 1.0),
-        (Command::PreviousFrame, -1.0),
-        (Command::PreviousFrame, -1.0),
+        ("playback.next_frame", 1.0),
+        ("playback.previous_frame", -1.0),
+        ("playback.previous_frame", -1.0),
     ] {
         press_for(cx, command)?;
         at = wait_for_frame(cx, at + step * FRAME).await?;
@@ -371,12 +370,12 @@ async fn float_on_top(cx: &mut AsyncApp) -> Result<(), String> {
     if !in_mission_control(cx, false)? {
         return Err("the window floating is missing from Mission Control".into());
     }
-    press_for(cx, Command::PlayPause)?;
+    press_for(cx, "playback.play_pause")?;
     wait_for(cx, "the window to come down when paused", |cx| {
         !is_on_top(cx, false)
     })
     .await?;
-    press_for(cx, Command::PlayPause)?;
+    press_for(cx, "playback.play_pause")?;
     wait_for(cx, "the window to float again when playing", |cx| {
         is_on_top(cx, false)
     })
@@ -716,8 +715,8 @@ fn press_in(cx: &mut AsyncApp, window: AnyWindowHandle, key: &str) -> Result<(),
         .map_err(|_| "the window went away".to_string())
 }
 
-/// Press the first key Settings give `command`.
-fn press_for(cx: &mut AsyncApp, command: Command) -> Result<(), String> {
+/// Press the first key Settings give `command`, by its id.
+fn press_for(cx: &mut AsyncApp, command: &str) -> Result<(), String> {
     let key = cx
         .update(|cx| {
             cx.global::<Settings>()
@@ -727,7 +726,7 @@ fn press_for(cx: &mut AsyncApp, command: Command) -> Result<(), String> {
                 .cloned()
         })
         .map_err(|_| "the app went away")?
-        .ok_or_else(|| format!("{command:?} has no key"))?;
+        .ok_or_else(|| format!("{command} has no key"))?;
     press(cx, &key)
 }
 

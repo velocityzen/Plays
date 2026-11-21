@@ -169,7 +169,8 @@ GPU-accelerated UI framework.
 - Shortcuts go to the tile the mouse is over, or the one the keys went
   to. With Shift, the playback ones go to every file in the window, and
   Shift-S syncs them all to that tile.
-- Change any playback or tile shortcut in Settings → Hotkeys.
+- Change any shortcut in Settings → Hotkeys, the app's own (⌘O, ⌘W and
+  so on) too.
 - The menu bar (a toolbar on Linux) has them too.
 
 ### Settings
@@ -278,9 +279,13 @@ before and after it faded above and below.
 
 To change shortcuts, open Settings → Hotkeys, click + by a command and
 press the keys; a key another command had moves to it, and Restore brings
-the defaults back. The app's own shortcuts above (⌘O, ⌘W and so on) stay
-as they are. Some commands have no keys until given some there, such as
-Float on Top.
+the defaults back. Every command that needs nothing more is there, in a
+card for each part of the app, the app's own (⌘O, ⌘W and so on) too. A
+key moves only from a command that works where it does: given to a
+player window's command, ⌘W leaves the window's Close to the other
+windows. Some commands have no keys until given some there, such as
+Float on Top. The menus show each command's first key, and are enabled
+only when their commands can run.
 
 ### Tiles
 
@@ -318,7 +323,7 @@ While a tile plays, its header and controls fade when the mouse leaves it,
 or rests on it for a couple of seconds; the pointer hides then too, until
 the mouse moves. Resting on the header or controls keeps them.
 
-The console (`~` or Video → Console) shows the file's format, each stream
+The console (`~` or Video → Show/Hide Console) shows the file's format, each stream
 playing as the file has it (codec and profile, size, pixel format, colors,
 sample rate, channels, bit rates), the decoder and what its frames become,
 and, as it plays, frames shown a second, frames dropped, how far the

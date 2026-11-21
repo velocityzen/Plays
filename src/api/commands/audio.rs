@@ -2,9 +2,8 @@
 
 use serde_json::json;
 
-use crate::api::registry::Spec;
+use crate::api::registry::{Spec, on_mac};
 use crate::api::target;
-use crate::hotkeys::Command;
 use crate::media::tracks::TrackKind;
 
 /// How far the volume commands change a tile's volume.
@@ -20,7 +19,8 @@ pub const COMMANDS: &[Spec] = &[
         |player, _, cx| player.change_volume(VOLUME_STEP, cx),
     )
     .keywords(&["louder", "sound"])
-    .hotkey(Command::VolumeUp),
+    .setting("volume_up")
+    .keys(&["up"]),
     Spec::tile(
         "audio.volume_down",
         "Volume Down",
@@ -28,7 +28,8 @@ pub const COMMANDS: &[Spec] = &[
         |player, _, cx| player.change_volume(-VOLUME_STEP, cx),
     )
     .keywords(&["quieter", "softer", "sound"])
-    .hotkey(Command::VolumeDown),
+    .setting("volume_down")
+    .keys(&["down"]),
     Spec::tile(
         "audio.toggle_mute",
         "Mute/Unmute",
@@ -36,7 +37,8 @@ pub const COMMANDS: &[Spec] = &[
         |player, _, cx| player.toggle_mute(cx),
     )
     .keywords(&["silence", "sound"])
-    .hotkey(Command::Mute)
+    .setting("mute")
+    .keys(&["secondary-/", "m"])
     .state(|target, cx| {
         target::read_tile(target, cx, |player, _| json!(player.player().is_muted()))
     }),
@@ -47,7 +49,8 @@ pub const COMMANDS: &[Spec] = &[
         |player, _, cx| player.next_track(TrackKind::Audio, cx),
     )
     .keywords(&["language", "dub", "commentary"])
-    .hotkey(Command::NextAudioTrack),
+    .setting("next_audio_track")
+    .keys(on_mac(&["ctrl-cmd-a"], &["ctrl-alt-a"])),
     Spec::tile(
         "audio.earlier",
         "Audio Earlier",
@@ -55,7 +58,8 @@ pub const COMMANDS: &[Spec] = &[
         |player, _, cx| player.shift_audio(-DELAY_STEP, cx),
     )
     .keywords(&["delay", "sync", "offset", "lip sync"])
-    .hotkey(Command::AudioEarlier),
+    .setting("audio_earlier")
+    .keys(&["ctrl--"]),
     Spec::tile(
         "audio.later",
         "Audio Later",
@@ -63,7 +67,8 @@ pub const COMMANDS: &[Spec] = &[
         |player, _, cx| player.shift_audio(DELAY_STEP, cx),
     )
     .keywords(&["delay", "sync", "offset", "lip sync"])
-    .hotkey(Command::AudioLater),
+    .setting("audio_later")
+    .keys(&["ctrl-="]),
     Spec::tile(
         "audio.reset_delay",
         "Reset Audio Delay",
@@ -71,7 +76,8 @@ pub const COMMANDS: &[Spec] = &[
         |player, _, cx| player.set_audio_delay(0.0, cx),
     )
     .keywords(&["sync", "offset"])
-    .hotkey(Command::ResetAudioDelay),
+    .setting("reset_audio_delay")
+    .keys(&["ctrl-backspace"]),
     Spec::tiles(
         "audio.volume_up_all",
         "Volume Up on All",
@@ -79,7 +85,8 @@ pub const COMMANDS: &[Spec] = &[
         |workspace, _, cx| workspace.change_volume_all(VOLUME_STEP, cx),
     )
     .keywords(&["every", "louder"])
-    .hotkey(Command::VolumeUpAll),
+    .setting("volume_up_all")
+    .keys(&["shift-up"]),
     Spec::tiles(
         "audio.volume_down_all",
         "Volume Down on All",
@@ -87,7 +94,8 @@ pub const COMMANDS: &[Spec] = &[
         |workspace, _, cx| workspace.change_volume_all(-VOLUME_STEP, cx),
     )
     .keywords(&["every", "quieter"])
-    .hotkey(Command::VolumeDownAll),
+    .setting("volume_down_all")
+    .keys(&["shift-down"]),
     Spec::tiles(
         "audio.toggle_mute_all",
         "Mute/Unmute All",
@@ -95,5 +103,6 @@ pub const COMMANDS: &[Spec] = &[
         |workspace, _, cx| workspace.toggle_mute_all(cx),
     )
     .keywords(&["every", "silence"])
-    .hotkey(Command::MuteAll),
+    .setting("mute_all")
+    .keys(&["shift-m"]),
 ];

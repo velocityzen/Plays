@@ -561,6 +561,8 @@ pub struct App {
     pub(crate) keyboard_mapper: Rc<dyn PlatformKeyboardMapper>,
     pub(crate) global_action_listeners:
         FxHashMap<TypeId, Vec<Rc<dyn Fn(&dyn Any, DispatchPhase, &mut Self)>>>,
+    /// Plays: what says whether a menu item's action can run now.
+    menu_validator: Option<Rc<dyn Fn(&dyn Action, &mut Self) -> Option<bool>>>,
     pending_effects: VecDeque<Effect>,
     pub(crate) pending_notifications: FxHashSet<EntityId>,
     pub(crate) pending_global_notifications: FxHashSet<TypeId>,
@@ -636,6 +638,7 @@ impl App {
                 keyboard_layout,
                 keyboard_mapper,
                 global_action_listeners: FxHashMap::default(),
+                menu_validator: None,
                 pending_effects: VecDeque::new(),
                 pending_notifications: FxHashSet::default(),
                 pending_global_notifications: FxHashSet::default(),
@@ -1834,6 +1837,28 @@ impl App {
             || self
                 .global_action_listeners
                 .contains_key(&action.as_any().type_id())
+    }
+
+    /// Plays: say whether the menu bar's items can run now: `validate`
+    /// answers for the actions it knows, `None` for those it leaves to
+    /// [`Self::is_action_available`]. An action handled globally is
+    /// otherwise always available, whatever it would act on.
+    pub fn validate_menu_actions_with(
+        &mut self,
+        validate: impl Fn(&dyn Action, &mut Self) -> Option<bool> + 'static,
+    ) {
+        self.menu_validator = Some(Rc::new(validate));
+    }
+
+    /// Plays: whether a menu item for `action` is enabled: as the validator
+    /// given [`Self::validate_menu_actions_with`] says, else whether the
+    /// action is available.
+    pub fn is_menu_action_enabled(&mut self, action: &dyn Action) -> bool {
+        let answer = self
+            .menu_validator
+            .clone()
+            .and_then(|validate| validate(action, self));
+        answer.unwrap_or_else(|| self.is_action_available(action))
     }
 
     /// Sets the menu bar for this application. This will replace any existing menu bar.

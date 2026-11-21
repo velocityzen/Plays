@@ -1,6 +1,7 @@
 //! The API: every command Plays has, by id, run one way. Keys, menus and
-//! the controls that send actions run them through here, as the command
-//! palette and the command line are to.
+//! the controls that send actions run them through here, sending one
+//! action, `Run`, which carries the command; the command palette and the
+//! command line are to as well.
 //!
 //! A command (`registry`, with the commands themselves in `commands`) has
 //! an id such as `playback.play_pause`, a title, a description, keywords,
@@ -10,7 +11,7 @@
 //! them (`target`). It hands back a JSON value, or an `Error`.
 
 mod args;
-mod commands;
+pub mod commands;
 mod error;
 mod registry;
 mod target;
@@ -20,8 +21,41 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 pub use error::Error;
-pub use registry::{find, for_hotkey};
+pub use registry::{Reach, Spec, all, find};
 pub use target::{Id, Target, front_window};
+
+/// What keys, menu items and the controls that send actions send: run
+/// this. One action for every command, so a command needs nothing more
+/// to take keys or be in a menu.
+#[derive(Clone, PartialEq, Debug, gpui::Action)]
+#[action(namespace = plays, no_json)]
+pub struct Run(pub Invocation);
+
+impl Run {
+    /// `command`, with no arguments, on what's in front.
+    pub fn command(command: &str) -> Self {
+        Self(Invocation::new(command).from(Source::Action))
+    }
+
+    /// `command`, given `args`, on what's in front.
+    pub fn with(command: &str, args: Value) -> Self {
+        Self(
+            Invocation::new(command)
+                .with_args(args)
+                .from(Source::Action),
+        )
+    }
+}
+
+/// Run every `Run` sent, and enable a menu item only when its command can
+/// run.
+pub fn register(cx: &mut App) {
+    cx.on_action(|run: &Run, cx| dispatch(run.0.clone(), cx));
+    cx.validate_menu_actions_with(|action, cx| {
+        let run = action.as_any().downcast_ref::<Run>()?;
+        Some(can_run(&run.0.command, &run.0.target, cx))
+    });
+}
 
 /// A command to run, with its arguments, what it's aimed at, and where it
 /// came from.
@@ -40,7 +74,7 @@ pub struct Invocation {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Source {
-    /// A gpui action: a key, a menu item, or a control that sends one.
+    /// A key, a menu item, or a control that sends `Run`.
     Action,
     /// A control that runs it itself.
     Ui,
@@ -145,7 +179,8 @@ pub fn check_args(spec: &registry::Spec, args: &Value) -> Result<(), Error> {
 }
 
 /// Run `invocation` once the current event is handled, as keys, menus and
-/// controls do, noting why if it doesn't run.
+/// controls do, noting why if it doesn't run; then the menus check what
+/// it changed.
 pub fn dispatch(invocation: Invocation, cx: &mut App) {
     cx.defer(move |cx| {
         let command = invocation.command.clone();
@@ -155,15 +190,12 @@ pub fn dispatch(invocation: Invocation, cx: &mut App) {
             Err(err) if err.is_not_found() => log::debug!("{command}: {err}"),
             Err(err) => log::warn!("{command}: {err}"),
         }
+        crate::app::refresh_menus(cx);
     });
 }
 
 /// What `command` changes, aimed at `target`, as it is now: whether Loop
 /// is on, say. Null for a command that changes nothing it can read.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "for the menus and palette to come")
-)]
 pub fn state(command: &str, target: &Target, cx: &mut App) -> Result<Value, Error> {
     let spec = find(command).ok_or_else(|| Error::NoSuchCommand {
         command: command.to_owned(),
@@ -177,10 +209,6 @@ pub fn state(command: &str, target: &Target, cx: &mut App) -> Result<Value, Erro
 
 /// Whether `command` can run now, aimed at `target`: this system has what
 /// it does, and there's what it acts on.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "for the menus and palette to come")
-)]
 pub fn can_run(command: &str, target: &Target, cx: &mut App) -> bool {
     let Some(spec) = find(command) else {
         return false;

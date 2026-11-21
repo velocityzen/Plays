@@ -16,7 +16,8 @@ use gpui::{AnyElement, App, Context, Corner, Div, ElementId, MouseDownEvent, Tas
 use stream_server::{Pick, SubtitleSource};
 
 use super::{PlayerEvent, PlayerView};
-use crate::app::{AudioEngine, SetWindowAudioDevice, ShowOnDisplay, output_kind};
+use crate::api::commands::{output, window as windows};
+use crate::app::{AudioEngine, output_kind};
 use crate::cast::target::FOLLOW_POLL;
 use crate::cast::{Casting, Device, Error, Link, Phase, Request, Shows, SubtitleChoice};
 use crate::media::Source;
@@ -409,7 +410,7 @@ impl PlayerView {
     /// This computer, or each display (`screens`) with the window's
     /// (`here`) checked, and the devices: the one playing checked. A
     /// speaker says it takes only a video's sound. Picking a display puts
-    /// the window full screen there (`ShowOnDisplay`), or plays the tile
+    /// the window full screen there (`window.show_on_display`), or plays the tile
     /// here again while it casts, if the window is on it; Wayland may keep
     /// it on its own display, which the menu says. Then the window's sound
     /// (`render_window_sound`), with `outputs` to pick from.
@@ -444,7 +445,7 @@ impl PlayerView {
             .mx_1()
             .on_click(cx.listener(move |this, _, window, cx| {
                 this.cast_open = false;
-                window.dispatch_action(Box::new(ShowOnDisplay(screen.id)), cx);
+                window.dispatch_action(Box::new(windows::show_on_display(screen.id)), cx);
                 cx.notify();
             }))
         });
@@ -496,7 +497,7 @@ impl PlayerView {
     /// own; then `outputs`, the window's own checked, and listed too while
     /// it isn't connected.
     /// Picking one plays the whole window through it
-    /// (`SetWindowAudioDevice`).
+    /// (`output.set_window_device`).
     fn render_window_sound(
         &self,
         outputs: Vec<DeviceInfo>,
@@ -552,7 +553,7 @@ impl PlayerView {
 fn pick_window_sound(device: Option<AudioDevice>, cx: &mut Context<PlayerView>) -> ClickHandler {
     Box::new(cx.listener(move |view, _, window, cx| {
         view.cast_open = false;
-        window.dispatch_action(Box::new(SetWindowAudioDevice(device.clone())), cx);
+        window.dispatch_action(Box::new(output::set_window_device(device.as_ref())), cx);
         cx.notify();
     }))
 }

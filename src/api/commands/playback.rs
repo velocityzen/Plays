@@ -6,11 +6,10 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use super::done;
-use crate::api::Error;
 use crate::api::args::{Arg, Kind};
 use crate::api::registry::Spec;
 use crate::api::target;
-use crate::hotkeys::Command;
+use crate::api::{Error, Run};
 use crate::settings::Settings;
 
 pub const COMMANDS: &[Spec] = &[
@@ -21,7 +20,8 @@ pub const COMMANDS: &[Spec] = &[
         |player, _, cx| player.play_pause(cx),
     )
     .keywords(&["play", "pause", "resume", "stop"])
-    .hotkey(Command::PlayPause),
+    .setting("play_pause")
+    .keys(&["space", "p"]),
     Spec::tile(
         "playback.seek_forward",
         "Seek Forward",
@@ -32,7 +32,8 @@ pub const COMMANDS: &[Spec] = &[
         },
     )
     .keywords(&["skip", "forward", "jump"])
-    .hotkey(Command::SeekForward),
+    .setting("seek_forward")
+    .keys(&["right"]),
     Spec::tile(
         "playback.seek_backward",
         "Seek Backward",
@@ -43,7 +44,8 @@ pub const COMMANDS: &[Spec] = &[
         },
     )
     .keywords(&["skip", "back", "rewind", "jump"])
-    .hotkey(Command::SeekBackward),
+    .setting("seek_backward")
+    .keys(&["left"]),
     Spec::tile(
         "playback.next_frame",
         "Next Frame",
@@ -51,7 +53,8 @@ pub const COMMANDS: &[Spec] = &[
         |player, _, cx| player.step_frame(1.0, cx),
     )
     .keywords(&["step"])
-    .hotkey(Command::NextFrame),
+    .setting("next_frame")
+    .keys(&["alt-right", ".", ">"]),
     Spec::tile(
         "playback.previous_frame",
         "Previous Frame",
@@ -59,7 +62,8 @@ pub const COMMANDS: &[Spec] = &[
         |player, _, cx| player.step_frame(-1.0, cx),
     )
     .keywords(&["step", "back"])
-    .hotkey(Command::PreviousFrame),
+    .setting("previous_frame")
+    .keys(&["alt-left", ",", "<"]),
     Spec::tile(
         "playback.next_chapter",
         "Next Chapter",
@@ -67,7 +71,8 @@ pub const COMMANDS: &[Spec] = &[
         |player, _, cx| player.next_chapter(cx),
     )
     .keywords(&["skip"])
-    .hotkey(Command::NextChapter),
+    .setting("next_chapter")
+    .keys(&["pagedown"]),
     Spec::tile(
         "playback.previous_chapter",
         "Previous Chapter",
@@ -75,7 +80,8 @@ pub const COMMANDS: &[Spec] = &[
         |player, _, cx| player.previous_chapter(cx),
     )
     .keywords(&["back"])
-    .hotkey(Command::PreviousChapter),
+    .setting("previous_chapter")
+    .keys(&["pageup"]),
     Spec::tile_with(
         "playback.go_to_chapter",
         "Go to Chapter",
@@ -110,7 +116,8 @@ pub const COMMANDS: &[Spec] = &[
         |player, _, cx| player.restart(cx),
     )
     .keywords(&["beginning", "rewind"])
-    .hotkey(Command::Restart),
+    .setting("restart")
+    .keys(&["home"]),
     Spec::tile(
         "playback.previous_file",
         "Previous File",
@@ -118,7 +125,8 @@ pub const COMMANDS: &[Spec] = &[
         |player, _, cx| player.open_neighbor(-1, cx),
     )
     .keywords(&["folder", "episode", "back"])
-    .hotkey(Command::PreviousFile),
+    .setting("previous_file")
+    .keys(&["secondary-left"]),
     Spec::tile(
         "playback.next_file",
         "Next File",
@@ -126,7 +134,8 @@ pub const COMMANDS: &[Spec] = &[
         |player, _, cx| player.open_neighbor(1, cx),
     )
     .keywords(&["folder", "episode", "skip"])
-    .hotkey(Command::NextFile),
+    .setting("next_file")
+    .keys(&["secondary-right"]),
     Spec::tile(
         "playback.toggle_loop",
         "Loop",
@@ -134,7 +143,8 @@ pub const COMMANDS: &[Spec] = &[
         |player, _, cx| player.toggle_loop(cx),
     )
     .keywords(&["repeat"])
-    .hotkey(Command::Loop)
+    .setting("loop")
+    .keys(&["secondary-shift-l"])
     .state(|target, cx| {
         target::read_tile(target, cx, |player, _| json!(player.player().is_looping()))
     }),
@@ -145,7 +155,8 @@ pub const COMMANDS: &[Spec] = &[
         |workspace, _, cx| workspace.toggle_all(cx),
     )
     .keywords(&["every", "play", "pause"])
-    .hotkey(Command::PlayPauseAll),
+    .setting("play_pause_all")
+    .keys(&["shift-space"]),
     Spec::tiles(
         "playback.play_all",
         "Play All",
@@ -167,7 +178,8 @@ pub const COMMANDS: &[Spec] = &[
         |workspace, _, cx| workspace.restart_all(cx),
     )
     .keywords(&["every", "beginning", "rewind"])
-    .hotkey(Command::RestartAll),
+    .setting("restart_all")
+    .keys(&["shift-home"]),
     Spec::tiles(
         "playback.seek_forward_all",
         "Seek All Forward",
@@ -175,7 +187,8 @@ pub const COMMANDS: &[Spec] = &[
         |workspace, _, cx| workspace.seek_all(1.0, cx),
     )
     .keywords(&["every", "skip", "jump"])
-    .hotkey(Command::SeekForwardAll),
+    .setting("seek_forward_all")
+    .keys(&["shift-right"]),
     Spec::tiles(
         "playback.seek_backward_all",
         "Seek All Backward",
@@ -183,7 +196,8 @@ pub const COMMANDS: &[Spec] = &[
         |workspace, _, cx| workspace.seek_all(-1.0, cx),
     )
     .keywords(&["every", "rewind", "jump"])
-    .hotkey(Command::SeekBackwardAll),
+    .setting("seek_backward_all")
+    .keys(&["shift-left"]),
     Spec::tiles(
         "playback.next_frame_all",
         "Next Frame on All",
@@ -191,7 +205,8 @@ pub const COMMANDS: &[Spec] = &[
         |workspace, _, cx| workspace.step_frame_all(1.0, cx),
     )
     .keywords(&["every", "step"])
-    .hotkey(Command::NextFrameAll),
+    .setting("next_frame_all")
+    .keys(&["alt-shift-right"]),
     Spec::tiles(
         "playback.previous_frame_all",
         "Previous Frame on All",
@@ -199,7 +214,8 @@ pub const COMMANDS: &[Spec] = &[
         |workspace, _, cx| workspace.step_frame_all(-1.0, cx),
     )
     .keywords(&["every", "step", "back"])
-    .hotkey(Command::PreviousFrameAll),
+    .setting("previous_frame_all")
+    .keys(&["alt-shift-left"]),
     Spec::tiles(
         "playback.sync_all",
         "Sync All to This Tile",
@@ -208,7 +224,8 @@ pub const COMMANDS: &[Spec] = &[
         |workspace, _, cx| workspace.sync_all(cx),
     )
     .keywords(&["every", "align", "same time"])
-    .hotkey(Command::SyncAll),
+    .setting("sync_all")
+    .keys(&["shift-s"]),
 ];
 
 #[derive(Deserialize)]
@@ -219,4 +236,9 @@ struct Chapter {
 /// How far the seek commands skip.
 fn seek_step(cx: &App) -> f64 {
     f64::from(cx.global::<Settings>().seek_step_seconds)
+}
+
+/// Play the tile in front from the start of chapter `number`, from 1.
+pub fn go_to_chapter(number: usize) -> Run {
+    Run::with("playback.go_to_chapter", json!({"number": number}))
 }

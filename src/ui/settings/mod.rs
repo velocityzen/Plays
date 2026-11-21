@@ -320,7 +320,13 @@ impl Render for SettingsView {
 
         div()
             .id("settings")
-            .key_context("Settings")
+            // Keys that work anywhere leave the ones pressed to record a
+            // shortcut to it.
+            .key_context(if self.recording.is_on() {
+                "Settings Recording"
+            } else {
+                "Settings"
+            })
             .track_focus(&self.focus_handle)
             .on_key_down(
                 cx.listener(|this, event, _, cx| PANES[this.pane].key_down(this, event, cx)),

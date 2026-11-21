@@ -189,10 +189,15 @@ read them or to open them one by one, and play on while a picked one is
 read, showing it once it is. DVD subtitles drawn as a clip plays are
 dropped from the GPU once they are off screen. Unit tests cover finding
 files for a video, reading their names and telling encodings, and the
-shortcuts: no default key used twice, a key moving to the command it is
-given, reading and writing them in the settings file, staying out of text
-fields, how they are shown, and every command's action (and the menu's
-Play All and Pause All) having something that does it. The text field's
+shortcuts: every command that takes keys has them and no other does, no
+default key used twice where it works, each key bound where its command
+works (a player window's not while typing nor elsewhere, ⌘W to the file
+in front there and to the window in front elsewhere, those that work
+anywhere in a window with no context too, but not while Settings records
+keys), a key moving to the command it is given only from one that works
+where it does, reading and writing them in the settings file under the
+names files saved before commands had ids use (every one of which still
+names a command), and how they are shown. The text field's
 tests compose as an IME does: the cursor stays in what is composed,
 counted within it even after other text and wider characters, deleting it
 leaves an empty field to type into, and ranges outside the text are kept
@@ -369,8 +374,9 @@ What the window tests check:
   them both ways; from Settings, they go to the first and the last, and ⌘2
   to the second. With the second closed, the third is ⌘2, one opened next
   is ⌘3, and Ctrl+Tab skips the closed one. The keymap test checks the
-  keys are these in a player window and in Settings, with the default
-  playback shortcuts bound too (none of which may take them); a unit test
+  keys are these in a player window, in an empty one and in Settings, but
+  not while Settings records keys, with every command's default keys
+  bound too (none of which may take them); a unit test
   checks the stepping round, and the Window menu has Next and Previous
   Window.
 - A file closed partway in opens there again; one barely begun starts
@@ -386,6 +392,9 @@ What the window tests check:
   front is in, and follows the tile the mouse is over.
 - Settings' Reset to Defaults asks first and changes nothing on Cancel,
   and picking an output in the Audio menu sets it.
+- Settings → Hotkeys lists every command that takes keys, and none that
+  takes none; a key recorded for Open Files is its, and ⌘O, recorded for
+  Settings, is recorded rather than run and leaves Open Files.
 - Settings opens in the middle of the display the first time, then where
   it was left and at its size, the next launch too (from a folder of the
   test's own), saved as it closes and as the app quits; left on a display
@@ -458,12 +467,14 @@ check:
 
 - Every command has an id of its own, in one of the namespaces and in
   lower case, a title of its own, a description that is a sentence, and
-  its arguments named once; each shortcut in Settings is exactly one
-  command, with that shortcut's keys, on the systems it's on.
-- Every action, from a key, a menu or a button, is a command, given
-  arguments it takes, and what an action carries (a window's number, a
-  chapter, a crop, a device) reaches it as it should (`app::commands`);
-  the keys bound are the commands' (`keymap`).
+  its arguments named once; each that takes keys is saved under a name
+  of its own, and its keys are keys; one that takes none has none.
+- What menus and controls send (a window's number, a display, a chapter,
+  an aspect ratio, a crop, a device to play through or cast to) is a
+  command given arguments it takes, aimed as it may be. Every menu item
+  runs a command, titled as it is, each once but those given arguments;
+  items are checked as their commands' state says, at once after one
+  runs, and enabled only when their commands can run (`menus`).
 - A command aimed at a tile acts on it, not on the one in front: a tile
   named by its id, its position or the end of its id, in a window named by
   its position or in any; positions count in the window in front, and

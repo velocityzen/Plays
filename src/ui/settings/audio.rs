@@ -6,7 +6,8 @@ use gpui::{AnyElement, ClickEvent, Context, Corner, SharedString, Window, div, p
 
 use super::form::{group, percent_slider, row, update_settings};
 use super::{Pane, SettingsView};
-use crate::app::{AudioEngine, Route, SetAudioDevice};
+use crate::api::commands::output;
+use crate::app::{AudioEngine, Route};
 use crate::settings::{AudioDevice, Settings};
 use crate::ui::components::{Button, MenuRow, Panel, Popover, Switch};
 use crate::ui::theme::Theme;
@@ -171,7 +172,7 @@ fn device_menu(s: &Settings, theme: &Theme, cx: &mut Context<SettingsView>) -> i
                 .on_click(cx.listener(move |view, _, window, cx| {
                     view.device_menu = false;
                     // As the Audio menu picks it.
-                    window.dispatch_action(Box::new(SetAudioDevice(device.clone())), cx);
+                    window.dispatch_action(Box::new(output::set_device(device.as_ref())), cx);
                     cx.notify();
                 }))
         })

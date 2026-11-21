@@ -4,10 +4,10 @@ use serde::Deserialize;
 use serde_json::json;
 
 use super::done;
-use crate::api::Error;
 use crate::api::args::{Arg, Kind};
 use crate::api::registry::Spec;
 use crate::api::target;
+use crate::api::{Error, Run};
 use crate::cast::{Casting, Device};
 
 pub const COMMANDS: &[Spec] = &[
@@ -74,4 +74,12 @@ pub const COMMANDS: &[Spec] = &[
 struct To {
     device: String,
     kind: Option<String>,
+}
+
+/// Cast the tile in front to `device`, or play it here again.
+pub fn to(device: Option<&Device>) -> Run {
+    match device {
+        Some(device) => Run::with("cast.to", json!({"device": device.id, "kind": device.kind})),
+        None => Run::command("cast.stop"),
+    }
 }

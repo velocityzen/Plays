@@ -12,8 +12,9 @@ use gpui::{TestAppContext, VisualTestContext};
 use serde_json::json;
 
 use super::casting::wait;
+use crate::api::commands::output;
 use crate::api::{self, Invocation};
-use crate::app::{AudioEngine, Bluetooth, Devices, Local, Paired, Route, SetWindowAudioDevice};
+use crate::app::{AudioEngine, Bluetooth, Devices, Local, Paired, Route};
 use crate::media::AudioOutput;
 use crate::media::output::{DeviceEvent, DeviceInfo, OpenError, Playing};
 use crate::settings::{AudioDevice, Settings};
@@ -222,8 +223,8 @@ fn headphones_paired_are_outputs_and_picking_them_connects_them(cx: &mut TestApp
     assert_eq!(asked(), [RADIO.0], "not once they go away");
 
     // A window picks one connected already, and one not paired.
-    cx.dispatch_action(SetWindowAudioDevice(Some(device(PODS))));
-    cx.dispatch_action(SetWindowAudioDevice(Some(device((
+    cx.dispatch_action(output::set_window_device(Some(&device(PODS))));
+    cx.dispatch_action(output::set_window_device(Some(&device((
         "00-00-5e-00-53-2c",
         "Stranger",
     )))));
@@ -232,7 +233,7 @@ fn headphones_paired_are_outputs_and_picking_them_connects_them(cx: &mut TestApp
     assert_eq!(asked(), [RADIO.0], "nothing to connect");
 
     // And them: the app's sound, waiting for them, plays through them too.
-    cx.dispatch_action(SetWindowAudioDevice(Some(radio)));
+    cx.dispatch_action(output::set_window_device(Some(&radio)));
     wait(&mut cx, "the sound to play through them again", |cx| {
         plays_through(cx, RADIO.1)
     });

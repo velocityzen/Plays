@@ -9,7 +9,6 @@ use super::Error;
 use super::args::{self, Arg};
 use super::commands;
 use super::target::Target;
-use crate::hotkeys::Command;
 use crate::ui::player::PlayerView;
 use crate::ui::workspace::Workspace;
 
@@ -41,6 +40,18 @@ impl Scope {
             Self::Tile => "tile",
         }
     }
+}
+
+/// Where a command's keys work.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Reach {
+    /// In any window, Settings and About too.
+    Anywhere,
+    /// In a player window with files open, typing in a field there too.
+    Files,
+    /// In a player window with files open, but not while typing in a
+    /// field there, where single keys such as space type.
+    NotTyping,
 }
 
 /// A command's arguments, as given, and the command they were given to.
@@ -90,10 +101,16 @@ pub struct Spec {
     pub keywords: &'static [&'static str],
     pub scope: Scope,
     pub args: &'static [Arg],
-    /// Its shortcut in Settings, whose keys can be changed there.
-    pub hotkey: Option<Command>,
-    /// Its keys, if it has no shortcut in Settings.
+    /// The keys it starts out with: `secondary` is ⌘ on macOS and Ctrl
+    /// elsewhere. Settings can change them.
     pub keys: &'static [&'static str],
+    /// The name the settings file keeps its keys under, if not its id:
+    /// that of the shortcut it was before commands had ids.
+    pub setting: Option<&'static str>,
+    pub reach: Reach,
+    /// Whether it must be told what to act on, as it does nothing to what's
+    /// in front; such a command takes no keys of its own.
+    pub needs_target: bool,
     pub run: Run,
     /// What it changes, as it is now: whether Loop is on, say.
     pub state: Option<StateFn>,
@@ -116,8 +133,15 @@ impl Spec {
             keywords: &[],
             scope,
             args: &[],
-            hotkey: None,
             keys: &[],
+            setting: None,
+            // The app's work anywhere; a window's or tile's where there are
+            // files, but not while typing.
+            reach: match scope {
+                Scope::App | Scope::AnyWindow => Reach::Anywhere,
+                Scope::Window | Scope::Tiles | Scope::Tile => Reach::NotTyping,
+            },
+            needs_target: false,
             run,
             state: None,
             available: || true,
@@ -212,13 +236,23 @@ impl Spec {
         self
     }
 
-    pub const fn hotkey(mut self, hotkey: Command) -> Self {
-        self.hotkey = Some(hotkey);
+    pub const fn keys(mut self, keys: &'static [&'static str]) -> Self {
+        self.keys = keys;
         self
     }
 
-    pub const fn keys(mut self, keys: &'static [&'static str]) -> Self {
-        self.keys = keys;
+    pub const fn setting(mut self, setting: &'static str) -> Self {
+        self.setting = Some(setting);
+        self
+    }
+
+    pub const fn reach(mut self, reach: Reach) -> Self {
+        self.reach = reach;
+        self
+    }
+
+    pub const fn needs_target(mut self) -> Self {
+        self.needs_target = true;
         self
     }
 
@@ -239,10 +273,15 @@ impl Spec {
             .map_or(self.id, |(namespace, _)| namespace)
     }
 
-    /// The keys it starts out with: `secondary` is ⌘ on macOS and Ctrl
-    /// elsewhere.
-    pub fn default_keys(&self) -> &'static [&'static str] {
-        self.hotkey.map_or(self.keys, Command::default_keys)
+    /// Whether it can be given keys: it needs no arguments or target, and
+    /// this system has what it does.
+    pub fn takes_keys(&self) -> bool {
+        self.args.is_empty() && !self.needs_target && (self.available)()
+    }
+
+    /// The name the settings file keeps its keys under.
+    pub fn setting_name(&self) -> &'static str {
+        self.setting.unwrap_or(self.id)
     }
 
     /// Whether `target` names what it can act on: nothing, for the app's;
@@ -271,8 +310,8 @@ impl Spec {
             "keywords": self.keywords,
             "namespace": self.namespace(),
             "scope": self.scope.name(),
-            "keys": self.default_keys(),
-            "setting": self.hotkey.map(Command::id),
+            "keys": self.keys,
+            "setting": self.takes_keys().then(|| self.setting_name()),
             "args": self.args.iter().map(Arg::describe).collect::<Vec<_>>(),
             "state": self.state.is_some(),
             "available": (self.available)(),
@@ -290,7 +329,14 @@ pub fn find(id: &str) -> Option<&'static Spec> {
     all().find(|spec| spec.id == id)
 }
 
-/// The command whose shortcut in Settings is `hotkey`.
-pub fn for_hotkey(hotkey: Command) -> Option<&'static Spec> {
-    all().find(|spec| spec.hotkey == Some(hotkey))
+/// `mac` on macOS, else `other`: keys that differ.
+pub const fn on_mac(
+    mac: &'static [&'static str],
+    other: &'static [&'static str],
+) -> &'static [&'static str] {
+    if cfg!(target_os = "macos") {
+        mac
+    } else {
+        other
+    }
 }

@@ -11,9 +11,8 @@ use gpui::{TestAppContext, VisualTestContext, WindowHandle};
 use super::casting::wait;
 use super::casting_to_airplay::{sheet_says, wants_pin};
 use super::open;
-use crate::app::{
-    AudioEngine, Bluetooth, Devices, Local, Route, SetAudioDevice, SetWindowAudioDevice, Speakers,
-};
+use crate::api::commands::output;
+use crate::app::{AudioEngine, Bluetooth, Devices, Local, Route, Speakers};
 use crate::cast::AppPairings;
 use crate::media::AudioOutput;
 use crate::media::output::{OpenError, Playing};
@@ -122,14 +121,14 @@ fn a_speaker_found_is_an_output_and_plays_the_sound_once_picked(cx: &mut TestApp
     assert!(device.id.starts_with("airplay:"), "{}", device.id);
     assert!(speaker.state().packets.is_empty(), "not till it's picked");
 
-    cx.dispatch_action(SetAudioDevice(Some(device)));
+    cx.dispatch_action(output::set_device(Some(&device)));
     wait(&mut cx, "the tone to be heard through it", |cx| {
         plays_through(cx, "Fake Speaker") && heard(&speaker)
     });
     let shown = cx.update(|_, cx| AudioEngine::device_description(cx));
     assert_eq!(shown, "Fake Speaker · 44.1 kHz");
 
-    cx.dispatch_action(SetAudioDevice(None));
+    cx.dispatch_action(output::set_device(None));
     wait(&mut cx, "the sound to come back here", |cx| {
         plays_through(cx, HERE)
     });
@@ -143,7 +142,7 @@ fn a_speaker_going_away_falls_back_as_settings_say_and_is_played_through_once_ba
     let speaker = FakeReceiver::start(Kind::Speaker);
     let (_, mut cx, speakers) = start(cx, &[&speaker], false);
     let device = output(&mut cx, &speaker);
-    cx.dispatch_action(SetAudioDevice(Some(device)));
+    cx.dispatch_action(output::set_device(Some(&device)));
     wait(&mut cx, "it to play through it", |cx| {
         plays_through(cx, "Fake Speaker") && heard(&speaker)
     });
@@ -190,7 +189,7 @@ fn a_tv_wants_its_pin_before_it_plays_the_apps_sound(cx: &mut TestAppContext) {
     let tv = FakeReceiver::start(Kind::Tv { pin: PIN });
     let (window, mut cx, _) = start(cx, &[&tv], false);
     let device = output(&mut cx, &tv);
-    cx.dispatch_action(SetAudioDevice(Some(device)));
+    cx.dispatch_action(output::set_device(Some(&device)));
     pair(window, &mut cx, &tv);
     assert_eq!(
         playing(&mut cx),
@@ -212,7 +211,7 @@ fn a_tv_a_window_plays_through_wants_its_pin_too(cx: &mut TestAppContext) {
     let tv = FakeReceiver::start(Kind::Tv { pin: PIN });
     let (window, mut cx, _) = start(cx, &[&tv], true);
     let device = output(&mut cx, &tv);
-    cx.dispatch_action(SetWindowAudioDevice(Some(device)));
+    cx.dispatch_action(output::set_window_device(Some(&device)));
     pair(window, &mut cx, &tv);
     wait(&mut cx, "the window to play through it once paired", |_| {
         heard(&tv)
@@ -235,7 +234,7 @@ fn a_tv_not_paired_with_is_picked_no_longer_and_the_sound_comes_back_here(cx: &m
     let speaker = FakeReceiver::start(Kind::Speaker);
     let (window, mut cx, _) = start(cx, &[&tv, &speaker], true);
     let device = output(&mut cx, &tv);
-    cx.dispatch_action(SetAudioDevice(Some(device.clone())));
+    cx.dispatch_action(output::set_device(Some(&device)));
     wait(&mut cx, "a sheet to ask for the PIN", |cx| {
         wants_pin(window, cx)
     });
@@ -253,14 +252,14 @@ fn a_tv_not_paired_with_is_picked_no_longer_and_the_sound_comes_back_here(cx: &m
     // the sheet saying so is closed, the window plays through the app's,
     // which plays on through what it picked.
     let other = output(&mut cx, &speaker);
-    cx.dispatch_action(SetAudioDevice(Some(other)));
+    cx.dispatch_action(output::set_device(Some(&other)));
     wait(
         &mut cx,
         "the app's sound to play through the speaker",
         |cx| plays_through(cx, "Fake Speaker"),
     );
     tv.state().refuse_pairing = true;
-    cx.dispatch_action(SetWindowAudioDevice(Some(device)));
+    cx.dispatch_action(output::set_window_device(Some(&device)));
     wait(&mut cx, "the sheet to say why it can't pair", |cx| {
         sheet_says(window, cx).starts_with("Can't pair")
     });
@@ -286,7 +285,7 @@ fn a_tv_asks_for_its_pin_once_and_cancelled_isnt_asked_again(cx: &mut TestAppCon
     let tv = FakeReceiver::start(Kind::Tv { pin: PIN });
     let (window, mut cx, _) = start(cx, &[&tv], false);
     let device = output(&mut cx, &tv);
-    cx.dispatch_action(SetAudioDevice(Some(device)));
+    cx.dispatch_action(output::set_device(Some(&device)));
     wait(&mut cx, "a sheet to ask for the PIN", |cx| {
         wants_pin(window, cx)
     });

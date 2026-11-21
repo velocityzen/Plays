@@ -9,7 +9,6 @@ use serde_json::json;
 
 use super::registry::{self, Scope};
 use super::*;
-use crate::hotkeys::Command;
 use crate::ui::player::PlayerView;
 use crate::ui::settings::SettingsView;
 use crate::ui::testing::{self, fixture};
@@ -59,22 +58,28 @@ fn every_command_has_an_id_of_its_own_a_title_and_a_description() {
         );
         let names: HashSet<&str> = spec.args.iter().map(|arg| arg.name).collect();
         assert_eq!(names.len(), spec.args.len(), "{id}'s arguments");
-        assert!(
-            spec.hotkey.is_none() || spec.keys.is_empty(),
-            "{id}'s keys are its shortcut's"
-        );
         assert_eq!(find(id).map(|found| found.id), Some(id));
     }
-    // Every shortcut in Settings is one command's, whose keys it has.
-    for hotkey in Command::ALL {
-        let commands: Vec<&str> = registry::all()
-            .filter(|spec| spec.hotkey == Some(hotkey))
-            .map(|spec| spec.id)
-            .collect();
-        assert_eq!(commands.len(), 1, "{hotkey:?} is {commands:?}");
-        let spec = for_hotkey(hotkey).unwrap();
-        assert_eq!(spec.default_keys(), hotkey.default_keys());
-        assert_eq!((spec.available)(), hotkey.available(), "{hotkey:?}");
+    // Each command that takes keys is saved under a name of its own, and
+    // its keys are keys.
+    let mut settings = HashSet::new();
+    for spec in registry::all().filter(|spec| spec.takes_keys()) {
+        assert!(
+            settings.insert(spec.setting_name()),
+            "{} twice",
+            spec.setting_name()
+        );
+        for key in spec.keys {
+            assert!(
+                crate::hotkeys::normalize(key).is_some(),
+                "{}'s {key}",
+                spec.id
+            );
+        }
+    }
+    // One that takes none has none.
+    for spec in registry::all().filter(|spec| !spec.takes_keys()) {
+        assert!(spec.keys.is_empty(), "{} takes no keys", spec.id);
     }
     assert!(find("playback.dance").is_none());
 }
@@ -119,6 +124,60 @@ fn describes_each_command() {
     for spec in registry::all() {
         assert_eq!(spec.describe()["id"], spec.id);
     }
+}
+
+#[test]
+fn what_menus_and_controls_send_is_what_their_commands_take() {
+    use super::commands::{cast, output, playback, video, window};
+    use crate::cast::target::{Device, Shows};
+    use crate::settings::AudioDevice;
+    use crate::ui::framing::{ASPECT_RATIOS, CROPS};
+
+    let tv = Device {
+        kind: "Chromecast",
+        id: "living-room".into(),
+        name: "Living Room".into(),
+        shows: Shows::Video,
+        address: "192.0.2.7".parse().unwrap(),
+    };
+    let headphones = AudioDevice {
+        id: "00-00-5e-00-53-01".into(),
+        name: "Headphones".into(),
+    };
+    let sent = [
+        window::focus(3),
+        window::show_on_display(2),
+        playback::go_to_chapter(2),
+        video::set_aspect_ratio(Some(ASPECT_RATIOS[1])),
+        video::set_aspect_ratio(None),
+        video::set_crop(Some(CROPS[1])),
+        video::set_crop(None),
+        output::set_device(Some(&headphones)),
+        output::set_device(None),
+        output::set_window_device(Some(&headphones)),
+        output::set_window_device(None),
+        cast::to(Some(&tv)),
+        cast::to(None),
+    ];
+    for Run(invocation) in sent {
+        let command = &invocation.command;
+        let spec = find(command).unwrap_or_else(|| panic!("no command {command}"));
+        check_args(spec, &invocation.args).unwrap_or_else(|err| panic!("{command}: {err}"));
+        spec.check_target(&invocation.target)
+            .unwrap_or_else(|err| panic!("{command}: {err}"));
+        assert_eq!(invocation.source, Source::Action, "{command}");
+    }
+    assert_eq!(window::focus(3).0.target.window.as_deref(), Some("3"));
+    assert_eq!(
+        cast::to(Some(&tv)).0.args,
+        json!({"device": "living-room", "kind": "Chromecast"})
+    );
+    assert_eq!(cast::to(None).0.command, "cast.stop");
+    assert_eq!(
+        video::set_crop(None).0.args,
+        json!({"crop": null}),
+        "not cropped"
+    );
 }
 
 #[test]

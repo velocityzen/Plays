@@ -29,7 +29,7 @@ test it.
 ```mermaid
 flowchart TB
     subgraph uithread ["UI thread, on gpui"]
-        app["App<br/>src/app: menus, keymap, actions"]
+        app["App<br/>src/app: menus, keymap"]
         api["API<br/>src/api: every command, by name"]
         settings["Settings window<br/>src/ui/settings"]
         subgraph windows ["Windows"]
@@ -144,14 +144,14 @@ Inside `src/`:
 | --- | --- |
 | `main.rs` | Starts the app. |
 | `api/` | Every command Plays has, by name: what each does and takes, and running one on the window or tile named. Every action goes through it. |
-| `app/` | Starting the app, its actions, menus, keymap, audio outputs and the AirPlay speakers and Bluetooth devices among them, keeping the computer awake, smoke runs. |
+| `app/` | Starting the app, its menus, keymap, audio outputs and the AirPlay speakers and Bluetooth devices among them, keeping the computer awake, smoke runs. |
 | `media/` | The playback engine: FFmpeg decoding, the mixers, clocks, subtitles, HDR. |
 | `ui/` | gpui views: windows, tiles, Settings, Picture in Picture, components and theme. |
 | `cast/` | Casting tiles to TVs and speakers. |
 | `settings.rs` | The settings, saved as `plays/settings.json` in the user's config folder. |
 | `progress.rs` | Where each file was when it last played, kept for 30 days in `plays/progress.json`, so it starts there again. |
 | `files.rs` | The folder those two files and the AirPlay pairings are kept in, and writing them whole, so a crash never leaves one half written. |
-| `hotkeys.rs` | The commands shortcuts run, and their keys. |
+| `hotkeys.rs` | The keys commands take, which Settings can change. |
 | `assets.rs` | Icons compiled into the binary, so the app needs no files next to it. |
 
 ## The media pipeline
@@ -474,8 +474,10 @@ flowchart LR
   `cast`, `output`) is a file in `commands/`, a list of `Spec`s: the
   command's id (`playback.toggle_loop`), title, description and keywords,
   what it acts on (the app, a window, every tile in one, or a tile), the
-  arguments it takes, its keys or the shortcut in Settings it is, what it
-  does, and its state (on or off, the chapter) where it has one.
+  arguments it takes, the keys it starts out with and where they work
+  (`Reach`: anywhere, in a window with files, or there but not while
+  typing), what it does, and its state (on or off, the chapter) where it
+  has one.
   `registry` finds them; `args` checks the arguments given against what
   the command takes before it runs, then reads them into a type of the
   command's own; `target` finds the window and tile named: by id, then by
@@ -489,41 +491,44 @@ flowchart LR
   it came from) and answers with JSON or an `Error`, which says what went
   wrong: no such command, arguments it doesn't take, nothing by that name
   or more than one, or that it failed. It updates the window it acts on,
-  so it's called outside any window's update; `api::dispatch`, which
-  actions use, runs it once the event is handled.
-- `src/app/`: starting the app and its own actions (`mod.rs`), the shared
-  audio outputs (`audio`, above), the command each action runs
-  (`commands`: every action, from a key, a menu or a button, becomes an
-  `Invocation` and goes through `api::dispatch`), running something on
-  the window in front once the event is handled (`dispatch`), the keymap
-  (`keymap`: the app's own shortcuts and the playback ones from Settings,
-  bound again whenever they change) and the menu bar (`menus`, set again
-  as outputs, displays or devices to cast to come and go, another is
-  picked, or the tile in front casts, turns out to have no sound, is shaped
-  or cropped, or another tile is in front; a menu named Window, which
-  macOS adds its own window items to, goes from tile to tile and window to
-  window). `windows` numbers the player windows in the order they open, as
-  each `Workspace` is made, for ⌘1 to ⌘9, and steps from the window in
-  front to the next or the one before for Ctrl+Tab and Ctrl+Shift+Tab;
-  those keys are app shortcuts, bound in no key context, so they work in
-  Settings and About too. `awake` keeps the screen awake
+  so it's called outside any window's update; `api::dispatch` runs it once
+  the event is handled. Keys, menu items and the controls that send
+  actions all send one gpui action, `api::Run`, which carries the
+  invocation: `api::register` handles it with `dispatch`, and enables a
+  menu item only when its command can run (`api::can_run`), through the
+  menu validator Plays adds to gpui. A command needs nothing more to take
+  keys or be in a menu.
+- `src/app/`: starting the app (`mod.rs`), the shared audio outputs
+  (`audio`, above), running something on the window in front once the
+  event is handled (`dispatch`), the keymap (`keymap`: every command's
+  keys from Settings, and ⌘1 to ⌘9, bound again whenever they change) and
+  the menu bar (`menus`: commands by id, each item titled as its command,
+  sending its `Run`, checked when its state is on and enabled when it can
+  run; set again after a command runs, as settings change, and as
+  outputs, displays or devices to cast to come and go; a menu named
+  Window, which macOS adds its own window items to, goes from tile to
+  tile and window to window). `windows` numbers the player windows in the
+  order they open, as each `Workspace` is made, for ⌘1 to ⌘9, and steps
+  from the window in front to the next or the one before for Ctrl+Tab and
+  Ctrl+Shift+Tab; those keys work in every window, Settings and About too,
+  but while Settings records a shortcut. `awake` keeps the screen awake
   while a video plays, and the computer while only sound does: a power
   assertion on macOS, the desktop portal's Inhibit on Linux. `smoke` runs
   the real app through scripted scenarios (see
   [CONTRIBUTING.md](CONTRIBUTING.md#smoke-runs)).
-- `src/hotkeys.rs`: the commands shortcuts can run, their default keys,
-  how they are saved in Settings and shown (`⌃⌘F`, `Ctrl+Alt+F`). Each
-  command has a gpui action, bound in the `Workspace` key context so
-  single keys such as space don't fire while typing elsewhere. The keymap
-  is rebuilt from them whenever they change, and the menus show them. Each
-  command is listed once, under its group, with its action, its name in
-  the settings file and its title; a macro (`commands!`) makes the
-  actions, the `Command` enum, the order Settings shows them in, and every
-  table of them from that list. Default keys are a `match` of their own,
-  which must name every command. Each is one command in `src/api`, which
-  names it as its `hotkey`, and its action runs that command: the actions
-  are registered with the route `app::commands` gives them
-  (`register_actions`).
+- `src/hotkeys.rs`: the keys of every command that takes them (one with
+  no arguments, that needs nothing named), which Settings can change, how
+  they are saved and shown (`⌃⌘F`, `Ctrl+Alt+F`), and their key bindings.
+  Each key runs its command's `Run` in the key context its `Reach` gives:
+  a player window's keys in `Workspace && !TextInput`, so space and
+  letters type in a text field; ⌘W and ⌘⇧W, for the file in front, in
+  `Workspace`; and those that work anywhere in `!Recording` (and not
+  `TextInput` for one without ⌘ or Ctrl), so Settings can record them. A
+  key goes to one command of those that work in player windows and one of
+  those that work anywhere; the player window's is bound last, and wins
+  there. The settings file keeps only the keys changed, each under the
+  name the command had before commands had ids (`play_pause`), else its
+  id, and reads either.
 - `src/settings.rs`: the settings, saved as JSON in the user's config
   folder with the version of Plays they're from. Each value is read on
   its own, so one a setting can't take (typed wrong, or from a later
@@ -647,7 +652,10 @@ flowchart LR
   Video, Subtitles, Casting, Screenshots, Hotkeys, Appearance, About) is a
   file of its own with its name and icon for the sidebar; `form` has the
   cards, rows and sliders they are made of, and `file` the settings file's
-  menu at the sidebar's foot. About shows the version and the credits,
+  menu at the sidebar's foot. Hotkeys lists every command that takes keys,
+  a card for each namespace; while it waits for keys to record, its key
+  context has `Recording`, which the keys that work anywhere stay out of.
+  About shows the version and the credits,
   each of which opens to its license; there are hundreds, so they are in a
   list that builds only the rows in view, each drawing its part of the
   card.
@@ -1163,6 +1171,9 @@ control over displays and full screen, and test support. Everything Plays change
   compositor leaves the size to it.
 - Text can be laid out and rasterized into memory, for subtitles in
   screenshots.
+- The app can say which menu items are enabled, as every Plays item sends
+  the same action, and a binding's context such as `!Recording` holds in
+  a window that sets none.
 - Its test platform takes the system's own text system, extra displays,
   and counts activations, and `gpui::render_offscreen` (macOS) draws with
   the real renderer off screen and reads the pixels back, for Plays' tests.

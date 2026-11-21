@@ -1,4 +1,4 @@
-//! Hotkeys: the playback shortcuts, a group for each part of playback.
+//! Hotkeys: every command that takes keys, a group for each namespace.
 //! Click + and press keys to add one.
 
 use gpui::prelude::*;
@@ -6,7 +6,8 @@ use gpui::{AnyElement, Context, KeyDownEvent, Keystroke, SharedString, Window, d
 
 use super::form::{group, row, update_settings};
 use super::{Pane, SettingsView};
-use crate::hotkeys::{self, Command, Group, Hotkeys};
+use crate::api::{self, commands::NAMESPACES};
+use crate::hotkeys::{self, Hotkeys};
 use crate::settings::Settings;
 use crate::ui::components::{Button, ComponentSize, ControlFrame, Icon, Sizable};
 use crate::ui::theme::Theme;
@@ -18,9 +19,17 @@ pub(super) struct HotkeysPane;
 #[derive(Default)]
 pub(super) struct Recording {
     /// The command whose next keystroke becomes one of its shortcuts.
-    command: Option<Command>,
+    command: Option<&'static str>,
     /// What the last shortcut recorded did to another command.
-    note: Option<(Command, SharedString)>,
+    note: Option<(&'static str, SharedString)>,
+}
+
+impl Recording {
+    /// Whether it waits for keys, which keys that work anywhere then leave
+    /// to it.
+    pub(super) fn is_on(&self) -> bool {
+        self.command.is_some()
+    }
 }
 
 impl Pane for HotkeysPane {
@@ -50,12 +59,8 @@ impl Pane for HotkeysPane {
             vec![row(
                 "Default shortcuts",
                 Some(
-                    format!(
-                        "Shortcuts go to the tile last clicked. Click + and press keys to add \
-                         one; menu shortcuts such as {} stay as they are.",
-                        hotkeys::display("secondary-o")
-                    )
-                    .into(),
+                    "Shortcuts go to the tile last clicked. Click + and press keys to add one."
+                        .into(),
                 ),
                 theme,
                 Button::new("restore-hotkeys", "Restore").on_click(|_, _, cx| {
@@ -64,32 +69,34 @@ impl Pane for HotkeysPane {
             )],
         );
         let mut groups = vec![intro];
-        for kind in Group::ALL {
-            let rows = Command::ALL
-                .into_iter()
-                .filter(|command| command.group() == kind && command.available())
-                .map(|command| {
+        for (namespace, title) in NAMESPACES {
+            let rows: Vec<AnyElement> = hotkeys::commands()
+                .filter(|spec| spec.namespace() == namespace)
+                .map(|spec| {
                     let note = view
                         .recording
                         .note
                         .as_ref()
-                        .filter(|(noted, _)| *noted == command)
+                        .filter(|(noted, _)| *noted == spec.id)
                         .map(|(_, note)| note.clone());
                     row(
-                        command.title(),
+                        spec.title,
                         note,
                         theme,
-                        key_chips(view, command, s.hotkeys.keys(command), theme, cx),
+                        key_chips(view, spec.id, s.hotkeys.keys(spec.id), theme, cx),
                     )
                 })
                 .collect();
-            groups.push(group(Some(kind.title()), theme, rows));
+            if !rows.is_empty() {
+                groups.push(group(Some(title), theme, rows));
+            }
         }
         groups
     }
 
-    /// While waiting for a shortcut, the keys pressed become it. Escape
-    /// cancels; the app's own shortcuts (⌘O and so on) never get here.
+    /// While waiting for a shortcut, the keys pressed become it, those that
+    /// work anywhere (⌘O and so on) too, which then stay out of the way
+    /// (the key context has `Recording`). Escape cancels.
     fn key_down(
         &self,
         view: &mut SettingsView,
@@ -118,7 +125,8 @@ impl Pane for HotkeysPane {
         let mut taken = None;
         update_settings(cx, true, |s| taken = s.hotkeys.add(command, &key));
         view.recording.note = taken.map(|from| {
-            let note = format!("{} was for “{}”", hotkeys::display(&key), from.title());
+            let title = api::find(from).map_or(from, |spec| spec.title);
+            let note = format!("{} was for “{}”", hotkeys::display(&key), title);
             (command, SharedString::from(note))
         });
         view.recording.command = None;
@@ -134,7 +142,7 @@ impl Pane for HotkeysPane {
 /// one (or a prompt while waiting for it).
 fn key_chips(
     view: &SettingsView,
-    command: Command,
+    command: &'static str,
     keys: &[String],
     theme: &Theme,
     cx: &mut Context<SettingsView>,
@@ -157,7 +165,7 @@ fn key_chips(
         .max_w(HOTKEY_KEYS_MAX_WIDTH)
         .children(keys.iter().map(|key| {
             let removed = key.clone();
-            chip(format!("{}-{key}", command.id()).into())
+            chip(format!("{command}-{key}").into())
                 .border_color(theme.border)
                 .bg(theme.background)
                 // As little room after the remove button as around it.
@@ -173,7 +181,7 @@ fn key_chips(
                 )
         }))
         .child(if recording {
-            chip(format!("{}-recording", command.id()).into())
+            chip(format!("{command}-recording").into())
                 .border_color(theme.accent)
                 .text_color(theme.accent)
                 .cursor_pointer()
@@ -183,7 +191,8 @@ fn key_chips(
                     cx.notify();
                 }))
         } else {
-            chip(format!("{}-add", command.id()).into())
+            chip(format!("{command}-add").into())
+                .debug_selector(move || format!("hotkey-add-{command}"))
                 .border_color(theme.border)
                 .cursor_pointer()
                 .hover(|style| style.bg(theme.surface_hover))

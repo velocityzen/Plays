@@ -13,7 +13,8 @@ use gpui::{Bounds, Pixels, TestAppContext, VisualTestContext, point, px, size};
 use parking_lot::Mutex;
 
 use super::SettingsView;
-use crate::app::{AudioEngine, SetAudioDevice};
+use crate::api::commands::output;
+use crate::app::AudioEngine;
 use crate::cast::fake::{FakeTarget, KIND};
 use crate::cast::target::{Device, Error, Session};
 use crate::cast::{AppPairings, Casting, Looking, Protocol, Shows, Target};
@@ -21,7 +22,7 @@ use crate::files::Folder;
 use crate::media::output::DeviceInfo;
 use crate::settings::{AudioDevice, PanelLook, Settings};
 use crate::ui::about::AboutView;
-use crate::ui::testing::{self, click, scroll, shows, wait_until};
+use crate::ui::testing::{self, click, press, scroll, shows, wait_until};
 use crate::ui::theme::layout::SETTINGS_WINDOW_SIZE;
 use crate::ui::workspace::forget_settings_place;
 
@@ -265,11 +266,11 @@ fn picking_an_output_in_the_audio_menu_sets_it(cx: &mut TestAppContext) {
         name: "Test Output".into(),
     };
 
-    cx.dispatch_action(SetAudioDevice(Some(device.clone())));
+    cx.dispatch_action(output::set_device(Some(&device)));
     cx.run_until_parked();
     assert_eq!(output(&mut cx), Some(device));
 
-    cx.dispatch_action(SetAudioDevice(None));
+    cx.dispatch_action(output::set_device(None));
     cx.run_until_parked();
     assert_eq!(output(&mut cx), None, "System Default");
 }
@@ -563,4 +564,38 @@ fn about_builds_only_the_credits_in_view(cx: &mut TestAppContext) {
     assert!(shows(&mut settings, "credit-texts"), "the license shows");
     click(&mut settings, "credit-plays");
     assert!(!shows(&mut settings, "credit-texts"), "and closes");
+}
+
+#[gpui::test]
+fn hotkeys_lists_every_command_that_takes_keys_and_records_any_key(cx: &mut TestAppContext) {
+    let (_, mut cx) = testing::start(cx);
+    let mut settings = open_settings(&mut cx);
+    click(&mut settings, "pane-Hotkeys");
+    // Tall enough to show them all.
+    let at = bounds_of(&mut settings).origin;
+    drag_to(&mut settings, Bounds::new(at, size(px(900.), px(12_000.))));
+    let add = |command: &str| -> &'static str {
+        Box::leak(format!("hotkey-add-{command}").into_boxed_str())
+    };
+    let keys = |command: &'static str, cx: &mut VisualTestContext| {
+        cx.update(|_, cx| cx.global::<Settings>().hotkeys.keys(command).to_vec())
+    };
+    for spec in crate::hotkeys::commands() {
+        assert!(shows(&mut settings, add(spec.id)), "{} is listed", spec.id);
+    }
+    assert!(!shows(&mut settings, add("window.focus")), "it takes none");
+
+    // A key for one that works anywhere.
+    let cmd_shift_k = crate::hotkeys::normalize("secondary-shift-k").unwrap();
+    click(&mut settings, add("window.open_files"));
+    press(&mut settings, "secondary-shift-k");
+    assert!(keys("window.open_files", &mut settings).contains(&cmd_shift_k));
+    // While it waits for one, a key that works anywhere is recorded
+    // rather than run (asking for files would fail here), and taken from
+    // the command that had it.
+    let cmd_o = crate::hotkeys::normalize("secondary-o").unwrap();
+    click(&mut settings, add("app.settings"));
+    press(&mut settings, "secondary-o");
+    assert!(keys("app.settings", &mut settings).contains(&cmd_o));
+    assert!(!keys("window.open_files", &mut settings).contains(&cmd_o));
 }

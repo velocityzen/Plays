@@ -1,12 +1,11 @@
-//! The app: starting it, and its own actions. What actions do is in
-//! `commands`, how they reach the window and tile in front in `dispatch`,
-//! their keys in `keymap` and the menu bar in `menus`; going from window to
-//! window is in `windows`.
+//! The app: starting it. Its commands are the API's (`crate::api`), whose
+//! keys are bound in `keymap` and which the menu bar (`menus`) runs;
+//! `dispatch` gets something to the window in front, and going from window
+//! to window is in `windows`.
 
 mod audio;
 mod awake;
 mod bluetooth;
-mod commands;
 mod dispatch;
 mod keymap;
 mod menus;
@@ -20,7 +19,7 @@ use std::time::Duration;
 
 use futures::StreamExt as _;
 use futures::channel::mpsc::UnboundedReceiver;
-use gpui::{App, actions};
+use gpui::App;
 
 pub use audio::{AudioEngine, Route};
 #[cfg(test)]
@@ -34,76 +33,17 @@ pub(crate) use speakers::Speakers;
 pub use speakers::{airplay_id, output_kind};
 pub(crate) use windows::{players as player_windows, step as step_window};
 
-use crate::cast::{self, AppPairings, Casting, Device, Pairings, Protocol};
+use crate::cast::{self, AppPairings, Casting, Pairings, Protocol};
 use crate::files::Folder;
 use crate::media::{Source, picture};
 use crate::progress::{self, Progress};
-use crate::settings::{AudioDevice, Settings};
-use crate::ui::framing::Ratio;
+use crate::settings::Settings;
 use crate::ui::theme::{UiFont, pick_ui_font, refresh_system_colors};
 use crate::ui::workspace::{Workspace, save_place_on_quit};
 use crate::ui::{blackout, displays};
 
 /// How often quitting looks whether the devices cast to have stopped.
 const STOP_POLL: Duration = Duration::from_millis(5);
-
-// The playback ones, which can be rebound, are in `hotkeys`.
-actions!(
-    plays,
-    [
-        About,
-        OpenFiles,
-        OpenUrl,
-        OpenSettings,
-        Quit,
-        CloseFile,
-        CloseWindow,
-        CloseAll,
-        NextWindow,
-        PreviousWindow
-    ]
-);
-
-/// Bring player window `n`, from 0 in the order they opened, to the front.
-#[derive(Clone, PartialEq, Debug, gpui::Action)]
-#[action(namespace = plays, no_json)]
-pub struct GoToWindow(pub usize);
-
-/// Show the picture in front at this aspect ratio, or its own.
-#[derive(Clone, PartialEq, Debug, gpui::Action)]
-#[action(namespace = plays, no_json)]
-pub struct SetAspectRatio(pub Option<Ratio>);
-
-/// Crop the picture in front to this shape, or not at all.
-#[derive(Clone, PartialEq, Debug, gpui::Action)]
-#[action(namespace = plays, no_json)]
-pub struct SetCrop(pub Option<Ratio>);
-
-/// Play through this output device, or the system's default.
-#[derive(Clone, PartialEq, Debug, gpui::Action)]
-#[action(namespace = plays, no_json)]
-pub struct SetAudioDevice(pub Option<AudioDevice>);
-
-/// Play the window in front through this output device instead of the
-/// app's output, or with `None` through the app's output again.
-#[derive(Clone, PartialEq, Debug, gpui::Action)]
-#[action(namespace = plays, no_json)]
-pub struct SetWindowAudioDevice(pub Option<AudioDevice>);
-
-/// Show the window in front full screen on this display (its id).
-#[derive(Clone, PartialEq, Debug, gpui::Action)]
-#[action(namespace = plays, no_json)]
-pub struct ShowOnDisplay(pub u32);
-
-/// Play the tile in front from the start of its chapter of this index.
-#[derive(Clone, PartialEq, Debug, gpui::Action)]
-#[action(namespace = plays, no_json)]
-pub struct GoToChapter(pub usize);
-
-/// Cast the tile in front to this device, or play it on this computer.
-#[derive(Clone, PartialEq, Debug, gpui::Action)]
-#[action(namespace = plays, no_json)]
-pub struct CastTo(pub Option<Device>);
 
 /// `opened` brings the URLs the system asks the app to open.
 pub fn run(cx: &mut App, sources: Vec<Source>, opened: UnboundedReceiver<Vec<String>>) {
@@ -147,7 +87,7 @@ pub fn run(cx: &mut App, sources: Vec<Source>, opened: UnboundedReceiver<Vec<Str
 
 /// What every window needs: `settings`, the audio engine, which `audio`
 /// starts, casting with `protocols` (those Settings have on), the UI font
-/// and colors, and the actions and their keys.
+/// and colors, and the commands, their keys and the menus.
 fn set_up(
     cx: &mut App,
     settings: Settings,
@@ -170,7 +110,7 @@ fn set_up(
     refresh_system_colors(cx);
 
     windows::number(cx);
-    commands::register(cx);
+    crate::api::register(cx);
     keymap::bind_keys(cx);
     keymap::watch_hotkeys(cx);
     menus::watch_settings(cx);

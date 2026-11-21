@@ -1,243 +1,298 @@
-//! The menu bar. Its items show the keys bound to their actions, so the
-//! keymap sets the menus again whenever it changes, and so does the audio
-//! engine as outputs come and go or another is picked, Settings when
-//! floating on top changes, the displays as they come and go or the window
-//! in front moves to another, the devices to cast to as they come and go
-//! or the tile in front casts to one, the output the window in front plays
-//! through as it picks another, and the tile in front's aspect ratio, crop
-//! and chapter as they change or another tile is in front.
+//! The menu bar. Its items are commands (`crate::api`), titled as they
+//! are, checked when what they change is on, as the commands' states say,
+//! and enabled when they can run, as the API says when the menu opens.
+//! Items show their commands' keys, so the keymap sets the menus again
+//! whenever it changes; so does each command run, the audio engine as
+//! outputs come and go, Settings as they change, the displays as they come
+//! and go or the window in front moves to another, the devices to cast to
+//! as they come and go or the tile in front casts to one, and the tile in
+//! front's chapters as another is in front.
+
+use std::collections::BTreeMap;
 
 use gpui::{App, Global, Menu, MenuItem, SystemMenuType};
+use serde_json::{Value, json};
 
+use super::AudioEngine;
 use super::speakers::output_kind;
-use super::{
-    About, AudioEngine, CastTo, CloseAll, CloseFile, CloseWindow, GoToChapter, NextWindow,
-    OpenFiles, OpenSettings, OpenUrl, PreviousWindow, Quit, SetAspectRatio, SetAudioDevice,
-    SetCrop, SetWindowAudioDevice, ShowOnDisplay,
-};
-use crate::api::front_window;
+use crate::api::commands::{cast, output, playback, video, window};
+use crate::api::{self, Run, Target, front_window};
 use crate::cast::{Casting, Device, Shows};
-use crate::hotkeys::*;
 use crate::media::output::DeviceInfo;
-use crate::settings::{AudioDevice, FloatOnTop, Settings};
+use crate::settings::{AudioDevice, Settings};
 use crate::ui::displays::{self, DisplayInfo};
 use crate::ui::framing::{ASPECT_RATIOS, CROPS, Ratio};
 use crate::ui::theme::motion::DISPLAYS_POLL;
 
+/// Set the menu bar as things are now.
 pub(super) fn set_menus(cx: &mut App) {
-    let float_on_top = cx.global::<Settings>().float_on_top;
+    let now = MenuState::now(cx);
+    show(now, cx);
+}
+
+/// Set the menu bar from `state`, which is kept as what it shows.
+fn show(state: MenuState, cx: &mut App) {
+    cx.set_global(state);
+    let menus = menus(cx);
+    cx.set_menus(menus);
+}
+
+/// The menu bar, as it shows things (as they are, before it's set).
+fn menus(cx: &mut App) -> Vec<Menu> {
     let state = cx
         .try_global::<MenuState>()
         .cloned()
         .unwrap_or_else(|| MenuState::now(cx));
-    let outputs = output_menu(
-        AudioEngine::devices(cx),
-        cx.global::<Settings>().audio_output.device.as_ref(),
-        &state,
-    );
-    let window_outputs = window_output_menu(AudioEngine::devices(cx), state.sound.as_ref());
-    cx.set_menus(vec![
-        plays_menu(),
-        file_menu(),
+    let devices = AudioEngine::devices(cx);
+    let picked: Option<AudioDevice> = state.read("output.set_device");
+    let own: Option<AudioDevice> = state.read("output.set_window_device");
+    let outputs = output_menu(devices, picked.as_ref(), &state);
+    let window_outputs = window_output_menu(devices, own.as_ref());
+    vec![
+        plays_menu(&state),
+        file_menu(&state),
         playback_menu(&state),
-        video_menu(float_on_top, &state),
-        audio_menu(outputs, window_outputs),
-        subtitles_menu(),
-        window_menu(),
-    ]);
+        video_menu(&state),
+        audio_menu(outputs, window_outputs, &state),
+        subtitles_menu(&state),
+        window_menu(&state),
+    ]
+}
+
+/// The item for `command`: its title, checked when it's on.
+fn item(command: &'static str, state: &MenuState) -> MenuItem {
+    let title = api::find(command).map_or(command, |spec| spec.title);
+    MenuItem::action(title, Run::command(command)).checked(state.is_on(command))
+}
+
+/// Items for `commands`, a separator for each empty one.
+fn items(commands: &[&'static str], state: &MenuState) -> Vec<MenuItem> {
+    commands
+        .iter()
+        .map(|&command| match command {
+            "" => MenuItem::separator(),
+            command => item(command, state),
+        })
+        .collect()
 }
 
 /// The app's own menu.
-fn plays_menu() -> Menu {
+fn plays_menu(state: &MenuState) -> Menu {
+    let mut items = items(&["app.about", "", "app.settings", ""], state);
+    items.extend([
+        MenuItem::os_submenu("Services", SystemMenuType::Services),
+        MenuItem::separator(),
+        item("app.quit", state),
+    ]);
     Menu {
         name: "Plays".into(),
-        items: vec![
-            MenuItem::action("About Plays", About),
-            MenuItem::separator(),
-            MenuItem::action("Settings…", OpenSettings),
-            MenuItem::separator(),
-            MenuItem::os_submenu("Services", SystemMenuType::Services),
-            MenuItem::separator(),
-            MenuItem::action("Quit Plays", Quit),
-        ],
+        items,
     }
 }
 
 /// Opening and closing files and windows.
-fn file_menu() -> Menu {
+fn file_menu(state: &MenuState) -> Menu {
     Menu {
         name: "File".into(),
-        items: vec![
-            MenuItem::action("Open…", OpenFiles),
-            MenuItem::action("Open URL…", OpenUrl),
-            MenuItem::separator(),
-            MenuItem::action("Close File", CloseFile),
-            MenuItem::action("Close All Files", CloseAll),
-            MenuItem::action("Close Window", CloseWindow),
-        ],
+        items: items(
+            &[
+                "window.open_files",
+                "window.open_url",
+                "",
+                "tile.close",
+                "tile.close_all",
+                "window.close",
+            ],
+            state,
+        ),
     }
 }
 
 /// Playing the tile in front, its chapters, and every tile.
 fn playback_menu(state: &MenuState) -> Menu {
+    let mut menu = items(
+        &[
+            "playback.play_pause",
+            "playback.restart",
+            "playback.toggle_loop",
+            "",
+            "playback.next_frame",
+            "playback.previous_frame",
+            "playback.next_chapter",
+            "playback.previous_chapter",
+            "playback.seek_forward",
+            "playback.seek_backward",
+            "playback.previous_file",
+            "playback.next_file",
+        ],
+        state,
+    );
+    menu.extend(
+        chapter_menu(&state.chapters, state.state("playback.go_to_chapter")).map(MenuItem::submenu),
+    );
+    menu.extend(items(
+        &[
+            "",
+            "playback.play_pause_all",
+            "playback.play_all",
+            "playback.pause_all",
+            "playback.restart_all",
+            "playback.seek_forward_all",
+            "playback.seek_backward_all",
+            "playback.next_frame_all",
+            "playback.previous_frame_all",
+            "playback.sync_all",
+        ],
+        state,
+    ));
     Menu {
         name: "Playback".into(),
-        items: vec![
-            MenuItem::action("Play/Pause", PlayPause),
-            MenuItem::action("Restart", Restart),
-            MenuItem::action("Loop", ToggleLoop),
-            MenuItem::separator(),
-            MenuItem::action("Next Frame", NextFrame),
-            MenuItem::action("Previous Frame", PreviousFrame),
-            MenuItem::action("Next Chapter", NextChapter),
-            MenuItem::action("Previous Chapter", PreviousChapter),
-            MenuItem::action("Seek Forward", SeekForward),
-            MenuItem::action("Seek Backward", SeekBackward),
-            MenuItem::action("Previous File", PreviousFile),
-            MenuItem::action("Next File", NextFile),
-        ]
-        .into_iter()
-        .chain(chapter_menu(&state.chapters, state.chapter).map(MenuItem::submenu))
-        .chain([
-            MenuItem::separator(),
-            MenuItem::action("Play/Pause All", PlayPauseAll),
-            MenuItem::action("Play All", PlayAll),
-            MenuItem::action("Pause All", PauseAll),
-            MenuItem::action("Restart All", RestartAll),
-            MenuItem::action("Seek All Forward", SeekForwardAll),
-            MenuItem::action("Seek All Backward", SeekBackwardAll),
-            MenuItem::action("Next Frame on All", NextFrameAll),
-            MenuItem::action("Previous Frame on All", PreviousFrameAll),
-            MenuItem::action("Sync All to This Tile", SyncAll),
-        ])
-        .collect(),
+        items: menu,
     }
 }
 
 /// The window and its display, and the tile in front's picture.
-fn video_menu(float_on_top: FloatOnTop, state: &MenuState) -> Menu {
+fn video_menu(state: &MenuState) -> Menu {
+    let mut menu = items(
+        &[
+            "window.toggle_full_screen",
+            "window.match_video_size",
+            "tile.toggle_picture_in_picture",
+            "window.toggle_float_on_top",
+            "window.toggle_float_on_top_while_playing",
+        ],
+        state,
+    );
+    menu.push(MenuItem::submenu(display_menu(state)));
+    menu.extend(items(
+        &[
+            "",
+            "video.next_track",
+            "",
+            "video.rotate_right",
+            "video.rotate_left",
+            "video.flip_horizontally",
+            "video.flip_vertically",
+            "",
+        ],
+        state,
+    ));
+    menu.extend([
+        MenuItem::submenu(aspect_menu(state.state("video.set_aspect_ratio"), state)),
+        MenuItem::submenu(crop_menu(state.state("video.set_crop"), state)),
+    ]);
+    menu.extend(items(
+        &[
+            "",
+            "video.reset_picture",
+            "",
+            "video.take_screenshot",
+            "",
+            "tile.toggle_console",
+        ],
+        state,
+    ));
     Menu {
         name: "Video".into(),
-        items: vec![
-            MenuItem::action("Full Screen", ToggleFullScreen),
-            MenuItem::action("Match Video Size", MatchVideoSize),
-            MenuItem::action("Picture in Picture", TogglePictureInPicture),
-            MenuItem::action("Float on Top", ToggleFloatOnTop)
-                .checked(float_on_top == FloatOnTop::Always),
-            MenuItem::action("Float on Top While Playing", ToggleFloatOnTopWhilePlaying)
-                .checked(float_on_top == FloatOnTop::WhilePlaying),
-            MenuItem::submenu(display_menu(state)),
-            MenuItem::separator(),
-            MenuItem::action("Next Video Track", NextVideoTrack),
-            MenuItem::separator(),
-            MenuItem::action("Rotate Right", RotateRight),
-            MenuItem::action("Rotate Left", RotateLeft),
-            MenuItem::action("Flip Horizontally", FlipHorizontally),
-            MenuItem::action("Flip Vertically", FlipVertically),
-            MenuItem::separator(),
-            MenuItem::submenu(aspect_menu(state.aspect)),
-            MenuItem::submenu(crop_menu(state.crop)),
-            MenuItem::separator(),
-            MenuItem::action("Reset Picture", ResetPicture),
-            MenuItem::separator(),
-            MenuItem::action("Take Screenshot", TakeScreenshot),
-            MenuItem::separator(),
-            MenuItem::action("Console", ToggleConsole),
-        ],
+        items: menu,
     }
 }
 
 /// The sound of the tile in front and every tile, and where it plays.
-fn audio_menu(outputs: Menu, window_outputs: Menu) -> Menu {
+fn audio_menu(outputs: Menu, window_outputs: Menu, state: &MenuState) -> Menu {
+    let mut menu = items(
+        &[
+            "audio.volume_up",
+            "audio.volume_down",
+            "audio.toggle_mute",
+            "",
+            "audio.next_track",
+            "",
+            "audio.earlier",
+            "audio.later",
+            "audio.reset_delay",
+            "",
+            "audio.volume_up_all",
+            "audio.volume_down_all",
+            "audio.toggle_mute_all",
+            "",
+        ],
+        state,
+    );
+    menu.extend([
+        MenuItem::submenu(outputs),
+        MenuItem::submenu(window_outputs),
+    ]);
     Menu {
         name: "Audio".into(),
-        items: vec![
-            MenuItem::action("Volume Up", VolumeUp),
-            MenuItem::action("Volume Down", VolumeDown),
-            MenuItem::action("Mute/Unmute", ToggleMute),
-            MenuItem::separator(),
-            MenuItem::action("Next Audio Track", NextAudioTrack),
-            MenuItem::separator(),
-            MenuItem::action("Audio Earlier", AudioEarlier),
-            MenuItem::action("Audio Later", AudioLater),
-            MenuItem::action("Reset Audio Delay", ResetAudioDelay),
-            MenuItem::separator(),
-            MenuItem::action("Volume Up on All", VolumeUpAll),
-            MenuItem::action("Volume Down on All", VolumeDownAll),
-            MenuItem::action("Mute/Unmute All", ToggleMuteAll),
-            MenuItem::separator(),
-            MenuItem::submenu(outputs),
-            MenuItem::submenu(window_outputs),
-        ],
+        items: menu,
     }
 }
 
 /// The subtitles of the tile in front.
-fn subtitles_menu() -> Menu {
+fn subtitles_menu(state: &MenuState) -> Menu {
     Menu {
         name: "Subtitles".into(),
-        items: vec![
-            MenuItem::action("Show/Hide Subtitles", ToggleSubtitles),
-            MenuItem::action("Next Subtitles", NextSubtitleTrack),
-            MenuItem::separator(),
-            MenuItem::action("Bigger", BiggerSubtitles),
-            MenuItem::action("Smaller", SmallerSubtitles),
-            MenuItem::action("Move Up", SubtitlesUp),
-            MenuItem::action("Move Down", SubtitlesDown),
-            MenuItem::separator(),
-            MenuItem::action("Earlier", SubtitlesEarlier),
-            MenuItem::action("Later", SubtitlesLater),
-            MenuItem::action("Reset Delay", ResetSubtitleDelay),
-        ],
+        items: items(
+            &[
+                "subtitles.toggle",
+                "subtitles.next_track",
+                "",
+                "subtitles.bigger",
+                "subtitles.smaller",
+                "subtitles.up",
+                "subtitles.down",
+                "",
+                "subtitles.earlier",
+                "subtitles.later",
+                "subtitles.reset_delay",
+            ],
+            state,
+        ),
     }
 }
 
 /// Going from tile to tile in the window in front, and moving them about.
 /// Named so, macOS adds its own window items to it.
-fn window_menu() -> Menu {
+fn window_menu(state: &MenuState) -> Menu {
     Menu {
         name: "Window".into(),
-        items: vec![
-            MenuItem::action("Focus Left", FocusLeft),
-            MenuItem::action("Focus Right", FocusRight),
-            MenuItem::action("Focus Up", FocusUp),
-            MenuItem::action("Focus Down", FocusDown),
-            MenuItem::action("Focus Previous Tile", FocusPreviousTile),
-            MenuItem::action("Focus Next Tile", FocusNextTile),
-            MenuItem::separator(),
-            MenuItem::action("Move Tile Left", MoveTileLeft),
-            MenuItem::action("Move Tile Right", MoveTileRight),
-            MenuItem::action("Move Tile Up", MoveTileUp),
-            MenuItem::action("Move Tile Down", MoveTileDown),
-            MenuItem::separator(),
-            // ⌘1 to ⌘9 go to a window by its number; macOS lists the
-            // windows below.
-            MenuItem::action("Next Window", NextWindow),
-            MenuItem::action("Previous Window", PreviousWindow),
-        ],
+        items: items(
+            &[
+                "tile.focus.left",
+                "tile.focus.right",
+                "tile.focus.up",
+                "tile.focus.down",
+                "tile.focus.previous",
+                "tile.focus.next",
+                "",
+                "tile.move.left",
+                "tile.move.right",
+                "tile.move.up",
+                "tile.move.down",
+                "",
+                // ⌘1 to ⌘9 go to a window by its number; macOS lists the
+                // windows below.
+                "window.next",
+                "window.previous",
+            ],
+            state,
+        ),
     }
 }
 
-/// Set the menus again when floating on top, which they check, changes.
+/// Check the menus again when Settings change: floating on top, and the
+/// output picked.
 pub(super) fn watch_settings(cx: &mut App) {
-    let mut shown = cx.global::<Settings>().float_on_top;
-    cx.observe_global::<Settings>(move |cx| {
-        let float_on_top = cx.global::<Settings>().float_on_top;
-        if float_on_top != shown {
-            shown = float_on_top;
-            set_menus(cx);
-        }
-    })
-    .detach();
+    cx.observe_global::<Settings>(refresh).detach();
 }
 
 /// What the menus show that changes without them hearing of it: besides
 /// this computer's outputs, Video → Output Device and Audio → Output Device
 /// show the displays, the one the window in front is on, the devices that
-/// show video, the speakers, and the one the tile in front casts to; Audio
-/// → Window Output Device checks the one the window in front plays
-/// through; Video → Aspect Ratio and Crop check the tile in front's, and
-/// Playback → Chapters lists its chapters, checking the one it's in.
+/// show video, the speakers, and the one the tile in front casts to;
+/// Playback → Chapters lists the tile in front's chapters; and what each
+/// command changes, for the window and tile in front, checks its items.
 #[derive(Clone, Default, PartialEq, Debug)]
 struct MenuState {
     displays: Vec<DisplayInfo>,
@@ -246,14 +301,11 @@ struct MenuState {
     /// Those for the tile in front: none when it has no sound.
     speakers: Vec<Device>,
     casting: Option<Device>,
-    /// The device the window in front plays through instead of the app's
-    /// output.
-    sound: Option<AudioDevice>,
-    aspect: Option<Ratio>,
-    crop: Option<Ratio>,
-    /// The tile in front's chapters, by name, and the one it's in.
+    /// The tile in front's chapters, by name.
     chapters: Vec<String>,
-    chapter: Option<usize>,
+    /// The state of each command that has one, as it is for the window
+    /// and tile in front.
+    states: BTreeMap<&'static str, Value>,
 }
 
 impl Global for MenuState {}
@@ -261,32 +313,30 @@ impl Global for MenuState {}
 impl MenuState {
     fn now(cx: &mut App) -> Self {
         let window = front_window(cx);
-        let (front, casting, sound, has_audio, picture, (chapters, chapter)) = window
+        let (front, casting, has_audio, chapters) = window
             .and_then(|handle| {
                 handle
                     .update(cx, |workspace, window, cx| {
                         (
                             displays::of(window, cx),
                             workspace.active_casting(cx),
-                            workspace.sound_device().cloned(),
                             workspace.active_has_audio(cx),
-                            workspace.active_adjustments(cx),
-                            workspace.active_chapters(cx),
+                            workspace.active_chapters(cx).0,
                         )
                     })
                     .ok()
             })
-            .unwrap_or((
-                None,
-                None,
-                None,
-                true,
-                Default::default(),
-                Default::default(),
-            ));
+            .unwrap_or((None, None, true, Vec::new()));
         let (devices, speakers) = Casting::devices_for(cx, has_audio)
             .into_iter()
             .partition(|device| device.shows == Shows::Video);
+        let states = api::all()
+            .filter(|spec| spec.state.is_some())
+            .map(|spec| {
+                let state = api::state(spec.id, &Target::default(), cx);
+                (spec.id, state.unwrap_or(Value::Null))
+            })
+            .collect();
         Self {
             // As last looked at: asking the system is slow on X11, and this
             // is made every second and as the mouse goes between tiles.
@@ -295,12 +345,24 @@ impl MenuState {
             devices,
             speakers,
             casting,
-            sound,
-            aspect: picture.aspect,
-            crop: picture.crop,
             chapters,
-            chapter,
+            states,
         }
+    }
+
+    /// The state of `command`, null for none.
+    fn state(&self, command: &str) -> &Value {
+        self.states.get(command).unwrap_or(&Value::Null)
+    }
+
+    /// Whether `command` is on: its state is true.
+    fn is_on(&self, command: &str) -> bool {
+        *self.state(command) == Value::Bool(true)
+    }
+
+    /// The state of `command`, as `T`, if it is one.
+    fn read<T: serde::de::DeserializeOwned + Default>(&self, command: &str) -> T {
+        serde_json::from_value(self.state(command).clone()).unwrap_or_default()
     }
 }
 
@@ -328,59 +390,68 @@ pub fn refresh(cx: &mut App) {
 fn refresh_outputs(cx: &mut App) {
     let now = MenuState::now(cx);
     if cx.try_global::<MenuState>() != Some(&now) {
-        cx.set_global(now);
-        set_menus(cx);
+        show(now, cx);
     }
 }
 
-/// The tile in front's chapters, the one it's in checked; none for a file
-/// without.
-fn chapter_menu(chapters: &[String], chapter: Option<usize>) -> Option<Menu> {
+/// The tile in front's chapters, the one it's in, `chapter` (from 1),
+/// checked; none for a file without.
+fn chapter_menu(chapters: &[String], chapter: &Value) -> Option<Menu> {
     (!chapters.is_empty()).then(|| Menu {
         name: "Chapters".into(),
         items: chapters
             .iter()
             .enumerate()
             .map(|(index, name)| {
-                MenuItem::action(name.clone(), GoToChapter(index)).checked(chapter == Some(index))
+                let number = index + 1;
+                MenuItem::action(name.clone(), playback::go_to_chapter(number))
+                    .checked(*chapter == json!(number))
             })
             .collect(),
     })
 }
 
-/// The aspect ratios, the tile in front's checked (as the file is, if it
-/// has none of its own).
-fn aspect_menu(aspect: Option<Ratio>) -> Menu {
+/// The aspect ratios, the tile in front's, `aspect` (by name, null as the
+/// file is), checked.
+fn aspect_menu(aspect: &Value, state: &MenuState) -> Menu {
     Menu {
-        name: "Aspect Ratio".into(),
+        name: title("video.set_aspect_ratio").into(),
         items: [(None, "As the File Is")]
             .into_iter()
             .chain(ASPECT_RATIOS.map(|r| (Some(r), r.name)))
             .map(|(ratio, name)| {
-                MenuItem::action(name, SetAspectRatio(ratio)).checked(ratio == aspect)
+                MenuItem::action(name, video::set_aspect_ratio(ratio))
+                    .checked(*aspect == named(ratio))
             })
-            .chain([
-                MenuItem::separator(),
-                MenuItem::action("Next Aspect Ratio", NextAspectRatio),
-            ])
+            .chain(items(&["", "video.next_aspect_ratio"], state))
             .collect(),
     }
 }
 
-/// The crops, the tile in front's checked (none, if it isn't cropped).
-fn crop_menu(crop: Option<Ratio>) -> Menu {
+/// The crops, the tile in front's, `crop` (by name, null for none),
+/// checked.
+fn crop_menu(crop: &Value, state: &MenuState) -> Menu {
     Menu {
-        name: "Crop".into(),
+        name: title("video.set_crop").into(),
         items: [(None, "None")]
             .into_iter()
             .chain(CROPS.map(|r| (Some(r), r.name)))
-            .map(|(ratio, name)| MenuItem::action(name, SetCrop(ratio)).checked(ratio == crop))
-            .chain([
-                MenuItem::separator(),
-                MenuItem::action("Next Crop", NextCrop),
-            ])
+            .map(|(ratio, name)| {
+                MenuItem::action(name, video::set_crop(ratio)).checked(*crop == named(ratio))
+            })
+            .chain(items(&["", "video.next_crop"], state))
             .collect(),
     }
+}
+
+/// A ratio as its command's state says it: by name, or null.
+fn named(ratio: Option<Ratio>) -> Value {
+    json!(ratio.map(|ratio| ratio.name))
+}
+
+/// The title of `command`.
+fn title(command: &'static str) -> &'static str {
+    api::find(command).map_or(command, |spec| spec.title)
 }
 
 /// Every display, the one the window in front is on checked, then the
@@ -397,7 +468,7 @@ fn display_menu(outputs: &MenuState) -> Menu {
         .displays
         .iter()
         .map(|display| {
-            MenuItem::action(display.name.clone(), ShowOnDisplay(display.id))
+            MenuItem::action(display.name.clone(), window::show_on_display(display.id))
                 .checked(casting.is_none() && outputs.front == Some(display.id))
         })
         .collect();
@@ -420,7 +491,7 @@ fn display_menu(outputs: &MenuState) -> Menu {
         .collect();
     items.extend(devices.into_iter().zip(titles).map(|(device, title)| {
         let checked = casting.is_some_and(|casting| casting.is(&device));
-        MenuItem::action(title, CastTo(Some(device))).checked(checked)
+        MenuItem::action(title, cast::to(Some(&device))).checked(checked)
     }));
     Menu {
         name: "Output Device".into(),
@@ -466,7 +537,8 @@ fn output_menu(devices: &[DeviceInfo], picked: Option<&AudioDevice>, outputs: &M
         .map(|device| told_apart(&device.name, Some(device.kind), &names))
         .collect();
     let mut items = vec![
-        MenuItem::action("System Default", SetAudioDevice(None)).checked(here && picked.is_none()),
+        MenuItem::action("System Default", output::set_device(None))
+            .checked(here && picked.is_none()),
         MenuItem::separator(),
     ];
     items.extend(devices.iter().map(|device| {
@@ -476,7 +548,7 @@ fn output_menu(devices: &[DeviceInfo], picked: Option<&AudioDevice>, outputs: &M
             id: device.id.clone(),
             name: device.name.clone(),
         };
-        MenuItem::action(title, SetAudioDevice(Some(device))).checked(checked)
+        MenuItem::action(title, output::set_device(Some(&device))).checked(checked)
     }));
     if let Some(picked) = picked
         && !devices.iter().any(|device| device.id == picked.id)
@@ -484,7 +556,7 @@ fn output_menu(devices: &[DeviceInfo], picked: Option<&AudioDevice>, outputs: &M
         items.push(
             MenuItem::action(
                 format!("{} (Not Connected)", picked.name),
-                SetAudioDevice(Some(picked.clone())),
+                output::set_device(Some(picked)),
             )
             .checked(here),
         );
@@ -498,7 +570,7 @@ fn output_menu(devices: &[DeviceInfo], picked: Option<&AudioDevice>, outputs: &M
             .zip(speaker_titles)
             .map(|(device, title)| {
                 let checked = casting.is_some_and(|casting| casting.is(&device));
-                MenuItem::action(title, CastTo(Some(device))).checked(checked)
+                MenuItem::action(title, cast::to(Some(&device))).checked(checked)
             }),
     );
     Menu {
@@ -512,7 +584,7 @@ fn output_menu(devices: &[DeviceInfo], picked: Option<&AudioDevice>, outputs: &M
 /// own is listed too while it isn't connected, as its sound waits for it.
 fn window_output_menu(devices: &[DeviceInfo], own: Option<&AudioDevice>) -> Menu {
     let mut items = vec![
-        MenuItem::action("Same as the App", SetWindowAudioDevice(None)).checked(own.is_none()),
+        MenuItem::action("Same as the App", output::set_window_device(None)).checked(own.is_none()),
         MenuItem::separator(),
     ];
     let names: Vec<&str> = devices.iter().map(|device| device.name.as_str()).collect();
@@ -523,7 +595,7 @@ fn window_output_menu(devices: &[DeviceInfo], own: Option<&AudioDevice>) -> Menu
             id: device.id.clone(),
             name: device.name.clone(),
         };
-        MenuItem::action(title, SetWindowAudioDevice(Some(device))).checked(checked)
+        MenuItem::action(title, output::set_window_device(Some(&device))).checked(checked)
     }));
     if let Some(own) = own
         && !devices.iter().any(|device| device.id == own.id)
@@ -531,7 +603,7 @@ fn window_output_menu(devices: &[DeviceInfo], own: Option<&AudioDevice>) -> Menu
         items.push(
             MenuItem::action(
                 format!("{} (Not Connected)", own.name),
-                SetWindowAudioDevice(Some(own.clone())),
+                output::set_window_device(Some(own)),
             )
             .checked(true),
         );
@@ -582,9 +654,12 @@ mod tests {
 
     #[test]
     fn lists_the_chapters_checking_the_one_the_tile_is_in() {
-        assert!(chapter_menu(&[], None).is_none(), "none for a file without");
+        assert!(
+            chapter_menu(&[], &Value::Null).is_none(),
+            "none for a file without"
+        );
         let names = ["Opening".to_owned(), "Middle".to_owned()];
-        let menu = chapter_menu(&names, Some(1)).unwrap();
+        let menu = chapter_menu(&names, &json!(2)).unwrap();
         assert_eq!(
             listed(&menu),
             [("Opening".into(), false), ("Middle".into(), true)]
@@ -625,20 +700,24 @@ mod tests {
         assert!(known, "its chapters are known");
         let state = TestAppContext::update(&cx, MenuState::now);
         assert_eq!(state.chapters, ["Opening", "Middle", "End"]);
-        assert_eq!(state.chapter, Some(0));
+        assert_eq!(state.state("playback.go_to_chapter"), &json!(1));
 
-        cx.dispatch_action(GoToChapter(2));
+        cx.dispatch_action(playback::go_to_chapter(3));
         cx.run_until_parked();
-        let shown = cx.update(|_, cx| cx.try_global::<MenuState>().and_then(|state| state.chapter));
-        assert_eq!(shown, Some(2), "at once");
+        let shown = cx.update(|_, cx| {
+            let state = cx.try_global::<MenuState>().cloned().unwrap_or_default();
+            state.state("playback.go_to_chapter").clone()
+        });
+        assert_eq!(shown, json!(3), "at once");
     }
 
     #[test]
     fn the_video_menu_sizes_the_window_for_its_videos() {
-        let menu = video_menu(FloatOnTop::Off, &MenuState::default());
+        let menu = video_menu(&MenuState::default());
         let matches = menu.items.iter().any(|item| match item {
             MenuItem::Action { name, action, .. } => {
-                name == "Match Video Size" && action.partial_eq(&MatchVideoSize)
+                name == "Match Video Size"
+                    && action.partial_eq(&Run::command("window.match_video_size"))
             }
             _ => false,
         });
@@ -647,27 +726,34 @@ mod tests {
 
     #[test]
     fn the_window_menu_goes_to_the_next_window_or_the_one_before() {
-        let menu = window_menu();
-        let has = |title: &str, wanted: &dyn gpui::Action| {
+        let menu = window_menu(&MenuState::default());
+        let has = |title: &str, command: &str| {
             menu.items.iter().any(|item| match item {
-                MenuItem::Action { name, action, .. } => name == title && action.partial_eq(wanted),
+                MenuItem::Action { name, action, .. } => {
+                    name == title && action.partial_eq(&Run::command(command))
+                }
                 _ => false,
             })
         };
-        assert!(has("Next Window", &NextWindow), "no Next Window");
+        assert!(has("Next Window", "window.next"), "no Next Window");
         assert!(
-            has("Previous Window", &PreviousWindow),
+            has("Previous Window", "window.previous"),
             "no Previous Window"
         );
     }
 
     #[test]
     fn checks_the_aspect_ratio_and_crop_of_the_tile_in_front() {
-        assert_eq!(checked(&aspect_menu(None)), ["As the File Is"]);
-        assert_eq!(checked(&aspect_menu(Some(ASPECT_RATIOS[1]))), ["4:3"]);
-        assert_eq!(checked(&crop_menu(None)), ["None"]);
+        let state = MenuState::default();
+        assert_eq!(
+            checked(&aspect_menu(&Value::Null, &state)),
+            ["As the File Is"]
+        );
+        let ratio = ASPECT_RATIOS[1];
+        assert_eq!(checked(&aspect_menu(&json!(ratio.name), &state)), ["4:3"]);
+        assert_eq!(checked(&crop_menu(&Value::Null, &state)), ["None"]);
         let crop = CROPS[CROPS.len() - 1];
-        assert_eq!(checked(&crop_menu(Some(crop))), [crop.name]);
+        assert_eq!(checked(&crop_menu(&json!(crop.name), &state)), [crop.name]);
     }
 
     #[gpui::test]
@@ -700,27 +786,36 @@ mod tests {
         }
         let shown = |cx: &mut VisualTestContext| {
             let state = cx.update(|_, cx| cx.try_global::<MenuState>().cloned());
-            state.map(|state| (state.aspect, state.crop))
+            state.map(|state| {
+                let read = |command| state.state(command).clone();
+                (read("video.set_aspect_ratio"), read("video.set_crop"))
+            })
         };
         let crop = CROPS[0];
+        let ratio = json!(ASPECT_RATIOS[0].name);
+        let none = Value::Null;
 
-        cx.dispatch_action(SetCrop(Some(crop)));
+        cx.dispatch_action(video::set_crop(Some(crop)));
         cx.run_until_parked();
-        assert_eq!(shown(&mut cx), Some((None, Some(crop))));
+        assert_eq!(shown(&mut cx), Some((none.clone(), json!(crop.name))));
 
         testing::hover(&mut cx, "tile-1");
-        assert_eq!(shown(&mut cx), Some((None, None)), "the other tile's");
-        cx.dispatch_action(NextAspectRatio);
+        assert_eq!(
+            shown(&mut cx),
+            Some((none.clone(), none.clone())),
+            "the other tile's"
+        );
+        cx.dispatch_action(Run::command("video.next_aspect_ratio"));
         cx.run_until_parked();
-        assert_eq!(shown(&mut cx), Some((Some(ASPECT_RATIOS[0]), None)));
+        assert_eq!(shown(&mut cx), Some((ratio.clone(), none.clone())));
 
         testing::hover(&mut cx, "tile-0");
-        assert_eq!(shown(&mut cx), Some((None, Some(crop))));
+        assert_eq!(shown(&mut cx), Some((none.clone(), json!(crop.name))));
 
         // Gone to from the keyboard: the other tile's again.
-        cx.dispatch_action(FocusNextTile);
+        cx.dispatch_action(Run::command("tile.focus.next"));
         cx.run_until_parked();
-        assert_eq!(shown(&mut cx), Some((Some(ASPECT_RATIOS[0]), None)));
+        assert_eq!(shown(&mut cx), Some((ratio, none)));
     }
 
     #[test]
@@ -1077,5 +1172,138 @@ mod tests {
         let outputs = TestAppContext::update(&cx, MenuState::now);
         assert!(outputs.speakers.is_empty(), "{:?}", outputs.speakers);
         assert_eq!(outputs.devices.len(), 1, "the TV still");
+    }
+
+    /// Every item in `menus`, submenus' too, with its title.
+    fn every_item(menus: &[Menu]) -> Vec<(String, Box<dyn gpui::Action>, bool)> {
+        fn walk(items: &[MenuItem], found: &mut Vec<(String, Box<dyn gpui::Action>, bool)>) {
+            for item in items {
+                match item {
+                    MenuItem::Action {
+                        name,
+                        action,
+                        checked,
+                        ..
+                    } => found.push((name.to_string(), action.boxed_clone(), *checked)),
+                    MenuItem::Submenu(menu) => walk(&menu.items, found),
+                    _ => {}
+                }
+            }
+        }
+        let mut found = Vec::new();
+        for menu in menus {
+            walk(&menu.items, &mut found);
+        }
+        found
+    }
+
+    /// The command an item runs.
+    fn invocation(action: &dyn gpui::Action) -> api::Invocation {
+        let run = action.as_any().downcast_ref::<Run>();
+        run.expect("items run commands").0.clone()
+    }
+
+    #[gpui::test]
+    fn every_item_runs_a_command_titled_as_it_is(cx: &mut TestAppContext) {
+        let (window, mut cx) = testing::start(cx);
+        window
+            .update(&mut cx, |workspace, _, cx| {
+                workspace.open_paths(vec![testing::fixture("clip-chapters.mkv")], cx)
+            })
+            .unwrap();
+        let known = testing::wait_until(&mut cx, |cx| {
+            let state = TestAppContext::update(cx, MenuState::now);
+            !state.chapters.is_empty()
+        });
+        assert!(known, "its chapters are known");
+        let items = TestAppContext::update(&cx, |cx| {
+            let state = MenuState::now(cx);
+            cx.set_global(state);
+            every_item(&menus(cx))
+        });
+
+        let mut commands = std::collections::HashSet::new();
+        for (name, action, _) in &items {
+            let invocation = invocation(&**action);
+            let spec = api::find(&invocation.command)
+                .unwrap_or_else(|| panic!("{name}: no command {}", invocation.command));
+            api::check_args(spec, &invocation.args).unwrap_or_else(|err| panic!("{name}: {err}"));
+            if spec.args.is_empty() {
+                assert_eq!(name, spec.title, "{}", spec.id);
+            }
+            commands.insert(spec.id);
+        }
+        // Each command once, but those with arguments, given each.
+        let takes_args = |action: &dyn gpui::Action| {
+            let command = invocation(action).command;
+            !api::find(&command).unwrap().args.is_empty()
+        };
+        let plain = items
+            .iter()
+            .filter(|(_, action, _)| !takes_args(&**action))
+            .count();
+        let with_args: std::collections::HashSet<_> = items
+            .iter()
+            .filter(|(_, action, _)| takes_args(&**action))
+            .map(|(_, action, _)| invocation(&**action).command)
+            .collect();
+        assert_eq!(plain + with_args.len(), commands.len(), "one item each");
+        for command in [
+            "playback.go_to_chapter",
+            "video.set_aspect_ratio",
+            "video.set_crop",
+            "output.set_device",
+            "output.set_window_device",
+            "window.show_on_display",
+        ] {
+            assert!(commands.contains(command), "no item runs {command}");
+        }
+    }
+
+    #[gpui::test]
+    fn checks_what_is_on_and_enables_what_can_run(cx: &mut TestAppContext) {
+        let (window, mut cx) = testing::start(cx);
+        let enabled = |command: &str, cx: &mut TestAppContext| {
+            TestAppContext::update(cx, |cx| cx.is_menu_action_enabled(&Run::command(command)))
+        };
+        // As the menu bar was last set.
+        let checked = |title: &str, cx: &mut TestAppContext| {
+            let items = TestAppContext::update(cx, |cx| {
+                assert!(cx.try_global::<MenuState>().is_some(), "the menus are set");
+                every_item(&menus(cx))
+            });
+            items
+                .into_iter()
+                .find(|(name, _, _)| name == title)
+                .is_some_and(|(_, _, checked)| checked)
+        };
+        // An empty window: nothing to play.
+        assert!(!enabled("playback.play_pause", &mut cx));
+        assert!(!enabled("tile.close", &mut cx));
+        assert!(enabled("window.open_files", &mut cx));
+        assert!(enabled("app.quit", &mut cx));
+
+        window
+            .update(&mut cx, |workspace, _, cx| {
+                workspace.open_paths(vec![testing::fixture("clip.mp4")], cx)
+            })
+            .unwrap();
+        let opened = testing::wait_until(&mut cx, |cx| enabled("playback.play_pause", cx));
+        assert!(opened, "a file to play");
+        assert!(enabled("tile.close", &mut cx));
+        assert_eq!(
+            enabled("tile.toggle_picture_in_picture", &mut cx),
+            cfg!(target_os = "macos")
+        );
+
+        assert!(!checked("Loop", &mut cx));
+        cx.dispatch_action(Run::command("playback.toggle_loop"));
+        cx.run_until_parked();
+        assert!(checked("Loop", &mut cx), "at once");
+        assert!(!checked("Float on Top", &mut cx));
+        cx.dispatch_action(Run::command("window.toggle_float_on_top"));
+        cx.run_until_parked();
+        assert!(checked("Float on Top", &mut cx));
+        assert!(!checked("Float on Top While Playing", &mut cx));
     }
 }

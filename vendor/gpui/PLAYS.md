@@ -170,6 +170,19 @@ item for an action can be `checked(true)`, which macOS shows with a check
 mark (`setState:`), for the output device picked in the Audio menu. Other
 platforms keep the flag and show nothing.
 
+`src/app.rs` and `src/platform/app_menu.rs`: the app can say whether menu
+items are enabled (`App::validate_menu_actions_with`), which
+`App::is_menu_action_enabled` asks first. Plays' keys and menus all
+dispatch one action, which carries the command to run, and a globally
+handled action is otherwise always available; the validator asks Plays'
+API whether that command can run now.
+
+`src/keymap/context.rs`: a binding's context that holds of an empty
+context, such as `!Recording`, holds in a window that sets no context, as
+a binding without one does; before, any context failed there. Plays binds
+the keys that work anywhere so (but while Settings records keys), and an
+empty player window sets none.
+
 `src/platform/test/window.rs`: a test window's `window_handle` returns
 `HandleError::Unavailable` instead of panicking, so Plays' views, whose
 native helpers give up on errors, can run in `#[gpui::test]`s. Its

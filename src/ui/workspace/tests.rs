@@ -22,9 +22,9 @@ use gpui::{
 
 use super::place::Place;
 use super::{TOOLBAR_SPACE, Workspace};
+use crate::api::Run;
+use crate::api::commands::window::show_on_display;
 use crate::api::{self, Invocation};
-use crate::app::ShowOnDisplay;
-use crate::hotkeys::{MatchVideoSize, ToggleFloatOnTop, ToggleFloatOnTopWhilePlaying};
 use crate::media::tracks::TrackKind;
 use crate::settings::{FloatOnTop, FullScreen, PanelLook, Settings};
 use crate::ui::pip::PipEvent;
@@ -118,7 +118,7 @@ fn the_window_takes_its_videos_size_again_from_the_keys_or_the_menu(cx: &mut Tes
     let (window, mut cx) = testing::start(cx);
     let size_now = |cx: &mut VisualTestContext| cx.update(|window, _| window.bounds().size);
     // Empty, it has no videos to match; only the menu reaches it.
-    cx.dispatch_action(MatchVideoSize);
+    cx.dispatch_action(Run::command("window.match_video_size"));
     cx.run_until_parked();
     assert_eq!(size_now(&mut cx), WINDOW_SIZE, "empty as it was");
 
@@ -143,7 +143,7 @@ fn the_window_takes_its_videos_size_again_from_the_keys_or_the_menu(cx: &mut Tes
     assert_eq!(size_now(&mut cx), fitted, "from the keys");
 
     cx.simulate_resize(resized);
-    cx.dispatch_action(MatchVideoSize);
+    cx.dispatch_action(Run::command("window.match_video_size"));
     cx.run_until_parked();
     assert_eq!(size_now(&mut cx), fitted, "from the menu");
 
@@ -586,7 +586,7 @@ fn floats_on_top_always_or_while_playing(cx: &mut TestAppContext) {
 
     // From the Video menu, with Settings floating along so they don't
     // open under the player.
-    cx.dispatch_action(ToggleFloatOnTopWhilePlaying);
+    cx.dispatch_action(Run::command("window.toggle_float_on_top_while_playing"));
     assert_eq!(
         cx.update(|_, cx| cx.global::<Settings>().float_on_top),
         FloatOnTop::WhilePlaying
@@ -605,10 +605,10 @@ fn floats_on_top_always_or_while_playing(cx: &mut TestAppContext) {
     assert!(paused);
     assert_eq!(on_top(&mut cx), (false, false), "paused");
 
-    cx.dispatch_action(ToggleFloatOnTop);
+    cx.dispatch_action(Run::command("window.toggle_float_on_top"));
     assert_eq!(on_top(&mut cx), (true, true), "always, though paused");
 
-    cx.dispatch_action(ToggleFloatOnTop);
+    cx.dispatch_action(Run::command("window.toggle_float_on_top"));
     assert_eq!(
         cx.update(|_, cx| cx.global::<Settings>().float_on_top),
         FloatOnTop::Off,
@@ -833,7 +833,7 @@ fn leaving_full_screen_on_another_display_goes_back_where_it_was(cx: &mut TestAp
     };
     let here = cx.update(|_, cx| Workspace::last_place(cx));
 
-    cx.dispatch_action(ShowOnDisplay(second));
+    cx.dispatch_action(show_on_display(second));
     assert!(away(&mut cx), "full screen on the other display");
     assert!(cx.update(|window, _| window.is_fullscreen()));
 
@@ -939,14 +939,14 @@ fn output_device_shows_the_window_full_screen_on_a_display(cx: &mut TestAppConte
         cx.update(|window, _| window.is_fullscreen())
     };
 
-    cx.dispatch_action(ShowOnDisplay(here));
+    cx.dispatch_action(show_on_display(here));
     assert!(full_screen(&mut cx), "full screen on the display it is on");
-    cx.dispatch_action(ShowOnDisplay(here));
+    cx.dispatch_action(show_on_display(here));
     assert!(full_screen(&mut cx), "and still, picked again");
 
     // Another display: out of full screen here, then in again there.
     let second = u32::from(cx.add_display(size(px(2560.), px(1440.))));
-    cx.dispatch_action(ShowOnDisplay(second));
+    cx.dispatch_action(show_on_display(second));
     assert!(full_screen(&mut cx), "full screen again after the move");
     let (moving, on) = (
         window
@@ -1012,7 +1012,7 @@ fn a_display_gone_on_the_way_leaves_the_window_where_it_was(cx: &mut TestAppCont
     // Picked from a menu that still had it, once it was unplugged: out of
     // full screen here, with nowhere to go on to.
     cx.remove_display(second);
-    cx.dispatch_action(ShowOnDisplay(u32::from(second)));
+    cx.dispatch_action(show_on_display(u32::from(second)));
     cx.run_until_parked();
 
     let (full_screen, on) =
@@ -1057,7 +1057,7 @@ fn the_cast_menu_puts_the_window_full_screen_on_a_display(cx: &mut TestAppContex
 fn a_tile_alone_expands_to_full_screen_while_it_floats(cx: &mut TestAppContext) {
     let (window, mut cx) = testing::start(cx);
     open(window, &mut cx, &["clip.mp4"], true);
-    cx.dispatch_action(ToggleFloatOnTopWhilePlaying);
+    cx.dispatch_action(Run::command("window.toggle_float_on_top_while_playing"));
     let full_screen = |cx: &mut VisualTestContext| {
         cx.run_until_parked();
         cx.update(|window, _| window.is_fullscreen())

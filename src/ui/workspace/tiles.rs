@@ -10,7 +10,6 @@ use crate::cast::Device;
 use crate::progress::{self, Note};
 use crate::settings::AudioDevice;
 use crate::ui::displays;
-use crate::ui::framing::Adjustments;
 use crate::ui::player::{PlayerEvent, PlayerView, TileLayout};
 use crate::ui::theme::layout::{
     AUDIO_WINDOW_SIZE, VIDEO_WINDOW_SIZE, WINDOW_MIN_SIZE, WINDOW_SIZE,
@@ -203,13 +202,6 @@ impl Workspace {
                 }
             })
             .max()
-            .unwrap_or_default()
-    }
-
-    /// How the tile shortcuts go to is turned, shaped and cropped.
-    pub fn active_adjustments(&self, cx: &App) -> Adjustments {
-        self.active_view()
-            .map(|view| view.read(cx).adjustments())
             .unwrap_or_default()
     }
 

@@ -658,7 +658,6 @@ mod tests {
     use gpui::TestAppContext;
 
     use super::*;
-    use crate::hotkeys::Command;
 
     /// A settings file of a test's own, holding `text`.
     fn file(name: &str, text: &str) -> PathBuf {
@@ -692,10 +691,10 @@ mod tests {
         assert_eq!(settings.subtitles.color, default.subtitles.color);
         assert_eq!(settings.subtitles.size, 1.5);
         assert_eq!(
-            settings.hotkeys.keys(Command::PlayPause),
-            default.hotkeys.keys(Command::PlayPause)
+            settings.hotkeys.keys("playback.play_pause"),
+            default.hotkeys.keys("playback.play_pause")
         );
-        assert_eq!(settings.hotkeys.keys(Command::Loop), ["cmd-l"]);
+        assert_eq!(settings.hotkeys.keys("playback.toggle_loop"), ["cmd-l"]);
         assert_eq!(kept_aside(&path).as_deref(), Some(text), "the file kept");
         let Ok(Value::Object(fields)) = serde_json::from_str(text) else {
             panic!("an object");

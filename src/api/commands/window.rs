@@ -7,12 +7,11 @@ use serde::Deserialize;
 use serde_json::json;
 
 use super::done;
-use crate::api::Error;
 use crate::api::args::{Arg, Kind};
-use crate::api::registry::{Args, Outcome, Scope, Spec};
+use crate::api::registry::{Args, Outcome, Reach, Scope, Spec, on_mac};
 use crate::api::target::{self, Target};
+use crate::api::{Error, Invocation, Run, Source};
 use crate::app::step_window;
-use crate::hotkeys::Command;
 use crate::settings::{FloatOnTop, Settings};
 
 pub const COMMANDS: &[Spec] = &[
@@ -26,7 +25,9 @@ pub const COMMANDS: &[Spec] = &[
         },
     )
     .keywords(&["file", "folder", "add", "play"])
-    .keys(&["secondary-o"]),
+    .keys(&["secondary-o"])
+    // An empty window has no files for keys to need.
+    .reach(Reach::Anywhere),
     Spec::window(
         "window.open_url",
         "Open URL…",
@@ -37,7 +38,8 @@ pub const COMMANDS: &[Spec] = &[
         },
     )
     .keywords(&["stream", "link", "network", "http", "rtsp"])
-    .keys(&["secondary-shift-o"]),
+    .keys(&["secondary-shift-o"])
+    .reach(Reach::Anywhere),
     Spec::custom(
         "window.close",
         "Close Window",
@@ -55,7 +57,9 @@ pub const COMMANDS: &[Spec] = &[
          they opened.",
         |_, window, _| window.activate_window(),
     )
-    .keywords(&["switch", "show", "raise"]),
+    .keywords(&["switch", "show", "raise"])
+    // The window in front is in front already; ⌘1 to ⌘9 name theirs.
+    .needs_target(),
     Spec::app(
         "window.next",
         "Next Window",
@@ -79,7 +83,8 @@ pub const COMMANDS: &[Spec] = &[
         |_, window, _| window.toggle_fullscreen(),
     )
     .keywords(&["enter", "exit", "maximize"])
-    .hotkey(Command::FullScreen)
+    .setting("full_screen")
+    .keys(on_mac(&["ctrl-cmd-f", "f"], &["f11", "f"]))
     .state(|target, cx| {
         target::in_window(target, cx, |_, window, _| Ok(json!(window.is_fullscreen())))
     }),
@@ -93,7 +98,8 @@ pub const COMMANDS: &[Spec] = &[
             }
         },
     )
-    .hotkey(Command::ExitFullScreen),
+    .setting("exit_full_screen")
+    .keys(&["escape"]),
     Spec::window(
         "window.match_video_size",
         "Match Video Size",
@@ -102,7 +108,8 @@ pub const COMMANDS: &[Spec] = &[
         |workspace, window, cx| workspace.match_video_size(window, cx),
     )
     .keywords(&["fit", "resize", "actual size"])
-    .hotkey(Command::MatchVideoSize),
+    .setting("match_video_size")
+    .keys(&["secondary-alt-0"]),
     Spec::app(
         "window.toggle_float_on_top",
         "Float on Top",
@@ -110,7 +117,7 @@ pub const COMMANDS: &[Spec] = &[
         |cx| toggle_float_on_top(FloatOnTop::Always, cx),
     )
     .keywords(&["pin", "always on top", "above"])
-    .hotkey(Command::FloatOnTop)
+    .setting("float_on_top")
     .state(|_, cx| Ok(json!(floats(FloatOnTop::Always, cx)))),
     Spec::app(
         "window.toggle_float_on_top_while_playing",
@@ -119,7 +126,7 @@ pub const COMMANDS: &[Spec] = &[
         |cx| toggle_float_on_top(FloatOnTop::WhilePlaying, cx),
     )
     .keywords(&["pin", "always on top", "above"])
-    .hotkey(Command::FloatOnTopWhilePlaying)
+    .setting("float_on_top_while_playing")
     .state(|_, cx| Ok(json!(floats(FloatOnTop::WhilePlaying, cx)))),
     Spec::window_with(
         "window.show_on_display",
@@ -167,4 +174,17 @@ fn toggle_float_on_top(mode: FloatOnTop, cx: &mut App) {
 
 fn floats(mode: FloatOnTop, cx: &App) -> bool {
     cx.global::<Settings>().float_on_top == mode
+}
+
+/// Bring player window `number`, from 1 in the order they opened, to the
+/// front.
+pub fn focus(number: usize) -> Run {
+    Run(Invocation::new("window.focus")
+        .in_window(number.to_string())
+        .from(Source::Action))
+}
+
+/// Show the window in front full screen on the display `id`.
+pub fn show_on_display(id: u32) -> Run {
+    Run::with("window.show_on_display", json!({"display": id}))
 }

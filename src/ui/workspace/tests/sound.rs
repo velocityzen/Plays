@@ -7,7 +7,9 @@ use std::sync::Arc;
 use gpui::{TestAppContext, VisualTestContext, WindowHandle, px, size};
 
 use super::open;
-use crate::app::{AudioEngine, SetWindowAudioDevice, ShowOnDisplay};
+use crate::api::commands::output;
+use crate::api::commands::window::show_on_display;
+use crate::app::AudioEngine;
 use crate::cast::fake::FakeTarget;
 use crate::cast::{Casting, Shows};
 use crate::media::Mixer;
@@ -117,7 +119,7 @@ fn a_window_plays_through_an_output_of_its_own(cx: &mut TestAppContext) {
     assert_eq!(outputs(&mut cx), 1, "one output for both");
 
     // Back to the app's output: the other window keeps the device.
-    cx.dispatch_action(SetWindowAudioDevice(None));
+    cx.dispatch_action(output::set_window_device(None));
     cx.run_until_parked();
     let (mixers, device) = sound(window, &cx);
     assert_eq!(device, None);
@@ -145,7 +147,7 @@ fn away(window: WindowHandle<Workspace>, cx: &mut VisualTestContext) -> bool {
 /// Have Output Device send the window full screen to display `to`.
 #[track_caller]
 fn send(window: WindowHandle<Workspace>, to: u32, cx: &mut VisualTestContext) {
-    cx.dispatch_action(ShowOnDisplay(to));
+    cx.dispatch_action(show_on_display(to));
     assert!(away(window, cx), "full screen on the other display");
 }
 
@@ -209,7 +211,7 @@ fn a_window_sent_to_a_display_plays_through_its_speakers_until_it_comes_back(
 
     // Full screen where it is, the sound stays.
     let here = cx.update(|window, cx| displays::of(window, cx)).unwrap();
-    cx.dispatch_action(ShowOnDisplay(here));
+    cx.dispatch_action(show_on_display(here));
     cx.run_until_parked();
     assert!(cx.update(|window, _| window.is_fullscreen()));
     assert_eq!(playing_through(&mut cx), None);
@@ -217,7 +219,7 @@ fn a_window_sent_to_a_display_plays_through_its_speakers_until_it_comes_back(
     cx.run_until_parked();
 
     // An output picked for it, it keeps.
-    cx.dispatch_action(SetWindowAudioDevice(Some(AudioDevice {
+    cx.dispatch_action(output::set_window_device(Some(&AudioDevice {
         id: "desk".into(),
         name: "Desk".into(),
     })));
@@ -227,10 +229,10 @@ fn a_window_sent_to_a_display_plays_through_its_speakers_until_it_comes_back(
     assert_eq!(playing_through(&mut cx).as_deref(), Some("Desk"));
 
     // An output picked while there, it keeps coming back.
-    cx.dispatch_action(SetWindowAudioDevice(None));
+    cx.dispatch_action(output::set_window_device(None));
     send(window, den, &mut cx);
     assert_eq!(playing_through(&mut cx).as_ref(), Some(&den_tv));
-    cx.dispatch_action(SetWindowAudioDevice(Some(AudioDevice {
+    cx.dispatch_action(output::set_window_device(Some(&AudioDevice {
         id: "desk".into(),
         name: "Desk".into(),
     })));
@@ -239,7 +241,7 @@ fn a_window_sent_to_a_display_plays_through_its_speakers_until_it_comes_back(
     assert_eq!(playing_through(&mut cx).as_deref(), Some("Desk"));
 
     // Settings say not to.
-    cx.dispatch_action(SetWindowAudioDevice(None));
+    cx.dispatch_action(output::set_window_device(None));
     cx.update(|_, cx| Settings::update(cx, false, |s| s.sound_follows_display = false));
     send(window, attic, &mut cx);
     assert_eq!(playing_through(&mut cx), None);

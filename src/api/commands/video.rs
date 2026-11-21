@@ -5,10 +5,10 @@ use serde::Deserialize;
 use serde_json::json;
 
 use super::done;
+use crate::api::Run;
 use crate::api::args::{Arg, Kind};
-use crate::api::registry::Spec;
+use crate::api::registry::{Spec, on_mac};
 use crate::api::target;
-use crate::hotkeys::Command;
 use crate::media::tracks::TrackKind;
 use crate::ui::framing::{ASPECT_RATIOS, CROPS, Ratio};
 
@@ -20,7 +20,8 @@ pub const COMMANDS: &[Spec] = &[
         |player, _, cx| player.next_track(TrackKind::Video, cx),
     )
     .keywords(&["angle", "stream"])
-    .hotkey(Command::NextVideoTrack),
+    .setting("next_video_track")
+    .keys(on_mac(&["ctrl-cmd-v"], &["ctrl-alt-v"])),
     Spec::tile(
         "video.rotate_right",
         "Rotate Right",
@@ -28,7 +29,8 @@ pub const COMMANDS: &[Spec] = &[
         |player, _, cx| player.rotate(1, cx),
     )
     .keywords(&["turn", "clockwise", "orientation"])
-    .hotkey(Command::RotateRight),
+    .setting("rotate_right")
+    .keys(&["secondary-r"]),
     Spec::tile(
         "video.rotate_left",
         "Rotate Left",
@@ -36,7 +38,8 @@ pub const COMMANDS: &[Spec] = &[
         |player, _, cx| player.rotate(-1, cx),
     )
     .keywords(&["turn", "counterclockwise", "orientation"])
-    .hotkey(Command::RotateLeft),
+    .setting("rotate_left")
+    .keys(&["secondary-l"]),
     Spec::tile(
         "video.flip_horizontally",
         "Flip Horizontally",
@@ -44,7 +47,8 @@ pub const COMMANDS: &[Spec] = &[
         |player, _, cx| player.flip(true, cx),
     )
     .keywords(&["mirror"])
-    .hotkey(Command::FlipHorizontally),
+    .setting("flip_horizontally")
+    .keys(&["secondary-shift-h"]),
     Spec::tile(
         "video.flip_vertically",
         "Flip Vertically",
@@ -52,7 +56,8 @@ pub const COMMANDS: &[Spec] = &[
         |player, _, cx| player.flip(false, cx),
     )
     .keywords(&["mirror", "upside down"])
-    .hotkey(Command::FlipVertically),
+    .setting("flip_vertically")
+    .keys(&["secondary-shift-v"]),
     Spec::tile(
         "video.next_aspect_ratio",
         "Next Aspect Ratio",
@@ -60,7 +65,8 @@ pub const COMMANDS: &[Spec] = &[
         |player, _, cx| player.next_aspect_ratio(cx),
     )
     .keywords(&["shape", "stretch"])
-    .hotkey(Command::NextAspectRatio),
+    .setting("next_aspect_ratio")
+    .keys(&["a"]),
     Spec::tile_with(
         "video.set_aspect_ratio",
         "Aspect Ratio",
@@ -89,7 +95,8 @@ pub const COMMANDS: &[Spec] = &[
         |player, _, cx| player.next_crop(cx),
     )
     .keywords(&["cut", "black bars", "zoom"])
-    .hotkey(Command::NextCrop),
+    .setting("next_crop")
+    .keys(&["c"]),
     Spec::tile_with(
         "video.set_crop",
         "Crop",
@@ -118,7 +125,8 @@ pub const COMMANDS: &[Spec] = &[
         |player, _, cx| player.reset_picture(cx),
     )
     .keywords(&["undo", "original"])
-    .hotkey(Command::ResetPicture),
+    .setting("reset_picture")
+    .keys(&["secondary-0"]),
     Spec::tile(
         "video.take_screenshot",
         "Take Screenshot",
@@ -126,7 +134,8 @@ pub const COMMANDS: &[Spec] = &[
         |player, window, cx| player.take_screenshot(window, cx),
     )
     .keywords(&["capture", "image", "frame", "snapshot"])
-    .hotkey(Command::TakeScreenshot),
+    .setting("take_screenshot")
+    .keys(&["s"]),
 ];
 
 #[derive(Deserialize)]
@@ -147,4 +156,20 @@ fn names(ratios: &[Ratio]) -> Vec<&'static str> {
 fn named(ratios: &[Ratio], name: Option<String>) -> Option<Ratio> {
     let name = name?;
     ratios.iter().copied().find(|ratio| ratio.name == name)
+}
+
+/// Show the tile in front at `ratio`, or as the file is.
+pub fn set_aspect_ratio(ratio: Option<Ratio>) -> Run {
+    Run::with(
+        "video.set_aspect_ratio",
+        json!({"ratio": ratio.map(|ratio| ratio.name)}),
+    )
+}
+
+/// Crop the tile in front to `crop`, or not at all.
+pub fn set_crop(crop: Option<Ratio>) -> Run {
+    Run::with(
+        "video.set_crop",
+        json!({"crop": crop.map(|crop| crop.name)}),
+    )
 }

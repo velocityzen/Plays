@@ -251,6 +251,13 @@ impl KeyBindingContextPredicate {
 
     /// Find the deepest depth at which the predicate matches.
     pub fn depth_of(&self, contexts: &[KeyContext]) -> Option<usize> {
+        // Plays: with no contexts at all (a window that sets none), one that
+        // holds of an empty context, such as `!Recording`, holds, at the
+        // bottom, as a binding without one does.
+        if contexts.is_empty() {
+            let none = [KeyContext::default()];
+            return self.eval_inner(&none, &none).then_some(0);
+        }
         for depth in (0..=contexts.len()).rev() {
             let context_slice = &contexts[0..depth];
             if self.eval_inner(context_slice, contexts) {

@@ -5,7 +5,7 @@ use gpui::prelude::*;
 use gpui::{AnyElement, App, ClickEvent, Context, Decorations, MouseButton, Window, div};
 
 use super::Workspace;
-use crate::app;
+use crate::api::Run;
 use crate::ui::components::Button;
 use crate::ui::theme::Theme;
 use crate::ui::theme::layout::{COMPACT_WIDTH, TOOLBAR_HEIGHT};
@@ -93,7 +93,7 @@ impl Workspace {
                 Button::icon("settings", "settings")
                     .icon_color(theme.text_muted)
                     .on_click(|_, window, cx| {
-                        window.dispatch_action(Box::new(app::OpenSettings), cx)
+                        window.dispatch_action(Box::new(Run::command("app.settings")), cx)
                     }),
             )
             .when(client_decorated, |this| {
