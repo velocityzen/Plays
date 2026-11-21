@@ -24,6 +24,19 @@ use crate::media::output::{DeviceEvent, DeviceInfo, OpenError, Playing};
 /// its id among AirPlay receivers.
 const PREFIX: &str = "airplay:";
 
+/// The id among AirPlay receivers of output `id`, if it's an AirPlay
+/// speaker.
+pub fn airplay_id(id: &str) -> Option<&str> {
+    id.strip_prefix(PREFIX)
+}
+
+/// The protocol output `id` is reached by: AirPlay for an AirPlay speaker,
+/// none for this computer's own outputs. A device found by another
+/// protocol too, as a speaker with DLNA, is told apart by it.
+pub fn output_kind(id: &str) -> Option<&'static str> {
+    airplay_id(id).map(|_| crate::cast::airplay::KIND)
+}
+
 pub struct Speakers {
     /// Looking for them until dropped; tests have their fakes instead.
     browser: Option<Browser>,
@@ -112,12 +125,12 @@ impl Speakers {
 
     /// Whether output `id` is one of these.
     pub fn owns(id: &str) -> bool {
-        id.starts_with(PREFIX)
+        airplay_id(id).is_some()
     }
 
     /// The receiver output `id` is, as found now.
     fn receiver(&self, id: &str) -> Option<airplay::Device> {
-        let id = id.strip_prefix(PREFIX)?;
+        let id = airplay_id(id)?;
         self.found()
             .into_iter()
             .find(|receiver| receiver.id == id && receiver.plays_audio())

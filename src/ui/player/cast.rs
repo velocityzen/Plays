@@ -16,7 +16,7 @@ use gpui::{AnyElement, App, Context, Corner, Div, ElementId, MouseDownEvent, Tas
 use stream_server::{Pick, SubtitleSource};
 
 use super::{PlayerEvent, PlayerView};
-use crate::app::{AudioEngine, SetWindowAudioDevice, ShowOnDisplay};
+use crate::app::{AudioEngine, SetWindowAudioDevice, ShowOnDisplay, output_kind};
 use crate::cast::target::FOLLOW_POLL;
 use crate::cast::{Casting, Device, Error, Link, Phase, Request, Shows, SubtitleChoice};
 use crate::media::Source;
@@ -518,15 +518,22 @@ impl PlayerView {
                 name: output.name,
             };
             let checked = own.as_ref().is_some_and(|own| own.id == device.id);
-            rows.push(
-                MenuRow::new(
-                    ElementId::Name(format!("sound-{i}").into()),
-                    device.name.clone(),
-                )
-                .checked(checked)
-                .mx_1()
-                .on_click(pick_window_sound(Some(device), cx)),
-            );
+            let mut row = MenuRow::new(
+                ElementId::Name(format!("sound-{i}").into()),
+                device.name.clone(),
+            )
+            .checked(checked);
+            // As the devices above say theirs: a speaker also cast to, with
+            // DLNA say, is told apart.
+            if let Some(kind) = output_kind(&device.id) {
+                row = row.detail(
+                    div()
+                        .debug_selector(move || format!("sound-{i}-kind"))
+                        .text_xs()
+                        .child(kind),
+                );
+            }
+            rows.push(row.mx_1().on_click(pick_window_sound(Some(device), cx)));
         }
         if let Some(device) = missing {
             rows.push(

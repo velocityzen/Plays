@@ -534,6 +534,14 @@ only. AirPlay speakers aren't cast to: they're outputs, which play the
 sound of everything ([Sound](#sound)); see [Displays, full screen and
 AirPlay](#displays-full-screen-and-airplay) for AirPlay displays.
 
+A device found by more than one protocol, such as a speaker with AirPlay
+and DLNA, shows under each. Settings → Casting lists it with each protocol
+(the AirPlay speakers while AirPlay looks), and the cast button's menu
+lists it to cast to with DLNA, and as an output under Window Sound,
+saying AirPlay. In the menu bar, where two items would have the same name,
+each device's protocol follows its name: Phantom (AirPlay), Phantom
+(DLNA).
+
 While a tile casts, it says where it plays and how the file gets there (as
 it is, repackaged, or re-encoded), and its bar, buttons and shortcuts drive
 the device, whose position moves the bar. Speakers are offered for

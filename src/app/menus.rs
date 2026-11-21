@@ -10,6 +10,7 @@
 use gpui::{App, Global, Menu, MenuItem, SystemMenuType};
 
 use super::dispatch::first_workspace;
+use super::speakers::output_kind;
 use super::{
     About, AudioEngine, CastTo, CloseAll, CloseFile, CloseWindow, GoToChapter, NextWindow,
     OpenFiles, OpenSettings, OpenUrl, PreviousWindow, Quit, SetAspectRatio, SetAudioDevice,
@@ -412,13 +413,34 @@ fn display_menu(outputs: &MenuState) -> Menu {
     if !devices.is_empty() {
         items.push(MenuItem::separator());
     }
-    items.extend(devices.into_iter().map(|device| {
+    let names: Vec<&str> = (outputs.displays.iter().map(|display| display.name.as_str()))
+        .chain(devices.iter().map(|device| device.name.as_str()))
+        .collect();
+    let titles: Vec<String> = devices
+        .iter()
+        .map(|device| told_apart(&device.name, Some(device.kind), &names))
+        .collect();
+    items.extend(devices.into_iter().zip(titles).map(|(device, title)| {
         let checked = casting.is_some_and(|casting| casting.is(&device));
-        MenuItem::action(device.name.clone(), CastTo(Some(device))).checked(checked)
+        MenuItem::action(title, CastTo(Some(device))).checked(checked)
     }));
     Menu {
         name: "Output Device".into(),
         items,
+    }
+}
+
+/// What an item for a device called `name` is titled, among items called
+/// `names` (its own too): its name, with the protocol it's reached by,
+/// `kind`, after it where another item has the same name. So a device
+/// found by two protocols, as a speaker with AirPlay and DLNA, shows as
+/// two; displays and this computer's outputs, reached by none, keep their
+/// names.
+fn told_apart(name: &str, kind: Option<&str>, names: &[&str]) -> String {
+    let shared = names.iter().filter(|&&other| other == name).count() > 1;
+    match kind {
+        Some(kind) if shared => format!("{name} ({kind})"),
+        _ => name.to_owned(),
     }
 }
 
@@ -430,17 +452,33 @@ fn display_menu(outputs: &MenuState) -> Menu {
 fn output_menu(devices: &[DeviceInfo], picked: Option<&AudioDevice>, outputs: &MenuState) -> Menu {
     let casting = outputs.casting.as_ref();
     let here = casting.is_none();
+    let mut speakers = outputs.speakers.clone();
+    // What it casts to plays its sound, and stays listed while it isn't
+    // found.
+    if let Some(casting) = casting
+        && !speakers.iter().any(|device| device.is(casting))
+    {
+        speakers.push(casting.clone());
+    }
+    let names: Vec<&str> = (devices.iter().map(|device| device.name.as_str()))
+        .chain(speakers.iter().map(|device| device.name.as_str()))
+        .collect();
+    let speaker_titles: Vec<String> = speakers
+        .iter()
+        .map(|device| told_apart(&device.name, Some(device.kind), &names))
+        .collect();
     let mut items = vec![
         MenuItem::action("System Default", SetAudioDevice(None)).checked(here && picked.is_none()),
         MenuItem::separator(),
     ];
     items.extend(devices.iter().map(|device| {
         let checked = here && picked.is_some_and(|picked| picked.id == device.id);
+        let title = told_apart(&device.name, output_kind(&device.id), &names);
         let device = AudioDevice {
             id: device.id.clone(),
             name: device.name.clone(),
         };
-        MenuItem::action(device.name.clone(), SetAudioDevice(Some(device))).checked(checked)
+        MenuItem::action(title, SetAudioDevice(Some(device))).checked(checked)
     }));
     if let Some(picked) = picked
         && !devices.iter().any(|device| device.id == picked.id)
@@ -453,21 +491,18 @@ fn output_menu(devices: &[DeviceInfo], picked: Option<&AudioDevice>, outputs: &M
             .checked(here),
         );
     }
-    let mut speakers = outputs.speakers.clone();
-    // What it casts to plays its sound, and stays listed while it isn't
-    // found.
-    if let Some(casting) = casting
-        && !speakers.iter().any(|device| device.is(casting))
-    {
-        speakers.push(casting.clone());
-    }
     if !speakers.is_empty() {
         items.push(MenuItem::separator());
     }
-    items.extend(speakers.into_iter().map(|device| {
-        let checked = casting.is_some_and(|casting| casting.is(&device));
-        MenuItem::action(device.name.clone(), CastTo(Some(device))).checked(checked)
-    }));
+    items.extend(
+        speakers
+            .into_iter()
+            .zip(speaker_titles)
+            .map(|(device, title)| {
+                let checked = casting.is_some_and(|casting| casting.is(&device));
+                MenuItem::action(title, CastTo(Some(device))).checked(checked)
+            }),
+    );
     Menu {
         name: "Output Device".into(),
         items,
@@ -482,13 +517,15 @@ fn window_output_menu(devices: &[DeviceInfo], own: Option<&AudioDevice>) -> Menu
         MenuItem::action("Same as the App", SetWindowAudioDevice(None)).checked(own.is_none()),
         MenuItem::separator(),
     ];
+    let names: Vec<&str> = devices.iter().map(|device| device.name.as_str()).collect();
     items.extend(devices.iter().map(|device| {
         let checked = own.is_some_and(|own| own.id == device.id);
+        let title = told_apart(&device.name, output_kind(&device.id), &names);
         let device = AudioDevice {
             id: device.id.clone(),
             name: device.name.clone(),
         };
-        MenuItem::action(device.name.clone(), SetWindowAudioDevice(Some(device))).checked(checked)
+        MenuItem::action(title, SetWindowAudioDevice(Some(device))).checked(checked)
     }));
     if let Some(own) = own
         && !devices.iter().any(|device| device.id == own.id)
@@ -836,6 +873,69 @@ mod tests {
         assert_eq!(
             listed(&display_menu(&outputs)).last().cloned(),
             Some(("Living Room".into(), true))
+        );
+    }
+
+    #[test]
+    fn a_device_found_by_two_protocols_shows_as_two() {
+        let dlna = |id: &str, name: &str| Device {
+            kind: "DLNA",
+            ..speaker(id, name)
+        };
+        // The Phantom as an AirPlay speaker, an output, and with DLNA, a
+        // speaker cast to.
+        let devices = [device("desk", "Desk"), device("airplay:ph", "Phantom")];
+        let outputs = MenuState {
+            speakers: vec![dlna("uuid-1", "Phantom"), speaker("k", "Kitchen")],
+            ..MenuState::default()
+        };
+        assert_eq!(
+            listed(&output_menu(&devices, None, &outputs)),
+            [
+                ("System Default".into(), true),
+                ("Desk".into(), false),
+                ("Phantom (AirPlay)".into(), false),
+                ("Phantom (DLNA)".into(), false),
+                ("Kitchen".into(), false),
+            ]
+        );
+        assert_eq!(
+            listed(&window_output_menu(
+                &[device("hdmi", "Beamer"), device("airplay:tv", "Beamer")],
+                None
+            )),
+            [
+                ("Same as the App".into(), true),
+                ("Beamer".into(), false),
+                ("Beamer (AirPlay)".into(), false),
+            ],
+            "this computer's own output keeps its name"
+        );
+        // A TV with two, beside a display of that name.
+        let outputs = MenuState {
+            displays: vec![display(1, "Living Room")],
+            devices: vec![tv("a", "Living Room"), dlna("b", "Living Room")],
+            ..MenuState::default()
+        };
+        assert_eq!(
+            listed(&display_menu(&outputs)),
+            [
+                ("Living Room".into(), false),
+                ("Living Room (Fake)".into(), false),
+                ("Living Room (DLNA)".into(), false),
+            ]
+        );
+        let outputs = MenuState {
+            devices: vec![tv("a", "Living Room")],
+            ..outputs
+        };
+        assert_eq!(
+            listed(&display_menu(&outputs)),
+            [
+                ("Living Room".into(), false),
+                ("Living Room (Fake)".into(), false),
+            ],
+            "told apart from the display too"
         );
     }
 

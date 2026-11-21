@@ -13,11 +13,12 @@ use gpui::{Bounds, Pixels, TestAppContext, VisualTestContext, point, px, size};
 use parking_lot::Mutex;
 
 use super::SettingsView;
-use crate::app::SetAudioDevice;
+use crate::app::{AudioEngine, SetAudioDevice};
 use crate::cast::fake::{FakeTarget, KIND};
 use crate::cast::target::{Device, Error, Session};
 use crate::cast::{AppPairings, Casting, Looking, Protocol, Shows, Target};
 use crate::files::Folder;
+use crate::media::output::DeviceInfo;
 use crate::settings::{AudioDevice, PanelLook, Settings};
 use crate::ui::about::AboutView;
 use crate::ui::testing::{self, click, scroll, shows, wait_until};
@@ -302,6 +303,37 @@ fn look_with(cx: &mut VisualTestContext, protocol: &str, on: bool) {
 }
 
 #[gpui::test]
+fn casting_lists_a_speaker_found_with_airplay_and_another_protocol_with_each(
+    cx: &mut TestAppContext,
+) {
+    let (_, mut cx) = testing::start(cx);
+    let fake = FakeTarget::default();
+    fake.add("Phantom", Shows::Sound);
+    cx.update(|_, cx| {
+        cx.set_global(Casting::local(vec![Arc::new(fake.clone())]));
+        let phantom = DeviceInfo {
+            id: "airplay:ph".into(),
+            name: "Phantom".into(),
+        };
+        AudioEngine::set_devices(vec![phantom], cx);
+    });
+    let mut settings = open_settings(&mut cx);
+    click(&mut settings, "pane-Casting");
+    assert!(shows(&mut settings, "found-Fake-Phantom"));
+    assert!(
+        shows(&mut settings, "found-AirPlay-Phantom"),
+        "and as AirPlay"
+    );
+
+    look_with(&mut settings, "AirPlay", false);
+    assert!(shows(&mut settings, "found-Fake-Phantom"));
+    assert!(
+        !shows(&mut settings, "found-AirPlay-Phantom"),
+        "not while AirPlay doesn't look"
+    );
+}
+
+#[gpui::test]
 fn casting_lists_the_devices_found_and_a_protocol_turned_off_finds_none(cx: &mut TestAppContext) {
     let (_, mut cx) = testing::start(cx);
     let fake = FakeTarget::default();
@@ -309,14 +341,14 @@ fn casting_lists_the_devices_found_and_a_protocol_turned_off_finds_none(cx: &mut
     cx.update(|_, cx| cx.set_global(Casting::local(vec![Arc::new(fake.clone())])));
     let mut settings = open_settings(&mut cx);
     click(&mut settings, "pane-Casting");
-    assert!(shows(&mut settings, "found-Den TV"));
+    assert!(shows(&mut settings, "found-Fake-Den TV"));
 
     fake.add("Kitchen", Shows::Sound);
     settings.update(|_, cx| Casting::refresh(cx));
     settings.run_until_parked();
     assert!(
         // Drawn again by itself, as nothing else changed.
-        settings.debug_bounds("found-Kitchen").is_some(),
+        settings.debug_bounds("found-Fake-Kitchen").is_some(),
         "a device shows as it's found"
     );
 
@@ -325,12 +357,12 @@ fn casting_lists_the_devices_found_and_a_protocol_turned_off_finds_none(cx: &mut
     assert!(!set.looks_with(KIND), "it's saved off");
     assert_eq!(looking(&mut settings), [Looking::Off]);
     assert!(found(&mut settings).is_empty());
-    assert!(!shows(&mut settings, "found-Den TV"), "its devices go");
+    assert!(!shows(&mut settings, "found-Fake-Den TV"), "its devices go");
 
     click(&mut settings, "look-with-Fake");
     assert_eq!(looking(&mut settings), [Looking::On]);
     assert_eq!(found(&mut settings), ["Den TV", "Kitchen"]);
-    assert!(shows(&mut settings, "found-Den TV"));
+    assert!(shows(&mut settings, "found-Fake-Den TV"));
 }
 
 #[gpui::test]

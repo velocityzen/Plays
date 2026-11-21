@@ -487,7 +487,15 @@ a while to stop doesn't hold up the windows: it stops on another thread.
 One off from the start never looks, and other settings or protocols
 changing leave it as it is; one that can't start says why and tries again
 when turned off and on. It lists the AirPlay TVs paired with, and Forget
-forgets one, which then asks for its PIN again. Unit tests check that of
+forgets one, which then asks for its PIN again. A speaker found with
+AirPlay and another protocol is listed with each, the AirPlay one only
+while AirPlay looks; the cast button's menu offers it to cast to, and
+under Window Sound as an output saying AirPlay, where this computer's own
+outputs say nothing; the Output Device menus put the protocol after a
+name another item has too (an AirPlay speaker and a DLNA one, two
+protocols' TVs, a display and a TV), leaving this computer's own outputs
+and displays as they are; a unit test checks an Apple TV, cast to and an
+output, is listed once. Unit tests check that of
 what the tile sends at once, only the last of seeks in a row is done, and
 only the last volume, looping and subtitles asked for. Each test has been
 checked to fail when the behavior it covers is broken.

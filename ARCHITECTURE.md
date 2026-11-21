@@ -354,6 +354,10 @@ flowchart LR
   the same `Pairings` as a TV cast to, and its own volume is set once, to
   where it says it is. One that wants its PIN says so
   (`OpenError::NeedsPin`); credentials it turns down are forgotten first.
+  `output_kind` says an output is reached by AirPlay, which the menus,
+  the cast button's Window Sound and Settings → Casting's devices found
+  show, so a speaker also found by DLNA is told apart; the menu bar adds
+  the protocol only where two items would share a name.
 - `src/app/audio.rs`: the `AudioEngine`, which keeps the outputs and which
   device each plays through. The app's output plays through the device
   picked in Settings → Audio, or the system's default. A window may play

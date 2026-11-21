@@ -8,6 +8,8 @@ use gpui::{TestAppContext, VisualTestContext, WindowHandle, px, size};
 
 use super::open;
 use crate::app::{AudioEngine, SetWindowAudioDevice, ShowOnDisplay};
+use crate::cast::fake::FakeTarget;
+use crate::cast::{Casting, Shows};
 use crate::media::Mixer;
 use crate::media::output::DeviceInfo;
 use crate::settings::{AudioDevice, Settings};
@@ -31,6 +33,33 @@ fn sound(
             (mixers, device)
         })
         .unwrap()
+}
+
+#[gpui::test]
+fn a_speaker_found_with_airplay_and_dlna_shows_under_both_saying_which(cx: &mut TestAppContext) {
+    let (window, mut cx) = testing::start(cx);
+    open(window, &mut cx, &["clip.mp4"], false);
+    let fake = FakeTarget::default();
+    fake.add("Phantom", Shows::Sound);
+    cx.update(|_, cx| {
+        cx.set_global(Casting::local(vec![Arc::new(fake.clone())]));
+        let device = |id: &str, name: &str| DeviceInfo {
+            id: id.into(),
+            name: name.into(),
+        };
+        let outputs = vec![device("desk", "Desk"), device("airplay:ph", "Phantom")];
+        AudioEngine::set_devices(outputs, cx);
+    });
+    click(&mut cx, "cast");
+    // Cast to, under Play On, saying its kind, and as an output under
+    // Window Sound, saying AirPlay.
+    assert!(shows(&mut cx, "cast-0"), "the speaker to cast to");
+    assert!(shows(&mut cx, "sound-1"), "the AirPlay speaker");
+    assert!(shows(&mut cx, "sound-1-kind"), "saying it's AirPlay");
+    assert!(
+        !shows(&mut cx, "sound-0-kind"),
+        "this computer's own says nothing"
+    );
 }
 
 #[gpui::test]

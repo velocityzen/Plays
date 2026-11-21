@@ -9,7 +9,9 @@ use gpui::{AnyElement, Context, SharedString, Window, div};
 
 use super::form::{group, row, update_settings};
 use super::{Pane, SettingsView};
-use crate::cast::{AppPairings, Casting, Looking, Shows};
+use crate::app::{AudioEngine, airplay_id};
+use crate::cast::{AppPairings, Casting, Device, Looking, Shows, airplay};
+use crate::media::output::DeviceInfo;
 use crate::settings::Settings;
 use crate::ui::components::{Button, Switch};
 use crate::ui::theme::Theme;
@@ -66,25 +68,35 @@ impl Pane for CastingPane {
             })
             .collect();
 
-        let mut found: Vec<AnyElement> = Casting::devices(cx)
-            .iter()
-            .map(|device| {
-                let name = device.name.clone();
-                div()
-                    .debug_selector(move || format!("found-{name}"))
-                    .child(row(
-                        device.name.clone(),
-                        Some(device.kind.into()),
-                        theme,
-                        div()
-                            .flex_none()
-                            .text_sm()
-                            .text_color(theme.text_muted)
-                            .child(shows(device.shows)),
-                    ))
-                    .into_any_element()
-            })
-            .collect();
+        let airplay_looks = s.casting.looks_with(airplay::KIND);
+        let mut found: Vec<AnyElement> = found_devices(
+            Casting::devices(cx),
+            AudioEngine::devices(cx),
+            airplay_looks,
+        )
+        .into_iter()
+        .map(|device| {
+            let Found {
+                name,
+                kind,
+                shows: what,
+            } = device;
+            let tag = format!("found-{kind}-{name}");
+            div()
+                .debug_selector(move || tag)
+                .child(row(
+                    name,
+                    Some(kind.into()),
+                    theme,
+                    div()
+                        .flex_none()
+                        .text_sm()
+                        .text_color(theme.text_muted)
+                        .child(shows(what)),
+                ))
+                .into_any_element()
+        })
+        .collect();
         if found.is_empty() {
             let (label, hint) = if looking {
                 (
@@ -153,6 +165,49 @@ fn sentence(why: &str) -> String {
 }
 
 /// What a device found shows.
+/// A device found, as Settings lists it.
+#[derive(Clone, PartialEq, Debug)]
+struct Found {
+    name: String,
+    kind: &'static str,
+    shows: Shows,
+}
+
+/// What the protocols found, by name: the devices to cast to, and while
+/// AirPlay looks, the AirPlay speakers among the `outputs`, which play as
+/// outputs instead (an Apple TV, cast to as well, listed once). So a
+/// device found by two protocols, as a speaker with AirPlay and DLNA, is
+/// listed with each.
+fn found_devices(devices: &[Device], outputs: &[DeviceInfo], airplay_looks: bool) -> Vec<Found> {
+    let cast_to = |id: &str| {
+        devices
+            .iter()
+            .any(|device| device.kind == airplay::KIND && device.id == id)
+    };
+    let speakers = outputs
+        .iter()
+        .filter(|_| airplay_looks)
+        .filter_map(|output| {
+            let id = airplay_id(&output.id)?;
+            (!cast_to(id)).then(|| Found {
+                name: output.name.clone(),
+                kind: airplay::KIND,
+                shows: Shows::Sound,
+            })
+        });
+    let mut found: Vec<Found> = devices
+        .iter()
+        .map(|device| Found {
+            name: device.name.clone(),
+            kind: device.kind,
+            shows: device.shows,
+        })
+        .chain(speakers)
+        .collect();
+    found.sort_by_cached_key(|device| (device.name.to_lowercase(), device.kind));
+    found
+}
+
 fn shows(shows: Shows) -> &'static str {
     match shows {
         Shows::Video => "Video",
@@ -171,6 +226,61 @@ mod tests {
             "Can't look for DLNA renderers: no network"
         );
         assert_eq!(sentence(""), "");
+    }
+
+    fn device(kind: &'static str, id: &str, name: &str, shows: Shows) -> Device {
+        Device {
+            kind,
+            id: id.into(),
+            name: name.into(),
+            shows,
+            address: std::net::Ipv4Addr::LOCALHOST.into(),
+        }
+    }
+
+    fn output(id: &str, name: &str) -> DeviceInfo {
+        DeviceInfo {
+            id: id.into(),
+            name: name.into(),
+        }
+    }
+
+    fn listed(found: &[Found]) -> Vec<(&str, &str, Shows)> {
+        found
+            .iter()
+            .map(|device| (device.name.as_str(), device.kind, device.shows))
+            .collect()
+    }
+
+    #[test]
+    fn a_device_found_by_two_protocols_is_listed_with_each() {
+        let devices = [
+            device(airplay::KIND, "tv", "Beamer", Shows::Video),
+            device("DLNA", "uuid-1", "Phantom", Shows::Sound),
+        ];
+        // This computer's speakers, the Phantom over AirPlay, and the Apple
+        // TV, which plays sound too.
+        let outputs = [
+            output("BuiltInSpeakerDevice", "MacBook Pro Speakers"),
+            output("airplay:ph", "Phantom"),
+            output("airplay:tv", "Beamer"),
+        ];
+        assert_eq!(
+            listed(&found_devices(&devices, &outputs, true)),
+            [
+                ("Beamer", airplay::KIND, Shows::Video),
+                ("Phantom", airplay::KIND, Shows::Sound),
+                ("Phantom", "DLNA", Shows::Sound),
+            ]
+        );
+        assert_eq!(
+            listed(&found_devices(&devices, &outputs, false)),
+            [
+                ("Beamer", airplay::KIND, Shows::Video),
+                ("Phantom", "DLNA", Shows::Sound),
+            ],
+            "AirPlay's speakers, while AirPlay looks"
+        );
     }
 
     #[test]

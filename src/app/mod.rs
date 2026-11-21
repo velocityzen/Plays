@@ -28,6 +28,7 @@ pub use awake::Awake;
 pub use menus::refresh as refresh_menus;
 #[cfg(test)]
 pub(crate) use speakers::Speakers;
+pub use speakers::{airplay_id, output_kind};
 
 use crate::cast::{self, AppPairings, Casting, Device, Pairings, Protocol};
 use crate::files::Folder;
