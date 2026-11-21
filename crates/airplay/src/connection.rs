@@ -274,7 +274,7 @@ impl Connection {
         let request = Request::http("POST", path)
             .header("X-Apple-HKP", hkp)
             .body("application/octet-stream", body);
-        Ok(self.exchange(request)?.body)
+        Ok(self.exchange(request).map_err(turned_away)?.body)
     }
 
     /// Transient pairing, then encrypt: for receivers open to everyone.
@@ -299,7 +299,8 @@ impl Connection {
 
     /// Have the receiver show a PIN to pair with.
     pub fn start_pin(&mut self) -> Result<()> {
-        self.exchange(Request::http("POST", "/pair-pin-start"))?;
+        self.exchange(Request::http("POST", "/pair-pin-start"))
+            .map_err(turned_away)?;
         Ok(())
     }
 
@@ -311,6 +312,15 @@ impl Connection {
         setup.m4(&m4)?;
         let m6 = self.pairing("/pair-setup", 3, setup.m5()?)?;
         setup.m6(&m6)
+    }
+}
+
+/// A pairing request answered `403 Forbidden`: the receiver lets only
+/// some senders in, and not this one.
+fn turned_away(err: Error) -> Error {
+    match err {
+        Error::Status { status: 403, .. } => Error::Refused,
+        err => err,
     }
 }
 

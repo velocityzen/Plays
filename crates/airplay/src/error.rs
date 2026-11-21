@@ -12,6 +12,10 @@ pub enum Error {
     NeedsPin,
     /// Pairing failed: a wrong PIN, or the receiver turned it down.
     Pairing(String),
+    /// It turned this computer away before pairing (`403 Forbidden`): it
+    /// lets only some senders play to it, as its settings say, such as a
+    /// Mac's own user's devices or a home's people.
+    Refused,
     /// It said something unexpected.
     Protocol(String),
 }
@@ -40,6 +44,7 @@ impl fmt::Display for Error {
             Self::Status { request, status } => write!(f, "{request} was answered {status}"),
             Self::NeedsPin => f.write_str("it needs to be paired with the PIN it shows"),
             Self::Pairing(why) => write!(f, "pairing failed: {why}"),
+            Self::Refused => f.write_str("it doesn't let this computer play to it"),
             Self::Protocol(why) => f.write_str(why),
         }
     }

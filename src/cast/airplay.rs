@@ -116,7 +116,7 @@ impl Target for AirPlayTarget {
                 self.pairings.forget(&receiver.id);
                 Err(Error::NeedsPin)
             }
-            Err(err) => Err(failed(&err)),
+            Err(err) => Err(failed_at(&receiver, &err)),
         }
     }
 
@@ -132,6 +132,33 @@ fn failed(err: &::airplay::Error) -> Error {
     } else {
         Error::Failed(err.to_string())
     }
+}
+
+/// `failed`, saying what to change on `receiver` if it turned this
+/// computer away.
+fn failed_at(receiver: &::airplay::Device, err: &::airplay::Error) -> Error {
+    match err {
+        ::airplay::Error::Refused => Error::Failed(turned_away(receiver)),
+        err => failed(err),
+    }
+}
+
+/// Why `receiver` turned this computer away, and what lets it in: a Mac
+/// lets only its own user's devices play to it unless set otherwise, as
+/// macOS sets it at first, and an Apple TV or HomePod may let only the
+/// people of its home.
+pub(crate) fn turned_away(receiver: &::airplay::Device) -> String {
+    let model = receiver.model.as_str();
+    let change = if model.starts_with("Mac") || model.starts_with("iMac") {
+        "On it, set System Settings → General → AirDrop & Handoff → Allow AirPlay \
+         for to Anyone on the Same Network or Everyone."
+    } else if model.starts_with("AppleTV") || model.starts_with("AudioAccessory") {
+        "In the Home app, set Home Settings → Speakers & TV → Allow Speaker & TV \
+         Access to Anyone on the Same Network or Everyone."
+    } else {
+        "Its settings say which."
+    };
+    format!("it lets only some devices play to it. {change}")
 }
 
 /// How the stream server serves a receiver, by its model: an Apple TV 4K
@@ -201,7 +228,7 @@ impl AirPlayPairing {
         receiver: ::airplay::Device,
         pairings: Arc<Pairings>,
     ) -> Result<Box<dyn Pairing>, Error> {
-        let pairing = PinPairing::start(&receiver).map_err(|err| failed(&err))?;
+        let pairing = PinPairing::start(&receiver).map_err(|err| failed_at(&receiver, &err))?;
         Ok(Box::new(Self {
             pairing,
             receiver,
@@ -212,7 +239,10 @@ impl AirPlayPairing {
 
 impl Pairing for AirPlayPairing {
     fn finish(self: Box<Self>, pin: &str) -> Result<(), Error> {
-        let credentials = self.pairing.finish(pin).map_err(|err| failed(&err))?;
+        let credentials = self
+            .pairing
+            .finish(pin)
+            .map_err(|err| failed_at(&self.receiver, &err))?;
         self.pairings
             .keep(&self.receiver.id, &self.receiver.name, &credentials);
         Ok(())
@@ -448,6 +478,67 @@ fn state(state: PlaybackState) -> State {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_receiver_that_turns_this_computer_away_says_what_lets_it_in() {
+        let fake = ::airplay::fake::FakeReceiver::start(::airplay::fake::Kind::Speaker);
+        let says = |model: &str| {
+            let mut receiver = fake.device();
+            receiver.model = model.into();
+            match failed_at(&receiver, &::airplay::Error::Refused) {
+                Error::Failed(why) => why,
+                other => panic!("{other}"),
+            }
+        };
+        for mac in [
+            "Mac13,2",
+            "Mac16,5",
+            "MacBookPro18,3",
+            "iMac21,1",
+            "Macmini9,1",
+        ] {
+            let why = says(mac);
+            assert!(why.starts_with("it lets only some devices play to it. "));
+            assert!(
+                why.contains("AirDrop & Handoff → Allow AirPlay for"),
+                "{mac}"
+            );
+        }
+        for home in ["AppleTV11,1", "AudioAccessory5,1"] {
+            assert!(says(home).contains("Home app"), "{home}");
+        }
+        assert!(says("Phantom").ends_with("Its settings say which."));
+        assert!(matches!(
+            failed_at(&fake.device(), &::airplay::Error::NeedsPin),
+            Error::Failed(why) if why.contains("PIN")
+        ));
+    }
+
+    #[test]
+    fn a_tv_that_turns_this_computer_away_later_says_what_lets_it_in() {
+        use ::airplay::fake::{FakeReceiver, Kind};
+
+        let tv = FakeReceiver::start(Kind::Tv { pin: "1234" });
+        let pairings = Arc::new(Pairings::load(&crate::files::Folder::app()));
+        let target = AirPlayTarget::with(vec![tv.device()], Arc::clone(&pairings));
+        let turned_away = |result: Result<(), Error>| match result {
+            Err(Error::Failed(why)) => why.starts_with("it lets only some devices play to it"),
+            _ => false,
+        };
+        // Once it has shown its PIN.
+        let pairing = AirPlayPairing::start(tv.device(), Arc::clone(&pairings)).unwrap();
+        tv.state().refuse_pairing = true;
+        assert!(turned_away(pairing.finish("1234")));
+
+        // Paired with before.
+        tv.state().refuse_pairing = false;
+        AirPlayPairing::start(tv.device(), Arc::clone(&pairings))
+            .and_then(|pairing| pairing.finish("1234"))
+            .unwrap();
+        tv.state().refuse_pairing = true;
+        let device = target.devices().remove(0);
+        assert!(turned_away(target.connect(&device).map(drop)));
+    }
 
     #[test]
     fn an_apple_tv_4k_gets_hevc_and_hdr_up_to_2160p_in_fragmented_mp4() {

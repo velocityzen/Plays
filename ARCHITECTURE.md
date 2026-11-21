@@ -983,7 +983,11 @@ through speakers (`src/app/speakers.rs`, `src/media/output.rs`).
   with SHA-512 and the 3072-bit group, then long-term Ed25519 keys swapped
   under ChaCha20-Poly1305), which leaves credentials to keep; transient,
   for receivers open to everyone; and pair-verify with the credentials,
-  for each session after. Proofs are compared in constant time.
+  for each session after. Proofs are compared in constant time. A
+  receiver that answers pairing `403 Forbidden` lets only some senders
+  play to it, as its settings say (a Mac's own user's devices, at first,
+  or a home's people): that is `Error::Refused`, and Plays says what to
+  change on it (`cast::airplay::turned_away`).
 - `channel.rs`, `message.rs`, `connection.rs`: the control connection,
   RTSP and HTTP requests on one TCP connection, encrypted once paired in
   frames of up to 1024 bytes. A receiver on more than one network has an

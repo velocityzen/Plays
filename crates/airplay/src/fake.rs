@@ -148,6 +148,9 @@ pub struct State {
     pub refuse_feedback: bool,
     /// Whether it refuses RECORD, as one busy with another sender does.
     pub refuse_record: bool,
+    /// Whether it turns pairing away, as a Mac does that lets only its own
+    /// user's devices play to it.
+    pub refuse_pairing: bool,
     /// Requests for this path that it answers this late.
     pub slow: Option<(&'static str, Duration)>,
     /// Control connections taken, and those the sender closed since.
@@ -245,6 +248,7 @@ impl FakeReceiver {
                 event_reply: None,
                 refuse_feedback: false,
                 refuse_record: false,
+                refuse_pairing: false,
                 slow: None,
                 connections: 0,
                 closed: 0,
@@ -503,6 +507,11 @@ fn answer(shared: &Arc<Shared>, request: &Received, secret: Option<&[u8]>) -> Re
     };
     let kind = shared.kind;
     match (request.method.as_str(), request.path()) {
+        ("POST", "/pair-pin-start" | "/pair-setup" | "/pair-verify")
+            if shared.state().refuse_pairing =>
+        {
+            Reply::status(403)
+        }
         ("POST", "/pair-pin-start") => {
             shared.state().pin_shown = true;
             Reply::ok()

@@ -208,6 +208,24 @@ fn a_tv_asks_for_the_pin_it_shows_once_and_a_wrong_one_has_it_show_another(
 }
 
 #[gpui::test]
+fn a_tv_that_turns_this_computer_away_says_what_lets_it_in(cx: &mut TestAppContext) {
+    let tv = tv();
+    tv.state().refuse_pairing = true;
+    let (window, mut cx) = start(cx, &tv, "clip.mp4", false);
+    pick(&mut cx);
+    wait(&mut cx, "the sheet to say why it can't pair", |cx| {
+        sheet_says(window, cx).starts_with("Can't pair")
+    });
+    let says = sheet_says(window, &mut cx);
+    assert!(
+        says.starts_with("Can't pair with Fake TV: it lets only some devices play to it."),
+        "{says}"
+    );
+    assert!(says.contains("Home app"), "{says}");
+    assert!(!tv.state().pin_shown);
+}
+
+#[gpui::test]
 fn cancelling_the_sheet_leaves_the_tile_playing_here(cx: &mut TestAppContext) {
     let tv = tv();
     let (window, mut cx) = start(cx, &tv, "clip.mp4", false);

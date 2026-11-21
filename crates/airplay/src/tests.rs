@@ -80,6 +80,27 @@ fn a_wrong_pin_says_so_and_pairs_nothing() {
 }
 
 #[test]
+fn a_receiver_that_lets_only_some_senders_in_says_so() {
+    let tv = FakeReceiver::start(Kind::Tv { pin: PIN });
+    tv.state().refuse_pairing = true;
+    assert!(matches!(
+        PinPairing::start(&tv.device()),
+        Err(Error::Refused)
+    ));
+    assert!(!tv.state().pin_shown);
+    let speaker = FakeReceiver::start(Kind::Speaker);
+    speaker.state().refuse_pairing = true;
+    assert!(matches!(
+        AudioStream::connect(&speaker.device(), None, &sender()),
+        Err(Error::Refused)
+    ));
+    assert_eq!(
+        Error::Refused.to_string(),
+        "it doesn't let this computer play to it"
+    );
+}
+
+#[test]
 fn credentials_for_another_tv_dont_verify() {
     let one = FakeReceiver::start(Kind::Tv { pin: PIN });
     let other = FakeReceiver::start(Kind::Tv { pin: PIN });

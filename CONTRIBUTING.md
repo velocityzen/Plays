@@ -616,10 +616,13 @@ sound to one that takes it only encrypted, which it decrypts with the key
 it unwraps from the ANNOUNCE back to what was sent, and one that takes
 only FairPlay refused; a receiver that goes away or refuses feedback
 ending the session, and an AirPlay 1 speaker going away while it plays
-ending it too; a request answered too late failing, its connection closed,
-and the late answer not taken for the next request's, which fails at once;
-a session the receiver ended stopped without asking it anything; and a
-session dropped without being stopped, or failing once connected (a
+ending it too; a TV and a speaker that turn pairing away (`403`) refused,
+before a PIN is shown, and the app's sheet saying what lets this computer
+in, by the receiver's model; a request answered too late failing, its
+connection closed, and the late answer not taken for the next request's,
+which fails at once; a session the receiver ended stopped without asking
+it anything; and a session dropped without being stopped, or failing once
+connected (a
 speaker busy with another sender refusing RECORD), letting go of the
 receiver: its connections closed and its clock no longer answering. Unit
 tests check SRP against RFC 5054's vectors, both sides of pairing, the

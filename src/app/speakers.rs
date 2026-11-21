@@ -15,7 +15,7 @@ use futures::channel::mpsc::UnboundedReceiver;
 use parking_lot::Mutex;
 
 use crate::cast::Pairings;
-use crate::cast::airplay::AirPlayPairing;
+use crate::cast::airplay::{AirPlayPairing, turned_away};
 use crate::cast::target::{Error, Pairing};
 use crate::media::AudioOutput;
 use crate::media::output::{DeviceEvent, DeviceInfo, OpenError, Playing};
@@ -151,6 +151,9 @@ impl Speakers {
                     self.pairings.forget(&receiver.id);
                     return Err(OpenError::NeedsPin);
                 }
+                Err(airplay::Error::Refused) => {
+                    return Err(OpenError::Failed(anyhow::anyhow!(turned_away(&receiver))));
+                }
                 Err(err) => return Err(OpenError::Failed(anyhow::Error::new(err))),
             };
         match stream.volume() {
@@ -264,6 +267,22 @@ mod tests {
         let playing = speakers.open(&mut output, &id, |_| {}).expect("playing");
         assert_eq!(playing.name, "Fake TV");
         assert!(tv.wait_for(|state| !state.packets.is_empty()));
+    }
+
+    #[test]
+    fn one_that_turns_this_computer_away_says_what_lets_it_in() {
+        let speaker = FakeReceiver::start(Kind::Speaker);
+        speaker.state().refuse_pairing = true;
+        let speakers = speakers(&[&speaker]);
+        let id = speakers.list()[0].id.clone();
+        let Err(OpenError::Failed(why)) = speakers.open(&mut output(), &id, |_| {}) else {
+            panic!("it doesn't play")
+        };
+        assert!(
+            why.to_string()
+                .starts_with("it lets only some devices play to it"),
+            "{why}"
+        );
     }
 
     #[test]

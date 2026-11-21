@@ -566,8 +566,13 @@ What pairing leaves is kept in `airplay.json` beside the settings,
 readable only by you, so the TV doesn't ask again; Settings → Casting
 lists the TVs paired with, and Forget has one ask for its PIN the next
 time. A TV reset since, or that has forgotten this computer, asks again by
-itself. Everything goes to it as HLS: H.264 and HEVC up to 4K with HDR10,
-HLG and Dolby Vision on an Apple TV 4K, HEVC up to 1080p on an Apple TV
+itself. A receiver that lets only some devices play to it turns Plays
+away, and the sheet says what to change on it: another Mac lets only its
+own user's devices until its System Settings → General → AirDrop &
+Handoff → Allow AirPlay for is set to Anyone on the Same Network or
+Everyone, and an Apple TV or HomePod may let only its home's people, as
+the Home app's Speaker & TV access says. Everything goes to it as HLS:
+H.264 and HEVC up to 4K with HDR10, HLG and Dolby Vision on an Apple TV 4K, HEVC up to 1080p on an Apple TV
 HD, and H.264 up to 1080p on older Apple TVs and other makes' TVs. An
 Apple TV gets AAC, AC-3, E-AC-3 and ALAC up to 7.1, another TV stereo AAC.
 Subtitles go in the playlist, and the TV draws them in its own style, as
