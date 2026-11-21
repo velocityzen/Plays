@@ -57,6 +57,20 @@ pub trait Target: Send + Sync {
     /// Connect to one of its devices. Waits on the network, so not for the
     /// UI thread.
     fn connect(&self, device: &Device) -> Result<Box<dyn Session>, Error>;
+
+    /// Start pairing with a device whose `connect` said `Error::NeedsPin`,
+    /// which has it show a PIN. Waits on the network too.
+    fn pair(&self, device: &Device) -> Result<Box<dyn Pairing>, Error> {
+        Err(Error::Failed(format!("{} doesn't pair", device.name)))
+    }
+}
+
+/// Pairing with a device, which shows a PIN: finished with it, the target
+/// keeps what pairing left, and connects with that from then on.
+pub trait Pairing: Send {
+    /// Waits on the network. A wrong PIN fails, and the device shows no
+    /// PIN any more: pairing starts again for another.
+    fn finish(self: Box<Self>, pin: &str) -> Result<(), Error>;
 }
 
 /// What a device says went wrong.
@@ -70,6 +84,8 @@ pub enum Error {
     Stopped,
     /// It couldn't play the media.
     Unplayable,
+    /// It needs to be paired with the PIN it shows first (`Target::pair`).
+    NeedsPin,
     /// It refused, or said something unexpected.
     Failed(String),
 }
@@ -81,6 +97,7 @@ impl fmt::Display for Error {
             Self::Replaced => f.write_str("it plays something else now"),
             Self::Stopped => f.write_str("it was stopped there"),
             Self::Unplayable => f.write_str("it can't play this"),
+            Self::NeedsPin => f.write_str("it needs to be paired with the PIN it shows"),
             Self::Failed(why) => f.write_str(why),
         }
     }

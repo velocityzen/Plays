@@ -120,7 +120,7 @@ clippy lints, in the root `Cargo.toml`, apply to all of them.
 | `crates/stream-server` | Serves media to TVs and speakers over HTTP, as they play it or repackaged and re-encoded for them. |
 | `crates/chromecast` | Finds Google Cast devices and drives them. |
 | `crates/dlna` | Finds UPnP media renderers and drives them. |
-| `crates/airplay` | Finds AirPlay receivers, pairs with them and sends to them. Plays doesn't use it yet. |
+| `crates/airplay` | Finds AirPlay receivers, pairs with them and sends to them. |
 | `crates/network` | What the three casting crates share on the network: connecting, reading HTTP and RTSP within bounds and in time, and finding devices over mDNS. |
 | `crates/ffmpeg-link` | Links the static FFmpeg into Plays and into the stream server's tests. |
 | `vendor/gpui` | gpui 0.2.2, patched for Plays. |
@@ -141,7 +141,7 @@ Inside `src/`:
 | `cast/` | Casting tiles to TVs and speakers. |
 | `settings.rs` | The settings, saved as `plays/settings.json` in the user's config folder. |
 | `progress.rs` | Where each file was when it last played, kept for 30 days in `plays/progress.json`, so it starts there again. |
-| `files.rs` | The folder those two files are kept in, and writing them whole, so a crash never leaves one half written. |
+| `files.rs` | The folder those two files and the AirPlay pairings are kept in, and writing them whole, so a crash never leaves one half written. |
 | `hotkeys.rs` | The commands shortcuts run, and their keys. |
 | `assets.rs` | Icons compiled into the binary, so the app needs no files next to it. |
 
@@ -453,7 +453,10 @@ flowchart LR
   smoke runs have none, so they never read or write the real files, and a
   test of them gives a folder of its own. And writing them whole: to a
   file beside first, on the disk, then renamed over the old one, so a
-  crash or losing power midway leaves the old one as it was.
+  crash or losing power midway leaves the old one as it was. A private
+  file, as the AirPlay pairings are, is made readable by its owner alone
+  (on unix) before anything is written to it, and one left beside by a
+  crash is removed first, as it could be anyone's.
 - `src/progress.rs`: where each file was when it last played, by its
   whole path, kept for 30 days in `progress.json` beside the settings.
   Tiles note it as they close or open another file, every 10 seconds
@@ -565,9 +568,9 @@ flowchart LR
     casting["Casting<br/>asks the targets every second"] --> target["Target<br/>each protocol Settings have on"]
     target -->|"finds"| device(["TV or speaker"])
     link -->|"connect"| target
-    target -->|"Session"| session["Session<br/>src/cast/chromecast.rs, dlna.rs"]
+    target -->|"Session"| session["Session<br/>src/cast/chromecast.rs, dlna.rs, airplay.rs"]
     link -->|"load, play, pause, seek,<br/>volume, subtitles, status"| session
-    session --> crate["Protocol crate<br/>crates/chromecast, crates/dlna"]
+    session --> crate["Protocol crate<br/>crates/chromecast, crates/dlna, crates/airplay"]
     crate -->|"play this URL"| device
     link -->|"serve this file, these tracks,<br/>for this device's profile"| server["Stream server<br/>crates/stream-server"]
     server -->|"URL"| link
@@ -602,12 +605,15 @@ sequenceDiagram
   name, what they show, video or sound only, and an address) and connects
   to one for a `Session`: what it plays, for the stream server, then load,
   play, pause, seek, volume, subtitles, stop and status. Each protocol's
-  crate is adapted to these (`target.rs`). `Casting`, a global, keeps the
-  protocols, starting each one Settings have on looking (its target) and
-  dropping it when turned off, which stops it looking. It is dropped on a
-  thread of its own, as stopping waits for the target's threads to end,
-  which can take a second, and the windows would stop drawing meanwhile; a
-  cast to one of its devices goes on, its link holding the target. It asks the targets every
+  crate is adapted to these (`target.rs`). A device to be paired with
+  first says so as it's connected to (`NeedsPin`), and its target pairs
+  with it (`pair`), which has it show a PIN and finishes with the one
+  typed. `Casting`, a global, keeps the protocols, starting each one
+  Settings have on looking (its target) and dropping it when turned off,
+  which stops it looking. It is dropped on a thread of its own, as
+  stopping waits for the target's threads to end, which can take a second,
+  and the windows would stop drawing meanwhile; a cast to one of its
+  devices goes on, its link holding the target. It asks the targets every
   second what they have found, and starts the stream server for the first
   cast, on every interface.
 - `src/cast/link.rs`: a tile's `Link` runs its session on a thread of its
@@ -656,6 +662,32 @@ sequenceDiagram
   is the stream's. Played to the end, it's loaded again to play again; it
   going idle stopped, or unable to play, ends the cast, as the crate's ways
   of ending do.
+- `src/cast/airplay.rs` adapts the AirPlay crate: receivers that show
+  video are offered for video, and speakers aren't cast to. It connects
+  with the credentials kept for the receiver, which says it needs its PIN
+  when there are none; credentials it turns down, as after it was reset,
+  are forgotten and it's paired again. The model it says it is decides how
+  the stream server serves it, always as HLS (fragmented MP4 for HEVC and
+  HDR on an Apple TV 4K and an Apple TV HD, MPEG-TS on older ones and
+  other makes' TVs) with the subtitles in the playlist, which the receiver
+  draws in its own style. It reads the playlist only once, so other
+  subtitles give it the media again from where it is, at a URL with a
+  query of its own, which the stream server ignores. The tile's volume is
+  the receiver's. Played to the end it says nothing of what it played, and
+  is given the media again to play again, from where it was sent since.
+- `src/cast/pairings.rs`: what pairing with AirPlay receivers left, kept
+  in `plays/airplay.json` in the user's config folder, readable by its
+  owner alone, with the id they know this computer by, made once.
+  `AppPairings`, a global, shares it between the AirPlay target and
+  Settings → Casting, which lists the receivers paired with and forgets
+  one. Tests and smoke runs keep them in memory only.
+- `src/ui/pairing.rs`, `src/ui/workspace/pairing.rs`: the pairing sheet. A
+  tile whose cast was turned down for want of a PIN ends its cast and asks
+  its window to pair; the window puts a sheet over itself, which pairs on
+  a thread of its own, as each step waits on the network, and looks at how
+  it goes ten times a second. A wrong PIN has the TV show another, which
+  the sheet asks for. Paired, the tile casts to it again; cancelled, it
+  plays on here.
 - `src/cast/fake.rs` is a protocol for tests: devices the test adds and
   takes away, which do as they are told, keep what they were told, and say
   what the test has them say.
@@ -889,7 +921,7 @@ them: a TV is told to play a URL (one the stream server makes) and driven
 while it does, and a speaker is sent live sound. Like the other two it
 knows nothing of Plays, gpui or FFmpeg. It blocks, on the caller's thread
 or a session's own, and what a session says as it goes comes over a
-channel. Plays doesn't cast with it yet.
+channel. Plays casts to TVs with it (`src/cast/airplay.rs`).
 
 - `browser.rs`, `device.rs`: mDNS for `_airplay._tcp` and `_raop._tcp`,
   with `network`'s browser, a receiver's two records put together by its

@@ -6,7 +6,7 @@ use gpui::{App, Global, KeyBinding};
 use super::{CloseAll, CloseFile, CloseWindow, OpenFiles, OpenSettings, OpenUrl, Quit, menus};
 use crate::hotkeys::Hotkeys;
 use crate::settings::Settings;
-use crate::ui::{open_url, text_input};
+use crate::ui::{open_url, pairing, text_input};
 
 /// The shortcuts in the keymap, to tell when Settings change them.
 struct BoundHotkeys(Hotkeys);
@@ -19,6 +19,7 @@ pub(super) fn bind_keys(cx: &mut App) {
     cx.clear_key_bindings();
     text_input::bind_keys(cx);
     open_url::bind_keys(cx);
+    pairing::bind_keys(cx);
     cx.bind_keys(app_bindings());
     cx.bind_keys(hotkeys.bindings());
     cx.set_global(BoundHotkeys(hotkeys));

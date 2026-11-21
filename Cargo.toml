@@ -54,6 +54,7 @@ chardetng = "0.1"
 encoding_rs = "0.8"
 dlna = { path = "crates/dlna" }
 chromecast = { path = "crates/chromecast" }
+airplay = { path = "crates/airplay" }
 
 # The same CoreFoundation and CoreVideo bindings gpui uses, to hand it
 # hardware-decoded frames to draw (`gpui::surface`).
@@ -88,6 +89,9 @@ gpui = { version = "0.2.2", features = ["test-support"] }
 # Their fake devices, for casting to them headless.
 dlna = { path = "crates/dlna", features = ["fake"] }
 chromecast = { path = "crates/chromecast", features = ["fake"] }
+airplay = { path = "crates/airplay", features = ["fake"] }
+# What the AirPlay fake was told, which comes as property lists.
+plist = "1"
 proptest = { version = "1", default-features = false, features = ["std"] }
 
 [profile.dev]

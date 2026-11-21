@@ -5,6 +5,7 @@ pub mod displays;
 pub mod framing;
 pub mod open_url;
 mod overlay;
+pub mod pairing;
 pub mod pip;
 pub mod player;
 pub mod screenshot;

@@ -120,8 +120,10 @@ GPU-accelerated UI framework.
 ### Casting
 
 - Play a tile on a TV or a speaker instead, from where it is, with its
-  tracks: Chromecasts, Google TVs and Nest speakers, and DLNA TVs and
-  speakers, found on the network by themselves.
+  tracks: Chromecasts, Google TVs and Nest speakers, DLNA TVs and
+  speakers, and Apple TVs and TVs with AirPlay, found on the network by
+  themselves.
+- An AirPlay TV is paired with once, with the PIN it shows.
 - A file goes as it is where the device plays it, else repackaged or
   re-encoded for it.
 - A video's sound can go to a speaker while its picture plays on in the
@@ -420,14 +422,15 @@ there. Leaving full screen, or switching to another app, takes the black
 away. On X11 each monitor counts as a display; Wayland doesn't let Plays
 place the covers.
 
-To play on an AirPlay TV or projector, connect it first from Control
-Center → Screen Mirroring and use it as a separate display: it then shows
-in Video → Output Device (by the name macOS gives it), and macOS sends the
-sound there with it. For sound alone, pick AirPlay speakers in Control
-Center → Sound: they become the system's default, which Plays follows, and
-show in Audio → Output Device and Settings → Audio like any other output.
-AirPlay sound comes out late, by up to a couple of seconds; the picture
-waits for it.
+To show exactly the picture Plays draws on an AirPlay TV or projector,
+connect it first from Control Center → Screen Mirroring and use it as a
+separate display: it then shows in Video → Output Device (by the name
+macOS gives it), and macOS sends the sound there with it. For sound alone,
+pick AirPlay speakers in Control Center → Sound: they become the system's
+default, which Plays follows, and show in Audio → Output Device and
+Settings → Audio like any other output. AirPlay sound comes out late, by
+up to a couple of seconds; the picture waits for it. To have an Apple TV
+play the file itself, cast to it instead (Casting, below).
 
 ### Picture in Picture
 
@@ -447,9 +450,9 @@ Output Device the speakers under this computer's outputs, checking the one
 the tile in front casts to. Devices on the same network are found by
 themselves, in a second or two. Settings → Casting turns each protocol on
 or off and lists the devices found, with what each shows: video, or sound
-only. AirPlay casting isn't wired in yet; see
-[Displays, full screen and AirPlay](#displays-full-screen-and-airplay)
-for AirPlay displays and speakers.
+only. AirPlay speakers aren't cast to yet; see [Displays, full screen and
+AirPlay](#displays-full-screen-and-airplay) for them and for AirPlay
+displays.
 
 While a tile casts, it says where it plays and how the file gets there (as
 it is, repackaged, or re-encoded), and its bar, buttons and shortcuts drive
@@ -498,6 +501,22 @@ gives it the file again from where it is, as DLNA takes subtitles only
 with the file. The tile's volume scales the TV's own: where it was when
 cast, the TV stays where it was.
 
+An Apple TV, or a TV with AirPlay built in, is offered for video. The
+first time, a sheet over the window asks for the PIN it shows: type it and
+press Return or Pair, and the tile casts. A wrong PIN has the TV show
+another, to type instead; Escape or Cancel leaves the tile playing here.
+What pairing leaves is kept in `airplay.json` beside the settings,
+readable only by you, so the TV doesn't ask again; Settings → Casting
+lists the TVs paired with, and Forget has one ask for its PIN the next
+time. A TV reset since, or that has forgotten this computer, asks again by
+itself. Everything goes to it as HLS: H.264 and HEVC up to 4K with HDR10,
+HLG and Dolby Vision on an Apple TV 4K, HEVC up to 1080p on an Apple TV
+HD, and H.264 up to 1080p on older Apple TVs and other makes' TVs. An
+Apple TV gets AAC, AC-3, E-AC-3 and ALAC up to 7.1, another TV stereo AAC.
+Subtitles go in the playlist, and the TV draws them in its own style, as
+its accessibility settings have them look; picking other subtitles gives
+it the media again from where it is. The tile's volume sets the TV's own.
+
 ### Screenshots
 
 `S` or Video → Take Screenshot saves the frame the tile shows, at the
@@ -520,16 +539,16 @@ The Settings window has panes for Playback, Audio, Video, Subtitles,
 Casting, Screenshots, Hotkeys, Appearance and About: the theme, master
 volume, the audio output, playing a window sent to a display through its
 speakers, default volume, autoplay, loop, resuming files where they were
-left, seek step,
-chapter notches on the bar, fit/fill scaling, gamma for SDR and for HDR
-video (applied to every open video as you drag), decode resolution limit,
-hardware decoding, subtitle style, the protocols that look for devices to
-cast to and what they found, where screenshots go and what they are like,
-the keys for every shortcut, grid columns, controls visibility, how the
-panels over the video look, and file names. Settings → About lists the
-version, the day it was built, and the credits, each of which opens to its
-license; on macOS, About Plays in the app menu shows the icon, version and
-build day in a small window of its own.
+left, seek step, chapter notches on the bar, fit/fill scaling, gamma for
+SDR and for HDR video (applied to every open video as you drag), decode
+resolution limit, hardware decoding, subtitle style, the protocols that
+look for devices to cast to, what they found and the AirPlay TVs paired
+with, where screenshots go and what they are like, the keys for every
+shortcut, grid columns, controls visibility, how the panels over the video
+look, and file names. Settings → About lists the version, the day it was
+built, and the credits, each of which opens to its license; on macOS,
+About Plays in the app menu shows the icon, version and build day in a
+small window of its own.
 
 Settings are saved as JSON in the user config folder:
 `~/Library/Application Support/plays/settings.json` on macOS,
@@ -607,12 +626,18 @@ resets every setting to its default (after asking).
   and the sound; gamma, crop, rotation, flips, aspect ratio, and picture
   subtitles where the video isn't re-encoded, stay on this computer (the
   tile says so), and frames can't be stepped.
-- Casting is to Chromecast and DLNA so far. Plays can't find or connect to
-  AirPlay receivers itself: macOS keeps that to its own picker and to
-  AVPlayer, which Plays doesn't play through. Connect one from Control
-  Center first. Mirrored, an AirPlay display shows the whole screen; as a
-  separate display, just the window. The Output Device menus are macOS
-  only.
+- AirPlay speakers aren't cast to yet: macOS plays through them once
+  picked in Control Center → Sound. Mirrored, an AirPlay display shows the
+  whole screen; as a separate display, just the window. The Output Device
+  menus are macOS only.
+- Casting to AirPlay hasn't been checked with a real Apple TV yet, only a
+  pretend one: none was on hand. AirPlay is Apple's own and unpublished,
+  and Plays speaks it as others have worked it out, so a tvOS update can
+  break it. A TV with a password set, rather than a PIN, can't be cast to.
+  What one plays goes by the model it says it is; a TV of another make
+  gets H.264 and stereo AAC, which it may play more than. Subtitles take
+  the TV's own style, not Settings', and picking others starts the media
+  again from where it is, after a moment's wait.
 - Casting to a Chromecast hasn't been checked with a real one yet, only
   a pretend one: none was on hand. What one plays goes by the model it
   says it is, and a Google TV that calls itself just "Chromecast" is

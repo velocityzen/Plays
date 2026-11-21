@@ -5,11 +5,13 @@
 //! started for the first cast; a tile's `Link` drives its device on a
 //! thread of its own.
 
+pub mod airplay;
 pub mod chromecast;
 pub mod dlna;
 #[cfg(test)]
 pub mod fake;
 mod link;
+pub mod pairings;
 pub mod target;
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
@@ -22,6 +24,7 @@ use parking_lot::Mutex;
 use stream_server::Server;
 
 pub use link::{Link, Phase, Request, SubtitleChoice};
+pub use pairings::{AppPairings, Pairings};
 pub use target::{Device, Error, Shows, Target};
 
 use crate::settings::Settings;
@@ -85,8 +88,8 @@ impl Protocol {
     }
 }
 
-/// The protocols Plays casts with.
-pub fn protocols() -> Vec<Protocol> {
+/// The protocols Plays casts with, AirPlay connecting as `pairings` say.
+pub fn protocols(pairings: Arc<Pairings>) -> Vec<Protocol> {
     vec![
         Protocol::new(
             chromecast::KIND,
@@ -106,6 +109,11 @@ pub fn protocols() -> Vec<Protocol> {
                 Ok(Arc::new(target))
             },
         ),
+        Protocol::new(airplay::KIND, "Apple TVs and TVs with AirPlay", move || {
+            let target = airplay::AirPlayTarget::start(Arc::clone(&pairings))
+                .map_err(|err| format!("can't look for AirPlay receivers: {err}"))?;
+            Ok(Arc::new(target))
+        }),
     ]
 }
 
@@ -302,18 +310,23 @@ impl Casting {
     /// Start casting `request` to `device`: connecting, serving and
     /// loading go on on the link's thread.
     pub fn link(cx: &App, device: &Device, request: Request) -> Result<Link, String> {
+        let target = Self::target(cx, device)?;
+        let server = cx.global::<Self>().server()?;
+        Ok(Link::start(target, device.clone(), server, request))
+    }
+
+    /// The target `device` was found by, while it's looking.
+    pub fn target(cx: &App, device: &Device) -> Result<Arc<dyn Target>, String> {
         let casting = cx
             .try_global::<Self>()
             .ok_or_else(|| "casting isn't set up".to_owned())?;
-        let target = casting
+        casting
             .protocols
             .iter()
             .filter_map(Kept::target)
             .find(|target| target.kind() == device.kind)
             .cloned()
-            .ok_or_else(|| format!("{} devices can't be reached", device.kind))?;
-        let server = casting.server()?;
-        Ok(Link::start(target, device.clone(), server, request))
+            .ok_or_else(|| format!("{} devices can't be reached", device.kind))
     }
 
     /// The stream server, started when a cast needs it and none is

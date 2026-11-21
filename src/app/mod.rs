@@ -11,6 +11,7 @@ mod menus;
 #[cfg(feature = "smoke")]
 pub mod smoke;
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use futures::StreamExt as _;
@@ -21,7 +22,7 @@ pub use audio::{AudioEngine, Route};
 pub use awake::Awake;
 pub use menus::refresh as refresh_menus;
 
-use crate::cast::{self, Casting, Device, Protocol};
+use crate::cast::{self, AppPairings, Casting, Device, Pairings, Protocol};
 use crate::files::Folder;
 use crate::media::{Source, picture};
 use crate::progress::{self, Progress};
@@ -128,13 +129,21 @@ pub fn run(cx: &mut App, sources: Vec<Source>, opened: UnboundedReceiver<Vec<Str
 /// What every window needs: `settings`, the audio engine, which `audio`
 /// starts, casting with `protocols` (those Settings have on), the UI font
 /// and colors, and the actions and their keys.
-fn set_up(cx: &mut App, settings: Settings, audio: fn(&mut App), protocols: fn() -> Vec<Protocol>) {
+fn set_up(
+    cx: &mut App,
+    settings: Settings,
+    audio: fn(&mut App),
+    protocols: fn(Arc<Pairings>) -> Vec<Protocol>,
+) {
     let [sdr_gamma, hdr_gamma] = settings.gamma();
     picture::set_gamma(sdr_gamma, hdr_gamma);
     cx.set_global(settings);
-    cx.set_global(Progress::load(&Folder::of(cx)));
+    let folder = Folder::of(cx);
+    cx.set_global(Progress::load(&folder));
     audio(cx);
-    cx.set_global(Casting::new(protocols()));
+    let pairings = Arc::new(Pairings::load(&folder));
+    cx.set_global(AppPairings(Arc::clone(&pairings)));
+    cx.set_global(Casting::new(protocols(pairings)));
     Casting::watch(cx);
     let font = pick_ui_font(cx);
     cx.set_global(UiFont(font));
@@ -152,7 +161,9 @@ fn set_up(cx: &mut App, settings: Settings, audio: fn(&mut App), protocols: fn()
 /// the computer awake.
 #[cfg(test)]
 pub fn set_up_for_tests(cx: &mut App) {
-    set_up(cx, Settings::default(), AudioEngine::start_silent, Vec::new);
+    set_up(cx, Settings::default(), AudioEngine::start_silent, |_| {
+        Vec::new()
+    });
 }
 
 /// Note where every open file is, and save it, every

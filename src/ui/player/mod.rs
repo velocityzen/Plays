@@ -37,6 +37,7 @@ use super::framing::{Adjustments, Framing};
 use super::subtitles;
 use super::theme::Theme;
 use super::theme::motion::LEVEL_FALLOFF;
+use crate::cast::Device;
 use crate::media::decoder::MediaInfo;
 use crate::media::picture::PictureId;
 use crate::media::subtitles::CueContent;
@@ -55,6 +56,9 @@ pub enum PlayerEvent {
     ToggleMaximize,
     /// Move to a new window.
     PopOut,
+    /// Pair with this TV, which it was cast to and asks for the PIN it
+    /// shows; then cast there again.
+    Pair(Device),
 }
 
 /// Where a tile is in its window, and where the mouse is, as the window

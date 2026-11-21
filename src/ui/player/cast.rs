@@ -15,7 +15,7 @@ use gpui::prelude::*;
 use gpui::{AnyElement, App, Context, Corner, Div, ElementId, MouseDownEvent, Task, Window, div};
 use stream_server::{Pick, SubtitleSource};
 
-use super::PlayerView;
+use super::{PlayerEvent, PlayerView};
 use crate::app::{AudioEngine, SetWindowAudioDevice, ShowOnDisplay};
 use crate::cast::target::FOLLOW_POLL;
 use crate::cast::{Casting, Device, Error, Link, Phase, Request, Shows, SubtitleChoice};
@@ -241,6 +241,12 @@ impl PlayerView {
                 }
             }
             Phase::On { .. } => {}
+            Phase::Over(Error::NeedsPin) => {
+                let device = cast.link.device().clone();
+                self.end_cast(cx);
+                cx.emit(PlayerEvent::Pair(device));
+                return false;
+            }
             Phase::Over(err) => {
                 let note = match err {
                     Error::Gone if cast.on => format!("{name} went away"),

@@ -213,7 +213,11 @@ the test's own, and a broken file is kept aside and saved over whole. The
 places files were left are saved there and read back, those over 30 days
 old left out of the file, a broken file read as no places and saved over,
 none kept when Settings say not to, and forgetting them all removes the
-file; each has been checked to fail when what it covers is broken.
+file. The AirPlay pairings are saved there and read back with the id they
+know this computer by, a broken file is saved over, and without a folder
+they're kept in memory only. A private file is its owner's alone (on
+unix), even where one left beside it by a crash was not; each has been
+checked to fail when what it covers is broken.
 
 A clip remuxed with a display matrix must report its turn and flip; unit
 tests check that orientations compose like their matrices, read FFmpeg's
@@ -398,10 +402,11 @@ one going; turned on, it looks again and finds them. A protocol that takes
 a while to stop doesn't hold up the windows: it stops on another thread.
 One off from the start never looks, and other settings or protocols
 changing leave it as it is; one that can't start says why and tries again
-when turned off and on. Unit tests check that of what the tile sends at
-once, only the last of seeks in a row is done, and only the last volume,
-looping and subtitles asked for. Each test has been checked to fail when
-the behavior it covers is broken.
+when turned off and on. It lists the AirPlay TVs paired with, and Forget
+forgets one, which then asks for its PIN again. Unit tests check that of
+what the tile sends at once, only the last of seeks in a row is done, and
+only the last volume, looping and subtitles asked for. Each test has been
+checked to fail when the behavior it covers is broken.
 
 Casting to DLNA is tested with the DLNA crate's fake renderer, found as it
 would be on the network. Picking the TV gives it the tile's Matroska file
@@ -451,6 +456,27 @@ profile for each model (the first Chromecasts, an Ultra, a Google TV, the
 HD one, the Streamer, another make's TV, a speaker), the subtitle style
 from Settings, and language codes as BCP 47. Each test has been checked to
 fail when the behavior it covers is broken.
+
+Casting to AirPlay is tested with the AirPlay crate's fake Apple TV 4K,
+paired with and spoken to encrypted as a real one. Picking it the first
+time puts a sheet over the window asking for the PIN the TV shows, and
+casts nothing meanwhile; a wrong PIN has the TV show another, which the
+sheet asks for, saying why; the right one pairs, keeps what pairing left
+and casts the tile, and casting again asks for no PIN. Escape takes the
+sheet away, leaving the tile playing here and nothing paired. A TV that
+turns down the credentials kept, as one reset since would, has them
+forgotten and asks for its PIN again. Paired, it's told to play the tile's
+Matroska file as HLS of fragmented MP4 from where the tile was, playing as
+it was, with the subtitles picked in the master playlist; picking none
+gives it the media again from where it says it is, at a URL of its own,
+the playlist now without them. Space, the arrows, `M` and the volume keys
+play, seek, mute, turn down and pause it; the bar follows where it says it
+is, and its saying nothing of what it played shows the end; sent back from
+there, it plays from there once told to, turned down as before, and from
+the start after the next end. Unit tests check the profile for each Apple
+TV and for another make's TV, and what it says it's doing as the tile
+shows it. Each test has been checked to fail when the behavior it covers
+is broken.
 
 ### The crates
 

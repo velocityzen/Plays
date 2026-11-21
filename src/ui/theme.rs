@@ -357,6 +357,8 @@ pub mod motion {
     /// How often a casting tile looks at what its device last said, which
     /// moves its bar.
     pub const CAST_POLL: Duration = Duration::from_millis(250);
+    /// How often a pairing sheet looks at how pairing with its TV goes.
+    pub const PAIRING_POLL: Duration = Duration::from_millis(100);
     /// How often a cast going on with the next file looks whether it's
     /// known yet what that file holds.
     pub const NEXT_CAST_POLL: Duration = Duration::from_millis(50);

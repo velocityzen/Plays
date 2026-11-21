@@ -9,6 +9,7 @@ mod grid;
 mod mouse;
 mod on_top;
 mod opening;
+mod pairing;
 mod place;
 mod sound;
 #[cfg(test)]
@@ -73,6 +74,10 @@ pub struct Workspace {
     active: Option<EntityId>,
     graveyard: Graveyard,
     open_url: Option<(Entity<OpenUrlDialog>, Subscription)>,
+    /// The sheet asking for the PIN a TV a tile was cast to shows.
+    pairing: Option<pairing::Pairing>,
+    /// A sheet closed: the window takes the keys back when next drawn.
+    refocus: bool,
     /// The "Open URL" form, which takes the place of the empty window's
     /// buttons while `url_form_open`.
     url_form: Entity<UrlForm>,
@@ -230,6 +235,8 @@ impl Workspace {
             active: None,
             graveyard: Graveyard::default(),
             open_url: None,
+            pairing: None,
+            refocus: false,
             url_form,
             url_form_open: false,
             mouse_inside: true,
@@ -283,6 +290,9 @@ impl Render for Workspace {
             self.url_form_open = false;
             window.focus(&self.focus_handle);
         }
+        if std::mem::take(&mut self.refocus) {
+            window.focus(&self.focus_handle);
+        }
 
         // The dialog sits next to the workspace rather than inside it, so the
         // workspace's single-key shortcuts (space, j, k, l, m) don't fire while
@@ -333,6 +343,9 @@ impl Render for Workspace {
             .child(workspace)
             .when_some(self.open_url.as_ref(), |this, (dialog, _)| {
                 this.child(dialog.clone())
+            })
+            .when_some(self.pairing.as_ref(), |this, pairing| {
+                this.child(pairing.dialog.clone())
             })
     }
 }

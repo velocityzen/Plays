@@ -29,6 +29,7 @@ impl Workspace {
             }
             PlayerEvent::ToggleMaximize => this.toggle_maximize(view.entity_id(), cx),
             PlayerEvent::PopOut => this.pop_out(view.entity_id(), cx),
+            PlayerEvent::Pair(device) => this.pair(&view, device.clone(), cx),
         });
         self.tiles.push(Tile {
             view,

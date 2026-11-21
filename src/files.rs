@@ -50,6 +50,17 @@ impl Folder {
 /// or losing power midway leaves the file as it was rather than half
 /// written.
 pub fn write_whole(path: &Path, contents: &[u8]) -> io::Result<()> {
+    write(path, contents, false)
+}
+
+/// Write `contents` to `path` as `write_whole` does, the file readable and
+/// writable by its owner alone: for secrets, such as what pairing with a
+/// TV leaves.
+pub fn write_private(path: &Path, contents: &[u8]) -> io::Result<()> {
+    write(path, contents, true)
+}
+
+fn write(path: &Path, contents: &[u8], private: bool) -> io::Result<()> {
     let folder = path
         .parent()
         .filter(|folder| !folder.as_os_str().is_empty());
@@ -57,7 +68,9 @@ pub fn write_whole(path: &Path, contents: &[u8]) -> io::Result<()> {
         fs::create_dir_all(folder)?;
     }
     let beside = with_suffix(path, ".tmp");
-    let written = File::create(&beside).and_then(|mut file| {
+    // One left by a crash keeps the permissions it was made with.
+    let _ = fs::remove_file(&beside);
+    let written = create(&beside, private).and_then(|mut file| {
         file.write_all(contents)?;
         file.sync_all()
     });
@@ -70,6 +83,19 @@ pub fn write_whole(path: &Path, contents: &[u8]) -> io::Result<()> {
         let _ = File::open(folder).and_then(|folder| folder.sync_all());
     }
     Ok(())
+}
+
+/// A new file at `path`, for its owner alone if `private`.
+#[cfg_attr(not(unix), allow(unused_variables))]
+fn create(path: &Path, private: bool) -> io::Result<File> {
+    let mut options = fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    if private {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    options.open(path)
 }
 
 /// `path` with `suffix` after its whole name: `settings.json.bad`.
@@ -105,6 +131,36 @@ mod tests {
             .map(|entry| entry.unwrap().file_name())
             .collect();
         assert_eq!(left, ["settings.json"], "nothing else left beside it");
+        let _ = fs::remove_dir_all(&folder);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_private_file_is_its_owners_alone_though_one_left_beside_it_was_not() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let folder = std::env::temp_dir()
+            .join("plays-tests")
+            .join(format!("private-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&folder);
+        let mode = |name: &str| {
+            fs::metadata(folder.join(name))
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777
+        };
+        // Left by a crash, readable by all.
+        fs::create_dir_all(&folder).unwrap();
+        fs::write(folder.join("airplay.json.tmp"), b"").unwrap();
+        fs::set_permissions(
+            folder.join("airplay.json.tmp"),
+            fs::Permissions::from_mode(0o644),
+        )
+        .unwrap();
+        write_private(&folder.join("airplay.json"), b"{}").unwrap();
+        assert_eq!(mode("airplay.json"), 0o600);
+        assert_eq!(fs::read(folder.join("airplay.json")).unwrap(), b"{}");
         let _ = fs::remove_dir_all(&folder);
     }
 }

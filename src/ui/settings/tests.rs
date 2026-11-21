@@ -7,6 +7,8 @@ use std::sync::{Arc, Weak};
 use std::thread::{self, ThreadId};
 use std::time::{Duration, Instant};
 
+use airplay::PinPairing;
+use airplay::fake::{FakeReceiver, Kind};
 use gpui::{TestAppContext, VisualTestContext, point, px};
 use parking_lot::Mutex;
 
@@ -14,7 +16,7 @@ use super::SettingsView;
 use crate::app::SetAudioDevice;
 use crate::cast::fake::{FakeTarget, KIND};
 use crate::cast::target::{Device, Error, Session};
-use crate::cast::{Casting, Looking, Protocol, Shows, Target};
+use crate::cast::{AppPairings, Casting, Looking, Protocol, Shows, Target};
 use crate::settings::{AudioDevice, PanelLook, Settings};
 use crate::ui::testing::{self, click, scroll, shows, wait_until};
 
@@ -193,6 +195,30 @@ fn casting_lists_the_devices_found_and_a_protocol_turned_off_finds_none(cx: &mut
     assert_eq!(looking(&mut settings), [Looking::On]);
     assert_eq!(found(&mut settings), ["Den TV", "Kitchen"]);
     assert!(shows(&mut settings, "found-Den TV"));
+}
+
+#[gpui::test]
+fn a_tv_paired_with_is_listed_and_forgotten_there(cx: &mut TestAppContext) {
+    let (_, mut cx) = testing::start(cx);
+    let tv = FakeReceiver::start(Kind::Tv { pin: "1234" });
+    let device = tv.device();
+    let credentials = PinPairing::start(&device)
+        .and_then(|pairing| pairing.finish("1234"))
+        .expect("paired with the fake");
+    let pairings = cx.update(|_, cx| Arc::clone(&cx.global::<AppPairings>().0));
+    let mut settings = open_settings(&mut cx);
+    click(&mut settings, "pane-Casting");
+    assert!(!shows(&mut settings, "forget-Fake TV"), "none paired yet");
+
+    pairings.keep(&device.id, &device.name, &credentials);
+    settings.update(|window, _| window.refresh());
+    settings.run_until_parked();
+    assert!(shows(&mut settings, "forget-Fake TV"));
+
+    click(&mut settings, "forget-Fake TV");
+    assert!(pairings.paired().is_empty(), "it asks for its PIN again");
+    assert!(pairings.credentials(&device.id).is_none());
+    assert!(!shows(&mut settings, "forget-Fake TV"), "it goes");
 }
 
 #[gpui::test]

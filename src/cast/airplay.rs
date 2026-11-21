@@ -1,0 +1,509 @@
+//! AirPlay receivers that show video, through the `airplay` crate: Apple
+//! TVs, and TVs with AirPlay built in. They're told to play a URL, as
+//! iPhones tell them, and driven while they do. One that wants it is paired
+//! with the PIN it shows, the first time: what that leaves is kept
+//! (`Pairings`), and verified on each connection after.
+//!
+//! What one plays goes by its model: an Apple TV 4K HEVC and HDR, as Apple
+//! lists. Everything goes as HLS, so subtitles go in its playlist, which
+//! the receiver draws in its own style; other subtitles have it play the
+//! media again from where it is, as it reads the playlist only once.
+
+use std::sync::Arc;
+
+use ::airplay::{Browser, Event, PinPairing, PlaybackInfo, PlaybackState, VideoSession};
+use futures::channel::mpsc::UnboundedReceiver;
+use stream_server::{AudioCodec, Hdr, Profile, Segments, VideoCodec};
+
+use super::pairings::Pairings;
+use super::target::{
+    Device, Error, Load, Pairing, Session, Shows, State, Status, Subtitles, Target,
+};
+
+pub const KIND: &str = "AirPlay";
+
+const FULL_HD: (u32, u32) = (1920, 1080);
+const UHD: (u32, u32) = (3840, 2160);
+
+pub struct AirPlayTarget {
+    /// Looking for receivers until dropped; tests have their fakes instead.
+    browser: Option<Browser>,
+    pairings: Arc<Pairings>,
+    #[cfg(test)]
+    fakes: Vec<::airplay::Device>,
+}
+
+impl AirPlayTarget {
+    /// Look for receivers on every network this computer is on, connecting
+    /// to them as `pairings` say.
+    pub fn start(pairings: Arc<Pairings>) -> ::airplay::Result<Self> {
+        // What's found is asked for when wanted, so news of it goes unheard.
+        let (browser, _found) = Browser::start()?;
+        Ok(Self {
+            browser: Some(browser),
+            pairings,
+            #[cfg(test)]
+            fakes: Vec::new(),
+        })
+    }
+
+    /// For tests: these fake receivers, as if found.
+    #[cfg(test)]
+    pub fn with(fakes: Vec<::airplay::Device>, pairings: Arc<Pairings>) -> Self {
+        Self {
+            browser: None,
+            pairings,
+            fakes,
+        }
+    }
+
+    fn found(&self) -> Vec<::airplay::Device> {
+        let found = self
+            .browser
+            .as_ref()
+            .map(Browser::devices)
+            .unwrap_or_default();
+        #[cfg(test)]
+        let found = [found, self.fakes.clone()].concat();
+        found
+    }
+
+    /// The receiver `device` is, as found now.
+    fn receiver(&self, device: &Device) -> Result<::airplay::Device, Error> {
+        self.found()
+            .into_iter()
+            .find(|found| found.id == device.id)
+            .ok_or(Error::Gone)
+    }
+}
+
+impl Target for AirPlayTarget {
+    fn kind(&self) -> &'static str {
+        KIND
+    }
+
+    /// Receivers that show video; speakers are outputs of their own.
+    fn devices(&self) -> Vec<Device> {
+        self.found()
+            .into_iter()
+            .filter(::airplay::Device::shows_video)
+            .filter_map(|receiver| {
+                Some(Device {
+                    kind: KIND,
+                    shows: Shows::Video,
+                    address: receiver.addresses.first()?.ip(),
+                    id: receiver.id,
+                    name: receiver.name,
+                })
+            })
+            .collect()
+    }
+
+    fn connect(&self, device: &Device) -> Result<Box<dyn Session>, Error> {
+        let receiver = self.receiver(device)?;
+        let credentials = self.pairings.credentials(&receiver.id);
+        let sender = self.pairings.sender();
+        match VideoSession::connect(&receiver, credentials.as_ref(), &sender) {
+            Ok((session, events)) => Ok(Box::new(AirPlaySession::new(
+                session,
+                events,
+                profile(&receiver.model),
+            ))),
+            Err(::airplay::Error::NeedsPin) => Err(Error::NeedsPin),
+            // It no longer knows us, as after it's reset: paired again.
+            Err(::airplay::Error::Pairing(why)) if credentials.is_some() => {
+                log::info!("airplay: {} turned down its pairing: {why}", receiver.name);
+                self.pairings.forget(&receiver.id);
+                Err(Error::NeedsPin)
+            }
+            Err(err) => Err(failed(&err)),
+        }
+    }
+
+    fn pair(&self, device: &Device) -> Result<Box<dyn Pairing>, Error> {
+        let receiver = self.receiver(device)?;
+        let pairing = PinPairing::start(&receiver).map_err(|err| failed(&err))?;
+        Ok(Box::new(AirPlayPairing {
+            pairing,
+            receiver,
+            pairings: Arc::clone(&self.pairings),
+        }))
+    }
+}
+
+/// What went wrong, as the tile is told.
+fn failed(err: &::airplay::Error) -> Error {
+    if err.is_gone() {
+        Error::Gone
+    } else {
+        Error::Failed(err.to_string())
+    }
+}
+
+/// How the stream server serves a receiver, by its model: an Apple TV 4K
+/// (`AppleTV6,2` and later) HEVC up to 2160p with HDR10, HLG and Dolby
+/// Vision; an Apple TV HD (`AppleTV5,3`) HEVC up to 1080p; an older Apple
+/// TV H.264. Apple TVs take AC-3, E-AC-3 and ALAC too, up to 7.1, in HLS of
+/// fragmented MP4, which HEVC and HDR need. Any other TV gets what nearly
+/// every TV plays: H.264 and AAC in MPEG-TS. Always as HLS, never a file as
+/// it is, so subtitles go in the playlist.
+fn profile(model: &str) -> Profile {
+    let plain = Profile {
+        files: Vec::new(),
+        hls_subtitles: true,
+        ..Profile::default()
+    };
+    let Some(generation) = apple_tv(model) else {
+        return plain;
+    };
+    let apple = Profile {
+        audio: vec![
+            AudioCodec::Aac,
+            AudioCodec::Ac3,
+            AudioCodec::Eac3,
+            AudioCodec::Alac,
+        ],
+        max_channels: 8,
+        ..plain
+    };
+    match generation {
+        6.. => Profile {
+            hls: Some(Segments::Fmp4),
+            video: vec![VideoCodec::H264, VideoCodec::Hevc],
+            max_size: Some(UHD),
+            max_bit_depth: 10,
+            hdr: vec![Hdr::Hdr10, Hdr::Hlg, Hdr::DolbyVision],
+            ..apple
+        },
+        5 => Profile {
+            hls: Some(Segments::Fmp4),
+            video: vec![VideoCodec::H264, VideoCodec::Hevc],
+            max_size: Some(FULL_HD),
+            max_bit_depth: 10,
+            ..apple
+        },
+        _ => apple,
+    }
+}
+
+/// An Apple TV's generation, from its model: 6 in `AppleTV6,2`.
+fn apple_tv(model: &str) -> Option<u32> {
+    let (generation, _) = model.strip_prefix("AppleTV")?.split_once(',')?;
+    generation.parse().ok()
+}
+
+/// Pairing with the PIN a receiver shows, kept once it's done.
+struct AirPlayPairing {
+    pairing: PinPairing,
+    receiver: ::airplay::Device,
+    pairings: Arc<Pairings>,
+}
+
+impl Pairing for AirPlayPairing {
+    fn finish(self: Box<Self>, pin: &str) -> Result<(), Error> {
+        let credentials = self.pairing.finish(pin).map_err(|err| failed(&err))?;
+        self.pairings
+            .keep(&self.receiver.id, &self.receiver.name, &credentials);
+        Ok(())
+    }
+}
+
+struct AirPlaySession {
+    /// Until stopped.
+    session: Option<VideoSession>,
+    events: UnboundedReceiver<Event>,
+    profile: Profile,
+    /// The URL it was last given.
+    url: Option<String>,
+    /// How many times it was given the media again for other subtitles:
+    /// each time at a URL of its own, so it reads the playlist anew.
+    given: u32,
+    /// What it last said it was doing.
+    info: PlaybackInfo,
+    /// Whether it was told to play.
+    playing: bool,
+    /// Whether it played to the end, after which it has nothing to play
+    /// and is given the media again to play it.
+    finished: bool,
+    /// Where it was sent since, to play from.
+    start_over: Option<f64>,
+    /// The tile's volume, which is the receiver's.
+    volume: f32,
+    muted: bool,
+    /// It went away, or ended the session.
+    gone: bool,
+}
+
+impl AirPlaySession {
+    fn new(session: VideoSession, events: UnboundedReceiver<Event>, profile: Profile) -> Self {
+        Self {
+            session: Some(session),
+            events,
+            profile,
+            url: None,
+            given: 0,
+            info: PlaybackInfo {
+                state: PlaybackState::Loading,
+                position: 0.0,
+                duration: None,
+            },
+            playing: false,
+            finished: false,
+            start_over: None,
+            volume: 1.0,
+            muted: false,
+            gone: false,
+        }
+    }
+
+    fn session(&mut self) -> Result<&mut VideoSession, Error> {
+        self.hear();
+        if self.gone {
+            return Err(Error::Gone);
+        }
+        self.session.as_mut().ok_or(Error::Gone)
+    }
+
+    /// Take in what it said since last asked.
+    fn hear(&mut self) {
+        while let Ok(event) = self.events.try_recv() {
+            match event {
+                Event::Gone => self.gone = true,
+            }
+        }
+    }
+
+    /// The URL to give it: the media's, marked with how many times it was
+    /// given again.
+    fn url(&self) -> Option<String> {
+        let url = self.url.as_ref()?;
+        Some(match self.given {
+            0 => url.clone(),
+            given => format!("{url}?{given}"),
+        })
+    }
+
+    /// Give it the media to play from `start`, and play it with `play`.
+    fn give(&mut self, play: bool, start: f64) -> Result<(), Error> {
+        let url = self.url().ok_or(Error::Unplayable)?;
+        self.session()?
+            .play(&url, start, play)
+            .map_err(|err| failed(&err))?;
+        self.playing = play;
+        self.finished = false;
+        self.start_over = None;
+        self.info = PlaybackInfo {
+            state: PlaybackState::Loading,
+            position: start,
+            duration: self.info.duration,
+        };
+        // Each starts at full volume.
+        if self.volume < 1.0 || self.muted {
+            self.turn()?;
+        }
+        Ok(())
+    }
+
+    /// Set its volume to the tile's.
+    fn turn(&mut self) -> Result<(), Error> {
+        let (volume, muted) = (self.volume, self.muted);
+        self.session()?
+            .set_volume(volume, muted)
+            .map_err(|err| failed(&err))
+    }
+
+    /// Ask what it's doing now.
+    fn ask(&mut self) -> Result<(), Error> {
+        let info = self
+            .session()?
+            .playback_info()
+            .map_err(|err| failed(&err))?;
+        self.info = PlaybackInfo {
+            duration: info.duration.or(self.info.duration),
+            ..info
+        };
+        if info.state == PlaybackState::Ended {
+            self.finished = true;
+        }
+        Ok(())
+    }
+}
+
+impl Session for AirPlaySession {
+    fn profile(&self) -> Profile {
+        self.profile.clone()
+    }
+
+    fn load(&mut self, load: &Load) -> Result<(), Error> {
+        self.url = Some(load.url.clone());
+        self.given = 0;
+        self.volume = load.volume;
+        self.muted = load.muted;
+        self.info.duration = load.duration;
+        self.give(load.autoplay, load.start)
+    }
+
+    fn play(&mut self) -> Result<(), Error> {
+        if self.finished {
+            let start = self.start_over.unwrap_or(0.0);
+            return self.give(true, start);
+        }
+        self.session()?.resume().map_err(|err| failed(&err))?;
+        self.playing = true;
+        Ok(())
+    }
+
+    fn pause(&mut self) -> Result<(), Error> {
+        self.playing = false;
+        if self.finished {
+            return Ok(());
+        }
+        self.session()?.pause().map_err(|err| failed(&err))
+    }
+
+    fn seek(&mut self, time: f64) -> Result<(), Error> {
+        if self.finished {
+            self.start_over = Some(time);
+            return Ok(());
+        }
+        self.session()?.seek(time).map_err(|err| failed(&err))
+    }
+
+    fn set_volume(&mut self, volume: f32, muted: bool) -> Result<(), Error> {
+        self.volume = volume;
+        self.muted = muted;
+        if self.url.is_none() || self.finished {
+            return Ok(());
+        }
+        self.turn()
+    }
+
+    /// The playlist says what subtitles there are, and the stream server
+    /// says them anew: it's given again, from where it is.
+    fn set_subtitles(&mut self, _: Option<&Subtitles>) -> Result<(), Error> {
+        if self.url.is_none() {
+            return Ok(());
+        }
+        self.given += 1;
+        if self.finished {
+            return Ok(());
+        }
+        self.ask()?;
+        if self.finished {
+            return Ok(());
+        }
+        let (playing, position) = (self.playing, self.info.position);
+        self.give(playing, position)
+    }
+
+    fn stop(&mut self) -> Result<(), Error> {
+        if let Some(session) = self.session.take() {
+            session.stop();
+        }
+        Ok(())
+    }
+
+    fn status(&mut self) -> Result<Status, Error> {
+        if !self.finished {
+            self.ask()?;
+        }
+        let (state, position) = match (self.finished, self.start_over) {
+            (true, Some(time)) => (State::Paused, time),
+            (true, None) => (
+                State::Ended,
+                self.info.duration.unwrap_or(self.info.position),
+            ),
+            (false, _) => (state(self.info.state), self.info.position),
+        };
+        Ok(Status {
+            state,
+            position,
+            at: None,
+            duration: self.info.duration,
+        })
+    }
+}
+
+/// What a tile makes of what a receiver says it's doing.
+fn state(state: PlaybackState) -> State {
+    match state {
+        PlaybackState::Loading => State::Buffering,
+        PlaybackState::Playing => State::Playing,
+        PlaybackState::Paused => State::Paused,
+        PlaybackState::Ended => State::Ended,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_apple_tv_4k_gets_hevc_and_hdr_up_to_2160p_in_fragmented_mp4() {
+        for model in ["AppleTV6,2", "AppleTV11,1", "AppleTV14,1"] {
+            let tv = profile(model);
+            assert_eq!(tv.video, [VideoCodec::H264, VideoCodec::Hevc], "{model}");
+            assert_eq!(tv.max_size, Some(UHD), "{model}");
+            assert_eq!(tv.max_bit_depth, 10, "{model}");
+            assert_eq!(tv.hdr, [Hdr::Hdr10, Hdr::Hlg, Hdr::DolbyVision], "{model}");
+            assert_eq!(tv.hls, Some(Segments::Fmp4), "{model}");
+            assert_eq!(
+                tv.audio,
+                [
+                    AudioCodec::Aac,
+                    AudioCodec::Ac3,
+                    AudioCodec::Eac3,
+                    AudioCodec::Alac
+                ],
+                "{model}"
+            );
+            assert_eq!(tv.max_channels, 8, "{model}");
+        }
+    }
+
+    #[test]
+    fn an_apple_tv_hd_gets_hevc_without_hdr_up_to_1080p() {
+        let hd = profile("AppleTV5,3");
+        assert_eq!(hd.video, [VideoCodec::H264, VideoCodec::Hevc]);
+        assert_eq!(hd.max_size, Some(FULL_HD));
+        assert_eq!(hd.max_bit_depth, 10);
+        assert!(hd.hdr.is_empty());
+        assert_eq!(hd.hls, Some(Segments::Fmp4));
+        assert_eq!(hd.max_channels, 8);
+    }
+
+    #[test]
+    fn an_older_apple_tv_and_any_other_tv_get_h264() {
+        let old = profile("AppleTV3,2");
+        assert_eq!(old.video, [VideoCodec::H264]);
+        assert_eq!(old.max_size, Some(FULL_HD));
+        assert_eq!(old.hls, Some(Segments::Ts));
+        assert!(old.audio.contains(&AudioCodec::Ac3));
+        for model in ["UN55TU8000", "AppleTV", "", "AppleTVx,1"] {
+            let other = profile(model);
+            assert_eq!(other.video, [VideoCodec::H264], "{model}");
+            assert_eq!(other.audio, [AudioCodec::Aac], "{model}");
+            assert_eq!(other.max_channels, 2, "{model}");
+            assert_eq!(other.hls, Some(Segments::Ts), "{model}");
+        }
+    }
+
+    #[test]
+    fn everything_goes_as_hls_with_subtitles_in_the_playlist() {
+        for model in ["AppleTV11,1", "AppleTV5,3", "AppleTV3,2", "UN55TU8000"] {
+            let tv = profile(model);
+            assert!(tv.files.is_empty(), "{model}");
+            assert!(tv.hls_subtitles, "{model}");
+            assert!(tv.fetches_urls, "{model}");
+            assert!(!tv.stream && tv.sound_stream.is_empty(), "{model}");
+        }
+    }
+
+    #[test]
+    fn what_it_says_its_doing_is_what_the_tile_shows() {
+        assert_eq!(state(PlaybackState::Loading), State::Buffering);
+        assert_eq!(state(PlaybackState::Playing), State::Playing);
+        assert_eq!(state(PlaybackState::Paused), State::Paused);
+        assert_eq!(state(PlaybackState::Ended), State::Ended);
+    }
+}
