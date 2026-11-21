@@ -516,7 +516,9 @@ flowchart LR
   dragged onto another lands (`grid`), going from tile to tile and moving
   them about the grid from the keyboard (`focus`: the tile beside, above
   or below the one in front, as the grid lays them out, or the one before
-  or after it in turn), the empty window's ring (`empty`), the
+  or after it in turn), the empty window's ring (`empty`: pressed anywhere
+  but its buttons and field, which keep their presses, and dragged, it
+  moves the window as a lone tile's picture does), the
   toolbar (`toolbar`), the mouse coming, going and resting, and the traffic
   lights (`mouse`), floating on top (`on_top`), where windows open and come
   back to (`place`), going full screen on another display (`display`: out
@@ -529,8 +531,9 @@ flowchart LR
   delays and `screenshot`; `pip` runs Picture in Picture for it, `cast`
   casts it), dragging it by its picture (`drag`: with gpui's drag and drop
   onto another tile, or the window with `Window::start_window_move` when
-  no other tile shows), and the graveyard frames wait in before they are
-  released.
+  no other tile shows, once the mouse has gone further than a click would,
+  which the empty window shares), and the graveyard frames wait in before
+  they are released.
   `playback` holds the tile's player and the device it casts to, and every
   command the tile sends goes through it: only that file can command the
   player, the rest of the tile reading it. While a tile casts, its play,

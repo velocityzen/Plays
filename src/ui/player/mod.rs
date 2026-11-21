@@ -29,7 +29,7 @@ use gpui::{
     Pixels, Point, SharedString, Stateful, Task, Window, black, div,
 };
 
-pub use drag::DraggedTile;
+pub use drag::{DraggedTile, move_window_once_dragged};
 pub use graveyard::Graveyard;
 
 use super::components::Panel;

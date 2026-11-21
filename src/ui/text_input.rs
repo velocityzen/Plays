@@ -650,6 +650,7 @@ impl Render for TextInput {
         };
         div()
             .id("text-input")
+            .debug_selector(|| "text-input".into())
             .key_context(CONTEXT)
             .track_focus(&self.focus_handle)
             .cursor(CursorStyle::IBeam)

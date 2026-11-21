@@ -94,16 +94,7 @@ impl PlayerView {
                 cx.listener(|this, _: &MouseUpEvent, _, _| this.window_press = None),
             )
             .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, window, _| {
-                let Some(pressed) = this.window_press else {
-                    return;
-                };
-                if event.pressed_button != Some(MouseButton::Left) {
-                    this.window_press = None;
-                } else if (event.position - pressed).magnitude() > f64::from(f32::from(DRAG_START))
-                {
-                    // The system has the mouse until its button is up.
-                    this.window_press = None;
-                    window.start_window_move();
+                if move_window_once_dragged(&mut this.window_press, event, window) {
                     #[cfg(test)]
                     {
                         this.window_moves += 1;
@@ -111,4 +102,29 @@ impl PlayerView {
                 }
             }))
     }
+}
+
+/// With the left button pressed at `press`, and the mouse moved to where
+/// `event` says, move the window once it has gone further than a click
+/// would, as from its title bar; whether it did. The press is forgotten
+/// then, as the system has the mouse until its button is up, or once the
+/// button is up.
+pub fn move_window_once_dragged(
+    press: &mut Option<Point<Pixels>>,
+    event: &MouseMoveEvent,
+    window: &Window,
+) -> bool {
+    let Some(pressed) = *press else {
+        return false;
+    };
+    if event.pressed_button != Some(MouseButton::Left) {
+        *press = None;
+        return false;
+    }
+    if (event.position - pressed).magnitude() <= f64::from(f32::from(DRAG_START)) {
+        return false;
+    }
+    *press = None;
+    window.start_window_move();
+    true
 }

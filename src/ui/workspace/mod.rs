@@ -88,6 +88,11 @@ pub struct Workspace {
     /// buttons while `url_form_open`.
     url_form: Entity<UrlForm>,
     url_form_open: bool,
+    /// Where the empty window was pressed, while that may yet move it.
+    empty_press: Option<gpui::Point<Pixels>>,
+    /// How many times the empty window has been moved by pressing it.
+    #[cfg(test)]
+    window_moves: usize,
     /// The mouse is over the window, so the controls and traffic lights show,
     /// unless it has been resting there (`mouse_idle`).
     mouse_inside: bool,
@@ -246,6 +251,9 @@ impl Workspace {
             refocus: false,
             url_form,
             url_form_open: false,
+            empty_press: None,
+            #[cfg(test)]
+            window_moves: 0,
             mouse_inside: true,
             mouse_idle: false,
             mouse_moved_at: Instant::now(),

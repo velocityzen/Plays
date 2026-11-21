@@ -132,9 +132,17 @@ pub fn double_click(cx: &mut VisualTestContext, selector: &'static str) {
 /// button down, move the mouse by `by`, a few steps at a time as a mouse
 /// goes, and let go there.
 pub fn drag_by(cx: &mut VisualTestContext, selector: &'static str, by: Point<Pixels>) {
-    const STEPS: u8 = 4;
-    hover(cx, selector);
     let from = find(cx, selector).center();
+    drag_from(cx, from, by);
+}
+
+/// Press at `from`, the mouse moving there first, and, with the button
+/// down, move the mouse by `by`, a few steps at a time as a mouse goes,
+/// and let go there.
+pub fn drag_from(cx: &mut VisualTestContext, from: Point<Pixels>, by: Point<Pixels>) {
+    const STEPS: u8 = 4;
+    cx.simulate_mouse_move(from, None, Modifiers::none());
+    cx.run_until_parked();
     cx.simulate_mouse_down(from, MouseButton::Left, Modifiers::none());
     let mut at = from;
     for step in 1..=STEPS {

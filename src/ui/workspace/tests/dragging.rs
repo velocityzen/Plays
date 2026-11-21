@@ -1,10 +1,13 @@
 //! Dragging a tile by its picture, as someone at the screen would: onto
-//! another tile, or, with no other tile showing, the window with it.
+//! another tile, or, with no other tile showing, the window with it; and
+//! an empty window, by anything but the ring's buttons and field.
 
-use gpui::{TestAppContext, VisualTestContext, WindowHandle, point, px};
+use gpui::{Modifiers, MouseButton, TestAppContext, VisualTestContext, WindowHandle, point, px};
 
 use super::{open, players};
-use crate::ui::testing::{self, double_click, drag, drag_by, fixture, shows, wait_until};
+use crate::ui::testing::{
+    self, click, double_click, drag, drag_by, drag_from, find, fixture, shows, wait_until,
+};
 use crate::ui::workspace::Workspace;
 
 /// How many times each tile's picture has moved the window.
@@ -100,4 +103,52 @@ fn with_no_other_tile_showing_the_picture_drags_the_window(cx: &mut TestAppConte
     drag_by(&mut cx, "tile-1", by);
     assert_eq!(window_moves(window, &cx), [1, 1]);
     assert_eq!(players(window, &cx).len(), 2, "no tile moved");
+}
+
+#[gpui::test]
+fn an_empty_window_drags_by_anything_but_what_is_in_its_ring(cx: &mut TestAppContext) {
+    let (window, mut cx) = testing::start(cx);
+    let moves = |cx: &VisualTestContext| {
+        window
+            .read_with(cx, |workspace, _| workspace.window_moves)
+            .unwrap()
+    };
+    let corner = find(&mut cx, "empty").origin + point(px(20.), px(20.));
+    // Down, off the buttons, so letting go there clicks none.
+    let by = point(px(0.), px(80.));
+
+    drag_from(&mut cx, corner, by);
+    assert_eq!(moves(&cx), 1);
+    drag_from(&mut cx, corner, point(px(1.), px(1.)));
+    assert_eq!(moves(&cx), 1, "a press that barely moves");
+
+    // A press let go, then one on a button where the mouse already was:
+    // the first is forgotten.
+    cx.simulate_click(corner, Modifiers::none());
+    let button = find(&mut cx, "open-empty").center();
+    cx.simulate_mouse_down(button, MouseButton::Left, Modifiers::none());
+    cx.simulate_mouse_move(button + by, MouseButton::Left, Modifiers::none());
+    cx.simulate_mouse_up(button + by, MouseButton::Left, Modifiers::none());
+    assert_eq!(moves(&cx), 1, "not by a press let go");
+    // Let go where the window didn't hear of it, then moved.
+    cx.simulate_mouse_down(corner, MouseButton::Left, Modifiers::none());
+    cx.simulate_mouse_move(corner + by, None, Modifiers::none());
+    assert_eq!(moves(&cx), 1, "not with the button up");
+
+    // On a button, or in the URL field, a press is theirs.
+    drag_by(&mut cx, "open-empty", by);
+    assert_eq!(moves(&cx), 1, "not by a button");
+    click(&mut cx, "open-url-empty");
+    assert!(shows(&mut cx, "text-input"), "the URL form is open");
+    drag_by(&mut cx, "text-input", point(px(60.), px(0.)));
+    assert_eq!(moves(&cx), 1, "not by the field, where it selects");
+
+    // Full screen, the window stays put.
+    cx.update(|window, _| window.toggle_fullscreen());
+    drag_from(&mut cx, corner, by);
+    assert_eq!(moves(&cx), 1);
+    cx.update(|window, _| window.toggle_fullscreen());
+    let corner = find(&mut cx, "empty").origin + point(px(20.), px(20.));
+    drag_from(&mut cx, corner, by);
+    assert_eq!(moves(&cx), 2, "and out of it, again");
 }

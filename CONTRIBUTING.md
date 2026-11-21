@@ -319,7 +319,11 @@ What the window tests check:
   tiles between moving over, and shortcuts then go to it; it keeps playing,
   isn't maximized, and let go over itself, stays. The only tile in a
   window, and a maximized one, move the window instead; a press that
-  barely moves doesn't, nor does any in full screen.
+  barely moves doesn't, nor does any in full screen. An empty window
+  moves dragged by anything but what's in its ring: not by its Open
+  button, nor its URL field, where a drag selects; not by a press let go
+  (one on a button after it doesn't), or let go where the window didn't
+  hear of it; not in full screen, and again once out of it.
 - Tiles from the keyboard: in two rows of two, `⌥⌘` and the arrows go
   from tile to tile and stop at the edges, a ring round the one gone to,
   which shortcuts then go to; closed down to one tile, there's no ring.
