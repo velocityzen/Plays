@@ -567,16 +567,19 @@ flowchart LR
   moves the window's progress bar. The tile pumps its player on a timer of
   its own, since gpui stops drawing a covered window: until the next frame
   is due while it plays, ten times a second while paused, and at once when
-  the window's buttons are pressed. VideoToolbox surfaces go as they are,
-  tagged with their colors (HDR included); other frames are copied into
-  BGRA buffers, and turned or mirrored videos are turned on the GPU. AVKit
-  moves the layer's video into its window at a size and scale of its own
-  rather than fitted to it, so Plays keeps it filling the window, looking
-  through the layers over it for one AVKit put there when the window
-  changes, and twice a second besides. Subtitles can't go over the video
-  there, so while any show, frames are scaled to the window's pixels on
-  the GPU and the subtitles drawn into them (`burn_in`), in the frame's
-  own signal and samples.
+  the window's buttons are pressed. VideoToolbox surfaces go tagged with
+  their colors (HDR included); other frames are copied into BGRA buffers,
+  and turned or mirrored videos are turned on the GPU. AVKit moves the
+  layer's video into its window at a size and scale of its own rather
+  than fitted to it, so Plays keeps it filling the window, looking through
+  the layers over it for one AVKit put there when the window changes, and
+  twice a second besides. AVKit does that again each time the frames
+  change size, so once the window is open every frame is scaled to its
+  pixels on the GPU (`Fitting`), with subtitles or without: were only
+  frames with subtitles scaled, the window would blink zoomed in as they
+  came and went. Subtitles can't go over the video there, so the ones
+  showing are drawn into those frames (`burn_in`), in the frame's own
+  signal and samples.
 - `src/ui/settings/`: the Settings window. Each pane (Playback, Audio,
   Video, Subtitles, Casting, Screenshots, Hotkeys, Appearance, About) is a
   file of its own with its name and icon for the sidebar; `form` has the

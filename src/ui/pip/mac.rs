@@ -10,12 +10,14 @@
 //!
 //! Frames go over as sample buffers marked to show at once, as the tile's
 //! player says they are due. The layer's timebase only follows playback for
-//! the window's progress bar. VideoToolbox surfaces go as they are, tagged
-//! with their colors (HDR included); converted frames are copied into BGRA
-//! buffers. Turned or mirrored videos are turned on the GPU first, from
-//! macOS 13. While subtitles show, frames are scaled to the window's pixels
-//! on the GPU and the subtitles drawn into them (`burn_in`). Dolby Vision
-//! surfaces need Plays' own shader, so they aren't shown.
+//! the window's progress bar. VideoToolbox surfaces go tagged with their
+//! colors (HDR included); converted frames are copied into BGRA buffers.
+//! Turned or mirrored videos are turned on the GPU first, from macOS 13.
+//! Once the window is open, frames are scaled on the GPU to its size in
+//! pixels, subtitles or not, and the subtitles showing drawn into them
+//! (`burn_in`): each time their size changes, AVKit lays the video out
+//! anew, zoomed, until `follow_window` puts it back. Dolby Vision surfaces
+//! need Plays' own shader, so they aren't shown.
 
 // objc's message macros test a `cargo-clippy` feature this crate doesn't have.
 #![allow(unexpected_cfgs)]
@@ -539,17 +541,11 @@ pub struct Pip {
     /// The layer's own layer showing the video, retained once AVKit is
     /// asked to start: it moves to the window, and back.
     video: *mut Object,
-    /// The window's content width and height in points, and its scale.
-    window: Option<(f64, f64, f64)>,
     lookout: Lookout,
-    /// The subtitles showing, counted each time they change.
-    subtitles: Option<Subtitles>,
+    /// Frames made to fit the window, with the subtitles showing.
+    fitting: Fitting,
+    /// Counts each time the subtitles change.
     revision: u64,
-    /// The subtitles drawn for frames of this HDR signal (or SDR).
-    burned: Option<(Option<Transfer>, Overlay)>,
-    /// Frames scaled to the subtitles' size, to draw them into.
-    scaled: Buffers,
-    scaler: Option<Scaler>,
 }
 
 impl Pip {
@@ -608,13 +604,9 @@ impl Pip {
                 turner: None,
                 asked: false,
                 video: ptr::null_mut(),
-                window: None,
                 lookout: Lookout::default(),
-                subtitles: None,
+                fitting: Fitting::default(),
                 revision: 0,
-                burned: None,
-                scaled: Buffers::default(),
-                scaler: None,
             };
             ensure!(
                 !controller.is_null(),
@@ -650,11 +642,11 @@ impl Pip {
             },
         };
         let buffer = self.turn(buffer, orientation);
-        let buffer = match self.burn_in(&buffer) {
-            Ok(Some(burned)) => burned,
+        let buffer = match self.fitting.fit(&buffer) {
+            Ok(Some(fitted)) => fitted,
             Ok(None) => buffer,
             Err(err) => {
-                log::warn!("Picture in Picture shows no subtitles: {err:#}");
+                log::warn!("Picture in Picture shows frames as they are, no subtitles: {err:#}");
                 buffer
             }
         };
@@ -723,14 +715,14 @@ impl Pip {
             let bounds: CGRect = msg_send![content, bounds];
             let scale: f64 = msg_send![window, backingScaleFactor];
             let size = (bounds.width, bounds.height, scale.max(1.0));
-            if self.window != Some(size) {
+            if self.fitting.window != Some(size) {
                 log::debug!(
                     "Picture in Picture window: {} x {} at {}x",
                     size.0,
                     size.1,
                     size.2
                 );
-                self.window = Some(size);
+                self.fitting.window = Some(size);
             }
             let fill: CGRect = msg_send![holder, convertRect: bounds fromLayer: content];
             let frame: CGRect = msg_send![self.video, frame];
@@ -779,61 +771,16 @@ impl Pip {
         }
     }
 
-    /// The size frames of `picture` size (as they show) go at while
-    /// subtitles are drawn into them: the window's, in pixels, so they are
-    /// as sharp as it shows them.
+    /// The size frames of `picture` size (as they show) go at, which the
+    /// subtitles are laid out for (`Fitting::size`).
     pub fn subtitle_size(&self, picture: (u32, u32)) -> (u32, u32) {
-        let (Some((width, height, scale)), (w, h)) = (self.window, picture) else {
-            return picture;
-        };
-        if w == 0 || h == 0 {
-            return picture;
-        }
-        let (w, h) = (f64::from(w), f64::from(h));
-        let fit = (width * scale / w).min(height * scale / h);
-        let side = |length: f64| (length * fit).round().max(1.0) as u32;
-        (side(w), side(h))
+        self.fitting.size(picture)
     }
 
     /// Draw these subtitles into the frames from now on, or none.
     pub fn set_subtitles(&mut self, subtitles: Option<Subtitles>) {
-        self.subtitles = subtitles;
-        self.burned = None;
+        self.fitting.set_subtitles(subtitles);
         self.revision += 1;
-    }
-
-    /// `buffer` scaled to the subtitles' size with them drawn in, while
-    /// there are any.
-    fn burn_in(&mut self, buffer: &CVPixelBuffer) -> Result<Option<CVPixelBuffer>> {
-        let Some(subtitles) = &self.subtitles else {
-            return Ok(None);
-        };
-        let format = buffer.get_pixel_format();
-        let layout = Layout::of(buffer).with_context(|| format!("frames in format {format:#x}"))?;
-        let (width, height) = (subtitles.size.0 as usize, subtitles.size.1 as usize);
-        let transfer = transfer_of(buffer);
-        if self
-            .burned
-            .as_ref()
-            .is_none_or(|(drawn, _)| *drawn != transfer)
-        {
-            let mut drawn = Overlay::new(width, height, transfer);
-            for (image, rect, sampling) in &subtitles.bitmaps {
-                overlay::draw_image(&mut drawn, image, *rect, *sampling);
-            }
-            overlay::draw_text(&mut drawn, &subtitles.text, &subtitles.text_system);
-            self.burned = Some((transfer, drawn));
-        }
-        let scaled = self.scaled.get(format, width, height)?;
-        let scaler = match &mut self.scaler {
-            Some(scaler) => scaler,
-            None => self.scaler.insert(Scaler::new()?),
-        };
-        scaler.scale(buffer, &scaled)?;
-        let (_, drawn) = self.burned.as_ref().expect("drawn above");
-        // SAFETY: the buffer was just made, and is this layout.
-        unsafe { layout.draw(drawn, &scaled)? };
-        Ok(Some(scaled))
     }
 
     /// Show or hide the layer over the tile; hidden while the video is in
@@ -1231,6 +1178,95 @@ unsafe fn draw_planes<S: Sample>(
     Some(())
 }
 
+/// Frames made to fit the Picture in Picture window: scaled to its size in
+/// pixels once it is open, with the subtitles showing drawn in.
+#[derive(Default)]
+struct Fitting {
+    /// The window's content width and height in points, and its scale.
+    window: Option<(f64, f64, f64)>,
+    /// The subtitles showing.
+    subtitles: Option<Subtitles>,
+    /// The subtitles drawn for frames of this HDR signal (or SDR).
+    burned: Option<(Option<Transfer>, Overlay)>,
+    /// Frames scaled to fit, to hand over and draw the subtitles into.
+    scaled: Buffers,
+    scaler: Option<Scaler>,
+}
+
+impl Fitting {
+    /// The size frames of `picture` size (as they show) go at: the
+    /// window's, in pixels, so they are as sharp as it shows them; their
+    /// own until it is open.
+    fn size(&self, picture: (u32, u32)) -> (u32, u32) {
+        let (Some((width, height, scale)), (w, h)) = (self.window, picture) else {
+            return picture;
+        };
+        if w == 0 || h == 0 {
+            return picture;
+        }
+        let (w, h) = (f64::from(w), f64::from(h));
+        let fit = (width * scale / w).min(height * scale / h);
+        let side = |length: f64| (length * fit).round().max(1.0) as u32;
+        (side(w), side(h))
+    }
+
+    /// Draw these subtitles, laid out at the size frames go at, into them
+    /// from now on, or none.
+    fn set_subtitles(&mut self, subtitles: Option<Subtitles>) {
+        self.subtitles = subtitles;
+        self.burned = None;
+    }
+
+    /// `buffer` at the size frames go at, with the subtitles showing drawn
+    /// in; `None` if it goes as it is. They keep that size as subtitles
+    /// come and go: each time it changes, AVKit lays the video out anew,
+    /// bigger than the window, which shows part of the picture, zoomed,
+    /// until `Pip::follow_window` puts it back a frame or two later.
+    fn fit(&mut self, buffer: &CVPixelBuffer) -> Result<Option<CVPixelBuffer>> {
+        let Some(subtitles) = &self.subtitles else {
+            let own = (buffer.get_width() as u32, buffer.get_height() as u32);
+            let size = self.size(own);
+            if size == own {
+                return Ok(None);
+            }
+            return self.scale(buffer, size).map(Some);
+        };
+        let format = buffer.get_pixel_format();
+        let layout = Layout::of(buffer).with_context(|| format!("frames in format {format:#x}"))?;
+        let size = subtitles.size;
+        let transfer = transfer_of(buffer);
+        if self
+            .burned
+            .as_ref()
+            .is_none_or(|(drawn, _)| *drawn != transfer)
+        {
+            let mut drawn = Overlay::new(size.0 as usize, size.1 as usize, transfer);
+            for (image, rect, sampling) in &subtitles.bitmaps {
+                overlay::draw_image(&mut drawn, image, *rect, *sampling);
+            }
+            overlay::draw_text(&mut drawn, &subtitles.text, &subtitles.text_system);
+            self.burned = Some((transfer, drawn));
+        }
+        let scaled = self.scale(buffer, size)?;
+        let (_, drawn) = self.burned.as_ref().expect("drawn above");
+        // SAFETY: the buffer was just made, and is this layout.
+        unsafe { layout.draw(drawn, &scaled)? };
+        Ok(Some(scaled))
+    }
+
+    /// `buffer` scaled to `size` on the GPU, in a buffer of its own.
+    fn scale(&mut self, buffer: &CVPixelBuffer, size: (u32, u32)) -> Result<CVPixelBuffer> {
+        let format = buffer.get_pixel_format();
+        let scaled = self.scaled.get(format, size.0 as usize, size.1 as usize)?;
+        let scaler = match &mut self.scaler {
+            Some(scaler) => scaler,
+            None => self.scaler.insert(Scaler::new()?),
+        };
+        scaler.scale(buffer, &scaled)?;
+        Ok(scaled)
+    }
+}
+
 /// Scales pixel buffers on the GPU, into buffers of their own format, with
 /// VideoToolbox's `VTPixelTransferSession`.
 struct Scaler {
@@ -1568,6 +1604,69 @@ mod tests {
         assert!(
             lookout.due(bigger, start + Duration::from_millis(920)),
             "a while on"
+        );
+    }
+
+    /// Each of a BGRA buffer's pixels, read or written in turn.
+    fn pixels(buffer: &CVPixelBuffer, mut each: impl FnMut(&mut [u8; 4])) {
+        // SAFETY: locked while its rows are touched, within its stride.
+        unsafe {
+            assert_eq!(buffer.lock_base_address(0), 0);
+            let base = buffer.get_base_address().cast::<u8>();
+            let stride = buffer.get_bytes_per_row();
+            for y in 0..buffer.get_height() {
+                let row = slice::from_raw_parts_mut(base.add(y * stride), buffer.get_width() * 4);
+                row.as_chunks_mut::<4>().0.iter_mut().for_each(&mut each);
+            }
+            buffer.unlock_base_address(0);
+        }
+    }
+
+    #[gpui::test]
+    fn frames_go_at_the_windows_size_as_subtitles_come_and_go(cx: &mut gpui::TestAppContext) {
+        let mut decoded = Buffers::default();
+        let frame = decoded.get(kCVPixelFormatType_32BGRA, 1920, 1080).unwrap();
+        pixels(&frame, |pixel| *pixel = [0, 0, 0, 255]);
+        let size = |buffer: Option<CVPixelBuffer>| {
+            let buffer = buffer.expect("scaled");
+            (buffer.get_width(), buffer.get_height())
+        };
+        let mut fitting = Fitting::default();
+        assert!(
+            fitting.fit(&frame).unwrap().is_none(),
+            "as they are before the window opens"
+        );
+
+        // The window: 480 by 270 points, at 2x.
+        fitting.window = Some((480.0, 270.0, 2.0));
+        assert_eq!(size(fitting.fit(&frame).unwrap()), (960, 540));
+        // A bitmap subtitle of opaque white over all of it.
+        let white = RenderImage::new(vec![image::Frame::new(
+            image::RgbaImage::from_raw(1, 1, vec![255; 4]).unwrap(),
+        )]);
+        let subtitles = Subtitles {
+            size: fitting.size((1920, 1080)),
+            text: Vec::new(),
+            bitmaps: vec![(
+                Arc::new(white),
+                [0.0, 0.0, 1.0, 1.0],
+                gpui::ContentTransform::IDENTITY,
+            )],
+            text_system: cx.text_system().clone(),
+        };
+        fitting.set_subtitles(Some(subtitles));
+        let burned = fitting.fit(&frame).unwrap();
+        pixels(burned.as_ref().unwrap(), |pixel| {
+            assert_eq!(pixel[..3], [255; 3], "drawn in");
+        });
+        assert_eq!(size(burned), (960, 540), "subtitles came");
+        fitting.set_subtitles(None);
+        assert_eq!(size(fitting.fit(&frame).unwrap()), (960, 540), "and went");
+
+        let fits = decoded.get(kCVPixelFormatType_32BGRA, 960, 540).unwrap();
+        assert!(
+            fitting.fit(&fits).unwrap().is_none(),
+            "one that fits as it is"
         );
     }
 
