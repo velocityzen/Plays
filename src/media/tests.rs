@@ -1,5 +1,6 @@
 //! End-to-end checks of the decoding engine against small files generated
-//! with the `ffmpeg` command line tool. Skipped when `ffmpeg` isn't installed.
+//! with the `ffmpeg` command line tool. Without it they fail, rather than
+//! pass having checked nothing.
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -27,22 +28,56 @@ fn options(autoplay: bool, looping: bool) -> PlayerOptions {
     }
 }
 
-/// Generate a test file once per test run; `None` if ffmpeg is unavailable.
-fn media(name: &str, args: &[&str]) -> Option<PathBuf> {
+/// Generate a test file with the `ffmpeg` tool, once per test run.
+fn media(name: &str, args: &[&str]) -> PathBuf {
+    made_by("ffmpeg", name, args)
+}
+
+/// A test file `program` makes, as `ffmpeg` does, once per test run. The
+/// test fails if it can't.
+fn made_by(program: &str, name: &str, args: &[&str]) -> PathBuf {
     ffmpeg_next::init().unwrap();
     let dir = std::env::temp_dir().join("plays-tests");
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join(name);
     if path.exists() {
-        return Some(path);
+        return path;
     }
-    let status = Command::new("ffmpeg")
+    let output = Command::new(program)
         .args(["-hide_banner", "-loglevel", "error", "-y"])
         .args(args)
         .arg(&path)
-        .status()
-        .ok()?;
-    status.success().then_some(path)
+        .output()
+        .unwrap_or_else(|err| {
+            panic!(
+                "`{program}` isn't installed ({err}), and the media tests make their files \
+                 with it: install it, or leave them out with `cargo test -- --skip media::tests`"
+            )
+        });
+    if !output.status.success() {
+        // What it left isn't the file.
+        let _ = std::fs::remove_file(&path);
+        panic!(
+            "`{program}` couldn't make {name}: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+    path
+}
+
+/// Without the tool that makes their media, the tests fail rather than
+/// pass having checked nothing.
+#[test]
+#[should_panic(expected = "isn't installed")]
+fn media_that_cant_be_made_fails_the_test() {
+    made_by("plays-no-such-tool", "never-made.mp4", &[]);
+}
+
+/// So do media the tool fails to make, as one without an encoder would.
+#[test]
+#[should_panic(expected = "couldn't make never-made.mkv")]
+fn media_the_tool_fails_to_make_fails_the_test() {
+    made_by("false", "never-made.mkv", &[]);
 }
 
 /// A decoder thread failing as a bug would, once the file is open: the tile
@@ -129,7 +164,7 @@ fn wait_until(timeout: Duration, mut done: impl FnMut() -> bool) -> bool {
 
 #[test]
 fn opens_and_seeks_video_accurately() {
-    let Some(path) = media(
+    let path = media(
         "video.mp4",
         &[
             "-f",
@@ -143,10 +178,7 @@ fn opens_and_seeks_video_accurately() {
             "-pix_fmt",
             "yuv420p",
         ],
-    ) else {
-        eprintln!("ffmpeg not found, skipping");
-        return;
-    };
+    );
     let mut player = Player::open(Source::File(path), None, options(false, false));
     assert!(wait_until(Duration::from_secs(5), || {
         player.tick();
@@ -180,7 +212,7 @@ fn opens_and_seeks_video_accurately() {
 
 #[test]
 fn reports_the_streams_as_the_file_has_them() {
-    let Some(path) = media(
+    let path = media(
         "details.mp4",
         &[
             "-f",
@@ -204,10 +236,7 @@ fn reports_the_streams_as_the_file_has_them() {
             "-ac",
             "2",
         ],
-    ) else {
-        eprintln!("ffmpeg not found, skipping");
-        return;
-    };
+    );
     let mixer = Mixer::detached(48_000);
     let mut player = Player::open(Source::File(path), Some(mixer), options(false, false));
     assert!(wait_until(Duration::from_secs(5), || {
@@ -301,7 +330,7 @@ fn drain_audio(
 
 #[test]
 fn resamples_audio_and_stops_at_the_end() {
-    let Some(path) = media(
+    let path = media(
         "tone.wav",
         &[
             "-f",
@@ -311,10 +340,7 @@ fn resamples_audio_and_stops_at_the_end() {
             "-ac",
             "2",
         ],
-    ) else {
-        eprintln!("ffmpeg not found, skipping");
-        return;
-    };
+    );
     let mixer = Mixer::detached(48_000);
     let mut player = Player::open(
         Source::File(path),
@@ -331,7 +357,7 @@ fn resamples_audio_and_stops_at_the_end() {
 
 #[test]
 fn plays_on_in_time_with_no_device() {
-    let Some(path) = media(
+    let path = media(
         "half.wav",
         &[
             "-f",
@@ -341,10 +367,7 @@ fn plays_on_in_time_with_no_device() {
             "-ac",
             "2",
         ],
-    ) else {
-        eprintln!("ffmpeg not found, skipping");
-        return;
-    };
+    );
     // Plays nowhere until told where: nothing asks it for sound.
     let mixer = output::mixer(1.0);
     let _output = AudioOutput::with_mixer(mixer.clone());
@@ -364,7 +387,7 @@ fn plays_on_in_time_with_no_device() {
 
 #[test]
 fn loops_when_asked() {
-    let Some(path) = media(
+    let path = media(
         "short.wav",
         &[
             "-f",
@@ -374,10 +397,7 @@ fn loops_when_asked() {
             "-ac",
             "2",
         ],
-    ) else {
-        eprintln!("ffmpeg not found, skipping");
-        return;
-    };
+    );
     let mixer = Mixer::detached(48_000);
     let mut player = Player::open(Source::File(path), Some(mixer.clone()), options(true, true));
     let heard = drain_audio(&mut player, &mixer, Duration::from_secs(10), |heard| {
@@ -425,7 +445,7 @@ fn subtitles_at(player: &mut Player, time: f64, expected: &[&str]) -> Vec<String
 
 /// A 4-second video with two audio tracks, English silence and a German
 /// tone, and two subtitle tracks, English and French, neither a default.
-fn tracks_media() -> Option<PathBuf> {
+fn tracks_media() -> PathBuf {
     let dir = std::env::temp_dir().join("plays-tests");
     std::fs::create_dir_all(&dir).unwrap();
     let first = dir.join("first.srt");
@@ -522,10 +542,7 @@ fn mix(player: &mut Player, mixer: &Mixer, buffers: usize, enough: usize) -> usi
 
 #[test]
 fn switches_audio_and_subtitle_tracks() {
-    let Some(path) = tracks_media() else {
-        eprintln!("ffmpeg not found, skipping");
-        return;
-    };
+    let path = tracks_media();
     let mixer = Mixer::detached(48_000);
     let mut player = Player::open(
         Source::File(path),
@@ -624,7 +641,7 @@ fn lands_at(player: &mut Player, go: impl FnOnce(&mut Player), expected: f64) ->
 #[test]
 fn skips_land_on_keyframes_far_from_the_target() {
     for container in ["mkv", "mp4"] {
-        let Some(path) = media(
+        let path = media(
             &format!("keyframes.{container}"),
             &[
                 "-f",
@@ -638,10 +655,7 @@ fn skips_land_on_keyframes_far_from_the_target() {
                 "-pix_fmt",
                 "yuv420p",
             ],
-        ) else {
-            eprintln!("ffmpeg not found, skipping");
-            return;
-        };
+        );
         let mut player = Player::open(Source::File(path), None, options(false, false));
         assert!(wait_until(Duration::from_secs(5), || {
             player.tick();
@@ -688,7 +702,7 @@ fn skips_land_on_keyframes_far_from_the_target() {
 /// keyframe. Letting go plays on as before.
 #[test]
 fn scrubbing_shows_frames_on_the_way_and_nothing_past_them() {
-    let Some(path) = media(
+    let path = media(
         "scrub.mp4",
         &[
             "-f",
@@ -708,10 +722,7 @@ fn scrubbing_shows_frames_on_the_way_and_nothing_past_them() {
             "-c:a",
             "aac",
         ],
-    ) else {
-        eprintln!("ffmpeg not found, skipping");
-        return;
-    };
+    );
     let mixer = Mixer::detached(48_000);
     let mut player = Player::open(Source::File(path), Some(mixer), options(false, false));
     assert!(wait_until(Duration::from_secs(5), || {
@@ -786,7 +797,7 @@ fn going_back_keeps_the_subtitles() {
          2\n00:00:03,500 --> 00:00:05,000\nAcross\n",
     )
     .unwrap();
-    let Some(path) = media(
+    let path = media(
         "across.mkv",
         &[
             "-f",
@@ -809,10 +820,7 @@ fn going_back_keeps_the_subtitles() {
             "-c:s",
             "srt",
         ],
-    ) else {
-        eprintln!("ffmpeg not found, skipping");
-        return;
-    };
+    );
     let mut player = Player::open(Source::File(path), None, options(false, false));
     assert!(wait_until(Duration::from_secs(5), || {
         player.tick();
@@ -854,7 +862,7 @@ fn plays_subtitle_files_beside_the_video() {
     let (russian, _, _) = encoding_rs::WINDOWS_1251
         .encode("1\n00:00:01,000 --> 00:00:02,500\nПривет из файла, как дела?\n");
     std::fs::write(dir.join("clip.ru.srt"), &russian).unwrap();
-    let Some(path) = media(
+    let path = media(
         "beside/clip.mkv",
         &[
             "-f",
@@ -868,10 +876,7 @@ fn plays_subtitle_files_beside_the_video() {
             "-pix_fmt",
             "yuv420p",
         ],
-    ) else {
-        eprintln!("ffmpeg not found, skipping");
-        return;
-    };
+    );
     let mut player = Player::open(Source::File(path), None, options(false, false));
     assert!(wait_until(Duration::from_secs(5), || {
         player.tick();
@@ -920,7 +925,7 @@ fn plays_subtitle_files_beside_the_video() {
 
 /// A 10-second video, `dir/clip.mkv`, with `files` beside it (name and
 /// what it says), in `plays-tests/dir`.
-fn video_with_subtitle_files(dir: &str, files: &[(&str, &str)]) -> Option<PathBuf> {
+fn video_with_subtitle_files(dir: &str, files: &[(&str, &str)]) -> PathBuf {
     let folder = std::env::temp_dir().join("plays-tests").join(dir);
     std::fs::create_dir_all(&folder).unwrap();
     // Only these, not those of an earlier run.
@@ -952,13 +957,10 @@ fn video_with_subtitle_files(dir: &str, files: &[(&str, &str)]) -> Option<PathBu
 
 #[test]
 fn keeps_playing_while_a_subtitle_file_is_read() {
-    let Some(path) = video_with_subtitle_files(
+    let path = video_with_subtitle_files(
         "slow-to-read",
         &[("clip.en.srt", "Hello"), ("clip.fr.srt", "Bonjour")],
-    ) else {
-        eprintln!("ffmpeg not found, skipping");
-        return;
-    };
+    );
     let french = path.with_file_name("clip.fr.srt");
     external::slow::TO_READ
         .lock()
@@ -1004,10 +1006,7 @@ fn opens_before_its_subtitle_files_are_read() {
         ("clip.fr.srt", "Bonjour"),
         ("clip.it.srt", "Ciao"),
     ];
-    let Some(path) = video_with_subtitle_files("slow-to-open", &files) else {
-        eprintln!("ffmpeg not found, skipping");
-        return;
-    };
+    let path = video_with_subtitle_files("slow-to-open", &files);
     // Each takes a second to open, as on a share far away, and the one
     // shown three to read.
     for (name, _) in files {
@@ -1087,7 +1086,7 @@ fn sizes_frames_for_display() {
 /// they go, and is sized as decoded.
 #[test]
 fn reports_the_streams_orientation() {
-    let Some(upright) = media(
+    let upright = media(
         "orientation-source.mp4",
         &[
             "-f",
@@ -1099,14 +1098,11 @@ fn reports_the_streams_orientation() {
             "-pix_fmt",
             "yuv420p",
         ],
-    ) else {
-        eprintln!("ffmpeg not found, skipping");
-        return;
-    };
+    );
     let upright = upright.to_str().unwrap();
     // A quarter turn counterclockwise, then mirrored, with the pictures as
     // they were.
-    let Some(path) = media(
+    let path = media(
         "orientation.mp4",
         &[
             "-display_rotation",
@@ -1117,9 +1113,7 @@ fn reports_the_streams_orientation() {
             "-c",
             "copy",
         ],
-    ) else {
-        panic!("ffmpeg couldn't remux with a display matrix");
-    };
+    );
     let mut player = Player::open(Source::File(path), None, options(false, false));
     assert!(wait_until(Duration::from_secs(5), || {
         player.tick();
@@ -1137,7 +1131,7 @@ fn reports_the_streams_orientation() {
 /// the sound plays on as it was.
 #[test]
 fn delays_the_sound_against_the_picture() {
-    let Some(path) = media(
+    let path = media(
         "sync.mkv",
         &[
             "-f",
@@ -1159,10 +1153,7 @@ fn delays_the_sound_against_the_picture() {
             "-ac",
             "2",
         ],
-    ) else {
-        eprintln!("ffmpeg not found, skipping");
-        return;
-    };
+    );
     let mixer = Mixer::detached(48_000);
     let mut player = Player::open(
         Source::File(path),
@@ -1208,7 +1199,7 @@ fn delays_subtitles_against_the_picture() {
         "1\n00:00:01,000 --> 00:00:02,000\nRight on time\n",
     )
     .unwrap();
-    let Some(path) = media(
+    let path = media(
         "delay/clip.mkv",
         &[
             "-f",
@@ -1222,10 +1213,7 @@ fn delays_subtitles_against_the_picture() {
             "-pix_fmt",
             "yuv420p",
         ],
-    ) else {
-        eprintln!("ffmpeg not found, skipping");
-        return;
-    };
+    );
     let mut player = Player::open(Source::File(path), None, options(false, false));
     assert!(wait_until(Duration::from_secs(5), || {
         player.tick();
@@ -1250,7 +1238,7 @@ fn delays_subtitles_against_the_picture() {
 /// already late instead of falling further and further behind.
 #[test]
 fn keeps_up_when_frames_are_rarely_consumed() {
-    let Some(path) = media(
+    let path = media(
         "big60.mp4",
         &[
             "-f",
@@ -1264,10 +1252,7 @@ fn keeps_up_when_frames_are_rarely_consumed() {
             "-pix_fmt",
             "yuv420p",
         ],
-    ) else {
-        eprintln!("ffmpeg not found, skipping");
-        return;
-    };
+    );
     let mut player = Player::open(Source::File(path), None, options(true, false));
     let start = Instant::now();
     while start.elapsed() < Duration::from_millis(2500) {
@@ -1281,7 +1266,7 @@ fn keeps_up_when_frames_are_rarely_consumed() {
 
 #[test]
 fn decodes_on_the_gpu_when_available() {
-    let Some(path) = media(
+    let path = media(
         "video640.mp4",
         &[
             "-f",
@@ -1295,10 +1280,7 @@ fn decodes_on_the_gpu_when_available() {
             "-pix_fmt",
             "yuv420p",
         ],
-    ) else {
-        eprintln!("ffmpeg not found, skipping");
-        return;
-    };
+    );
     let mut player = Player::open(
         Source::File(path),
         None,
@@ -1367,10 +1349,7 @@ fn surfaces_match_software_colors() {
         let source = format!("testsrc2=size={size}:rate=30:duration=1");
         let mut args = vec!["-f", "lavfi", "-i", &source, "-c:v", "libx264", "-crf", "8"];
         args.extend_from_slice(extra);
-        let Some(path) = media(name, &args) else {
-            eprintln!("ffmpeg not found, skipping");
-            return;
-        };
+        let path = media(name, &args);
         let Picture::Surface(surface) = first_frame(&path, true) else {
             panic!("{name}: hardware frames should stay on the GPU");
         };
@@ -1554,10 +1533,7 @@ fn hdr_surfaces_match_software_tone_mapping() {
             "-x265-params",
             &x265,
         ];
-        let Some(path) = media(name, &args) else {
-            eprintln!("ffmpeg with libx265 not found, skipping");
-            return;
-        };
+        let path = media(name, &args);
         let Picture::Surface(surface) = first_frame(&path, true) else {
             panic!("{name}: hardware frames should stay on the GPU");
         };
@@ -1666,6 +1642,7 @@ fn hdr_surface_to_sdr(
 /// are saved as PNGs next to the generated test media.
 #[cfg(target_os = "macos")]
 #[test]
+#[ignore = "needs a Dolby Vision profile 5 file named by PLAYS_DOLBY_VISION_SAMPLE"]
 fn dolby_vision_surfaces_match_software() {
     use core_foundation::base::TCFType;
     use core_foundation::data::{CFData, CFDataRef};
@@ -1676,10 +1653,9 @@ fn dolby_vision_surfaces_match_software() {
     use super::picture::Picture;
     use super::videotoolbox::DOLBY_VISION_ATTACHMENT;
 
-    let Some(path) = std::env::var_os("PLAYS_DOLBY_VISION_SAMPLE").map(PathBuf::from) else {
-        eprintln!("PLAYS_DOLBY_VISION_SAMPLE isn't set, skipping");
-        return;
-    };
+    let path = std::env::var_os("PLAYS_DOLBY_VISION_SAMPLE")
+        .map(PathBuf::from)
+        .expect("PLAYS_DOLBY_VISION_SAMPLE names a Dolby Vision profile 5 file");
     ffmpeg_next::init().unwrap();
     let out_dir = std::env::temp_dir().join("plays-tests");
     std::fs::create_dir_all(&out_dir).unwrap();
@@ -1890,7 +1866,7 @@ mod http {
 }
 
 /// A short video with sound, as MPEG-TS, plus an HLS version of it in `hls/`.
-fn stream_media() -> Option<PathBuf> {
+fn stream_media() -> PathBuf {
     let ts = media(
         "stream.ts",
         &[
@@ -1915,11 +1891,11 @@ fn stream_media() -> Option<PathBuf> {
             "-ac",
             "2",
         ],
-    )?;
-    let dir = ts.parent()?.to_path_buf();
+    );
+    let dir = ts.parent().unwrap().to_path_buf();
     let hls = dir.join("hls");
     if !hls.join("vod.m3u8").exists() {
-        std::fs::create_dir_all(&hls).ok()?;
+        std::fs::create_dir_all(&hls).unwrap();
         let status = Command::new("ffmpeg")
             .args(["-hide_banner", "-loglevel", "error", "-y", "-i"])
             .arg(&ts)
@@ -1937,28 +1913,23 @@ fn stream_media() -> Option<PathBuf> {
             .arg(hls.join("segment%d.ts"))
             .arg(hls.join("vod.m3u8"))
             .status()
-            .ok()?;
-        if !status.success() {
-            return None;
-        }
+            .expect("ffmpeg made stream.ts");
+        assert!(status.success(), "ffmpeg couldn't make the HLS version");
         // The same segments without an end: what a live stream looks like.
-        let vod = std::fs::read_to_string(hls.join("vod.m3u8")).ok()?;
+        let vod = std::fs::read_to_string(hls.join("vod.m3u8")).unwrap();
         let live: String = vod
             .lines()
             .filter(|l| !l.starts_with("#EXT-X-ENDLIST") && !l.starts_with("#EXT-X-PLAYLIST-TYPE"))
             .map(|l| format!("{l}\n"))
             .collect();
-        std::fs::write(hls.join("live.m3u8"), live).ok()?;
+        std::fs::write(hls.join("live.m3u8"), live).unwrap();
     }
-    Some(dir)
+    dir
 }
 
 #[test]
 fn plays_a_file_over_http() {
-    let Some(dir) = stream_media() else {
-        eprintln!("ffmpeg not found, skipping");
-        return;
-    };
+    let dir = stream_media();
     let addr = http::serve(dir, None);
     let mixer = Mixer::detached(48_000);
     let source = Source::parse_url(&format!("http://{addr}/stream.ts")).unwrap();
@@ -1979,10 +1950,7 @@ fn plays_a_file_over_http() {
 
 #[test]
 fn plays_and_seeks_hls() {
-    let Some(dir) = stream_media() else {
-        eprintln!("ffmpeg not found, skipping");
-        return;
-    };
+    let dir = stream_media();
     let addr = http::serve(dir, None);
     let source = Source::parse_url(&format!("http://{addr}/hls/vod.m3u8")).unwrap();
     let mut player = Player::open(source, None, options(false, false));
@@ -2012,10 +1980,7 @@ fn plays_and_seeks_hls() {
 
 #[test]
 fn treats_playlists_without_an_end_as_live() {
-    let Some(dir) = stream_media() else {
-        eprintln!("ffmpeg not found, skipping");
-        return;
-    };
+    let dir = stream_media();
     let addr = http::serve(dir, None);
     let source = Source::parse_url(&format!("http://{addr}/hls/live.m3u8")).unwrap();
     let mut player = Player::open(source, None, options(true, false));
@@ -2041,10 +2006,7 @@ fn treats_playlists_without_an_end_as_live() {
 
 #[test]
 fn waits_for_a_stalled_stream_and_resumes() {
-    let Some(dir) = stream_media() else {
-        eprintln!("ffmpeg not found, skipping");
-        return;
-    };
+    let dir = stream_media();
     let addr = http::serve(dir, Some(Duration::from_secs(3)));
     let mixer = Mixer::detached(48_000);
     let source = Source::parse_url(&format!("http://{addr}/stream.ts")).unwrap();
@@ -2136,7 +2098,7 @@ fn stills_are_the_frame_shown_at_full_size() {
     use super::still;
 
     // Each frame a flat grey a few levels brighter than the one before.
-    let Some(path) = media(
+    let path = media(
         "frames.mkv",
         &[
             "-f",
@@ -2153,10 +2115,7 @@ fn stills_are_the_frame_shown_at_full_size() {
             "-pix_fmt",
             "yuv420p",
         ],
-    ) else {
-        eprintln!("ffmpeg not found, skipping");
-        return;
-    };
+    );
     let source = Source::File(path);
     let mut player = Player::open(
         source.clone(),
@@ -2199,7 +2158,7 @@ fn hdr_stills_keep_their_signal() {
     use super::hdr::{REFERENCE_WHITE_NITS, ToneMapper, Transfer, pq_to_nits};
     use super::still;
 
-    let Some(path) = media(
+    let path = media(
         "still-pq.mp4",
         &[
             "-f",
@@ -2221,10 +2180,7 @@ fn hdr_stills_keep_their_signal() {
             "-x265-params",
             "log-level=error:colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc",
         ],
-    ) else {
-        eprintln!("ffmpeg with libx265 not found, skipping");
-        return;
-    };
+    );
     let source = Source::File(path);
     let sdr = still::grab(&source, 0, 0, false).unwrap();
     let hdr = still::grab(&source, 0, 0, true).unwrap();

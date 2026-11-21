@@ -138,12 +138,16 @@ cargo test --workspace   # Plays and the crates in crates/
 ```
 
 The engine tests generate short clips with the `ffmpeg` command line tool,
-and are skipped if it isn't installed. Dolby Vision profile 5 can't be made
-with the `ffmpeg` tool, so that test runs only on a file you name,
-comparing both paths on two of its frames (and saving them as PNGs):
+which needs libx264 and libx265 as Homebrew's and Debian's have them
+(`brew install ffmpeg`, `sudo apt install ffmpeg`). Without it they fail,
+saying so, rather than pass having checked nothing; `cargo test -- --skip
+media::tests` leaves them out. Dolby Vision profile 5 can't be made with
+the `ffmpeg` tool, so that test is ignored unless asked for, and runs on a
+file you name, comparing both paths on two of its frames (and saving them
+as PNGs):
 
 ```bash
-PLAYS_DOLBY_VISION_SAMPLE=path/to/profile5.mkv cargo test dolby -- --nocapture
+PLAYS_DOLBY_VISION_SAMPLE=path/to/profile5.mkv cargo test dolby -- --ignored --nocapture
 ```
 
 One ignored test plays through the machine's own outputs, each by its id:
