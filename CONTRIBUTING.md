@@ -622,6 +622,8 @@ check:
   - In `protocol`, each request read with its defaults and written back,
     and answers, errors (each with its own message) and events read by a
     client. In `server`, a client too far behind cut off.
+  - Each test's socket is in a folder of its own in the temporary folder,
+    removed as the test ends, pass or fail, even one it left shut.
 
 Unit tests check finding a name among ids, labels, positions and the ends
 of ids (an id first, positions only among those given, several matching

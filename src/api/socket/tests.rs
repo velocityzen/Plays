@@ -4,6 +4,7 @@
 //! client runs on a thread of its own, as another process would, while
 //! the test runs the app.
 
+use std::cell::RefCell;
 use std::ffi::OsString;
 use std::fs;
 use std::io::{BufRead, BufReader, Write};
@@ -28,12 +29,54 @@ use crate::ui::testing::{self, fixture, wait_until};
 use crate::ui::theme::layout::WINDOW_SIZE;
 use crate::ui::workspace::Workspace;
 
-/// A socket of a test's own, in a folder not made yet. Short: a socket's
-/// path has room for about a hundred bytes.
+/// A socket of a test's own, in a folder not made yet, and removed as the
+/// test ends, pass or fail. Short: a socket's path has room for about a
+/// hundred bytes.
 fn socket(name: &str) -> PathBuf {
     let folder = std::env::temp_dir().join(format!("plays-{name}-{}", std::process::id()));
     fs::remove_dir_all(&folder).ok();
+    MADE.with(|made| made.0.borrow_mut().push(folder.clone()));
     folder.join(NAME)
+}
+
+thread_local! {
+    /// The folders made for the test on this thread: each test runs on a
+    /// thread of its own.
+    static MADE: Made = const { Made(RefCell::new(Vec::new())) };
+}
+
+/// Folders removed as the thread that made them ends.
+struct Made(RefCell<Vec<PathBuf>>);
+
+impl Drop for Made {
+    fn drop(&mut self) {
+        for folder in self.0.get_mut().drain(..) {
+            // Opened first, as a test may have failed with it shut.
+            fs::set_permissions(&folder, fs::Permissions::from_mode(0o700)).ok();
+            fs::remove_dir_all(&folder).ok();
+        }
+    }
+}
+
+#[test]
+fn a_tests_folders_are_removed_as_it_ends() {
+    let made = thread::spawn(|| {
+        let open = socket("made");
+        let shut = socket("shut");
+        for path in [&open, &shut] {
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, "").unwrap();
+        }
+        let folder = shut.parent().unwrap();
+        fs::set_permissions(folder, fs::Permissions::from_mode(0o000)).unwrap();
+        [open, shut]
+    })
+    .join()
+    .unwrap();
+    for path in made {
+        let folder = path.parent().unwrap();
+        assert!(!folder.exists(), "{} left", folder.display());
+    }
 }
 
 /// The app, with its first window in front, answering on a socket of its
