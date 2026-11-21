@@ -76,6 +76,8 @@ GPU-accelerated UI framework.
 - Drag a tile by its picture onto another to put it in that one's place.
   A window's only tile, or a maximized one, drags the whole window, and
   so does an empty window, anywhere but its buttons.
+- An empty window shows the app's logo, with Open and Open URL under it;
+  the logo lights up while files are dragged over the window.
 - Go from tile to tile with the keyboard, to the one beside, above or
   below, or to each in turn, and move the tile in front about the grid
   the same way. A ring shows which tile the keys went to.
@@ -319,7 +321,7 @@ playing. Every window takes drops and works the same way; menus and
 shortcuts act on the window in front, and files opened from Finder go to
 it too. Drag the top edge of a window to move it, or the picture of its
 only tile; an empty window moves by anywhere but the buttons and the URL
-form in its ring. Closing the last window quits.
+form under its logo. Closing the last window quits.
 
 As files open, their window takes the size of the video, or of a grid with
 room for each video at its own size, scaled down to fit the screen. After

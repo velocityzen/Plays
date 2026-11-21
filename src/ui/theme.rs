@@ -417,22 +417,19 @@ pub mod layout {
     /// is wide.
     pub const DRAG_TITLE_OFFSET: Point<Pixels> = point(px(12.), px(12.));
     pub const DRAG_TITLE_MAX_WIDTH: Pixels = px(240.);
-    /// The empty window's ring: its share of the window's shorter side, and
-    /// its smallest and largest sizes. It is drawn 2 points wide.
-    pub const RING_SCALE: f32 = 0.8;
-    pub const RING_MIN_DIAMETER: Pixels = px(300.);
-    pub const RING_MAX_DIAMETER: Pixels = px(480.);
-    /// The least room the ring leaves around it in a small window.
-    pub const RING_MARGIN: Pixels = px(16.);
-    /// The ring's border, as an opacity of the text color, and of the
-    /// accent while a file is dragged over it.
-    pub const RING_BORDER: f32 = 0.1;
-    pub const RING_BORDER_DROP: f32 = 0.6;
-    /// The URL field in the ring: its share of the ring, and the least and
-    /// most it is wide.
-    pub const RING_FORM_SCALE: f32 = 0.62;
-    pub const RING_FORM_MIN_WIDTH: Pixels = px(210.);
-    pub const RING_FORM_MAX_WIDTH: Pixels = px(320.);
+    /// The empty window's logo: its share of the window's shorter side,
+    /// and its largest size.
+    pub const LOGO_SCALE: f32 = 0.35;
+    pub const LOGO_MAX: Pixels = px(192.);
+    /// The logo's color, as an opacity of the text color, and of the
+    /// accent while a file is dragged over the window.
+    pub const LOGO_OPACITY: f32 = 0.35;
+    pub const LOGO_DROP_OPACITY: f32 = 0.8;
+    /// Between the logo and the open buttons, or the URL form, under it.
+    pub const EMPTY_GAP: Pixels = px(24.);
+    /// How wide the open buttons are together, each half, and the URL
+    /// form.
+    pub const EMPTY_WIDTH: Pixels = px(320.);
 }
 
 /// Menu rows, by size (the track menu's, the track reel's and the font

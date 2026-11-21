@@ -57,11 +57,15 @@ const APP_GLYPH: (&str, &[u8]) = (
     include_bytes!("../assets/AppIcon.icon/Assets/icon.svg"),
 );
 
+/// The app's logo, which the empty window shows.
+pub const LOGO: &str = "logo.svg";
+const LOGO_SVG: (&str, &[u8]) = (LOGO, include_bytes!("../assets/icon.svg"));
+
 impl AssetSource for Assets {
     fn load(&self, path: &str) -> Result<Option<Cow<'static, [u8]>>> {
         Ok(ICONS
             .iter()
-            .chain([&APP_GLYPH])
+            .chain([&APP_GLYPH, &LOGO_SVG])
             .find(|(name, _)| *name == path)
             .map(|(_, bytes)| Cow::Borrowed(*bytes)))
     }
@@ -98,5 +102,11 @@ mod tests {
                 "assets/icons/{name}.svg isn't in `icons!`"
             );
         }
+    }
+
+    #[test]
+    fn the_logo_is_built_in() {
+        let logo = Assets.load(LOGO).unwrap().expect("the logo");
+        assert!(logo.starts_with(b"<svg"), "assets/icon.svg");
     }
 }

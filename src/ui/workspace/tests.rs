@@ -31,7 +31,7 @@ use crate::ui::testing::{
     self, OPEN_WAIT, click, double_click, find, fixture, hover, press, shows, wait_until,
 };
 use crate::ui::theme::backdrop;
-use crate::ui::theme::layout::{WINDOW_GAP, WINDOW_MIN_SIZE, WINDOW_SIZE};
+use crate::ui::theme::layout::{LOGO_MAX, WINDOW_GAP, WINDOW_MIN_SIZE, WINDOW_SIZE};
 use crate::ui::theme::motion::FIT_POLL;
 use crate::ui::{blackout, displays};
 
@@ -417,6 +417,43 @@ fn command_w_closes_the_tile_in_front_then_the_window(cx: &mut TestAppContext) {
         !cx.windows().contains(&window.into()),
         "an empty window closes"
     );
+}
+
+#[gpui::test]
+fn an_empty_window_shows_the_logo_with_the_open_buttons_alike_under_it(cx: &mut TestAppContext) {
+    let (window, mut cx) = testing::start(cx);
+    let middle = find(&mut cx, "empty").center().x;
+    let logo = find(&mut cx, "logo");
+    let [open_file, open_url] =
+        ["open-empty", "open-url-empty"].map(|button| find(&mut cx, button));
+    let near = |a: Pixels, b: Pixels| (a - b).abs() < px(1.);
+
+    assert!(near(logo.center().x, middle), "the logo in the middle");
+    assert_eq!(logo.size, size(LOGO_MAX, LOGO_MAX), "at its largest");
+    assert_eq!(open_file.size, open_url.size, "the buttons alike");
+    assert_eq!(open_file.top(), open_url.top(), "on one line");
+    assert!(open_url.left() > open_file.right());
+    assert!(
+        near((open_file.left() + open_url.right()) / 2., middle),
+        "in the middle"
+    );
+    assert!(open_file.top() > logo.bottom(), "under the logo");
+
+    // Open URL's form takes their place, under the logo.
+    click(&mut cx, "open-url-empty");
+    assert!(!shows(&mut cx, "open-empty"));
+    assert!(find(&mut cx, "text-input").top() > logo.bottom());
+
+    // In the smallest window, smaller, and all of it fits.
+    cx.simulate_resize(WINDOW_MIN_SIZE);
+    let logo = find(&mut cx, "logo");
+    assert!(logo.size.width < LOGO_MAX, "{:?}", logo.size);
+    let viewport = cx.update(|window, _| window.viewport_size());
+    assert!(logo.top() > px(0.));
+    assert!(find(&mut cx, "text-input").bottom() < viewport.height);
+
+    open(window, &mut cx, &["clip.mp4"], false);
+    assert!(!shows(&mut cx, "logo"), "a file opened, it goes");
 }
 
 #[gpui::test]

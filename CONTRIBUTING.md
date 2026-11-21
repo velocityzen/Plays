@@ -315,12 +315,16 @@ What the window tests check:
   toolbar, and another puts the grid back, as opening more files does; the
   tile redraws each time; ⌘W closes the tile in front, then the empty
   window; four tiles sit in two even rows.
+- An empty window shows the app's logo in the middle, at its largest,
+  and smaller in the smallest window, where all of it fits; under it,
+  Open and Open URL side by side, the same size, in the middle, which
+  Open URL's form replaces. A file opened, they go.
 - A tile dragged by its picture onto another takes that one's place, the
   tiles between moving over, and shortcuts then go to it; it keeps playing,
   isn't maximized, and let go over itself, stays. The only tile in a
   window, and a maximized one, move the window instead; a press that
   barely moves doesn't, nor does any in full screen. An empty window
-  moves dragged by anything but what's in its ring: not by its Open
+  moves dragged by anything but what's under its logo: not by its Open
   button, nor its URL field, where a drag selects; not by a press let go
   (one on a button after it doesn't), or let go where the window didn't
   hear of it; not in full screen, and again once out of it.
