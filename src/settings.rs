@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::ops::RangeInclusive;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use gpui::{App, BorrowAppContext, Global};
 use serde::de::DeserializeOwned;
@@ -405,6 +406,10 @@ pub struct Settings {
     pub full_screen: FullScreen,
     /// Cover the other displays in black while a window is full screen.
     pub black_out_displays: bool,
+    /// An empty window left alone in front for `screensaver_minutes` fades
+    /// its buttons out and bounces its logo off its edges.
+    pub screensaver: bool,
+    pub screensaver_minutes: u32,
     /// Gamma for SDR video, for every open video at once; 1 leaves it be.
     pub sdr_gamma: f32,
     /// Gamma for HDR video (Dolby Vision included).
@@ -442,6 +447,8 @@ impl Default for Settings {
             float_on_top: FloatOnTop::Off,
             full_screen: FullScreen::OwnSpace,
             black_out_displays: false,
+            screensaver: true,
+            screensaver_minutes: 5,
             sdr_gamma: 1.0,
             hdr_gamma: 1.0,
             subtitles: SubtitleStyle::default(),
@@ -572,6 +579,12 @@ impl Settings {
                 1.0
             }
         })
+    }
+
+    /// How long an empty window rests before its screensaver starts: a
+    /// minute at least.
+    pub fn screensaver_after(&self) -> Duration {
+        Duration::from_secs(u64::from(self.screensaver_minutes.max(1)) * 60)
     }
 
     pub fn columns_for(&self, count: usize) -> usize {
@@ -760,6 +773,19 @@ mod tests {
         assert_eq!(settings.master_volume, 0.5);
         assert_eq!(settings.theme, ThemeMode::Light);
         assert_eq!(settings.max_resolution, Settings::default().max_resolution);
+    }
+
+    #[test]
+    fn the_screensaver_starts_after_five_minutes_and_a_minute_at_least() {
+        let settings = Settings::default();
+        assert!(settings.screensaver);
+        assert_eq!(settings.screensaver_after(), Duration::from_secs(5 * 60));
+        let read = |minutes: u32| Settings {
+            screensaver_minutes: minutes,
+            ..Settings::default()
+        };
+        assert_eq!(read(30).screensaver_after(), Duration::from_secs(30 * 60));
+        assert_eq!(read(0).screensaver_after(), Duration::from_secs(60));
     }
 
     #[test]

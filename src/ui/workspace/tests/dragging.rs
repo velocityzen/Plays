@@ -1,6 +1,6 @@
 //! Dragging a tile by its picture, as someone at the screen would: onto
 //! another tile, or, with no other tile showing, the window with it; and
-//! an empty window, by anything but the ring's buttons and field.
+//! an empty window, by anything but its buttons and field.
 
 use gpui::{Modifiers, MouseButton, TestAppContext, VisualTestContext, WindowHandle, point, px};
 

@@ -1,4 +1,5 @@
-//! Appearance: the theme, and how windows lay out their tiles.
+//! Appearance: the theme, how windows lay out their tiles, and the empty
+//! window's screensaver.
 
 use gpui::{AnyElement, Context, Window};
 
@@ -130,8 +131,45 @@ impl Pane for AppearancePane {
                 .chain([black_out_row(s, theme)])
                 .collect(),
             ),
+            group(Some("Empty window"), theme, screensaver_rows(s, theme)),
         ]
     }
+}
+
+/// The screensaver on or off and, on, how long the window rests first.
+fn screensaver_rows(s: &Settings, theme: &Theme) -> Vec<AnyElement> {
+    let switch = row(
+        "Screensaver",
+        Some(
+            "Left alone in front, the window fades its buttons out and bounces its \
+             logo off its edges."
+                .into(),
+        ),
+        theme,
+        Switch::new("screensaver", s.screensaver)
+            .on_toggle(|&on, _, cx| update_settings(cx, true, |s| s.screensaver = on)),
+    );
+    let after = s.screensaver.then(|| {
+        row(
+            "Start after",
+            None,
+            theme,
+            Segmented::new(
+                "screensaver-minutes",
+                &[
+                    (1, "1 min"),
+                    (2, "2 min"),
+                    (5, "5 min"),
+                    (10, "10 min"),
+                    (15, "15 min"),
+                    (30, "30 min"),
+                ],
+                s.screensaver_minutes,
+            )
+            .on_select(|&v, _, cx| update_settings(cx, true, |s| s.screensaver_minutes = v)),
+        )
+    });
+    [switch].into_iter().chain(after).collect()
 }
 
 /// The other displays in black while a window is full screen.

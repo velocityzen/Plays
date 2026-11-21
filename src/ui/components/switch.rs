@@ -53,8 +53,11 @@ impl RenderOnce for Switch {
         let theme = Theme::get(window, cx);
         let on = self.on;
         let size = self.size.pick(SWITCH);
+        // Tests find a switch by its id.
+        let selector = self.id.clone();
         div()
             .id(self.id)
+            .debug_selector(move || selector.to_string())
             .flex()
             .flex_none()
             .items_center()

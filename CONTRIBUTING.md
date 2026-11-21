@@ -319,6 +319,23 @@ What the window tests check:
   and smaller in the smallest window, where all of it fits; under it,
   Open and Open URL side by side, the same size, in the middle, which
   Open URL's form replaces. A file opened, they go.
+- The screensaver, on the fake clock: an empty window left alone in front
+  for 5 minutes, and not a second less, sets its logo off across and down,
+  drawn at once, without the traffic lights; it bounces off every edge and
+  stays within them. Its buttons, faded, take no click, and a click only
+  brings the logo back from where it was, most of the way in half the
+  time, and the buttons with it. The mouse, a key or the wheel each bring
+  it back, and it sets off again 5 minutes on; used now and then, it
+  doesn't. Turned off, it never sets off; turned on, it counts from then;
+  turned off while out, the logo comes back; told to wait less than it has
+  rested, it sets off at once. It waits while a URL is typed, while another
+  window is in front (counting from when it's in front again) and with a
+  file open, and the window sent behind brings the logo back. A click on
+  the logo draws it in its next color at once, without moving the window;
+  out, a click on it only brings it back, in the color it had, which it
+  keeps. Unit tests follow the logo back and forth along each edge, the
+  color it takes at each, from the one it rests in, the colors a click
+  goes through, round to its own, its way back and the color it keeps.
 - A tile dragged by its picture onto another takes that one's place, the
   tiles between moving over, and shortcuts then go to it; it keeps playing,
   isn't maximized, and let go over itself, stays. The only tile in a
@@ -393,6 +410,8 @@ What the window tests check:
 - Picking a look for the panels over the video in Settings → Appearance
   sets it, and the controls of a paused video then show it through them
   with that look's backdrop, and none when plain.
+- Settings → Appearance turns the screensaver off and on, and picks how
+  long it waits, which shows only while it's on.
 - Settings → About, scrolled hundreds of credits down, builds only the
   few rows in view to draw, and a license there opens and closes.
 

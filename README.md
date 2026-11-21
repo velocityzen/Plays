@@ -78,6 +78,10 @@ GPU-accelerated UI framework.
   so does an empty window, anywhere but its buttons.
 - An empty window shows the app's logo, with Open and Open URL under it;
   the logo lights up while files are dragged over the window.
+- Left alone in front for a while, an empty window fades its buttons out
+  and its logo bounces off the window's edges, taking a new color at each.
+  Move the mouse or press a key, and it flies back to its place, keeping
+  the color it had. Click the logo for the next of those colors.
 - Go from tile to tile with the keyboard, to the one beside, above or
   below, or to each in turn, and move the tile in front about the grid
   the same way. A ring shows which tile the keys went to.
@@ -340,6 +344,18 @@ comes down while it is full screen and floats again after.
 On macOS, the traffic lights fade out with the controls while something
 plays, when the mouse leaves the window or rests in it.
 
+An empty window left alone in front for 5 minutes fades its buttons out
+(and, on macOS, its traffic lights), and its logo sets off across it,
+bouncing off its edges and taking a new color at each. Moving the mouse
+over the window, clicking or scrolling in it, pressing a key, or switching
+to another window brings the logo quickly back to its place, and the
+buttons with it; a click on where a hidden button was only does that.
+Settings → Appearance → Screensaver turns it off, and Start after sets how
+long the window rests first. It waits while a URL is being typed in the
+window. Clicking the logo in its place shows it at once in the next of
+the colors it bounces through, and after the last in its own again. It
+sets off in the color it has, and brought back, it keeps the one it had.
+
 Settings → Appearance sets how the controls, notes and menus over a video
 show it through them: frosted (blurred and dimmed), glass (clear, with a
 polished edge that bends the light and catches it), glow (glass whose edge
@@ -585,7 +601,7 @@ resolution limit, hardware decoding, subtitle style, the protocols that
 look for devices to cast to, what they found and the AirPlay receivers
 paired with, where screenshots go and what they are like, the keys for
 every shortcut, grid columns, controls visibility, how the panels over the
-video look, and file names. Settings → About lists the version, the day it
+video look, file names, and the empty window's screensaver. Settings → About lists the version, the day it
 was built, and the credits, each of which opens to its license; on macOS,
 About Plays in the app menu shows the icon, version and build day in a
 small window of its own.

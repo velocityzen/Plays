@@ -80,6 +80,34 @@ fn picking_how_panels_show_the_video_sets_it(cx: &mut TestAppContext) {
     }
 }
 
+#[gpui::test]
+fn the_screensaver_turns_off_and_waits_as_long_as_picked(cx: &mut TestAppContext) {
+    let (_, mut cx) = testing::start(cx);
+    let mut settings = open_settings(&mut cx);
+    click(&mut settings, "pane-Appearance");
+    // Tall enough for its rows, at the foot of the pane.
+    settings.simulate_resize(gpui::size(px(720.), px(1400.)));
+    let saver = |cx: &mut VisualTestContext| {
+        cx.update(|_, cx| {
+            let s = cx.global::<Settings>();
+            (s.screensaver, s.screensaver_minutes)
+        })
+    };
+    assert_eq!(saver(&mut settings), (true, 5), "on, after 5 minutes");
+
+    click(&mut settings, "screensaver-minutes-10 min");
+    assert_eq!(saver(&mut settings), (true, 10));
+    click(&mut settings, "screensaver");
+    assert_eq!(saver(&mut settings), (false, 10));
+    assert!(
+        !shows(&mut settings, "screensaver-minutes-10 min"),
+        "off, it waits for nothing"
+    );
+    click(&mut settings, "screensaver");
+    click(&mut settings, "screensaver-minutes-1 min");
+    assert_eq!(saver(&mut settings), (true, 1));
+}
+
 #[cfg(target_os = "macos")]
 #[gpui::test]
 fn picking_how_windows_go_full_screen_sets_it(cx: &mut TestAppContext) {

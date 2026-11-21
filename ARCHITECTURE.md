@@ -519,7 +519,16 @@ flowchart LR
   or after it in turn), the empty window (`empty`: the app's logo, from
   `assets/icon.svg`, with the open buttons or the URL form under it;
   pressed anywhere but those, which keep their presses, and dragged, it
-  moves the window as a lone tile's picture does), the toolbar
+  moves the window as a lone tile's picture does), its screensaver
+  (`screensaver`: left alone in front, the window fades its buttons out
+  and the logo bounces off its edges, a new color at each, from the one it
+  rests in (a click on it picks the next; back from bouncing, it keeps
+  the one it had), till it's used again and the logo flies back. Where
+  the logo is follows from the time
+  alone, read from gpui's executor, so tests see it on the fake clock; the
+  empty window and the logo's place are noted as they're laid out, for it
+  to bounce in and fly back to, and a task waits for the window to have
+  rested, let go whenever the window is drawn unable to rest), the toolbar
   (`toolbar`), the mouse coming, going and resting, and the traffic
   lights (`mouse`), floating on top (`on_top`), where windows open and come
   back to (`place`), going full screen on another display (`display`: out

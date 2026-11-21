@@ -12,6 +12,7 @@ mod on_top;
 mod opening;
 mod pairing;
 mod place;
+mod screensaver;
 mod sound;
 #[cfg(test)]
 mod tests;
@@ -25,8 +26,8 @@ use anyhow::Result;
 use gpui::prelude::*;
 use gpui::{
     AnyWindowHandle, App, Bounds, Context, DisplayId, Entity, EntityId, ExternalPaths, FocusHandle,
-    Pixels, Size, Subscription, TitlebarOptions, Window, WindowBounds, WindowHandle, WindowOptions,
-    black, div, px,
+    KeyDownEvent, Pixels, Size, Subscription, TitlebarOptions, Window, WindowBounds, WindowHandle,
+    WindowOptions, black, div, px,
 };
 
 use super::displays;
@@ -90,6 +91,8 @@ pub struct Workspace {
     url_form_open: bool,
     /// Where the empty window was pressed, while that may yet move it.
     empty_press: Option<gpui::Point<Pixels>>,
+    /// Left alone, the empty window's logo bounces about.
+    screensaver: screensaver::Screensaver,
     /// How many times the empty window has been moved by pressing it.
     #[cfg(test)]
     window_moves: usize,
@@ -173,6 +176,7 @@ impl Workspace {
         let settings_subscription = cx.observe_global_in::<Settings>(window, |this, window, cx| {
             let settings = cx.global::<Settings>();
             window.set_fullscreen_style(settings.full_screen.style());
+            this.screensaver_settings_changed();
             let (volume, gamma) = (settings.master_volume, settings.gamma());
             AudioEngine::set_master_volume(volume, cx);
             if gamma != this.gamma {
@@ -217,26 +221,7 @@ impl Workspace {
                 window.focus(&this.focus_handle);
                 cx.notify();
             });
-        // Rendering stops while the window is hidden; keep players moving
-        // anyway, and the window floating while they play.
-        cx.spawn_in(window, async move |this, cx| {
-            loop {
-                cx.background_executor()
-                    .timer(Duration::from_millis(200))
-                    .await;
-                let alive = this.update_in(cx, |this, window, cx| {
-                    for tile in &this.tiles {
-                        tile.view.update(cx, |view, cx| view.background_tick(cx));
-                    }
-                    this.update_on_top(window, cx);
-                    this.finish_moving(window, cx);
-                });
-                if alive.is_err() {
-                    break;
-                }
-            }
-        })
-        .detach();
+        keep_ticking(window, cx);
         Self {
             focus_handle,
             window: window.window_handle(),
@@ -252,6 +237,7 @@ impl Workspace {
             url_form,
             url_form_open: false,
             empty_press: None,
+            screensaver: screensaver::Screensaver::new(cx.background_executor().now()),
             #[cfg(test)]
             window_moves: 0,
             mouse_inside: true,
@@ -274,6 +260,29 @@ impl Workspace {
     }
 }
 
+/// Rendering stops while the window is hidden; keep players moving anyway,
+/// and the window floating while they play.
+fn keep_ticking(window: &mut Window, cx: &mut Context<Workspace>) {
+    cx.spawn_in(window, async move |this, cx| {
+        loop {
+            cx.background_executor()
+                .timer(Duration::from_millis(200))
+                .await;
+            let alive = this.update_in(cx, |this, window, cx| {
+                for tile in &this.tiles {
+                    tile.view.update(cx, |view, cx| view.background_tick(cx));
+                }
+                this.update_on_top(window, cx);
+                this.finish_moving(window, cx);
+            });
+            if alive.is_err() {
+                break;
+            }
+        }
+    })
+    .detach();
+}
+
 /// What smoke runs check.
 #[cfg(feature = "smoke")]
 impl Workspace {
@@ -293,6 +302,7 @@ impl Render for Workspace {
         if self.graveyard.collect(window) {
             window.request_animation_frame();
         }
+        self.tend_screensaver(window, cx);
         self.update_traffic_lights(window, cx);
         self.update_on_top(window, cx);
         self.finish_moving(window, cx);
@@ -354,6 +364,7 @@ impl Render for Workspace {
             .bg(if empty { theme.background } else { black() })
             .text_color(theme.text)
             .font_family(theme.font.clone())
+            .capture_key_down(cx.listener(|this, _: &KeyDownEvent, _, cx| this.used(cx)))
             .child(mouse::track_mouse(cx.entity().downgrade()))
             .child(workspace)
             .when_some(self.open_url.as_ref(), |this, (dialog, _)| {

@@ -6,6 +6,7 @@ mod casting_to_airplay;
 mod casting_to_chromecast;
 mod casting_to_dlna;
 mod dragging;
+mod screensaver;
 mod sound;
 mod sound_to_airplay;
 mod tiles_from_the_keyboard;

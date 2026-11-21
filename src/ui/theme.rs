@@ -434,6 +434,23 @@ pub mod layout {
 
 /// Menu rows, by size (the track menu's, the track reel's and the font
 /// menu's are medium), and where menus go.
+/// An empty window's screensaver: its buttons fade out and its logo
+/// bounces off its edges, taking the next color at each.
+pub mod screensaver {
+    use std::time::Duration;
+
+    /// How long the buttons take to fade out as it starts.
+    pub const FADE: Duration = Duration::from_millis(600);
+    /// How long the logo takes to fly back to its place, the window used
+    /// again, as the buttons fade back in.
+    pub const RETURN: Duration = Duration::from_millis(400);
+    /// How fast the logo goes, across and down at once, in points a second.
+    pub const SPEED: f64 = 90.;
+    /// The colors it takes in turn, one per edge it bounces off.
+    pub const COLORS: [u32; 6] = [0xff375f, 0xff9f0a, 0xffd60a, 0x34c759, 0x0a84ff, 0xbf5af2];
+    pub const COLOR_OPACITY: f32 = 0.9;
+}
+
 pub mod menu {
     use gpui::{Pixels, px};
 

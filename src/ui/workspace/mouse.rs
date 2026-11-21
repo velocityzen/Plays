@@ -4,7 +4,10 @@
 use std::time::Instant;
 
 use gpui::prelude::*;
-use gpui::{Context, DispatchPhase, MouseExitEvent, MouseMoveEvent, WeakEntity, Window, canvas};
+use gpui::{
+    Context, DispatchPhase, MouseDownEvent, MouseExitEvent, MouseMoveEvent, ScrollWheelEvent,
+    WeakEntity, Window, canvas,
+};
 
 use super::Workspace;
 use crate::settings::{ControlsVisibility, Settings};
@@ -13,6 +16,7 @@ use crate::ui::traffic_lights;
 
 impl Workspace {
     fn mouse_moved(&mut self, cx: &mut Context<Self>) {
+        self.used(cx);
         self.mouse_moved_at = Instant::now();
         if !self.mouse_inside || self.mouse_idle || self.keyboard_focus {
             self.mouse_inside = true;
@@ -65,10 +69,12 @@ impl Workspace {
     /// Like the controls, the traffic lights fade out while something plays
     /// and the mouse is away from the window or resting.
     pub(super) fn update_traffic_lights(&mut self, window: &Window, cx: &Context<Self>) {
-        let show = (self.mouse_inside
-            && (!self.mouse_idle || self.tiles.iter().any(|t| t.view.read(cx).over_bars())))
-            || cx.global::<Settings>().controls == ControlsVisibility::Always
-            || !self.any_playing(cx);
+        // The screensaver hides them too.
+        let show = !self.screensaver.bouncing()
+            && ((self.mouse_inside
+                && (!self.mouse_idle || self.tiles.iter().any(|t| t.view.read(cx).over_bars())))
+                || cx.global::<Settings>().controls == ControlsVisibility::Always
+                || !self.any_playing(cx));
         if show != self.traffic_lights_shown {
             self.traffic_lights_shown = show;
             traffic_lights::set_visible(window, show);
@@ -78,10 +84,27 @@ impl Workspace {
 
 /// Follows the mouse in and out of the window. gpui keeps the last position
 /// after the mouse leaves, so hovering alone would leave things showing.
+/// A press or scroll, wherever it goes, uses the window too.
 pub(super) fn track_mouse(workspace: WeakEntity<Workspace>) -> impl IntoElement {
     canvas(
         |_, _, _| (),
         move |_, _, window, _| {
+            window.on_mouse_event({
+                let workspace = workspace.clone();
+                move |_: &MouseDownEvent, phase, _, cx| {
+                    if phase == DispatchPhase::Capture {
+                        workspace.update(cx, |this, cx| this.used(cx)).ok();
+                    }
+                }
+            });
+            window.on_mouse_event({
+                let workspace = workspace.clone();
+                move |_: &ScrollWheelEvent, phase, _, cx| {
+                    if phase == DispatchPhase::Capture {
+                        workspace.update(cx, |this, cx| this.used(cx)).ok();
+                    }
+                }
+            });
             window.on_mouse_event({
                 let workspace = workspace.clone();
                 move |_: &MouseMoveEvent, phase, _, cx| {
