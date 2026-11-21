@@ -759,8 +759,13 @@ mod tests {
             prop_assert_eq!(request.method, expected);
             prop_assert_eq!(&request.path, &path);
             prop_assert_eq!(&request.query, &query.unwrap_or_default());
-            for (name, value) in &headers {
-                prop_assert_eq!(request.header(&name.to_ascii_lowercase()), Some(value.as_str()));
+            for (name, _) in &headers {
+                // A name sent twice, in any case, is the first one sent.
+                let first = headers
+                    .iter()
+                    .find(|(other, _)| other.eq_ignore_ascii_case(name))
+                    .map(|(_, value)| value.as_str());
+                prop_assert_eq!(request.header(&name.to_ascii_lowercase()), first);
             }
             prop_assert_eq!(keep_alive, !http_1_0);
             let (next, _) = read_request(&mut reader).unwrap().unwrap();
