@@ -343,7 +343,8 @@ of the window in front. On Wayland, the compositor places windows.
 Player windows float above other apps' windows with Video → Float on Top
 or Float on Top While Playing, or Settings → Appearance. Settings and
 About float with them, so they don't open underneath. On macOS a window
-comes down while it is full screen and floats again after.
+comes down while it is full screen and floats again after, and floating,
+it still shows in Mission Control, and ⌘` still goes to it.
 
 On macOS, the traffic lights fade out with the controls while something
 plays, when the mouse leaves the window or rests in it.

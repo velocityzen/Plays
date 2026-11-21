@@ -1416,14 +1416,12 @@ impl PlatformWindow for MacWindow {
             .spawn(async move {
                 unsafe {
                     let style = window.styleMask();
-                    // macOS lets a window go full screen by its level unless
-                    // it says otherwise, and one above the normal level
-                    // can't: a window that can at the normal level says so.
-                    if on_top && style.contains(NSWindowStyleMask::NSResizableWindowMask) {
-                        window.setCollectionBehavior_(
-                            window.collectionBehavior()
-                                | NSWindowCollectionBehavior::NSWindowCollectionBehaviorFullScreenPrimary,
-                        );
+                    if on_top {
+                        let resizable = style.contains(NSWindowStyleMask::NSResizableWindowMask);
+                        window.setCollectionBehavior_(floating_behavior(
+                            window.collectionBehavior(),
+                            resizable,
+                        ));
                     }
                     let full_screen =
                         covering || style.contains(NSWindowStyleMask::NSFullScreenWindowMask);
@@ -1442,6 +1440,20 @@ impl PlatformWindow for MacWindow {
         let window = self.0.lock().native_window;
         let level: NSInteger = unsafe { msg_send![window, level] };
         level > NSNormalWindowLevel
+    }
+
+    // Plays.
+    fn is_in_mission_control(&self) -> bool {
+        let window = self.0.lock().native_window;
+        // SAFETY: the window is alive as long as this, on the main thread.
+        let (level, behavior): (NSInteger, NSWindowCollectionBehavior) =
+            unsafe { (msg_send![window, level], window.collectionBehavior()) };
+        let asked = NSWindowCollectionBehavior::NSWindowCollectionBehaviorManaged
+            | NSWindowCollectionBehavior::NSWindowCollectionBehaviorParticipatesInCycle;
+        let left_out = NSWindowCollectionBehavior::NSWindowCollectionBehaviorTransient
+            | NSWindowCollectionBehavior::NSWindowCollectionBehaviorStationary;
+        let normal = level == NSNormalWindowLevel && !behavior.intersects(left_out);
+        normal || behavior.contains(asked)
     }
 
     fn is_fullscreen(&self) -> bool {
@@ -2893,4 +2905,25 @@ extern "C" fn toggle_tab_bar(this: &Object, _sel: Sel, _id: id) {
             window_state.lock().toggle_tab_bar_callback = Some(callback);
         }
     }
+}
+
+/// Plays: the collection behavior of a window raised above the normal
+/// level, from the one it has. macOS gives a window at the normal level a
+/// place in Mission Control and in ⌘`'s round of the app's windows, and
+/// lets it go full screen, but one above it none of these unless it asks:
+/// it asks to be managed (so neither transient nor stationary), to take
+/// part in the round, and, `resizable`, to go full screen.
+fn floating_behavior(
+    behavior: NSWindowCollectionBehavior,
+    resizable: bool,
+) -> NSWindowCollectionBehavior {
+    let left_out = NSWindowCollectionBehavior::NSWindowCollectionBehaviorTransient
+        | NSWindowCollectionBehavior::NSWindowCollectionBehaviorStationary;
+    let mut behavior = (behavior - left_out)
+        | NSWindowCollectionBehavior::NSWindowCollectionBehaviorManaged
+        | NSWindowCollectionBehavior::NSWindowCollectionBehaviorParticipatesInCycle;
+    if resizable {
+        behavior |= NSWindowCollectionBehavior::NSWindowCollectionBehaviorFullScreenPrimary;
+    }
+    behavior
 }

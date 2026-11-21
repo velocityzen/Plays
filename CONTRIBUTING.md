@@ -757,8 +757,9 @@ names), and the script exits non-zero if any failed:
 - `subtitles` turns the subtitles beside a video off and on again;
 - `step-back` steps a frame forward and two back through B-frames;
 - `float-on-top` floats the window while it plays, as the system has it
-  (the window's level on macOS, `_NET_WM_STATE_ABOVE` on X11), brings it
-  down when paused, and floats Settings with it.
+  (the window's level on macOS, `_NET_WM_STATE_ABOVE` on X11), still in
+  Mission Control (macOS), brings it down when paused, and floats Settings
+  with it, in Mission Control too.
 
 Throughout, a window that has fitted its files must be laid out at the
 size it really is, every playing video must show at least 15 of its 25

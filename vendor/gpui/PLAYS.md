@@ -196,7 +196,12 @@ for (`src/platform/test/display.rs` too).
 back among them, and `Window::is_on_top` says whether it is there now. On
 macOS it sets the window's level to floating, and the window delegate
 drops it to normal while the window is full screen and raises it again
-after. On X11 it asks the window manager for `_NET_WM_STATE_ABOVE` and
+after. macOS leaves a window above the normal level out of Mission
+Control and ⌘`'s round of the app's windows, and won't let it go full
+screen, unless it asks, so a floating window asks for all three in its
+collection behavior (managed, taking part in the round, and, resizable,
+full screen primary); `Window::is_in_mission_control` says whether it
+has them, by its level and collection behavior (always elsewhere). On X11 it asks the window manager for `_NET_WM_STATE_ABOVE` and
 reads it back from `_NET_WM_STATE`. The test window keeps the flag;
 Wayland has no protocol for it, so there it does nothing.
 

@@ -4292,6 +4292,12 @@ impl Window {
         self.platform_window.is_on_top()
     }
 
+    /// Plays: whether Mission Control shows the window, and ⌘` goes to it
+    /// among the app's windows, floating or not (macOS; elsewhere always).
+    pub fn is_in_mission_control(&self) -> bool {
+        self.platform_window.is_in_mission_control()
+    }
+
     /// Plays: how the window goes full screen from now on
     /// (`toggle_fullscreen`); one full screen now leaves the way it came.
     /// Only macOS has a choice.

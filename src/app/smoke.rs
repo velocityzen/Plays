@@ -363,6 +363,9 @@ async fn float_on_top(cx: &mut AsyncApp) -> Result<(), String> {
         is_on_top(cx, false)
     })
     .await?;
+    if !in_mission_control(cx, false)? {
+        return Err("the window floating is missing from Mission Control".into());
+    }
     press_for(cx, Command::PlayPause)?;
     wait_for(cx, "the window to come down when paused", |cx| {
         !is_on_top(cx, false)
@@ -381,6 +384,9 @@ async fn float_on_top(cx: &mut AsyncApp) -> Result<(), String> {
         is_on_top(cx, true)
     })
     .await?;
+    if !in_mission_control(cx, true)? {
+        return Err("Settings floating is missing from Mission Control".into());
+    }
     set_float_on_top(cx, FloatOnTop::Off)?;
     wait_for(cx, "both windows to come down", |cx| {
         !is_on_top(cx, false) && !is_on_top(cx, true)
@@ -401,19 +407,36 @@ fn on_top(cx: &mut AsyncApp, settings: bool) -> Result<bool, String> {
         .map_err(|_| "the app went away".into())
 }
 
+/// Whether Mission Control shows the player window, or with `settings` the
+/// Settings window, and ⌘` goes to it, as the system has it.
+fn in_mission_control(cx: &mut AsyncApp, settings: bool) -> Result<bool, String> {
+    cx.update(|cx| {
+        player_or_settings(cx, settings).is_some_and(|window| {
+            window
+                .update(cx, |_, window, _| window.is_in_mission_control())
+                .unwrap_or(false)
+        })
+    })
+    .map_err(|_| "the app went away".into())
+}
+
 fn is_on_top(cx: &mut App, settings: bool) -> bool {
-    let window = if settings {
+    player_or_settings(cx, settings).is_some_and(|window| {
+        window
+            .update(cx, |_, window, _| window.is_on_top())
+            .unwrap_or(false)
+    })
+}
+
+/// The player window, or with `settings` the Settings window.
+fn player_or_settings(cx: &mut App, settings: bool) -> Option<AnyWindowHandle> {
+    if settings {
         cx.windows()
             .into_iter()
             .find(|window| window.downcast::<SettingsView>().is_some())
     } else {
         workspace(cx).ok().map(AnyWindowHandle::from)
-    };
-    window.is_some_and(|window| {
-        window
-            .update(cx, |_, window, _| window.is_on_top())
-            .unwrap_or(false)
-    })
+    }
 }
 
 /// Open the fixtures `files` into the window, as Finder does, and wait

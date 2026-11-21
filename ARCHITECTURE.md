@@ -1088,7 +1088,9 @@ control over displays and full screen, and test support. Everything Plays change
   This is how the panels over the video look as Settings → Appearance
   says.
 - Corners can be superellipses, menu items can show a check mark (macOS),
-  a window can float above other apps' windows (macOS and X11), and
+  a window can float above other apps' windows (macOS and X11; on macOS
+  still in Mission Control and ⌘`'s round of the app's windows, which
+  macOS gives only windows at the normal level unless they ask), and
   `start_window_move` moves a macOS window with the mouse, as gpui already
   did on Linux.
 - Displays have names, and on X11 each RandR monitor is a display rather

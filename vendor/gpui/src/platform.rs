@@ -500,6 +500,11 @@ pub(crate) trait PlatformWindow: HasWindowHandle + HasDisplayHandle {
     fn is_on_top(&self) -> bool {
         false
     }
+    /// Plays: whether Mission Control shows the window, and ⌘` goes to it
+    /// among the app's windows. Only macOS has these.
+    fn is_in_mission_control(&self) -> bool {
+        true
+    }
     /// Plays: how the window goes full screen from now on.
     fn set_fullscreen_style(&self, _style: FullscreenStyle) {}
     /// Plays: how the window goes full screen.
