@@ -35,6 +35,7 @@ use super::open_url::{OpenUrlDialog, OpenUrlEvent, UrlForm};
 use super::player::{Graveyard, PlayerView};
 use super::theme::layout::{DROP_INSET, TOOLBAR_HEIGHT, TRAFFIC_LIGHTS, WINDOW_MIN_SIZE};
 use super::theme::{self, Theme};
+use crate::api::Id;
 use crate::app::AudioEngine;
 use crate::cast::{self, Casting};
 use crate::media::{Mixer, picture};
@@ -66,6 +67,10 @@ struct Tile {
 /// A window: a toolbar and a grid with one tile per open file. Every window
 /// is one of these; a tile can move to a new one and keep playing.
 pub struct Workspace {
+    /// What the API knows it by.
+    id: Id,
+    /// What it's called, besides its id, if it's been named.
+    label: Option<String>,
     focus_handle: FocusHandle,
     /// Its own window, to size for the videos opened in it.
     window: AnyWindowHandle,
@@ -225,6 +230,8 @@ impl Workspace {
             });
         keep_ticking(window, cx);
         Self {
+            id: Id::next(),
+            label: None,
             focus_handle,
             window: window.window_handle(),
             fitting: None,
@@ -285,14 +292,30 @@ fn keep_ticking(window: &mut Window, cx: &mut Context<Workspace>) {
     .detach();
 }
 
-/// What smoke runs check.
-#[cfg(feature = "smoke")]
+/// What the API reads.
 impl Workspace {
-    /// The tiles' players, in order.
+    pub fn id(&self) -> Id {
+        self.id
+    }
+
+    pub fn label(&self) -> Option<&str> {
+        self.label.as_deref()
+    }
+
+    /// The tiles' players, in the order the grid shows them.
     pub fn players(&self) -> Vec<Entity<PlayerView>> {
         self.tiles.iter().map(|tile| tile.view.clone()).collect()
     }
 
+    /// The player of the tile keys go to.
+    pub fn active_player(&self) -> Option<Entity<PlayerView>> {
+        self.active_view()
+    }
+}
+
+/// What smoke runs check.
+#[cfg(feature = "smoke")]
+impl Workspace {
     /// Whether the window waits for its files' sizes, to fit them.
     pub fn is_fitting(&self) -> bool {
         self.fitting.is_some()

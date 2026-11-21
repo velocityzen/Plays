@@ -71,6 +71,8 @@ mod tests {
     use gpui::{KeyContext, Keymap, Keystroke};
 
     use super::*;
+    use crate::api;
+    use crate::app::commands;
 
     #[test]
     fn command_w_closes_the_file_in_front_or_else_the_window() {
@@ -84,6 +86,31 @@ mod tests {
         assert!(with_tiles[0].action().partial_eq(&CloseFile));
         let (without, _) = keymap.bindings_for_input(&keys, &[root]);
         assert!(without[0].action().partial_eq(&CloseWindow));
+    }
+
+    #[test]
+    fn the_commands_have_the_keys_bound_to_them() {
+        for binding in app_bindings() {
+            let invocation = commands::invocation(binding.action()).unwrap();
+            let key = binding
+                .keystrokes()
+                .iter()
+                .map(|keystroke| keystroke.unparse())
+                .collect::<Vec<_>>()
+                .join(" ");
+            if !invocation.target.is_empty() {
+                // ⌘1 to ⌘9, each aimed at its window.
+                assert_eq!(invocation.command, "window.focus", "{key}");
+                continue;
+            }
+            let spec = api::find(&invocation.command).unwrap();
+            let keys: Vec<String> = spec
+                .default_keys()
+                .iter()
+                .filter_map(|key| crate::hotkeys::normalize(key))
+                .collect();
+            assert!(keys.contains(&key), "{} lacks {key}: {keys:?}", spec.id);
+        }
     }
 
     #[test]

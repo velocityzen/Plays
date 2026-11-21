@@ -32,6 +32,7 @@ pub use menus::refresh as refresh_menus;
 #[cfg(test)]
 pub(crate) use speakers::Speakers;
 pub use speakers::{airplay_id, output_kind};
+pub(crate) use windows::{players as player_windows, step as step_window};
 
 use crate::cast::{self, AppPairings, Casting, Device, Pairings, Protocol};
 use crate::files::Folder;

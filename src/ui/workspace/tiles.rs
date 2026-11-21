@@ -64,7 +64,8 @@ impl Workspace {
         cx.notify();
     }
 
-    fn close(&mut self, id: EntityId, cx: &mut Context<Self>) {
+    /// Close the tile `id`; the window stays, empty after the last.
+    pub fn close(&mut self, id: EntityId, cx: &mut Context<Self>) {
         if let Some(index) = self.tiles.iter().position(|t| t.view.entity_id() == id) {
             let tile = self.tiles.remove(index);
             let note = tile.view.read(cx).progress();
@@ -136,14 +137,6 @@ impl Workspace {
         view.update(cx, |view, _| view.move_to_window(graveyard));
         self.add_tile(view, cx);
         self.tiles_changed(cx);
-    }
-
-    /// Close the tile shortcuts go to; the window stays, empty after the
-    /// last.
-    pub fn close_active(&mut self, cx: &mut Context<Self>) {
-        if let Some(view) = self.active_view() {
-            self.close(view.entity_id(), cx);
-        }
     }
 
     pub fn close_all(&mut self, cx: &mut Context<Self>) {
@@ -276,6 +269,7 @@ impl Workspace {
     }
 
     /// Run `f` on the tile shortcuts go to.
+    #[cfg(test)]
     pub fn with_active(
         &mut self,
         cx: &mut Context<Self>,

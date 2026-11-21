@@ -1,7 +1,7 @@
 //! Going from window to window from the keyboard: ⌘1 to ⌘9 bring the
 //! player window of that number to the front, counted in the order they
-//! opened, and Ctrl+Tab and Ctrl+Shift+Tab the one after the window in
-//! front or the one before, round and round.
+//! opened (`window.focus`, aimed at it), and Ctrl+Tab and Ctrl+Shift+Tab
+//! the one after the window in front or the one before, round and round.
 
 use gpui::{AnyWindowHandle, App, Global};
 
@@ -25,7 +25,7 @@ pub(super) fn number(cx: &mut App) {
 }
 
 /// The player windows open, in the order they opened.
-fn players(cx: &App) -> Vec<AnyWindowHandle> {
+pub(crate) fn players(cx: &App) -> Vec<AnyWindowHandle> {
     let open = cx.windows();
     cx.try_global::<Opened>()
         .map(|opened| {
@@ -39,16 +39,9 @@ fn players(cx: &App) -> Vec<AnyWindowHandle> {
         .unwrap_or_default()
 }
 
-/// Bring player window `nth`, from 0, to the front, if there is one.
-pub(super) fn go_to(nth: usize, cx: &mut App) {
-    if let Some(window) = players(cx).get(nth).copied() {
-        activate(window, cx);
-    }
-}
-
 /// Bring the player window `step` from the window in front to the front:
 /// 1 for the next, -1 for the one before.
-pub(super) fn step(step: isize, cx: &mut App) {
+pub(crate) fn step(step: isize, cx: &mut App) {
     let players = players(cx);
     if let Some(window) = stepped(&players, cx.active_window(), step) {
         activate(window, cx);

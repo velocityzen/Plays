@@ -13,8 +13,8 @@ use serde::{Deserialize, Serialize};
 
 /// Every command once, in the order Settings shows them, under its group:
 /// its variant, the gpui action it fires, its name in the settings file and
-/// its title. The actions, `Command`, `Command::ALL`, `id`, `title`, `group`
-/// and `action` are all made from this one list, so a command can't be
+/// its title. The actions, `Command`, `Command::ALL`, `id`, `title`, `group`,
+/// `action` and `register_actions` are all made from this one list, so a command can't be
 /// missing from any of them. Its default keys are a `match` of their own
 /// (`Command::default_keys`), which must name every command too.
 macro_rules! commands {
@@ -56,6 +56,11 @@ macro_rules! commands {
                     $($(Self::$command => Box::new($action),)+)+
                 }
             }
+        }
+
+        /// Hand each command's action, wherever it's dispatched, to `route`.
+        pub fn register_actions(cx: &mut gpui::App, route: fn(&dyn Action, &mut gpui::App)) {
+            $($(cx.on_action(move |action: &$action, cx| route(action, cx));)+)+
         }
     };
 }
@@ -199,7 +204,7 @@ impl Command {
 
     /// The keys a command starts out with. `secondary` is ⌘ on macOS and
     /// Ctrl elsewhere.
-    fn default_keys(self) -> &'static [&'static str] {
+    pub fn default_keys(self) -> &'static [&'static str] {
         let mac = cfg!(target_os = "macos");
         match self {
             Self::PlayPause => &["space", "p"],

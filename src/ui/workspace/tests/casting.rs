@@ -11,7 +11,10 @@ use gpui::{
     Entity, Modifiers, MouseButton, TestAppContext, VisualTestContext, WindowHandle, point,
 };
 
+use serde_json::json;
+
 use super::open;
+use crate::api::{self, Invocation, Target};
 use crate::cast::fake::{Call, FakeTarget, KIND};
 use crate::cast::target::{Load, State};
 use crate::cast::{Casting, Device, Shows};
@@ -138,6 +141,68 @@ pub(super) fn get(url: &str) -> (u16, Vec<u8>) {
     let head = String::from_utf8_lossy(&response[..end]);
     let status = head.split(' ').nth(1).unwrap().parse().unwrap();
     (status, response[end + 4..].to_vec())
+}
+
+#[gpui::test]
+fn the_cast_command_plays_on_a_device_found_by_its_id(cx: &mut TestAppContext) {
+    let (window, mut cx, fake, tv) = start(cx, "clip.mp4", true);
+    let view = tile(window, &cx);
+    let run = |args: serde_json::Value, cx: &mut VisualTestContext| {
+        let invocation = Invocation::new("cast.to").with_args(args);
+        TestAppContext::update(cx, |cx| api::run(invocation, cx))
+    };
+    let casting = |cx: &mut VisualTestContext| {
+        TestAppContext::update(cx, |cx| api::state("cast.to", &Target::default(), cx))
+    };
+
+    assert_eq!(
+        run(json!({"device": tv.id, "kind": "DLNA"}), &mut cx),
+        Err(api::Error::not_found("device", tv.id.clone())),
+        "not found that way"
+    );
+    assert_eq!(
+        run(json!({"device": "elsewhere"}), &mut cx),
+        Err(api::Error::not_found("device", "elsewhere"))
+    );
+    assert_eq!(casting(&mut cx), Ok(serde_json::Value::Null));
+    // Its kind in any case.
+    let kind = KIND.to_uppercase();
+    assert_eq!(
+        run(json!({"device": tv.id, "kind": kind}), &mut cx),
+        Ok(serde_json::Value::Null)
+    );
+    wait(&mut cx, "the device to load it", |_| {
+        !loads(&fake, &tv).is_empty()
+    });
+    assert_eq!(
+        view.read_with(&cx, |view, _| view.casting().cloned()),
+        Some(tv.clone())
+    );
+    assert_eq!(
+        casting(&mut cx),
+        Ok(json!({"id": tv.id, "kind": KIND, "name": "Living Room"}))
+    );
+    // Cast to already: still by its id while it isn't found, its protocol
+    // turned off.
+    cx.update(|_, cx| {
+        Settings::update(cx, false, |s| {
+            s.casting.look_with.insert(KIND.to_owned(), false);
+        })
+    });
+    cx.run_until_parked();
+    assert!(cx.update(|_, cx| Casting::devices(cx).is_empty()));
+    assert_eq!(
+        run(json!({"device": tv.id}), &mut cx),
+        Ok(serde_json::Value::Null)
+    );
+    assert_eq!(
+        view.read_with(&cx, |view, _| view.casting().cloned()),
+        Some(tv.clone())
+    );
+
+    TestAppContext::update(&cx, |cx| api::run(Invocation::new("cast.stop"), cx)).unwrap();
+    cx.run_until_parked();
+    assert_eq!(view.read_with(&cx, |view, _| view.casting().cloned()), None);
 }
 
 #[gpui::test]

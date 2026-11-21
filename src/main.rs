@@ -1,5 +1,6 @@
 //! Plays: a small video and audio player that plays many files at once.
 
+mod api;
 mod app;
 mod assets;
 mod cast;

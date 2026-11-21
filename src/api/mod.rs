@@ -1,0 +1,201 @@
+//! The API: every command Plays has, by id, run one way. Keys, menus and
+//! the controls that send actions run them through here, as the command
+//! palette and the command line are to.
+//!
+//! A command (`registry`, with the commands themselves in `commands`) has
+//! an id such as `playback.play_pause`, a title, a description, keywords,
+//! its keys, the arguments it takes (`args`) and what it acts on: the app,
+//! a window, every tile in a window, or a tile, by default the window in
+//! front and the tile in it that keys go to, or as an invocation names
+//! them (`target`). It hands back a JSON value, or an `Error`.
+
+mod args;
+mod commands;
+mod error;
+mod registry;
+mod target;
+
+use gpui::App;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+
+pub use error::Error;
+pub use registry::{find, for_hotkey};
+pub use target::{Id, Target, front_window};
+
+/// A command to run, with its arguments, what it's aimed at, and where it
+/// came from.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Invocation {
+    pub command: String,
+    /// An object of them, or null for none.
+    #[serde(default, skip_serializing_if = "Value::is_null")]
+    pub args: Value,
+    #[serde(default, skip_serializing_if = "Target::is_empty")]
+    pub target: Target,
+    pub source: Source,
+}
+
+/// Where an invocation came from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Source {
+    /// A gpui action: a key, a menu item, or a control that sends one.
+    Action,
+    /// A control that runs it itself.
+    Ui,
+    Palette,
+    Cli,
+}
+
+impl Invocation {
+    /// `command`, with no arguments, aimed at the window in front, as if
+    /// from a control.
+    pub fn new(command: impl Into<String>) -> Self {
+        Self {
+            command: command.into(),
+            args: Value::Null,
+            target: Target::default(),
+            source: Source::Ui,
+        }
+    }
+
+    pub fn with_args(mut self, args: Value) -> Self {
+        self.args = args;
+        self
+    }
+
+    /// Aimed at the window `name` names.
+    pub fn in_window(mut self, name: impl Into<String>) -> Self {
+        self.target.window = Some(name.into());
+        self
+    }
+
+    /// Aimed at the tile `name` names.
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "for the command line and palette to come")
+    )]
+    pub fn on_tile(mut self, name: impl Into<String>) -> Self {
+        self.target.tile = Some(name.into());
+        self
+    }
+
+    pub fn from(mut self, source: Source) -> Self {
+        self.source = source;
+        self
+    }
+}
+
+/// Run `invocation` now, handing back what the command does.
+///
+/// Not while a window is being updated: not from an action's or a view's
+/// listener, where gpui holds the window the event came to, which the
+/// command may need. `dispatch` runs it once the event is handled.
+pub fn run(invocation: Invocation, cx: &mut App) -> Result<Value, Error> {
+    let Invocation {
+        command,
+        args,
+        target,
+        ..
+    } = invocation;
+    let spec = find(&command).ok_or(Error::NoSuchCommand { command })?;
+    args::check(spec.id, spec.args, &args)?;
+    spec.check_target(&target)?;
+    if !(spec.available)() {
+        return Err(Error::failed(format!(
+            "{} isn't on this system",
+            spec.title
+        )));
+    }
+    let args = registry::Args {
+        command: spec.id,
+        value: &args,
+    };
+    match spec.run {
+        registry::Run::App(run) => {
+            run(cx);
+            Ok(Value::Null)
+        }
+        registry::Run::AppWith(run) => run(args, cx),
+        registry::Run::Window(run) => target::in_window(&target, cx, |workspace, window, cx| {
+            run(workspace, window, cx);
+            Ok(Value::Null)
+        }),
+        registry::Run::WindowWith(run) => {
+            target::in_window(&target, cx, |workspace, window, cx| {
+                run(args, workspace, window, cx)
+            })
+        }
+        registry::Run::Tile(run) => target::on_tile(&target, cx, |player, window, cx| {
+            run(player, window, cx);
+            Ok(Value::Null)
+        }),
+        registry::Run::TileWith(run) => target::on_tile(&target, cx, |player, window, cx| {
+            run(args, player, window, cx)
+        }),
+        registry::Run::Custom(run) => run(args, &target, cx),
+    }
+}
+
+/// Check `args` against what `spec` takes.
+#[cfg(test)]
+pub fn check_args(spec: &registry::Spec, args: &Value) -> Result<(), Error> {
+    args::check(spec.id, spec.args, args)
+}
+
+/// Run `invocation` once the current event is handled, as keys, menus and
+/// controls do, noting why if it doesn't run.
+pub fn dispatch(invocation: Invocation, cx: &mut App) {
+    cx.defer(move |cx| {
+        let command = invocation.command.clone();
+        match run(invocation, cx) {
+            Ok(_) => {}
+            // A key pressed with no file open, say.
+            Err(err) if err.is_not_found() => log::debug!("{command}: {err}"),
+            Err(err) => log::warn!("{command}: {err}"),
+        }
+    });
+}
+
+/// What `command` changes, aimed at `target`, as it is now: whether Loop
+/// is on, say. Null for a command that changes nothing it can read.
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "for the menus and palette to come")
+)]
+pub fn state(command: &str, target: &Target, cx: &mut App) -> Result<Value, Error> {
+    let spec = find(command).ok_or_else(|| Error::NoSuchCommand {
+        command: command.to_owned(),
+    })?;
+    spec.check_target(target)?;
+    match spec.state {
+        Some(state) => state(target, cx),
+        None => Ok(Value::Null),
+    }
+}
+
+/// Whether `command` can run now, aimed at `target`: this system has what
+/// it does, and there's what it acts on.
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "for the menus and palette to come")
+)]
+pub fn can_run(command: &str, target: &Target, cx: &mut App) -> bool {
+    let Some(spec) = find(command) else {
+        return false;
+    };
+    let there = match spec.scope {
+        registry::Scope::App => true,
+        registry::Scope::AnyWindow => {
+            target.window.is_none() && cx.active_window().is_some()
+                || target::window(target, cx).is_ok()
+        }
+        registry::Scope::Window | registry::Scope::Tiles => target::window(target, cx).is_ok(),
+        registry::Scope::Tile => target::tile(target, cx).is_ok(),
+    };
+    there && spec.check_target(target).is_ok() && (spec.available)()
+}
+
+#[cfg(test)]
+mod tests;

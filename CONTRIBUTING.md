@@ -451,6 +451,47 @@ What the window tests check:
 - Settings → About, scrolled hundreds of credits down, builds only the
   few rows in view to draw, and a license there opens and closes.
 
+### Commands
+
+The commands (`src/api`) are tested as the windows are, and their tests
+check:
+
+- Every command has an id of its own, in one of the namespaces and in
+  lower case, a title of its own, a description that is a sentence, and
+  its arguments named once; each shortcut in Settings is exactly one
+  command, with that shortcut's keys, on the systems it's on.
+- Every action, from a key, a menu or a button, is a command, given
+  arguments it takes, and what an action carries (a window's number, a
+  chapter, a crop, a device) reaches it as it should (`app::commands`);
+  the keys bound are the commands' (`keymap`).
+- A command aimed at a tile acts on it, not on the one in front: a tile
+  named by its id, its position or the end of its id, in a window named by
+  its position or in any; positions count in the window in front, and
+  after another window comes to the front, in that one. A window's
+  commands act on the window named; Close Window closes the window in
+  front, Settings too, or the player window named.
+- Go to Chapter goes to a chapter by its number from 1, and to none past
+  the last.
+- Each kind of error comes back, saying what went wrong: no such command,
+  arguments it doesn't take (checked before anything else), a window or
+  tile named to a command that takes none, nothing by that name, and
+  Picture in Picture where there's none.
+- Whether a command can run, and its state (looping, muted, floating on
+  top, the crop).
+- Casting to a device by its id and kind, the one cast to still found
+  once its protocol is off (`casting`), and picking an output by its id
+  alone (`sound_to_bluetooth`).
+
+Unit tests check finding a name among ids, labels, positions and the ends
+of ids (an id first, positions only among those given, several matching
+an error), and checking arguments.
+
+A command updates the window it acts on, so a test runs one outside that
+window's update: with `TestAppContext::update(cx, |cx| api::run(..))`,
+not `VisualTestContext::update`, which holds its window. Ids are hex, so
+a window number a test means not to be found mustn't be one its window's
+id could end with (`past_the_last`).
+
 ### Casting
 
 Casting is tested with a fake protocol whose devices keep what they are

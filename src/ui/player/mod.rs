@@ -37,6 +37,7 @@ use super::framing::{Adjustments, Framing};
 use super::subtitles;
 use super::theme::Theme;
 use super::theme::motion::LEVEL_FALLOFF;
+use crate::api::Id;
 use crate::cast::Device;
 use crate::media::decoder::MediaInfo;
 use crate::media::picture::PictureId;
@@ -86,6 +87,10 @@ pub struct TileLayout {
 }
 
 pub struct PlayerView {
+    /// What the API knows it by, from window to window.
+    id: Id,
+    /// What it's called, besides its id, if it's been named.
+    label: Option<String>,
     /// The player here, and the device it plays on instead while it casts.
     playback: Playback,
     title: SharedString,
@@ -137,6 +142,17 @@ pub struct PlayerView {
 
 impl EventEmitter<PlayerEvent> for PlayerView {}
 
+/// What the API knows a tile by.
+impl PlayerView {
+    pub fn id(&self) -> Id {
+        self.id
+    }
+
+    pub fn label(&self) -> Option<&str> {
+        self.label.as_deref()
+    }
+}
+
 impl PlayerView {
     pub fn new(
         source: Source,
@@ -157,6 +173,8 @@ impl PlayerView {
             },
         );
         Self {
+            id: Id::next(),
+            label: None,
             playback,
             title,
             neighbors: None,

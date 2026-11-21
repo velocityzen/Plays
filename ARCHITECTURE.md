@@ -29,7 +29,8 @@ test it.
 ```mermaid
 flowchart TB
     subgraph uithread ["UI thread, on gpui"]
-        app["App<br/>src/app: menus, keymap, commands, dispatch"]
+        app["App<br/>src/app: menus, keymap, actions"]
+        api["API<br/>src/api: every command, by name"]
         settings["Settings window<br/>src/ui/settings"]
         subgraph windows ["Windows"]
             workspace["Workspace<br/>src/ui/workspace: toolbar,<br/>grid, fitting, placing, sound"]
@@ -64,6 +65,9 @@ flowchart TB
 
     app --> workspace
     app --> settings
+    app -->|"actions"| api
+    api --> workspace
+    api --> tiles
     workspace --> tiles
     tiles --> player
     tiles --> pip
@@ -85,7 +89,9 @@ flowchart TB
     server --> ffmpeg
 ```
 
-gpui runs the app on one thread: windows, views, menus and settings. Each
+gpui runs the app on one thread: windows, views, menus and settings.
+Every action, from a key, a menu or a button, runs a command of the API by
+name, on the window or tile it names or the one in front. Each
 open file or stream is a `Player`, owned by its tile, with two threads of
 its own that read and decode it. Decoded sound goes into a mixer, which an
 audio output plays; the output tells each player's clock what is being
@@ -137,6 +143,7 @@ Inside `src/`:
 | Path | What it is |
 | --- | --- |
 | `main.rs` | Starts the app. |
+| `api/` | Every command Plays has, by name: what each does and takes, and running one on the window or tile named. Every action goes through it. |
 | `app/` | Starting the app, its actions, menus, keymap, audio outputs and the AirPlay speakers and Bluetooth devices among them, keeping the computer awake, smoke runs. |
 | `media/` | The playback engine: FFmpeg decoding, the mixers, clocks, subtitles, HDR. |
 | `ui/` | gpui views: windows, tiles, Settings, Picture in Picture, components and theme. |
@@ -461,9 +468,34 @@ flowchart LR
 
 ## The app and its windows
 
+- `src/api/`: every command Plays has, which every action runs by name,
+  as a command line and a command palette are to. Each namespace
+  (`app`, `window`, `tile`, `playback`, `audio`, `subtitles`, `video`,
+  `cast`, `output`) is a file in `commands/`, a list of `Spec`s: the
+  command's id (`playback.toggle_loop`), title, description and keywords,
+  what it acts on (the app, a window, every tile in one, or a tile), the
+  arguments it takes, its keys or the shortcut in Settings it is, what it
+  does, and its state (on or off, the chapter) where it has one.
+  `registry` finds them; `args` checks the arguments given against what
+  the command takes before it runs, then reads them into a type of the
+  command's own; `target` finds the window and tile named: by id, then by
+  label, then by position from 1 (windows in the order they opened, tiles
+  in the window named or in front), then by the end of an id, with an
+  error if none is or several are; named by nothing, the window in front
+  and the tile in it keys go to. Windows and tiles get an id as they're
+  made, a number never given again, mixed so ids made one after another
+  differ at the end, and shown as eight hex digits. `api::run` runs an
+  `Invocation` (the command, its arguments, what it's aimed at and where
+  it came from) and answers with JSON or an `Error`, which says what went
+  wrong: no such command, arguments it doesn't take, nothing by that name
+  or more than one, or that it failed. It updates the window it acts on,
+  so it's called outside any window's update; `api::dispatch`, which
+  actions use, runs it once the event is handled.
 - `src/app/`: starting the app and its own actions (`mod.rs`), the shared
-  audio outputs (`audio`, above), what each action does (`commands`), how
-  actions reach the window and tile in front (`dispatch`), the keymap
+  audio outputs (`audio`, above), the command each action runs
+  (`commands`: every action, from a key, a menu or a button, becomes an
+  `Invocation` and goes through `api::dispatch`), running something on
+  the window in front once the event is handled (`dispatch`), the keymap
   (`keymap`: the app's own shortcuts and the playback ones from Settings,
   bound again whenever they change) and the menu bar (`menus`, set again
   as outputs, displays or devices to cast to come and go, another is
@@ -488,7 +520,10 @@ flowchart LR
   the settings file and its title; a macro (`commands!`) makes the
   actions, the `Command` enum, the order Settings shows them in, and every
   table of them from that list. Default keys are a `match` of their own,
-  which must name every command.
+  which must name every command. Each is one command in `src/api`, which
+  names it as its `hotkey`, and its action runs that command: the actions
+  are registered with the route `app::commands` gives them
+  (`register_actions`).
 - `src/settings.rs`: the settings, saved as JSON in the user's config
   folder with the version of Plays they're from. Each value is read on
   its own, so one a setting can't take (typed wrong, or from a later

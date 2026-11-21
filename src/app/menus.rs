@@ -9,13 +9,13 @@
 
 use gpui::{App, Global, Menu, MenuItem, SystemMenuType};
 
-use super::dispatch::first_workspace;
 use super::speakers::output_kind;
 use super::{
     About, AudioEngine, CastTo, CloseAll, CloseFile, CloseWindow, GoToChapter, NextWindow,
     OpenFiles, OpenSettings, OpenUrl, PreviousWindow, Quit, SetAspectRatio, SetAudioDevice,
     SetCrop, SetWindowAudioDevice, ShowOnDisplay,
 };
+use crate::api::front_window;
 use crate::cast::{Casting, Device, Shows};
 use crate::hotkeys::*;
 use crate::media::output::DeviceInfo;
@@ -260,9 +260,7 @@ impl Global for MenuState {}
 
 impl MenuState {
     fn now(cx: &mut App) -> Self {
-        let window = first_workspace(cx.active_window())
-            .or_else(|| first_workspace(cx.window_stack().unwrap_or_default()))
-            .or_else(|| first_workspace(cx.windows()));
+        let window = front_window(cx);
         let (front, casting, sound, has_audio, picture, (chapters, chapter)) = window
             .and_then(|handle| {
                 handle

@@ -22,6 +22,7 @@ use gpui::{
 
 use super::place::Place;
 use super::{TOOLBAR_SPACE, Workspace};
+use crate::api::{self, Invocation};
 use crate::app::ShowOnDisplay;
 use crate::hotkeys::{MatchVideoSize, ToggleFloatOnTop, ToggleFloatOnTopWhilePlaying};
 use crate::media::tracks::TrackKind;
@@ -978,9 +979,8 @@ fn a_file_opened_again_starts_where_it_was_left(cx: &mut TestAppContext) {
             })
             .unwrap();
         cx.run_until_parked();
-        window
-            .update(cx, |workspace, _, cx| workspace.close_active(cx))
-            .unwrap();
+        // Outside the window's update, as a deferred command runs.
+        TestAppContext::update(cx, |cx| api::run(Invocation::new("tile.close"), cx)).unwrap();
     };
 
     // Paused where it opens, to read where that is.

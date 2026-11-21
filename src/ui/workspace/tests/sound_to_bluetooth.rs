@@ -9,7 +9,10 @@ use std::time::Duration;
 
 use gpui::{TestAppContext, VisualTestContext};
 
+use serde_json::json;
+
 use super::casting::wait;
+use crate::api::{self, Invocation};
 use crate::app::{AudioEngine, Bluetooth, Devices, Local, Paired, Route, SetWindowAudioDevice};
 use crate::media::AudioOutput;
 use crate::media::output::{DeviceEvent, DeviceInfo, OpenError, Playing};
@@ -234,4 +237,11 @@ fn headphones_paired_are_outputs_and_picking_them_connects_them(cx: &mut TestApp
         plays_through(cx, RADIO.1)
     });
     assert_eq!(asked(), [RADIO.0, RADIO.0]);
+
+    // By its id alone, as from the command line: named as it's listed.
+    let pods = device(PODS);
+    let by_id = Invocation::new("output.set_device").with_args(json!({"id": pods.id}));
+    TestAppContext::update(&cx, |cx| api::run(by_id, cx)).unwrap();
+    let picked = cx.update(|_, cx| cx.global::<Settings>().audio_output.device.clone());
+    assert_eq!(picked, Some(pods));
 }

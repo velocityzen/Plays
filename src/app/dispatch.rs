@@ -1,50 +1,27 @@
-//! Getting a command to where it goes: the workspace window in front, and
-//! the tile in it that shortcuts go to.
+//! Getting something to the workspace window in front.
 
 use gpui::{AnyWindowHandle, App, Context, Window, WindowHandle};
 
-use crate::ui::player::PlayerView;
+use crate::api::front_window;
 use crate::ui::workspace::Workspace;
 
-/// Run `f` on the workspace window in front, which menus, shortcuts and files
-/// opened from Finder go to.
+/// Run `f` on the workspace window in front, which files opened from
+/// Finder go to.
 ///
-/// It runs once the current event is handled: gpui hands actions from menus
-/// and keys to their listeners while it holds the window in front, and that
-/// window can't be updated again until it lets go.
+/// It runs once the current event is handled: gpui hands events to their
+/// listeners while it holds the window they came to, and that window can't
+/// be updated again until it lets go.
 pub(super) fn with_workspace(
     cx: &mut App,
     f: impl FnOnce(&mut Workspace, &mut Window, &mut Context<Workspace>) + 'static,
 ) {
     cx.defer(|cx| {
-        let front = first_workspace(cx.active_window())
-            .or_else(|| first_workspace(cx.window_stack().unwrap_or_default()))
-            .or_else(|| first_workspace(cx.windows()));
-        if let Some(handle) = front {
+        if let Some(handle) = front_window(cx) {
             handle
                 .update(cx, |workspace, window, cx| f(workspace, window, cx))
                 .inspect_err(|err| log::warn!("can't reach the window in front: {err:#}"))
                 .ok();
         }
-    });
-}
-
-/// Run `f` on the tile shortcuts go to in the window in front.
-pub(super) fn with_active(
-    cx: &mut App,
-    f: impl FnOnce(&mut PlayerView, &mut Context<PlayerView>) + 'static,
-) {
-    with_workspace(cx, |workspace, _, cx| workspace.with_active(cx, f));
-}
-
-/// Run `f` on the tile shortcuts go to in the window in front, with that
-/// window.
-pub(super) fn with_active_in_window(
-    cx: &mut App,
-    f: impl FnOnce(&mut PlayerView, &mut Window, &mut Context<PlayerView>) + 'static,
-) {
-    with_workspace(cx, |workspace, window, cx| {
-        workspace.with_active(cx, |player, cx| f(player, window, cx))
     });
 }
 
