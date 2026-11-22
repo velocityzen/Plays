@@ -766,6 +766,11 @@ check:
     heading once, and those run lately under Recent and not again; found
     or asked for, no headings, a row saying its namespace after its name.
   - Pointing at a row picking it, and the arrows going on from there.
+  - Where it's drawn: a row, the one picked too, as wide as the field
+    and lined up with it, its keys at its end as far in as its name, and
+    a heading starting where its rows' names do; its text as tall as a
+    menu row's, or a hint's for headings, the footer and the command's
+    chip in the field.
   - The footer saying what Return and ⌘Return do, only for a command that
     takes keys, and a click on either doing it.
   - A command's arguments asked for in turn: a chapter from a list, a

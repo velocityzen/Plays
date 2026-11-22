@@ -40,9 +40,10 @@ use serde_json::{Map, Value};
 use super::components::{Icon, Panel};
 use super::text_input::TextInput;
 use super::theme::palette::{
-    CHECK_WIDTH, DETAIL_SELECTED, FIELD_HEIGHT, FIELD_RADIUS, KEYCAP_RADIUS, LIST_PADDING, RADIUS,
-    ROW_HEIGHT, ROW_RADIUS, ROWS, SEARCH_ICON, WIDTH as PALETTE_WIDTH,
+    CHECK_WIDTH, DETAIL_SELECTED, FIELD_HEIGHT, FIELD_RADIUS, INSET, KEYCAP_RADIUS, LIST_PADDING,
+    RADIUS, ROW_HEIGHT, ROW_RADIUS, ROWS, SEARCH_ICON, WIDTH as PALETTE_WIDTH,
 };
+use super::theme::text::TextStyle;
 use super::theme::{Theme, dialog};
 use crate::api::commands::NAMESPACES;
 use crate::api::{self, Invocation, Scope, Source, Spec, Target};
@@ -720,6 +721,7 @@ impl Palette {
             (None, None) => None,
         };
         let field = div()
+            .debug_selector(|| "palette-field".into())
             .flex()
             .items_center()
             .gap_2()
@@ -727,7 +729,6 @@ impl Palette {
             .px_3()
             .superellipse(FIELD_RADIUS)
             .bg(theme.surface_hover)
-            .text_base()
             .child(
                 div()
                     .debug_selector(|| "palette-search-icon".into())
@@ -747,7 +748,7 @@ impl Palette {
                         .py_0p5()
                         .superellipse(ROW_RADIUS)
                         .bg(theme.surface_active)
-                        .text_sm()
+                        .text_xs()
                         .font_weight(FontWeight::MEDIUM)
                         .child(command),
                 )
@@ -765,7 +766,7 @@ impl Palette {
                 None => this.child(div().flex_1().min_w_0().h_full().child(self.input.clone())),
             });
         div()
-            .p_2()
+            .p(INSET)
             .border_b_1()
             .border_color(theme.border)
             .child(field)
@@ -795,7 +796,7 @@ impl Palette {
             .py_2()
             .border_t_1()
             .border_color(theme.border)
-            .text_sm()
+            .text_xs()
             .text_color(theme.text_muted)
             .when(changes, |this| {
                 this.child(
@@ -885,20 +886,28 @@ impl Palette {
 
     /// A row or a heading, which start their names in the same place.
     fn line() -> Div {
-        div().h(ROW_HEIGHT).mx_1p5().px_2().flex().gap_2()
+        div().h(ROW_HEIGHT).px_2().flex().gap_2()
+    }
+
+    /// `line` across the list, as far from its sides as the field is from
+    /// the card's. A list lays out each line on its own, where a flex box
+    /// is only as wide as what's in it and its margins are dropped; a
+    /// plain box fills the list, and so does a line in it.
+    fn inset(line: impl IntoElement) -> AnyElement {
+        div().px(INSET).child(line).into_any_element()
     }
 
     fn render_heading(&self, heading: &'static str, theme: &Theme) -> AnyElement {
-        Self::line()
-            .debug_selector(move || format!("palette-heading-{heading}"))
-            .items_end()
-            .pb_1()
-            .text_sm()
-            .font_weight(FontWeight::MEDIUM)
-            .text_color(theme.text_muted)
-            .child(div().flex_none().w(CHECK_WIDTH))
-            .child(heading)
-            .into_any_element()
+        Self::inset(
+            Self::line()
+                .debug_selector(move || format!("palette-heading-{heading}"))
+                .items_end()
+                .pb_1()
+                .text_label()
+                .text_color(theme.text_muted)
+                .child(div().flex_none().w(CHECK_WIDTH))
+                .child(heading),
+        )
     }
 
     fn render_row(&self, ix: usize, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
@@ -931,7 +940,7 @@ impl Palette {
         let group = group.filter(|_| !self.headed());
         let accent = theme.accent;
         let selector = id.clone();
-        Self::line()
+        let line = Self::line()
             .id(id)
             .debug_selector(move || selector.to_string())
             .items_center()
@@ -974,8 +983,8 @@ impl Palette {
                         this.child(div().flex_none().text_color(muted).child(group))
                     }),
             )
-            .child(details)
-            .into_any_element()
+            .child(details);
+        Self::inset(line)
     }
 }
 
@@ -997,7 +1006,6 @@ fn hint(id: &'static str, does: &'static str, keys: String, theme: &Theme) -> St
                 .border_1()
                 .border_color(theme.border)
                 .superellipse(KEYCAP_RADIUS)
-                .text_xs()
                 .child(keys),
         )
 }

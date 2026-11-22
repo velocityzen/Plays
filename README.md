@@ -188,10 +188,11 @@ GPU-accelerated UI framework.
   letters of its name, its menu or a word for it to find it, and Return
   runs the one picked, in your accent color. Pointing at a row picks it,
   and a click runs it.
-- Each row says what its command is set to now (✓ when on) and its
-  shortcut. What a command takes, it asks for next: a track, a chapter,
-  a display, a setting and its value from a list, the one now picked
-  first; a time, a volume or a path typed, and said why it won't do.
+- Each row says what its command is set to now (✓ when on) and, at its
+  end, its shortcut. What a command takes, it asks for next: a track, a
+  chapter, a display, a setting and its value from a list, the one now
+  picked first; a time, a volume or a path typed, and said why it won't
+  do.
 - The footer says what Return does and, for a command that takes keys,
   Change Shortcut (⌘↩). Either can be clicked.
 - Change Shortcut lists the command's shortcuts in the palette itself,

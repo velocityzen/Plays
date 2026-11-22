@@ -1,7 +1,10 @@
 //! The palette, opened with its keys over a player window and driven
 //! from the keyboard, as someone at the screen would (see `ui::testing`).
 
-use gpui::{Entity, Modifiers, TestAppContext, VisualTestContext, WindowHandle, point, px};
+use gpui::{
+    Bounds, Entity, Modifiers, Pixels, Rems, TestAppContext, VisualTestContext, WindowHandle,
+    point, px,
+};
 use serde_json::{Map, json};
 
 use super::asking::{self, Ask};
@@ -12,6 +15,7 @@ use crate::files::Folder;
 use crate::settings::Settings;
 use crate::ui::testing::{self, OPEN_WAIT, fixture, press, shows, wait_until};
 use crate::ui::theme::layout::WINDOW_SIZE;
+use crate::ui::theme::palette::CHECK_WIDTH;
 use crate::ui::workspace::Workspace;
 
 /// Open the palette over the window in front with its keys.
@@ -624,6 +628,116 @@ fn the_row_picked_and_the_heading_over_it_stay_in_view(cx: &mut TestAppContext) 
         shows_made(&mut cx, format!("palette-heading-{}", headed[0].0)),
         "back at the first, its heading too"
     );
+}
+
+/// Where `text` is drawn in the element tagged `selector`.
+fn painted_in(cx: &mut VisualTestContext, text: &str, selector: String) -> Bounds<Pixels> {
+    let within = testing::find(cx, Box::leak(selector.into_boxed_str()));
+    testing::painted(cx)
+        .into_iter()
+        .find(|(drawn, at)| drawn == text && within.contains(&at.center()))
+        .unwrap_or_else(|| panic!("{text:?} isn't drawn in {within:?}"))
+        .1
+}
+
+/// How tall a line of text `size` big is in the window.
+fn line_height(cx: &mut VisualTestContext, size: Rems) -> Pixels {
+    cx.update(|window, _| {
+        let mut style = window.text_style();
+        style.font_size = size.into();
+        style.line_height_in_pixels(window.rem_size())
+    })
+}
+
+/// The text of a menu row, a text field or a setting (`text_sm`).
+const TEXT: Rems = Rems(0.875);
+/// The text of a heading in a menu, or of a hint (`text_xs`).
+const SMALL: Rems = Rems(0.75);
+
+fn assert_near(a: Pixels, b: Pixels, what: &str) {
+    assert!((a - b).abs() < px(0.5), "{what}: {a:?}, not {b:?}");
+}
+
+#[gpui::test]
+fn rows_fill_the_list_as_wide_as_the_field_and_end_in_their_keys(cx: &mut TestAppContext) {
+    let (window, mut cx) = testing::start(cx);
+    open_palette(&mut cx);
+    let field = testing::find(&mut cx, "palette-field");
+    let (heading, ids) = sections(window, &cx).remove(0);
+    let first = format!("palette-row-{}", ids[0]);
+    let row = testing::find(&mut cx, Box::leak(first.clone().into_boxed_str()));
+    assert_near(
+        row.left(),
+        field.left(),
+        "a row starts where the field does",
+    );
+    assert_near(row.right(), field.right(), "and ends where it does");
+    let title = api::find(&ids[0]).unwrap().title;
+    assert_near(
+        painted_in(&mut cx, &heading, format!("palette-heading-{heading}")).left(),
+        painted_in(&mut cx, title, first).left(),
+        "a heading starts where its rows' names do",
+    );
+
+    type_in(&mut cx, "new window");
+    let picked = "palette-row-window.new";
+    let row = testing::find(&mut cx, picked);
+    assert_near(
+        row.left(),
+        field.left(),
+        "the row picked starts where the field does",
+    );
+    assert_near(row.right(), field.right(), "and ends where it does");
+    let keys = crate::hotkeys::display("secondary-n");
+    let keys = painted_in(&mut cx, &keys, picked.into());
+    let name = painted_in(&mut cx, "New Window", picked.into());
+    assert!(
+        keys.left() > row.center().x,
+        "its keys at its end: {keys:?} in {row:?}"
+    );
+    assert_near(
+        row.right() - keys.right(),
+        name.left() - row.left() - CHECK_WIDTH - px(8.),
+        "as far from its end as its name, the check aside, from its start",
+    );
+}
+
+#[gpui::test]
+fn its_text_is_as_big_as_in_menus_and_settings(cx: &mut TestAppContext) {
+    let (window, mut cx) = testing::start(cx);
+    open_palette(&mut cx);
+    let (heading, _) = sections(window, &cx).remove(0);
+    let (text, small) = (line_height(&mut cx, TEXT), line_height(&mut cx, SMALL));
+    assert!(small < text);
+    let drawn = painted_in(&mut cx, &heading, format!("palette-heading-{heading}"));
+    assert_near(drawn.size.height, small, "a heading");
+
+    type_in(&mut cx, "new window");
+    let row = "palette-row-window.new";
+    let drawn = painted_in(&mut cx, "New Window", row.into());
+    assert_near(drawn.size.height, text, "a row");
+    let keys = crate::hotkeys::display("secondary-n");
+    let drawn = painted_in(&mut cx, &keys, row.into());
+    assert_near(drawn.size.height, text, "its keys");
+    let drawn = painted_in(&mut cx, "Run", "palette-return".into());
+    assert_near(drawn.size.height, small, "the footer");
+    let enter = crate::hotkeys::display("enter");
+    let drawn = painted_in(&mut cx, &enter, "palette-return".into());
+    assert_near(drawn.size.height, small, "its keycaps");
+
+    clear(&mut cx);
+    type_in(&mut cx, "zzz");
+    let drawn = painted_in(&mut cx, "No commands found", "palette-empty".into());
+    assert_near(drawn.size.height, text, "what it says with nothing found");
+
+    clear(&mut cx);
+    type_in(&mut cx, "new window");
+    press_and_wait(&mut cx, "secondary-enter");
+    let press = "Press a shortcut for New Window";
+    let drawn = painted_in(&mut cx, press, "palette-press".into());
+    assert_near(drawn.size.height, text, "what's in the field");
+    let drawn = painted_in(&mut cx, "New Window", "palette-asking".into());
+    assert_near(drawn.size.height, small, "the command's chip in it");
 }
 
 /// Which of `ids` it lists first.

@@ -908,7 +908,15 @@ flowchart LR
   the commands, their keys as they are now. With nothing typed, the
   rows are under a heading for each namespace, Recent first (`Line`); found,
   they're ranked with none, each saying its namespace after its name.
-  The row picked is filled with the accent color, and pointing at one
+  Each row fills the list, inset as far as the field is from the
+  card's sides (`theme::palette::INSET`), its keys at its end: a
+  `uniform_list` lays out each line on its own, where a flex box is only
+  as wide as what's in it and its margins are dropped, so each line goes
+  in a plain box, which fills the list, padded by the inset
+  (`Palette::inset`). Its text is the panel's, as a menu row's is
+  (`text_sm`), the field's too, and the headings, the footer and the
+  command's chip a hint's (`text_xs`). The row picked is filled with the
+  accent color, and pointing at one
   picks it, so the mouse and the arrows move the same row. A footer says
   what Return does and Change Shortcut's ⌘↩, each in a keycap and each
   clickable. Go to… (`window.go_to`, ⌘P) is

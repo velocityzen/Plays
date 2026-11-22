@@ -710,6 +710,9 @@ pub mod palette {
     pub const FIELD_HEIGHT: Pixels = px(40.);
     pub const FIELD_RADIUS: Pixels = px(10.);
     pub const SEARCH_ICON: Pixels = px(16.);
+    /// How far the field keeps from the card's sides, and the rows from
+    /// the list's: the row picked is as wide as the field.
+    pub const INSET: Pixels = px(8.);
     /// A row's height, and a heading's.
     pub const ROW_HEIGHT: Pixels = px(32.);
     /// The row picked's corners, and the chip's in the field.
