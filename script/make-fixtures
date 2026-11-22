@@ -14,6 +14,9 @@
 # clip-sound-gap.mkv  clip.mp4's picture with 1.6 s of Opus sound and
 #                none from 0.6 s to 1 s, the rest playing from 1 s on
 # tone.m4a       1 s of 440 Hz, AAC, no picture
+# tune.flac      0.3 s of 440 Hz, 24-bit 96 kHz FLAC, tagged as Tone by
+#                Plays on Fixtures, whose album artist is Various Artists;
+#                after tone.m4a by name, so the files beside the others stay
 # clip.srt       two cues, found beside clip.mp4
 # clip-subs.mkv  clip.mp4 with clip.srt in it, as an English track
 # clip-languages.mkv  clip.mp4 with its sound as English, a German tone
@@ -55,6 +58,10 @@ x264=(-c:v libx264 -pix_fmt yuv420p -preset veryslow -crf 36 -g 25)
     -c:v copy -c:a libopus -b:a 24k -ac 1 -map_metadata -1 clip-sound-gap.mkv
 "${ffmpeg[@]}" -f lavfi -i "sine=frequency=440:sample_rate=48000:duration=1" \
     -c:a aac -b:a 32k -ac 1 -map_metadata -1 tone.m4a
+"${ffmpeg[@]}" -f lavfi -i "sine=frequency=440:sample_rate=96000:duration=0.3" \
+    -c:a flac -sample_fmt s32 -bits_per_raw_sample 24 -ac 1 -map_metadata -1 \
+    -metadata title=Tone -metadata artist=Plays -metadata album=Fixtures \
+    -metadata album_artist="Various Artists" tune.flac
 cat > clip.srt <<'SRT'
 1
 00:00:00,200 --> 00:00:01,000

@@ -46,6 +46,8 @@ pub struct AudioDetails {
     pub layout: Option<String>,
     /// Such as "fltp".
     pub sample_format: Option<&'static str>,
+    /// Bits a sample, for formats that keep them: lossless ones, and PCM.
+    pub bits: Option<u32>,
     pub bit_rate: Option<u64>,
 }
 
@@ -98,9 +100,24 @@ impl AudioDetails {
             sample_format: Some(decoder.format())
                 .filter(|format| *format != Sample::None)
                 .map(|format| format.name()),
+            bits: bits(decoder),
             bit_rate: positive(decoder.bit_rate() as i64),
         }
     }
+}
+
+/// The bits a sample its decoder says it has, or its codec has if it has
+/// a fixed number; lossy codecs have none.
+fn bits(decoder: &ffmpeg::decoder::Audio) -> Option<u32> {
+    // SAFETY: the context is open.
+    let bits = unsafe {
+        let context = decoder.as_ptr();
+        match (*context).bits_per_raw_sample {
+            0 => ffi::av_get_bits_per_sample((*context).codec_id),
+            raw => raw,
+        }
+    };
+    u32::try_from(bits).ok().filter(|bits| *bits > 0)
 }
 
 fn positive(bit_rate: i64) -> Option<u64> {

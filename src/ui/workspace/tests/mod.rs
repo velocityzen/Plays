@@ -17,6 +17,7 @@ mod inspect;
 mod languages;
 mod over_video;
 mod playlist;
+mod sound_files;
 mod sound_to_airplay;
 mod sound_to_bluetooth;
 mod windows;
@@ -48,6 +49,16 @@ use crate::ui::theme::layout::{
 };
 use crate::ui::theme::motion::FIT_POLL;
 use crate::ui::{blackout, displays};
+
+/// The lines of text drawn in the element tagged `selector`.
+pub(super) fn drawn_in(cx: &mut VisualTestContext, selector: &'static str) -> Vec<String> {
+    let bounds = find(cx, selector);
+    testing::painted(cx)
+        .into_iter()
+        .filter(|(_, at)| bounds.contains(&at.origin))
+        .map(|(text, _)| text.to_string())
+        .collect()
+}
 
 /// Open `files` into `window`, and wait until every one of them has
 /// opened, and, with `playing`, is playing.

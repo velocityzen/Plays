@@ -73,6 +73,7 @@ fn shows_the_file_its_streams_and_how_they_play() {
             channels: 2,
             layout: Some("stereo".to_owned()),
             sample_format: Some("fltp"),
+            bits: None,
             bit_rate: Some(128_000),
         }),
         ..MediaInfo::default()

@@ -287,7 +287,7 @@ fn subtitle_rows(facts: &Facts, info: &MediaInfo) -> Option<Vec<Row>> {
     })
 }
 
-fn joined(parts: impl IntoIterator<Item = String>) -> String {
+pub(super) fn joined(parts: impl IntoIterator<Item = String>) -> String {
     parts
         .into_iter()
         .filter(|part| !part.is_empty())
@@ -295,7 +295,7 @@ fn joined(parts: impl IntoIterator<Item = String>) -> String {
         .join(" · ")
 }
 
-fn with_profile(codec: String, profile: Option<&str>) -> String {
+pub(super) fn with_profile(codec: String, profile: Option<&str>) -> String {
     match profile {
         Some(profile) => format!("{codec} {profile}"),
         None => codec,
@@ -312,7 +312,7 @@ fn decimals(value: f64, places: usize) -> String {
     }
 }
 
-fn bit_rate(bits: u64) -> String {
+pub(super) fn bit_rate(bits: u64) -> String {
     if bits >= 1_000_000 {
         format!("{} Mb/s", decimals(bits as f64 / 1e6, 1))
     } else {
@@ -320,7 +320,7 @@ fn bit_rate(bits: u64) -> String {
     }
 }
 
-fn sample_rate(rate: u32) -> String {
+pub(super) fn sample_rate(rate: u32) -> String {
     format!("{} kHz", decimals(f64::from(rate) / 1e3, 1))
 }
 

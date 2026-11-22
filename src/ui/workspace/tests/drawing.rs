@@ -8,7 +8,7 @@ use gpui::{
 };
 use unicode_segmentation::UnicodeSegmentation;
 
-use super::open;
+use super::{drawn_in, open};
 use crate::files::test_folder;
 use crate::ui::player::PlayerView;
 use crate::ui::testing::{self, errors_logged, find, fixture, keep_errors, painted, wait_until};
@@ -25,16 +25,6 @@ fn blocks(window: WindowHandle<Workspace>, cx: &impl AppContext) -> Vec<Entity<P
                 .collect()
         })
         .unwrap()
-}
-
-/// The lines of text drawn in the element tagged `selector`.
-fn drawn_in(cx: &mut VisualTestContext, selector: &'static str) -> Vec<String> {
-    let bounds = find(cx, selector);
-    painted(cx)
-        .into_iter()
-        .filter(|(_, at)| bounds.contains(&at.origin))
-        .map(|(text, _)| text.to_string())
-        .collect()
 }
 
 /// Dropped on a window, a sound file named `name` shows its name in its

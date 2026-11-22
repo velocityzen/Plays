@@ -1,5 +1,6 @@
-//! What fills a block: the video; cover art and a level meter for audio; or
-//! a line on what is happening (opening, an error).
+//! What fills a block: the video; for audio, cover art, the file's tags and
+//! quality, and a level meter; or a line on what is happening (opening, an
+//! error).
 
 use gpui::prelude::*;
 use std::cell::Cell;
@@ -11,7 +12,9 @@ use gpui::{
 };
 
 use super::PlayerView;
+use super::sound::SoundLines;
 use crate::media::Picture;
+use crate::media::decoder::MediaInfo;
 use crate::ui::components::{ComponentSize, Icon, Meter};
 use crate::ui::framing::Framing;
 use crate::ui::theme::player::{
@@ -59,7 +62,7 @@ impl PlayerView {
             return picture(frame, framing, cover, self.picture_bounds.clone());
         }
         match self.playback.local().info() {
-            Some(info) if !info.has_video => self.render_audio(theme),
+            Some(info) if !info.has_video => self.render_audio(theme, &info),
             _ => div()
                 .text_sm()
                 .text_color(theme.text_muted)
@@ -72,8 +75,9 @@ impl PlayerView {
         }
     }
 
-    /// Audio-only files get their cover art (or a note) and a level meter.
-    fn render_audio(&self, theme: &Theme) -> AnyElement {
+    /// Audio-only files get their cover art (or a note), their tags and
+    /// quality, and a level meter.
+    fn render_audio(&self, theme: &Theme, info: &MediaInfo) -> AnyElement {
         let artwork = match self.playback.local().cover() {
             Some(cover) => img(cover)
                 .size(COVER_SIZE)
@@ -90,13 +94,21 @@ impl PlayerView {
                 .child(Icon::new("music").size(NO_COVER_ICON).color(theme.accent))
                 .into_any_element(),
         };
-        let title = self
-            .playback
-            .local()
-            .info()
-            .and_then(|i| i.title.clone())
-            .map(SharedString::from)
-            .unwrap_or_else(|| self.title.clone());
+        let SoundLines {
+            title,
+            artist,
+            album,
+            quality,
+        } = SoundLines::of(info, &self.title);
+        let line = |selector: &'static str, text: String| {
+            div()
+                .debug_selector(move || selector.into())
+                .max_w_full()
+                .truncate()
+                .text_xs()
+                .text_color(theme.text_muted)
+                .child(SharedString::from(text))
+        };
         div()
             .size_full()
             .flex()
@@ -108,11 +120,25 @@ impl PlayerView {
             .child(artwork)
             .child(
                 div()
+                    .flex()
+                    .flex_col()
+                    .items_center()
+                    .gap_0p5()
                     .max_w_full()
-                    .truncate()
-                    .text_sm()
-                    .text_color(theme.text)
-                    .child(title),
+                    .child(
+                        div()
+                            .debug_selector(|| "sound-title".into())
+                            .max_w_full()
+                            .truncate()
+                            .text_sm()
+                            .text_color(theme.text)
+                            .child(title),
+                    )
+                    .children(
+                        artist.map(|artist| line("sound-artist", artist).text_color(theme.text)),
+                    )
+                    .children(album.map(|album| line("sound-album", album)))
+                    .children(quality.map(|quality| line("sound-quality", quality))),
             )
             .child(Meter::new(self.level).w(COVER_SIZE))
             .into_any_element()

@@ -18,6 +18,7 @@ mod pip;
 mod playback;
 mod playlist;
 mod screenshot;
+mod sound;
 mod sync;
 mod tracks;
 

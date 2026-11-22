@@ -274,6 +274,163 @@ fn reports_the_streams_as_the_file_has_them() {
     assert!(read_on, "{:?}", player.stats());
 }
 
+/// What a file says of itself once opened, ticking it on till it does.
+fn info_of(path: PathBuf) -> Arc<super::decoder::MediaInfo> {
+    let mut player = Player::open(
+        Source::File(path),
+        Some(Mixer::detached(48_000)),
+        options(false, false),
+    );
+    let opened = wait_until(Duration::from_secs(5), || {
+        player.tick();
+        player.info().is_some()
+    });
+    assert!(opened);
+    player.info().unwrap()
+}
+
+const TAGS: [&str; 8] = [
+    "-metadata",
+    "title=Tone",
+    "-metadata",
+    "artist=Plays",
+    "-metadata",
+    "album=Fixtures",
+    "-metadata",
+    "album_artist=Various Artists",
+];
+
+/// A file's tags, and its sound's bits a sample where it keeps them.
+#[test]
+fn reads_a_songs_tags_and_bits() {
+    let mut args = vec![
+        "-f",
+        "lavfi",
+        "-i",
+        "sine=frequency=440:sample_rate=96000:duration=0.3",
+        "-c:a",
+        "flac",
+        "-sample_fmt",
+        "s32",
+        "-bits_per_raw_sample",
+        "24",
+    ];
+    args.extend(TAGS);
+    let info = info_of(media("tags/tone.flac", &args));
+    assert_eq!(info.title.as_deref(), Some("Tone"));
+    assert_eq!(info.artist.as_deref(), Some("Plays"));
+    assert_eq!(info.album.as_deref(), Some("Fixtures"));
+    assert_eq!(info.album_artist.as_deref(), Some("Various Artists"));
+    let audio = info.audio_details.as_ref().unwrap();
+    assert_eq!((audio.bits, audio.sample_rate), (Some(24), 96_000));
+
+    let lossy = info_of(media(
+        "tags/tone.m4a",
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:duration=0.3",
+            "-c:a",
+            "aac",
+        ],
+    ));
+    assert_eq!(lossy.audio_details.as_ref().unwrap().bits, None);
+    assert_eq!(lossy.title, None);
+}
+
+/// PCM keeps no count of its bits but its codec's own.
+#[test]
+fn reads_the_bits_of_pcm_from_its_codec() {
+    let info = info_of(media(
+        "tags/tone.wav",
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:sample_rate=48000:duration=0.3",
+            "-c:a",
+            "pcm_s16le",
+        ],
+    ));
+    assert_eq!(info.audio_details.as_ref().unwrap().bits, Some(16));
+}
+
+/// Tags lose the spaces around them, and one of spaces alone is none.
+#[test]
+fn reads_tags_without_the_spaces_around_them() {
+    let info = info_of(media(
+        "tags/spaced.flac",
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:duration=0.3",
+            "-c:a",
+            "flac",
+            "-metadata",
+            "title=  Tone ",
+            "-metadata",
+            "artist=   ",
+        ],
+    ));
+    assert_eq!(
+        (info.title.as_deref(), info.artist.as_deref()),
+        (Some("Tone"), None)
+    );
+}
+
+/// Ogg keeps a song's tags on its sound, not on the file.
+#[test]
+fn reads_the_tags_a_file_with_only_sound_keeps_on_it() {
+    let mut args = vec![
+        "-f",
+        "lavfi",
+        "-i",
+        "sine=frequency=440:sample_rate=48000:duration=0.3",
+        "-c:a",
+        "libopus",
+    ];
+    args.extend(TAGS);
+    let info = info_of(media("tags/tone.opus", &args));
+    assert_eq!(info.title.as_deref(), Some("Tone"));
+    assert_eq!(info.artist.as_deref(), Some("Plays"));
+    assert_eq!(info.album.as_deref(), Some("Fixtures"));
+    assert_eq!(info.album_artist.as_deref(), Some("Various Artists"));
+}
+
+/// A film's sound may be titled for what it is, such as "Stereo", which
+/// isn't the film's title.
+#[test]
+fn takes_no_tags_from_a_films_sound() {
+    let info = info_of(media(
+        "tags/film.mkv",
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc=size=160x120:rate=25:duration=0.4",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:sample_rate=48000:duration=0.4",
+            "-c:v",
+            "libx264",
+            "-c:a",
+            "libopus",
+            "-metadata:s:a:0",
+            "title=Stereo",
+            "-metadata:s:a:0",
+            "artist=Sound Crew",
+        ],
+    ));
+    assert!(info.has_video);
+    assert_eq!(
+        (info.title.as_deref(), info.artist.as_deref()),
+        (None, None)
+    );
+}
+
 /// A file whose colors FFmpeg has no names for, as a Matroska Colour element
 /// can give them (primaries 15, transfer 40 and matrix 30, which the
 /// demuxer passes on as they are), plays to the end with them unknown.

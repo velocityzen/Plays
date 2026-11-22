@@ -110,6 +110,11 @@ pub struct MediaInfo {
     /// The hardware decoding API in use, once frames come out of it.
     pub hardware: Option<&'static str>,
     pub title: Option<String>,
+    /// Who made it, as its tags say; for a song, the album it's on, and
+    /// whose album that is.
+    pub artist: Option<String>,
+    pub album: Option<String>,
+    pub album_artist: Option<String>,
     /// Every track that can be played, in the file's order, then the
     /// subtitle files beside it.
     pub tracks: Vec<Track>,
@@ -755,6 +760,12 @@ fn media_info(
     let chapters = chapters(input, offset);
     let video = decoders.video.as_ref();
     let audio = decoders.audio.as_ref();
+    // A file with only sound may keep its tags on it, as Ogg does.
+    let sound = video
+        .is_none()
+        .then(|| decoders.selected(TrackKind::Audio))
+        .flatten();
+    let tag = |key| tag(input, sound, key);
     MediaInfo {
         duration,
         live: source.is_network() && duration.is_none(),
@@ -766,7 +777,10 @@ fn media_info(
         video_codec: video.map(|v| v.codec_name()),
         audio_codec: audio.map(|a| a.codec_name()),
         hardware: None,
-        title: input.metadata().get("title").map(str::to_owned),
+        title: tag("title"),
+        artist: tag("artist"),
+        album: tag("album"),
+        album_artist: tag("album_artist"),
         video_track: decoders.selected(TrackKind::Video),
         audio_track: decoders.selected(TrackKind::Audio),
         subtitle_track: decoders.selected(TrackKind::Subtitle),
@@ -776,6 +790,22 @@ fn media_info(
         audio_details: audio.map(|a| AudioDetails::of(&a.decoder)),
         chapters,
     }
+}
+
+/// The file's tag `key`, or the stream `sound`'s if the file has none.
+fn tag(input: &ffmpeg::format::context::Input, sound: Option<usize>, key: &str) -> Option<String> {
+    let value = |metadata: ffmpeg::DictionaryRef| {
+        metadata
+            .get(key)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned)
+    };
+    value(input.metadata()).or_else(|| {
+        sound
+            .and_then(|index| input.stream(index))
+            .and_then(|stream| value(stream.metadata()))
+    })
 }
 
 /// The file's chapters, in order, on the playback timeline, which starts
