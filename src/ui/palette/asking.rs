@@ -1,0 +1,654 @@
+//! What the palette asks for before running a command that takes
+//! arguments: each it needs, and each it can do without that there's a
+//! choice of. A choice is picked from a list, such as a tile's audio
+//! tracks, the displays or a setting's values, read from the queries the
+//! command line reads too; anything else is typed, such as a time to seek
+//! to, as 1:23:45.
+
+use std::rc::Rc;
+
+use gpui::{App, SharedString};
+use serde_json::{Map, Value, json};
+
+use super::aimed;
+use crate::api::args::{Arg, Kind};
+use crate::api::commands::settings::protocols;
+use crate::api::{self, Invocation, Source, Spec, Target};
+use crate::settings::Settings;
+use crate::settings::fields::{self, Field};
+use crate::ui::player::format_time;
+use crate::ui::settings::installed_fonts;
+
+/// One of the things to pick for an argument.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Choice {
+    pub label: SharedString,
+    /// Dimmer, after it: a chapter's start, a device's protocol.
+    pub detail: Option<SharedString>,
+    /// The arguments it gives: `{number: 2}`, or `{device, kind}`; none
+    /// for what the command does with none given.
+    pub args: Map<String, Value>,
+    /// It's what's picked now.
+    pub current: bool,
+}
+
+impl Choice {
+    fn new(label: impl Into<SharedString>, args: Value) -> Self {
+        Self {
+            label: label.into(),
+            detail: None,
+            args: match args {
+                Value::Object(args) => args,
+                _ => Map::new(),
+            },
+            current: false,
+        }
+    }
+
+    fn detail(mut self, detail: Option<impl Into<SharedString>>) -> Self {
+        self.detail = detail.map(Into::into);
+        self
+    }
+
+    fn current(mut self, current: bool) -> Self {
+        self.current = current;
+        self
+    }
+}
+
+/// Reads what's typed: the value of the argument, or why it won't do.
+pub type Read = Rc<dyn Fn(&str) -> Result<Value, String>>;
+
+/// How an argument is asked for.
+#[derive(Clone)]
+pub enum Ask {
+    /// Picked from these.
+    Choose(Vec<Choice>),
+    /// Typed, and read so.
+    Type(Read),
+}
+
+/// Asking for one argument.
+#[derive(Clone)]
+pub struct Question {
+    /// The argument asked for.
+    pub arg: &'static str,
+    /// What the field says while nothing's typed.
+    pub prompt: SharedString,
+    pub ask: Ask,
+}
+
+/// What to ask next before running `spec` on `window` (a target naming
+/// it), given the arguments it has and those asked for already: each it
+/// needs, and each it can do without that there's a choice of, in order.
+/// `None` once there's nothing more to ask.
+pub fn next(
+    spec: &'static Spec,
+    asked: &[&'static str],
+    args: &Map<String, Value>,
+    window: &Target,
+    cx: &mut App,
+) -> Option<Question> {
+    let mut on = On { window, cx };
+    spec.args
+        .iter()
+        .filter(|arg| !asked.contains(&arg.name) && !args.contains_key(arg.name))
+        .find_map(|arg| question(spec, arg, args, &mut on))
+}
+
+/// The window asked about, and the app.
+struct On<'a, 'b> {
+    window: &'a Target,
+    cx: &'b mut App,
+}
+
+impl On<'_, '_> {
+    /// What a query hands back about the window, or what's in it, or null.
+    fn query(&mut self, command: &str) -> Value {
+        let target =
+            api::find(command).map_or_else(Target::default, |spec| aimed(spec, self.window));
+        let mut invocation = Invocation::new(command).from(Source::Palette);
+        invocation.target = target;
+        api::run(invocation, self.cx).unwrap_or_default()
+    }
+
+    /// What `command` changes, as it is now, on the window or what's in
+    /// it, or null.
+    fn state(&mut self, command: &str) -> Value {
+        let target =
+            api::find(command).map_or_else(Target::default, |spec| aimed(spec, self.window));
+        api::state(command, &target, self.cx).unwrap_or_default()
+    }
+
+    /// The API's name for the window.
+    fn window_id(&self) -> Option<&str> {
+        self.window.window.as_deref()
+    }
+}
+
+/// Asking for `arg` of `spec`, given `args`: from its choices if it has
+/// them, else typed if it's needed. `None` for one it can do without.
+fn question(
+    spec: &Spec,
+    arg: &'static Arg,
+    args: &Map<String, Value>,
+    on: &mut On,
+) -> Option<Question> {
+    let asking = |prompt: &str, ask| {
+        Some(Question {
+            arg: arg.name,
+            prompt: prompt.to_owned().into(),
+            ask,
+        })
+    };
+    if let Some((prompt, choices)) = choices(spec, arg, args, on) {
+        return asking(prompt, Ask::Choose(choices));
+    }
+    if !arg.required {
+        return None;
+    }
+    if let Some((prompt, read)) = typed(spec, arg, args, on.cx) {
+        return asking(&prompt, Ask::Type(read));
+    }
+    let read: Read = Rc::new(move |typed| read_typed(arg, typed));
+    asking(prompt_for(arg), Ask::Type(read))
+}
+
+/// What the field says for `arg`, typed: its description, without the
+/// full stop.
+fn prompt_for(arg: &Arg) -> &'static str {
+    arg.description.trim_end_matches('.')
+}
+
+/// The choices of `arg` of `spec`, and what the field says: a tile's
+/// tracks, the displays, and so on; for one of a set of words, those.
+fn choices(
+    spec: &Spec,
+    arg: &Arg,
+    args: &Map<String, Value>,
+    on: &mut On,
+) -> Option<(&'static str, Vec<Choice>)> {
+    let listed = match (spec.id, arg.name) {
+        ("audio.select_track", "number") => ("Audio track", tracks("audio", None, on)),
+        ("video.select_track", "number") => ("Video track", tracks("video", None, on)),
+        ("subtitles.select_track", "number") => ("Subtitles", tracks("subtitles", Some("Off"), on)),
+        ("playback.go_to_chapter", "number") => ("Chapter", chapters(on)),
+        ("window.move", "position") => ("Where", window_places(on)),
+        ("window.show_on_display", "display") => ("Display", displays(on)),
+        ("tile.move", "position") => ("Where", tile_places(on)),
+        ("tile.move_to_window", "window") => ("Window", other_windows(on)),
+        ("cast.to" | "cast.pair", "device") => ("Device", devices(on)),
+        ("output.set_device", "id") => ("Output", outputs(spec.id, "System Default", on)),
+        ("output.set_window_device", "id") => ("Output", outputs(spec.id, "Same as Plays", on)),
+        ("settings.get" | "settings.reset", "key") => ("Setting", settings(true, on.cx)),
+        ("settings.set", "key") => ("Setting", settings(false, on.cx)),
+        ("settings.set", "value") => ("Value", setting_values(args, on)?),
+        (_, name) => match arg.kind {
+            Kind::Choice(words) => {
+                let none = (!arg.required).then_some(match spec.id {
+                    "video.set_aspect_ratio" => "Original",
+                    "video.set_crop" => "No Crop",
+                    _ => "None",
+                });
+                ("Pick one", words_of(spec, name, words(), none, on))
+            }
+            _ => return None,
+        },
+    };
+    Some(listed)
+}
+
+fn text(value: &Value) -> Option<&str> {
+    value.as_str().filter(|text| !text.is_empty())
+}
+
+/// The front tile's tracks of `kind` (`audio`, `video`, `subtitles`),
+/// after `none` for none, if they can be turned off.
+fn tracks(kind: &str, none: Option<&'static str>, on: &mut On) -> Vec<Choice> {
+    let tile = on.query("tile.inspect");
+    let picked = tile["picked"][kind].as_u64();
+    let off = none.map(|label| Choice::new(label, json!({})).current(picked.is_none()));
+    let listed = tile["tracks"][kind]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|track| {
+            let number = track["number"].as_u64()?;
+            let label =
+                text(&track["label"]).map_or_else(|| format!("Track {number}"), str::to_owned);
+            Some(Choice::new(label, json!({ "number": number })).current(picked == Some(number)))
+        });
+    off.into_iter().chain(listed).collect()
+}
+
+/// The front tile's chapters, each with where it starts.
+fn chapters(on: &mut On) -> Vec<Choice> {
+    let tile = on.query("tile.inspect");
+    let current = tile["chapter"].as_u64();
+    tile["chapters"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|chapter| {
+            let number = chapter["number"].as_u64()?;
+            let name =
+                text(&chapter["name"]).map_or_else(|| format!("Chapter {number}"), str::to_owned);
+            let start = chapter["start"].as_f64().map(format_time);
+            Some(
+                Choice::new(name, json!({ "number": number }))
+                    .detail(start)
+                    .current(current == Some(number)),
+            )
+        })
+        .collect()
+}
+
+/// What a window is called: its label, or its number.
+fn window_name(window: &Value) -> String {
+    text(&window["label"]).map_or_else(
+        || format!("Window {}", window["number"].as_u64().unwrap_or_default()),
+        str::to_owned,
+    )
+}
+
+/// Each player window's place, ⌘1 and on, by the window there now.
+fn window_places(on: &mut On) -> Vec<Choice> {
+    let windows = on.query("window.ls");
+    let this = on.window_id();
+    windows
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|window| {
+            let number = window["number"].as_u64()?;
+            Some(
+                Choice::new(number.to_string(), json!({ "position": number }))
+                    .detail(Some(window_name(window)))
+                    .current(this.is_some_and(|this| window["id"] == this)),
+            )
+        })
+        .collect()
+}
+
+/// Each tile's place in the window, by the tile there now, the one keys
+/// go to picked.
+fn tile_places(on: &mut On) -> Vec<Choice> {
+    let tiles = on.query("tile.ls");
+    tiles
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|tile| {
+            let number = tile["number"].as_u64()?;
+            let name = text(&tile["label"]).or_else(|| text(&tile["title"]));
+            Some(
+                Choice::new(number.to_string(), json!({ "position": number }))
+                    .detail(name.map(str::to_owned))
+                    .current(tile["front"] == true),
+            )
+        })
+        .collect()
+}
+
+/// The player windows but this one.
+fn other_windows(on: &mut On) -> Vec<Choice> {
+    let windows = on.query("window.ls");
+    let this = on.window_id();
+    windows
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|window| this.is_none_or(|this| window["id"] != this))
+        .filter_map(|window| {
+            let id = text(&window["id"])?;
+            let tiles = window["tiles"].as_u64().unwrap_or_default();
+            let files = match tiles {
+                1 => "1 file".to_owned(),
+                tiles => format!("{tiles} files"),
+            };
+            Some(Choice::new(window_name(window), json!({ "window": id })).detail(Some(files)))
+        })
+        .collect()
+}
+
+/// The displays, the one the window is on picked.
+fn displays(on: &mut On) -> Vec<Choice> {
+    let shown_on = on.query("window.inspect")["display"].as_u64();
+    let displays = on.query("display.ls");
+    displays
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|display| {
+            let id = display["id"].as_u64()?;
+            let name =
+                text(&display["name"]).map_or_else(|| format!("Display {id}"), str::to_owned);
+            Some(Choice::new(name, json!({ "display": id })).current(shown_on == Some(id)))
+        })
+        .collect()
+}
+
+/// The devices found to cast to, each with its protocol, which a device's
+/// id is told apart by.
+fn devices(on: &mut On) -> Vec<Choice> {
+    let casting = on.state("cast.to");
+    let found = on.query("cast.ls");
+    found
+        .as_object()
+        .into_iter()
+        .flatten()
+        .flat_map(|(kind, devices)| {
+            devices
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(move |device| (kind, device))
+        })
+        .filter_map(|(kind, device)| {
+            let id = text(&device["id"])?;
+            let name = text(&device["name"]).unwrap_or(id);
+            let current = casting["id"] == id && casting["kind"] == kind.as_str();
+            Some(
+                Choice::new(name.to_owned(), json!({ "device": id, "kind": kind }))
+                    .detail(Some(kind.clone()))
+                    .current(current),
+            )
+        })
+        .collect()
+}
+
+/// The outputs connected, after `none`, for what the command does given
+/// none; the one `command` has picked now.
+fn outputs(command: &str, none: &str, on: &mut On) -> Vec<Choice> {
+    let picked = on.state(command);
+    let listed = on.query("output.ls");
+    let default = Choice::new(none.to_owned(), json!({})).current(picked.is_null());
+    let connected = listed["outputs"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|output| {
+            let id = text(&output["id"])?;
+            let name = text(&output["name"]).unwrap_or(id);
+            Some(
+                Choice::new(name.to_owned(), json!({ "id": id, "name": name }))
+                    .detail(text(&output["kind"]).map(str::to_owned))
+                    .current(picked["id"] == id),
+            )
+        })
+        .collect::<Vec<_>>();
+    std::iter::once(default).chain(connected).collect()
+}
+
+/// Every setting, as Settings calls it, by its pane; with the shortcuts,
+/// which can't be typed here but can be read and put back, if `keys`.
+fn settings(keys: bool, cx: &mut App) -> Vec<Choice> {
+    fields::all(&protocols(cx))
+        .into_iter()
+        .filter(|field| keys || !matches!(field.kind, fields::Kind::Keys))
+        .map(|field| {
+            Choice::new(field.title.to_string(), json!({ "key": field.key }))
+                .detail(Some(field.pane))
+        })
+        .collect()
+}
+
+/// The setting `args` names.
+fn field(args: &Map<String, Value>, cx: &App) -> Option<Field> {
+    fields::find(args.get("key")?.as_str()?, &protocols(cx))
+}
+
+/// The values the setting `args` names can be picked from, as Settings
+/// offers them, the one it has now picked; `None` for one typed.
+fn setting_values(args: &Map<String, Value>, on: &mut On) -> Option<Vec<Choice>> {
+    let field = field(args, on.cx)?;
+    let now = fields::get(on.cx.global::<Settings>(), &field.key);
+    let value = |label: &str, value: Value| {
+        let current = value == now;
+        Choice::new(label.to_owned(), json!({ "value": value })).current(current)
+    };
+    let values = match field.kind {
+        fields::Kind::Toggle => vec![value("On", json!(true)), value("Off", json!(false))],
+        fields::Kind::Choice(choices) => choices()
+            .into_iter()
+            .map(|(choice, label)| value(label, choice))
+            .collect(),
+        fields::Kind::Font => std::iter::once(value("System", json!("")))
+            .chain(
+                installed_fonts(on.cx)
+                    .iter()
+                    .map(|font| value(font, json!(font.as_ref()))),
+            )
+            .collect(),
+        fields::Kind::Output => {
+            let listed = on.query("output.ls");
+            std::iter::once(value("System Default", Value::Null))
+                .chain(
+                    listed["outputs"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .filter_map(|output| {
+                            let id = text(&output["id"])?;
+                            let name = text(&output["name"]).unwrap_or(id);
+                            let current = now["id"] == id;
+                            Some(
+                                Choice::new(
+                                    name.to_owned(),
+                                    json!({ "value": { "id": id, "name": name } }),
+                                )
+                                .current(current),
+                            )
+                        }),
+                )
+                .collect()
+        }
+        fields::Kind::Number { .. } | fields::Kind::Folder | fields::Kind::Keys => return None,
+    };
+    Some(values)
+}
+
+/// One of `words`, after `none` if it can be done without: the one
+/// `spec` has now picked.
+fn words_of(
+    spec: &Spec,
+    name: &str,
+    words: Vec<&'static str>,
+    none: Option<&'static str>,
+    on: &mut On,
+) -> Vec<Choice> {
+    let now = on.state(spec.id);
+    let off = none.map(|label| Choice::new(label, json!({})).current(now.is_null()));
+    let listed = words.into_iter().map(|word| {
+        let mut args = Map::new();
+        args.insert(name.to_owned(), json!(word));
+        Choice::new(word, Value::Object(args)).current(now == word)
+    });
+    off.into_iter().chain(listed).collect()
+}
+
+/// For one typed that's read otherwise than its kind says, what the
+/// field says and how it's read: a time, a path, a setting's number.
+fn typed(
+    spec: &Spec,
+    arg: &'static Arg,
+    args: &Map<String, Value>,
+    cx: &App,
+) -> Option<(String, Read)> {
+    match (spec.id, arg.name) {
+        ("playback.seek", "time") => Some((
+            "A time, such as 1:23:45 or 90".to_owned(),
+            Rc::new(move |typed| {
+                let seconds = seconds(typed.trim())
+                    .ok_or_else(|| "That's not a time: try 1:23:45 or 90".to_owned())?;
+                Ok(json!(seconds))
+            }),
+        )),
+        ("app.open", "urls") => Some((
+            "A file's or folder's full path, or a stream's URL".to_owned(),
+            Rc::new(move |typed| {
+                let typed = typed.trim();
+                if typed.is_empty() {
+                    return Err("Type a path or a URL".to_owned());
+                }
+                Ok(json!([typed]))
+            }),
+        )),
+        ("settings.set", "value") => {
+            let field = field(args, cx)?;
+            match field.kind {
+                fields::Kind::Number { min, max } => Some((
+                    format!("A number from {min} to {max}"),
+                    Rc::new(move |typed| match typed.trim().parse::<f64>() {
+                        Ok(number) if (min..=max).contains(&number) => Ok(json!(number)),
+                        _ => Err(format!("Type a number from {min} to {max}")),
+                    }),
+                )),
+                fields::Kind::Folder => Some((
+                    "A folder's full path; none for Pictures".to_owned(),
+                    Rc::new(|typed| {
+                        let typed = typed.trim();
+                        Ok(if typed.is_empty() {
+                            Value::Null
+                        } else {
+                            json!(typed)
+                        })
+                    }),
+                )),
+                _ => None,
+            }
+        }
+        _ => None,
+    }
+}
+
+/// What's typed for `arg`, read as its kind says, and checked.
+fn read_typed(arg: &Arg, typed: &str) -> Result<Value, String> {
+    let typed = typed.trim();
+    if typed.is_empty() {
+        return Err(format!("Type {}", prompt_for(arg).to_lowercase()));
+    }
+    let value = match arg.kind {
+        Kind::Integer { .. } => typed
+            .parse::<i64>()
+            .map(Value::from)
+            .map_err(|_| "Type a whole number".to_owned())?,
+        Kind::Number { .. } => match typed.parse::<f64>() {
+            Ok(number) if number.is_finite() => json!(number),
+            _ => return Err("Type a number".to_owned()),
+        },
+        Kind::Texts => json!([typed]),
+        Kind::Any => serde_json::from_str(typed).unwrap_or_else(|_| json!(typed)),
+        Kind::Text | Kind::Choice(_) => json!(typed),
+    };
+    arg.check(&value).map_err(|why| capitalized(&why))?;
+    Ok(value)
+}
+
+fn capitalized(text: &str) -> String {
+    let mut chars = text.chars();
+    chars
+        .next()
+        .map(|first| first.to_uppercase().chain(chars).collect())
+        .unwrap_or_default()
+}
+
+/// The seconds in a time typed as 1:23:45, 23:45 or 90, a fraction of a
+/// second too; `None` if it isn't one.
+pub fn seconds(typed: &str) -> Option<f64> {
+    let parts: Vec<&str> = typed.split(':').collect();
+    if parts.len() > 3 {
+        return None;
+    }
+    let mut seconds = 0.0;
+    for (at, part) in parts.iter().enumerate() {
+        let last = at + 1 == parts.len();
+        let number: f64 = if last {
+            part.parse().ok().filter(|n: &f64| n.is_finite())?
+        } else {
+            f64::from(part.parse::<u32>().ok()?)
+        };
+        if number < 0.0 || at > 0 && number >= 60.0 {
+            return None;
+        }
+        seconds = seconds * 60.0 + number;
+    }
+    Some(seconds)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_time_is_hours_minutes_and_seconds_or_fewer() {
+        assert_eq!(seconds("1:23:45"), Some(5025.0));
+        assert_eq!(seconds("23:45"), Some(1425.0));
+        assert_eq!(seconds("90"), Some(90.0));
+        assert_eq!(seconds("1:02.5"), Some(62.5));
+        assert_eq!(seconds("0"), Some(0.0));
+        assert_eq!(
+            seconds("120:00"),
+            Some(7200.0),
+            "minutes past an hour first"
+        );
+    }
+
+    #[test]
+    fn a_time_with_more_than_its_parts_take_isnt_one() {
+        for typed in [
+            "", "1:60", "1:2:3:4", "a", "-5", "1:-5", "1.5:00", "inf", "NaN", "1::2",
+        ] {
+            assert_eq!(seconds(typed), None, "{typed:?}");
+        }
+    }
+
+    fn arg(kind: Kind, required: bool) -> &'static Arg {
+        Box::leak(Box::new(if required {
+            Arg::required("level", kind, "How loud, from 0 to 100.")
+        } else {
+            Arg::optional("level", kind, "How loud, from 0 to 100.")
+        }))
+    }
+
+    #[test]
+    fn what_is_typed_is_read_as_its_kind_says_and_checked() {
+        let number = arg(
+            Kind::Number {
+                min: 0.0,
+                max: Some(100.0),
+            },
+            true,
+        );
+        assert_eq!(read_typed(number, " 50 "), Ok(json!(50.0)));
+        assert_eq!(
+            read_typed(number, "150"),
+            Err("Level is at most 100".to_owned())
+        );
+        assert_eq!(read_typed(number, "loud"), Err("Type a number".to_owned()));
+        assert_eq!(
+            read_typed(number, ""),
+            Err("Type how loud, from 0 to 100".to_owned())
+        );
+        let whole = arg(Kind::Integer { min: 1 }, true);
+        assert_eq!(read_typed(whole, "3"), Ok(json!(3)));
+        assert_eq!(
+            read_typed(whole, "0"),
+            Err("Level is at least 1".to_owned())
+        );
+        assert_eq!(
+            read_typed(whole, "2.5"),
+            Err("Type a whole number".to_owned())
+        );
+        assert_eq!(
+            read_typed(arg(Kind::Text, true), "Movies"),
+            Ok(json!("Movies"))
+        );
+        assert_eq!(
+            read_typed(arg(Kind::Texts, true), "/a b"),
+            Ok(json!(["/a b"]))
+        );
+        assert_eq!(read_typed(arg(Kind::Any, true), "0.5"), Ok(json!(0.5)));
+        assert_eq!(read_typed(arg(Kind::Any, true), "dark"), Ok(json!("dark")));
+    }
+}

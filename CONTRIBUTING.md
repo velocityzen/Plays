@@ -668,6 +668,29 @@ check:
     Settings… on macOS, and Settings → Command Line's switch and Install
     button send `settings.set` and `cli.install` (noted, not run, so
     nothing is linked).
+- The command palette (`ui::palette::tests`), opened with ⇧⌘P over a
+  window of the test's own:
+  - Listing every command that can run in the window and no others,
+    queries and those needing a target left out; put away by Escape or
+    a click outside it.
+  - Finding commands by title, namespace and keyword, best first; the
+    arrows picking a row, wrapping, and Return or a click running it from
+    the palette (`Source::Palette`), on the window it's over or, for an
+    App command, on the app.
+  - Rows saying what each command is set to now and its shortcut.
+  - A command's arguments asked for in turn: a chapter from a list, a
+    setting then its value as Settings offers them, a volume typed until
+    it's in range and a time as `1:23` or seconds; and which arguments
+    are picked from a list, typed, or not asked at all. Lists offer what
+    there is, what's picked now first and checked.
+  - Commands run from it lately first, each once, the latest few kept in
+    the app's folder (`Folder::for_test`).
+  - Change Shortcut… opening Settings on Hotkeys recording keys for the
+    command, and missing for a command that takes none.
+  - Unit tests in `search` check where letters are found and how they
+    score: in order, ignoring case, starting words and side by side
+    counting for more, early more than late, and a title more than a
+    group or keyword.
 
 Unit tests check finding a name among ids, labels, positions and the ends
 of ids (an id first, positions only among those given, several matching

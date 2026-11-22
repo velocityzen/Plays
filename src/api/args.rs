@@ -89,7 +89,7 @@ impl Arg {
 
     /// Whether `value` is one of its values; null is none, for one not
     /// required.
-    fn check(&self, value: &Value) -> Result<(), String> {
+    pub fn check(&self, value: &Value) -> Result<(), String> {
         let name = self.name;
         match (&self.kind, value) {
             (_, Value::Null) if !self.required => Ok(()),

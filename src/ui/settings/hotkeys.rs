@@ -2,7 +2,10 @@
 //! Click + and press keys to add one.
 
 use gpui::prelude::*;
-use gpui::{AnyElement, Context, KeyDownEvent, Keystroke, SharedString, Window, div};
+use gpui::{
+    AnyElement, Context, KeyDownEvent, Keystroke, ScrollAnchor, ScrollHandle, SharedString, Window,
+    div,
+};
 
 use super::form::{group, reset, row, set};
 use super::{Pane, SettingsView};
@@ -22,6 +25,8 @@ pub(super) struct Recording {
     command: Option<&'static str>,
     /// What the last shortcut recorded did to another command.
     note: Option<(&'static str, SharedString)>,
+    /// Its row is to be scrolled into view, once drawn.
+    reveal: Option<ScrollAnchor>,
 }
 
 impl Recording {
@@ -29,6 +34,14 @@ impl Recording {
     /// to it.
     pub(super) fn is_on(&self) -> bool {
         self.command.is_some()
+    }
+
+    /// Wait for keys for `command`, its row scrolled into the view `scroll`
+    /// tracks once drawn.
+    pub(super) fn start(&mut self, command: &'static str, scroll: &ScrollHandle) {
+        self.command = Some(command);
+        self.note = None;
+        self.reveal = Some(ScrollAnchor::for_handle(scroll.clone()));
     }
 }
 
@@ -50,9 +63,10 @@ impl Pane for HotkeysPane {
         view: &mut SettingsView,
         s: &Settings,
         theme: &Theme,
-        _: &mut Window,
+        window: &mut Window,
         cx: &mut Context<SettingsView>,
     ) -> Vec<AnyElement> {
+        let reveal = view.recording.reveal.take();
         let intro = group(
             None,
             theme,
@@ -77,12 +91,23 @@ impl Pane for HotkeysPane {
                         .as_ref()
                         .filter(|(noted, _)| *noted == spec.id)
                         .map(|(_, note)| note.clone());
-                    row(
+                    let row = row(
                         spec.title,
                         note,
                         theme,
                         key_chips(view, spec.id, s.hotkeys.keys(spec.id), theme, cx),
-                    )
+                    );
+                    match &reveal {
+                        Some(anchor) if view.recording.command == Some(spec.id) => {
+                            anchor.scroll_to(window, cx);
+                            div()
+                                .id(spec.id)
+                                .anchor_scroll(Some(anchor.clone()))
+                                .child(row)
+                                .into_any_element()
+                        }
+                        _ => row,
+                    }
                 })
                 .collect();
             if !rows.is_empty() {
@@ -183,6 +208,7 @@ fn key_chips(
         }))
         .child(if recording {
             chip(format!("{command}-recording").into())
+                .debug_selector(move || format!("hotkey-recording-{command}"))
                 .border_color(theme.accent)
                 .text_color(theme.accent)
                 .cursor_pointer()

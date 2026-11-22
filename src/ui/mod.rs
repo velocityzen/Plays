@@ -9,6 +9,7 @@ pub mod name_sheet;
 pub mod open_url;
 mod overlay;
 pub mod pairing;
+pub mod palette;
 pub mod pip;
 pub mod player;
 pub mod screenshot;

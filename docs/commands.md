@@ -92,6 +92,13 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 - Acts on a player window.
 - Keys: ⇧⌘O
 
+### Command Palette…
+
+`window.command_palette`: List every command that can run in the window, to find one by name and run it, picking or typing what it takes.
+
+- Acts on a player window.
+- Keys: ⇧⌘P
+
 ### Close Window
 
 `window.close`: Close the window and the files in it; with none named, the window in front, Settings and About too.

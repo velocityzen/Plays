@@ -30,6 +30,7 @@ use gpui::{
     Pixels, Point, SharedString, Stateful, Task, Window, black, div,
 };
 
+pub use controls::format_time;
 pub use drag::{DraggedTile, move_window_once_dragged};
 pub use graveyard::Graveyard;
 

@@ -1,6 +1,7 @@
 //! A window: the toolbar, and a grid with one tile per open file, or the
 //! empty window's ring. Each part is in its own file.
 
+mod command_palette;
 mod commands;
 mod display;
 mod empty;
@@ -36,6 +37,7 @@ use serde_json::json;
 use super::displays;
 use super::name_sheet::NameSheet;
 use super::open_url::{OpenUrlDialog, OpenUrlEvent, UrlForm};
+use super::palette::Palette;
 use super::player::{Graveyard, PlayerView};
 use super::theme::layout::{DROP_INSET, TOOLBAR_HEIGHT, TRAFFIC_LIGHTS, WINDOW_MIN_SIZE};
 use super::theme::{self, Theme};
@@ -100,6 +102,8 @@ pub struct Workspace {
     open_url: Option<(Entity<OpenUrlDialog>, Subscription)>,
     /// The sheet asking what to call the window.
     naming: Option<(Entity<NameSheet>, Subscription)>,
+    /// The command palette.
+    palette: Option<(Entity<Palette>, Subscription)>,
     /// The sheet asking for the PIN a TV a tile was cast to shows.
     pairing: Option<pairing::Pairing>,
     /// A sheet closed: the window takes the keys back when next drawn.
@@ -259,6 +263,7 @@ impl Workspace {
             graveyard: Graveyard::default(),
             open_url: None,
             naming: None,
+            palette: None,
             pairing: None,
             refocus: false,
             url_form,
@@ -415,6 +420,9 @@ impl Render for Workspace {
             })
             .when_some(self.naming.as_ref(), |this, (sheet, _)| {
                 this.child(sheet.clone())
+            })
+            .when_some(self.palette.as_ref(), |this, (palette, _)| {
+                this.child(palette.clone())
             })
             .when_some(self.pairing.as_ref(), |this, pairing| {
                 this.child(pairing.dialog.clone())

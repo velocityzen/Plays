@@ -693,6 +693,22 @@ pub mod settings {
     pub const PREVIEW_SUN_CENTER: gpui::Point<f32> = point(0.76, 0.36);
 }
 
+/// The command palette.
+pub mod palette {
+    use gpui::{Pixels, px};
+
+    pub const WIDTH: Pixels = px(600.);
+    pub const ROW_HEIGHT: Pixels = px(30.);
+    /// How many rows show before the list scrolls.
+    pub const ROWS: usize = 10;
+    /// Where a check goes, before the name.
+    pub const CHECK_WIDTH: Pixels = px(14.);
+    /// What a command's group takes, at the end of its row.
+    pub const GROUP_WIDTH: Pixels = px(96.);
+    /// A detail's opacity, white on the row picked.
+    pub const DETAIL_SELECTED: f32 = 0.8;
+}
+
 /// The Open URL dialog.
 pub mod dialog {
     use gpui::{Pixels, px};

@@ -13,6 +13,7 @@ use crate::api::target::{self, Target};
 use crate::api::{Error, Invocation, Run, Source};
 use crate::app::{back_window, move_window, player_windows, recent_window, step_window};
 use crate::settings::{FloatOnTop, Settings};
+use crate::ui::palette;
 use crate::ui::theme::layout::WINDOW_SIZE;
 use crate::ui::workspace::Workspace;
 
@@ -73,6 +74,18 @@ pub const COMMANDS: &[Spec] = &[
     )
     .keywords(&["stream", "link", "network", "http", "rtsp"])
     .keys(&["secondary-shift-o"])
+    .reach(Reach::Anywhere),
+    Spec::custom(
+        palette::COMMAND,
+        "Command Palette…",
+        "List every command that can run in the window, to find one by name and run it, \
+         picking or typing what it takes.",
+        Scope::Window,
+        show_palette,
+    )
+    .keywords(&["commands", "actions", "run", "search", "find"])
+    .keys(&["secondary-shift-p"])
+    // An empty window has commands to run too.
     .reach(Reach::Anywhere),
     Spec::custom(
         "window.close",
@@ -260,6 +273,23 @@ pub const COMMANDS: &[Spec] = &[
     )
     .keywords(&["screen", "monitor", "projector", "move"]),
 ];
+
+/// Show the command palette over the window, listing the commands that
+/// can run there as they are now, and run lately.
+fn show_palette(_: Args, target: &Target, cx: &mut App) -> Outcome {
+    let window = target::window(target, cx)?;
+    let here = Target {
+        window: Some(target::read(window, cx)?.id().to_string()),
+        tile: None,
+    };
+    let entries = palette::entries(&here, cx);
+    let recents = palette::recent_commands(cx);
+    target::in_window(&here, cx, |workspace, window, cx| {
+        window.activate_window();
+        workspace.show_palette(entries, recents, window, cx);
+        done()
+    })
+}
 
 #[derive(Deserialize)]
 struct OnDisplay {

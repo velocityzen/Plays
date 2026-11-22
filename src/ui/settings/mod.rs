@@ -25,9 +25,9 @@ use std::rc::Rc;
 
 use gpui::prelude::*;
 use gpui::{
-    AnyElement, App, Bounds, Context, FocusHandle, Global, KeyDownEvent, SharedString,
-    Subscription, TitlebarOptions, Window, WindowBounds, WindowHandle, WindowOptions, div, rgb,
-    white,
+    AnyElement, App, Bounds, Context, FocusHandle, Global, KeyDownEvent, Point, ScrollHandle,
+    SharedString, Subscription, TitlebarOptions, Window, WindowBounds, WindowHandle, WindowOptions,
+    div, rgb, white,
 };
 
 use super::components::Icon;
@@ -120,6 +120,8 @@ pub struct SettingsView {
     /// Whether the settings file's menu is open.
     file_menu: bool,
     recording: hotkeys::Recording,
+    /// Where the pane showing is scrolled to.
+    scroll: ScrollHandle,
     /// The credit in About whose license shows.
     license: Option<SharedString>,
     /// About's rows, made when it first shows.
@@ -196,6 +198,7 @@ impl SettingsView {
             device_menu: false,
             file_menu: false,
             recording: hotkeys::Recording::default(),
+            scroll: ScrollHandle::new(),
             license: None,
             credits: None,
             _casting: cx.observe_global::<Casting>(|_, cx| cx.notify()),
@@ -203,6 +206,37 @@ impl SettingsView {
                 cx.observe_window_bounds(window, |_, window, cx| note_settings_place(window, cx)),
                 cx.on_release(|_, cx| save_settings_place(cx)),
             ],
+        }
+    }
+
+    /// Show the pane `index` in `PANES`, at its top.
+    fn show(&mut self, index: usize) {
+        PANES[self.pane].leave(self);
+        self.pane = index;
+        self.scroll.set_offset(Point::default());
+    }
+
+    /// Open Settings at Hotkeys, waiting for keys to add to `command`'s
+    /// shortcuts, its row scrolled into view: Change Shortcut… in the
+    /// command palette.
+    pub fn record_shortcut(command: &'static str, cx: &mut App) {
+        Self::open_window(cx);
+        let Some(handle) = cx.try_global::<SettingsWindow>().map(|open| open.0) else {
+            return;
+        };
+        let opened = handle.update(cx, |view, window, cx| {
+            if let Some(index) = PANES
+                .iter()
+                .position(|pane| pane.name() == hotkeys::HotkeysPane.name())
+            {
+                view.show(index);
+            }
+            view.recording.start(command, &view.scroll);
+            window.focus(&view.focus_handle);
+            cx.notify();
+        });
+        if let Err(err) = opened {
+            log::warn!("can't reach Settings: {err}");
         }
     }
 
@@ -253,8 +287,7 @@ impl SettingsView {
                         }
                     })
                     .on_click(cx.listener(move |this, _, _, cx| {
-                        PANES[this.pane].leave(this);
-                        this.pane = index;
+                        this.show(index);
                         cx.notify();
                     }))
                     // White on the selected row, where the pane's color
@@ -292,6 +325,7 @@ impl Render for SettingsView {
                 .flex_1()
                 .min_h_0()
                 .overflow_y_scroll()
+                .track_scroll(&self.scroll)
                 .flex()
                 .flex_col()
                 .gap_5()

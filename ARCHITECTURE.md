@@ -470,7 +470,7 @@ flowchart LR
 ## The app and its windows
 
 - `src/api/`: every command Plays has, which every action runs by name,
-  as a command line and a command palette are to. Each namespace
+  as the command line and the command palette do. Each namespace
   (`app`, `window`, `tile`, `playback`, `audio`, `subtitles`, `video`,
   `cast`, `output`, `display`, `settings`, `cli`) is a file in `commands/`, a
   list of `Spec`s: the command's id (`playback.toggle_loop`), title,
@@ -833,10 +833,31 @@ flowchart LR
   that takes keys, a card for each namespace; while it waits for keys to
   record, its key
   context has `Recording`, which the keys that work anywhere stay out of.
+  `record_shortcut` opens it on Hotkeys waiting for a command's keys, its
+  row scrolled into view once drawn, as the palette's Change Shortcut…
+  does.
   About shows the version and the credits,
   each of which opens to its license; there are hundreds, so they are in a
   list that builds only the rows in view, each drawing its part of the
   card.
+- `src/ui/palette/`: the command palette, `window.command_palette` (⇧⌘P),
+  a sheet over the window it opens in (`workspace/command_palette`), which
+  it runs every command on, an App one on the app. It lists the commands
+  `api::can_run` says can run there, none that are queries or need a
+  target named, each with its state (`api::state`: ✓, or a value) and its
+  keys. `search` finds what's typed: each word, its letters in order,
+  in a title, a namespace's name or a keyword, letters starting a word or
+  side by side counting for more, the title most. `recents` keeps the
+  last few commands run from it in `recent-commands.json` beside the
+  settings, first when nothing is typed and counting for more when
+  something is. A command's arguments are asked for one by one
+  (`asking`): from a list where there is one (tracks, chapters, windows,
+  displays, devices, outputs, settings and their values, an argument's
+  own choices), what's picked now first and checked, asked by running
+  the queries (`tile.inspect`, `display.ls` and so on) once the window
+  is free; or typed, a time, a number in range, a path or a URL, read as
+  the argument takes it and said why not until it will do. Change
+  Shortcut… hands the command to Settings.
 - `src/ui/components/`: the reusable components, one `RenderOnce`
   component per file, each in three sizes (small, medium, large) with its
   numbers for each in `theme`. An icon; a button in seven variants

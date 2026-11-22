@@ -329,7 +329,7 @@ fn time_label(position: f64, duration: Option<f64>, chapters: &[Chapter]) -> Str
     }
 }
 
-pub(super) fn format_time(seconds: f64) -> String {
+pub fn format_time(seconds: f64) -> String {
     let total = seconds.max(0.0).floor() as u64;
     let (h, m, s) = (total / 3600, (total / 60) % 60, total % 60);
     if h > 0 {

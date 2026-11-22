@@ -8,7 +8,7 @@ use super::menus;
 use crate::api::commands::window;
 use crate::hotkeys::Hotkeys;
 use crate::settings::Settings;
-use crate::ui::{name_sheet, open_url, pairing, text_input};
+use crate::ui::{name_sheet, open_url, pairing, palette, text_input};
 
 /// The shortcuts in the keymap, to tell when Settings change them.
 struct BoundHotkeys(Hotkeys);
@@ -22,6 +22,7 @@ pub(super) fn bind_keys(cx: &mut App) {
     open_url::bind_keys(cx);
     name_sheet::bind_keys(cx);
     pairing::bind_keys(cx);
+    palette::bind_keys(cx);
     cx.bind_keys(hotkeys.bindings());
     cx.bind_keys(window_numbers());
     cx.set_global(BoundHotkeys(hotkeys));

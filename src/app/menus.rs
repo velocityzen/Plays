@@ -279,6 +279,8 @@ fn subtitles_menu(state: &MenuState) -> Menu {
 fn window_menu(state: &MenuState) -> Menu {
     let mut items = items(
         &[
+            "window.command_palette",
+            "",
             "window.new",
             "window.rename",
             "window.close_others",
@@ -889,6 +891,12 @@ mod tests {
                 _ => false,
             })
         };
+        assert!(
+            matches!(&menu.items[0], MenuItem::Action { name, action, .. }
+                if name == "Command Palette…"
+                    && action.partial_eq(&Run::command("window.command_palette"))),
+            "the palette first"
+        );
         for (title, command) in [
             ("New Window", "window.new"),
             ("Rename Window…", "window.rename"),

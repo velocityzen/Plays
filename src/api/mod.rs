@@ -1,7 +1,7 @@
 //! The API: every command Plays has, by id, run one way. Keys, menus and
 //! the controls that send actions run them through here, sending one
 //! action, `Run`, which carries the command; the command palette and the
-//! command line are to as well.
+//! command line run them here too.
 //!
 //! A command (`registry`, with the commands themselves in `commands`) has
 //! an id such as `playback.play_pause`, a title, a description, keywords,

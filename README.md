@@ -176,6 +176,18 @@ GPU-accelerated UI framework.
   so on) too.
 - The menu bar (a toolbar on Linux) has them too.
 
+### Command palette
+
+- ⇧⌘P lists every command that can run in the window: type a few
+  letters of its name, its menu or a word for it to find it, and Return
+  runs it. Those run from it lately come first.
+- Each row says what its command is set to now (✓ when on) and its
+  shortcut. What a command takes, it asks for next: a track, a chapter,
+  a display, a setting and its value from a list, the one now picked
+  first; a time, a volume or a path typed, and said why it won't do.
+- Change Shortcut… (⌘↩ on a row) records a new shortcut for it in
+  Settings → Hotkeys.
+
 ### Command line
 
 - `plays` in a terminal lists, opens, runs and watches what Plays is
@@ -282,6 +294,7 @@ a socket that only you can use, kept with Plays' settings on macOS and in
 | Player window 1 to 9 | `⌘1` … `⌘9` / `Ctrl+1` … `Ctrl+9` |
 | Next/previous window | `⌃⇥` `⌃⇧⇥` / `Ctrl+Tab` `Ctrl+Shift+Tab` |
 | The window in front before | `⌘'` / `Ctrl+'` |
+| Command palette | `⇧⌘P` / `Ctrl+Shift+P` |
 | Settings | `⌘,` / `Ctrl+,` |
 
 Shortcuts act on the active tile: the one the mouse is over (or was last
