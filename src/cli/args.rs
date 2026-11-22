@@ -3,7 +3,7 @@
 
 use std::ffi::OsString;
 
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, Parser, Subcommand, ValueEnum, ValueHint};
 
 /// Plays from a terminal.
 #[derive(Debug, Parser)]
@@ -77,7 +77,7 @@ pub enum Command {
     /// Open files, folders and streams, in the window in front or the one
     /// named.
     Open {
-        #[arg(required = true, value_name = "FILE|URL")]
+        #[arg(required = true, value_name = "FILE|URL", value_hint = ValueHint::AnyPath)]
         paths: Vec<OsString>,
         /// In a new window.
         #[arg(long)]
@@ -114,6 +114,24 @@ pub enum Command {
     Keymap,
     /// Print this program's version, and that of the Plays running.
     Version,
+    /// Print the script that completes plays's subcommands, options,
+    /// command ids and setting keys in a shell.
+    #[command(after_help = "Keep it where the shell finds it:\n  \
+                            bash: plays completions bash > \
+                            ~/.local/share/bash-completion/completions/plays\n  \
+                            zsh:  plays completions zsh > ~/.zfunc/_plays, with \
+                            fpath=(~/.zfunc $fpath) before compinit in ~/.zshrc\n  \
+                            fish: plays completions fish > \
+                            ~/.config/fish/completions/plays.fish")]
+    Completions { shell: Shell },
+}
+
+/// The shells `completions` writes for.
+#[derive(Clone, Copy, Debug, ValueEnum)]
+pub enum Shell {
+    Bash,
+    Zsh,
+    Fish,
 }
 
 #[derive(Debug, Subcommand)]

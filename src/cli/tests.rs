@@ -236,6 +236,26 @@ fn actions_lists_every_command_without_plays() {
 }
 
 #[test]
+fn completions_are_written_for_each_shell_without_plays() {
+    let ran = command_line(None, None, &["completions", "zsh"]);
+    assert_eq!(ran.status, 0, "{ran:?}");
+    assert!(ran.out.starts_with("#compdef plays"), "{}", ran.out);
+    let ran = command_line(None, None, &["completions", "bash"]);
+    assert!(ran.out.contains("complete -F _plays"), "{}", ran.out);
+    let ran = command_line(None, None, &["completions", "fish"]);
+    assert!(ran.out.contains("complete -c plays"), "{}", ran.out);
+
+    let ran = command_line(None, None, &["completions", "tcsh"]);
+    assert_eq!(ran.status, 2);
+    assert!(
+        ran.err.contains("[possible values: bash, zsh, fish]"),
+        "{}",
+        ran.err
+    );
+    assert!(wanted(&owned(&["completions", "fish"])));
+}
+
+#[test]
 #[cfg(target_os = "macos")]
 fn the_command_reference_is_current() {
     let kept = include_str!("../../docs/commands.md");

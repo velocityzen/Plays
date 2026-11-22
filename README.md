@@ -200,7 +200,8 @@ GPU-accelerated UI framework.
   shortcuts, what changes as it does, and waiting for a file to end. It
   prints tables or JSON. Off until Settings → Command Line turns it on.
 - Plays → Install Command Line Tool puts `plays` where a terminal finds
-  it.
+  it, and `plays completions` has bash, zsh or fish complete its
+  subcommands, command ids and setting keys.
 
 ### Settings
 
@@ -777,8 +778,9 @@ so instead). Without one, `plays FILE…` opens files as before.
 Plays takes commands from a command line only once Settings → Command
 Line → Allow control from the command line is on. Until then it says so,
 and exits with 5; a command line can't turn it on, as it's refused.
-`plays FILE…` and `plays version` work either way, and turning it off
-cuts off every command line connected, `events` and `wait` too.
+`plays FILE…`, `plays version`, `plays actions` and `plays completions`
+work either way, and turning it off cuts off every command line
+connected, `events` and `wait` too.
 
 On macOS, Plays → Install Command Line Tool (or Install in Settings →
 Command Line) links `/usr/local/bin/plays` to the app, and says so in an
@@ -820,6 +822,27 @@ plays actions                             # every command, Plays or not
 - A word that is neither a subcommand nor a file or folder there is taken
   for a mistyped subcommand, not handed to Plays.
 - `PLAYS_SOCKET` names another socket to ask at.
+
+`plays completions SHELL` prints the script that has bash, zsh or fish
+complete the subcommands and options, each command's id after `do`,
+`api describe` and `api call` (with its title, in zsh and fish), and the
+setting keys after `settings get` and `set`. It needs no Plays running,
+and works with control from the command line off. Keep it where the shell
+finds it:
+
+```bash
+plays completions bash > ~/.local/share/bash-completion/completions/plays  # or source it in ~/.bashrc
+```
+
+```bash
+plays completions zsh > ~/.zfunc/_plays  # with fpath=(~/.zfunc $fpath) before compinit
+```
+
+```bash
+plays completions fish > ~/.config/fish/completions/plays.fish
+```
+
+Run it again after updating Plays, for the commands it has then.
 
 ## Limitations
 

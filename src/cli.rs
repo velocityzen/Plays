@@ -11,6 +11,7 @@
 //! Plays started with files, which hands them to the one running.
 
 mod args;
+mod completions;
 mod events;
 mod reference;
 mod show;
@@ -201,6 +202,9 @@ impl Session<'_> {
             Command::Settings(settings) => self.settings(settings),
             Command::Keymap => self.keymap(),
             Command::Version => self.version(),
+            Command::Completions { shell } => {
+                completions::completions(self.out, shell).map_err(Stop::Output)
+            }
         }
     }
 

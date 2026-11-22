@@ -623,8 +623,14 @@ flowchart LR
   ended already prints its `ended` at once, and the tile or window closing
   first, or the time running out, fails the wait. `reference` lists the
   commands from the registry compiled in, Plays running or not, and
-  writes `docs/commands.md` (`plays actions --markdown`). `show` prints
-  tables, events and results. The exit status is the error's (1 failed,
+  writes `docs/commands.md` (`plays actions --markdown`). `completions`
+  writes the script that completes the command line in bash, zsh or fish
+  (clap_complete), from clap's command with the registry's ids, each with
+  its title, as what `do`, `api describe` and `api call` take, and the
+  settings' keys for `settings get` and `set`, the cast protocols' too,
+  none of them started. clap's script for fish completes options alone,
+  so lines of its own offer those words, each until one of its names is
+  given. `show` prints tables, events and results. The exit status is the error's (1 failed,
   3 not found, 4 unreachable, 5 control from the command line off), 2 for
   a bad command line, clap's or one of its own checks; output closed
   (`| head`) ends it quietly with 0.

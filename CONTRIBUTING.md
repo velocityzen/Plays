@@ -659,6 +659,18 @@ check:
   - As a process of its own, the test binary again running only
     `command_line_as_another_process`, otherwise ignored: printing to
     its own standard output and exiting with the status it says.
+  - `completions` writing each shell's script without Plays, and an
+    unknown shell a bad command line. Then, in `cli::completions::tests`,
+    the ids and titles clap is given for `do`, `api describe` and `api
+    call` and the keys for `settings get` and `set`, the cast protocols'
+    too; and each script loaded in its shell, from files in a folder of
+    the test's own: bash and fish asked what they offer for a line, as a
+    terminal asks (subcommands, ids after options too, keys, shells, no
+    ids once one is given or under `api list`, and fish still offering
+    files to `open`), fish reading quotes, `$` and backslashes in what it
+    offers as they are, and zsh reading its script with `-n`, its ids,
+    keys and shells checked in it. Without fish installed, what it offers
+    goes unchecked.
   - `docs/commands.md` as `plays actions --markdown` writes it now:
     after changing a command, write it again with
     `cargo run -- actions --markdown > docs/commands.md`. Commands for
