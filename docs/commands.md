@@ -227,6 +227,32 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 - Arguments:
   - `display` (a whole number, at least 0): The display's id.
 
+## view
+
+### Show Controls
+
+`view.toggle_controls`: Show the seek bar and buttons at the bottom of each tile, or never show them.
+
+- Acts on the app.
+
+### Show Top Bar
+
+`view.toggle_top_bar`: Show the file's name and buttons at the top of each tile, or never show them.
+
+- Acts on the app.
+
+### Show Track Switcher
+
+`view.toggle_track_switcher`: Show the reel of tracks a shortcut rolls to the audio, video or subtitles picked, or switch without it.
+
+- Acts on the app.
+
+### Show Notes
+
+`view.toggle_notes`: Show notes on what a shortcut changed, like the volume, or not. Notes on what's wrong still show.
+
+- Acts on the app.
+
 ## tile
 
 ### List Tiles

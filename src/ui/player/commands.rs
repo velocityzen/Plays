@@ -1,12 +1,10 @@
 //! What the playback shortcuts do to a tile.
 
-use std::time::Instant;
-
 use gpui::{App, ClipboardItem, Context};
 
 use super::PlayerView;
 use super::controls::format_time;
-use super::osd::{Osd, TrackReel};
+use super::osd::TrackReel;
 use super::tracks::track_choices;
 use crate::app::refresh_menus;
 use crate::media::chapters::{self, Chapter};
@@ -101,7 +99,7 @@ impl PlayerView {
             return;
         };
         self.seek(chapter.start);
-        self.note(chapter.name(index), cx);
+        self.note_change(chapter.name(index), cx);
         // Playback → Chapters checks this one now.
         refresh_menus(cx);
     }
@@ -124,7 +122,7 @@ impl PlayerView {
         if delta > 0.0 && self.playback.local().is_muted() {
             self.set_muted(false);
         }
-        self.note(format!("Volume {}%", (volume * 100.0).round()), cx);
+        self.note_change(format!("Volume {}%", (volume * 100.0).round()), cx);
     }
 
     /// Set the volume, from 0 to 1; above none, it's no longer muted.
@@ -139,13 +137,13 @@ impl PlayerView {
     pub fn toggle_mute(&mut self, cx: &mut Context<Self>) {
         let muted = !self.playback.local().is_muted();
         self.set_muted(muted);
-        self.note(if muted { "Muted" } else { "Unmuted" }, cx);
+        self.note_change(if muted { "Muted" } else { "Unmuted" }, cx);
     }
 
     pub fn toggle_loop(&mut self, cx: &mut Context<Self>) {
         let looping = !self.playback.local().is_looping();
         self.set_looping(looping);
-        self.note(if looping { "Loop on" } else { "Loop off" }, cx);
+        self.note_change(if looping { "Loop on" } else { "Loop off" }, cx);
     }
 
     /// Play the next track of a kind, after the last one going back to the
@@ -173,9 +171,7 @@ impl PlayerView {
         if kind == TrackKind::Subtitle {
             self.hidden_subtitles = None;
         }
-        let reel = TrackReel { choices, at };
-        self.osd = Some((Osd::Reel(reel), Instant::now()));
-        cx.notify();
+        self.roll_reel(TrackReel { choices, at }, cx);
     }
 
     /// Play track `number` (from 1) of a kind, as the tracks menu numbers
@@ -214,7 +210,7 @@ impl PlayerView {
         if let Some(index) = info.subtitle_track {
             self.hidden_subtitles = Some(index);
             self.select_track(TrackKind::Subtitle, None, cx);
-            self.note("Subtitles hidden", cx);
+            self.note_change("Subtitles hidden", cx);
             return;
         }
         let tracks: Vec<_> = info.tracks(TrackKind::Subtitle).collect();
@@ -227,7 +223,7 @@ impl PlayerView {
             Some(i) => {
                 let index = tracks[i].index;
                 self.select_track(TrackKind::Subtitle, Some(index), cx);
-                self.note(format!("Subtitles: {}", tracks[i].label(i + 1)), cx);
+                self.note_change(format!("Subtitles: {}", tracks[i].label(i + 1)), cx);
             }
             None => self.note("No subtitles", cx),
         }

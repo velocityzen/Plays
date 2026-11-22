@@ -74,7 +74,7 @@ impl PlayerView {
             return;
         }
         change(&mut self.adjustments);
-        self.note(note, cx);
+        self.note_change(note, cx);
         // Video → Aspect Ratio and Crop check what it is now.
         refresh_menus(cx);
     }

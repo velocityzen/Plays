@@ -1,5 +1,5 @@
-//! Appearance: the theme, how windows lay out their tiles, and the empty
-//! window's screensaver.
+//! Appearance: the theme, how windows lay out their tiles, which panels
+//! show over the video, and the empty window's screensaver.
 
 use gpui::{AnyElement, Context, Window};
 
@@ -93,9 +93,52 @@ impl Pane for AppearancePane {
                 .chain([black_out_row(s, theme)])
                 .collect(),
             ),
+            group(Some("Over the video"), theme, over_video_rows(s, theme)),
             group(Some("Empty window"), theme, screensaver_rows(s, theme)),
         ]
     }
+}
+
+/// Each panel over the video on or off: its name, what it is, and its
+/// setting, which is its switch's id.
+fn over_video_rows(s: &Settings, theme: &Theme) -> Vec<AnyElement> {
+    let shown = s.over_video;
+    [
+        (
+            "Controls",
+            "The seek bar and buttons at the bottom.",
+            "over_video.controls",
+            shown.controls,
+        ),
+        (
+            "Top bar",
+            "The file's name and buttons at the top.",
+            "over_video.top_bar",
+            shown.top_bar,
+        ),
+        (
+            "Track switcher",
+            "The reel a shortcut rolls to the audio, video or subtitles picked.",
+            "over_video.track_switcher",
+            shown.track_switcher,
+        ),
+        (
+            "Notes",
+            "What a shortcut changed, like the volume. Notes on what's wrong still show.",
+            "over_video.notes",
+            shown.notes,
+        ),
+    ]
+    .into_iter()
+    .map(|(name, hint, key, on)| {
+        row(
+            name,
+            Some(hint.into()),
+            theme,
+            Switch::new(key, on).on_toggle(move |&on, _, cx| set(key, on, cx)),
+        )
+    })
+    .collect()
 }
 
 /// The screensaver on or off and, on, how long the window rests first.

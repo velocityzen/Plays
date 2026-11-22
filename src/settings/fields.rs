@@ -354,6 +354,25 @@ const FIELDS: &[Field] = &[
     ),
     Field::new("show_titles", "Show file names", "Appearance", Kind::Toggle),
     Field::new(
+        "over_video.controls",
+        "Show controls",
+        "Appearance",
+        Kind::Toggle,
+    ),
+    Field::new(
+        "over_video.top_bar",
+        "Show the top bar",
+        "Appearance",
+        Kind::Toggle,
+    ),
+    Field::new(
+        "over_video.track_switcher",
+        "Show the track switcher",
+        "Appearance",
+        Kind::Toggle,
+    ),
+    Field::new("over_video.notes", "Show notes", "Appearance", Kind::Toggle),
+    Field::new(
         "float_on_top",
         "Float on top",
         "Appearance",

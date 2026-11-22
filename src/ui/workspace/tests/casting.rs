@@ -206,6 +206,23 @@ fn the_cast_command_plays_on_a_device_found_by_its_id(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn the_cast_menu_closes_as_the_controls_are_hidden(cx: &mut TestAppContext) {
+    let (_, mut cx, _, _) = start(cx, "clip.mp4", false);
+    let show_controls = |on: bool, cx: &mut VisualTestContext| {
+        cx.update(|_, cx| Settings::update(cx, false, |s| s.over_video.controls = on));
+        cx.run_until_parked();
+    };
+    click(&mut cx, "cast");
+    assert!(shows(&mut cx, "cast-0"), "the menu opens");
+    show_controls(false, &mut cx);
+    assert!(!shows(&mut cx, "cast-0"), "it goes with them");
+    show_controls(true, &mut cx);
+    hover(&mut cx, "tile-0");
+    assert!(shows(&mut cx, "cast"));
+    assert!(!shows(&mut cx, "cast-0"), "closed when they're back");
+}
+
+#[gpui::test]
 fn picking_a_device_plays_the_file_there_from_where_it_is_and_pauses_the_tile(
     cx: &mut TestAppContext,
 ) {
@@ -736,6 +753,30 @@ fn a_video_without_sound_doesnt_go_to_a_speaker(cx: &mut TestAppContext) {
     assert_eq!(view.read_with(&cx, |view, _| view.casting().cloned()), None);
     std::thread::sleep(Duration::from_millis(100));
     assert!(calls(&fake, &speaker).is_empty());
+}
+
+#[gpui::test]
+fn the_sound_going_to_a_speaker_is_said_unless_notes_are_hidden(cx: &mut TestAppContext) {
+    let (window, mut cx, fake, _) = start(cx, "clip.mp4", false);
+    let kitchen = speaker(&fake, "Kitchen");
+    let view = tile(window, &cx);
+    let noted = |cx: &mut VisualTestContext| view.read_with(cx, |view, _| view.noted());
+    cast(window, &mut cx, &fake, &kitchen);
+    wait(&mut cx, "a note on where the sound is", |cx| {
+        noted(cx).is_some()
+    });
+    assert_eq!(noted(&mut cx).as_deref(), Some("Sound on Kitchen"));
+    view.update(&mut cx, |view, cx| view.end_cast(cx));
+
+    cx.update(|_, cx| Settings::update(cx, false, |s| s.over_video.notes = false));
+    let bedroom = speaker(&fake, "Bedroom");
+    cast(window, &mut cx, &fake, &bedroom);
+    // Heard there: it's on.
+    say(&fake, &bedroom, State::Playing, 0.5);
+    wait(&mut cx, "the picture to be where the sound is", |cx| {
+        view.read_with(cx, |view, _| (view.player().position() - 0.5).abs() < 1e-9)
+    });
+    assert_ne!(noted(&mut cx).as_deref(), Some("Sound on Bedroom"));
 }
 
 #[gpui::test]

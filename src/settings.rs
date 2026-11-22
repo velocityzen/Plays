@@ -84,6 +84,33 @@ pub enum PanelLook {
     Tint,
 }
 
+/// Which panels show over the video, each turned off to keep the picture
+/// clear of it. Notes on what's wrong show whatever these say.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct OverVideo {
+    /// The seek bar and the buttons at the bottom.
+    pub controls: bool,
+    /// The file's name and the buttons at the top.
+    pub top_bar: bool,
+    /// The reel of tracks a shortcut rolls to the audio, video or
+    /// subtitles picked.
+    pub track_switcher: bool,
+    /// What a shortcut changed, like the volume.
+    pub notes: bool,
+}
+
+impl Default for OverVideo {
+    fn default() -> Self {
+        Self {
+            controls: true,
+            top_bar: true,
+            track_switcher: true,
+            notes: true,
+        }
+    }
+}
+
 /// Whether player windows stay above other apps' windows.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -404,6 +431,7 @@ pub struct Settings {
     pub controls: ControlsVisibility,
     pub show_titles: bool,
     pub panels: PanelLook,
+    pub over_video: OverVideo,
     pub float_on_top: FloatOnTop,
     pub full_screen: FullScreen,
     /// Cover the other displays in black while a window is full screen.
@@ -450,6 +478,7 @@ impl Default for Settings {
             controls: ControlsVisibility::OnHover,
             show_titles: true,
             panels: PanelLook::Frosted,
+            over_video: OverVideo::default(),
             float_on_top: FloatOnTop::Off,
             full_screen: FullScreen::OwnSpace,
             black_out_displays: false,

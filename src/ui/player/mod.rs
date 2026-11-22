@@ -27,8 +27,8 @@ use std::time::Instant;
 
 use gpui::prelude::*;
 use gpui::{
-    Bounds, ClickEvent, Context, CursorStyle, Div, EventEmitter, Hsla, MouseButton, MouseMoveEvent,
-    Pixels, Point, SharedString, Stateful, Task, Window, black, div,
+    App, Bounds, ClickEvent, Context, CursorStyle, Div, EventEmitter, Hsla, MouseButton,
+    MouseMoveEvent, Pixels, Point, SharedString, Stateful, Task, Window, black, div,
 };
 
 pub use controls::format_time;
@@ -435,7 +435,7 @@ impl PlayerView {
             return;
         };
         self.playback.seek(position);
-        self.note(
+        self.note_change(
             format!("Resumed at {}", controls::format_time(position)),
             cx,
         );
@@ -522,7 +522,6 @@ impl Render for PlayerView {
         let settings = cx.global::<Settings>();
         let cover = settings.video_fit == VideoFit::Cover;
         let subtitle_style = settings.subtitles.clone();
-        let show_titles = settings.show_titles;
         let player = self.playback.local();
         let info = player.info();
         let framing = self.framing_for(info.as_deref());
@@ -535,7 +534,6 @@ impl Render for PlayerView {
         let mouse_in_window = layout.mouse_in_window && (!layout.mouse_idle || self.over_bars());
         let hide_pointer =
             layout.mouse_in_window && layout.mouse_idle && !self.over_bars() && !pinned;
-        let live = info.as_ref().is_some_and(|i| i.live);
         // A stream that has started and then stalls; opening has its own message.
         let stalled = !casting
             && player.is_buffering()
@@ -547,8 +545,7 @@ impl Render for PlayerView {
             group: format!("tile-{}", cx.entity_id()).into(),
         };
 
-        let header = self.render_header(&reveal, info.as_deref(), show_titles, window, cx);
-        let controls = self.render_controls(&reveal, info.as_deref(), &theme, window, cx);
+        let bars = self.render_bars(&reveal, info.as_deref(), &theme, window, cx);
         let osd = self.render_osd(window);
         let console = self.render_console();
 
@@ -593,7 +590,7 @@ impl Render for PlayerView {
                         &reveal,
                         framing,
                         cover,
-                        live,
+                        self.subtitle_clearance(cx),
                         &theme,
                         subtitle_style,
                     ))
@@ -602,29 +599,7 @@ impl Render for PlayerView {
             .when(stalled, |this| this.child(render_buffering()))
             .children(console)
             .children(osd)
-            // Presses on the bars mustn't reach the surface underneath (which
-            // expands the tile and drags it), but they can't `occlude()`
-            // either: an occluding child stops its parent counting as
-            // hovered, which would hide the bars as soon as the pointer moved
-            // onto them.
-            .child(
-                header
-                    .id("header")
-                    .on_hover(cx.listener(|this, hovered: &bool, _, cx| {
-                        this.over_header = *hovered;
-                        cx.notify();
-                    }))
-                    .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation()),
-            )
-            .child(
-                controls
-                    .id("controls")
-                    .on_hover(cx.listener(|this, hovered: &bool, _, cx| {
-                        this.over_controls = *hovered;
-                        cx.notify();
-                    }))
-                    .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation()),
-            )
+            .children(bars)
             .when(layout.focus_ring, |this| {
                 this.child(render_focus_ring(theme.accent))
             })
@@ -632,6 +607,58 @@ impl Render for PlayerView {
 }
 
 impl PlayerView {
+    /// The header and the controls, those Settings has shown over the
+    /// video: one hidden isn't drawn, so the mouse isn't over it, and no
+    /// menu is open from it.
+    fn render_bars(
+        &mut self,
+        reveal: &Reveal,
+        info: Option<&MediaInfo>,
+        theme: &Theme,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Vec<Stateful<Div>> {
+        let settings = cx.global::<Settings>();
+        let (shown, show_titles) = (settings.over_video, settings.show_titles);
+        if !shown.top_bar {
+            self.over_header = false;
+        }
+        if !shown.controls {
+            self.over_controls = false;
+            self.tracks_open = false;
+            self.cast_open = false;
+        }
+        let header = shown
+            .top_bar
+            .then(|| self.render_header(reveal, info, show_titles, window, cx));
+        let controls = shown
+            .controls
+            .then(|| self.render_controls(reveal, info, theme, window, cx));
+        // Presses on the bars mustn't reach the surface underneath (which
+        // expands the tile and drags it), but they can't `occlude()`
+        // either: an occluding child stops its parent counting as hovered,
+        // which would hide the bars as soon as the pointer moved onto them.
+        let header = header.map(|header| {
+            header
+                .id("header")
+                .on_hover(cx.listener(|this, hovered: &bool, _, cx| {
+                    this.over_header = *hovered;
+                    cx.notify();
+                }))
+                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+        });
+        let controls = controls.map(|controls| {
+            controls
+                .id("controls")
+                .on_hover(cx.listener(|this, hovered: &bool, _, cx| {
+                    this.over_controls = *hovered;
+                    cx.notify();
+                }))
+                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+        });
+        header.into_iter().chain(controls).collect()
+    }
+
     /// Take what playback has for this frame: retire the picture it drew
     /// over, show the cues now, follow the sound's level, and ask for the
     /// next frame while anything moves.
@@ -683,14 +710,21 @@ impl PlayerView {
         self.drag_by_picture(surface, window, cx)
     }
 
+    /// How far up the tile its subtitles keep clear of, for the controls
+    /// while they show: none when Settings has them hidden.
+    pub fn subtitle_clearance(&self, cx: &App) -> Pixels {
+        let live = self.playback.local().info().is_some_and(|info| info.live);
+        controls::clearance(cx.global::<Settings>().over_video.controls, live)
+    }
+
     /// The cues showing, placed on the picture and kept above the controls
-    /// while they show.
+    /// while they show, `controls_height` up the tile.
     fn render_subtitles(
         &self,
         reveal: &Reveal,
         framing: Option<Framing>,
         cover: bool,
-        live: bool,
+        controls_height: Pixels,
         theme: &Theme,
         style: SubtitleStyle,
     ) -> impl IntoElement {
@@ -699,7 +733,7 @@ impl PlayerView {
             subtitles::Layout {
                 framing,
                 cover,
-                controls_height: controls::height(live),
+                controls_height,
                 controls_pinned: reveal.pinned,
                 mouse_in_window: reveal.mouse_in_window,
                 font: theme.font.clone(),

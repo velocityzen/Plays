@@ -35,6 +35,12 @@ pub(super) fn height(live: bool) -> Pixels {
         }
 }
 
+/// How far up the tile subtitles keep clear of, for the controls: none
+/// when they're hidden, as they're never drawn.
+pub(super) fn clearance(shown: bool, live: bool) -> Pixels {
+    if shown { height(live) } else { px(0.) }
+}
+
 impl PlayerView {
     pub(super) fn render_controls(
         &self,
@@ -341,7 +347,18 @@ pub fn format_time(seconds: f64) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{Chapter, format_time, time_label};
+    use gpui::px;
+
+    use super::{Chapter, clearance, format_time, height, time_label};
+
+    #[test]
+    fn subtitles_keep_clear_of_the_controls_only_while_they_show() {
+        for live in [false, true] {
+            assert_eq!(clearance(true, live), height(live));
+            assert!(clearance(true, live) > px(0.));
+            assert_eq!(clearance(false, live), px(0.));
+        }
+    }
 
     #[test]
     fn the_time_says_which_chapter_it_is_in() {

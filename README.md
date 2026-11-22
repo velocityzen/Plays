@@ -103,6 +103,8 @@ GPU-accelerated UI framework.
   or rests, and the pointer hides.
 - The controls, notes and menus over a video show it through them:
   frosted, glass, glow, tint, or plain see-through black.
+- Each panel over the video can be hidden for good: the controls, the top
+  bar, the track switcher, and notes on what a shortcut changed.
 - On macOS, windows show just the video, edge to edge, with the traffic
   lights over it. Colors are macOS's own, in light and dark, with your
   accent color.
@@ -319,6 +321,16 @@ it shows at once.
 A short note on the tile says what a shortcut, or the mute or loop
 button, changed; switching tracks rolls a reel, like a slot machine's, to the track picked, with the ones
 before and after it faded above and below.
+
+Video → Show Controls, Show Top Bar, Show Track Switcher and Show Notes,
+or Settings → Appearance → Over the video, hide each panel over the video
+in every tile, and show it again: the controls at the bottom, the file's
+name and buttons at the top, the reel tracks roll on, and the notes on
+what a shortcut changed. A shortcut still does what it does, without
+saying so; a note on what's wrong, such as No chapters or a screenshot
+that failed, still shows. Subtitles don't move up for controls that are
+hidden. The `view` commands do the same from the command line or the
+command palette.
 
 To change shortcuts, open Settings → Hotkeys, click + by a command and
 press the keys; a key another command had moves to it, and Restore brings
@@ -746,7 +758,8 @@ resolution limit, hardware decoding, subtitle style, the protocols that
 look for devices to cast to, what they found and the AirPlay receivers
 paired with, where screenshots go and what they are like, the keys for
 every shortcut, grid columns, controls visibility, how the panels over the
-video look, file names, the empty window's screensaver, and whether the
+video look and which of them show, file names, the empty window's
+screensaver, and whether the
 command line may control Plays. Settings → About lists the version, the day it
 was built, and what it is built with (FFmpeg, dav1d, and GPUI from the Zed
 team), each of which opens to its license; on macOS, About Plays in the

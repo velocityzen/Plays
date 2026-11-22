@@ -27,7 +27,7 @@ impl PlayerView {
             "Audio delay {}",
             delay_text(self.playback.local().audio_delay())
         );
-        self.note(note, cx);
+        self.note_change(note, cx);
     }
 
     /// Show subtitles `step` seconds later (negative: earlier).
@@ -54,7 +54,7 @@ impl PlayerView {
             "Subtitle delay {}",
             delay_text(self.playback.local().subtitle_delay())
         );
-        self.note(note, cx);
+        self.note_change(note, cx);
     }
 }
 

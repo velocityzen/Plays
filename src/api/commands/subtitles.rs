@@ -124,7 +124,7 @@ fn change_style(
         note = change(&mut style);
         settings.subtitles = style;
     });
-    player.note(note, cx);
+    player.note_change(note, cx);
 }
 
 fn change_size(player: &mut PlayerView, delta: f32, cx: &mut Context<PlayerView>) {

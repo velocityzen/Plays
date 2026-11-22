@@ -246,7 +246,7 @@ impl PlayerView {
             Phase::On { .. } if !cast.on => {
                 cast.on = true;
                 if cast.picture_here {
-                    self.note(format!("Sound on {name}"), cx);
+                    self.note_change(format!("Sound on {name}"), cx);
                 }
             }
             Phase::On { .. } => {}

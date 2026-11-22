@@ -67,17 +67,18 @@ impl PlayerView {
         };
         let task = cx.background_spawn(async move { screenshot::take(request) });
         cx.spawn(async move |this, cx| {
-            let note = match task.await {
+            let taken = task.await;
+            this.update(cx, |this, cx| match taken {
                 Ok(path) => {
                     log::info!("saved a screenshot to {}", path.display());
-                    saved(&path)
+                    this.note_change(saved(&path), cx);
                 }
                 Err(err) => {
                     log::warn!("screenshot failed: {err:#}");
-                    format!("Screenshot failed: {err}")
+                    this.note(format!("Screenshot failed: {err}"), cx);
                 }
-            };
-            this.update(cx, |this, cx| this.note(note, cx)).ok();
+            })
+            .ok();
         })
         .detach();
     }

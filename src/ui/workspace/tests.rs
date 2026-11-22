@@ -10,6 +10,7 @@ mod controls;
 mod dragging;
 mod events;
 mod inspect;
+mod over_video;
 mod screensaver;
 mod sound;
 mod sound_to_airplay;
@@ -1006,6 +1007,20 @@ fn a_file_opened_again_starts_where_it_was_left(cx: &mut TestAppContext) {
     leave_at(1.0, &mut cx);
     open(window, &mut cx, &["clip.mp4"], false);
     assert_eq!(position(&mut cx), 1.0, "where it was left");
+    let noted = |cx: &mut VisualTestContext| {
+        window
+            .read_with(cx, |workspace, cx| workspace.tiles[0].view.read(cx).noted())
+            .unwrap()
+    };
+    assert_eq!(noted(&mut cx).as_deref(), Some("Resumed at 0:01"));
+
+    // Unsaid with notes hidden.
+    cx.update(|_, cx| Settings::update(cx, false, |s| s.over_video.notes = false));
+    leave_at(1.0, &mut cx);
+    open(window, &mut cx, &["clip.mp4"], false);
+    assert_eq!(position(&mut cx), 1.0);
+    assert_eq!(noted(&mut cx), None);
+    cx.update(|_, cx| Settings::update(cx, false, |s| s.over_video.notes = true));
 
     leave_at(0.02, &mut cx);
     open(window, &mut cx, &["clip.mp4"], false);

@@ -16,9 +16,10 @@ use crate::ui::theme::layout::WINDOW_SIZE;
 use crate::ui::workspace::Workspace;
 
 /// The namespaces command ids start with.
-const NAMESPACES: [&str; 12] = [
+const NAMESPACES: [&str; 13] = [
     "app",
     "window",
+    "view",
     "tile",
     "playback",
     "audio",

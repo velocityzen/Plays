@@ -11,6 +11,7 @@ pub mod settings;
 mod subtitles;
 pub mod tile;
 pub mod video;
+mod view;
 pub mod window;
 
 use gpui::Context;
@@ -23,9 +24,10 @@ use crate::media::tracks::TrackKind;
 use crate::ui::player::PlayerView;
 
 /// Every namespace's commands.
-pub const ALL: [&[Spec]; 12] = [
+pub const ALL: [&[Spec]; 13] = [
     app::COMMANDS,
     window::COMMANDS,
+    view::COMMANDS,
     tile::COMMANDS,
     playback::COMMANDS,
     audio::COMMANDS,
@@ -40,11 +42,12 @@ pub const ALL: [&[Spec]; 12] = [
 
 /// The namespaces, in the order Settings → Hotkeys lists their commands,
 /// each with its title there.
-pub const NAMESPACES: [(&str, &str); 11] = [
+pub const NAMESPACES: [(&str, &str); 12] = [
     ("playback", "Playback"),
     ("audio", "Audio"),
     ("subtitles", "Subtitles"),
     ("video", "Video"),
+    ("view", "Over the video"),
     ("window", "Windows"),
     ("tile", "Tiles in a window"),
     ("cast", "Casting"),

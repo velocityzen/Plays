@@ -464,7 +464,8 @@ What the window tests check:
   sets it, and the controls of a paused video then show it through them
   with that look's backdrop, and none when plain.
 - Settings → Appearance turns the screensaver off and on, and picks how
-  long it waits, which shows only while it's on.
+  long it waits, which shows only while it's on; and turns each panel over
+  the video off and on, each on its own.
 - Settings → About credits Plays, FFmpeg, dav1d and GPUI; a license opens
   under its credit, one at a time, and closes, and leaving the pane
   closes it. `settings::about::tests` checks what each says: no crate
@@ -504,6 +505,17 @@ check:
   Picture in Picture where there's none.
 - Whether a command can run, and its state (looping, muted, floating on
   top, the crop).
+- The panels over the video (`over_video`): each `view` command hides its
+  own panel in every tile and shows it again, its state following; hidden
+  controls and top bar aren't drawn, the mouse isn't over them, subtitles
+  don't keep clear of hidden controls, and the tracks menu and the cast
+  menu (`casting`) close with them. With notes and the track switcher
+  hidden, each shortcut that changes something (the volume, mute, loop,
+  subtitles, delays, their size, the picture, a chapter, a track) still
+  does, unsaid, and with them shown says so. No chapters and a screenshot
+  that failed are said either way; a screenshot saved, a file resumed
+  (`a_file_opened_again`) and its sound gone to a speaker (`casting`) only
+  with notes shown.
 - Casting to a device by its id and kind, the one cast to still found
   once its protocol is off (`casting`), and picking an output by its id
   alone (`sound_to_bluetooth`).

@@ -472,8 +472,9 @@ flowchart LR
 
 - `src/api/`: every command Plays has, which every action runs by name,
   as the command line and the command palette do. Each namespace
-  (`app`, `window`, `tile`, `playback`, `audio`, `subtitles`, `video`,
-  `cast`, `output`, `display`, `settings`, `cli`) is a file in `commands/`, a
+  (`app`, `window`, `view`, `tile`, `playback`, `audio`, `subtitles`,
+  `video`, `cast`, `output`, `display`, `settings`, `cli`) is a file in
+  `commands/`, a
   list of `Spec`s: the command's id (`playback.toggle_loop`), title,
   description and keywords,
   what it acts on (the app, a window, every tile in one, or a tile), the
@@ -800,6 +801,13 @@ flowchart LR
   no other tile shows, once the mouse has gone further than a click would,
   which the empty window shares), and the graveyard frames wait in before
   they are released.
+  Settings' `over_video` says which panels show over the video: the header
+  and controls hidden aren't drawn (nor counted as hovered, nor kept clear
+  of by subtitles, and the menus from the controls close); `osd` has two
+  kinds of note, `note` for what's wrong or why a shortcut did nothing,
+  which always shows, and `note_change` for what a shortcut changed, which
+  hidden notes leave unsaid, as a hidden track switcher leaves the reel
+  unrolled.
   `playback` holds the tile's player and the device it casts to, and every
   command the tile sends goes through it: only that file can command the
   player, the rest of the tile reading it. While a tile casts, its play,

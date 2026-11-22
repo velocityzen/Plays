@@ -251,6 +251,10 @@ fn video_menu(state: &MenuState) -> Menu {
             "",
             "video.take_screenshot",
             "",
+            "view.toggle_controls",
+            "view.toggle_top_bar",
+            "view.toggle_track_switcher",
+            "view.toggle_notes",
             "tile.toggle_console",
         ],
         state,
@@ -903,6 +907,34 @@ mod tests {
             _ => false,
         });
         assert!(matches, "no Match Video Size in the Video menu");
+    }
+
+    #[test]
+    fn the_video_menu_checks_each_panel_shown_over_the_video() {
+        let mut state = MenuState::default();
+        for (command, on) in [
+            ("view.toggle_controls", true),
+            ("view.toggle_top_bar", false),
+            ("view.toggle_track_switcher", true),
+            ("view.toggle_notes", false),
+        ] {
+            state.states.insert(command, json!(on));
+        }
+        let menu = video_menu(&state);
+        let panels: Vec<(String, bool)> = listed(&menu)
+            .into_iter()
+            .filter(|(name, _)| name.starts_with("Show "))
+            .collect();
+        let panel = |name: &str, on| (name.to_owned(), on);
+        assert_eq!(
+            panels,
+            [
+                panel("Show Controls", true),
+                panel("Show Top Bar", false),
+                panel("Show Track Switcher", true),
+                panel("Show Notes", false),
+            ]
+        );
     }
 
     #[test]
@@ -1787,5 +1819,9 @@ mod tests {
         cx.run_until_parked();
         assert!(checked("Float on Top", &mut cx));
         assert!(!checked("Float on Top While Playing", &mut cx));
+        assert!(checked("Show Notes", &mut cx), "notes show at first");
+        cx.dispatch_action(Run::command("view.toggle_notes"));
+        cx.run_until_parked();
+        assert!(!checked("Show Notes", &mut cx));
     }
 }

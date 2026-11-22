@@ -220,6 +220,35 @@ fn the_screensaver_turns_off_and_waits_as_long_as_picked(cx: &mut TestAppContext
     assert_eq!(saver(&mut settings), (true, 1));
 }
 
+#[gpui::test]
+fn each_panel_over_the_video_is_switched_off_and_on(cx: &mut TestAppContext) {
+    let (_, mut cx) = testing::start(cx);
+    let mut settings = open_settings(&mut cx);
+    click(&mut settings, "pane-Appearance");
+    // Tall enough for every row.
+    settings.simulate_resize(gpui::size(px(720.), px(1600.)));
+    let shown = |cx: &mut VisualTestContext| {
+        cx.update(|_, cx| {
+            let s = cx.global::<Settings>().over_video;
+            [s.controls, s.top_bar, s.track_switcher, s.notes]
+        })
+    };
+    let switches = [
+        "over_video.controls",
+        "over_video.top_bar",
+        "over_video.track_switcher",
+        "over_video.notes",
+    ];
+    for (at, switch) in switches.into_iter().enumerate() {
+        click(&mut settings, switch);
+        let mut wanted = [true; 4];
+        wanted[at] = false;
+        assert_eq!(shown(&mut settings), wanted, "{switch}");
+        click(&mut settings, switch);
+        assert_eq!(shown(&mut settings), [true; 4], "{switch} again");
+    }
+}
+
 #[cfg(target_os = "macos")]
 #[gpui::test]
 fn picking_how_windows_go_full_screen_sets_it(cx: &mut TestAppContext) {
