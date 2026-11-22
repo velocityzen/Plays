@@ -14,8 +14,6 @@ use crate::ui::testing::{self, errors_logged, find, fixture, keep_errors, painte
 use crate::ui::theme::layout::WINDOW_SIZE;
 use crate::ui::workspace::Workspace;
 
-const NAME: &str = "01 Рэп больше не кал.m4a";
-
 fn blocks(window: WindowHandle<Workspace>, cx: &impl AppContext) -> Vec<Entity<PlayerView>> {
     window
         .read_with(cx, |workspace, _| {
@@ -38,17 +36,17 @@ fn drawn_in(cx: &mut VisualTestContext, selector: &'static str) -> Vec<String> {
         .collect()
 }
 
-/// Dropped on a window, its name is in its header and over its cover,
-/// which its file has none of, whole where it fits and cut short with "…"
-/// where it doesn't, as its time is. Laid out by the system's own text
-/// system, which panicked on the name cut short for one width and laid
-/// out for another.
-#[test]
-fn a_sound_file_named_in_cyrillic_shows_its_name_cut_short_only_where_it_does_not_fit() {
+/// Dropped on a window, a sound file named `name` shows its name in its
+/// header and over its cover, which its file has none of, whole where it
+/// fits and cut short with "…" where it doesn't, as its time is, at each
+/// width from narrow to wide. Laid out by the system's own text system,
+/// which panicked on a Cyrillic name cut short for one width and laid out
+/// for another.
+fn shows_its_name_cut_short_only_where_it_does_not_fit(folder: &str, name: &str) {
     let mut cx = TestAppContext::with_native_text();
-    let folder = test_folder("cyrillic-name");
+    let folder = test_folder(folder);
     std::fs::create_dir_all(&folder).unwrap();
-    let path = folder.join(NAME);
+    let path = folder.join(name);
     std::fs::copy(fixture("tone.m4a"), &path).unwrap();
     keep_errors();
     let (window, mut cx) = testing::start(&mut cx);
@@ -61,12 +59,12 @@ fn a_sound_file_named_in_cyrillic_shows_its_name_cut_short_only_where_it_does_no
             .first()
             .is_some_and(|block| block.read_with(cx, |view, _| view.player().is_known()))
     });
-    assert!(opened, "{NAME} opens");
+    assert!(opened, "{name} opens");
 
     cx.simulate_resize(size(px(900.), px(540.)));
-    assert_eq!(drawn_in(&mut cx, "block-title"), [NAME]);
+    assert_eq!(drawn_in(&mut cx, "block-title"), [name]);
     let lines = painted(&mut cx);
-    let names = lines.iter().filter(|(text, _)| text == NAME).count();
+    let names = lines.iter().filter(|(text, _)| text == name).count();
     assert_eq!(names, 2, "in its header and over its cover: {lines:?}");
     assert!(
         lines.iter().any(|(text, _)| text == "0:00 / 0:01"),
@@ -80,19 +78,82 @@ fn a_sound_file_named_in_cyrillic_shows_its_name_cut_short_only_where_it_does_no
     };
     let shown = title.strip_suffix('…').expect("cut short with an ellipsis");
     assert!(
-        NAME.starts_with(shown) && shown.chars().count() > 3,
+        name.starts_with(shown) && shown.chars().count() > 3,
         "{title}"
     );
     let lines = painted(&mut cx);
     assert!(
-        lines.iter().any(|(text, _)| text == NAME),
-        "whole over its cover"
+        lines.iter().any(|(text, _)| text == name),
+        "whole over its cover: {lines:?}"
     );
+
+    let mut shown_before = 0;
+    for width in (200..900).step_by(4) {
+        cx.simulate_resize(size(px(width as f32), px(400.)));
+        let bounds = find(&mut cx, "block-title");
+        let lines = painted(&mut cx);
+        let title: Vec<_> = lines
+            .iter()
+            .filter(|(_, at)| bounds.contains(&at.origin))
+            .collect();
+        let [(title, at)] = title.as_slice() else {
+            panic!("one line of title at {width}: {title:?}");
+        };
+        let shown = match title.strip_suffix('…') {
+            Some(shown) => {
+                assert!(
+                    name.starts_with(shown) && shown.len() < name.len(),
+                    "{title} at {width}"
+                );
+                shown
+            }
+            None => {
+                assert_eq!(title, name, "at {width}");
+                name
+            }
+        };
+        assert!(
+            at.right() <= bounds.right() + px(0.5),
+            "{title} drawn past its end at {width}: {at:?} in {bounds:?}"
+        );
+        assert!(shown.len() >= shown_before, "{title} shorter at {width}");
+        shown_before = shown.len();
+    }
+    assert_eq!(shown_before, name.len(), "whole where there's room");
 
     assert_eq!(
         errors_logged(),
         Vec::<String>::new(),
         "its text was laid out as given"
+    );
+}
+
+#[test]
+fn a_sound_file_named_in_cyrillic_shows_its_name_cut_short_only_where_it_does_not_fit() {
+    shows_its_name_cut_short_only_where_it_does_not_fit(
+        "cyrillic-name",
+        "01 Рэп больше не кал.m4a",
+    );
+}
+
+#[test]
+fn a_sound_file_named_in_chinese_shows_its_name_cut_short_only_where_it_does_not_fit() {
+    shows_its_name_cut_short_only_where_it_does_not_fit(
+        "chinese-name",
+        "01 月亮代表我的心 邓丽君 1977.m4a",
+    );
+}
+
+#[test]
+fn a_sound_file_named_in_arabic_shows_its_name_cut_short_only_where_it_does_not_fit() {
+    shows_its_name_cut_short_only_where_it_does_not_fit("arabic-name", "01 الأطلال أم كلثوم.m4a");
+}
+
+#[test]
+fn a_sound_file_named_with_emoji_shows_its_name_cut_short_only_where_it_does_not_fit() {
+    shows_its_name_cut_short_only_where_it_does_not_fit(
+        "emoji-name",
+        "01 🎵 Night Drive 🌙🚗 👨‍👩‍👧.m4a",
     );
 }
 
