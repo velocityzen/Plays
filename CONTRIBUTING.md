@@ -724,8 +724,10 @@ check:
     Names given by number are found before anything closes or moves.
   - `events` printing what other command lines do: everything without
     `-w` (a file opened that starts playing, where it is, its volume
-    however it's changed and its pausing, each after its command), once
-    it listens (`api::events::listeners`), and with `-w` that window's;
+    however it's changed and its pausing, each after its command; files
+    dropped on a window, with no command run, each told opened then
+    playing by its own id and title), once it listens
+    (`api::events::listeners`), and with `-w` that window's;
     and `wait` ending with
     its event, failing when the tile closes first or the time runs out,
     and naming a tile that isn't there with status 3. That a tile that has

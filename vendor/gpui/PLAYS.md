@@ -213,6 +213,9 @@ app was brought forward. `TestAppContext::add_display` connects
 another display, after the main one, and `remove_display` disconnects it;
 `displays()` lists them all, and a window opens on the one its options ask
 for (`src/platform/test/display.rs` too).
+`src/interactive.rs`: `ExternalPaths::for_test` (test builds only) makes
+the files the system drags in, whose paths are gpui's own to set, so a
+test can drop them on a window with `FileDropEvent`, as the system does.
 
 `src/platform.rs`, `src/window.rs`, and the macOS, X11 and test windows:
 `Window::set_on_top` keeps a window above other apps' windows, or puts it

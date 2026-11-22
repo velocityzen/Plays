@@ -9,12 +9,13 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::thread;
 
-use gpui::{TestAppContext, WindowHandle};
+use gpui::{ExternalPaths, FileDropEvent, TestAppContext, VisualTestContext, WindowHandle, point};
 use serde_json::{Value, json};
 
 use super::*;
 use crate::api::socket::tests::{serving, socket, talk};
 use crate::ui::testing::{fixture, wait_until};
+use crate::ui::theme::layout::WINDOW_SIZE;
 use crate::ui::workspace::Workspace;
 
 /// What a command line came to: its exit status, and what it printed.
@@ -771,6 +772,101 @@ fn events_hear_every_window_and_tile_unless_one_is_named(cx: &mut TestAppContext
         "down, then up: {volumes:?}"
     );
     assert_eq!(volumes[2], &json!(30.0));
+}
+
+/// Drop `files` on the middle of `window` as the system does: dragged in,
+/// then let go.
+fn drop_files(window: WindowHandle<Workspace>, cx: &TestAppContext, files: &[PathBuf]) {
+    let mut cx = VisualTestContext::from_window(window.into(), cx);
+    let position = point(WINDOW_SIZE.width / 2., WINDOW_SIZE.height / 2.);
+    let paths = ExternalPaths::for_test(files.iter().cloned());
+    cx.simulate_event(FileDropEvent::Entered { position, paths });
+    cx.simulate_event(FileDropEvent::Submit { position });
+    cx.run_until_parked();
+}
+
+/// Files dropped on a window open with no command run, each playing as it
+/// opens: plain `plays events` hears each tile opened, then playing, by
+/// its own id and title.
+#[gpui::test]
+fn files_dropped_are_heard_each_opened_then_playing(cx: &mut TestAppContext) {
+    let (path, window, mut cx) = serving("cli-events-dropped", cx);
+    let files = ["clip.mp4", "clip-ip.mkv", "clip-chapters.mkv"].map(fixture);
+    let ran = plays_while(
+        &mut cx,
+        &path,
+        &["--json", "events", "--count", "40"],
+        |cx, time| {
+            if time > 0 {
+                // Clients come and go till it has heard enough.
+                plays(cx, &path, &["version"]);
+                return;
+            }
+            let listens = wait_until(cx, |cx| cx.update(api::events::listeners) == 1);
+            assert!(listens, "it listens");
+            drop_files(window, cx, &files);
+            let playing = wait_until(cx, |cx| {
+                window
+                    .read_with(cx, |workspace, cx| {
+                        let players = workspace.players();
+                        players.len() == files.len()
+                            && players.iter().all(|view| {
+                                let view = view.read(cx);
+                                view.player().is_known() && view.is_playing()
+                            })
+                    })
+                    .unwrap()
+            });
+            assert!(playing, "each file dropped plays");
+            // What changed is told now, as the app does every `LOOK_EVERY`.
+            cx.update(api::events::look);
+        },
+    );
+    assert_eq!(ran.status, 0, "{ran:?}");
+    let heard: Vec<Value> = ran
+        .out
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert!(
+        !heard.iter().any(|event| event["type"] == "command_run"
+            && event["payload"]["command"]
+                .as_str()
+                .is_some_and(|command| command.contains("open"))),
+        "a drop runs no command: {heard:#?}"
+    );
+    let window_id = window_id(window, &cx);
+    let tiles: Vec<(String, String)> = window
+        .read_with(&cx, |workspace, cx| {
+            workspace
+                .players()
+                .iter()
+                .map(|view| {
+                    let view = view.read(cx);
+                    (view.id().to_string(), view.header_title().to_string())
+                })
+                .collect()
+        })
+        .unwrap();
+    assert_eq!(tiles.len(), files.len());
+    for (tile, title) in &tiles {
+        let told = |kind: &str| {
+            heard.iter().position(|event| {
+                event["type"] == kind && event["payload"]["tile_id"] == tile.as_str()
+            })
+        };
+        let opened = told("opened").unwrap_or_else(|| panic!("{title} opened: {heard:#?}"));
+        let playing = told("playing").unwrap_or_else(|| panic!("{title} playing: {heard:#?}"));
+        assert!(opened < playing, "{title}: opened, then playing");
+        for at in [opened, playing] {
+            let payload = &heard[at]["payload"];
+            assert_eq!(payload["tile_title"], title.as_str(), "{payload}");
+            assert_eq!(payload["window_id"], window_id.as_str(), "{payload}");
+        }
+        let playing = &heard[playing]["payload"];
+        assert!(playing["position"].is_number(), "{playing}");
+        assert!(playing["frame"].is_u64(), "{playing}");
+    }
 }
 
 /// Wait until `plays wait`, on another thread, has looked at the tile it

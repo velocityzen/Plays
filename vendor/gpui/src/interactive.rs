@@ -501,6 +501,13 @@ impl ExternalPaths {
     pub fn paths(&self) -> &[PathBuf] {
         &self.0
     }
+
+    /// Plays: files as the system drags them in, for tests to drop on a
+    /// window with `FileDropEvent`.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn for_test(paths: impl IntoIterator<Item = PathBuf>) -> Self {
+        Self(paths.into_iter().collect())
+    }
 }
 
 impl Render for ExternalPaths {
