@@ -1,4 +1,5 @@
-//! Playback: what files do when they open, and how far seeking goes.
+//! Playback: what files do when they open, several at once too, and how
+//! far seeking goes.
 
 use gpui::{AnyElement, Context, Window};
 
@@ -43,6 +44,17 @@ impl Pane for PlaybackPane {
                     theme,
                     Switch::new("autoplay", s.autoplay)
                         .on_toggle(|&on, _, cx| set("autoplay", on, cx)),
+                ),
+                row(
+                    "Play several files",
+                    Some(
+                        "Opened or dropped at once, or a folder's: a tile each, all \
+                         playing, or one tile playing them in turn"
+                            .into(),
+                    ),
+                    theme,
+                    Segmented::new("several-files", &fields::SEVERAL_FILES, s.several_files)
+                        .on_select(|&v, _, cx| set("several_files", v, cx)),
                 ),
                 row(
                     "Loop new files",

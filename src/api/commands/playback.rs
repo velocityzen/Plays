@@ -142,7 +142,7 @@ pub const COMMANDS: &[Spec] = &[
     Spec::tile(
         "playback.previous_file",
         "Previous File",
-        "Play the file before this one in its folder instead.",
+        "Play the file before this one in its playlist, or else its folder, instead.",
         |player, _, cx| player.open_neighbor(-1, cx),
     )
     .keywords(&["folder", "episode", "back"])
@@ -151,7 +151,7 @@ pub const COMMANDS: &[Spec] = &[
     Spec::tile(
         "playback.next_file",
         "Next File",
-        "Play the file after this one in its folder instead.",
+        "Play the file after this one in its playlist, or else its folder, instead.",
         |player, _, cx| player.open_neighbor(1, cx),
     )
     .keywords(&["folder", "episode", "skip"])

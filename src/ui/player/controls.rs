@@ -216,8 +216,8 @@ impl PlayerView {
             .on_dismiss(cx.listener(close_tracks))
     }
 
-    /// The file before this one in its folder, skip back, play, skip
-    /// forward, and the file after. Skips go by the seek step in Settings,
+    /// The file before this one in its playlist or folder, skip back,
+    /// play, skip forward, and the file after. Skips go by the seek step in Settings,
     /// as the arrow keys do; a live stream can't skip.
     fn render_transport(&self, live: bool, play_icon: &'static str, cx: &mut Context<Self>) -> Div {
         div()
@@ -228,11 +228,7 @@ impl PlayerView {
             .child(
                 Button::icon("previous", "previous")
                     .overlay()
-                    .disabled(
-                        self.neighbors
-                            .as_ref()
-                            .is_none_or(|neighbors| neighbors.previous.is_none()),
-                    )
+                    .disabled(!self.has_beside(-1))
                     .on_click(cx.listener(|this, _, _, cx| {
                         this.send("playback.previous_file", Value::Null, cx);
                     })),
@@ -263,11 +259,7 @@ impl PlayerView {
             .child(
                 Button::icon("next", "next")
                     .overlay()
-                    .disabled(
-                        self.neighbors
-                            .as_ref()
-                            .is_none_or(|neighbors| neighbors.next.is_none()),
-                    )
+                    .disabled(!self.has_beside(1))
                     .on_click(cx.listener(|this, _, _, cx| {
                         this.send("playback.next_file", Value::Null, cx);
                     })),

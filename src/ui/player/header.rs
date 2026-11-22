@@ -1,6 +1,6 @@
-//! The bar over the top of a tile: the file's name and what it is, and
-//! buttons for Picture in Picture, to pop the tile out, expand it and close
-//! it.
+//! The bar over the top of a tile: the file's name, where it is in its
+//! playlist and what it is, and buttons for Picture in Picture, to pop the
+//! tile out, expand it and close it.
 
 use gpui::prelude::*;
 use gpui::{Context, Div, Window, div, linear_color_stop, linear_gradient};
@@ -30,7 +30,6 @@ impl PlayerView {
         // Full screen hides the traffic lights.
         let under_traffic_lights =
             cfg!(target_os = "macos") && self.layout.top_left && !window.is_fullscreen();
-        let details = info.map(details);
 
         reveal
             .apply(
@@ -55,35 +54,7 @@ impl PlayerView {
                         linear_color_stop(overlay::scrim_clear(), 1.),
                     )),
             )
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .flex()
-                    .items_baseline()
-                    .gap_2()
-                    // A label shows though titles don't: it was given.
-                    .when(show_titles || self.label.is_some(), |this| {
-                        this.child(
-                            div()
-                                .debug_selector(|| "tile-title".into())
-                                .min_w_0()
-                                .truncate()
-                                .text_sm()
-                                .text_color(overlay::text())
-                                .child(self.header_title()),
-                        )
-                    })
-                    .when_some(details.filter(|d| !d.is_empty()), |this, details| {
-                        this.child(
-                            div()
-                                .flex_none()
-                                .text_xs()
-                                .text_color(overlay::text_muted())
-                                .child(details),
-                        )
-                    }),
-            )
+            .child(self.render_names(info, show_titles))
             .when(
                 pip::supported()
                     && self.playback.local().frame().is_some()
@@ -121,6 +92,43 @@ impl PlayerView {
                     .on_click(cx.listener(|this, _, _, cx| {
                         this.send("tile.close", Value::Null, cx);
                     })),
+            )
+    }
+
+    /// What the header says it plays: its title (or label, which shows
+    /// though titles don't, as it was given), where that is in its
+    /// playlist, and what it is.
+    fn render_names(&self, info: Option<&MediaInfo>, show_titles: bool) -> Div {
+        let aside = |text: String| {
+            div()
+                .flex_none()
+                .text_xs()
+                .text_color(overlay::text_muted())
+                .child(text)
+        };
+        div()
+            .flex_1()
+            .min_w_0()
+            .flex()
+            .items_baseline()
+            .gap_2()
+            .when(show_titles || self.label.is_some(), |this| {
+                this.child(
+                    div()
+                        .debug_selector(|| "tile-title".into())
+                        .min_w_0()
+                        .truncate()
+                        .text_sm()
+                        .text_color(overlay::text())
+                        .child(self.header_title()),
+                )
+            })
+            .when_some(self.playlist_counter(), |this, counter| {
+                this.child(aside(counter).debug_selector(|| "tile-playlist".into()))
+            })
+            .when_some(
+                info.map(details).filter(|details| !details.is_empty()),
+                |this, details| this.child(aside(details)),
             )
     }
 }

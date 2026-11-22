@@ -350,6 +350,12 @@ impl Player {
         self.shared.audio().map_or(0.0, |a| a.peak.load())
     }
 
+    /// It played through to its end and stopped there, not looping:
+    /// moving it anywhere, its end too, starts it over.
+    pub fn has_played_out(&self) -> bool {
+        self.ended
+    }
+
     pub fn play(&mut self) {
         if self.ended {
             self.seek(0.0);

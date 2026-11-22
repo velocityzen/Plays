@@ -19,7 +19,8 @@ GPU-accelerated UI framework.
 ### Playback
 
 - Open any number of files, or whole folders: each gets a tile in a grid
-  that sizes itself.
+  that sizes itself. Or, as Settings → Playback says, they play one after
+  another in one tile, a playlist.
 - Open network streams with **Open URL…**: HTTP(S) files, HLS and DASH
   playlists, RTMP and RTSP. Live streams show a LIVE badge; a stream that
   stalls pauses and resumes instead of skipping ahead.
@@ -30,7 +31,8 @@ GPU-accelerated UI framework.
   Linux. Videos the GPU can't decode fall back to software by themselves.
 - Chapters: a notch on the bar where each starts, the time under the bar
   says which one you're in, and keys and a menu go from one to the next.
-- The previous and next media file in the folder open in the same tile.
+- The previous and next media file in the folder, or in its playlist,
+  open in the same tile.
 - File → Open Recent opens the files played lately (the last 20).
 - A file opened again starts where it was left, for 30 days since it last
   played, with the audio and subtitles picked in it; one barely begun, or
@@ -283,7 +285,7 @@ a socket that only you can use, kept with Plays' settings on macOS and in
 | Previous/next frame | `⌥←` `⌥→` / `Alt+←` `Alt+→`, or `,` `.`, or `<` `>` |
 | Restart | `Home` |
 | Previous/next chapter | `Page Up` `Page Down` |
-| Previous/next file in its folder | `⌘←` `⌘→` / `Ctrl+←` `Ctrl+→` |
+| Previous/next file in its playlist or folder | `⌘←` `⌘→` / `Ctrl+←` `Ctrl+→` |
 | Loop | `⌘⇧L` / `Ctrl+Shift+L` |
 | Volume down/up | `↓` `↑` |
 | Mute/unmute | `M`, or `⌘/` / `Ctrl+/` |
@@ -370,8 +372,18 @@ would take the place of lights up. With no other tile showing (the only
 one in its window, or maximized), dragging the picture moves the window,
 except in full screen. Drag the bar to scrub. In the middle under the bar,
 the previous and next buttons open the media file before or after this one
-in its folder, by name, in the same tile; between them, skip back and
-forward go by the seek step, around play/pause.
+in its playlist, or else in its folder, by name, in the same tile; between
+them, skip back and forward go by the seek step, around play/pause.
+
+Several files opened at once, dropped together, or a folder's, each get a
+tile, all playing. With Settings → Playback → Play several files set to One
+after another, they open in one tile instead, a playlist in the order
+given (a folder's by name), which plays the next once one has played to its
+end, as it was playing, and stops after the last; a looping file plays on.
+Its header says which it plays: 2 of 5. Previous and next go through the
+playlist, stopping at its ends. A file played instead that is in it plays
+on from there; one that isn't ends the playlist, and previous and next go
+by the file's folder again.
 
 From the keyboard, `⌥⌘` and an arrow (`Ctrl+Alt` on Linux) go to the tile
 beside, above or below the one in front, stopping at the grid's edges;
@@ -792,7 +804,8 @@ The Settings window has panes for Playback, Audio, Video, Subtitles,
 Casting, Screenshots, Hotkeys, Appearance, Command Line and About: the theme, master
 volume, the audio output, playing a window sent to a display through its
 speakers, the languages to play audio and show subtitles in, default
-volume, autoplay, loop, resuming files where they were left, seek step, chapter notches on the bar, fit/fill scaling, gamma for
+volume, autoplay, playing several files together or one after another,
+loop, resuming files where they were left, seek step, chapter notches on the bar, fit/fill scaling, gamma for
 SDR and for HDR video (applied to every open video as you drag), decode
 resolution limit, hardware decoding, subtitle style, the protocols that
 look for devices to cast to, what they found and the AirPlay receivers
@@ -958,7 +971,9 @@ Run it again after updating Plays, for the commands it has then.
 - Picture adjustments and delays aren't kept: a file opens as its file
   has it. A display matrix that isn't a quarter turn goes to the nearest
   one, and text subtitles stay upright when the picture turns.
-- No playlists or playback speed.
+- No playback speed. A playlist is the files opened together, kept only
+  while its tile is open: none is saved, and a playlist file (`.m3u`,
+  `.pls`) isn't read as files to play in turn.
 - On Linux, outputs aren't watched for coming and going while the one
   wanted is playing: the device list in Settings → Audio is read again
   when its menu opens. ALSA's own error messages about plugins with

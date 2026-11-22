@@ -15,7 +15,8 @@ use crate::media::tracks;
 use super::{
     ControlsVisibility, FloatOnTop, FullScreen, GAMMA_RANGE, JPEG_QUALITY_RANGE, MaxResolution,
     PanelLook, SUBTITLE_COLORS, SUBTITLE_POSITION_RANGE, SUBTITLE_SIZE_RANGE, ScreenshotFormat,
-    ScreenshotHdr, Settings, SubtitleArea, SubtitleEdge, SubtitleWeight, ThemeMode, VideoFit,
+    ScreenshotHdr, Settings, SeveralFiles, SubtitleArea, SubtitleEdge, SubtitleWeight, ThemeMode,
+    VideoFit,
 };
 
 pub const THEMES: [(ThemeMode, &str); 3] = [
@@ -49,6 +50,11 @@ pub const FLOATING: [(FloatOnTop, &str); 3] = [
 pub const FULL_SCREENS: [(FullScreen, &str); 2] = [
     (FullScreen::OwnSpace, "Own Space"),
     (FullScreen::OverDisplay, "Over the display"),
+];
+
+pub const SEVERAL_FILES: [(SeveralFiles, &str); 2] = [
+    (SeveralFiles::Together, "Together"),
+    (SeveralFiles::Playlist, "One after another"),
 ];
 
 pub const SCREENSAVER_MINUTES: [(u32, &str); 6] = [
@@ -184,6 +190,12 @@ const FIELDS: &[Field] = &[
         "Play files when opened",
         "Playback",
         Kind::Toggle,
+    ),
+    Field::new(
+        "several_files",
+        "Play several files",
+        "Playback",
+        Kind::Choice(|| choices(&SEVERAL_FILES)),
     ),
     Field::new(
         "loop_by_default",

@@ -12,6 +12,7 @@ mod events;
 mod inspect;
 mod languages;
 mod over_video;
+mod playlist;
 mod sound_to_airplay;
 mod sound_to_bluetooth;
 mod tiles;

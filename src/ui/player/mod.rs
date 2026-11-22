@@ -15,6 +15,7 @@ mod inspect;
 mod osd;
 mod pip;
 mod playback;
+mod playlist;
 mod screenshot;
 mod sync;
 mod tracks;
@@ -51,6 +52,7 @@ use crate::recents;
 use crate::settings::{AudioDevice, ControlsVisibility, Settings, SubtitleStyle, VideoFit};
 use osd::Osd;
 use playback::Playback;
+use playlist::Playlist;
 
 /// What a tile tells its window. What its controls do, they run as
 /// commands (`send`).
@@ -99,6 +101,10 @@ pub struct PlayerView {
     neighbors: Option<Neighbors>,
     /// Lists the folder (`find_neighbors`).
     finding_neighbors: Task<()>,
+    /// The files opened with this one, to play one after another, as
+    /// Settings → Playback can have them; for the previous and next
+    /// buttons in place of its folder's.
+    playlist: Option<Playlist>,
     graveyard: Graveyard,
     seek_drag: Rc<Cell<bool>>,
     volume_drag: Rc<Cell<bool>>,
@@ -225,6 +231,7 @@ impl PlayerView {
             title,
             neighbors: None,
             finding_neighbors: Task::ready(()),
+            playlist: None,
             graveyard,
             seek_drag: Rc::default(),
             volume_drag: Rc::default(),
@@ -281,10 +288,49 @@ impl PlayerView {
         self.neighbors.is_some()
     }
 
-    /// Play the media file before (`-1`) or after (`1`) this one in its
-    /// folder instead (`play_instead`). Without one, say so, as only a
-    /// shortcut gets here then.
+    /// Play `sources`, the first of which it plays, one after another;
+    /// none for fewer than two.
+    pub fn set_playlist(&mut self, sources: Vec<Source>, cx: &mut Context<Self>) {
+        self.playlist = Playlist::new(sources);
+        cx.notify();
+    }
+
+    /// Where what it plays is in its playlist, as its header says: "2 of
+    /// 5"; none without one.
+    pub fn playlist_counter(&self) -> Option<String> {
+        self.playlist.as_ref().map(Playlist::counter)
+    }
+
+    /// There's a file before (`-1`) or after (`1`) this one: in its
+    /// playlist, if it has one, else in its folder, once looked through.
+    fn has_beside(&self, direction: i32) -> bool {
+        if let Some(playlist) = &self.playlist {
+            return playlist.beside(direction).is_some();
+        }
+        self.neighbors.as_ref().is_some_and(|neighbors| {
+            if direction < 0 {
+                neighbors.previous.is_some()
+            } else {
+                neighbors.next.is_some()
+            }
+        })
+    }
+
+    /// Play the media file before (`-1`) or after (`1`) this one instead:
+    /// in its playlist, if it has one, else in its folder (`play_instead`).
+    /// Without one, say so, as only a shortcut gets here then.
     pub fn open_neighbor(&mut self, direction: i32, cx: &mut Context<Self>) {
+        let side = if direction < 0 { "previous" } else { "next" };
+        if let Some(playlist) = &mut self.playlist {
+            match playlist.step(direction) {
+                Some(source) => {
+                    let playing = self.is_playing();
+                    self.switch_to(source, playing, cx);
+                }
+                None => self.note(format!("No {side} file in its playlist"), cx),
+            }
+            return;
+        }
         let Some(neighbors) = &self.neighbors else {
             self.note("Still looking through its folder", cx);
             return;
@@ -295,11 +341,21 @@ impl PlayerView {
             neighbors.next.clone()
         };
         let Some(path) = neighbor else {
-            let side = if direction < 0 { "previous" } else { "next" };
             self.note(format!("No {side} file in its folder"), cx);
             return;
         };
         self.play_instead(path, cx);
+    }
+
+    /// Play the next file in its playlist once this one has played to its
+    /// end, playing.
+    fn follow_playlist(&mut self, cx: &mut Context<Self>) {
+        if !self.playback.played_out() {
+            return;
+        }
+        if let Some(next) = self.playlist.as_mut().and_then(|playlist| playlist.step(1)) {
+            self.switch_to(next, true, cx);
+        }
     }
 
     /// The media files in its file's folder, by name, once it has been
@@ -319,16 +375,32 @@ impl PlayerView {
     }
 
     /// Play `path` instead, at the same volume, muted and looping as this
-    /// file is, and playing if it is (or files start playing).
+    /// file is, and playing if it is (or files start playing). In its
+    /// playlist, it plays on from there; not, it ends the playlist.
     pub fn play_instead(&mut self, path: PathBuf, cx: &mut Context<Self>) {
-        recents::note_file(&path, cx);
         let source = Source::File(path);
+        if self
+            .playlist
+            .as_mut()
+            .is_some_and(|playlist| !playlist.go_to(&source))
+        {
+            self.playlist = None;
+        }
+        let playing = self.is_playing();
+        self.switch_to(source, playing, cx);
+    }
+
+    /// Play `source` instead, at the same volume, muted and looping as this
+    /// file is, and playing if `playing` (or files start playing).
+    fn switch_to(&mut self, source: Source, playing: bool, cx: &mut Context<Self>) {
+        if let Source::File(path) = &source {
+            recents::note_file(path, cx);
+        }
         log::info!("opening {source}");
         // The file it played is left where it was, to resume.
         progress::note(self.progress(), true, cx);
         // A cast goes on with the new file, which waits here meanwhile.
         let casting = self.casting().cloned();
-        let playing = self.is_playing();
         let settings = cx.global::<Settings>();
         let autoplay = playing || settings.autoplay;
         let player = self.playback.local();
@@ -424,7 +496,8 @@ impl PlayerView {
     }
 
     /// Keeps playback moving (frame queues, end of file, looping) while the
-    /// window isn't drawing, for example when it is minimized.
+    /// window isn't drawing, for example when it is minimized; and plays
+    /// the next file in its playlist once one has played to its end.
     pub fn background_tick(&mut self, cx: &mut Context<Self>) {
         let was_playing = self.playback.local().is_playing();
         let tick = self.playback.tick();
@@ -435,6 +508,7 @@ impl PlayerView {
         if advanced || was_playing != self.playback.local().is_playing() {
             cx.notify();
         }
+        self.follow_playlist(cx);
     }
 
     /// Where its file is, of how long, once it has opened, and the tracks

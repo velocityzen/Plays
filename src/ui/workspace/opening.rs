@@ -1,5 +1,6 @@
 //! Opening files, the media files in folders, and streams, from the open
-//! panel, a drop or the "Open URL" form.
+//! panel, a drop or the "Open URL" form: several at once in a tile each,
+//! or in one playing them in turn, as Settings → Playback say.
 
 use std::path::PathBuf;
 
@@ -11,6 +12,7 @@ use super::Workspace;
 use crate::media::Source;
 use crate::media::source::media_in;
 use crate::recents;
+use crate::settings::{Settings, SeveralFiles};
 use crate::ui::open_url::{OpenUrlDialog, OpenUrlEvent};
 use crate::ui::player::PlayerView;
 
@@ -32,22 +34,31 @@ impl Workspace {
         .detach();
     }
 
-    /// A tile for each of `sources`.
+    /// A tile for each of `sources`, or one playing them one after
+    /// another, as Settings → Playback say.
     fn add_players(&mut self, sources: Vec<Source>, cx: &mut Context<Self>) {
-        if sources.is_empty() {
+        let Some(first) = sources.first() else {
             return;
-        }
+        };
+        let in_turn = cx.global::<Settings>().several_files == SeveralFiles::Playlist;
+        let (tiles, playlist) = if in_turn {
+            (vec![first.clone()], sources)
+        } else {
+            (sources, Vec::new())
+        };
         let mixer = self.mixer(cx);
         let mut opened = Vec::new();
-        for source in sources {
+        for source in tiles {
             log::info!("opening {source}");
             if let Source::File(path) = &source {
                 recents::note_file(path, cx);
             }
             let graveyard = self.graveyard.clone();
             let mixer = mixer.clone();
+            let playlist = playlist.clone();
             let view = cx.new(|cx| {
                 let mut view = PlayerView::new(source, mixer, graveyard, cx);
+                view.set_playlist(playlist, cx);
                 view.resume(cx);
                 view.find_neighbors(cx);
                 view

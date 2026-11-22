@@ -141,6 +141,15 @@ impl Playback {
         }
     }
 
+    /// Played through to its end, here or there, and stopped: not moved
+    /// there.
+    pub fn played_out(&self) -> bool {
+        match &self.cast {
+            Some(cast) => cast.link.has_ended(),
+            None => self.player.has_played_out(),
+        }
+    }
+
     pub fn play(&mut self) {
         match &mut self.cast {
             Some(cast) => cast.link.play(),

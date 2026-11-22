@@ -138,6 +138,17 @@ impl FloatOnTop {
     }
 }
 
+/// What several files opened at once, or a folder's, do.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SeveralFiles {
+    /// Each opens in a tile of its own, all playing.
+    #[default]
+    Together,
+    /// They open in one tile, which plays them one after another.
+    Playlist,
+}
+
 /// How player windows go full screen, on macOS.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -425,6 +436,8 @@ pub struct Settings {
     /// Volume new players start at.
     pub default_volume: f32,
     pub autoplay: bool,
+    /// Several files opened at once play together or one after another.
+    pub several_files: SeveralFiles,
     pub loop_by_default: bool,
     /// Start a file opened again where it was left, within a while
     /// (`progress::KEEP_DAYS`).
@@ -477,6 +490,7 @@ impl Default for Settings {
             casting: CastingSettings::default(),
             default_volume: 0.8,
             autoplay: true,
+            several_files: SeveralFiles::Together,
             loop_by_default: false,
             resume_files: true,
             // How far the arrow keys seek.

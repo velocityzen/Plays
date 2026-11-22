@@ -39,7 +39,8 @@ pub const COMMANDS: &[Spec] = &[
         "app.open",
         "Open Paths or URLs",
         "Play files, the media files in folders, and streams, in the window named, or \
-         the one in front, or a new one if none is open.",
+         the one in front, or a new one if none is open: each in a tile, or one after \
+         another in one, as Settings say.",
         Scope::Window,
         &[Arg::required(
             "urls",

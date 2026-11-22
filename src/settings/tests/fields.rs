@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use serde_json::json;
 
 use super::*;
-use crate::settings::{AudioDevice, Rgb};
+use crate::settings::{AudioDevice, Rgb, SeveralFiles};
 
 /// The keys of the values in `value` at `at`, going into each object
 /// that has something in it.
@@ -61,6 +61,10 @@ fn takes_what_the_window_offers() {
     assert_eq!(set("theme", json!("dark")).theme, ThemeMode::Dark);
     assert_eq!(set("columns", json!(3)).columns, 3);
     assert_eq!(set("seek_step_seconds", json!(30)).seek_step_seconds, 30);
+    assert_eq!(
+        set("several_files", json!("playlist")).several_files,
+        SeveralFiles::Playlist
+    );
     assert_eq!(set("master_volume", json!(0.25)).master_volume, 0.25);
     assert_eq!(set("subtitles.size", json!(1.5)).subtitles.size, 1.5);
     assert_eq!(
@@ -137,6 +141,10 @@ fn turns_the_rest_away_saying_what_it_takes() {
     assert_eq!(
         set("seek_step_seconds", json!(7)),
         "seek_step_seconds is one of 5, 10, 30, 60"
+    );
+    assert_eq!(
+        set("several_files", json!("shuffled")),
+        r#"several_files is one of "together", "playlist""#
     );
     assert_eq!(
         set("subtitles.size", json!(3.0)),

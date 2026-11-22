@@ -435,6 +435,16 @@ What the window tests check:
   Window.
 - A file closed partway in opens there again; one barely begun starts
   over, and so does every file with Settings' resuming off.
+- Several files opened at once get a tile each, by default. With Settings
+  → Playback set to play them one after another, three open in one tile,
+  its header saying 1 of 3, as does a folder's media; previous and next go
+  through them and no further (their buttons greyed at the ends, though the
+  folder has files beside), saying so from the keyboard. Played to its end,
+  a file gives way to the next, playing though Settings no longer play files
+  as they open; the last stays at its end, and so does a paused file moved
+  to its end. A file played instead that's in the playlist moves it there;
+  one that isn't ends it, and previous goes by the folder again. Unit tests
+  step a playlist (a file in it twice included) and count where it is.
 - `⇧S` puts every tile where the one clicked is, paused as it is, and
   `⌥⇧→` and `⌥⇧←` step them all a frame at a time; with the one clicked
   playing, the others go back to where it is and play. `⇧↑` and `⇧↓` turn

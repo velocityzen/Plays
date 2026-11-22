@@ -814,7 +814,8 @@ flowchart LR
     `system_colors` reads macOS's own colors and the accent color from
     AppKit. `about` is the About window.
 - `src/ui/workspace/`: a window, one per window, a file per part: opening
-  files, folders and streams (`opening`), the tiles, putting one in
+  files, folders and streams (`opening`: a tile each, or, as Settings say,
+  one with them all as its playlist), the tiles, putting one in
   another's place, maximizing one, and moving one to another window or
   one of its own, where it plays on (`tiles`), sizing the
   window for its videos (`fit`: as they open, unless the window was
@@ -854,8 +855,12 @@ flowchart LR
   casts it), dragging it by its picture (`drag`: with gpui's drag and drop
   onto another tile, or the window with `Window::start_window_move` when
   no other tile shows, once the mouse has gone further than a click would,
-  which the empty window shares), and the graveyard frames wait in before
-  they are released.
+  which the empty window shares), the graveyard frames wait in before
+  they are released, and its `playlist`: the files opened with it, to
+  play one after another. The window's tick plays the next once the
+  player says one played through to its end (not moved there, which
+  starts it over), or the device it casts to does; previous and next go
+  through the playlist, else the file's folder.
   Settings' `over_video` says which panels show over the video: the header
   and controls hidden aren't drawn (nor counted as hovered, nor kept clear
   of by subtitles, and the menus from the controls close); `osd` has two

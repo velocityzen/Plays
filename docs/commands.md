@@ -13,7 +13,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 ### Open Paths or URLs
 
-`app.open`: Play files, the media files in folders, and streams, in the window named, or the one in front, or a new one if none is open.
+`app.open`: Play files, the media files in folders, and streams, in the window named, or the one in front, or a new one if none is open: each in a tile, or one after another in one, as Settings say.
 
 - Acts on a player window.
 - Arguments:
@@ -520,14 +520,14 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 ### Previous File
 
-`playback.previous_file`: Play the file before this one in its folder instead.
+`playback.previous_file`: Play the file before this one in its playlist, or else its folder, instead.
 
 - Acts on a tile.
 - Keys: ⌘←
 
 ### Next File
 
-`playback.next_file`: Play the file after this one in its folder instead.
+`playback.next_file`: Play the file after this one in its playlist, or else its folder, instead.
 
 - Acts on a tile.
 - Keys: ⌘→
