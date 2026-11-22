@@ -6,6 +6,7 @@ use serde_json::{Value, json};
 
 use super::done;
 use crate::api::args::{Arg, Kind};
+use crate::api::events::{EventField, EventKind};
 use crate::api::registry::{Args, Scope, Spec};
 use crate::api::target;
 use crate::api::{Error, Run};
@@ -67,6 +68,7 @@ pub const COMMANDS: &[Spec] = &[
             done()
         },
     )
+    .tells(&["route_changed", "settings_changed"])
     .keywords(&[
         "sound",
         "speakers",
@@ -105,6 +107,28 @@ pub const COMMANDS: &[Spec] = &[
             Ok(json!(workspace.sound_device()))
         })
     }),
+];
+
+/// The outputs' events.
+pub const EVENTS: &[EventKind] = &[
+    EventKind::app(
+        "outputs_changed",
+        "Outputs were connected or disconnected.",
+        &[EventField::new(
+            "outputs",
+            "Those connected now, as `output.ls` lists them.",
+        )],
+    )
+    .causes(&["an output connected or disconnected"]),
+    EventKind::app(
+        "route_changed",
+        "The app's sound goes elsewhere.",
+        &[EventField::new(
+            "route",
+            "Where it goes now, as `output.ls` says.",
+        )],
+    )
+    .causes(&["the system's own output changing"]),
 ];
 
 /// What `output.ls` says: the outputs, the one picked, and where the

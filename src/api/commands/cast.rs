@@ -8,6 +8,7 @@ use serde_json::{Map, Value, json};
 
 use super::done;
 use crate::api::args::{Arg, Kind};
+use crate::api::events::{EventField, EventKind};
 use crate::api::registry::{Args, Outcome, Scope, Spec};
 use crate::api::target::{self, Target};
 use crate::api::{Error, Run};
@@ -56,6 +57,7 @@ pub const COMMANDS: &[Spec] = &[
             done()
         },
     )
+    .tells(&["cast_started"])
     .keywords(&[
         "cast",
         "tv",
@@ -81,6 +83,7 @@ pub const COMMANDS: &[Spec] = &[
         "Stop casting the tile, and play it here from where the device got to.",
         |player, _, cx| player.cast_to(None, cx),
     )
+    .tells(&["cast_ended"])
     .keywords(&["cast", "stop casting", "disconnect", "this computer"]),
     Spec::custom_with(
         "cast.pair",
@@ -92,6 +95,37 @@ pub const COMMANDS: &[Spec] = &[
         pair_with,
     )
     .keywords(&["cast", "pin", "code", "apple tv", "airplay"]),
+];
+
+/// Casting's events.
+pub const EVENTS: &[EventKind] = &[
+    EventKind::app(
+        "cast_devices_changed",
+        "TVs or speakers to cast to were found on the network, or went.",
+        &[EventField::new(
+            "devices",
+            "Those found now, as `cast.ls` lists them.",
+        )],
+    )
+    .causes(&["devices found on the network or gone from it"]),
+    EventKind::tile(
+        "cast_started",
+        "A tile began playing on a TV or speaker.",
+        &[EventField::new(
+            "device",
+            "The device: its id, kind and name.",
+        )],
+    )
+    .causes(&["a TV paired with `cast.pair` once its PIN is typed"]),
+    EventKind::tile(
+        "cast_ended",
+        "A tile stopped playing on a TV or speaker.",
+        &[EventField::new(
+            "device",
+            "The device it played on: its id, kind and name.",
+        )],
+    )
+    .causes(&["the device stopping or leaving the network"]),
 ];
 
 /// The devices found, by protocol, each protocol's by name.

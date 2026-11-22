@@ -591,6 +591,17 @@ flowchart LR
   first, as closing it would, then `quit`, which every listener hears,
   one window's too (`Reach::everyone`).
 
+  Each event is registered (`events::kinds`): its type, who hears it
+  (`Heard`: the app's listeners, a window's, both, or every one, which
+  also says what ids its payload starts with), its payload's fields, each
+  with a line, and what tells it besides commands, such as a file
+  reaching its end. Each namespace's events are beside its commands, in
+  `api::commands` (`EVENTS`), and each command says what events it tells
+  (`Spec::tells`): those that follow it, as it's run, though not what a
+  sheet it opens leads to, files picked or a PIN typed. In tests, each
+  event told is checked against its kind as it's told: who hears it, and
+  its payload's fields (`kinds::check`).
+
   `api::socket` is how the command line, and another Plays, reach the
   one running. `main` takes the socket first (`socket::start`), before
   FFmpeg or gpui start: it's in a folder only this user can open (0700,
@@ -667,7 +678,10 @@ flowchart LR
   tile or window closing first, Plays quitting, or the time running out,
   fails the wait. `reference`
   lists the commands from the registry compiled in, Plays running or not,
-  and writes `docs/commands.md` (`plays actions --markdown`). `completions`
+  and writes `docs/commands.md` (`plays actions --markdown`): each
+  command, with what it tells, then each namespace's events, with who
+  hears each, its payload, and the commands and whatever else it
+  follows. `completions`
   writes the script that completes the command line in bash, zsh, fish or
   Nushell, from clap's command with the registry's ids, each with its
   title, as what `do`, `api describe` and `api call` take, and the

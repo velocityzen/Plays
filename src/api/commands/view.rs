@@ -14,6 +14,7 @@ pub const COMMANDS: &[Spec] = &[
         "Show the seek bar and buttons at the bottom of each tile, or never show them.",
         |cx| toggle(cx, |shown| &mut shown.controls),
     )
+    .tells(&["settings_changed"])
     .keywords(&["hide", "player controls", "seek bar", "bottom bar"])
     .state(|_, cx| Ok(json!(shown(cx).controls))),
     Spec::app(
@@ -22,6 +23,7 @@ pub const COMMANDS: &[Spec] = &[
         "Show the file's name and buttons at the top of each tile, or never show them.",
         |cx| toggle(cx, |shown| &mut shown.top_bar),
     )
+    .tells(&["settings_changed"])
     .keywords(&["hide", "header", "title", "buttons"])
     .state(|_, cx| Ok(json!(shown(cx).top_bar))),
     Spec::app(
@@ -31,6 +33,7 @@ pub const COMMANDS: &[Spec] = &[
          or switch without it.",
         |cx| toggle(cx, |shown| &mut shown.track_switcher),
     )
+    .tells(&["settings_changed"])
     .keywords(&["hide", "reel", "streams", "audio track", "subtitle track"])
     .state(|_, cx| Ok(json!(shown(cx).track_switcher))),
     Spec::app(
@@ -40,6 +43,7 @@ pub const COMMANDS: &[Spec] = &[
          wrong still show.",
         |cx| toggle(cx, |shown| &mut shown.notes),
     )
+    .tells(&["settings_changed"])
     .keywords(&["hide", "osd", "on-screen display", "volume", "messages"])
     .state(|_, cx| Ok(json!(shown(cx).notes))),
 ];

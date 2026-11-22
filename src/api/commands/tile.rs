@@ -7,6 +7,7 @@ use serde_json::{Value, json};
 
 use super::done;
 use crate::api::args::{Arg, Kind};
+use crate::api::events::{EventField, EventKind};
 use crate::api::registry::{Args, Outcome, Reach, Scope, Spec, on_mac};
 use crate::api::target::{self, Target};
 use crate::api::{Error, Run};
@@ -57,6 +58,7 @@ pub const COMMANDS: &[Spec] = &[
         Scope::Tile,
         focus,
     )
+    .tells(&["active_window_changed", "active_tile_changed"])
     .keywords(&["switch", "select", "show", "activate"])
     // The tile in front is in front already.
     .needs_target(),
@@ -67,6 +69,11 @@ pub const COMMANDS: &[Spec] = &[
         Scope::Tile,
         close,
     )
+    .tells(&[
+        "tile_closed",
+        "window_layout_changed",
+        "active_tile_changed",
+    ])
     .keywords(&["remove", "stop"])
     .keys(&["secondary-w"])
     // Typing a URL over the tiles too, but where a key that works anywhere
@@ -78,6 +85,11 @@ pub const COMMANDS: &[Spec] = &[
         "Close every file in the window. The window stays, empty.",
         |workspace, _, cx| workspace.close_all(cx),
     )
+    .tells(&[
+        "tile_closed",
+        "window_layout_changed",
+        "active_tile_changed",
+    ])
     .keywords(&["clear", "remove", "stop"])
     .keys(&["secondary-shift-w"])
     .reach(Reach::Files),
@@ -88,6 +100,7 @@ pub const COMMANDS: &[Spec] = &[
         Scope::Tile,
         close_others,
     )
+    .tells(&["tile_closed", "window_layout_changed"])
     .keywords(&["close all", "others", "keep", "remove"]),
     Spec::window(
         "tile.focus.left",
@@ -95,6 +108,7 @@ pub const COMMANDS: &[Spec] = &[
         "Send keys to the tile left of the one they go to.",
         |workspace, _, cx| workspace.focus_tile(Toward::Left, cx),
     )
+    .tells(&["active_tile_changed"])
     .setting("focus_left")
     .keys(&["secondary-alt-left"]),
     Spec::window(
@@ -103,6 +117,7 @@ pub const COMMANDS: &[Spec] = &[
         "Send keys to the tile right of the one they go to.",
         |workspace, _, cx| workspace.focus_tile(Toward::Right, cx),
     )
+    .tells(&["active_tile_changed"])
     .setting("focus_right")
     .keys(&["secondary-alt-right"]),
     Spec::window(
@@ -111,6 +126,7 @@ pub const COMMANDS: &[Spec] = &[
         "Send keys to the tile above the one they go to.",
         |workspace, _, cx| workspace.focus_tile(Toward::Up, cx),
     )
+    .tells(&["active_tile_changed"])
     .setting("focus_up")
     .keys(&["secondary-alt-up"]),
     Spec::window(
@@ -119,6 +135,7 @@ pub const COMMANDS: &[Spec] = &[
         "Send keys to the tile below the one they go to.",
         |workspace, _, cx| workspace.focus_tile(Toward::Down, cx),
     )
+    .tells(&["active_tile_changed"])
     .setting("focus_down")
     .keys(&["secondary-alt-down"]),
     Spec::window(
@@ -127,6 +144,7 @@ pub const COMMANDS: &[Spec] = &[
         "Send keys to the tile before the one they go to, the last before the first.",
         |workspace, _, cx| workspace.focus_tile(Toward::Previous, cx),
     )
+    .tells(&["active_tile_changed"])
     .setting("focus_previous_tile")
     .keys(&["secondary-["]),
     Spec::window(
@@ -135,6 +153,7 @@ pub const COMMANDS: &[Spec] = &[
         "Send keys to the tile after the one they go to, the first after the last.",
         |workspace, _, cx| workspace.focus_tile(Toward::Next, cx),
     )
+    .tells(&["active_tile_changed"])
     .setting("focus_next_tile")
     .keys(&["secondary-]"]),
     Spec::window(
@@ -144,6 +163,7 @@ pub const COMMANDS: &[Spec] = &[
          one before that, and so on, until something else is done.",
         |workspace, _, cx| workspace.back_tile(cx),
     )
+    .tells(&["active_tile_changed"])
     .keywords(&["history", "previous", "last", "return", "focus"]),
     Spec::window(
         "tile.recent",
@@ -152,6 +172,7 @@ pub const COMMANDS: &[Spec] = &[
          back to that one.",
         |workspace, _, cx| workspace.recent_tile(cx),
     )
+    .tells(&["active_tile_changed"])
     .keywords(&["history", "last", "toggle", "alternate", "switch", "focus"]),
     Spec::window(
         "tile.move.left",
@@ -159,6 +180,7 @@ pub const COMMANDS: &[Spec] = &[
         "Swap the tile keys go to with the one to its left.",
         |workspace, _, cx| workspace.move_front_tile(Toward::Left, cx),
     )
+    .tells(&["window_layout_changed"])
     .setting("move_tile_left")
     .keys(&["secondary-alt-shift-left"]),
     Spec::window(
@@ -167,6 +189,7 @@ pub const COMMANDS: &[Spec] = &[
         "Swap the tile keys go to with the one to its right.",
         |workspace, _, cx| workspace.move_front_tile(Toward::Right, cx),
     )
+    .tells(&["window_layout_changed"])
     .setting("move_tile_right")
     .keys(&["secondary-alt-shift-right"]),
     Spec::window(
@@ -175,6 +198,7 @@ pub const COMMANDS: &[Spec] = &[
         "Swap the tile keys go to with the one above it.",
         |workspace, _, cx| workspace.move_front_tile(Toward::Up, cx),
     )
+    .tells(&["window_layout_changed"])
     .setting("move_tile_up")
     .keys(&["secondary-alt-shift-up"]),
     Spec::window(
@@ -183,6 +207,7 @@ pub const COMMANDS: &[Spec] = &[
         "Swap the tile keys go to with the one below it.",
         |workspace, _, cx| workspace.move_front_tile(Toward::Down, cx),
     )
+    .tells(&["window_layout_changed"])
     .setting("move_tile_down")
     .keys(&["secondary-alt-shift-down"]),
     Spec::custom(
@@ -193,6 +218,7 @@ pub const COMMANDS: &[Spec] = &[
         Scope::Tile,
         zoom,
     )
+    .tells(&["full_screen_changed", "window_layout_changed"])
     .keywords(&["expand", "enlarge", "full", "restore"])
     .keys(&["secondary-shift-enter"]),
     Spec::custom_with(
@@ -209,6 +235,7 @@ pub const COMMANDS: &[Spec] = &[
         )],
         rename,
     )
+    .tells(&["tile_label_changed"])
     .keywords(&["name", "label", "title"]),
     Spec::custom_with(
         "tile.move",
@@ -223,6 +250,7 @@ pub const COMMANDS: &[Spec] = &[
         )],
         put,
     )
+    .tells(&["window_layout_changed"])
     .keywords(&["reorder", "place", "drag", "swap"])
     .state(position),
     Spec::custom_with(
@@ -237,6 +265,7 @@ pub const COMMANDS: &[Spec] = &[
         )],
         send_to_window,
     )
+    .tells(&["tile_moved", "window_layout_changed", "active_tile_changed"])
     .keywords(&["send", "other window"]),
     Spec::custom(
         "tile.move_to_new_window",
@@ -245,6 +274,12 @@ pub const COMMANDS: &[Spec] = &[
         Scope::Tile,
         move_to_new_window,
     )
+    .tells(&[
+        "window_created",
+        "tile_moved",
+        "window_layout_changed",
+        "active_tile_changed",
+    ])
     .keywords(&["pop out", "detach", "separate", "own window"])
     .returns("{window}: the new window's id."),
     Spec::tile_with(
@@ -274,6 +309,7 @@ pub const COMMANDS: &[Spec] = &[
         "Play the tile in a small window floating above every app's, or in its tile again.",
         |player, window, cx| player.toggle_picture_in_picture(window, cx),
     )
+    .tells(&["picture_in_picture_changed"])
     .keywords(&["pip", "float", "mini player"])
     .setting("picture_in_picture")
     .keys(on_mac(&["ctrl-cmd-p"], &[]))
@@ -288,6 +324,56 @@ pub const COMMANDS: &[Spec] = &[
     .keywords(&["info", "stats", "codec", "debug"])
     .setting("console")
     .keys(&["~", "`"]),
+];
+
+/// The tiles' events.
+pub const EVENTS: &[EventKind] = &[
+    EventKind::tile(
+        "tile_created",
+        "A tile came into a window, for a file to play in.",
+        &[EventField::new("label", "Its label; none without one.")],
+    )
+    .causes(&[super::DROPPED]),
+    EventKind::tile(
+        "tile_moved",
+        "A tile moved to another window: those listening to the window it left hear it too.",
+        &[
+            EventField::new("from_window_id", "The id of the window it left."),
+            EventField::new("from_window_title", "That window's title."),
+        ],
+    ),
+    EventKind::tile("tile_closed", "A tile closed, and the file in it.", &[])
+        .causes(&["Plays quitting"]),
+    EventKind::tile(
+        "tile_label_changed",
+        "A tile was labeled, or its label taken away.",
+        &[EventField::new(
+            "label",
+            "Its label; none once it's taken away.",
+        )],
+    ),
+    EventKind::window(
+        "active_tile_changed",
+        "Keys go to another tile in a window, or to none.",
+        &[
+            EventField::new("tile_id", "The tile's id; none if keys go to none."),
+            EventField::new(
+                "tile_title",
+                "Its title, as its header shows it; none without a tile.",
+            ),
+        ],
+    )
+    .causes(&["a click on a tile or the mouse going to one"]),
+    EventKind::tile(
+        "picture_in_picture_changed",
+        "A tile began playing in a small window floating above every app's, or in its tile \
+         again.",
+        &[EventField::new(
+            "picture_in_picture",
+            "Whether it plays in the small window now.",
+        )],
+    )
+    .causes(&["the small window's own buttons"]),
 ];
 
 /// Close the tile named, or the one keys go to.

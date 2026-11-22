@@ -896,8 +896,10 @@ plays actions                             # every command, Plays or not
   `window_id` and `window_title`, as its title bar shows it (its label,
   or else Plays), and `tile_id` and `tile_title`, as its header shows it
   (its label, or else the title of what it plays).
-- [docs/commands.md](docs/commands.md) describes every command, as
-  `plays actions --markdown` writes it.
+- [docs/commands.md](docs/commands.md) describes every command, with
+  the events it tells, and every event: who hears it, its payload, and
+  the commands and whatever else it follows. `plays actions --markdown`
+  writes it.
 - It exits with 0 when it's done, 1 when Plays couldn't do it, 2 for a
   bad command line, 3 for nothing by the name given, 4 when there's no
   Plays to ask, or it closed the connection before answering, and 5

@@ -19,6 +19,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use super::Error;
+use super::events::EventKind;
 use super::registry::{Args, Outcome, Spec};
 use crate::media::tracks::TrackKind;
 use crate::ui::player::PlayerView;
@@ -39,6 +40,22 @@ pub const ALL: [&[Spec]; 13] = [
     settings::COMMANDS,
     cli::COMMANDS,
 ];
+
+/// The events of each namespace that has any, in the order of `ALL`.
+pub const EVENTS: [(&str, &[EventKind]); 8] = [
+    ("app", app::EVENTS),
+    ("window", window::EVENTS),
+    ("tile", tile::EVENTS),
+    ("playback", playback::EVENTS),
+    ("audio", audio::EVENTS),
+    ("cast", cast::EVENTS),
+    ("output", output::EVENTS),
+    ("settings", settings::EVENTS),
+];
+
+/// What opens files in a window, other than a command: events' cause.
+const DROPPED: &str =
+    "files dropped on a window or picked when `window.open_files` or `window.open_url` asks";
 
 /// The namespaces, in the order Settings → Hotkeys lists their commands,
 /// each with its title there.

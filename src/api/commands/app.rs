@@ -9,6 +9,7 @@ use serde_json::json;
 use super::{output, settings, window};
 use crate::api::Error;
 use crate::api::args::{Arg, Kind};
+use crate::api::events::{EventField, EventKind};
 use crate::api::registry::{Args, Outcome, Scope, Spec};
 use crate::api::target::{self, Target};
 use crate::app::AudioEngine;
@@ -49,6 +50,14 @@ pub const COMMANDS: &[Spec] = &[
         )],
         open,
     )
+    .tells(&[
+        "window_created",
+        "active_window_changed",
+        "tile_created",
+        "window_layout_changed",
+        "active_tile_changed",
+        "opened",
+    ])
     .keywords(&["file", "folder", "stream", "url", "play", "add"])
     .returns("{window}: the id of the window they open in."),
     Spec::app(
@@ -111,8 +120,62 @@ pub const COMMANDS: &[Spec] = &[
         "Quit, keeping where each file got to and stopping the devices cast to.",
         |cx| cx.quit(),
     )
+    .tells(&[
+        "tile_closed",
+        "window_closed",
+        "active_window_changed",
+        "quit",
+    ])
     .keywords(&["exit"])
     .keys(&["secondary-q"]),
+];
+
+/// The app's events.
+pub const EVENTS: &[EventKind] = &[
+    EventKind::app(
+        "command_run",
+        "A command is about to run: told before anything it changes.",
+        &[
+            EventField::new("command", "Its id."),
+            EventField::new(
+                "source",
+                "Where it was run from: action (a key, a menu item, or a control that sends one), \
+                 ui (a control that runs it itself), palette, or cli.",
+            ),
+            EventField::optional("args", "The arguments it was given, if any."),
+            EventField::optional(
+                "target",
+                "The window and the tile it was aimed at, by name, if either was.",
+            ),
+        ],
+    )
+    .causes(&["every command, as it runs"]),
+    EventKind::app(
+        "client_connected",
+        "A client connected to the socket, as the command line does.",
+        &[EventField::new(
+            "client_id",
+            "A number for it, which its `client_left` has too.",
+        )],
+    )
+    .causes(&["a client connecting"]),
+    EventKind::app(
+        "client_left",
+        "A client went from the socket.",
+        &[EventField::new(
+            "client_id",
+            "The number its `client_connected` had.",
+        )],
+    )
+    .causes(&[
+        "a client going or being cut off, as when control from the command line is turned off",
+    ]),
+    EventKind::to_everyone(
+        "quit",
+        "Plays is quitting: told last, after each window still open is told closing.",
+        &[],
+    )
+    .causes(&["Plays quitting from the Dock or with the system"]),
 ];
 
 /// Put `text` on the clipboard, handing it back.

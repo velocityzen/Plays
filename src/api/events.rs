@@ -23,6 +23,7 @@
 //! quits (`quit`), each window still open is told closing, then `quit`,
 //! which every listener hears, one window's too.
 
+pub mod kinds;
 mod seen;
 
 use std::collections::HashMap;
@@ -33,6 +34,7 @@ use gpui::{App, Global};
 use serde::Serialize;
 use serde_json::{Value, json};
 
+pub use kinds::{EventField, EventKind, Heard};
 pub use seen::{Seen, TRACKS, TileSeen, WindowSeen, playhead};
 
 use super::commands::{self, cast, output};
@@ -278,6 +280,8 @@ fn keep_looking(cx: &mut App) {
 
 /// Tell `event` to those who hear it.
 fn tell(event: &Event, cx: &App) {
+    #[cfg(test)]
+    kinds::check(event);
     let Some(events) = cx.try_global::<Events>() else {
         return;
     };

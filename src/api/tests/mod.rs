@@ -15,6 +15,8 @@ use crate::ui::testing::{self, fixture};
 use crate::ui::theme::layout::WINDOW_SIZE;
 use crate::ui::workspace::Workspace;
 
+mod tells;
+
 /// The namespaces command ids start with.
 const NAMESPACES: [&str; 13] = [
     "app",
@@ -151,6 +153,7 @@ fn describes_each_command() {
             }],
             "state": true,
             "returns": null,
+            "tells": ["seeked", "chapter_changed"],
             "query": false,
             "available": true,
         })

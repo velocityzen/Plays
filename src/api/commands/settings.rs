@@ -7,6 +7,7 @@ use serde_json::{Value, json};
 
 use crate::api::Error;
 use crate::api::args::{Arg, Kind};
+use crate::api::events::{EventField, EventKind};
 use crate::api::registry::{Args, Outcome, Scope, Spec};
 use crate::cast::Casting;
 use crate::files::Folder;
@@ -76,6 +77,7 @@ pub const COMMANDS: &[Spec] = &[
         SET,
         set,
     )
+    .tells(&["settings_changed", "keymap_changed"])
     .keywords(&["preferences", "options"])
     .returns("Its value now."),
     Spec::app_with(
@@ -85,6 +87,7 @@ pub const COMMANDS: &[Spec] = &[
         &[KEY],
         reset,
     )
+    .tells(&["settings_changed", "keymap_changed"])
     .keywords(&["preferences", "options", "default", "restore"])
     .returns("Its value now."),
     Spec::app_with(
@@ -104,8 +107,31 @@ pub const COMMANDS: &[Spec] = &[
         &[],
         reload,
     )
+    .tells(&["settings_changed", "keymap_changed"])
     .keywords(&["preferences", "json", "refresh"])
     .returns("[key]: the settings the file changed."),
+];
+
+/// The settings' events.
+pub const EVENTS: &[EventKind] = &[
+    EventKind::app(
+        "settings_changed",
+        "Settings changed.",
+        &[EventField::new(
+            "keys",
+            "The keys of those that changed, as `settings.get` takes them.",
+        )],
+    )
+    .causes(&["Settings moving a slider, importing a settings file or resetting every setting"]),
+    EventKind::app(
+        "keymap_changed",
+        "The keys that run commands changed.",
+        &[EventField::new(
+            "commands",
+            "The ids of the commands whose keys changed.",
+        )],
+    )
+    .causes(&["Settings importing a settings file or resetting every setting"]),
 ];
 
 /// The protocols that look for devices to cast to, each a setting.

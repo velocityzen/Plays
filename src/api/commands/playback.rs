@@ -9,6 +9,7 @@ use serde_json::{Value, json};
 
 use super::done;
 use crate::api::args::{Arg, Kind};
+use crate::api::events::{EventField, EventKind};
 use crate::api::registry::Spec;
 use crate::api::target;
 use crate::api::{Error, Run};
@@ -21,6 +22,7 @@ pub const COMMANDS: &[Spec] = &[
         "Pause the tile if it plays, else play it.",
         |player, _, cx| player.play_pause(cx),
     )
+    .tells(&["playing", "paused"])
     .keywords(&["play", "pause", "resume", "stop"])
     .setting("play_pause")
     .keys(&["space", "p"]),
@@ -42,6 +44,7 @@ pub const COMMANDS: &[Spec] = &[
             done()
         },
     )
+    .tells(&["seeked", "ended", "chapter_changed"])
     .keywords(&["jump", "position", "time", "go to", "scrub"]),
     Spec::tile(
         "playback.seek_forward",
@@ -52,6 +55,7 @@ pub const COMMANDS: &[Spec] = &[
             player.seek_by(step, cx);
         },
     )
+    .tells(&["seeked", "ended", "chapter_changed"])
     .keywords(&["skip", "forward", "jump"])
     .setting("seek_forward")
     .keys(&["right"]),
@@ -64,6 +68,7 @@ pub const COMMANDS: &[Spec] = &[
             player.seek_by(-step, cx);
         },
     )
+    .tells(&["seeked", "chapter_changed"])
     .keywords(&["skip", "back", "rewind", "jump"])
     .setting("seek_backward")
     .keys(&["left"]),
@@ -73,6 +78,7 @@ pub const COMMANDS: &[Spec] = &[
         "Pause and show the next frame.",
         |player, _, cx| player.step_frame(1.0, cx),
     )
+    .tells(&["paused", "seeked"])
     .keywords(&["step"])
     .setting("next_frame")
     .keys(&["alt-right", ".", ">"]),
@@ -82,6 +88,7 @@ pub const COMMANDS: &[Spec] = &[
         "Pause and show the frame before.",
         |player, _, cx| player.step_frame(-1.0, cx),
     )
+    .tells(&["paused", "seeked"])
     .keywords(&["step", "back"])
     .setting("previous_frame")
     .keys(&["alt-left", ",", "<"]),
@@ -91,6 +98,7 @@ pub const COMMANDS: &[Spec] = &[
         "Play from the start of the next chapter.",
         |player, _, cx| player.next_chapter(cx),
     )
+    .tells(&["seeked", "chapter_changed"])
     .keywords(&["skip"])
     .setting("next_chapter")
     .keys(&["pagedown"]),
@@ -100,6 +108,7 @@ pub const COMMANDS: &[Spec] = &[
         "Play from the start of this chapter, or of the one before near its start.",
         |player, _, cx| player.previous_chapter(cx),
     )
+    .tells(&["seeked", "chapter_changed"])
     .keywords(&["back"])
     .setting("previous_chapter")
     .keys(&["pageup"]),
@@ -121,6 +130,7 @@ pub const COMMANDS: &[Spec] = &[
             done()
         },
     )
+    .tells(&["seeked", "chapter_changed"])
     .keywords(&["chapters", "jump", "skip"])
     // The chapter it's in, from 1.
     .state(|target, cx| {
@@ -136,6 +146,7 @@ pub const COMMANDS: &[Spec] = &[
         "Play from the start.",
         |player, _, cx| player.restart(cx),
     )
+    .tells(&["seeked", "chapter_changed"])
     .keywords(&["beginning", "rewind"])
     .setting("restart")
     .keys(&["home"]),
@@ -145,6 +156,7 @@ pub const COMMANDS: &[Spec] = &[
         "Play the file before this one in its playlist, or else its folder, instead.",
         |player, _, cx| player.open_neighbor(-1, cx),
     )
+    .tells(&["opened", "playing"])
     .keywords(&["folder", "episode", "back"])
     .setting("previous_file")
     .keys(&["secondary-left"]),
@@ -154,6 +166,7 @@ pub const COMMANDS: &[Spec] = &[
         "Play the file after this one in its playlist, or else its folder, instead.",
         |player, _, cx| player.open_neighbor(1, cx),
     )
+    .tells(&["opened", "playing"])
     .keywords(&["folder", "episode", "skip"])
     .setting("next_file")
     .keys(&["secondary-right"]),
@@ -173,6 +186,7 @@ pub const COMMANDS: &[Spec] = &[
             done()
         },
     )
+    .tells(&["opened", "playing"])
     .keywords(&["open", "folder", "episode", "switch", "replace"]),
     Spec::tile(
         "playback.toggle_loop",
@@ -192,6 +206,7 @@ pub const COMMANDS: &[Spec] = &[
         "Pause every file in the window if any plays, else play them all.",
         |workspace, _, cx| workspace.toggle_all(cx),
     )
+    .tells(&["playing", "paused"])
     .keywords(&["every", "play", "pause"])
     .setting("play_pause_all")
     .keys(&["shift-space"]),
@@ -201,6 +216,7 @@ pub const COMMANDS: &[Spec] = &[
         "Play every file in the window.",
         |workspace, _, cx| workspace.play_all(cx),
     )
+    .tells(&["playing"])
     .keywords(&["every", "resume"]),
     Spec::tiles(
         "playback.pause_all",
@@ -208,6 +224,7 @@ pub const COMMANDS: &[Spec] = &[
         "Pause every file in the window.",
         |workspace, _, cx| workspace.pause_all(cx),
     )
+    .tells(&["paused"])
     .keywords(&["every", "stop"]),
     Spec::tiles(
         "playback.restart_all",
@@ -215,6 +232,7 @@ pub const COMMANDS: &[Spec] = &[
         "Play every file in the window from the start.",
         |workspace, _, cx| workspace.restart_all(cx),
     )
+    .tells(&["seeked", "chapter_changed"])
     .keywords(&["every", "beginning", "rewind"])
     .setting("restart_all")
     .keys(&["shift-home"]),
@@ -224,6 +242,7 @@ pub const COMMANDS: &[Spec] = &[
         "Skip every file in the window ahead by the seek step.",
         |workspace, _, cx| workspace.seek_all(1.0, cx),
     )
+    .tells(&["seeked", "ended", "chapter_changed"])
     .keywords(&["every", "skip", "jump"])
     .setting("seek_forward_all")
     .keys(&["shift-right"]),
@@ -233,6 +252,7 @@ pub const COMMANDS: &[Spec] = &[
         "Skip every file in the window back by the seek step.",
         |workspace, _, cx| workspace.seek_all(-1.0, cx),
     )
+    .tells(&["seeked", "chapter_changed"])
     .keywords(&["every", "rewind", "jump"])
     .setting("seek_backward_all")
     .keys(&["shift-left"]),
@@ -242,6 +262,7 @@ pub const COMMANDS: &[Spec] = &[
         "Pause every file in the window and show its next frame.",
         |workspace, _, cx| workspace.step_frame_all(1.0, cx),
     )
+    .tells(&["paused", "seeked"])
     .keywords(&["every", "step"])
     .setting("next_frame_all")
     .keys(&["alt-shift-right"]),
@@ -251,6 +272,7 @@ pub const COMMANDS: &[Spec] = &[
         "Pause every file in the window and show the frame before.",
         |workspace, _, cx| workspace.step_frame_all(-1.0, cx),
     )
+    .tells(&["paused", "seeked"])
     .keywords(&["every", "step", "back"])
     .setting("previous_frame_all")
     .keys(&["alt-shift-left"]),
@@ -261,9 +283,118 @@ pub const COMMANDS: &[Spec] = &[
          paused as it is.",
         |workspace, _, cx| workspace.sync_all(cx),
     )
+    .tells(&["seeked", "playing", "paused"])
     .keywords(&["every", "align", "same time"])
     .setting("sync_all")
     .keys(&["shift-s"]),
+];
+
+/// What opens a file, and plays it, other than a command: a playlist
+/// going on.
+const NEXT: &str = "a playlist going on to its next file, once one plays to its end";
+
+/// Where a file is, as the events of how it plays say.
+const PLAYHEAD: &[EventField] = &[
+    EventField::new(
+        "position",
+        "How far through the file it is, from 0 to 1; none while its duration isn't known, \
+         as a live stream's.",
+    ),
+    EventField::new("time", "Where it is, in seconds."),
+    EventField::new(
+        "frame",
+        "The number of the frame showing then, from 0; none for sound alone.",
+    ),
+];
+
+/// How files play: the tiles' events about them.
+pub const EVENTS: &[EventKind] = &[
+    EventKind::tile(
+        "opened",
+        "A file opened in a tile, paused at its start.",
+        &[
+            EventField::new(
+                "title",
+                "What its header shows without a label: the file's name, or the stream's.",
+            ),
+            EventField::new("file", "Its path; none for a stream."),
+            EventField::new("url", "The stream's URL; none for a file."),
+            EventField::new(
+                "duration",
+                "How long it plays, in seconds; none for a live stream.",
+            ),
+        ],
+    )
+    .causes(&[super::DROPPED, NEXT]),
+    EventKind::tile(
+        "open_failed",
+        "A file couldn't be opened.",
+        &[EventField::new("error", "Why.")],
+    )
+    .causes(&["a file Plays can't play or a stream it can't reach"]),
+    EventKind::tile(
+        "failed",
+        "A file stopped playing on an error.",
+        &[EventField::new("error", "Why.")],
+    )
+    .causes(&["a file that's damaged or a stream that went"]),
+    EventKind::tile("playing", "A file began playing.", PLAYHEAD)
+        .causes(&["a file opening while Autoplay is on", NEXT]),
+    EventKind::tile("paused", "A file paused.", PLAYHEAD),
+    EventKind::tile(
+        "seeked",
+        "A file was sought to another time, here or on the device it's cast to: where it went.",
+        PLAYHEAD,
+    ),
+    EventKind::tile(
+        "ended",
+        "A file played to its end, and stopped there.",
+        PLAYHEAD,
+    )
+    .causes(&["a file playing to its end"]),
+    EventKind::tile(
+        "position",
+        "Where a file is as it plays: told only to those who ask for positions, at most once \
+         a second, and only once it has moved.",
+        &[
+            EventField::new(
+                "position",
+                "How far through the file it is, from 0 to 1; none while its duration isn't \
+                 known, as a live stream's.",
+            ),
+            EventField::new("time", "Where it is, in seconds."),
+            EventField::new(
+                "frame",
+                "The number of the frame showing then, from 0; none for sound alone.",
+            ),
+            EventField::new(
+                "duration",
+                "How long it plays, in seconds; none for a live stream.",
+            ),
+        ],
+    )
+    .causes(&["a file playing"]),
+    EventKind::tile(
+        "chapter_changed",
+        "A file is in another chapter.",
+        &[EventField::new(
+            "chapter",
+            "The chapter, from 1; none before the first.",
+        )],
+    )
+    .causes(&["a file playing into its next chapter"]),
+    EventKind::tile(
+        "track_changed",
+        "Another of a file's tracks plays, or none of its kind.",
+        &[
+            EventField::new("kind", "The track's: video, audio or subtitles."),
+            EventField::new(
+                "track",
+                "The one playing, from 1 among its kind's, as the tracks menu lists them; \
+                 none for none.",
+            ),
+        ],
+    ),
 ];
 
 #[derive(Deserialize)]

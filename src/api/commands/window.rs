@@ -8,6 +8,7 @@ use serde_json::{Value, json};
 
 use super::done;
 use crate::api::args::{Arg, Kind};
+use crate::api::events::{EventField, EventKind};
 use crate::api::registry::{Args, Outcome, Reach, Scope, Spec, on_mac};
 use crate::api::target::{self, Target};
 use crate::api::{Error, Invocation, Run, Source};
@@ -49,6 +50,7 @@ pub const COMMANDS: &[Spec] = &[
         &[],
         new_window,
     )
+    .tells(&["window_created", "active_window_changed"])
     .keywords(&["open", "empty", "another", "create"])
     .keys(&["secondary-n"])
     .returns("{window}: the new window's id."),
@@ -118,6 +120,7 @@ pub const COMMANDS: &[Spec] = &[
         Scope::AnyWindow,
         close,
     )
+    .tells(&["tile_closed", "window_closed", "active_window_changed"])
     // ⌘W closes the file in front, and this where there's none.
     .keys(&["secondary-alt-w", "secondary-w"]),
     Spec::custom(
@@ -127,6 +130,7 @@ pub const COMMANDS: &[Spec] = &[
         Scope::Window,
         close_others,
     )
+    .tells(&["tile_closed", "window_closed"])
     .keywords(&["close all", "others", "keep"]),
     Spec::window_with(
         "window.rename",
@@ -152,6 +156,7 @@ pub const COMMANDS: &[Spec] = &[
             done()
         },
     )
+    .tells(&["window_label_changed"])
     .keywords(&["name", "label", "title"]),
     Spec::window(
         "window.focus",
@@ -160,6 +165,7 @@ pub const COMMANDS: &[Spec] = &[
          numbers.",
         |_, window, _| window.activate_window(),
     )
+    .tells(&["active_window_changed"])
     .keywords(&["switch", "show", "raise"])
     // The window in front is in front already; ⌘1 to ⌘9 name theirs.
     .needs_target(),
@@ -169,6 +175,7 @@ pub const COMMANDS: &[Spec] = &[
         "Bring the window after the one in front to the front: the first after the last.",
         |cx| step_window(1, cx),
     )
+    .tells(&["active_window_changed"])
     .keywords(&["switch", "cycle"])
     .keys(&["ctrl-tab"]),
     Spec::app(
@@ -177,6 +184,7 @@ pub const COMMANDS: &[Spec] = &[
         "Bring the window before the one in front to the front: the last before the first.",
         |cx| step_window(-1, cx),
     )
+    .tells(&["active_window_changed"])
     .keywords(&["switch", "cycle"])
     .keys(&["ctrl-shift-tab"]),
     Spec::app(
@@ -186,6 +194,7 @@ pub const COMMANDS: &[Spec] = &[
          that, and so on, until something else is done.",
         back_window,
     )
+    .tells(&["active_window_changed"])
     .keywords(&["history", "previous", "last", "return"]),
     Spec::app(
         "window.recent",
@@ -193,6 +202,7 @@ pub const COMMANDS: &[Spec] = &[
         "Bring back the player window in front last; again, the one in front first.",
         recent_window,
     )
+    .tells(&["active_window_changed"])
     .keywords(&["history", "last", "toggle", "alternate", "switch"])
     .keys(&["secondary-'"]),
     Spec::custom_with(
@@ -232,6 +242,7 @@ pub const COMMANDS: &[Spec] = &[
         "Show the window full screen, or as it was again.",
         |_, window, _| window.toggle_fullscreen(),
     )
+    .tells(&["full_screen_changed"])
     .keywords(&["enter", "exit", "maximize"])
     .setting("full_screen")
     .keys(on_mac(&["ctrl-cmd-f", "f"], &["f11", "f"]))
@@ -248,6 +259,7 @@ pub const COMMANDS: &[Spec] = &[
             }
         },
     )
+    .tells(&["full_screen_changed"])
     .setting("exit_full_screen")
     .keys(&["escape"]),
     Spec::window(
@@ -266,6 +278,7 @@ pub const COMMANDS: &[Spec] = &[
         "Keep player windows above other apps' windows, or stop.",
         |cx| toggle_float_on_top(FloatOnTop::Always, cx),
     )
+    .tells(&["settings_changed"])
     .keywords(&["pin", "always on top", "above"])
     .setting("float_on_top")
     .state(|_, cx| Ok(json!(floats(FloatOnTop::Always, cx)))),
@@ -275,6 +288,7 @@ pub const COMMANDS: &[Spec] = &[
         "Keep player windows above other apps' windows while a file in them plays, or stop.",
         |cx| toggle_float_on_top(FloatOnTop::WhilePlaying, cx),
     )
+    .tells(&["settings_changed"])
     .keywords(&["pin", "always on top", "above"])
     .setting("float_on_top_while_playing")
     .state(|_, cx| Ok(json!(floats(FloatOnTop::WhilePlaying, cx)))),
@@ -294,7 +308,63 @@ pub const COMMANDS: &[Spec] = &[
             done()
         },
     )
+    .tells(&["full_screen_changed"])
     .keywords(&["screen", "monitor", "projector", "move"]),
+];
+
+/// The windows' events.
+pub const EVENTS: &[EventKind] = &[
+    EventKind::of_window(
+        "window_created",
+        "A player window opened.",
+        &[EventField::new("label", "Its label; none without one.")],
+    ),
+    EventKind::of_window(
+        "window_closed",
+        "A player window closed: told after each of its tiles is told closed.",
+        &[],
+    )
+    .causes(&["Plays quitting"]),
+    EventKind::of_window(
+        "window_label_changed",
+        "A window was labeled, or its label taken away.",
+        &[EventField::new(
+            "label",
+            "Its label; none once it's taken away.",
+        )],
+    ),
+    EventKind::of_window(
+        "active_window_changed",
+        "Another player window came to the front, or none is in front: its `window_id` and \
+         `window_title` are none then.",
+        &[],
+    )
+    .causes(&["a click on another window"]),
+    EventKind::window(
+        "full_screen_changed",
+        "A window went full screen, or came back from it.",
+        &[EventField::new(
+            "full_screen",
+            "Whether it's full screen now.",
+        )],
+    )
+    .causes(&["the window's own full screen button"]),
+    EventKind::window(
+        "window_layout_changed",
+        "Tiles came into a window, went, or changed places, or one filled it or stopped \
+         filling it.",
+        &[
+            EventField::new(
+                "tiles",
+                "The ids of its tiles, in the order its grid shows them.",
+            ),
+            EventField::new(
+                "maximized",
+                "The id of the tile filling it; none if none does.",
+            ),
+        ],
+    )
+    .causes(&[super::DROPPED]),
 ];
 
 /// Show the command palette over the window, listing the commands that

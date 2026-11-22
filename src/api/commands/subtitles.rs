@@ -23,6 +23,7 @@ pub const COMMANDS: &[Spec] = &[
         "Show the file's next subtitles, and none after the last.",
         |player, _, cx| player.next_track(TrackKind::Subtitle, cx),
     )
+    .tells(&["track_changed"])
     .keywords(&["captions", "language", "track"])
     .setting("next_subtitle_track")
     .keys(on_mac(&["ctrl-cmd-s"], &["ctrl-alt-s"])),
@@ -37,6 +38,7 @@ pub const COMMANDS: &[Spec] = &[
         )],
         |args, player, _, cx| select_track(args, TrackKind::Subtitle, player, cx),
     )
+    .tells(&["track_changed"])
     .keywords(&["captions", "language", "track", "off"]),
     Spec::tile(
         "subtitles.toggle",
@@ -44,6 +46,7 @@ pub const COMMANDS: &[Spec] = &[
         "Hide the subtitles showing, or show the ones hidden.",
         |player, _, cx| player.toggle_subtitles(cx),
     )
+    .tells(&["track_changed"])
     .keywords(&["captions", "off", "on"])
     .setting("toggle_subtitles")
     .keys(&["v"]),
@@ -53,6 +56,7 @@ pub const COMMANDS: &[Spec] = &[
         "Make every file's subtitles bigger.",
         |player, _, cx| change_size(player, SIZE_STEP, cx),
     )
+    .tells(&["settings_changed"])
     .keywords(&["captions", "size", "larger", "font"])
     .setting("bigger_subtitles")
     .keys(&["shift-g"]),
@@ -62,6 +66,7 @@ pub const COMMANDS: &[Spec] = &[
         "Make every file's subtitles smaller.",
         |player, _, cx| change_size(player, -SIZE_STEP, cx),
     )
+    .tells(&["settings_changed"])
     .keywords(&["captions", "size", "font"])
     .setting("smaller_subtitles")
     .keys(&["shift-f"]),
@@ -71,6 +76,7 @@ pub const COMMANDS: &[Spec] = &[
         "Show every file's subtitles higher up.",
         |player, _, cx| change_height(player, HEIGHT_STEP, cx),
     )
+    .tells(&["settings_changed"])
     .keywords(&["captions", "position", "raise"])
     .setting("subtitles_up")
     .keys(&["r"]),
@@ -80,6 +86,7 @@ pub const COMMANDS: &[Spec] = &[
         "Show every file's subtitles lower down.",
         |player, _, cx| change_height(player, -HEIGHT_STEP, cx),
     )
+    .tells(&["settings_changed"])
     .keywords(&["captions", "position", "lower"])
     .setting("subtitles_down")
     .keys(&["shift-r", "t"]),

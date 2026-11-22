@@ -119,6 +119,9 @@ pub struct Spec {
     /// What it hands back, as JSON, if anything: what the command reference
     /// says of it.
     pub returns: Option<&'static str>,
+    /// The events it tells, by type, as `events` registers them; a test
+    /// runs it to hear them.
+    pub tells: &'static [&'static str],
     /// Whether it only reads, as `window.ls` does: such a command takes no
     /// keys, and doesn't count as one run between two others, as Go Back
     /// One Window's walk sees them.
@@ -157,6 +160,7 @@ impl Spec {
             run,
             state: None,
             returns: None,
+            tells: &[],
             query: false,
             available: || true,
             developer: false,
@@ -287,6 +291,12 @@ impl Spec {
         self
     }
 
+    /// It tells the events `tells`, by type.
+    pub const fn tells(mut self, tells: &'static [&'static str]) -> Self {
+        self.tells = tells;
+        self
+    }
+
     pub const fn keywords(mut self, keywords: &'static [&'static str]) -> Self {
         self.keywords = keywords;
         self
@@ -379,6 +389,7 @@ impl Spec {
             "args": self.args.iter().map(Arg::describe).collect::<Vec<_>>(),
             "state": self.state.is_some(),
             "returns": self.returns,
+            "tells": self.tells,
             "query": self.query,
             "available": (self.available)(),
         })

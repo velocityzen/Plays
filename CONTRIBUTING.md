@@ -692,6 +692,21 @@ check:
   rates (`api::events::seen`); settings told by key and
   shortcuts by command, a command before what it changes and a query not
   at all, and looking only while someone listens (`api::events`).
+- What each command tells (`api::tests::tells`), a test for each
+  namespace: each command run in a world of its own (two windows, the
+  one in front with a file of several tracks and one of a picture and
+  sound, the other with sound alone; Autoplay off, and each file starting
+  at its start with the tracks it says), in each way that shows what it
+  tells (from a file playing, in a file of chapters, among four tiles,
+  from full screen…), tells what it says it does (`Spec::tells`) and
+  nothing else. What can't be heard there is listed with why
+  (`NOT_HEARD`: Picture in Picture, a second video track, where the
+  sound goes), as are the commands not run (`NOT_RUN`), which say they
+  tell nothing. Every event is registered once, a sentence saying what
+  it is and each of its fields; a command or something else tells it;
+  a command tells only events there are, each once, and a query none;
+  and every event told in any test is told as registered, to those it
+  says and with the fields it says (`api::events::kinds`).
 - The socket (`api::socket::tests`), each client on a thread of its own
   as another process would be:
   - Taking it: made only this user's, a Plays answering there kept, a
@@ -789,7 +804,7 @@ check:
     test. Without fish or Nushell installed, what
     it offers goes unchecked.
   - `docs/commands.md` as `plays actions --markdown` writes it now:
-    after changing a command, write it again with
+    after changing a command or an event, write it again with
     `cargo run -- actions --markdown > docs/commands.md`. Commands for
     working on Plays (`developer`), which debug builds alone have, aren't
     in it.

@@ -1,7 +1,7 @@
 //! `plays actions`: every command, from the registry this program has, so
 //! Plays needn't be running. As a table of ids, titles and keys; as JSON,
 //! each described; or, with `--markdown`, the command reference kept in
-//! `docs/commands.md`.
+//! `docs/commands.md`, with every event Plays tells and what tells it.
 
 use std::fmt::Write as _;
 use std::io::{self, Write};
@@ -10,6 +10,7 @@ use serde_json::Value;
 
 use super::show;
 use crate::api::args::{Arg, Kind};
+use crate::api::events::{EventKind, Heard, kinds};
 use crate::api::{self, Scope, Spec};
 use crate::hotkeys;
 
@@ -35,7 +36,9 @@ fn keys(spec: &Spec) -> String {
 }
 
 /// The command reference, in Markdown: each namespace's commands, with
-/// what they act on, their keys, arguments and what they hand back.
+/// what they act on, their keys, arguments, what they hand back and the
+/// events they tell; then each namespace's events, with who hears them,
+/// their payload, and what tells them.
 pub fn reference() -> String {
     let mut text = String::from(
         "# Commands\n\n\
@@ -43,18 +46,89 @@ pub fn reference() -> String {
          them. A terminal runs one with `plays do ID [KEY=VALUE…]`, naming the window \
          or tile it acts on with `-w` and `-t`; keys run those that have them, and \
          Settings → Hotkeys changes those. The keys here are macOS's: elsewhere Ctrl \
-         stands for ⌘, and Alt for ⌥.\n",
+         stands for ⌘, and Alt for ⌥. What each tells is in [Events](#events).\n",
     );
     let mut namespace = "";
-    // Those for working on Plays itself are in debug builds only.
-    for spec in api::all().filter(|spec| !spec.developer) {
+    for spec in commands() {
         if spec.namespace() != namespace {
             namespace = spec.namespace();
             writeln!(text, "\n## {namespace}").ok();
         }
         command(&mut text, spec);
     }
+    text.push_str(
+        "\n# Events\n\n\
+         What changes in Plays, its windows and their tiles, by namespace: `plays events` \
+         prints each as it comes, and `plays wait` waits for one. Each is a JSON object, \
+         `{type, payload}`. The payload of one about a window starts with `window_id` and \
+         `window_title`, as its title bar shows it; of one about a tile, with `tile_id` \
+         and `tile_title` too, as its header shows it. A listener hears the app's, one \
+         window's, or all of them. Readers ignore events and fields they don't know.\n",
+    );
+    let mut namespace = "";
+    for (in_namespace, kind) in kinds::all() {
+        if in_namespace != namespace {
+            namespace = in_namespace;
+            writeln!(text, "\n## {namespace}").ok();
+        }
+        event(&mut text, kind);
+    }
     text
+}
+
+/// The commands the reference has: those for working on Plays itself are
+/// in debug builds only.
+fn commands() -> impl Iterator<Item = &'static Spec> {
+    api::all().filter(|spec| !spec.developer)
+}
+
+/// One event, in the reference.
+fn event(text: &mut String, kind: &EventKind) {
+    writeln!(text, "\n### {}\n\n{}\n", kind.name, kind.description).ok();
+    let heard = match kind.heard {
+        Heard::App => "those listening to the app's events",
+        Heard::AppAndWindow => "those listening to the app's events, and to its window's",
+        Heard::Window | Heard::Tile => "those listening to its window's events",
+        Heard::Everyone => "every listener",
+    };
+    writeln!(text, "- Heard by {heard}.").ok();
+    let ids = kind.heard.ids();
+    if ids.is_empty() && kind.fields.is_empty() {
+        text.push_str("- Payload: none.\n");
+    } else {
+        text.push_str("- Payload:\n");
+    }
+    if !ids.is_empty() {
+        let names: Vec<String> = ids.iter().map(|id| format!("`{id}`")).collect();
+        let whose = if kind.heard == Heard::Tile {
+            "its window's and its tile's"
+        } else {
+            "its window's"
+        };
+        writeln!(text, "  - {}: {whose}.", names.join(", ")).ok();
+    }
+    for field in kind.fields {
+        let sometimes = if field.optional {
+            ", only sometimes"
+        } else {
+            ""
+        };
+        writeln!(
+            text,
+            "  - `{}`{sometimes}: {}",
+            field.name, field.description
+        )
+        .ok();
+    }
+    let mut follows: Vec<String> = commands()
+        .filter(|spec| spec.tells.contains(&kind.name))
+        .map(|spec| format!("`{}`", spec.id))
+        .collect();
+    follows.extend(kind.causes.iter().map(|&cause| cause.to_owned()));
+    if let Some(last) = follows.len().checked_sub(1).filter(|&last| last > 0) {
+        follows[last] = format!("or {}", follows[last]);
+    }
+    writeln!(text, "- Follows: {}.", follows.join(", ")).ok();
 }
 
 /// One command, in the reference.
@@ -84,6 +158,10 @@ fn command(text: &mut String, spec: &Spec) {
     }
     if let Some(returns) = spec.returns {
         writeln!(text, "- Hands back: {returns}").ok();
+    }
+    if !spec.tells.is_empty() {
+        let tells: Vec<String> = spec.tells.iter().map(|kind| format!("`{kind}`")).collect();
+        writeln!(text, "- Tells: {}.", tells.join(", ")).ok();
     }
 }
 
