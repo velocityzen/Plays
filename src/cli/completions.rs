@@ -1,5 +1,5 @@
-//! `plays completions SHELL`: the script that has bash, zsh or fish
-//! complete the command line, its subcommands and options, the ids of
+//! `plays completions SHELL`: the script that has bash, zsh, fish or
+//! Nushell complete the command line, its subcommands and options, the ids of
 //! Plays' commands for `do` and `api`, setting keys, and files to open.
 //! It's written from what clap knows of the command line and the registry
 //! this program has, so Plays needn't be running; one built with other
@@ -10,7 +10,8 @@ use std::io::{self, Write};
 use std::sync::Arc;
 
 use clap::builder::{PossibleValue, PossibleValuesParser};
-use clap::{Command, CommandFactory};
+use clap::{Arg, Command, CommandFactory};
+use clap_complete_nushell::Nushell;
 
 use super::args::{Cli, Shell};
 use crate::api;
@@ -24,19 +25,22 @@ pub fn completions(out: &mut dyn Write, shell: Shell) -> io::Result<()> {
     // pipe closed early.
     let mut script = Vec::new();
     let mut command = command();
-    clap_complete::generate(generator(shell), &mut command, "plays", &mut script);
-    if matches!(shell, Shell::Fish) {
-        script.extend_from_slice(fish_words(&command).as_bytes());
+    let generate = |generator, command: &mut Command, script: &mut Vec<u8>| {
+        clap_complete::generate(generator, command, "plays", script);
+    };
+    match shell {
+        Shell::Bash => generate(clap_complete::Shell::Bash, &mut command, &mut script),
+        Shell::Zsh => generate(clap_complete::Shell::Zsh, &mut command, &mut script),
+        Shell::Fish => {
+            generate(clap_complete::Shell::Fish, &mut command, &mut script);
+            script.extend_from_slice(fish_words(&command).as_bytes());
+        }
+        Shell::Nushell => {
+            clap_complete::generate(Nushell, &mut command, "plays", &mut script);
+            script = nu_described(&String::from_utf8_lossy(&script), &command).into_bytes();
+        }
     }
     out.write_all(&script)
-}
-
-fn generator(shell: Shell) -> clap_complete::Shell {
-    match shell {
-        Shell::Bash => clap_complete::Shell::Bash,
-        Shell::Zsh => clap_complete::Shell::Zsh,
-        Shell::Fish => clap_complete::Shell::Fish,
-    }
 }
 
 /// The command line as clap reads it, with the names each word can be:
@@ -146,6 +150,49 @@ fn fish_text(text: &str) -> String {
         .replace('\'', "\\'")
         .replace('"', "\\\"")
         .replace('$', "\\$")
+}
+
+/// `script`, clap's for Nushell, with what it leaves out: what each name
+/// it offers is, a command's title or a setting's, beside it. Its
+/// completers list the names alone; each lists records instead.
+fn nu_described(script: &str, command: &Command) -> String {
+    let mut script = script.to_owned();
+    let mut commands = vec![command];
+    while let Some(command) = commands.pop() {
+        commands.extend(command.get_subcommands());
+        let bin = command.get_bin_name().unwrap_or(command.get_name());
+        for arg in command.get_arguments() {
+            let head = format!("def \"nu-complete {bin} {}\" [] {{", arg.get_id());
+            let Some(at) = script.find(&head).map(|at| at + head.len()) else {
+                continue;
+            };
+            if let Some(end) = script[at..].find("\n  }") {
+                script.replace_range(at..at + end, &nu_records(arg));
+            }
+        }
+    }
+    script
+}
+
+/// The names `arg` takes as a completer's list of records, each with what
+/// it is where it says.
+fn nu_records(arg: &Arg) -> String {
+    let mut records = String::from("\n    [\n");
+    for value in arg.get_possible_values() {
+        write!(records, "      {{ value: \"{}\"", nu_text(value.get_name())).ok();
+        if let Some(help) = value.get_help() {
+            write!(records, ", description: \"{}\"", nu_text(&help.to_string())).ok();
+        }
+        records.push_str(" }\n");
+    }
+    records.push_str("    ]");
+    records
+}
+
+/// `text` to be read as it is from between double quotes, as Nushell reads
+/// a string: backslashes and quotes escaped. Nothing in one is run.
+fn nu_text(text: &str) -> String {
+    text.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
 /// The kinds of device Plays casts to, each of which has a setting for

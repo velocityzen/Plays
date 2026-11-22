@@ -242,11 +242,16 @@ fn completions_are_written_for_each_shell_without_plays() {
     assert!(ran.out.contains("complete -F _plays"), "{}", ran.out);
     let ran = command_line(None, None, &["completions", "fish"]);
     assert!(ran.out.contains("complete -c plays"), "{}", ran.out);
+    let ran = command_line(None, None, &["completions", "nushell"]);
+    assert!(ran.out.contains("export extern plays ["), "{}", ran.out);
+    let ran = command_line(None, None, &["completions", "nu"]);
+    assert!(ran.out.starts_with("module completions {"), "{}", ran.out);
 
     let ran = command_line(None, None, &["completions", "tcsh"]);
     assert_eq!(ran.status, 2);
     assert!(
-        ran.err.contains("[possible values: bash, zsh, fish]"),
+        ran.err
+            .contains("[possible values: bash, zsh, fish, nushell]"),
         "{}",
         ran.err
     );

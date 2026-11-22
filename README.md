@@ -214,7 +214,7 @@ GPU-accelerated UI framework.
   shortcuts, what changes as it does, and waiting for a file to end. It
   prints tables or JSON. Off until Settings → Command Line turns it on.
 - Plays → Install Command Line Tool puts `plays` where a terminal finds
-  it, and `plays completions` has bash, zsh or fish complete its
+  it, and `plays completions` has bash, zsh, fish or Nushell complete its
   subcommands, command ids and setting keys.
 
 ### Settings
@@ -886,12 +886,13 @@ plays actions                             # every command, Plays or not
   for a mistyped subcommand, not handed to Plays.
 - `PLAYS_SOCKET` names another socket to ask at.
 
-`plays completions SHELL` prints the script that has bash, zsh or fish
-complete the subcommands and options, each command's id after `do`,
-`api describe` and `api call` (with its title, in zsh and fish), and the
-setting keys after `settings get` and `set`. It needs no Plays running,
-and works with control from the command line off. Keep it where the shell
-finds it:
+`plays completions SHELL` prints the script that has bash, zsh, fish or
+Nushell (`nushell`, or `nu`) complete the subcommands and options, each
+command's id after `do`, `api describe` and `api call` (with its title,
+in zsh, fish and Nushell), and the setting keys after `settings get` and
+`set`. It needs no Plays running, and works with control from the command
+line off. Nushell finds a subcommand's words only with `-w` and `-t` after
+it (`plays do -w 2 …`), not before. Keep it where the shell finds it:
 
 ```bash
 plays completions bash > ~/.local/share/bash-completion/completions/plays  # or source it in ~/.bashrc
@@ -903,6 +904,10 @@ plays completions zsh > ~/.zfunc/_plays  # with fpath=(~/.zfunc $fpath) before c
 
 ```bash
 plays completions fish > ~/.config/fish/completions/plays.fish
+```
+
+```nu
+mkdir ($nu.user-autoload-dirs | first); plays completions nushell | save -f ($nu.user-autoload-dirs | first | path join plays.nu)
 ```
 
 Run it again after updating Plays, for the commands it has then.

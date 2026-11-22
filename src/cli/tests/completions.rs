@@ -1,6 +1,7 @@
 //! The scripts that complete the command line: what clap is told each
-//! word can be, and what bash and fish offer with the scripts loaded, as
-//! a terminal would ask them; zsh's is read for mistakes.
+//! word can be, and what bash, fish and Nushell offer with the scripts
+//! loaded, as a terminal or an editor would ask them; zsh's is read for
+//! mistakes.
 
 use std::fs;
 use std::io;
@@ -194,7 +195,7 @@ fn fish_completes_commands_ids_setting_keys_and_shells_and_still_files() {
 
     let mut shells = offers("plays completions ").unwrap();
     shells.sort();
-    assert_eq!(shells, ["bash", "fish", "zsh"]);
+    assert_eq!(shells, ["bash", "fish", "nushell", "zsh"]);
     assert_eq!(offers("plays open fi"), Some(vec!["film.mkv".to_owned()]));
 }
 
@@ -208,6 +209,136 @@ fn fish_reads_what_it_offers_as_it_is() {
     );
     if let Some(offers) = fish(&folder, &["-c", &offer]) {
         assert_eq!(offers, [format!("word\t{text}")]);
+    }
+}
+
+#[test]
+fn nushell_offers_the_commands_ids_and_setting_keys_each_with_what_it_is() {
+    let (_, script) = with_script("nushell", Shell::Nushell);
+    let text = fs::read_to_string(&script).unwrap();
+    assert!(text.starts_with("module completions {"), "{text}");
+    assert!(text.ends_with("export use completions *\n"));
+    // What the completer called `name` offers, from its opening brace to
+    // its closing one.
+    let offers = |name: &str| -> &str {
+        let head = format!("def \"nu-complete {name}\" [] {{");
+        let at = text.find(&head).unwrap_or_else(|| panic!("no {name}")) + head.len();
+        &text[at..at + text[at..].find("\n  }").unwrap()]
+    };
+    let seek = r#"{ value: "playback.seek", description: "Seek To" }"#;
+    for path in ["plays do", "plays api describe", "plays api call"] {
+        let typed = format!(r#"command: string@"nu-complete {path} command""#);
+        assert!(text.contains(&typed), "{path}");
+        let names = offers(&format!("{path} command"));
+        assert!(names.contains(seek), "{names}");
+        assert_eq!(
+            names.matches("{ value: ").count(),
+            api::all().count(),
+            "{path}: each command, with what it is"
+        );
+    }
+    let size = fields::find("subtitles.size", &[]).unwrap();
+    let size = format!(
+        r#"{{ value: "subtitles.size", description: "{}" }}"#,
+        nu_text(&size.title)
+    );
+    for path in ["plays settings get", "plays settings set"] {
+        let keys = offers(&format!("{path} key"));
+        assert!(keys.contains(&size), "{keys}");
+    }
+    let shells = offers("plays completions shell");
+    for shell in ["bash", "zsh", "fish", "nushell"] {
+        assert!(shells.contains(&format!("\"{shell}\"")), "{shells}");
+    }
+    assert!(text.contains("export extern \"plays open\" ["));
+    assert!(!text.contains("complete -c plays"), "fish's lines");
+}
+
+/// What Nushell prints for `args`, in `folder`, with no config of its
+/// own, or nothing if there's no Nushell to ask.
+fn nu(folder: &Path, args: &[&str]) -> Option<Vec<String>> {
+    match Process::new("nu")
+        .arg("--no-config-file")
+        .args(args)
+        .current_dir(folder)
+        .output()
+    {
+        Ok(output) => Some(printed(&output)),
+        Err(err) if err.kind() == io::ErrorKind::NotFound => {
+            eprintln!("no nu to ask: what it offers goes unchecked");
+            None
+        }
+        Err(err) => panic!("{err}"),
+    }
+}
+
+/// What Nushell offers for the end of `line`, in `folder`, with the
+/// script there as `plays.nu` and used, as `use plays.nu *` in its config
+/// would; as an editor asks it.
+fn nu_offers(folder: &Path, line: &str) -> Option<Vec<String>> {
+    let typed = format!("use plays.nu *\n{line}");
+    fs::write(folder.join("typed.nu"), &typed).unwrap();
+    let at = typed.len().to_string();
+    let printed = nu(folder, &["--ide-complete", &at, "typed.nu"])?;
+    let listed: serde_json::Value = serde_json::from_str(&printed.concat()).unwrap();
+    let offered = listed["completions"].as_array().unwrap().iter();
+    Some(
+        offered
+            .map(|name| name.as_str().unwrap().to_owned())
+            .collect(),
+    )
+}
+
+#[test]
+fn nushell_completes_commands_ids_setting_keys_shells_and_files() {
+    let (folder, script) = with_script("nushell-asked", Shell::Nushell);
+    fs::copy(&script, folder.join("plays.nu")).unwrap();
+    fs::write(folder.join("film.mkv"), b"").unwrap();
+    let offers = |line: &str| nu_offers(&folder, line);
+    let Some(seeks) = offers("plays do playback.seek") else {
+        return;
+    };
+    assert!(
+        seeks.contains(&"playback.seek_forward".to_owned()),
+        "{seeks:?}"
+    );
+    assert!(seeks.iter().all(|id| id.starts_with("playback.seek")));
+    // An option before the subcommand hides it from Nushell; after, not.
+    assert_eq!(offers("plays do -w 1 playback.seek"), Some(seeks));
+    let quit = Some(vec!["app.quit".to_owned()]);
+    assert_eq!(offers("plays api describe app.qu"), quit);
+    assert_eq!(offers("plays api call app.qu"), quit);
+    assert_eq!(
+        offers("plays settings get subtitles.si"),
+        Some(vec!["subtitles.size".to_owned()])
+    );
+    assert_eq!(
+        offers("plays settings set casting.look_with.")
+            .unwrap()
+            .len(),
+        3
+    );
+    assert_eq!(
+        offers("plays completions n"),
+        Some(vec!["nushell".to_owned()])
+    );
+    assert_eq!(offers("plays open fi"), Some(vec!["film.mkv".to_owned()]));
+}
+
+#[test]
+fn nushell_reads_what_it_offers_as_it_is() {
+    let text = r#"it's "quoted", $HOME, (not run) and a back\slash"#;
+    let quoted = r#"it's \"quoted\", $HOME, (not run) and a back\\slash"#;
+    let word = PossibleValue::new(text).help(text);
+    let arg = clap::Arg::new("word").value_parser(PossibleValuesParser::new([word]));
+    let records = nu_records(&arg);
+    assert_eq!(
+        records,
+        format!("\n    [\n      {{ value: \"{quoted}\", description: \"{quoted}\" }}\n    ]")
+    );
+    let read = format!("let offered = ({records}); print $offered.0.value $offered.0.description");
+    if let Some(printed) = nu(&std::env::temp_dir(), &["-c", &read]) {
+        assert_eq!(printed, [text, text]);
     }
 }
 
@@ -241,7 +372,7 @@ fn zsh_reads_its_script_and_it_offers_the_commands_ids_and_files() {
     for names in keys {
         assert!(names.contains(r"subtitles.size\:"), "{names}");
     }
-    assert!(text.contains("':shell:(bash zsh fish)'"));
+    assert!(text.contains("':shell:(bash zsh fish nushell)'"));
     assert!(text.contains("'*::paths:_files'"));
     assert!(!text.contains("complete -c plays"), "fish's lines");
 }

@@ -27,9 +27,10 @@ workspace = true
 [dependencies]
 anyhow = "1"
 # The command line's subcommands, options and help (`src/cli`), and the
-# scripts that complete them in bash, zsh and fish.
+# scripts that complete them in bash, zsh, fish and Nushell.
 clap = { version = "4", features = ["derive", "string"] }
 clap_complete = "4"
+clap_complete_nushell = "4"
 cpal = "0.18"
 dirs = "6"
 env_logger = "0.11"

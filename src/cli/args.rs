@@ -120,7 +120,10 @@ pub enum Command {
                             zsh:  plays completions zsh > ~/.zfunc/_plays, with \
                             fpath=(~/.zfunc $fpath) before compinit in ~/.zshrc\n  \
                             fish: plays completions fish > \
-                            ~/.config/fish/completions/plays.fish")]
+                            ~/.config/fish/completions/plays.fish\n  \
+                            nushell: mkdir ($nu.user-autoload-dirs | first); \
+                            plays completions nushell | save -f \
+                            ($nu.user-autoload-dirs | first | path join plays.nu)")]
     Completions { shell: Shell },
 }
 
@@ -130,6 +133,8 @@ pub enum Shell {
     Bash,
     Zsh,
     Fish,
+    #[value(alias = "nu")]
+    Nushell,
 }
 
 #[derive(Debug, Subcommand)]
