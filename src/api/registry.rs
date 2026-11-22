@@ -27,6 +27,8 @@ pub enum Scope {
     Window,
     /// Every block in a player window.
     Blocks,
+    /// Every block in every player window: it takes no window or block.
+    EveryBlock,
     /// A block: the one keys go to in the window in front, or the one named.
     Block,
 }
@@ -37,8 +39,15 @@ impl Scope {
             Self::App => "app",
             Self::AnyWindow | Self::Window => "window",
             Self::Blocks => "blocks",
+            Self::EveryBlock => "every_block",
             Self::Block => "block",
         }
+    }
+
+    /// Whether it acts on a window, or something in one, that can be
+    /// named: not the app, nor every block in every window.
+    pub fn takes_target(self) -> bool {
+        !matches!(self, Self::App | Self::EveryBlock)
     }
 }
 
@@ -154,7 +163,9 @@ impl Spec {
             // files, but not while typing.
             reach: match scope {
                 Scope::App | Scope::AnyWindow => Reach::Anywhere,
-                Scope::Window | Scope::Blocks | Scope::Block => Reach::NotTyping,
+                Scope::Window | Scope::Blocks | Scope::EveryBlock | Scope::Block => {
+                    Reach::NotTyping
+                }
             },
             needs_target: false,
             run,
@@ -213,6 +224,16 @@ impl Spec {
         run: WindowFn,
     ) -> Self {
         Self::new(id, title, description, Scope::Blocks, Run::Window(run))
+    }
+
+    /// One for every block in every player window.
+    pub const fn every_block(
+        id: &'static str,
+        title: &'static str,
+        description: &'static str,
+        run: fn(&mut App),
+    ) -> Self {
+        Self::new(id, title, description, Scope::EveryBlock, Run::App(run))
     }
 
     pub const fn block(
@@ -362,11 +383,14 @@ impl Spec {
         self.setting.unwrap_or(self.id)
     }
 
-    /// Whether `target` names what it can act on: nothing, for the app's;
-    /// no block, for a window's.
+    /// Whether `target` names what it can act on: nothing, for the app's
+    /// and every block's; no block, for a window's.
     pub fn check_target(&self, target: &Target) -> Result<(), Error> {
         let message = match self.scope {
             Scope::App if !target.is_empty() => "acts on the app, not on a window or block",
+            Scope::EveryBlock if !target.is_empty() => {
+                "acts on every block in every window: name no window or block"
+            }
             Scope::AnyWindow | Scope::Window | Scope::Blocks if target.block.is_some() => {
                 "acts on a window: name it with window, not block"
             }

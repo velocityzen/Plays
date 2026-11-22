@@ -496,7 +496,8 @@ flowchart LR
   `commands/`, a
   list of `Spec`s: the command's id (`playback.toggle_loop`), title,
   description and keywords,
-  what it acts on (the app, a window, every block in one, or a block), the
+  what it acts on (the app, a window, every block in one, every block in
+  every window, or a block), the
   arguments it takes, the keys it starts out with and where they work
   (`Reach`: anywhere, in a window with files, or there but not while
   typing), what it does, its state (on or off, the chapter) where it
@@ -860,7 +861,8 @@ flowchart LR
   `window.json`, and Settings as it moves, saved in `settings-window.json`
   as it closes, which quitting does too), going full screen on another display (`display`: out
   of full screen, across, and in again), the window's sound (`sound`), and
-  what the Playback commands do to every block (`commands`).
+  what the "all" Playback and Audio commands do to every block in every
+  window (`all`).
 - `src/ui/player/`: a player's block, a file per part: what fills it
   (`content`), the header, the controls, the track menu, notes on what
   shortcuts did (`osd`, with the track reel), the `console`, what

@@ -281,6 +281,28 @@ fn rows_show_what_commands_change_and_run_on_the_window_its_over(cx: &mut TestAp
 }
 
 #[gpui::test]
+fn the_all_commands_run_from_it_aimed_at_no_window_as_they_reach_every_one(
+    cx: &mut TestAppContext,
+) {
+    let (window, mut cx) = testing::start(cx);
+    open(window, &mut cx, &["clip.mp4"]);
+    cx.update(|_, cx| api::record(cx));
+    open_palette(&mut cx);
+    type_in(&mut cx, "play all");
+    press_and_wait(&mut cx, "enter");
+    assert_eq!(
+        ran(&mut cx),
+        [Invocation::new("playback.play_all").from(Source::Palette)]
+    );
+    let playing = window
+        .read_with(&cx, |workspace, cx| {
+            workspace.players()[0].read(cx).is_playing()
+        })
+        .unwrap();
+    assert!(playing, "it ran");
+}
+
+#[gpui::test]
 fn a_command_taking_a_choice_asks_for_it_from_a_list(cx: &mut TestAppContext) {
     let (window, mut cx) = testing::start(cx);
     open(window, &mut cx, &["clip-chapters.mkv"]);

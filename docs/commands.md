@@ -604,71 +604,71 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 ### Play/Pause All
 
-`playback.play_pause_all`: Pause every file in the window if any plays, else play them all.
+`playback.play_pause_all`: Pause every file in every window if any plays, else play them all.
 
-- Acts on every block in a window.
+- Acts on every block in every window.
 - Keys: ⇧Space
 - Tells: `playing`, `paused`.
 
 ### Play All
 
-`playback.play_all`: Play every file in the window.
+`playback.play_all`: Play every file in every window.
 
-- Acts on every block in a window.
+- Acts on every block in every window.
 - Tells: `playing`.
 
 ### Pause All
 
-`playback.pause_all`: Pause every file in the window.
+`playback.pause_all`: Pause every file in every window.
 
-- Acts on every block in a window.
+- Acts on every block in every window.
 - Tells: `paused`.
 
 ### Restart All
 
-`playback.restart_all`: Play every file in the window from the start.
+`playback.restart_all`: Play every file in every window from the start.
 
-- Acts on every block in a window.
+- Acts on every block in every window.
 - Keys: ⇧↖
 - Tells: `seeked`, `chapter_changed`.
 
 ### Seek All Forward
 
-`playback.seek_forward_all`: Skip every file in the window ahead by the seek step.
+`playback.seek_forward_all`: Skip every file in every window ahead by the seek step.
 
-- Acts on every block in a window.
+- Acts on every block in every window.
 - Keys: ⇧→
 - Tells: `seeked`, `ended`, `chapter_changed`.
 
 ### Seek All Backward
 
-`playback.seek_backward_all`: Skip every file in the window back by the seek step.
+`playback.seek_backward_all`: Skip every file in every window back by the seek step.
 
-- Acts on every block in a window.
+- Acts on every block in every window.
 - Keys: ⇧←
 - Tells: `seeked`, `chapter_changed`.
 
 ### Next Frame on All
 
-`playback.next_frame_all`: Pause every file in the window and show its next frame.
+`playback.next_frame_all`: Pause every file in every window and show its next frame.
 
-- Acts on every block in a window.
+- Acts on every block in every window.
 - Keys: ⌥⇧→
 - Tells: `paused`, `seeked`.
 
 ### Previous Frame on All
 
-`playback.previous_frame_all`: Pause every file in the window and show the frame before.
+`playback.previous_frame_all`: Pause every file in every window and show the frame before.
 
-- Acts on every block in a window.
+- Acts on every block in every window.
 - Keys: ⌥⇧←
 - Tells: `paused`, `seeked`.
 
 ### Sync All to This Block
 
-`playback.sync_all`: Bring every file in the window to where the block keys go to is, playing or paused as it is.
+`playback.sync_all`: Bring every file in every window to where the block is, playing or paused as it is.
 
-- Acts on every block in a window.
+- Acts on a block.
 - Keys: ⇧S
 - Tells: `seeked`, `playing`, `paused`.
 
@@ -747,25 +747,25 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 ### Volume Up on All
 
-`audio.volume_up_all`: Turn every file's volume in the window up, each from its own.
+`audio.volume_up_all`: Turn every file's volume in every window up, each from its own.
 
-- Acts on every block in a window.
+- Acts on every block in every window.
 - Keys: ⇧↑
 - Tells: `volume_changed`.
 
 ### Volume Down on All
 
-`audio.volume_down_all`: Turn every file's volume in the window down, each from its own.
+`audio.volume_down_all`: Turn every file's volume in every window down, each from its own.
 
-- Acts on every block in a window.
+- Acts on every block in every window.
 - Keys: ⇧↓
 - Tells: `volume_changed`.
 
 ### Mute/Unmute All
 
-`audio.toggle_mute_all`: Mute every file in the window if any plays its sound, else unmute them all.
+`audio.toggle_mute_all`: Mute every file in every window if any plays its sound, else unmute them all.
 
-- Acts on every block in a window.
+- Acts on every block in every window.
 - Keys: ⇧M
 - Tells: `volume_changed`.
 

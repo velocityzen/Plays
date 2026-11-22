@@ -46,7 +46,7 @@ use super::theme::palette::{
 use super::theme::text::TextStyle;
 use super::theme::{Theme, dialog};
 use crate::api::commands::NAMESPACES;
-use crate::api::{self, Invocation, Scope, Source, Spec, Target};
+use crate::api::{self, Invocation, Source, Spec, Target};
 use crate::hotkeys;
 use crate::recents;
 use crate::settings::Settings;
@@ -142,12 +142,12 @@ impl State {
 }
 
 /// `window`, for a command that acts on a window or what's in it;
-/// nothing, for the app's.
+/// nothing, for the app's and every block's.
 fn aimed(spec: &Spec, window: &Target) -> Target {
-    if spec.scope == Scope::App {
-        Target::default()
-    } else {
+    if spec.scope.takes_target() {
         window.clone()
+    } else {
+        Target::default()
     }
 }
 

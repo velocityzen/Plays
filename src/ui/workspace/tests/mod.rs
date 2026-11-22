@@ -11,6 +11,7 @@ mod commands;
 mod controls;
 mod dragging;
 mod events;
+mod every_window;
 mod inspect;
 mod languages;
 mod over_video;

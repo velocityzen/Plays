@@ -166,7 +166,9 @@ fn describes_each_command() {
     );
     assert_eq!(play["state"], false);
     let all = find("playback.play_all").unwrap().describe();
-    assert_eq!(all["scope"], "blocks");
+    assert_eq!(all["scope"], "every_block");
+    let close_all = find("block.close_all").unwrap().describe();
+    assert_eq!(close_all["scope"], "blocks");
     let quit = find("app.quit").unwrap().describe();
     assert_eq!(quit["keys"], json!(["secondary-q"]));
     assert_eq!(quit["scope"], "app");
@@ -423,12 +425,14 @@ fn a_command_aimed_at_a_block_acts_on_it_not_on_the_one_in_front(cx: &mut TestAp
     // As commands named nothing are.
     run_now(mute(), &mut cx).unwrap();
     assert!(muted(&other, &mut cx));
-    // Every block in a window.
-    run_now(Invocation::new("playback.play_all").in_window("1"), &mut cx).unwrap();
+    // Every block in every window, named none.
+    run_now(Invocation::new("playback.play_all"), &mut cx).unwrap();
     let playing = |player: &Entity<PlayerView>, cx: &mut VisualTestContext| {
         TestAppContext::update(cx, |cx| player.read(cx).is_playing())
     };
-    assert!(playing(&first, &mut cx) && playing(&second, &mut cx));
+    for player in [&first, &second, &other] {
+        assert!(playing(player, &mut cx));
+    }
     // A block closed in a window behind.
     run_now(Invocation::new("block.close").on_block(&second_id), &mut cx).unwrap();
     assert_eq!(players(front, &mut cx), [first]);
@@ -599,14 +603,23 @@ fn says_what_can_run_and_what_its_state_is(cx: &mut TestAppContext) {
     assert!(!can("app.quit", named("1"), &mut cx), "it takes none");
     assert!(!can("playback.dance", none(), &mut cx));
     assert!(can("window.toggle_full_screen", none(), &mut cx));
-    assert!(can("playback.play_all", named("1"), &mut cx));
+    assert!(can("block.close_all", named("1"), &mut cx));
     let window_id = TestAppContext::update(&cx, |cx| window.read(cx).unwrap().id().to_string());
     let past = past_the_last(&window_id);
-    assert!(!can("playback.play_all", named(&past), &mut cx), "no other");
+    assert!(!can("block.close_all", named(&past), &mut cx), "no other");
     assert!(!can("playback.play_pause", none(), &mut cx), "no file");
+    assert!(
+        !can("playback.play_all", none(), &mut cx),
+        "no file anywhere"
+    );
     assert!(can("window.close", none(), &mut cx));
     open(window, &["clip.mp4"], &mut cx);
     assert!(can("playback.play_pause", none(), &mut cx));
+    assert!(can("playback.play_all", none(), &mut cx));
+    assert!(
+        !can("playback.play_all", named("1"), &mut cx),
+        "it takes none"
+    );
     assert_eq!(
         can("block.toggle_picture_in_picture", none(), &mut cx),
         cfg!(target_os = "macos")

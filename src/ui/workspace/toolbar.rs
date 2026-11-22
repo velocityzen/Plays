@@ -5,8 +5,8 @@ use gpui::prelude::*;
 use gpui::{AnyElement, App, ClickEvent, Context, Decorations, MouseButton, Window, div};
 use serde_json::Value;
 
-use super::Workspace;
-use crate::api::Run;
+use super::{Workspace, all};
+use crate::api::{self, Invocation, Run};
 use crate::ui::components::Button;
 use crate::ui::theme::Theme;
 use crate::ui::theme::layout::{COMPACT_WIDTH, TOOLBAR_HEIGHT};
@@ -20,7 +20,9 @@ impl Workspace {
     ) -> impl IntoElement {
         let client_decorated = matches!(window.window_decorations(), Decorations::Client { .. });
         let count = self.blocks.len();
-        let playing = self.any_playing(cx);
+        // What Play/Pause All pauses: a block playing in any window.
+        let playing =
+            self.any_playing(cx) || all::playing_elsewhere(window.window_handle().window_id(), cx);
         let compact = window.viewport_size().width < COMPACT_WIDTH;
         let status = self.status(cx);
 
@@ -54,18 +56,14 @@ impl Workspace {
                     "play-pause-all",
                     if playing { "pause" } else { "play" },
                     if playing { "Pause all" } else { "Play all" },
-                    cx.listener(|this, _, _, cx| {
-                        this.send("playback.play_pause_all", Value::Null, cx);
-                    }),
+                    |_, _, cx| api::dispatch(Invocation::new("playback.play_pause_all"), cx),
                 ))
                 .child(tool(
                     compact,
                     "restart-all",
                     "replay",
                     "Restart all",
-                    cx.listener(|this, _, _, cx| {
-                        this.send("playback.restart_all", Value::Null, cx);
-                    }),
+                    |_, _, cx| api::dispatch(Invocation::new("playback.restart_all"), cx),
                 ))
                 .child(tool(
                     compact,

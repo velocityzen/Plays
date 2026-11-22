@@ -1,9 +1,9 @@
 //! A window: the toolbar, and a grid with one block per open file, or the
 //! empty window's ring. Each part is in its own file.
 
+pub mod all;
 mod blocks;
 mod command_palette;
-mod commands;
 mod display;
 mod empty;
 mod fit;

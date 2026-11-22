@@ -180,8 +180,9 @@ GPU-accelerated UI framework.
 ### Keyboard shortcuts
 
 - Shortcuts go to the block the mouse is over, or the one the keys went
-  to. With Shift, the playback ones go to every file in the window, and
-  Shift-S syncs them all to that block.
+  to. With Shift, the playback and volume ones go to every file in every
+  window, so one moved to a window of its own on another display keeps up
+  with the rest, and Shift-S syncs them all to that block.
 - Change any shortcut in Settings → Hotkeys, the app's own (⌘O, ⌘W and
   so on) too.
 - The menu bar (a toolbar on Linux) has them too.

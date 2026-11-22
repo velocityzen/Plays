@@ -33,7 +33,7 @@ pub use error::Error;
 pub use registry::{Reach, Scope, Spec, all, find};
 pub use target::{Id, Target, front_window, read_block};
 
-use crate::ui::workspace::Workspace;
+use crate::ui::workspace::{self, Workspace};
 
 /// What keys, menu items and the controls that send actions send: run
 /// this. One action for every command, so a command needs nothing more
@@ -324,6 +324,7 @@ pub fn can_run(command: &str, target: &Target, cx: &mut App) -> bool {
                 || target::window(target, cx).is_ok()
         }
         registry::Scope::Window | registry::Scope::Blocks => target::window(target, cx).is_ok(),
+        registry::Scope::EveryBlock => !workspace::all::views(cx).is_empty(),
         registry::Scope::Block => target::block(target, cx).is_ok(),
     };
     there && spec.check_target(target).is_ok() && (spec.available)()

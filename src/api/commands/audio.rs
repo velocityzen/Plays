@@ -9,6 +9,7 @@ use crate::api::events::{EventField, EventKind};
 use crate::api::registry::{Spec, on_mac};
 use crate::api::target;
 use crate::media::tracks::TrackKind;
+use crate::ui::workspace::all;
 
 /// How far the volume commands change a block's volume.
 const VOLUME_STEP: f32 = 0.05;
@@ -120,31 +121,31 @@ pub const COMMANDS: &[Spec] = &[
     .keywords(&["sync", "offset"])
     .setting("reset_audio_delay")
     .keys(&["ctrl-backspace"]),
-    Spec::blocks(
+    Spec::every_block(
         "audio.volume_up_all",
         "Volume Up on All",
-        "Turn every file's volume in the window up, each from its own.",
-        |workspace, _, cx| workspace.change_volume_all(VOLUME_STEP, cx),
+        "Turn every file's volume in every window up, each from its own.",
+        |cx| all::change_volume(VOLUME_STEP, cx),
     )
     .tells(&["volume_changed"])
     .keywords(&["every", "louder"])
     .setting("volume_up_all")
     .keys(&["shift-up"]),
-    Spec::blocks(
+    Spec::every_block(
         "audio.volume_down_all",
         "Volume Down on All",
-        "Turn every file's volume in the window down, each from its own.",
-        |workspace, _, cx| workspace.change_volume_all(-VOLUME_STEP, cx),
+        "Turn every file's volume in every window down, each from its own.",
+        |cx| all::change_volume(-VOLUME_STEP, cx),
     )
     .tells(&["volume_changed"])
     .keywords(&["every", "quieter"])
     .setting("volume_down_all")
     .keys(&["shift-down"]),
-    Spec::blocks(
+    Spec::every_block(
         "audio.toggle_mute_all",
         "Mute/Unmute All",
-        "Mute every file in the window if any plays its sound, else unmute them all.",
-        |workspace, _, cx| workspace.toggle_mute_all(cx),
+        "Mute every file in every window if any plays its sound, else unmute them all.",
+        all::toggle_mute,
     )
     .tells(&["volume_changed"])
     .keywords(&["every", "silence"])

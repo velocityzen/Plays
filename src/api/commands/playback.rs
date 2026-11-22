@@ -10,10 +10,11 @@ use serde_json::{Value, json};
 use super::done;
 use crate::api::args::{Arg, Kind};
 use crate::api::events::{EventField, EventKind};
-use crate::api::registry::Spec;
+use crate::api::registry::{Scope, Spec};
 use crate::api::target;
 use crate::api::{Error, Run};
 use crate::settings::Settings;
+use crate::ui::workspace::all;
 
 pub const COMMANDS: &[Spec] = &[
     Spec::block(
@@ -200,88 +201,93 @@ pub const COMMANDS: &[Spec] = &[
     .state(|target, cx| {
         target::read_block(target, cx, |player, _| json!(player.player().is_looping()))
     }),
-    Spec::blocks(
+    Spec::every_block(
         "playback.play_pause_all",
         "Play/Pause All",
-        "Pause every file in the window if any plays, else play them all.",
-        |workspace, _, cx| workspace.toggle_all(cx),
+        "Pause every file in every window if any plays, else play them all.",
+        all::toggle,
     )
     .tells(&["playing", "paused"])
     .keywords(&["every", "play", "pause"])
     .setting("play_pause_all")
     .keys(&["shift-space"]),
-    Spec::blocks(
+    Spec::every_block(
         "playback.play_all",
         "Play All",
-        "Play every file in the window.",
-        |workspace, _, cx| workspace.play_all(cx),
+        "Play every file in every window.",
+        all::play,
     )
     .tells(&["playing"])
     .keywords(&["every", "resume"]),
-    Spec::blocks(
+    Spec::every_block(
         "playback.pause_all",
         "Pause All",
-        "Pause every file in the window.",
-        |workspace, _, cx| workspace.pause_all(cx),
+        "Pause every file in every window.",
+        all::pause,
     )
     .tells(&["paused"])
     .keywords(&["every", "stop"]),
-    Spec::blocks(
+    Spec::every_block(
         "playback.restart_all",
         "Restart All",
-        "Play every file in the window from the start.",
-        |workspace, _, cx| workspace.restart_all(cx),
+        "Play every file in every window from the start.",
+        all::restart,
     )
     .tells(&["seeked", "chapter_changed"])
     .keywords(&["every", "beginning", "rewind"])
     .setting("restart_all")
     .keys(&["shift-home"]),
-    Spec::blocks(
+    Spec::every_block(
         "playback.seek_forward_all",
         "Seek All Forward",
-        "Skip every file in the window ahead by the seek step.",
-        |workspace, _, cx| workspace.seek_all(1.0, cx),
+        "Skip every file in every window ahead by the seek step.",
+        |cx| all::seek(1.0, cx),
     )
     .tells(&["seeked", "ended", "chapter_changed"])
     .keywords(&["every", "skip", "jump"])
     .setting("seek_forward_all")
     .keys(&["shift-right"]),
-    Spec::blocks(
+    Spec::every_block(
         "playback.seek_backward_all",
         "Seek All Backward",
-        "Skip every file in the window back by the seek step.",
-        |workspace, _, cx| workspace.seek_all(-1.0, cx),
+        "Skip every file in every window back by the seek step.",
+        |cx| all::seek(-1.0, cx),
     )
     .tells(&["seeked", "chapter_changed"])
     .keywords(&["every", "rewind", "jump"])
     .setting("seek_backward_all")
     .keys(&["shift-left"]),
-    Spec::blocks(
+    Spec::every_block(
         "playback.next_frame_all",
         "Next Frame on All",
-        "Pause every file in the window and show its next frame.",
-        |workspace, _, cx| workspace.step_frame_all(1.0, cx),
+        "Pause every file in every window and show its next frame.",
+        |cx| all::step_frame(1.0, cx),
     )
     .tells(&["paused", "seeked"])
     .keywords(&["every", "step"])
     .setting("next_frame_all")
     .keys(&["alt-shift-right"]),
-    Spec::blocks(
+    Spec::every_block(
         "playback.previous_frame_all",
         "Previous Frame on All",
-        "Pause every file in the window and show the frame before.",
-        |workspace, _, cx| workspace.step_frame_all(-1.0, cx),
+        "Pause every file in every window and show the frame before.",
+        |cx| all::step_frame(-1.0, cx),
     )
     .tells(&["paused", "seeked"])
     .keywords(&["every", "step", "back"])
     .setting("previous_frame_all")
     .keys(&["alt-shift-left"]),
-    Spec::blocks(
+    Spec::custom(
         "playback.sync_all",
         "Sync All to This Block",
-        "Bring every file in the window to where the block keys go to is, playing or \
-         paused as it is.",
-        |workspace, _, cx| workspace.sync_all(cx),
+        "Bring every file in every window to where the block is, playing or paused as \
+         it is.",
+        Scope::Block,
+        |_, target, cx| {
+            let (_, block) = target::block(target, cx)?;
+            all::sync_to(&block, cx);
+            Ok(Value::Null)
+        },
     )
     .tells(&["seeked", "playing", "paused"])
     .keywords(&["every", "align", "same time"])

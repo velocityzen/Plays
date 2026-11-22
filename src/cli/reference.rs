@@ -171,6 +171,7 @@ fn acts_on(scope: Scope) -> &'static str {
         Scope::AnyWindow => "a window, Settings and About too",
         Scope::Window => "a player window",
         Scope::Blocks => "every block in a window",
+        Scope::EveryBlock => "every block in every window",
         Scope::Block => "a block",
     }
 }

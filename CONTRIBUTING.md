@@ -448,7 +448,12 @@ What the window tests check:
 - `⇧S` puts every block where the one clicked is, paused as it is, and
   `⌥⇧→` and `⌥⇧←` step them all a frame at a time; with the one clicked
   playing, the others go back to where it is and play. `⇧↑` and `⇧↓` turn
-  every block up or down from its own volume.
+  every block up or down from its own volume. With a block in a second
+  window, the "all" keys and commands reach it too: `⇧S`, the frame steps,
+  `⇧Space` (pausing one that plays only behind), Play, Pause and Restart
+  All, `⇧→` and the volume and mute; Sync All on a block named in the
+  window behind brings both to it. They take no window, and Close All
+  Files closes only its own window's.
 - In a file with three chapters, `Page Down` goes to the second and then
   the third, and no further; `Page Up` goes back to the second, then the
   first; the bar has a notch at the second and third, none with Settings'
@@ -829,7 +834,7 @@ check:
   - Finding commands by title, namespace and keyword, best first; the
     arrows picking a row, wrapping, and Return or a click running it from
     the palette (`Source::Palette`), on the window it's over or, for an
-    App command, on the app.
+    App command or an "all" one (Play All, say), on nothing named.
   - Rows saying what each command is set to now and its shortcut.
   - With nothing typed, each command under its namespace's heading, each
     heading once, and those run lately under Recent and not again; found
