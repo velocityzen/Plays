@@ -12,7 +12,7 @@ use gpui::{App, Context, EntityId, Pixels, Size, Window, px, size};
 use super::{TOOLBAR_SPACE, Workspace};
 use crate::settings::Settings;
 use crate::ui::player::PlayerView;
-use crate::ui::theme::layout::{AUDIO_WINDOW_SIZE, SCREEN_MARGIN, TILE_GAP, WINDOW_MIN_SIZE};
+use crate::ui::theme::layout::{AUDIO_WINDOW_SIZE, BLOCK_GAP, SCREEN_MARGIN, WINDOW_MIN_SIZE};
 use crate::ui::theme::motion::{FIT_POLL, FIT_WAIT};
 
 /// Who has the window sized for its videos.
@@ -32,15 +32,15 @@ fn may_size(sizing: Sizing, full_screen: bool, zoomed: bool) -> bool {
 
 /// Files opened into a window whose sizes it waits for.
 pub(super) struct Fitting {
-    /// Their tiles.
+    /// Their blocks.
     opened: Vec<EntityId>,
     /// When the last of them was opened.
     started: Instant,
 }
 
 impl Workspace {
-    /// Once the tiles just `opened` know how big their videos are (or have
-    /// failed, or `FIT_WAIT` has passed), size the window for every tile,
+    /// Once the blocks just `opened` know how big their videos are (or have
+    /// failed, or `FIT_WAIT` has passed), size the window for every block,
     /// unless it was resized meanwhile. Files opened while it waits are
     /// waited for too.
     pub(super) fn fit_when_known(&mut self, opened: Vec<EntityId>, cx: &mut Context<Self>) {
@@ -94,11 +94,11 @@ impl Workspace {
         };
         fitting.started.elapsed() >= FIT_WAIT
             || self
-                .tiles
+                .blocks
                 .iter()
-                .filter(|tile| fitting.opened.contains(&tile.view.entity_id()))
-                .all(|tile| {
-                    let player = tile.view.read(cx).player();
+                .filter(|block| fitting.opened.contains(&block.view.entity_id()))
+                .all(|block| {
+                    let player = block.view.read(cx).player();
                     player.is_known() || player.error().is_some()
                 })
     }
@@ -110,19 +110,19 @@ impl Workspace {
         self.fit_window(window, Sizing::Asked, cx);
     }
 
-    /// Size the window so every tile shows its video at its own size, or
+    /// Size the window so every block shows its video at its own size, or
     /// as near as the screen allows, if `sizing` may.
     fn fit_window(&mut self, window: &mut Window, sizing: Sizing, cx: &mut Context<Self>) {
         let may = may_size(sizing, window.is_fullscreen(), window.is_maximized());
-        if !may || self.tiles.is_empty() {
+        if !may || self.blocks.is_empty() {
             return;
         }
-        let count = self.tiles.len();
+        let count = self.blocks.len();
         let columns = cx.global::<Settings>().columns_for(count).clamp(1, count);
         let cells: Vec<_> = self
-            .tiles
+            .blocks
             .iter()
-            .filter_map(|tile| shown_size(tile.view.read(cx)))
+            .filter_map(|block| shown_size(block.view.read(cx)))
             .collect();
         let room = screen::room(window, cx);
         let room = size(room.width, room.height - TOOLBAR_SPACE);
@@ -138,8 +138,8 @@ impl Workspace {
     }
 }
 
-/// How big a tile's video shows, turned and adjusted, at a point a pixel;
-/// an audio file's tile takes the size its own window would have.
+/// How big a block's video shows, turned and adjusted, at a point a pixel;
+/// an audio file's block takes the size its own window would have.
 fn shown_size(view: &PlayerView) -> Option<Size<Pixels>> {
     if let Some(framing) = view.framing() {
         let (width, height) = framing.size;
@@ -149,7 +149,7 @@ fn shown_size(view: &PlayerView) -> Option<Size<Pixels>> {
     (!info.has_video).then_some(AUDIO_WINDOW_SIZE)
 }
 
-/// The grid for `count` tiles in `columns` columns, whose cells all fit the
+/// The grid for `count` blocks in `columns` columns, whose cells all fit the
 /// biggest of `cells` (the sizes known), scaled down evenly to fit `room`.
 /// `None` if no size is known.
 fn grid_size(
@@ -162,8 +162,8 @@ fn grid_size(
     let columns = columns.clamp(1, count.max(1));
     let rows = count.max(1).div_ceil(columns);
     let gaps = size(
-        TILE_GAP * (columns - 1) as f32,
-        TILE_GAP * (rows - 1) as f32,
+        BLOCK_GAP * (columns - 1) as f32,
+        BLOCK_GAP * (rows - 1) as f32,
     );
     let full = size(cell.width * columns as f32, cell.height * rows as f32);
     let scale = ((room.width - gaps.width) / full.width)

@@ -21,9 +21,9 @@ impl Workspace {
         if !self.mouse_inside || self.mouse_idle || self.keyboard_focus {
             self.mouse_inside = true;
             self.mouse_idle = false;
-            // The tile under it is in front now.
+            // The block under it is in front now.
             self.keyboard_focus = false;
-            self.tiles_changed(cx);
+            self.blocks_changed(cx);
         }
         if !self.watching_idle {
             self.watching_idle = true;
@@ -34,12 +34,12 @@ impl Workspace {
     fn mouse_left(&mut self, cx: &mut Context<Self>) {
         if self.mouse_inside {
             self.mouse_inside = false;
-            self.tiles_changed(cx);
+            self.blocks_changed(cx);
         }
     }
 
     /// Once the mouse has rested for `MOUSE_IDLE`, take it as gone from
-    /// playing tiles: their controls fade, and the pointer hides over them.
+    /// playing blocks: their controls fade, and the pointer hides over them.
     fn watch_idle(&mut self, cx: &mut Context<Self>) {
         cx.spawn(async move |this, cx| {
             let mut wait = MOUSE_IDLE;
@@ -53,7 +53,7 @@ impl Workspace {
                     this.watching_idle = false;
                     if this.mouse_inside {
                         this.mouse_idle = true;
-                        this.tiles_changed(cx);
+                        this.blocks_changed(cx);
                     }
                     None
                 });
@@ -72,7 +72,7 @@ impl Workspace {
         // The screensaver hides them too.
         let show = !self.screensaver.bouncing()
             && ((self.mouse_inside
-                && (!self.mouse_idle || self.tiles.iter().any(|t| t.view.read(cx).over_bars())))
+                && (!self.mouse_idle || self.blocks.iter().any(|t| t.view.read(cx).over_bars())))
                 || cx.global::<Settings>().controls == ControlsVisibility::Always
                 || !self.any_playing(cx));
         if show != self.traffic_lights_shown {

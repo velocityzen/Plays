@@ -145,7 +145,7 @@ fn window_id(window: WindowHandle<Workspace>, cx: &VisualTestContext) -> String 
 fn in_window(name: &str) -> Target {
     Target {
         window: Some(name.into()),
-        tile: None,
+        block: None,
     }
 }
 
@@ -280,7 +280,7 @@ fn a_client_passes_over_other_answers_and_keeps_the_events_that_come_first() {
         &path,
         &[
             r#"{"id": 99, "result": "stale"}"#,
-            r#"{"type": "playing", "payload": {"tile_id": "1"}}"#,
+            r#"{"type": "playing", "payload": {"block_id": "1"}}"#,
             r#"{"id": 1, "result": "hello"}"#,
             r#"{"type": "paused", "payload": null}"#,
         ],
@@ -291,7 +291,7 @@ fn a_client_passes_over_other_answers_and_keeps_the_events_that_come_first() {
     plays.join().unwrap();
     assert_eq!(
         client.next_event().unwrap(),
-        ("playing".into(), json!({"tile_id": "1"}))
+        ("playing".into(), json!({"block_id": "1"}))
     );
     assert_eq!(client.next_event().unwrap(), ("paused".into(), Value::Null));
     assert_eq!(
@@ -315,7 +315,7 @@ fn an_event_half_read_by_the_time_given_is_read_whole_the_next_time() {
         writeln!(&stream, r#"{{"id": 1, "result": "hello"}}"#).unwrap();
         write!(&stream, r#"{{"type": "ended", "pay"#).unwrap();
         told.recv().unwrap();
-        writeln!(&stream, r#"load": {{"tile_id": "1"}}}}"#).unwrap();
+        writeln!(&stream, r#"load": {{"block_id": "1"}}}}"#).unwrap();
     });
     let mut client = Client::connect(&path).unwrap();
     client.request(Ask::Hello).unwrap();
@@ -328,7 +328,7 @@ fn an_event_half_read_by_the_time_given_is_read_whole_the_next_time() {
     go_on.send(()).unwrap();
     assert_eq!(
         client.next_event_by(None).unwrap(),
-        Some(("ended".into(), json!({"tile_id": "1"})))
+        Some(("ended".into(), json!({"block_id": "1"})))
     );
     plays.join().unwrap();
 }
@@ -443,11 +443,11 @@ fn with_control_off_it_says_who_it_is_and_takes_files_but_runs_and_tells_nothing
     allow_control(&mut cx, true);
     let listed = talk(&mut cx, move || {
         let mut client = Client::connect(&path).unwrap();
-        client.call("tile.ls", Value::Null, Target::default())
+        client.call("block.ls", Value::Null, Target::default())
     });
     assert_eq!(
         listed
-            .map(|tiles| tiles.as_array().map_or(0, Vec::len))
+            .map(|blocks| blocks.as_array().map_or(0, Vec::len))
             .ok(),
         Some(1),
         "once turned on"
@@ -757,12 +757,12 @@ fn events_reach_those_who_subscribe_as_they_happen(cx: &mut TestAppContext) {
         let mut client = Client::connect(&path).unwrap();
         let open = json!({"urls": [clip]});
         client.call("app.open", open, Target::default()).unwrap();
-        // Its tile is made in a moment, and seen as the next command runs.
-        let tiles = |client: &mut Client| {
-            let listed = client.call("tile.ls", Value::Null, Target::default());
+        // Its block is made in a moment, and seen as the next command runs.
+        let blocks = |client: &mut Client| {
+            let listed = client.call("block.ls", Value::Null, Target::default());
             listed.unwrap().as_array().map_or(0, Vec::len)
         };
-        while tiles(&mut client) == 0 {
+        while blocks(&mut client) == 0 {
             thread::sleep(Duration::from_millis(5));
         }
         let rename = json!({"label": "Films"});
@@ -797,7 +797,7 @@ fn events_reach_those_who_subscribe_as_they_happen(cx: &mut TestAppContext) {
     assert_eq!(apps[3].1["label"], "Films");
     assert_eq!(apps[4].1, json!({"client_id": 3}));
     assert!(
-        kinds(everything).contains(&"tile_created"),
+        kinds(everything).contains(&"block_created"),
         "what's in a window is heard by those listening to everything: {:?}",
         kinds(everything)
     );
@@ -1082,7 +1082,7 @@ fn each_failure_has_its_exit_status() {
         (Failure::Closed, 4),
         (Failure::Command(Error::failed("no")), 1),
         (Failure::Command(Error::bad_args("a.b", "no")), 2),
-        (Failure::Command(Error::not_found("tile", "x")), 3),
+        (Failure::Command(Error::not_found("block", "x")), 3),
         (Failure::BadRequest("no".into()), 1),
     ];
     for (failure, status) in cases {

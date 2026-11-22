@@ -166,7 +166,7 @@ impl Source {
         }
     }
 
-    /// A short name for the tile: the file name, or the host and last path
+    /// A short name for the block: the file name, or the host and last path
     /// segment of a URL.
     pub fn name(&self) -> String {
         match self {

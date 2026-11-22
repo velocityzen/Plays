@@ -1,4 +1,4 @@
-//! Casting a tile to the AirPlay crate's fake TV, as someone at the screen
+//! Casting a block to the AirPlay crate's fake TV, as someone at the screen
 //! would: pairing with the PIN it shows, then driving it. The stream
 //! server is the real one, serving this computer only.
 
@@ -10,7 +10,7 @@ use gpui::{TestAppContext, VisualTestContext, WindowHandle};
 use plist::{Dictionary, Value};
 use serde_json::json;
 
-use super::casting::{get, tile, wait};
+use super::casting::{block, get, wait};
 use super::open;
 use crate::api::{self, Invocation};
 use crate::cast::airplay::{AirPlayTarget, KIND};
@@ -42,7 +42,7 @@ fn start(
     cx.update(|_, cx| cx.set_global(Casting::local(vec![Arc::new(target)])));
     open(window, &mut cx, &[file], playing);
     if !playing {
-        tile(window, &cx).update(&mut cx, |view, cx| {
+        block(window, &cx).update(&mut cx, |view, cx| {
             view.pause();
             cx.notify();
         });
@@ -116,7 +116,7 @@ fn seen_playing(tv: &FakeReceiver) -> bool {
         >= 2
 }
 
-/// Pick the TV from the tile's cast menu.
+/// Pick the TV from the block's cast menu.
 fn pick(cx: &mut VisualTestContext) {
     click(cx, "cast");
     click(cx, "cast-0");
@@ -160,12 +160,12 @@ fn a_tv_asks_for_the_pin_it_shows_once_and_a_wrong_one_has_it_show_another(
 ) {
     let tv = tv();
     let (window, mut cx) = start(cx, &tv, "clip.mp4", false);
-    let name = tile(window, &cx).read_with(&cx, |view, _| view.id().to_string());
+    let name = block(window, &cx).read_with(&cx, |view, _| view.id().to_string());
     let device = tv.device();
-    let on_tile = |command: &str| {
+    let on_block = |command: &str| {
         Invocation::new(command)
             .with_args(json!({"device": device.id, "kind": KIND}))
-            .on_tile(name.clone())
+            .on_block(name.clone())
     };
     cx.update(|_, cx| api::record(cx));
     pick(&mut cx);
@@ -174,15 +174,15 @@ fn a_tv_asks_for_the_pin_it_shows_once_and_a_wrong_one_has_it_show_another(
     });
     assert_eq!(
         cx.update(|_, cx| api::recorded(cx)),
-        [on_tile("cast.to"), on_tile("cast.pair")],
-        "the menu casts; the TV wanting its PIN, the tile asks to pair"
+        [on_block("cast.to"), on_block("cast.pair")],
+        "the menu casts; the TV wanting its PIN, the block asks to pair"
     );
     assert!(tv.state().pin_shown, "the TV shows it");
     assert!(shows(&mut cx, "pairing"));
     let says = sheet_says(window, &mut cx);
     assert_eq!(says, "Enter the PIN Fake TV shows.");
     assert!(plays(&tv).is_empty(), "not till it's paired");
-    let view = tile(window, &cx);
+    let view = block(window, &cx);
     assert!(view.read_with(&cx, |view, _| view.casting().is_none()));
 
     tv.state().pin_shown = false;
@@ -203,7 +203,7 @@ fn a_tv_asks_for_the_pin_it_shows_once_and_a_wrong_one_has_it_show_another(
     });
     assert_eq!(
         cx.update(|_, cx| api::recorded(cx)),
-        [on_tile("cast.to")],
+        [on_block("cast.to")],
         "paired, it's cast there again"
     );
     assert!(!shows(&mut cx, "pairing"), "the sheet goes");
@@ -246,7 +246,7 @@ fn a_tv_that_turns_this_computer_away_says_what_lets_it_in(cx: &mut TestAppConte
 }
 
 #[gpui::test]
-fn cancelling_the_sheet_leaves_the_tile_playing_here(cx: &mut TestAppContext) {
+fn cancelling_the_sheet_leaves_the_block_playing_here(cx: &mut TestAppContext) {
     let tv = tv();
     let (window, mut cx) = start(cx, &tv, "clip.mp4", false);
     pick(&mut cx);
@@ -255,20 +255,20 @@ fn cancelling_the_sheet_leaves_the_tile_playing_here(cx: &mut TestAppContext) {
     });
     press(&mut cx, "escape");
     wait(&mut cx, "the sheet to go", |cx| !shows(cx, "pairing"));
-    let view = tile(window, &cx);
+    let view = block(window, &cx);
     assert!(view.read_with(&cx, |view, _| view.casting().is_none()));
     assert!(pairings(&mut cx).paired().is_empty());
     assert!(plays(&tv).is_empty());
 }
 
 #[gpui::test]
-fn a_paired_tv_plays_the_front_tile_from_where_it_is_with_subtitles_in_the_playlist(
+fn a_paired_tv_plays_the_front_block_from_where_it_is_with_subtitles_in_the_playlist(
     cx: &mut TestAppContext,
 ) {
     let tv = tv();
     let (window, mut cx) = start(cx, &tv, "clip-subs.mkv", true);
     paired_before(&mut cx, &tv);
-    let view = tile(window, &cx);
+    let view = block(window, &cx);
     view.update(&mut cx, |view, cx| {
         view.select_track(TrackKind::Subtitle, Some(2), cx);
         view.seek(1.0);
@@ -282,9 +282,9 @@ fn a_paired_tv_plays_the_front_tile_from_where_it_is_with_subtitles_in_the_playl
     let start = number(&play, "Start-Position-Seconds");
     assert!(
         start >= 1.0 && (start - here).abs() < 0.01,
-        "from where the tile was: {start} against {here}"
+        "from where the block was: {start} against {here}"
     );
-    assert_eq!(number(&play, "rate"), 1.0, "playing, as the tile was");
+    assert_eq!(number(&play, "rate"), 1.0, "playing, as the block was");
 
     let url = url(&play);
     assert!(url.ends_with("master.m3u8"), "always HLS: {url}");
@@ -301,7 +301,7 @@ fn a_paired_tv_plays_the_front_tile_from_where_it_is_with_subtitles_in_the_playl
         String::from_utf8(video).unwrap().contains("init.mp4"),
         "an Apple TV 4K gets fragmented MP4"
     );
-    wait(&mut cx, "the tile to say where it plays", |cx| {
+    wait(&mut cx, "the block to say where it plays", |cx| {
         shows(cx, "play-here")
     });
 
@@ -328,18 +328,18 @@ fn a_paired_tv_plays_the_front_tile_from_where_it_is_with_subtitles_in_the_playl
 }
 
 #[gpui::test]
-fn the_tiles_controls_reach_it_and_its_status_moves_the_bar(cx: &mut TestAppContext) {
+fn the_blocks_controls_reach_it_and_its_status_moves_the_bar(cx: &mut TestAppContext) {
     let tv = tv();
     let (window, mut cx) = start(cx, &tv, "clip.mp4", false);
     paired_before(&mut cx, &tv);
-    let view = tile(window, &cx);
+    let view = block(window, &cx);
     cast(&mut cx, &tv);
     assert_eq!(
         number(&last_play(&tv), "rate"),
         0.0,
-        "paused, as the tile was"
+        "paused, as the block was"
     );
-    wait(&mut cx, "the tile to say where it plays", |cx| {
+    wait(&mut cx, "the block to say where it plays", |cx| {
         shows(cx, "play-here")
     });
 
@@ -365,7 +365,7 @@ fn the_tiles_controls_reach_it_and_its_status_moves_the_bar(cx: &mut TestAppCont
     wait(&mut cx, "it to pause", |_| rates(&tv).last() == Some(&0.0));
     assert!(
         !view.read_with(&cx, |view, _| view.player().is_playing()),
-        "the shortcuts drive it, not the tile's own playback"
+        "the shortcuts drive it, not the block's own playback"
     );
 
     tv.state()

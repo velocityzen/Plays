@@ -104,8 +104,8 @@ fn subcommands_and_their_options_are_the_command_lines_and_files_plays() {
         &["window", "ls"],
         &["--json", "ls"],
         &["--json=true"],
-        &["-w", "2", "tile", "ls"],
-        &["-t2"],
+        &["-w", "2", "block", "ls"],
+        &["-b2"],
         &["--help"],
         &["-h"],
         &["help"],
@@ -259,6 +259,38 @@ fn completions_are_written_for_each_shell_without_plays() {
 }
 
 #[test]
+fn what_it_names_are_windows_and_the_blocks_in_them() {
+    // What shows a player in a window is a block: no command, event,
+    // argument, namespace or help says otherwise.
+    let described = Value::from_iter(api::all().map(api::Spec::describe)).to_string();
+    let namespaces: String = api::commands::NAMESPACES
+        .iter()
+        .map(|(id, title)| format!("{id}: {title}\n"))
+        .collect();
+    let mut cli = Cli::command();
+    cli.build();
+    let mut help = String::new();
+    every_help(&mut cli, &mut help);
+    for (what, text) in [
+        ("the reference", reference::reference()),
+        ("the commands", described),
+        ("the namespaces", namespaces),
+        ("the help", help),
+    ] {
+        assert!(text.contains("block"), "{what} names blocks");
+        assert!(!text.to_lowercase().contains("tile"), "{what} names tiles");
+    }
+}
+
+/// `command`'s help, and each of its subcommands', all the way down.
+fn every_help(command: &mut clap::Command, help: &mut String) {
+    help.push_str(&command.render_long_help().to_string());
+    for sub in command.get_subcommands_mut() {
+        every_help(sub, help);
+    }
+}
+
+#[test]
 #[cfg(target_os = "macos")]
 fn the_command_reference_is_current() {
     let kept = include_str!("../../docs/commands.md");
@@ -375,7 +407,7 @@ fn arguments_are_typed_as_their_commands_take_them() {
 }
 
 #[gpui::test]
-fn windows_and_their_tiles_are_listed(cx: &mut TestAppContext) {
+fn windows_and_their_blocks_are_listed(cx: &mut TestAppContext) {
     let (path, window, mut cx) = serving("cli-ls", cx);
     let ran = plays(
         &mut cx,
@@ -408,19 +440,19 @@ fn windows_and_their_tiles_are_listed(cx: &mut TestAppContext) {
     let listed = plays(&mut cx, &path, &["--json", "ls"]).json();
     assert_eq!(listed[0]["id"], id.as_str());
     assert_eq!(
-        listed[0]["tiles"][1]["title"], "tone.m4a",
-        "the tiles, not how many"
+        listed[0]["blocks"][1]["title"], "tone.m4a",
+        "the blocks, not how many"
     );
 
     let ran = plays(&mut cx, &path, &["window", "ls"]);
     assert_eq!(
         ran.out,
         format!(
-            "   #  ID{}  LABEL  TILES\n*  1  {id}  -      2\n",
+            "   #  ID{}  LABEL  BLOCKS\n*  1  {id}  -      2\n",
             " ".repeat(6)
         )
     );
-    let ran = plays(&mut cx, &path, &["tile", "ls"]);
+    let ran = plays(&mut cx, &path, &["block", "ls"]);
     let lines: Vec<&str> = ran.out.lines().collect();
     assert!(
         lines[0].starts_with("   #  ID") && lines[0].ends_with("NAME      STATE"),
@@ -430,8 +462,8 @@ fn windows_and_their_tiles_are_listed(cx: &mut TestAppContext) {
         lines[2].contains("tone.m4a  paused") || lines[2].contains("tone.m4a  playing"),
         "{lines:?}"
     );
-    let tiles = plays(&mut cx, &path, &["--json", "-w", "1", "tile", "ls"]).json();
-    assert_eq!(tiles.as_array().unwrap().len(), 2);
+    let blocks = plays(&mut cx, &path, &["--json", "-w", "1", "block", "ls"]).json();
+    assert_eq!(blocks.as_array().unwrap().len(), 2);
 }
 
 #[gpui::test]
@@ -526,8 +558,8 @@ fn windows_are_opened_named_moved_and_closed(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn tiles_are_focused_maximized_renamed_moved_and_closed(cx: &mut TestAppContext) {
-    let (path, window, mut cx) = serving("cli-tiles", cx);
+fn blocks_are_focused_maximized_renamed_moved_and_closed(cx: &mut TestAppContext) {
+    let (path, window, mut cx) = serving("cli-blocks", cx);
     plays(
         &mut cx,
         &path,
@@ -546,38 +578,38 @@ fn tiles_are_focused_maximized_renamed_moved_and_closed(cx: &mut TestAppContext)
     });
     assert!(opened);
     let names = |cx: &mut TestAppContext| -> Vec<String> {
-        let tiles = plays(cx, &path, &["--json", "tile", "ls"]).json();
-        listed(&tiles)
-            .map(|tile| match &tile["label"] {
-                Value::Null => show::text(&tile["title"]),
+        let blocks = plays(cx, &path, &["--json", "block", "ls"]).json();
+        listed(&blocks)
+            .map(|block| match &block["label"] {
+                Value::Null => show::text(&block["title"]),
                 label => show::text(label),
             })
             .collect()
     };
-    plays(&mut cx, &path, &["tile", "rename", "1", "Clip"]);
-    plays(&mut cx, &path, &["tile", "rename", "2", "Tone"]);
+    plays(&mut cx, &path, &["block", "rename", "1", "Clip"]);
+    plays(&mut cx, &path, &["block", "rename", "2", "Tone"]);
     assert_eq!(names(&mut cx), ["Clip", "Tone", "clip-ip.mkv"]);
 
-    plays(&mut cx, &path, &["tile", "focus", "Tone"]);
-    let inspected = plays(&mut cx, &path, &["--json", "tile", "inspect"]).json();
+    plays(&mut cx, &path, &["block", "focus", "Tone"]);
+    let inspected = plays(&mut cx, &path, &["--json", "block", "inspect"]).json();
     assert_eq!(inspected["label"], "Tone", "keys go to it");
-    plays(&mut cx, &path, &["tile", "rename", "Sound"]);
+    plays(&mut cx, &path, &["block", "rename", "Sound"]);
     assert_eq!(
         names(&mut cx),
         ["Clip", "Sound", "clip-ip.mkv"],
         "the one keys go to"
     );
 
-    plays(&mut cx, &path, &["tile", "move", "Clip", "--after", "3"]);
+    plays(&mut cx, &path, &["block", "move", "Clip", "--after", "3"]);
     assert_eq!(names(&mut cx), ["Sound", "clip-ip.mkv", "Clip"]);
     plays(
         &mut cx,
         &path,
-        &["-t", "Clip", "tile", "move", "--index", "1"],
+        &["-b", "Clip", "block", "move", "--index", "1"],
     );
     assert_eq!(names(&mut cx), ["Clip", "Sound", "clip-ip.mkv"]);
 
-    let ran = plays(&mut cx, &path, &["tile", "zoom", "Sound"]);
+    let ran = plays(&mut cx, &path, &["block", "zoom", "Sound"]);
     assert_eq!(ran.status, 0, "{ran:?}");
     let zoomed = window
         .update(&mut cx, |workspace, window, cx| {
@@ -585,12 +617,12 @@ fn tiles_are_focused_maximized_renamed_moved_and_closed(cx: &mut TestAppContext)
         })
         .unwrap();
     assert!(zoomed.is_some(), "it fills the window");
-    plays(&mut cx, &path, &["tile", "zoom", "Sound"]);
+    plays(&mut cx, &path, &["block", "zoom", "Sound"]);
 
-    let ran = plays(&mut cx, &path, &["tile", "close", "1", "2"]);
+    let ran = plays(&mut cx, &path, &["block", "close", "1", "2"]);
     assert_eq!(ran.status, 0, "{ran:?}");
     assert_eq!(names(&mut cx), ["clip-ip.mkv"], "1 and 2 as they were");
-    let ran = plays(&mut cx, &path, &["tile", "inspect", "Clip"]);
+    let ran = plays(&mut cx, &path, &["block", "inspect", "Clip"]);
     assert_eq!(ran.status, 3, "{ran:?}");
 }
 
@@ -607,8 +639,8 @@ fn files_open_by_their_full_paths_in_a_new_window_or_the_one_named(cx: &mut Test
     assert_ne!(opened_in, window_id(first, &cx), "a new window");
     let clip = fixture("clip.mp4").display().to_string();
     let shown = wait_until(&mut cx, |cx| {
-        let tiles = plays(cx, &path, &["--json", "-w", "2", "tile", "ls"]).json();
-        tiles[0]["file"] == clip.as_str()
+        let blocks = plays(cx, &path, &["--json", "-w", "2", "block", "ls"]).json();
+        blocks[0]["file"] == clip.as_str()
     });
     assert!(shown, "by its full path");
 
@@ -627,18 +659,18 @@ fn files_open_by_their_full_paths_in_a_new_window_or_the_one_named(cx: &mut Test
     let ran = plays(&mut cx, &path, &["open", "gopher://example.com/film"]);
     assert_eq!(ran.status, 2, "{ran:?}");
 
-    // A tile moves within its grid: to another window by a command of its
+    // A block moves within its grid: to another window by a command of its
     // own.
     let id = |cx: &mut TestAppContext, window| {
-        let tile = plays(cx, &path, &["--json", "-w", window, "tile", "inspect"]).json();
-        show::text(&tile["id"])
+        let block = plays(cx, &path, &["--json", "-w", window, "block", "inspect"]).json();
+        show::text(&block["id"])
     };
     let (near, far) = (id(&mut cx, "1"), id(&mut cx, "2"));
-    let ran = plays(&mut cx, &path, &["tile", "move", &near, "--after", &far]);
+    let ran = plays(&mut cx, &path, &["block", "move", &near, "--after", &far]);
     assert_eq!(ran.status, 2, "{ran:?}");
     assert!(
         ran.err
-            .contains("is in another window: move tiles between windows"),
+            .contains("is in another window: move blocks between windows"),
         "{ran:?}"
     );
 }
@@ -676,11 +708,11 @@ fn events_print_as_they_happen(cx: &mut TestAppContext) {
     assert!(event["payload"]["window_id"].is_string());
 }
 
-/// Plain `plays events` hears everything, each window's tiles too: a file
+/// Plain `plays events` hears everything, each window's blocks too: a file
 /// opened that starts playing, where it is said, its volume however it's
 /// changed, and its pausing, each after its command.
 #[gpui::test]
-fn events_hear_every_window_and_tile_unless_one_is_named(cx: &mut TestAppContext) {
+fn events_hear_every_window_and_block_unless_one_is_named(cx: &mut TestAppContext) {
     let (path, window, mut cx) = serving("cli-events-all", cx);
     let playing = move |cx: &mut TestAppContext, playing: bool| {
         let now = wait_until(cx, |cx| {
@@ -762,7 +794,7 @@ fn events_hear_every_window_and_tile_unless_one_is_named(cx: &mut TestAppContext
             .map(|event| &event["payload"])
     };
     let opened = told("opened").next().unwrap();
-    assert_eq!(opened["tile_title"], "clip.mp4", "{opened}");
+    assert_eq!(opened["block_title"], "clip.mp4", "{opened}");
     assert_eq!(opened["window_title"], "Plays", "{opened}");
     for payload in told("playing").chain(told("paused")) {
         assert!(payload["position"].is_number(), "{payload}");
@@ -791,7 +823,7 @@ fn drop_files(window: WindowHandle<Workspace>, cx: &TestAppContext, files: &[Pat
 }
 
 /// Files dropped on a window open with no command run, each playing as it
-/// opens: plain `plays events` hears each tile opened, then playing, by
+/// opens: plain `plays events` hears each block opened, then playing, by
 /// its own id and title.
 #[gpui::test]
 fn files_dropped_are_heard_each_opened_then_playing(cx: &mut TestAppContext) {
@@ -841,7 +873,7 @@ fn files_dropped_are_heard_each_opened_then_playing(cx: &mut TestAppContext) {
         "a drop runs no command: {heard:#?}"
     );
     let window_id = window_id(window, &cx);
-    let tiles: Vec<(String, String)> = window
+    let blocks: Vec<(String, String)> = window
         .read_with(&cx, |workspace, cx| {
             workspace
                 .players()
@@ -853,11 +885,11 @@ fn files_dropped_are_heard_each_opened_then_playing(cx: &mut TestAppContext) {
                 .collect()
         })
         .unwrap();
-    assert_eq!(tiles.len(), files.len());
-    for (tile, title) in &tiles {
+    assert_eq!(blocks.len(), files.len());
+    for (block, title) in &blocks {
         let told = |kind: &str| {
             heard.iter().position(|event| {
-                event["type"] == kind && event["payload"]["tile_id"] == tile.as_str()
+                event["type"] == kind && event["payload"]["block_id"] == block.as_str()
             })
         };
         let opened = told("opened").unwrap_or_else(|| panic!("{title} opened: {heard:#?}"));
@@ -865,7 +897,7 @@ fn files_dropped_are_heard_each_opened_then_playing(cx: &mut TestAppContext) {
         assert!(opened < playing, "{title}: opened, then playing");
         for at in [opened, playing] {
             let payload = &heard[at]["payload"];
-            assert_eq!(payload["tile_title"], title.as_str(), "{payload}");
+            assert_eq!(payload["block_title"], title.as_str(), "{payload}");
             assert_eq!(payload["window_id"], window_id.as_str(), "{payload}");
         }
         let playing = &heard[playing]["payload"];
@@ -874,19 +906,19 @@ fn files_dropped_are_heard_each_opened_then_playing(cx: &mut TestAppContext) {
     }
 }
 
-/// Wait until `plays wait`, on another thread, has looked at the tile it
+/// Wait until `plays wait`, on another thread, has looked at the block it
 /// waits for, hearing already: what happens to it from then on is heard.
 fn looked(cx: &mut TestAppContext) {
     let inspected = wait_until(cx, |cx| {
         let ran = cx.update(api::recorded);
         ran.iter()
-            .any(|invocation| invocation.command == "tile.inspect")
+            .any(|invocation| invocation.command == "block.inspect")
     });
-    assert!(inspected, "it looked at the tile");
+    assert!(inspected, "it looked at the block");
 }
 
 #[gpui::test]
-fn waiting_for_a_tile_ends_with_its_event_or_says_why_not(cx: &mut TestAppContext) {
+fn waiting_for_a_block_ends_with_its_event_or_says_why_not(cx: &mut TestAppContext) {
     let (path, window, mut cx) = serving("cli-wait", cx);
     plays(
         &mut cx,
@@ -905,17 +937,17 @@ fn waiting_for_a_tile_ends_with_its_event_or_says_why_not(cx: &mut TestAppContex
     let ran = plays_while(
         &mut cx,
         &path,
-        &["wait", "tile_label_changed", "-t", "2"],
+        &["wait", "block_label_changed", "-b", "2"],
         |cx, time| {
             if time == 0 {
                 looked(cx);
-                plays(cx, &path, &["-t", "2", "do", "tile.rename", "label=Low"]);
+                plays(cx, &path, &["-b", "2", "do", "block.rename", "label=Low"]);
             }
         },
     );
     assert_eq!(ran.status, 0, "{ran:?}");
     assert!(
-        ran.out.starts_with("tile_label_changed window_id="),
+        ran.out.starts_with("block_label_changed window_id="),
         "{ran:?}"
     );
     assert_eq!(ran.out.lines().count(), 1);
@@ -923,21 +955,24 @@ fn waiting_for_a_tile_ends_with_its_event_or_says_why_not(cx: &mut TestAppContex
     let ran = plays(
         &mut cx,
         &path,
-        &["wait", "playing", "-t", "1", "--timeout", "0.2"],
+        &["wait", "playing", "-b", "1", "--timeout", "0.2"],
     );
     assert_eq!(ran.failed(), (1, "plays: no playing in 0.2 seconds"));
-    let ran = plays(&mut cx, &path, &["wait", "ended", "-t", "Attic"]);
+    let ran = plays(&mut cx, &path, &["wait", "ended", "-b", "Attic"]);
     assert_eq!(ran.status, 3, "{ran:?}");
 
     TestAppContext::update(&cx, api::record);
-    let ran = plays_while(&mut cx, &path, &["wait", "ended", "-t", "1"], |cx, time| {
+    let ran = plays_while(&mut cx, &path, &["wait", "ended", "-b", "1"], |cx, time| {
         if time == 0 {
-            // Closed first, the other would be tile 1.
+            // Closed first, the other would be block 1.
             looked(cx);
-            plays(cx, &path, &["tile", "close", "1"]);
+            plays(cx, &path, &["block", "close", "1"]);
         }
     });
-    assert_eq!(ran.failed(), (1, "plays: the tile closed before its ended"));
+    assert_eq!(
+        ran.failed(),
+        (1, "plays: the block closed before its ended")
+    );
 }
 
 /// As Plays quits, `events` prints each window closing, then `quit`, and
@@ -1077,9 +1112,9 @@ fn the_api_is_listed_described_and_called(cx: &mut TestAppContext) {
     assert_eq!(ran.out.lines().count(), api::all().count() + 1, "{ran:?}");
     let listed = plays(&mut cx, &path, &["--json", "api", "list"]).json();
     assert_eq!(listed[0], api::all().next().unwrap().describe());
-    let described = plays(&mut cx, &path, &["api", "describe", "tile.focus"]).json();
-    assert_eq!(described["title"], "Go to Tile");
-    let ran = plays(&mut cx, &path, &["api", "describe", "tile.nope"]);
+    let described = plays(&mut cx, &path, &["api", "describe", "block.focus"]).json();
+    assert_eq!(described["title"], "Go to Block");
+    let ran = plays(&mut cx, &path, &["api", "describe", "block.nope"]);
     assert_eq!(ran.status, 1);
 
     let ran = plays(

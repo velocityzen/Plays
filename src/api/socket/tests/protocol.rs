@@ -12,7 +12,7 @@ fn reads_each_request_with_what_it_leaves_out_at_its_default() {
                 args: json!({"seconds": 30}),
                 target: Target {
                     window: Some("2".into()),
-                    tile: None,
+                    block: None,
                 },
             },
         ),
@@ -169,10 +169,10 @@ fn a_client_reads_answers_errors_and_events_back() {
             },
         ),
         (
-            json!({"type": "playing", "payload": {"tile_id": "1"}}),
+            json!({"type": "playing", "payload": {"block_id": "1"}}),
             Incoming::Event {
                 kind: "playing".into(),
-                payload: json!({"tile_id": "1"}),
+                payload: json!({"block_id": "1"}),
             },
         ),
     ];

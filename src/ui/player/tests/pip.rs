@@ -15,6 +15,6 @@ fn the_pump_waits_for_the_next_frame_and_idles_while_paused() {
     assert_eq!(pump_wait(true, false, None), PUMP_IDLE, "a cover");
     assert!(
         PUMP_IDLE >= ms(100),
-        "a paused tile looks ten times a second"
+        "a paused block looks ten times a second"
     );
 }

@@ -82,7 +82,7 @@ fn media_the_tool_fails_to_make_fails_the_test() {
     made_by("false", "never-made.mkv", &[]);
 }
 
-/// A decoder thread failing as a bug would, once the file is open: the tile
+/// A decoder thread failing as a bug would, once the file is open: the block
 /// says it can't play it, and stops waiting for more.
 #[test]
 fn a_decoder_thread_failing_says_so_and_stops_waiting() {

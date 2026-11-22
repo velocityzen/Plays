@@ -18,17 +18,17 @@ pub type Outcome = Result<Value, Error>;
 /// What a command acts on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Scope {
-    /// The app: it takes no window or tile.
+    /// The app: it takes no window or block.
     App,
     /// A window, Settings and About too: the one in front, or the player
     /// window named.
     AnyWindow,
     /// A player window: the one in front, or the one named.
     Window,
-    /// Every tile in a player window.
-    Tiles,
-    /// A tile: the one keys go to in the window in front, or the one named.
-    Tile,
+    /// Every block in a player window.
+    Blocks,
+    /// A block: the one keys go to in the window in front, or the one named.
+    Block,
 }
 
 impl Scope {
@@ -36,8 +36,8 @@ impl Scope {
         match self {
             Self::App => "app",
             Self::AnyWindow | Self::Window => "window",
-            Self::Tiles => "tiles",
-            Self::Tile => "tile",
+            Self::Blocks => "blocks",
+            Self::Block => "block",
         }
     }
 }
@@ -72,8 +72,8 @@ impl Args<'_> {
 
 type WindowFn = fn(&mut Workspace, &mut Window, &mut Context<Workspace>);
 type WindowWithFn = fn(Args, &mut Workspace, &mut Window, &mut Context<Workspace>) -> Outcome;
-type TileFn = fn(&mut PlayerView, &mut Window, &mut Context<PlayerView>);
-type TileWithFn = fn(Args, &mut PlayerView, &mut Window, &mut Context<PlayerView>) -> Outcome;
+type BlockFn = fn(&mut PlayerView, &mut Window, &mut Context<PlayerView>);
+type BlockWithFn = fn(Args, &mut PlayerView, &mut Window, &mut Context<PlayerView>) -> Outcome;
 type CustomFn = fn(Args, &Target, &mut App) -> Outcome;
 /// Reads the state of what a command changes, for its target.
 pub type StateFn = fn(&Target, &mut App) -> Outcome;
@@ -86,8 +86,8 @@ pub enum Run {
     AppWith(fn(Args, &mut App) -> Outcome),
     Window(WindowFn),
     WindowWith(WindowWithFn),
-    Tile(TileFn),
-    TileWith(TileWithFn),
+    Block(BlockFn),
+    BlockWith(BlockWithFn),
     /// Finds what it acts on itself.
     Custom(CustomFn),
 }
@@ -150,11 +150,11 @@ impl Spec {
             args: &[],
             keys: &[],
             setting: None,
-            // The app's work anywhere; a window's or tile's where there are
+            // The app's work anywhere; a window's or block's where there are
             // files, but not while typing.
             reach: match scope {
                 Scope::App | Scope::AnyWindow => Reach::Anywhere,
-                Scope::Window | Scope::Tiles | Scope::Tile => Reach::NotTyping,
+                Scope::Window | Scope::Blocks | Scope::Block => Reach::NotTyping,
             },
             needs_target: false,
             run,
@@ -205,33 +205,33 @@ impl Spec {
         Self::new(id, title, description, Scope::Window, Run::WindowWith(run)).args(args)
     }
 
-    /// One for every tile in a window.
-    pub const fn tiles(
+    /// One for every block in a window.
+    pub const fn blocks(
         id: &'static str,
         title: &'static str,
         description: &'static str,
         run: WindowFn,
     ) -> Self {
-        Self::new(id, title, description, Scope::Tiles, Run::Window(run))
+        Self::new(id, title, description, Scope::Blocks, Run::Window(run))
     }
 
-    pub const fn tile(
+    pub const fn block(
         id: &'static str,
         title: &'static str,
         description: &'static str,
-        run: TileFn,
+        run: BlockFn,
     ) -> Self {
-        Self::new(id, title, description, Scope::Tile, Run::Tile(run))
+        Self::new(id, title, description, Scope::Block, Run::Block(run))
     }
 
-    pub const fn tile_with(
+    pub const fn block_with(
         id: &'static str,
         title: &'static str,
         description: &'static str,
         args: &'static [Arg],
-        run: TileWithFn,
+        run: BlockWithFn,
     ) -> Self {
-        Self::new(id, title, description, Scope::Tile, Run::TileWith(run)).args(args)
+        Self::new(id, title, description, Scope::Block, Run::BlockWith(run)).args(args)
     }
 
     /// One that finds what it acts on, a `scope`, itself.
@@ -363,12 +363,12 @@ impl Spec {
     }
 
     /// Whether `target` names what it can act on: nothing, for the app's;
-    /// no tile, for a window's.
+    /// no block, for a window's.
     pub fn check_target(&self, target: &Target) -> Result<(), Error> {
         let message = match self.scope {
-            Scope::App if !target.is_empty() => "acts on the app, not on a window or tile",
-            Scope::AnyWindow | Scope::Window | Scope::Tiles if target.tile.is_some() => {
-                "acts on a window: name it with window, not tile"
+            Scope::App if !target.is_empty() => "acts on the app, not on a window or block",
+            Scope::AnyWindow | Scope::Window | Scope::Blocks if target.block.is_some() => {
+                "acts on a window: name it with window, not block"
             }
             _ => return Ok(()),
         };

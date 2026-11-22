@@ -1,4 +1,4 @@
-//! What the screenshot shortcut and menu item do to a tile: save the frame
+//! What the screenshot shortcut and menu item do to a block: save the frame
 //! it shows, and say where it went.
 
 use std::path::Path;

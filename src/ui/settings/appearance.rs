@@ -1,4 +1,4 @@
-//! Appearance: the theme, how windows lay out their tiles, which panels
+//! Appearance: the theme, how windows lay out their blocks, which panels
 //! show over the video, and the empty window's screensaver.
 
 use gpui::{AnyElement, Context, Window};

@@ -332,7 +332,7 @@ video range samples (high in their 16 bits), and over BGRA; over HDR they
 are at reference white. Once its window is open, frames go at the
 window's size in pixels as subtitles come and go, drawn into when they
 show, and one already that size goes as it is. Its progress bar runs and
-stops with playback whether the tile's buttons or the window's own play
+stops with playback whether the block's buttons or the window's own play
 and pause it.
 
 The looks of the panels over the video are checked in pixels on macOS,
@@ -355,10 +355,10 @@ app as it starts for real, but with default settings that are never saved
 (no test reads or writes the real settings file), silent audio, and without
 keeping the computer awake. Files open on real decoding threads, so tests
 wait for them in real time. A file opened into a window must open in a
-tile, and the window must then fit it.
+block, and the window must then fit it.
 
 `ui::testing` clicks, double-clicks and types as someone at the screen
-would, finding what to click by its debug selector (`tile-0`, a menu row's
+would, finding what to click by its debug selector (`block-0`, a menu row's
 or a button's id), set only in test builds; a selected button also holds
 an empty mark tagged with its id and `-selected` (`cast-selected`). It
 draws the window before it looks, as what a file says once it opens
@@ -369,13 +369,13 @@ platform's text system gives every character the same width.
 
 What the window tests check:
 
-- A click picks a tile without pausing it, and shortcuts then go to it; so
+- A click picks a block without pausing it, and shortcuts then go to it; so
   does the mouse moving over one, but not while it drags (a slider of the
-  tile it came from).
-- A double-click fills the window with a tile, the whole area under the
+  block it came from).
+- A double-click fills the window with a block, the whole area under the
   toolbar, and another puts the grid back, as opening more files does; the
-  tile redraws each time; ⌘W closes the tile in front, then the empty
-  window; four tiles sit in two even rows.
+  block redraws each time; ⌘W closes the block in front, then the empty
+  window; four blocks sit in two even rows.
 - A window that fitted its files keeps a size given it after, till ⌥⌘0 or
   Video → Match Video Size fits it to them again; zoomed, it isn't fitted
   to files opening, but ⌥⌘0 fits it; empty (only the menu reaches it), or
@@ -402,26 +402,26 @@ What the window tests check:
   keeps. Unit tests follow the logo back and forth along each edge, the
   color it takes at each, from the one it rests in, the colors a click
   goes through, round to its own, its way back and the color it keeps.
-- A tile dragged by its picture onto another takes that one's place, the
-  tiles between moving over, and shortcuts then go to it; it keeps playing,
-  isn't maximized, and let go over itself, stays. The only tile in a
+- A block dragged by its picture onto another takes that one's place, the
+  blocks between moving over, and shortcuts then go to it; it keeps playing,
+  isn't maximized, and let go over itself, stays. The only block in a
   window, and a maximized one, move the window instead; a press that
   barely moves doesn't, nor does any in full screen. An empty window
   moves dragged by anything but what's under its logo: not by its Open
   button, nor its URL field, where a drag selects; not by a press let go
   (one on a button after it doesn't), or let go where the window didn't
   hear of it; not in full screen, and again once out of it.
-- Tiles from the keyboard: in two rows of two, `⌥⌘` and the arrows go
-  from tile to tile and stop at the edges, a ring round the one gone to,
-  which shortcuts then go to; closed down to one tile, there's no ring.
-  `⌘]` and `⌘[` go round every tile. The ring goes once the mouse moves,
-  over that tile or another, or clicks where it rests, the tile under it
-  in front then. With `⌥⇧⌘`, the tile in front swaps with the one beside,
-  above or below it (in a short last row, its last tile), not past the
-  edges, staying in front, playing as it was. With a tile maximized, the keys
+- Blocks from the keyboard: in two rows of two, `⌥⌘` and the arrows go
+  from block to block and stop at the edges, a ring round the one gone to,
+  which shortcuts then go to; closed down to one block, there's no ring.
+  `⌘]` and `⌘[` go round every block. The ring goes once the mouse moves,
+  over that block or another, or clicks where it rests, the block under it
+  in front then. With `⌥⇧⌘`, the block in front swaps with the one beside,
+  above or below it (in a short last row, its last block), not past the
+  edges, staying in front, playing as it was. With a block maximized, the keys
   maximize the one they go to, without a ring, and move none. Unit tests
   check where each key goes from each place in a full grid, one with a
-  short last row, one row and one tile.
+  short last row, one row and one block.
 - Windows from the keyboard: with three player windows, the first
   labeled 9 and the third 2, ⌘2 and ⌘3 bring those to the front by
   number alone and ⌘9 nothing; Ctrl+Tab and Ctrl+Shift+Tab go round
@@ -435,8 +435,8 @@ What the window tests check:
   Window.
 - A file closed partway in opens there again; one barely begun starts
   over, and so does every file with Settings' resuming off.
-- Several files opened at once get a tile each, by default. With Settings
-  → Playback set to play them one after another, three open in one tile,
+- Several files opened at once get a block each, by default. With Settings
+  → Playback set to play them one after another, three open in one block,
   its header saying 1 of 3, as does a folder's media; previous and next go
   through them and no further (their buttons greyed at the ends, though the
   folder has files beside), saying so from the keyboard. Played to its end,
@@ -445,15 +445,15 @@ What the window tests check:
   to its end. A file played instead that's in the playlist moves it there;
   one that isn't ends it, and previous goes by the folder again. Unit tests
   step a playlist (a file in it twice included) and count where it is.
-- `⇧S` puts every tile where the one clicked is, paused as it is, and
+- `⇧S` puts every block where the one clicked is, paused as it is, and
   `⌥⇧→` and `⌥⇧←` step them all a frame at a time; with the one clicked
   playing, the others go back to where it is and play. `⇧↑` and `⇧↓` turn
-  every tile up or down from its own volume.
+  every block up or down from its own volume.
 - In a file with three chapters, `Page Down` goes to the second and then
   the third, and no further; `Page Up` goes back to the second, then the
   first; the bar has a notch at the second and third, none with Settings'
-  notches off. Playback → Chapters lists them, checking the one the tile in
-  front is in, and follows the tile the mouse is over.
+  notches off. Playback → Chapters lists them, checking the one the block in
+  front is in, and follows the block the mouse is over.
 - Settings' Reset to Defaults asks first and changes nothing on Cancel,
   and picking an output in the Audio menu sets it.
 - Settings → Hotkeys lists every command that takes keys, and none that
@@ -466,8 +466,8 @@ What the window tests check:
   since gone, it opens in the middle at its size. About opens in the
   middle wherever it was left.
 - A window playing through an output of its own: with one output the
-  tile's menu offers none; with two, picking one plays the tile there, a
-  file opened in the window plays there too, a tile popped out takes the
+  block's menu offers none; with two, picking one plays the block there, a
+  file opened in the window plays there too, a block popped out takes the
   device along and shares its output, going back to the app's output
   leaves the other window on the device, and the output closes with its
   last window.
@@ -514,9 +514,9 @@ What the window tests check:
 - Black out covers the other displays while a window is full screen, and
   only as Settings say, and it and the Output Device menus go by the
   displays as last looked at rather than asking the system each time.
-- Video → Aspect Ratio and Crop check what the tile in front has (as the
+- Video → Aspect Ratio and Crop check what the block in front has (as the
   file is, and none, at first), as soon as it changes and as soon as the
-  mouse is over another tile, or the keys go to one.
+  mouse is over another block, or the keys go to one.
 - Picking a look for the panels over the video in Settings → Appearance
   sets it, and the controls of a paused video then show it through them
   with that look's backdrop, and none when plain.
@@ -530,7 +530,7 @@ What the window tests check:
   preferred that it has, else as the file says (`languages`, on
   `clip-languages.mkv`); with the tracks picked in it before, over the
   languages, and its subtitles hidden if they were, while files resume
-  where they were left; and a file played instead in a tile with its own
+  where they were left; and a file played instead in a block with its own
   picks, not the last file's.
 - Settings → About credits Plays, FFmpeg, dav1d and GPUI; a license opens
   under its credit, one at a time, and closes, and leaving the pane
@@ -557,7 +557,7 @@ check:
   Open Recent opens the files played lately by name, with their folder
   where two share one, none without any, and follows them as they
   change; Clear Recent Files forgets them.
-- A command aimed at a tile acts on it, not on the one in front: a tile
+- A command aimed at a block acts on it, not on the one in front: a block
   named by its id, its position or the end of its id, in a window named by
   its position or in any; `#` and a number name by position alone, not a
   label or an id ending so (`target::pick`); positions count in the
@@ -569,12 +569,12 @@ check:
   the last.
 - Each kind of error comes back, saying what went wrong: no such command,
   arguments it doesn't take (checked before anything else), a window or
-  tile named to a command that takes none, nothing by that name, and
+  block named to a command that takes none, nothing by that name, and
   Picture in Picture where there's none.
 - Whether a command can run, and its state (looping, muted, floating on
   top, the crop).
 - The panels over the video (`over_video`): each `view` command hides its
-  own panel in every tile and shows it again, its state following; hidden
+  own panel in every block and shows it again, its state following; hidden
   controls and top bar aren't drawn, the mouse isn't over them, subtitles
   don't keep clear of hidden controls, and the tracks menu and the cast
   menu (`casting`) close with them. With notes and the track switcher
@@ -587,12 +587,12 @@ check:
 - Casting to a device by its id and kind, the one cast to still found
   once its protocol is off (`casting`), and picking an output by its id
   alone (`sound_to_bluetooth`).
-- Each of a window's controls sends its command, aimed at its own tile
-  or window (`controls`): a tile's buttons, a double click, the seek bar
+- Each of a window's controls sends its command, aimed at its own block
+  or window (`controls`): a block's buttons, a double click, the seek bar
   and the volume slider once let go, the tracks menu's rows, Pop Out and
-  a tile dropped on another; the empty window's buttons, and the Open URL
+  a block dropped on another; the empty window's buttons, and the Open URL
   form and sheet, a URL's user and password kept. `api::intercept` notes
-  what's sent without running it, so one tile can have every control
+  what's sent without running it, so one block can have every control
   clicked. Picking a device and Play Here (`casting`), and a TV wanting
   its PIN asking to pair, then cast there again once paired
   (`casting_to_airplay`), are noted as they run (`api::record`). The
@@ -602,11 +602,11 @@ check:
   no later than the end, and the seek bar holds while dragged, sends
   nothing, and plays on once let go; Set Volume takes percent and
   unmutes unless it's none; tracks are picked by number from 1, and
-  subtitles by none too; Maximize Tile, and full screen for a window's
-  only tile; Move Tile To a place from 1, none past the last; Move Tile
+  subtitles by none too; Maximize Block, and full screen for a window's
+  only block; Move Block To a place from 1, none past the last; Move Block
   to Window, last there with keys going to it, playing on, and staying
-  put in its own; Move Tile to New Window, which says the window; Play
-  File Instead, in the same tile at the volume, mute and loop it had,
+  put in its own; Move Block to New Window, which says the window; Play
+  File Instead, in the same block at the volume, mute and loop it had,
   noted as played lately, and refusing a path that isn't full; and Open
   Paths or URLs in the window named, in a new one with none open, or why
   a path or URL won't open.
@@ -621,18 +621,18 @@ check:
   last, ⌘1 going to it, and Backward and Forward, stopping at the ends.
   The Window menu has them, Move Window To a number for each window, the
   one in front's checked, and follows windows opening and closing.
-- The tile commands (`tiles`): Close Other Files, another window's left
-  open; Go to Recent Tile and Go Back One Tile, going to tiles clicked or
+- The block commands (`blocks`): Close Other Files, another window's left
+  open; Go to Recent Block and Go Back One Block, going to blocks clicked or
   gone to from the keys but not those the mouse passed over, the walk
   starting again after a click or another command, past one closed;
-  Rename Tile, trimmed, the header showing it (with titles off too),
+  Rename Block, trimmed, the header showing it (with titles off too),
   named by it, none shared in whichever window and blank for none, and
   with no label the sheet asking, holding the label, refusing a name
   taken and put away by Escape; Copy File Path and Copy Current Time,
-  handing back what they copied, and ⌥⌘C; ⇧⌘↩ maximizing the tile in
-  front and back; and Move Tile To's state, its place from 1. The File
-  and Window menus have them, Move Tile To a place for each tile, the
-  one in front's checked, and Move Tile to Window each other window, by
+  handing back what they copied, and ⌥⌘C; ⇧⌘↩ maximizing the block in
+  front and back; and Move Block To's state, its place from 1. The File
+  and Window menus have them, Move Block To a place for each block, the
+  one in front's checked, and Move Block to Window each other window, by
   label or number.
 - The settings as commands (`ui::settings::tests::commands`): a switch
   clicked in Settings and `settings.set` saving the same file; a choice, a
@@ -649,24 +649,24 @@ check:
 - What the queries hand back (`inspect`), as whole JSON: List Windows
   and Inspect Window (the number, its title, the window in front, its
   bounds and display, full screen, floating on top, its own output and
-  its tiles);
-  List Tiles and Inspect Tile, before and after a tile is renamed,
+  its blocks);
+  List Blocks and Inspect Block, before and after a block is renamed,
   sought, looped, its volume and mute, delays, track, picture and
   chapter changed, past its end, and casting; a subtitle file's path; a
   stream's URL without its user, password or query; List Outputs, List
   Displays and List Devices to cast to, by protocol and name; and
   Inspect Plays, the version with what List Windows and List Outputs
-  say. A query between two Go Back One Tile doesn't start the walk
+  say. A query between two Go Back One Block doesn't start the walk
   again. Every query says what it hands back and takes no keys
   (`api::tests`).
-- Events (`ui::workspace::tests::events`), each once and in order: a tile
-  opened (created, the layout, the tile keys go to, opened, playing),
+- Events (`ui::workspace::tests::events`), each once and in order: a block
+  opened (created, the layout, the block keys go to, opened, playing),
   renamed, and its window renamed and full screen, each by its id and
   title as it is then, each after its
-  `command_run`, the app hearing commands and windows' names; a tile moved
+  `command_run`, the app hearing commands and windows' names; a block moved
   to a window of its own (the window created, the one left hearing it go),
   that window brought to the front and closed, the one before in front
-  again; a tile maximized and back; how a file plays, by command and by
+  again; a block maximized and back; how a file plays, by command and by
   its play button: paused, playing, sought (its time, how far through and
   frame), a step back to the start and a frame on (frame 1), volume and
   mute, a chapter, and played to its end (ended, not paused), another
@@ -674,17 +674,17 @@ check:
   frame; positions, only to those who ask, each with its time, how far
   through, frame and duration, a second apart at most on the app's clock,
   and one more at most once paused; subtitles picked, and the next file opened in the same
-  tile, told once, its tracks as it has them, and the one before, opened
+  block, told once, its tracks as it has them, and the one before, opened
   by no command and known before the app looks; a file that can't open;
   the outputs, devices to cast to, and a cast started and stopped; and the
   app quitting: what changed since the last look told first, then each
-  window closing, its tiles first, and `quit` to every listener, one
+  window closing, its blocks first, and `quit` to every listener, one
   window's too, nothing told with no one listening. The
   app's clock moves only as a test advances it: a file plays on only as
-  its tile ticks, so those tests advance it a step at a time
+  its block ticks, so those tests advance it a step at a time
   (`play_until`). Unit tests check what each change of what was seen
-  tells, and who hears it, a tile moved out of a window closing as it goes
-  told moved, not closed, each window and tile named by its id and title,
+  tells, and who hears it, a block moved out of a window closing as it goes
+  told moved, not closed, each window and block named by its id and title,
   one closed as it was, files dropped together each told opened, then
   playing, however the looks fall, though each says it plays before it
   has opened, and where a file plays told from 0 to 1, in
@@ -697,7 +697,7 @@ check:
   one in front with a file of several tracks and one of a picture and
   sound, the other with sound alone; Autoplay off, and each file starting
   at its start with the tracks it says), in each way that shows what it
-  tells (from a file playing, in a file of chapters, among four tiles,
+  tells (from a file playing, in a file of chapters, among four blocks,
   from full screen…), tells what it says it does (`Spec::tells`) and
   nothing else. What can't be heard there is listed with why
   (`NOT_HEARD`: Picture in Picture, a second video track, where the
@@ -725,7 +725,7 @@ check:
     a relative path opens in the window in front by its full path, and
     Plays comes forward; URLs are handed over as given. With nothing to
     open, the window in front is focused, or one is opened.
-  - Events: a subscriber to everything hears a tile created, which one to
+  - Events: a subscriber to everything hears a block created, which one to
     the app's doesn't. Both hear clients connecting and leaving and
     commands run from the command line. A subscriber to one window hears
     only that window's events. A subscriber running a command hears its
@@ -763,7 +763,7 @@ check:
     and status 2. With no Plays, status 4, Plays started unless
     `--no-autostart`, and `version` saying none runs without starting one.
   - `do` with arguments read as the command takes them, and its statuses;
-    `ls`, the window and tile subcommands, `open` (in a new window, by
+    `ls`, the window and block subcommands, `open` (in a new window, by
     full paths), settings, the keymap and `api`, as tables and JSON.
     Names given by number are found before anything closes or moves.
   - `events` printing what other command lines do: everything without
@@ -773,11 +773,11 @@ check:
     playing by its own id and title), once it listens
     (`api::events::listeners`), and with `-w` that window's;
     and `wait` ending with
-    its event, failing when the tile closes first or the time runs out,
-    and naming a tile that isn't there with status 3. As Plays quits,
+    its event, failing when the block closes first or the time runs out,
+    and naming a block that isn't there with status 3. As Plays quits,
     `events` printing each window closing, then `quit`, and ending with 0,
     with `-w` that window's; `wait` failing as Plays quit, or as the
-    window it watches closed, and `wait quit` printing it. That a tile
+    window it watches closed, and `wait quit` printing it. That a block
     that has ended has nothing to wait for, its `ended` said as the event
     says it, is a unit test: the test platform's timers don't play a file
     to its end, so the `cli` smoke run does.
@@ -809,6 +809,9 @@ check:
     `cargo run -- actions --markdown > docs/commands.md`. Commands for
     working on Plays (`developer`), which debug builds alone have, aren't
     in it.
+  - What it names are windows and the blocks in them, a block being what
+    shows a player: no command, event, argument, namespace or help
+    names anything else.
   - `cli.install` linking where a terminal finds it, replacing a link
     but nothing else, and saying what to type where it can't write, its
     folder made too if it isn't there, each in a folder of its own
@@ -833,8 +836,8 @@ check:
     or asked for, no headings, a row saying its namespace after its name.
   - The output commands under Audio Output, not just Output, and Window
     Output Device offering "Same as the App" first, as Audio → Window
-    Output Device and a tile's menu say (`output::SAME_AS_APP`; the
-    tile's menu says so in `ui::workspace::tests::sound`).
+    Output Device and a block's menu say (`output::SAME_AS_APP`; the
+    block's menu says so in `ui::workspace::tests::sound`).
   - Pointing at a row picking it, and the arrows going on from there.
   - Where it's drawn: a row, the one picked too, as wide as the field
     and lined up with it, its keys at its end as far in as its name, and
@@ -872,14 +875,14 @@ check:
     group or keyword.
 - Go to… (`ui::palette::places::tests`), opened with ⌘P over a window with
   two files and a second window, labeled, with one:
-  - Listing the windows, the tiles in each, the media files in the front
-    tile's folder by name, and the files played lately, the latest first,
-    in that order, under a heading for each; this window, its tile in front and the file it plays
-    checked, but not another window's tile in front; a window's files, a
-    tile's window (there being two, not one) and a recent file's folder.
+  - Listing the windows, the blocks in each, the media files in the front
+    block's folder by name, and the files played lately, the latest first,
+    in that order, under a heading for each; this window, its block in front and the file it plays
+    checked, but not another window's block in front; a window's files, a
+    block's window (there being two, not one) and a recent file's folder.
   - Finding places by name, kind and where they are, best first.
-  - Return going to a tile (`tile.focus`) or window (`window.focus`),
-    playing a file from the folder in the front tile
+  - Return going to a block (`block.focus`) or window (`window.focus`),
+    playing a file from the folder in the front block
     (`playback.play_file`), or opening one played lately (`app.open`).
   - It and the command palette, which lists it, taking each other's
     place, and ⌘P again keeping what's typed.
@@ -905,19 +908,19 @@ as `Attic`, never is.
 Casting is tested with a fake protocol whose devices keep what they are told
 and say what the test has them say, and the real stream server, serving this
 computer only. Picking a device from the cast button plays the file there
-from where the tile was, as it played (the device fetches the MP4 as it is),
-and pauses the tile. The next file goes there too, with the subtitles beside
+from where the block was, as it played (the device fetches the MP4 as it is),
+and pauses the block. The next file goes there too, with the subtitles beside
 it, and the previous one to a speaker sends only its sound, the picture
-staying on the tile. Space, the arrows and `M` play, pause, seek and mute
-it, not the tile, and the bar follows where it says it is; so do the buttons
+staying on the block. Space, the arrows and `M` play, pause, seek and mute
+it, not the block, and the bar follows where it says it is; so do the buttons
 of a Picture in Picture window, which isn't offered while the picture plays
 there, and they play and pause a speaker a video's sound is cast to.
 Dragging the slider moves only the bar, the device seeking once it's let go,
-and frame steps and audio or subtitle delays leave the tile's own player
-alone. Play Here goes on in the tile from where the device was, paused as it
+and frame steps and audio or subtitle delays leave the block's own player
+alone. Play Here goes on in the block from where the device was, paused as it
 was, the device stops, and with no cast left the stream server stops
 listening. A device going away ends the cast the same way, and the cast
-button goes with the last device. The button is lit while the tile casts,
+button goes with the last device. The button is lit while the block casts,
 and while its window plays through an output of its own; a device's name too
 long for the menu ends in "…" inside its row, the kind beside it whole.
 Quitting stops the device and keeps where it was to resume from, and closing
@@ -925,21 +928,21 @@ the last window, which quits, waits for it to stop too. Subtitles picked on
 a Matroska file cast as HLS reach the device as WebVTT with the file's cues,
 and turning them off hides them, without loading it again; another sound
 track loads it again with them still going along. DVD subtitles picked stay
-on this computer, the tile says, where the file goes as it is; where it is
+on this computer, the block says, where the file goes as it is; where it is
 re-encoded they are drawn in, the file loaded again from where it was at a
 URL of its own, the first no longer served, and turning them off loads it
 again without them (macOS). Speakers are offered for anything with sound,
 and get a file of sound alone as it is. A video's sound goes to a speaker as
-a stream of AAC, its picture staying on the tile, which waits while the
+a stream of AAC, its picture staying on the block, which waits while the
 speaker plays but hasn't moved, plays once it's seen moving, pauses with it
-where it stopped (from the speaker or the tile), and keeps its place and its
+where it stopped (from the speaker or the block), and keeps its place and its
 sound when the cast ends; dragging the slider shows the picture where it's
 dragged, however often the speaker says where it is, and the speaker seeks
 there once it's let go; a video without sound isn't sent to one. Video →
 Output Device lists the devices that show video after the displays, checking
-the one the tile in front casts to instead of the display; a speaker it
+the one the block in front casts to instead of the display; a speaker it
 casts to leaves the display checked. Audio → Output Device lists the
-speakers after this computer's outputs for a tile with sound and none for
+speakers after this computer's outputs for a block with sound and none for
 one without, checking the one cast to (or a TV) instead of the output.
 Settings → Casting lists the devices found, a new one as it's found, and
 turning a protocol off there saves it off, stops it looking (its target
@@ -957,22 +960,22 @@ Device menus put the protocol after a name another item has too (an AirPlay
 speaker and a DLNA one, two protocols' TVs, a display and a TV), leaving
 this computer's own outputs and displays as they are; a unit test checks an
 Apple TV, cast to and an output, is listed once. Unit tests check that of
-what the tile sends at once, only the last of seeks in a row is done, and
+what the block sends at once, only the last of seeks in a row is done, and
 only the last volume, looping and subtitles asked for. Each test has been
 checked to fail when the behavior it covers is broken.
 
 Casting to DLNA is tested with the DLNA crate's fake renderer, found as it
-would be on the network. Picking the TV gives it the tile's Matroska file
-as it is (the TV lists Matroska), seeks it to where the tile was, then
+would be on the network. Picking the TV gives it the block's Matroska file
+as it is (the TV lists Matroska), seeks it to where the block was, then
 plays it, with the subtitles picked as SRT both ways the crate writes them;
 both URLs serve what they should. A TV that lists MP4 and MPEG-TS (as
 `video/mpeg`) only gets that file as a stream of MPEG-TS, by its own name
 for it; the speaker, from its protocol info, is offered for anything with
-sound and gets the M4A as it is, and a paused tile leaves it paused. A
+sound and gets the M4A as it is, and a paused block leaves it paused. A
 video's sound goes to it as a stream of FLAC (it lists FLAC, not AAC),
 re-encoded, the picture staying here; it's asked where it is several times
 a second from the start, and seen moving, it plays on from when it was
-first heard where it is, not from when it was last asked. From a tile
+first heard where it is, not from when it was last asked. From a block
 partway through, the speaker gets the stream at a URL that starts there,
 with what's left as its duration, and is never told to seek; where it says
 it is counts from there, the bar's length is the file's however long the
@@ -983,19 +986,19 @@ pause the TV (its volume scaled from where it was); the bar follows where
 it says it is, and its playing to the end shows the end. Other subtitles
 give it the file again, from where it was, with them or without. A TV that
 refuses to seek before it plays, as Rygel's renderers do, goes there once
-it plays, the bar staying where the tile was meanwhile. Something else
+it plays, the bar staying where the block was meanwhile. Something else
 playing there, or the TV going away, ends the cast. What the renderer
 plays decides what it shows and its profile, from Samsung's, LG's, Sonos's
-and Devialet's protocol info, and the tile's volume scales the renderer's.
+and Devialet's protocol info, and the block's volume scales the renderer's.
 Each test has been checked to fail when the behavior it covers is broken.
 
 Casting to a Chromecast is tested with the Chromecast crate's fake device,
-over TLS as a real one. Picking the TV loads the tile's Matroska file
-there as HLS of MPEG-TS, saying so, from where the tile was and playing,
+over TLS as a real one. Picking the TV loads the block's Matroska file
+there as HLS of MPEG-TS, saying so, from where the block was and playing,
 with the subtitles picked as a WebVTT track (its language as BCP 47) shown
 in the style Settings give them; the playlist doesn't list them too, and
 the track's URL serves the file's cues. The speaker is offered for
-anything with sound and gets the M4A as it is, and a paused tile leaves it
+anything with sound and gets the M4A as it is, and a paused block leaves it
 paused. An MP4 goes as it is; space, the arrows, `M` and the volume keys
 play, seek, mute, turn down and pause it, the volume being the stream's
 and the device's own left alone; the bar follows where it says it is, its
@@ -1015,11 +1018,11 @@ paired with and spoken to encrypted as a real one. Picking it the first
 time puts a sheet over the window asking for the PIN the TV shows, and
 casts nothing meanwhile; a wrong PIN has the TV show another, which the
 sheet asks for, saying why; the right one pairs, keeps what pairing left
-and casts the tile, and casting again asks for no PIN. Escape takes the
-sheet away, leaving the tile playing here and nothing paired. A TV that
+and casts the block, and casting again asks for no PIN. Escape takes the
+sheet away, leaving the block playing here and nothing paired. A TV that
 turns down the credentials kept, as one reset since would, has them
-forgotten and asks for its PIN again. Paired, it's told to play the tile's
-Matroska file as HLS of fragmented MP4 from where the tile was, playing as
+forgotten and asks for its PIN again. Paired, it's told to play the block's
+Matroska file as HLS of fragmented MP4 from where the block was, playing as
 it was, with the subtitles picked in the master playlist; picking none
 gives it the media again from where it says it is, at a URL of its own,
 the playlist now without them. Space, the arrows, `M` and the volume keys
@@ -1027,7 +1030,7 @@ play, seek, mute, turn down and pause it; the bar follows where it says it
 is, and its saying nothing of what it played shows the end; sent back from
 there, it plays from there once told to, turned down as before, and from
 the start after the next end. Unit tests check the profile for each Apple
-TV and for another make's TV, and what it says it's doing as the tile
+TV and for another make's TV, and what it says it's doing as the block
 shows it. Each test has been checked to fail when the behavior it covers
 is broken.
 
@@ -1248,7 +1251,7 @@ names), and the script exits non-zero if any failed:
 
 - `first-open` opens a video into the empty window, which must fit it;
 - `several` opens two videos and a sound into one window;
-- `close` closes the tiles and then the window with ⌘W, and the app must
+- `close` closes the blocks and then the window with ⌘W, and the app must
   quit;
 - `subtitles` turns the subtitles beside a video off and on again;
 - `step-back` steps a frame forward and two back through B-frames;

@@ -23,11 +23,11 @@ fn several_share_the_biggest_cell() {
     // Two side by side, with the gap between them.
     assert_eq!(
         grid_size(&cells, 2, 2, ROOM),
-        Some(size(px(640. * 2.) + TILE_GAP, px(360.)))
+        Some(size(px(640. * 2.) + BLOCK_GAP, px(360.)))
     );
     // Four in two rows, one size unknown yet.
     let four = grid_size(&cells, 4, 2, ROOM).unwrap();
-    assert_eq!(four.height, px(720.) + TILE_GAP);
+    assert_eq!(four.height, px(720.) + BLOCK_GAP);
 }
 
 #[test]

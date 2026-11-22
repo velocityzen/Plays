@@ -1,8 +1,8 @@
 # Plays
 
 A small video and audio player for macOS and Linux that plays many files at
-once, side by side. Every file gets a tile of its own, with its own
-controls; a tile can move to a window of its own, play full screen on
+once, side by side. Every file gets a block of its own, with its own
+controls; a block can move to a window of its own, play full screen on
 another display, or cast to a TV or a speaker. All of the UI, including the
 settings window, is built with
 [gpui](https://github.com/zed-industries/zed/tree/main/crates/gpui), Zed's
@@ -18,9 +18,9 @@ GPU-accelerated UI framework.
 
 ### Playback
 
-- Open any number of files, or whole folders: each gets a tile in a grid
+- Open any number of files, or whole folders: each gets a block in a grid
   that sizes itself. Or, as Settings → Playback says, they play one after
-  another in one tile, a playlist.
+  another in one block, a playlist.
 - Open network streams with **Open URL…**: HTTP(S) files, HLS and DASH
   playlists, RTMP and RTSP. Live streams show a LIVE badge; a stream that
   stalls pauses and resumes instead of skipping ahead.
@@ -32,7 +32,7 @@ GPU-accelerated UI framework.
 - Chapters: a notch on the bar where each starts, the time under the bar
   says which one you're in, and keys and a menu go from one to the next.
 - The previous and next media file in the folder, or in its playlist,
-  open in the same tile.
+  open in the same block.
 - File → Open Recent opens the files played lately (the last 20).
 - A file opened again starts where it was left, for 30 days since it last
   played, with the audio and subtitles picked in it; one barely begun, or
@@ -54,7 +54,7 @@ GPU-accelerated UI framework.
   Elsewhere, and for video decoded in software, HDR is tone mapped to SDR.
 - Turn the picture a quarter turn either way, flip it, show it at another
   aspect ratio (1:1 to 2.35:1) or crop it to another shape (1:1 to 2.39:1),
-  each tile on its own. Even a paused video changes at once.
+  each block on its own. Even a paused video changes at once.
 - Videos whose files say to turn them, as phones' do, show upright.
 - Gamma for SDR and for HDR video, applied to every open video as you
   drag it.
@@ -76,13 +76,13 @@ GPU-accelerated UI framework.
 - Move a file's sound (in 50 ms steps) or subtitles (in 100 ms steps)
   earlier or later against the picture, for files that are out of step.
 
-### Windows and tiles
+### Windows and blocks
 
-- Any tile can pop out into a new window, beside the one it left, where it
+- Any block can pop out into a new window, beside the one it left, where it
   keeps playing. Every window works the same: drop more files on it and
   they play side by side.
-- Drag a tile by its picture onto another to put it in that one's place.
-  A window's only tile, or a maximized one, drags the whole window, and
+- Drag a block by its picture onto another to put it in that one's place.
+  A window's only block, or a maximized one, drags the whole window, and
   so does an empty window, anywhere but its buttons.
 - An empty window shows the app's logo, with Open and Open URL under it;
   the logo lights up while files are dragged over the window.
@@ -90,10 +90,10 @@ GPU-accelerated UI framework.
   and its logo bounces off the window's edges, taking a new color at each.
   Move the mouse or press a key, and it flies back to its place, keeping
   the color it had. Click the logo for the next of those colors.
-- Go from tile to tile with the keyboard, to the one beside, above or
-  below, or to each in turn, and move the tile in front about the grid
-  the same way. A ring shows which tile the keys went to.
-- Go back to the tile you clicked before, name a tile, and copy a file's
+- Go from block to block with the keyboard, to the one beside, above or
+  below, or to each in turn, and move the block in front about the grid
+  the same way. A ring shows which block the keys went to.
+- Go back to the block you clicked before, name a block, and copy a file's
   path or where it is.
 - Windows take the size of the video as files open, or of a grid with room
   for each video at its own size, scaled down to fit the screen. After
@@ -106,7 +106,7 @@ GPU-accelerated UI framework.
   to the one in front before. Name a window, and number them as you like.
 - Player windows can float above other apps' windows, always or only while
   something in them plays.
-- While a tile plays, its header and controls fade when the mouse leaves
+- While a block plays, its header and controls fade when the mouse leaves
   or rests, and the pointer hides.
 - The controls, notes and menus over a video show it through them:
   frosted, glass, glow, tint, or plain see-through black.
@@ -115,7 +115,7 @@ GPU-accelerated UI framework.
 - On macOS, windows show just the video, edge to edge, with the traffic
   lights over it. Colors are macOS's own, in light and dark, with your
   accent color.
-- Picture in Picture on macOS 12 and later: a tile in macOS's own floating
+- Picture in Picture on macOS 12 and later: a block in macOS's own floating
   window, over every app and Space, subtitles and all.
 
 ### Displays and full screen
@@ -149,7 +149,7 @@ GPU-accelerated UI framework.
 
 ### Casting
 
-- Play a tile on a TV or a speaker instead, from where it is, with its
+- Play a block on a TV or a speaker instead, from where it is, with its
   tracks: Chromecasts, Google TVs and Nest speakers, DLNA TVs and
   speakers, and Apple TVs and TVs with AirPlay, found on the network by
   themselves.
@@ -157,13 +157,13 @@ GPU-accelerated UI framework.
 - A file goes as it is where the device plays it, else repackaged or
   re-encoded for it.
 - A video's sound can go to a speaker while its picture plays on in the
-  tile, in step with it.
-- The tile's bar, buttons and shortcuts drive the device, and the
+  block, in step with it.
+- The block's bar, buttons and shortcuts drive the device, and the
   subtitles picked go along.
 
 ### Screenshots
 
-- Save the frame a tile shows, at the video's full resolution, turned,
+- Save the frame a block shows, at the video's full resolution, turned,
   reshaped and cropped as it shows, with the subtitles showing drawn in.
 - PNG or JPEG. HDR video is saved as an SDR screen shows it, or kept as
   HDR in a 16-bit PNG.
@@ -172,16 +172,16 @@ GPU-accelerated UI framework.
 
 ### Console
 
-- A console on the tile in front: the file's format, each stream as the
+- A console on the block in front: the file's format, each stream as the
   file has it, the decoder, and, as it plays, frames shown and dropped, how
   far the picture is from the clock, what is queued and how far ahead the
   file or stream is read.
 
 ### Keyboard shortcuts
 
-- Shortcuts go to the tile the mouse is over, or the one the keys went
+- Shortcuts go to the block the mouse is over, or the one the keys went
   to. With Shift, the playback ones go to every file in the window, and
-  Shift-S syncs them all to that tile.
+  Shift-S syncs them all to that block.
 - Change any shortcut in Settings → Hotkeys, the app's own (⌘O, ⌘W and
   so on) too.
 - The menu bar (a toolbar on Linux) has them too.
@@ -207,16 +207,16 @@ GPU-accelerated UI framework.
   pick one with the arrows and press Return, or click it, to remove it.
   Escape goes back to the commands. The arrows, Return and Escape aren't
   recorded there; Settings → Hotkeys records those too.
-- ⌘P (Go to…) lists the windows, their tiles, the files in the folder of
-  the tile in front and those played lately, under a heading for each,
+- ⌘P (Go to…) lists the windows, their blocks, the files in the folder of
+  the block in front and those played lately, under a heading for each,
   found by name the same way.
-  Return brings a window or tile to the front, plays a file from the
-  folder in that tile, or opens one played lately.
+  Return brings a window or block to the front, plays a file from the
+  folder in that block, or opens one played lately.
 
 ### Command line
 
 - `plays` in a terminal lists, opens, runs and watches what Plays is
-  doing: its windows and tiles, any command by its id, settings and
+  doing: its windows and blocks, any command by its id, settings and
   shortcuts, what changes as it does, and waiting for a file to end. It
   prints tables or JSON. Off until Settings → Command Line turns it on.
 - Plays → Install Command Line Tool puts `plays` where a terminal finds
@@ -254,7 +254,7 @@ https, and libva and libvdpau for hardware decoding.
   required.
 - For hardware decoding, install your GPU's VA-API driver
   (`intel-media-va-driver` or `mesa-va-drivers`), or use NVIDIA's driver
-  for NVDEC. The tile header shows the API in use, for example
+  for NVDEC. The block header shows the API in use, for example
   `h264 (VA-API)`.
 - For your file manager's **Open With** menu, put the `plays` binary on
   your `PATH` and copy `resources/linux/plays.desktop` to
@@ -307,11 +307,11 @@ a socket that only you can use, kept with Plays' settings on macOS and in
 | Play/pause, seek, restart, mute all | `⇧Space`, `⇧←` `⇧→`, `⇧Home`, `⇧M` |
 | Volume down/up on all | `⇧↓` `⇧↑` |
 | Previous/next frame on all | `⌥⇧←` `⌥⇧→` / `Alt+Shift+←` `Alt+Shift+→` |
-| Sync all to the active tile | `⇧S` |
-| Focus the tile left, right, above, below | `⌥⌘←` `⌥⌘→` `⌥⌘↑` `⌥⌘↓` / `Ctrl+Alt+` arrows |
-| Focus the previous/next tile | `⌘[` `⌘]` / `Ctrl+[` `Ctrl+]` |
-| Move the tile in front left, right, up, down | `⌥⇧⌘` and an arrow / `Ctrl+Alt+Shift+` arrows |
-| Maximize the tile in front, or show them all | `⇧⌘↩` / `Ctrl+Shift+Enter` |
+| Sync all to the active block | `⇧S` |
+| Focus the block left, right, above, below | `⌥⌘←` `⌥⌘→` `⌥⌘↑` `⌥⌘↓` / `Ctrl+Alt+` arrows |
+| Focus the previous/next block | `⌘[` `⌘]` / `Ctrl+[` `Ctrl+]` |
+| Move the block in front left, right, up, down | `⌥⇧⌘` and an arrow / `Ctrl+Alt+Shift+` arrows |
+| Maximize the block in front, or show them all | `⇧⌘↩` / `Ctrl+Shift+Enter` |
 | Copy the file's path | `⌥⌘C` / `Ctrl+Alt+C` |
 | Close the file in front | `⌘W` / `Ctrl+W` (in an empty window, it closes the window) |
 | Close all | `⌘⇧W` / `Ctrl+Shift+W` |
@@ -321,14 +321,14 @@ a socket that only you can use, kept with Plays' settings on macOS and in
 | Next/previous window | `⌃⇥` `⌃⇧⇥` / `Ctrl+Tab` `Ctrl+Shift+Tab` |
 | The window in front before | `⌘'` / `Ctrl+'` |
 | Command palette | `⇧⌘P` / `Ctrl+Shift+P` |
-| Go to a window, tile or file | `⌘P` / `Ctrl+P` |
+| Go to a window, block or file | `⌘P` / `Ctrl+P` |
 | Settings | `⌘,` / `Ctrl+,` |
 
-Shortcuts act on the active tile: the one the mouse is over (or was last
+Shortcuts act on the active block: the one the mouse is over (or was last
 over, or clicked), the one the keys went to, or the maximized one, as its
 controls show. Those with
-`⇧` act on every tile in the window: play/pause, seek, frame step, restart,
-volume (each tile's from its own) and mute. Sync all puts every tile where
+`⇧` act on every block in the window: play/pause, seek, frame step, restart,
+volume (each block's from its own) and mute. Sync all puts every block where
 the active one is, playing or paused as it is, so files side by side go on
 together (the active one seeks there too); the frame keys with `⇧` then
 step them all, each by its own frame rate.
@@ -336,13 +336,13 @@ step them all, each by its own frame rate.
 Where keyframes are far apart, a skip lands on the nearest one its way, so
 it shows at once.
 
-A short note on the tile says what a shortcut, or the mute or loop
+A short note on the block says what a shortcut, or the mute or loop
 button, changed; switching tracks rolls a reel, like a slot machine's, to the track picked, with the ones
 before and after it faded above and below.
 
 Video → Show Controls, Show Top Bar, Show Track Switcher and Show Notes,
 or Settings → Appearance → Over the video, hide each panel over the video
-in every tile, and show it again: the controls at the bottom, the file's
+in every block, and show it again: the controls at the bottom, the file's
 name and buttons at the top, the reel tracks roll on, and the notes on
 what a shortcut changed. A shortcut still does what it does, without
 saying so; a note on what's wrong, such as No chapters or a screenshot
@@ -357,27 +357,27 @@ card for each part of the app, the app's own (⌘O, ⌘W and so on) too. A
 key moves only from a command that works where it does: given to a
 player window's command, ⌘W leaves the window's Close to the other
 windows. Some commands have no keys until given some there, such as
-Float on Top, Go Back One Tile, Move Tile to New Window and Go Back One
+Float on Top, Go Back One Block, Move Block to New Window and Go Back One
 Window. The menus show each command's first key, and are enabled
 only when their commands can run.
 
-### Tiles
+### Blocks
 
-Click the picture to make it the tile shortcuts go to; double-click it (or
+Click the picture to make it the block shortcuts go to; double-click it (or
 the corner button, or `⇧⌘↩`) to maximize it; opening more files puts the grid back,
-with them in it. For the only tile in a window, both toggle full screen
-instead. Drag the picture onto another tile to put the tile there, the
-tiles between moving over; its title follows the pointer, and the tile it
-would take the place of lights up. With no other tile showing (the only
+with them in it. For the only block in a window, both toggle full screen
+instead. Drag the picture onto another block to put the block there, the
+blocks between moving over; its title follows the pointer, and the block it
+would take the place of lights up. With no other block showing (the only
 one in its window, or maximized), dragging the picture moves the window,
 except in full screen. Drag the bar to scrub. In the middle under the bar,
 the previous and next buttons open the media file before or after this one
-in its playlist, or else in its folder, by name, in the same tile; between
+in its playlist, or else in its folder, by name, in the same block; between
 them, skip back and forward go by the seek step, around play/pause.
 
 Several files opened at once, dropped together, or a folder's, each get a
-tile, all playing. With Settings → Playback → Play several files set to One
-after another, they open in one tile instead, a playlist in the order
+block, all playing. With Settings → Playback → Play several files set to One
+after another, they open in one block instead, a playlist in the order
 given (a folder's by name), which plays the next once one has played to its
 end, as it was playing, and stops after the last; a looping file plays on.
 Its header says which it plays: 2 of 5. Previous and next go through the
@@ -385,28 +385,28 @@ playlist, stopping at its ends. A file played instead that is in it plays
 on from there; one that isn't ends the playlist, and previous and next go
 by the file's folder again.
 
-From the keyboard, `⌥⌘` and an arrow (`Ctrl+Alt` on Linux) go to the tile
+From the keyboard, `⌥⌘` and an arrow (`Ctrl+Alt` on Linux) go to the block
 beside, above or below the one in front, stopping at the grid's edges;
-down into a short last row, where there's no tile right below, goes to
-that row's last tile. `⌘[` and `⌘]` go to the previous and next tile in
+down into a short last row, where there's no block right below, goes to
+that row's last block. `⌘[` and `⌘]` go to the previous and next block in
 turn, from the last back to the first. With `⇧` as well, the arrows move
-the tile in front that way instead, swapping it with the one there. A
-ring round the tile shows where the keys went, until the mouse moves or
-clicks: the tile under it is in front then. While a tile is maximized,
-the keys maximize the tile they go to instead, and no tile moves. On
+the block in front that way instead, swapping it with the one there. A
+ring round the block shows where the keys went, until the mouse moves or
+clicks: the block under it is in front then. While a block is maximized,
+the keys maximize the block they go to instead, and no block moves. On
 macOS the Window menu has them all; Settings → Hotkeys changes their
-keys, under Tiles in a window.
+keys, under Blocks in a window.
 
-Window → Go to Recent Tile sends the keys to the tile you clicked or went
-to before the one in front; again, back to this one. Go Back One Tile
-goes further back each time, to a tile it hasn't been to yet, until you
+Window → Go to Recent Block sends the keys to the block you clicked or went
+to before the one in front; again, back to this one. Go Back One Block
+goes further back each time, to a block it hasn't been to yet, until you
 do something else. Only clicks and the keys count: the mouse passing over
-a tile on its way to another puts it in front, but it isn't gone back
-to. Window → Rename Tile… names the tile in front: its header shows the
+a block on its way to another puts it in front, but it isn't gone back
+to. Window → Rename Block… names the block in front: its header shows the
 name in place of the file's, even with titles off, and the command line
-can name the tile by it. No two tiles share a name, in whichever window;
-a blank one takes it away. Move Tile To puts it at another place in the
-grid, and Move Tile to Window in another window.
+can name the block by it. No two blocks share a name, in whichever window;
+a blank one takes it away. Move Block To puts it at another place in the
+grid, and Move Block to Window in another window.
 
 File → Close Other Files closes every file in the window but the one in
 front. Copy File Path (`⌥⌘C` / `Ctrl+Alt+C`) copies its file's path, or
@@ -417,13 +417,13 @@ The track button (next to loop, on files that have subtitles or more than
 one audio or video track) opens the track menu: a column each for audio,
 subtitles and (when there are several) video. While there are devices to
 cast to, or more than one display or audio output, the cast button before
-it opens a menu of where to play: the tile, under Play This Tile On, and
+it opens a menu of where to play: the block, under Play This Block On, and
 its window's sound, under Play This Window's Sound On. The button is lit
-while the tile plays elsewhere: cast to a device, or with its window's
+while the block plays elsewhere: cast to a device, or with its window's
 sound through an output of its own. A name too long for the menu is cut
 short with "…".
 
-While a tile plays, its header and controls fade when the mouse leaves it,
+While a block plays, its header and controls fade when the mouse leaves it,
 or rests on it for a couple of seconds; the pointer hides then too, until
 the mouse moves. Resting on the header or controls keeps them.
 
@@ -436,12 +436,12 @@ stream is read.
 
 ### Windows
 
-When a window has more than one tile, the button next to maximize moves a
-tile to a new window sized for it, beside the one it left, where it keeps
+When a window has more than one block, the button next to maximize moves a
+block to a new window sized for it, beside the one it left, where it keeps
 playing. Every window takes drops and works the same way; menus and
 shortcuts act on the window in front, and files opened from Finder go to
 it too. Drag the top edge of a window to move it, or the picture of its
-only tile; an empty window moves by anywhere but the buttons and the URL
+only block; an empty window moves by anywhere but the buttons and the URL
 form under its logo. Closing the last window quits.
 
 As files open, their window takes the size of the video, or of a grid with
@@ -507,9 +507,9 @@ it, none of their shapes), or plain see-through black.
 ### Picture
 
 On macOS, the Video menu lists every aspect ratio and crop to pick from,
-checking the active tile's; `A` and `C` go through them in turn, then back
+checking the active block's; `A` and `C` go through them in turn, then back
 to none. Rotating and flipping go by the picture as it shows, and cropping
-keeps its middle. Opening another file in the tile starts it as its file
+keeps its middle. Opening another file in the block starts it as its file
 has it.
 
 Settings → Video has the gamma for SDR and for HDR video, the decode
@@ -528,7 +528,7 @@ converted.
 
 Files with chapters (Matroska, MP4 and the like) go from one to the next
 with `Page Down` and back with `Page Up`, or straight to one from
-Playback → Chapters, which checks the one the tile is in. Going back
+Playback → Chapters, which checks the one the block is in. Going back
 within the first couple of seconds of a chapter goes to the one before, as
 on a disc player; later, to its start. The bar has a notch where each
 starts (Settings → Playback turns them off), and the time under it says
@@ -539,11 +539,11 @@ picture: the sound in 50 ms steps, up to 5 seconds either way; subtitles
 (embedded or in a file beside the video) in 100 ms steps, up to a minute.
 The sound plays on as it is and the picture moves against it. A note shows
 the delay as it changes ("Audio delay +200 ms"). Opening another file in
-the tile starts it with none.
+the block starts it with none.
 
 Settings → Subtitles sets how text subtitles look: font, weight, size,
 color, outline or shadow and its color, a background box, on the picture
-or anywhere in the tile, and height, with a live preview.
+or anywhere in the block, and height, with a live preview.
 
 Settings → Audio → Languages and Settings → Subtitles → Languages list the
 languages to play a file's audio and show its subtitles in, first first:
@@ -574,11 +574,11 @@ default), and the sound goes back to it as soon as it's there.
 
 A window can play through an output of its own instead, such as a TV's
 speakers while the desk keeps its own: pick it under Play This Window's
-Sound On in a tile's cast menu, which shows with more than one output, or on
+Sound On in a block's cast menu, which shows with more than one output, or on
 macOS from Audio → Window Output Device ("Same as the App" goes back). Its
-tiles, and files opened in it, play there, picking up where they are; the
+blocks, and files opened in it, play there, picking up where they are; the
 other windows keep the app's output. Windows that pick the same device share
-it, and a tile moved to a new window takes the device along. While it isn't
+it, and a block moved to a new window takes the device along. While it isn't
 connected, its sound waits for it or goes through the system's default, as
 Settings → Audio says for the app's. It isn't remembered from run to run.
 The command palette lists Output Device and Window Output Device under
@@ -600,7 +600,7 @@ their sound, are outputs too, on macOS and Linux. Plays finds them and
 connects to them itself, without Control Center, and lists them with this
 computer's outputs as they come and go (but this computer itself, which
 macOS's AirPlay Receiver offers as one): in Settings → Audio, Audio →
-Output Device and a tile's cast menu. The sound of everything playing
+Output Device and a block's cast menu. The sound of everything playing
 through one goes straight to it, uncompressed, while the pictures stay
 here. AirPlay plays it a second and a half after it's sent, and later on
 a speaker that says it adds some; the picture is held back by as much, so
@@ -616,7 +616,7 @@ it's found again.
 
 On macOS, the Bluetooth headphones and speakers paired with the Mac are
 outputs too, even while they aren't connected: they're listed with the
-rest, in Settings → Audio, Audio → Output Device and a tile's Window
+rest, in Settings → Audio, Audio → Output Device and a block's Window
 Sound, and picking one connects it, as Control Center would. The sound
 goes there once it's up, a few seconds later. Picking one picked already,
 but not connected, connects it too. Nothing else does: not starting Plays
@@ -641,7 +641,7 @@ broadcast Plays' sound:
 
 - Plug in a USB Auracast transmitter. To the computer it's a USB sound
   output, on macOS and Linux alike: pick it in Settings → Audio, or for
-  one window in a tile's cast menu, and have the headphones join its
+  one window in a block's cast menu, and have the headphones join its
   broadcast as the transmitter says.
 - On Linux, a Bluetooth adapter that supports LE Audio can broadcast
   itself, with a recent BlueZ, PipeWire and WirePlumber set up for it
@@ -652,8 +652,8 @@ broadcast Plays' sound:
 
 ### Displays, full screen and AirPlay
 
-With more than one display, the cast button on a tile lists them by name
-under Play This Tile On, as Video → Output Device does on macOS, and puts
+With more than one display, the cast button on a block lists them by name
+under Play This Block On, as Video → Output Device does on macOS, and puts
 the player window full screen on the one picked, picture, subtitles and all.
 Video → Output Device checks the display the window is on; picking that one
 just puts it full screen. Out of full screen, the window goes back where it
@@ -686,20 +686,20 @@ file itself, cast to it instead (Casting, below).
 
 ### Picture in Picture
 
-On macOS 12 and later, a tile can play in macOS's own Picture in Picture
+On macOS 12 and later, a block can play in macOS's own Picture in Picture
 window, over every app and Space, with its play/pause and skip buttons:
-`⌃⌘P`, Video → Picture in Picture, or the button on the tile. The sound
+`⌃⌘P`, Video → Picture in Picture, or the button on the block. The sound
 keeps coming through Plays, and the subtitles showing are drawn into the
 picture. Closing the window, or its button to go back, brings the video
-back to the tile.
+back to the block.
 
 ### Casting
 
-The cast button on a tile lists the devices found, after This Computer,
+The cast button on a block lists the devices found, after This Computer,
 each with its kind and the one playing checked. On macOS, Video → Output
 Device also lists those that show video under the displays, and Audio →
 Output Device the speakers under this computer's outputs, checking the one
-the tile in front casts to. Devices on the same network are found by
+the block in front casts to. Devices on the same network are found by
 themselves, in a second or two. Settings → Casting turns each protocol on
 or off and lists the devices found, with what each shows: video, or sound
 only. AirPlay speakers aren't cast to: they're outputs, which play the
@@ -714,11 +714,11 @@ saying AirPlay. In the menu bar, where two items would have the same name,
 each device's protocol follows its name: Phantom (AirPlay), Phantom
 (DLNA).
 
-While a tile casts, it says where it plays and how the file gets there (as
+While a block casts, it says where it plays and how the file gets there (as
 it is, repackaged, or re-encoded), and its bar, buttons and shortcuts drive
 the device, whose position moves the bar. Speakers are offered for
 anything with sound; a video's sound goes to one while its picture plays
-on in the tile, in step with what the speaker plays, and the tile's
+on in the block, in step with what the speaker plays, and the block's
 buttons and shortcuts drive both.
 
 Video whose keyframes are more than half a minute apart, as in some screen
@@ -726,14 +726,14 @@ recordings, is re-encoded to go as HLS, so the device can be given it a
 few seconds at a time.
 
 The subtitles picked go along and change there as they change on the
-tile. Picture subtitles (PGS, DVD) in the file go drawn into the picture
+block. Picture subtitles (PGS, DVD) in the file go drawn into the picture
 where it is re-encoded, and stay here where it isn't. Another audio or
 video track, or subtitles drawn in changing, loads the file there again
 from where it is.
 
 Playing it here again (This Computer, Play Here, or the display in the
-menu), closing the tile, or the device going away ends the cast, and the
-tile goes on from where the device was. Quitting stops the devices cast
+menu), closing the block, or the device going away ends the cast, and the
+block goes on from where the device was. Quitting stops the devices cast
 to.
 
 A Chromecast, Google TV or TV with Cast built in is offered for anything,
@@ -747,7 +747,7 @@ Ultra or a Google TV, AV1 too on a Google TV Streamer. Subtitles show
 there as Settings → Subtitles has them look (size, color, outline or
 shadow and its color, the box behind them); turning them off and on, or
 changing how they look, changes them there as it plays, and picking other
-subtitles gives it the file again from where it is. The tile's volume is
+subtitles gives it the file again from where it is. The block's volume is
 that of what plays there, so the device's own stays where it is.
 
 A DLNA TV or speaker is offered by what it lists: one that lists only
@@ -756,15 +756,15 @@ that kind of file, else as a stream of MPEG-TS, re-encoded where it needs
 to be; a video's sound goes to a speaker as a stream of AAC or FLAC, as
 internet radio does, while the picture plays on here, following it. A
 speaker can't seek in such a stream, so it's given the stream from where
-the tile is, and again from elsewhere to seek. Picking other subtitles
+the block is, and again from elsewhere to seek. Picking other subtitles
 gives it the file again from where it is, as DLNA takes subtitles only
-with the file. The tile's volume scales the TV's own: where it was when
+with the file. The block's volume scales the TV's own: where it was when
 cast, the TV stays where it was.
 
 An Apple TV, or a TV with AirPlay built in, is offered for video. The
 first time, a sheet over the window asks for the PIN it shows: type it and
-press Return or Pair, and the tile casts. A wrong PIN has the TV show
-another, to type instead; Escape or Cancel leaves the tile playing here.
+press Return or Pair, and the block casts. A wrong PIN has the TV show
+another, to type instead; Escape or Cancel leaves the block playing here.
 What pairing leaves is kept in `airplay.json` beside the settings,
 readable only by you, so the TV doesn't ask again; Settings → Casting
 lists the TVs paired with, and Forget has one ask for its PIN the next
@@ -780,11 +780,11 @@ HD, and H.264 up to 1080p on older Apple TVs and other makes' TVs. An
 Apple TV gets AAC, AC-3, E-AC-3 and ALAC up to 7.1, another TV stereo AAC.
 Subtitles go in the playlist, and the TV draws them in its own style, as
 its accessibility settings have them look; picking other subtitles gives
-it the media again from where it is. The tile's volume sets the TV's own.
+it the media again from where it is. The block's volume sets the TV's own.
 
 ### Screenshots
 
-`S` or Video → Take Screenshot saves the frame the tile shows, at the
+`S` or Video → Take Screenshot saves the frame the block shows, at the
 video's full resolution (whatever the decode limit), turned, reshaped and
 cropped as it shows, with the subtitles showing drawn in. Files are named
 after the video and the time, `Movie 01-23-45.678.png`, and never replace
@@ -795,7 +795,7 @@ it), PNG or JPEG and the JPEG's quality, whether subtitles go in, and how
 HDR video is saved: as an SDR screen shows it (tone mapped, with the HDR
 gamma), or as it is, in a 16-bit PNG tagged BT.2020 PQ or HLG (its cICP
 chunk), which only HDR-aware apps show right. Text subtitles are laid out
-as on a tile showing just the picture, in the style Settings give them;
+as on a block showing just the picture, in the style Settings give them;
 bitmap ones go where the stream puts them.
 
 ### Settings
@@ -856,15 +856,15 @@ makes the link in a terminal, asking for your password, and Copy
 Command copies it.
 
 ```bash
-plays ls                                  # windows, each with its tiles
+plays ls                                  # windows, each with its blocks
 plays open ~/Movies/film.mkv              # in the window in front
 plays open --new-window a.mkv b.mkv
-plays -w Kitchen tile ls                  # the window labeled Kitchen
+plays -w Kitchen block ls                 # the window labeled Kitchen
 plays do playback.seek time=90            # any command, by its id
-plays -t 2 do audio.set_volume volume=40  # on the second tile
-plays tile rename 2 Commentary
+plays -b 2 do audio.set_volume volume=40  # on the second block
+plays block rename 2 Commentary
 plays window move Kitchen --after 1
-plays wait ended -t 1 --timeout 600       # until the first tile ends
+plays wait ended -b 1 --timeout 600       # until the first block ends
 plays events --json                       # every change, a JSON line each
 plays -w Kitchen events                   # the Kitchen window's alone
 plays settings set autoplay false
@@ -872,29 +872,29 @@ plays keymap                              # the shortcuts as they are now
 plays actions                             # every command, Plays or not
 ```
 
-- `-w` names a window and `-t` a tile: by id, label, number (from 1, as
-  ⌘1 to ⌘9 count windows and the grid counts tiles), or the end of an
+- `-w` names a window and `-b` a block: by id, label, number (from 1, as
+  ⌘1 to ⌘9 count windows and the grid counts blocks), or the end of an
   id; `#2` names the second alone, as ⌘2 does. Without them, it's the
-  window in front and the tile keys go to.
+  window in front and the block keys go to.
 - `--json` prints what comes back as JSON, one line an event for
   `events` and `wait`.
 - `do` takes each argument as `KEY=VALUE`, read as the command takes it:
   text stays text (`label=1984`), anything else is read as JSON, and a
   key given again makes a list. `api call` takes them as a JSON object.
 - `events` prints every change as it comes: the app's, and each window's
-  and tile's, or with `-w` only that window's and its tiles'. As Plays
+  and block's, or with `-w` only that window's and its blocks'. As Plays
   quits, it prints each window closing, then `quit`, and ends.
 - `wait` prints the event once it comes (one that has ended already has),
-  and fails if the tile or window closes first, Plays quits, or
+  and fails if the block or window closes first, Plays quits, or
   `--timeout` runs out. `wait quit` waits for Plays to quit.
 - The events of how a file plays (`playing`, `paused`, `seeked`, `ended`,
   and `position` with `--positions`) say where it is three ways:
   `position`, how far through it is from 0 to 1 (none for a live
   stream); `time`, in seconds; and `frame`, the number of the frame
   showing then, from 0 (none for sound alone).
-- An event about a window or a tile names it by id and title:
+- An event about a window or a block names it by id and title:
   `window_id` and `window_title`, as its title bar shows it (its label,
-  or else Plays), and `tile_id` and `tile_title`, as its header shows it
+  or else Plays), and `block_id` and `block_title`, as its header shows it
   (its label, or else the title of what it plays).
 - [docs/commands.md](docs/commands.md) describes every command, with
   the events it tells, and every event: who hears it, its payload, and
@@ -913,7 +913,7 @@ Nushell (`nushell`, or `nu`) complete the subcommands and options, each
 command's id after `do`, `api describe` and `api call` (with its title,
 in zsh, fish and Nushell), and the setting keys after `settings get` and
 `set`. It needs no Plays running, and works with control from the command
-line off. Nushell finds a subcommand's words only with `-w` and `-t` after
+line off. Nushell finds a subcommand's words only with `-w` and `-b` after
 it (`plays do -w 2 …`), not before. Keep it where the shell finds it:
 
 ```bash
@@ -955,7 +955,7 @@ Run it again after updating Plays, for the commands it has then.
   used, only italics, bold and top/middle/bottom placement. A cue in the
   file that started before the keyframe a seek lands on is missed (one in
   a subtitle file beside it isn't, unless it started over 30 seconds
-  before). Subtitle files can't be dropped on a tile. Subtitles in the
+  before). Subtitle files can't be dropped on a block. Subtitles in the
   video file itself are read about a second ahead with it, so moved
   earlier than that they show late. In a live stream, a new track starts
   with its next packets rather than at the playhead.
@@ -966,7 +966,7 @@ Run it again after updating Plays, for the commands it has then.
   lays out AVKit's own layers there, which a later macOS may change.
 - Screenshots of live streams can't be taken (the frame can't be found
   again). Text subtitles in a screenshot are laid out for the picture
-  rather than the tile, so in a small tile, whose text is held to a least
+  rather than the block, so in a small block, whose text is held to a least
   size, they come out relatively smaller. HDR JPEGs (with a gain map)
   aren't made, and HDR PNGs carry no mastering display or light level
   metadata.
@@ -974,7 +974,7 @@ Run it again after updating Plays, for the commands it has then.
   has it. A display matrix that isn't a quarter turn goes to the nearest
   one, and text subtitles stay upright when the picture turns.
 - No playback speed. A playlist is the files opened together, kept only
-  while its tile is open: none is saved, and a playlist file (`.m3u`,
+  while its block is open: none is saved, and a playlist file (`.m3u`,
   `.pls`) isn't read as files to play in turn.
 - On Linux, outputs aren't watched for coming and going while the one
   wanted is playing: the device list in Settings → Audio is read again
@@ -1000,10 +1000,10 @@ Run it again after updating Plays, for the commands it has then.
   a seek starts the stream again shows only from the next. Text subtitles
   lose their placement, and a track in the media is read through the whole
   file first.
-- While a tile casts, delays don't apply, as the device plays the picture
+- While a block casts, delays don't apply, as the device plays the picture
   and the sound; gamma, crop, rotation, flips, aspect ratio, and picture
   subtitles where the video isn't re-encoded, stay on this computer (the
-  tile says so), and frames can't be stepped.
+  block says so), and frames can't be stepped.
 - AirPlay speakers aren't cast to: they're outputs, playing the sound of
   everything, or a window's. Mirrored, an AirPlay display shows the whole
   screen; as a separate display, just the window. The Output Device menus
@@ -1046,7 +1046,7 @@ Run it again after updating Plays, for the commands it has then.
 - DLNA renderers are found over IPv4 only. Subtitles on a DLNA TV depend
   on the TV, as DLNA has none of its own: most take SRT one way or the
   other, some neither, and changing them loads the file again. A DLNA TV
-  has only its own volume, which the tile's scales. One that doesn't say
+  has only its own volume, which the block's scales. One that doesn't say
   what it plays gets H.264 and AAC in MPEG-TS, which it may still not
   play, and one that won't seek while stopped starts from the beginning a
   moment first. A renderer that neither sends events nor answers when

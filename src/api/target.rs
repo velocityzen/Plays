@@ -1,11 +1,11 @@
-//! What a command acts on: a player window, or a tile in one. Each has an
-//! id it keeps while it's open, a tile from window to window as it moves,
-//! that is never another's. A command names its window or tile by
+//! What a command acts on: a player window, or a block in one. Each has an
+//! id it keeps while it's open, a block from window to window as it moves,
+//! that is never another's. A command names its window or block by
 //! `Target`; one named by neither acts on the window in front and the
-//! tile in it that keys go to.
+//! block in it that keys go to.
 //!
 //! A name is, in this order: an id, a label, a position (windows in the
-//! order ⌘1 to ⌘9 count them, tiles in the order their grid shows them,
+//! order ⌘1 to ⌘9 count them, blocks in the order their grid shows them,
 //! from 1), or the end of an id, as long as it's one id's.
 
 use std::fmt;
@@ -19,7 +19,7 @@ use crate::app::player_windows;
 use crate::ui::player::PlayerView;
 use crate::ui::workspace::Workspace;
 
-/// A window's or a tile's id: given once, and never to another.
+/// A window's or a block's id: given once, and never to another.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Id(u32);
 
@@ -51,19 +51,19 @@ impl fmt::Display for Id {
     }
 }
 
-/// The window and the tile a command is aimed at, by name; either may be
+/// The window and the block a command is aimed at, by name; either may be
 /// left out.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Target {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub window: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tile: Option<String>,
+    pub block: Option<String>,
 }
 
 impl Target {
     pub fn is_empty(&self) -> bool {
-        self.window.is_none() && self.tile.is_none()
+        self.window.is_none() && self.block.is_none()
     }
 }
 
@@ -175,21 +175,21 @@ pub fn window(target: &Target, cx: &App) -> Result<WindowHandle<Workspace>, Erro
     Ok(windows[at].0)
 }
 
-/// The tile `target` names, and its window: in the window it names, or
+/// The block `target` names, and its window: in the window it names, or
 /// with none named, in any by id, label or the end of its id, and in the
-/// window in front by position. With no tile named, the one keys go to
+/// window in front by position. With no block named, the one keys go to
 /// in the window named or in front.
-pub fn tile(
+pub fn block(
     target: &Target,
     cx: &App,
 ) -> Result<(WindowHandle<Workspace>, Entity<PlayerView>), Error> {
-    let Some(name) = &target.tile else {
+    let Some(name) = &target.block else {
         let window = window(target, cx)?;
         let active = read(window, cx)?.active_player();
         let id = || read(window, cx).map(Workspace::id);
         return match active {
-            Some(tile) => Ok((window, tile)),
-            None => Err(Error::not_found("tile", format!("in window {}", id()?))),
+            Some(block) => Ok((window, block)),
+            None => Err(Error::not_found("block", format!("in window {}", id()?))),
         };
     };
     let (windows, front) = match target.window {
@@ -200,28 +200,28 @@ pub fn tile(
             (windows, front.unwrap_or(usize::MAX))
         }
     };
-    let mut tiles = Vec::new();
+    let mut blocks = Vec::new();
     let mut positions = Vec::new();
     for (at, window) in windows.into_iter().enumerate() {
-        for tile in read(window, cx)?.players() {
+        for block in read(window, cx)?.players() {
             if at == front {
-                positions.push(tiles.len());
+                positions.push(blocks.len());
             }
-            tiles.push((window, tile));
+            blocks.push((window, block));
         }
     }
-    let named: Vec<Named> = tiles
+    let named: Vec<Named> = blocks
         .iter()
-        .map(|(_, tile)| {
-            let view = tile.read(cx);
+        .map(|(_, block)| {
+            let view = block.read(cx);
             Named {
                 id: view.id(),
                 label: view.label(),
             }
         })
         .collect();
-    let at = pick("tile", name, &named, &positions)?;
-    Ok(tiles.swap_remove(at))
+    let at = pick("block", name, &named, &positions)?;
+    Ok(blocks.swap_remove(at))
 }
 
 /// `window`'s workspace, to read.
@@ -239,29 +239,29 @@ pub fn in_window<R>(
     window.update(cx, f).map_err(|_| closed())?
 }
 
-/// Run `f` on the tile `target` names, or the one keys go to, with its
+/// Run `f` on the block `target` names, or the one keys go to, with its
 /// window.
-pub fn on_tile<R>(
+pub fn on_block<R>(
     target: &Target,
     cx: &mut App,
     f: impl FnOnce(&mut PlayerView, &mut Window, &mut Context<PlayerView>) -> Result<R, Error>,
 ) -> Result<R, Error> {
-    let (window, tile) = tile(target, cx)?;
+    let (window, block) = block(target, cx)?;
     window
         .update(cx, |_, window, cx| {
-            tile.update(cx, |player, cx| f(player, window, cx))
+            block.update(cx, |player, cx| f(player, window, cx))
         })
         .map_err(|_| closed())?
 }
 
-/// What `read` makes of the tile `target` names, or the one keys go to.
-pub fn read_tile<R>(
+/// What `read` makes of the block `target` names, or the one keys go to.
+pub fn read_block<R>(
     target: &Target,
     cx: &App,
     read: impl FnOnce(&PlayerView, &App) -> R,
 ) -> Result<R, Error> {
-    let (_, tile) = tile(target, cx)?;
-    Ok(read(tile.read(cx), cx))
+    let (_, block) = block(target, cx)?;
+    Ok(read(block.read(cx), cx))
 }
 
 fn closed() -> Error {

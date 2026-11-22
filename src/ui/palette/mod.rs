@@ -13,7 +13,7 @@
 //! closes it.
 //!
 //! Go to… (⌘P, `window.go_to`) is the same sheet listing places instead
-//! (`places`): the windows, their tiles, the files in the front tile's
+//! (`places`): the windows, their blocks, the files in the front block's
 //! folder and those played lately, under a heading for each, found as
 //! commands are; Return goes there, running the command each has.
 
@@ -202,7 +202,7 @@ pub enum Listing {
         entries: Vec<Entry>,
         recents: Vec<String>,
     },
-    /// Places to go to (Go to…, ⌘P): windows, tiles and files.
+    /// Places to go to (Go to…, ⌘P): windows, blocks and files.
     Places(Vec<Place>),
 }
 
@@ -383,7 +383,7 @@ impl Palette {
     ) -> Self {
         let placeholder = match listing {
             Listing::Commands { .. } => "Search commands",
-            Listing::Places(_) => "Go to a window, tile or file",
+            Listing::Places(_) => "Go to a window, block or file",
         };
         let input = cx.new(|cx| TextInput::new(placeholder, cx).bare());
         window.focus(&input.focus_handle(cx));

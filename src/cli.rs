@@ -192,7 +192,7 @@ impl Session<'_> {
             Command::Api(api) => self.api(api),
             Command::Ls => windows::ls(self),
             Command::Window(window) => windows::window(self, window),
-            Command::Tile(tile) => windows::tile(self, tile),
+            Command::Block(block) => windows::block(self, block),
             Command::Open { paths, new_window } => self.open(&paths, new_window),
             Command::Events { positions, count } => events::events(self, positions, count),
             Command::Wait { event, timeout } => events::wait(self, &event, timeout),
@@ -218,15 +218,15 @@ impl Session<'_> {
         Ok(self.client.as_mut().expect("connected"))
     }
 
-    /// What `-w` and `-t` name.
+    /// What `-w` and `-b` name.
     fn target(&self) -> Target {
         Target {
             window: self.options.window.clone(),
-            tile: self.options.tile.clone(),
+            block: self.options.block.clone(),
         }
     }
 
-    /// Run `command` with `args` on what `-w` and `-t` name.
+    /// Run `command` with `args` on what `-w` and `-b` name.
     fn call(&mut self, command: &str, args: Value) -> Result<Value, Failure> {
         let target = self.target();
         self.call_on(command, args, target)
@@ -281,7 +281,7 @@ impl Session<'_> {
             let opened = self.call_on("window.new", Value::Null, Target::default())?;
             Target {
                 window: Some(show::text(&opened["window"])),
-                tile: None,
+                block: None,
             }
         } else {
             self.target()

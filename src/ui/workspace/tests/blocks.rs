@@ -1,5 +1,5 @@
-//! The tile commands, run as the API runs them: closing the others, going
-//! back to a tile clicked or gone to before, naming one, copying its
+//! The block commands, run as the API runs them: closing the others, going
+//! back to a block clicked or gone to before, naming one, copying its
 //! file's path or where it is, and the keys for them.
 
 use gpui::{Entity, EntityId, TestAppContext, VisualTestContext, WindowHandle};
@@ -21,21 +21,21 @@ fn run(cx: &mut VisualTestContext, invocation: Invocation) -> Result<Value, Erro
     done
 }
 
-/// The API's name for `tile`.
-fn name(tile: &Entity<PlayerView>, cx: &VisualTestContext) -> String {
-    tile.read_with(cx, |view, _| view.id().to_string())
+/// The API's name for `block`.
+fn name(block: &Entity<PlayerView>, cx: &VisualTestContext) -> String {
+    block.read_with(cx, |view, _| view.id().to_string())
 }
 
-/// Run `command`, given `args`, on `tile`, and what it hands back.
+/// Run `command`, given `args`, on `block`, and what it hands back.
 fn run_on(
     cx: &mut VisualTestContext,
     command: &str,
     args: Value,
-    tile: &Entity<PlayerView>,
+    block: &Entity<PlayerView>,
 ) -> Result<Value, Error> {
     let invocation = Invocation::new(command)
         .with_args(args)
-        .on_tile(name(tile, cx));
+        .on_block(name(block, cx));
     run(cx, invocation)
 }
 
@@ -47,28 +47,28 @@ fn in_window(command: &str, window: WindowHandle<Workspace>, cx: &VisualTestCont
     Invocation::new(command).in_window(name)
 }
 
-/// The tiles' players, in order.
-fn tiles(window: WindowHandle<Workspace>, cx: &VisualTestContext) -> Vec<Entity<PlayerView>> {
+/// The blocks' players, in order.
+fn blocks(window: WindowHandle<Workspace>, cx: &VisualTestContext) -> Vec<Entity<PlayerView>> {
     window
         .read_with(cx, |workspace, _| workspace.players())
         .unwrap()
 }
 
-fn ids(tiles: &[Entity<PlayerView>]) -> Vec<EntityId> {
-    tiles.iter().map(Entity::entity_id).collect()
+fn ids(blocks: &[Entity<PlayerView>]) -> Vec<EntityId> {
+    blocks.iter().map(Entity::entity_id).collect()
 }
 
-/// The tile keys go to.
+/// The block keys go to.
 fn in_front(window: WindowHandle<Workspace>, cx: &VisualTestContext) -> Option<EntityId> {
     window
         .read_with(cx, |workspace, _| {
-            workspace.active_player().map(|tile| tile.entity_id())
+            workspace.active_player().map(|block| block.entity_id())
         })
         .unwrap()
 }
 
-fn label(tile: &Entity<PlayerView>, cx: &VisualTestContext) -> Option<String> {
-    tile.read_with(cx, |view, _| view.label().map(str::to_owned))
+fn label(block: &Entity<PlayerView>, cx: &VisualTestContext) -> Option<String> {
+    block.read_with(cx, |view, _| view.label().map(str::to_owned))
 }
 
 /// Open another player window, with `files` in it.
@@ -86,7 +86,7 @@ fn clipboard(cx: &VisualTestContext) -> Option<String> {
 }
 
 #[gpui::test]
-fn close_others_closes_every_tile_in_the_window_but_the_one_named(cx: &mut TestAppContext) {
+fn close_others_closes_every_block_in_the_window_but_the_one_named(cx: &mut TestAppContext) {
     let (window, mut cx) = testing::start(cx);
     open(
         window,
@@ -95,25 +95,25 @@ fn close_others_closes_every_tile_in_the_window_but_the_one_named(cx: &mut TestA
         false,
     );
     let other = open_player(&mut cx, &["clip.mp4"]);
-    let [_, b, _] = &tiles(window, &cx)[..] else {
-        panic!("three tiles");
+    let [_, b, _] = &blocks(window, &cx)[..] else {
+        panic!("three blocks");
     };
 
-    run_on(&mut cx, "tile.close_others", Value::Null, b).unwrap();
-    assert_eq!(ids(&tiles(window, &cx)), [b.entity_id()]);
-    assert_eq!(tiles(other, &cx).len(), 1, "another window's stay");
+    run_on(&mut cx, "block.close_others", Value::Null, b).unwrap();
+    assert_eq!(ids(&blocks(window, &cx)), [b.entity_id()]);
+    assert_eq!(blocks(other, &cx).len(), 1, "another window's stay");
 }
 
 #[gpui::test]
-fn back_and_recent_go_to_the_tiles_clicked_or_gone_to_before(cx: &mut TestAppContext) {
+fn back_and_recent_go_to_the_blocks_clicked_or_gone_to_before(cx: &mut TestAppContext) {
     let (window, mut cx) = testing::start(cx);
     // Two rows of two:
     // a b
     // c d
     let files = ["clip.mp4", "clip-ip.mkv", "clip.mp4", "tone.m4a"];
     open(window, &mut cx, &files, false);
-    let [a, b, c, d] = &ids(&tiles(window, &cx))[..] else {
-        panic!("four tiles");
+    let [a, b, c, d] = &ids(&blocks(window, &cx))[..] else {
+        panic!("four blocks");
     };
     let (a, b, c, d) = (*a, *b, *c, *d);
     let command = |command: &str, cx: &mut VisualTestContext| {
@@ -122,66 +122,66 @@ fn back_and_recent_go_to_the_tiles_clicked_or_gone_to_before(cx: &mut TestAppCon
         in_front(window, cx)
     };
 
-    // The mouse passing over a tile goes to it, but only those clicked
+    // The mouse passing over a block goes to it, but only those clicked
     // are gone back to.
-    click(&mut cx, "tile-0");
-    click(&mut cx, "tile-1");
-    hover(&mut cx, "tile-2");
-    hover(&mut cx, "tile-0");
+    click(&mut cx, "block-0");
+    click(&mut cx, "block-1");
+    hover(&mut cx, "block-2");
+    hover(&mut cx, "block-0");
     assert_eq!(in_front(window, &cx), Some(a));
-    assert_eq!(command("tile.recent", &mut cx), Some(b), "not c");
-    assert_eq!(command("tile.recent", &mut cx), Some(a), "and back");
+    assert_eq!(command("block.recent", &mut cx), Some(b), "not c");
+    assert_eq!(command("block.recent", &mut cx), Some(a), "and back");
 
-    // Gone to from the keys, a tile is gone back to too.
+    // Gone to from the keys, a block is gone back to too.
     press(&mut cx, "secondary-alt-down");
     assert_eq!(in_front(window, &cx), Some(c));
-    click(&mut cx, "tile-3");
-    assert_eq!(command("tile.back", &mut cx), Some(c), "back one");
-    assert_eq!(command("tile.back", &mut cx), Some(a), "and on, past it");
-    assert_eq!(command("tile.back", &mut cx), Some(b));
-    assert_eq!(command("tile.back", &mut cx), Some(b), "none before it");
+    click(&mut cx, "block-3");
+    assert_eq!(command("block.back", &mut cx), Some(c), "back one");
+    assert_eq!(command("block.back", &mut cx), Some(a), "and on, past it");
+    assert_eq!(command("block.back", &mut cx), Some(b));
+    assert_eq!(command("block.back", &mut cx), Some(b), "none before it");
 
     // Another clicked, the walk starts again, even back where it went.
-    click(&mut cx, "tile-0");
-    click(&mut cx, "tile-1");
+    click(&mut cx, "block-0");
+    click(&mut cx, "block-1");
     assert_eq!(
-        command("tile.back", &mut cx),
+        command("block.back", &mut cx),
         Some(a),
         "clicked just before"
     );
     // Another command, it starts again too.
     run(&mut cx, Invocation::new("window.toggle_float_on_top")).unwrap();
-    assert_eq!(command("tile.back", &mut cx), Some(b), "not on to c");
+    assert_eq!(command("block.back", &mut cx), Some(b), "not on to c");
 
     // Those closed are passed over, nothing put in front since.
-    let players = tiles(window, &cx);
-    run_on(&mut cx, "tile.close", Value::Null, &players[0]).unwrap();
-    assert_eq!(command("tile.back", &mut cx), Some(c), "a closed");
-    run_on(&mut cx, "tile.close", Value::Null, &players[1]).unwrap();
-    assert_eq!(command("tile.recent", &mut cx), Some(d), "b closed");
+    let players = blocks(window, &cx);
+    run_on(&mut cx, "block.close", Value::Null, &players[0]).unwrap();
+    assert_eq!(command("block.back", &mut cx), Some(c), "a closed");
+    run_on(&mut cx, "block.close", Value::Null, &players[1]).unwrap();
+    assert_eq!(command("block.recent", &mut cx), Some(d), "b closed");
 }
 
 #[gpui::test]
-fn a_tile_moved_in_from_another_window_is_gone_back_to(cx: &mut TestAppContext) {
+fn a_block_moved_in_from_another_window_is_gone_back_to(cx: &mut TestAppContext) {
     let (window, mut cx) = testing::start(cx);
     open(window, &mut cx, &["clip.mp4", "tone.m4a"], false);
     let other = open_player(&mut cx, &["clip-ip.mkv"]);
-    let moved = tiles(other, &cx)[0].clone();
+    let moved = blocks(other, &cx)[0].clone();
     let here = window
         .read_with(&cx, |workspace, _| workspace.id().to_string())
         .unwrap();
 
-    click(&mut cx, "tile-0");
+    click(&mut cx, "block-0");
     run_on(
         &mut cx,
-        "tile.move_to_window",
+        "block.move_to_window",
         json!({"window": here}),
         &moved,
     )
     .unwrap();
     assert_eq!(in_front(window, &cx), Some(moved.entity_id()));
-    click(&mut cx, "tile-1");
-    let invocation = in_window("tile.recent", window, &cx);
+    click(&mut cx, "block-1");
+    let invocation = in_window("block.recent", window, &cx);
     run(&mut cx, invocation).unwrap();
     assert_eq!(
         in_front(window, &cx),
@@ -191,42 +191,42 @@ fn a_tile_moved_in_from_another_window_is_gone_back_to(cx: &mut TestAppContext) 
 }
 
 #[gpui::test]
-fn rename_labels_a_tile_its_header_shows_and_names_it_by(cx: &mut TestAppContext) {
+fn rename_labels_a_block_its_header_shows_and_names_it_by(cx: &mut TestAppContext) {
     let (window, mut cx) = testing::start(cx);
     open(window, &mut cx, &["clip.mp4", "tone.m4a"], false);
     let other = open_player(&mut cx, &["clip-ip.mkv"]);
-    let [a, b] = &tiles(window, &cx)[..] else {
-        panic!("two tiles");
+    let [a, b] = &blocks(window, &cx)[..] else {
+        panic!("two blocks");
     };
-    let elsewhere = &tiles(other, &cx)[0];
-    let title = |tile: &Entity<PlayerView>, cx: &VisualTestContext| {
-        tile.read_with(cx, |view, _| view.header_title().to_string())
+    let elsewhere = &blocks(other, &cx)[0];
+    let title = |block: &Entity<PlayerView>, cx: &VisualTestContext| {
+        block.read_with(cx, |view, _| view.header_title().to_string())
     };
     assert_eq!(title(a, &cx), "clip.mp4", "the file's name");
 
-    run_on(&mut cx, "tile.rename", json!({"label": " Intro  "}), a).unwrap();
+    run_on(&mut cx, "block.rename", json!({"label": " Intro  "}), a).unwrap();
     assert_eq!(label(a, &cx).as_deref(), Some("Intro"), "trimmed");
     assert_eq!(title(a, &cx), "Intro", "its header shows it");
     run(
         &mut cx,
-        Invocation::new("audio.toggle_mute").on_tile("Intro"),
+        Invocation::new("audio.toggle_mute").on_block("Intro"),
     )
     .unwrap();
     let muted: Vec<bool> = players(window, &cx).iter().map(|p| p.2).collect();
     assert_eq!(muted, [true, false], "named by it");
 
-    run_on(&mut cx, "tile.rename", json!({"label": "Intro"}), a).expect("its own again");
+    run_on(&mut cx, "block.rename", json!({"label": "Intro"}), a).expect("its own again");
     let taken = Err(Error::bad_args(
-        "tile.rename",
-        "another tile is called Intro",
+        "block.rename",
+        "another block is called Intro",
     ));
-    for tile in [b, elsewhere] {
-        let renamed = run_on(&mut cx, "tile.rename", json!({"label": "Intro"}), tile);
+    for block in [b, elsewhere] {
+        let renamed = run_on(&mut cx, "block.rename", json!({"label": "Intro"}), block);
         assert_eq!(renamed, taken, "in whichever window");
-        assert_eq!(label(tile, &cx), None);
+        assert_eq!(label(block, &cx), None);
     }
 
-    run_on(&mut cx, "tile.rename", json!({"label": " "}), a).unwrap();
+    run_on(&mut cx, "block.rename", json!({"label": " "}), a).unwrap();
     assert_eq!(label(a, &cx), None, "blank is none");
     assert_eq!(title(a, &cx), "clip.mp4", "as it was");
 }
@@ -235,41 +235,41 @@ fn rename_labels_a_tile_its_header_shows_and_names_it_by(cx: &mut TestAppContext
 fn a_label_shows_in_the_header_though_titles_dont(cx: &mut TestAppContext) {
     let (window, mut cx) = testing::start(cx);
     open(window, &mut cx, &["clip.mp4"], false);
-    let tile = &tiles(window, &cx)[0];
+    let block = &blocks(window, &cx)[0];
     cx.update(|_, cx| Settings::update(cx, false, |s| s.show_titles = false));
-    hover(&mut cx, "tile-0");
-    assert!(!shows(&mut cx, "tile-title"), "titles are off");
+    hover(&mut cx, "block-0");
+    assert!(!shows(&mut cx, "block-title"), "titles are off");
 
-    run_on(&mut cx, "tile.rename", json!({"label": "Intro"}), tile).unwrap();
-    hover(&mut cx, "tile-0");
-    assert!(shows(&mut cx, "tile-title"), "but it was given");
+    run_on(&mut cx, "block.rename", json!({"label": "Intro"}), block).unwrap();
+    hover(&mut cx, "block-0");
+    assert!(shows(&mut cx, "block-title"), "but it was given");
 }
 
 #[gpui::test]
 fn rename_with_no_label_asks_for_one(cx: &mut TestAppContext) {
     let (window, mut cx) = testing::start(cx);
     open(window, &mut cx, &["clip.mp4", "tone.m4a"], false);
-    let [a, b] = &tiles(window, &cx)[..] else {
-        panic!("two tiles");
+    let [a, b] = &blocks(window, &cx)[..] else {
+        panic!("two blocks");
     };
-    run_on(&mut cx, "tile.rename", json!({"label": "Song"}), b).unwrap();
+    run_on(&mut cx, "block.rename", json!({"label": "Song"}), b).unwrap();
 
-    run_on(&mut cx, "tile.rename", Value::Null, a).unwrap();
-    assert!(shows(&mut cx, "rename-tile"), "it asks");
+    run_on(&mut cx, "block.rename", Value::Null, a).unwrap();
+    assert!(shows(&mut cx, "rename-block"), "it asks");
     cx.simulate_input("Song ");
     press(&mut cx, "enter");
     assert!(
-        shows(&mut cx, "rename-tile-error"),
-        "another tile is called so, trimmed"
+        shows(&mut cx, "rename-block-error"),
+        "another block is called so, trimmed"
     );
-    assert!(shows(&mut cx, "rename-tile"), "and it asks again");
+    assert!(shows(&mut cx, "rename-block"), "and it asks again");
     assert_eq!(label(a, &cx), None);
 
     press(&mut cx, "backspace backspace backspace backspace backspace");
     cx.simulate_input("Clip");
     press(&mut cx, "enter");
     cx.run_until_parked();
-    assert!(!shows(&mut cx, "rename-tile"), "named, it goes");
+    assert!(!shows(&mut cx, "rename-block"), "named, it goes");
     assert_eq!(label(a, &cx).as_deref(), Some("Clip"));
     assert_eq!(
         label(b, &cx).as_deref(),
@@ -278,16 +278,16 @@ fn rename_with_no_label_asks_for_one(cx: &mut TestAppContext) {
     );
 
     // Asked again, it holds the label, Return keeping it.
-    run_on(&mut cx, "tile.rename", Value::Null, a).unwrap();
+    run_on(&mut cx, "block.rename", Value::Null, a).unwrap();
     press(&mut cx, "enter");
     cx.run_until_parked();
-    assert!(!shows(&mut cx, "rename-tile"));
+    assert!(!shows(&mut cx, "rename-block"));
     assert_eq!(label(a, &cx).as_deref(), Some("Clip"), "held");
     // And Escape leaves it, whatever was typed.
-    run_on(&mut cx, "tile.rename", Value::Null, a).unwrap();
+    run_on(&mut cx, "block.rename", Value::Null, a).unwrap();
     cx.simulate_input("Other");
     press(&mut cx, "escape");
-    assert!(!shows(&mut cx, "rename-tile"), "Escape puts it away");
+    assert!(!shows(&mut cx, "rename-block"), "Escape puts it away");
     assert_eq!(label(a, &cx).as_deref(), Some("Clip"));
 }
 
@@ -295,45 +295,45 @@ fn rename_with_no_label_asks_for_one(cx: &mut TestAppContext) {
 fn copies_the_files_path_and_where_it_is(cx: &mut TestAppContext) {
     let (window, mut cx) = testing::start(cx);
     open(window, &mut cx, &["clip.mp4", "tone.m4a"], false);
-    let [clip, tone] = &tiles(window, &cx)[..] else {
-        panic!("two tiles");
+    let [clip, tone] = &blocks(window, &cx)[..] else {
+        panic!("two blocks");
     };
     let path = |file: &str| fixture(file).display().to_string();
 
-    let copied = run_on(&mut cx, "tile.copy_path", Value::Null, tone).unwrap();
+    let copied = run_on(&mut cx, "block.copy_path", Value::Null, tone).unwrap();
     assert_eq!(copied, json!(path("tone.m4a")), "what was copied");
     assert_eq!(clipboard(&cx), Some(path("tone.m4a")));
 
     run_on(&mut cx, "playback.seek", json!({"time": 1.5}), clip).unwrap();
-    let copied = run_on(&mut cx, "tile.copy_time", Value::Null, clip).unwrap();
+    let copied = run_on(&mut cx, "block.copy_time", Value::Null, clip).unwrap();
     assert_eq!(copied, json!("0:01"));
     assert_eq!(clipboard(&cx).as_deref(), Some("0:01"));
 
-    // ⌥⌘C copies the path of the tile in front.
-    hover(&mut cx, "tile-0");
+    // ⌥⌘C copies the path of the block in front.
+    hover(&mut cx, "block-0");
     press(&mut cx, "secondary-alt-c");
     assert_eq!(clipboard(&cx), Some(path("clip.mp4")));
 }
 
 #[gpui::test]
-fn shift_command_return_maximizes_the_tile_in_front_and_move_says_where_it_is(
+fn shift_command_return_maximizes_the_block_in_front_and_move_says_where_it_is(
     cx: &mut TestAppContext,
 ) {
     let (window, mut cx) = testing::start(cx);
     open(window, &mut cx, &["clip.mp4", "tone.m4a"], false);
-    let tone = tiles(window, &cx)[1].entity_id();
+    let tone = blocks(window, &cx)[1].entity_id();
     let maximized = |cx: &VisualTestContext| {
         window
             .read_with(cx, |workspace, _| workspace.maximized)
             .unwrap()
     };
 
-    hover(&mut cx, "tile-1");
+    hover(&mut cx, "block-1");
     press(&mut cx, "secondary-shift-enter");
     assert_eq!(maximized(&cx), Some(tone));
     press(&mut cx, "secondary-shift-enter");
     assert_eq!(maximized(&cx), None, "and back");
 
-    let place = TestAppContext::update(&cx, |cx| api::state("tile.move", &Target::default(), cx));
+    let place = TestAppContext::update(&cx, |cx| api::state("block.move", &Target::default(), cx));
     assert_eq!(place, Ok(json!(2)), "its place, from 1");
 }

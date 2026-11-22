@@ -1,5 +1,5 @@
-//! Dragging a tile by its picture: onto another tile in its window, to
-//! take that one's place; or, as the only tile there or maximized, the
+//! Dragging a block by its picture: onto another block in its window, to
+//! take that one's place; or, as the only block there or maximized, the
 //! window with it, as its title bar does. Not in full screen, where the
 //! window stays put.
 
@@ -14,10 +14,10 @@ use crate::ui::components::Panel;
 use crate::ui::theme::layout::{DRAG_START, DRAG_TITLE_MAX_WIDTH, DRAG_TITLE_OFFSET};
 use crate::ui::theme::overlay;
 
-/// A tile being dragged onto another's place: which one.
-pub struct DraggedTile(pub EntityId);
+/// A block being dragged onto another's place: which one.
+pub struct DraggedBlock(pub EntityId);
 
-/// What follows the mouse while a tile is dragged: its title, beside the
+/// What follows the mouse while a block is dragged: its title, beside the
 /// pointer.
 struct DraggedTitle {
     title: SharedString,
@@ -62,8 +62,8 @@ impl Render for DraggedTitle {
 }
 
 impl PlayerView {
-    /// Let the picture, `surface`, drag the tile onto another's place, or
-    /// the window with no other tile showing.
+    /// Let the picture, `surface`, drag the block onto another's place, or
+    /// the window with no other block showing.
     pub(super) fn drag_by_picture(
         &self,
         surface: Stateful<Div>,
@@ -72,7 +72,7 @@ impl PlayerView {
     ) -> Stateful<Div> {
         if !self.layout.alone && !self.layout.maximized {
             let title = self.title.clone();
-            return surface.on_drag(DraggedTile(cx.entity_id()), move |_, pressed, _, cx| {
+            return surface.on_drag(DraggedBlock(cx.entity_id()), move |_, pressed, _, cx| {
                 cx.new(|_| DraggedTitle {
                     title: title.clone(),
                     pressed,

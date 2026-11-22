@@ -1,6 +1,6 @@
 //! What a window's controls send: each runs its command through the API,
-//! aimed at its own tile or window. `api::intercept` notes what's sent
-//! without running it, so one tile can have every control clicked; what
+//! aimed at its own block or window. `api::intercept` notes what's sent
+//! without running it, so one block can have every control clicked; what
 //! the commands do is tested with them.
 
 use std::time::{Duration, Instant};
@@ -20,11 +20,11 @@ use crate::ui::workspace::Workspace;
 /// password it's watched with, which the URL sent keeps.
 const URL: &str = "rtsp://viewer:secret@192.0.2.1/live";
 
-/// The API's name for tile `at` in `window`.
-fn tile_name(window: WindowHandle<Workspace>, at: usize, cx: &VisualTestContext) -> String {
+/// The API's name for block `at` in `window`.
+fn block_name(window: WindowHandle<Workspace>, at: usize, cx: &VisualTestContext) -> String {
     window
         .read_with(cx, |workspace, cx| {
-            workspace.tiles[at].view.read(cx).id().to_string()
+            workspace.blocks[at].view.read(cx).id().to_string()
         })
         .unwrap()
 }
@@ -57,11 +57,11 @@ fn number(args: &Value, name: &str) -> f64 {
 }
 
 #[gpui::test]
-fn each_of_a_tiles_controls_sends_its_command_to_it(cx: &mut TestAppContext) {
+fn each_of_a_blocks_controls_sends_its_command_to_it(cx: &mut TestAppContext) {
     let (window, mut cx) = testing::start(cx);
     open(window, &mut cx, &["clip-subs.mkv"], false);
     let view = window
-        .read_with(&cx, |workspace, _| workspace.tiles[0].view.clone())
+        .read_with(&cx, |workspace, _| workspace.blocks[0].view.clone())
         .unwrap();
     let neighbors = wait_until(&mut cx, |cx| {
         view.read_with(cx, |view, _| view.knows_neighbors())
@@ -70,14 +70,14 @@ fn each_of_a_tiles_controls_sends_its_command_to_it(cx: &mut TestAppContext) {
     let duration = view
         .read_with(&cx, |view, _| view.duration())
         .expect("its length");
-    let tile = tile_name(window, 0, &cx);
-    let on_tile = |command: &str, args: Value| {
+    let block = block_name(window, 0, &cx);
+    let on_block = |command: &str, args: Value| {
         Invocation::new(command)
             .with_args(args)
-            .on_tile(tile.clone())
+            .on_block(block.clone())
     };
     cx.update(|_, cx| api::intercept(cx));
-    hover(&mut cx, "tile-0");
+    hover(&mut cx, "block-0");
 
     for (control, command) in [
         ("play", "playback.play_pause"),
@@ -87,11 +87,11 @@ fn each_of_a_tiles_controls_sends_its_command_to_it(cx: &mut TestAppContext) {
         ("next", "playback.next_file"),
         ("loop", "playback.toggle_loop"),
         ("mute", "audio.toggle_mute"),
-        ("maximize", "tile.zoom"),
-        ("close", "tile.close"),
+        ("maximize", "block.zoom"),
+        ("close", "block.close"),
     ] {
         click(&mut cx, control);
-        assert_eq!(sent(&mut cx), [on_tile(command, Value::Null)], "{control}");
+        assert_eq!(sent(&mut cx), [on_block(command, Value::Null)], "{control}");
     }
     if pip::supported() {
         // Once it shows a picture, drawn.
@@ -102,13 +102,13 @@ fn each_of_a_tiles_controls_sends_its_command_to_it(cx: &mut TestAppContext) {
         click(&mut cx, "pip");
         assert_eq!(
             sent(&mut cx),
-            [on_tile("tile.toggle_picture_in_picture", Value::Null)]
+            [on_block("block.toggle_picture_in_picture", Value::Null)]
         );
     }
-    double_click(&mut cx, "tile-0");
+    double_click(&mut cx, "block-0");
     assert_eq!(
         sent(&mut cx),
-        [on_tile("tile.zoom", Value::Null)],
+        [on_block("block.zoom", Value::Null)],
         "a double click"
     );
 
@@ -116,14 +116,14 @@ fn each_of_a_tiles_controls_sends_its_command_to_it(cx: &mut TestAppContext) {
     click(&mut cx, "seek");
     let seek = sent_one(&mut cx, "the seek bar");
     assert_eq!(seek.command, "playback.seek");
-    assert_eq!(seek.target.tile.as_deref(), Some(tile.as_str()));
+    assert_eq!(seek.target.block.as_deref(), Some(block.as_str()));
     let time = number(&seek.args, "time");
     assert!((time / duration - 0.5).abs() < 0.2, "{time} of {duration}");
 
     click(&mut cx, "volume");
     let volume = sent_one(&mut cx, "the volume slider");
     assert_eq!(volume.command, "audio.set_volume");
-    assert_eq!(volume.target.tile.as_deref(), Some(tile.as_str()));
+    assert_eq!(volume.target.block.as_deref(), Some(block.as_str()));
     let volume = number(&volume.args, "volume");
     assert!((volume - 50.0).abs() < 20.0, "{volume}");
 
@@ -137,7 +137,7 @@ fn each_of_a_tiles_controls_sends_its_command_to_it(cx: &mut TestAppContext) {
         click(&mut cx, row);
         assert_eq!(
             sent(&mut cx),
-            [on_tile(command, json!({"number": number}))],
+            [on_block(command, json!({"number": number}))],
             "{row}"
         );
         assert!(!shows(&mut cx, row), "the menu closes");
@@ -145,25 +145,27 @@ fn each_of_a_tiles_controls_sends_its_command_to_it(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn a_tile_popped_out_or_dropped_on_another_and_the_url_dialog_send_theirs(cx: &mut TestAppContext) {
+fn a_block_popped_out_or_dropped_on_another_and_the_url_dialog_send_theirs(
+    cx: &mut TestAppContext,
+) {
     let (window, mut cx) = testing::start(cx);
     open(window, &mut cx, &["clip.mp4", "clip-ip.mkv"], false);
-    let (first, second) = (tile_name(window, 0, &cx), tile_name(window, 1, &cx));
+    let (first, second) = (block_name(window, 0, &cx), block_name(window, 1, &cx));
     cx.update(|_, cx| api::intercept(cx));
 
-    hover(&mut cx, "tile-1");
+    hover(&mut cx, "block-1");
     click(&mut cx, "pop-out");
     assert_eq!(
         sent(&mut cx),
-        [Invocation::new("tile.move_to_new_window").on_tile(second)]
+        [Invocation::new("block.move_to_new_window").on_block(second)]
     );
 
-    drag(&mut cx, "tile-0", "tile-1");
+    drag(&mut cx, "block-0", "block-1");
     assert_eq!(
         sent(&mut cx),
-        [Invocation::new("tile.move")
+        [Invocation::new("block.move")
             .with_args(json!({"position": 2}))
-            .on_tile(first)],
+            .on_block(first)],
         "the place it's dropped on, from 1"
     );
 

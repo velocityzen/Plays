@@ -1,4 +1,4 @@
-//! `subtitles`: a tile's subtitles, and how every file's look.
+//! `subtitles`: a block's subtitles, and how every file's look.
 
 use gpui::Context;
 
@@ -17,7 +17,7 @@ const SIZE_STEP: f32 = 0.1;
 const HEIGHT_STEP: f32 = 0.01;
 
 pub const COMMANDS: &[Spec] = &[
-    Spec::tile(
+    Spec::block(
         "subtitles.next_track",
         "Next Subtitles",
         "Show the file's next subtitles, and none after the last.",
@@ -27,7 +27,7 @@ pub const COMMANDS: &[Spec] = &[
     .keywords(&["captions", "language", "track"])
     .setting("next_subtitle_track")
     .keys(on_mac(&["ctrl-cmd-s"], &["ctrl-alt-s"])),
-    Spec::tile_with(
+    Spec::block_with(
         "subtitles.select_track",
         "Pick Subtitles",
         "Show one of the file's subtitles, or none.",
@@ -40,7 +40,7 @@ pub const COMMANDS: &[Spec] = &[
     )
     .tells(&["track_changed"])
     .keywords(&["captions", "language", "track", "off"]),
-    Spec::tile(
+    Spec::block(
         "subtitles.toggle",
         "Show/Hide Subtitles",
         "Hide the subtitles showing, or show the ones hidden.",
@@ -50,7 +50,7 @@ pub const COMMANDS: &[Spec] = &[
     .keywords(&["captions", "off", "on"])
     .setting("toggle_subtitles")
     .keys(&["v"]),
-    Spec::tile(
+    Spec::block(
         "subtitles.bigger",
         "Bigger Subtitles",
         "Make every file's subtitles bigger.",
@@ -60,7 +60,7 @@ pub const COMMANDS: &[Spec] = &[
     .keywords(&["captions", "size", "larger", "font"])
     .setting("bigger_subtitles")
     .keys(&["shift-g"]),
-    Spec::tile(
+    Spec::block(
         "subtitles.smaller",
         "Smaller Subtitles",
         "Make every file's subtitles smaller.",
@@ -70,7 +70,7 @@ pub const COMMANDS: &[Spec] = &[
     .keywords(&["captions", "size", "font"])
     .setting("smaller_subtitles")
     .keys(&["shift-f"]),
-    Spec::tile(
+    Spec::block(
         "subtitles.up",
         "Move Subtitles Up",
         "Show every file's subtitles higher up.",
@@ -80,7 +80,7 @@ pub const COMMANDS: &[Spec] = &[
     .keywords(&["captions", "position", "raise"])
     .setting("subtitles_up")
     .keys(&["r"]),
-    Spec::tile(
+    Spec::block(
         "subtitles.down",
         "Move Subtitles Down",
         "Show every file's subtitles lower down.",
@@ -90,28 +90,28 @@ pub const COMMANDS: &[Spec] = &[
     .keywords(&["captions", "position", "lower"])
     .setting("subtitles_down")
     .keys(&["shift-r", "t"]),
-    Spec::tile(
+    Spec::block(
         "subtitles.earlier",
         "Subtitles Earlier",
-        "Show the tile's subtitles a little earlier.",
+        "Show the block's subtitles a little earlier.",
         |player, _, cx| player.shift_subtitles(-DELAY_STEP, cx),
     )
     .keywords(&["captions", "delay", "sync", "offset"])
     .setting("subtitles_earlier")
     .keys(&["z"]),
-    Spec::tile(
+    Spec::block(
         "subtitles.later",
         "Subtitles Later",
-        "Show the tile's subtitles a little later.",
+        "Show the block's subtitles a little later.",
         |player, _, cx| player.shift_subtitles(DELAY_STEP, cx),
     )
     .keywords(&["captions", "delay", "sync", "offset"])
     .setting("subtitles_later")
     .keys(&["x"]),
-    Spec::tile(
+    Spec::block(
         "subtitles.reset_delay",
         "Reset Subtitle Delay",
-        "Show the tile's subtitles at their own times again.",
+        "Show the block's subtitles at their own times again.",
         |player, _, cx| player.set_subtitle_delay(0.0, cx),
     )
     .keywords(&["captions", "sync", "offset"])

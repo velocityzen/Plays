@@ -1,4 +1,4 @@
-//! What the playback shortcuts do to a tile.
+//! What the playback shortcuts do to a block.
 
 use gpui::{App, ClipboardItem, Context};
 

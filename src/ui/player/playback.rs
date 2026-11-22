@@ -1,9 +1,9 @@
-//! A tile's playback: the player here, and the device it plays on instead
-//! while it casts. Every command the tile sends comes through here and
+//! A block's playback: the player here, and the device it plays on instead
+//! while it casts. Every command the block sends comes through here and
 //! goes to the device or to the player here, as casting says, so no part
-//! of the tile has to remember to ask first. Only this file can command
-//! the player here; the rest of the tile reads it (`Playback::local`).
-//! Where the player here is commanded while the tile casts, it is on
+//! of the block has to remember to ask first. Only this file can command
+//! the player here; the rest of the block reads it (`Playback::local`).
+//! Where the player here is commanded while the block casts, it is on
 //! purpose, and its method says so: the picture following sound heard
 //! elsewhere, or the player taking over again once a cast ends.
 
@@ -21,10 +21,10 @@ use crate::media::tracks::TrackKind;
 use crate::media::{Mixer, Picture, Player, PlayerOptions, Source};
 use crate::ui::theme::motion::END_FOLLOW_SEEK;
 
-/// A tile's playback, here or on the device it casts to.
+/// A block's playback, here or on the device it casts to.
 pub(super) struct Playback {
     /// The player here. Its commands take `&mut`, which only this file
-    /// can get; the rest of the tile reads it through `local`.
+    /// can get; the rest of the block reads it through `local`.
     player: Player,
     /// The device it plays on instead, while it casts.
     pub(super) cast: Option<Cast>,
@@ -56,7 +56,7 @@ impl Playback {
     }
 
     /// Open `source` here in place of what played, into the same mixer.
-    /// A device it cast to lets go; the tile goes on casting the new file
+    /// A device it cast to lets go; the block goes on casting the new file
     /// once it's known (`PlayerView::cast_once_known`).
     pub fn reopen(&mut self, source: Source, options: PlayerOptions) {
         self.cast = None;
@@ -89,7 +89,7 @@ impl Playback {
         &self.player
     }
 
-    /// The device the tile casts to, or goes on casting to with the file
+    /// The device the block casts to, or goes on casting to with the file
     /// just opened.
     pub fn casting(&self) -> Option<&Device> {
         match &self.cast {
@@ -103,7 +103,7 @@ impl Playback {
         self.cast.as_ref().is_some_and(|cast| cast.picture_here)
     }
 
-    /// It casts, picture and all: the tile shows where it plays instead.
+    /// It casts, picture and all: the block shows where it plays instead.
     pub fn casts_picture(&self) -> bool {
         self.cast.as_ref().is_some_and(|cast| !cast.picture_here)
     }
@@ -229,7 +229,7 @@ impl Playback {
     }
 
     /// Pause and show the next frame (`1`) or the one before (`-1`).
-    /// Only here: a device can't step through frames, so while the tile
+    /// Only here: a device can't step through frames, so while the block
     /// casts nothing happens. Whether it stepped.
     pub fn step_frame(&mut self, direction: f64) -> bool {
         if self.casting().is_some() {
@@ -259,7 +259,7 @@ impl Playback {
         true
     }
 
-    /// The tile's volume, which a cast takes along.
+    /// The block's volume, which a cast takes along.
     pub fn set_volume(&mut self, volume: f32) {
         self.player.set_volume(volume);
         self.volume_changed();
@@ -315,7 +315,7 @@ impl Playback {
 
     /// Hear the sound `delay` seconds after the picture (negative: before
     /// it). A device plays both, and a delay here doesn't reach it, so
-    /// while the tile casts it stays as it is.
+    /// while the block casts it stays as it is.
     pub fn set_audio_delay(&mut self, delay: f64) {
         if self.casting().is_none() {
             self.player.set_audio_delay(delay);
@@ -323,7 +323,7 @@ impl Playback {
     }
 
     /// Show subtitles `delay` seconds after their times (negative:
-    /// before). As with the sound's, not while the tile casts.
+    /// before). As with the sound's, not while the block casts.
     pub fn set_subtitle_delay(&mut self, delay: f64) {
         if self.casting().is_none() {
             self.player.set_subtitle_delay(delay);
@@ -331,7 +331,7 @@ impl Playback {
     }
 
     /// Move the player here along: frame queues, end of file, looping. It
-    /// does while the tile casts too, as a picture following sound heard
+    /// does while the block casts too, as a picture following sound heard
     /// elsewhere plays here.
     pub fn tick(&mut self) -> Tick {
         self.player.tick()
@@ -382,7 +382,7 @@ impl Playback {
 
     /// With the sound on the device, keep the picture here with it:
     /// playing once the device is seen to, and where it is. This commands
-    /// the player here while the tile casts, as the picture is here.
+    /// the player here while the block casts, as the picture is here.
     pub fn follow_sound(&mut self) {
         let Some(cast) = self.cast.as_ref().filter(|cast| cast.picture_here) else {
             return;
@@ -398,7 +398,7 @@ impl Playback {
 
     /// Play here again, from where the device was, playing if it was; or,
     /// with the file just opened not yet gone there, as it would have
-    /// played there. Whether the tile was casting.
+    /// played there. Whether the block was casting.
     pub fn end_cast(&mut self) -> bool {
         if let Some(next) = self.next_cast.take() {
             // The file just opened hadn't gone there yet; it plays here as
@@ -444,7 +444,7 @@ impl Playback {
     }
 }
 
-/// The tile's playback, as the workspace, the menus and the shortcuts
+/// The block's playback, as the workspace, the menus and the shortcuts
 /// reach it: each goes through `Playback`.
 impl PlayerView {
     /// The player here, to read.
@@ -452,7 +452,7 @@ impl PlayerView {
         self.playback.local()
     }
 
-    /// The device the tile casts to, or goes on casting to with the file
+    /// The device the block casts to, or goes on casting to with the file
     /// just opened.
     pub fn casting(&self) -> Option<&Device> {
         self.playback.casting()
@@ -464,7 +464,7 @@ impl PlayerView {
         self.playback.casts_sound_only()
     }
 
-    /// It casts, picture and all: the tile shows where it plays instead.
+    /// It casts, picture and all: the block shows where it plays instead.
     pub(super) fn casts_picture(&self) -> bool {
         self.playback.casts_picture()
     }
@@ -507,7 +507,7 @@ impl PlayerView {
         self.playback.seek(time);
     }
 
-    /// The tile's volume, which a cast takes along.
+    /// The block's volume, which a cast takes along.
     pub fn set_volume(&mut self, volume: f32) {
         self.playback.set_volume(volume);
     }

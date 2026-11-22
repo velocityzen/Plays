@@ -1,4 +1,4 @@
-//! A tile's playlist: files opened at once, played one after another in
+//! A block's playlist: files opened at once, played one after another in
 //! it, as Settings → Playback can have them; and which of them plays.
 
 use crate::media::Source;
@@ -50,7 +50,7 @@ impl Playlist {
         }
     }
 
-    /// Where the one playing is, as its tile's header says: "2 of 5".
+    /// Where the one playing is, as its block's header says: "2 of 5".
     pub fn counter(&self) -> String {
         format!("{} of {}", self.at + 1, self.sources.len())
     }

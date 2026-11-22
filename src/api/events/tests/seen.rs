@@ -3,9 +3,9 @@ use serde_json::{Value, json};
 use super::*;
 use crate::api::events::Scope;
 
-/// A tile that hasn't opened its file yet.
-fn tile(id: Id) -> TileSeen {
-    TileSeen {
+/// A block that hasn't opened its file yet.
+fn block(id: Id) -> BlockSeen {
+    BlockSeen {
         id,
         label: None,
         title: "clip.mp4".into(),
@@ -28,26 +28,26 @@ fn tile(id: Id) -> TileSeen {
     }
 }
 
-/// `tile`, its file opened.
-fn opened(tile: TileSeen) -> TileSeen {
-    TileSeen {
+/// `block`, its file opened.
+fn opened(block: BlockSeen) -> BlockSeen {
+    BlockSeen {
         opened: Some(json!({"title": "clip.mp4", "duration": 10.0})),
         duration: Some(10.0),
         frame_rate: Some(25.0),
-        ..tile
+        ..block
     }
 }
 
-/// A window with `tiles`, keys going to the first.
-fn window(id: Id, tiles: Vec<TileSeen>) -> WindowSeen {
+/// A window with `blocks`, keys going to the first.
+fn window(id: Id, blocks: Vec<BlockSeen>) -> WindowSeen {
     WindowSeen {
         id,
         label: None,
         title: "Plays".into(),
         full_screen: false,
-        active: tiles.first().map(|tile| tile.id),
+        active: blocks.first().map(|block| block.id),
         maximized: None,
-        tiles,
+        blocks,
     }
 }
 
@@ -73,8 +73,8 @@ fn kinds(events: &[Event]) -> Vec<&str> {
     events.iter().map(|event| event.kind).collect()
 }
 
-/// What's told going from one tile, `old`, to `new`, in one window.
-fn tile_changes(old: &TileSeen, new: &TileSeen) -> Vec<Event> {
+/// What's told going from one block, `old`, to `new`, in one window.
+fn block_changes(old: &BlockSeen, new: &BlockSeen) -> Vec<Event> {
     let w = Id::next();
     changes(
         &app(vec![window(w, vec![old.clone()])]),
@@ -89,7 +89,7 @@ fn said(events: &[Event]) -> Vec<(&str, Value)> {
         .map(|event| {
             let mut payload = event.payload.clone();
             if let Value::Object(fields) = &mut payload {
-                for name in ["window_id", "window_title", "tile_id", "tile_title"] {
+                for name in ["window_id", "window_title", "block_id", "block_title"] {
                     fields.remove(name);
                 }
             }
@@ -99,19 +99,19 @@ fn said(events: &[Event]) -> Vec<(&str, Value)> {
 }
 
 #[test]
-fn windows_and_tiles_are_told_as_they_open_and_close_once_each() {
+fn windows_and_blocks_are_told_as_they_open_and_close_once_each() {
     let (w, t) = (Id::next(), Id::next());
     let none = Seen::default();
-    let one = app(vec![window(w, vec![tile(t)])]);
+    let one = app(vec![window(w, vec![block(t)])]);
 
     let events = changes(&none, &one);
     assert_eq!(
         kinds(&events),
         [
             "window_created",
-            "tile_created",
+            "block_created",
             "window_layout_changed",
-            "active_tile_changed",
+            "active_block_changed",
             "active_window_changed",
         ]
     );
@@ -121,23 +121,23 @@ fn windows_and_tiles_are_told_as_they_open_and_close_once_each() {
         events[0].payload,
         json!({"window_id": w, "window_title": "Plays", "label": null})
     );
-    let tile_ids = json!({
+    let block_ids = json!({
         "window_id": w,
         "window_title": "Plays",
-        "tile_id": t,
-        "tile_title": "clip.mp4",
+        "block_id": t,
+        "block_title": "clip.mp4",
     });
-    assert_eq!(events[1].payload, with(&tile_ids, json!({"label": null})));
+    assert_eq!(events[1].payload, with(&block_ids, json!({"label": null})));
     assert_eq!(
         events[2].payload,
         json!({
             "window_id": w,
             "window_title": "Plays",
-            "tiles": [t],
+            "blocks": [t],
             "maximized": null,
         })
     );
-    assert_eq!(events[3].payload, tile_ids, "the tile keys go to");
+    assert_eq!(events[3].payload, block_ids, "the block keys go to");
     assert_eq!(
         events[4].payload,
         json!({"window_id": w, "window_title": "Plays"})
@@ -147,9 +147,9 @@ fn windows_and_tiles_are_told_as_they_open_and_close_once_each() {
     let events = changes(&one, &none);
     assert_eq!(
         kinds(&events),
-        ["tile_closed", "window_closed", "active_window_changed"]
+        ["block_closed", "window_closed", "active_window_changed"]
     );
-    assert_eq!(events[0].payload, tile_ids, "as they were");
+    assert_eq!(events[0].payload, block_ids, "as they were");
     assert_eq!(
         events[1].payload,
         json!({"window_id": w, "window_title": "Plays"})
@@ -161,17 +161,17 @@ fn windows_and_tiles_are_told_as_they_open_and_close_once_each() {
 }
 
 #[test]
-fn labels_full_screen_the_layout_and_the_tile_keys_go_to_are_told_as_they_change() {
+fn labels_full_screen_the_layout_and_the_block_keys_go_to_are_told_as_they_change() {
     let (w, t, u) = (Id::next(), Id::next(), Id::next());
-    let before = app(vec![window(w, vec![tile(t), tile(u)])]);
+    let before = app(vec![window(w, vec![block(t), block(u)])]);
     let mut after = before.clone();
     let changed = &mut after.windows[0];
     changed.label = Some("news".into());
     changed.title = "news".into();
     changed.full_screen = true;
-    changed.tiles[1].label = Some("left".into());
-    changed.tiles[1].title = "left".into();
-    changed.tiles.swap(0, 1);
+    changed.blocks[1].label = Some("left".into());
+    changed.blocks[1].title = "left".into();
+    changed.blocks.swap(0, 1);
     changed.maximized = Some(u);
     changed.active = Some(u);
 
@@ -184,13 +184,13 @@ fn labels_full_screen_the_layout_and_the_tile_keys_go_to_are_told_as_they_change
             (
                 "window_layout_changed",
                 json!({
-                    "tiles": [u.to_string(), t.to_string()],
+                    "blocks": [u.to_string(), t.to_string()],
                     "maximized": u.to_string(),
                 })
             ),
-            ("active_tile_changed", json!({})),
-            // Then the tiles, as they now are.
-            ("tile_label_changed", json!({"label": "left"})),
+            ("active_block_changed", json!({})),
+            // Then the blocks, as they now are.
+            ("block_label_changed", json!({"label": "left"})),
         ]
     );
     // Each by its title as it now is.
@@ -201,26 +201,26 @@ fn labels_full_screen_the_layout_and_the_tile_keys_go_to_are_told_as_they_change
         "{events:?}"
     );
     assert_eq!(
-        events[3].payload["tile_title"], "left",
-        "the tile keys go to"
+        events[3].payload["block_title"], "left",
+        "the block keys go to"
     );
-    assert_eq!(events[4].payload["tile_title"], "left");
+    assert_eq!(events[4].payload["block_title"], "left");
     assert!(changes(&after, &after).is_empty());
 }
 
 #[test]
-fn the_window_in_front_and_the_tile_keys_go_to_are_named_by_their_titles() {
+fn the_window_in_front_and_the_block_keys_go_to_are_named_by_their_titles() {
     let (w, x, t, u) = (Id::next(), Id::next(), Id::next(), Id::next());
     let kitchen = WindowSeen {
         title: "Kitchen".into(),
         ..window(x, Vec::new())
     };
-    let before = app(vec![window(w, vec![tile(t), tile(u)]), kitchen]);
+    let before = app(vec![window(w, vec![block(t), block(u)]), kitchen]);
     let mut after = before.clone();
     after.front = Some(x);
     let changed = &mut after.windows[0];
-    changed.tiles[1].label = Some("left".into());
-    changed.tiles[1].title = "left".into();
+    changed.blocks[1].label = Some("left".into());
+    changed.blocks[1].title = "left".into();
     changed.active = Some(u);
 
     let events = changes(&before, &after);
@@ -229,12 +229,12 @@ fn the_window_in_front_and_the_tile_keys_go_to_are_named_by_their_titles() {
         event.map(|event| event.payload.clone())
     };
     assert_eq!(
-        told("active_tile_changed"),
+        told("active_block_changed"),
         Some(json!({
             "window_id": w.to_string(),
             "window_title": "Plays",
-            "tile_id": u.to_string(),
-            "tile_title": "left",
+            "block_id": u.to_string(),
+            "block_title": "left",
         }))
     );
     assert_eq!(
@@ -244,20 +244,20 @@ fn the_window_in_front_and_the_tile_keys_go_to_are_named_by_their_titles() {
 }
 
 #[test]
-fn a_tile_moved_to_another_window_is_told_to_both() {
+fn a_block_moved_to_another_window_is_told_to_both() {
     let (w, x) = (Id::next(), Id::next());
     let (t, u, v) = (Id::next(), Id::next(), Id::next());
-    let kitchen = |tiles| WindowSeen {
+    let kitchen = |blocks| WindowSeen {
         title: "Kitchen".into(),
-        ..window(x, tiles)
+        ..window(x, blocks)
     };
     let before = app(vec![
-        window(w, vec![tile(t), opened(tile(u))]),
-        kitchen(vec![tile(v)]),
+        window(w, vec![block(t), opened(block(u))]),
+        kitchen(vec![block(v)]),
     ]);
     let after = app(vec![
-        window(w, vec![tile(t)]),
-        kitchen(vec![tile(v), opened(tile(u))]),
+        window(w, vec![block(t)]),
+        kitchen(vec![block(v), opened(block(u))]),
     ]);
 
     let events = changes(&before, &after);
@@ -265,7 +265,7 @@ fn a_tile_moved_to_another_window_is_told_to_both() {
         kinds(&events),
         [
             "window_layout_changed",
-            "tile_moved",
+            "block_moved",
             "window_layout_changed"
         ],
         "neither closed nor made, nor opened again"
@@ -276,8 +276,8 @@ fn a_tile_moved_to_another_window_is_told_to_both() {
         json!({
             "window_id": x.to_string(),
             "window_title": "Kitchen",
-            "tile_id": u.to_string(),
-            "tile_title": "clip.mp4",
+            "block_id": u.to_string(),
+            "block_title": "clip.mp4",
             "from_window_id": w.to_string(),
             "from_window_title": "Plays",
         })
@@ -286,12 +286,12 @@ fn a_tile_moved_to_another_window_is_told_to_both() {
     assert!(!moved.heard_in(Scope::App));
 
     // Its window closing as it goes, the rest close with it.
-    let gone = app(vec![kitchen(vec![tile(v), opened(tile(u)), tile(t)])]);
+    let gone = app(vec![kitchen(vec![block(v), opened(block(u)), block(t)])]);
     let events = changes(&after, &gone);
     assert_eq!(
         kinds(&events),
         [
-            "tile_moved",
+            "block_moved",
             "window_layout_changed",
             "window_closed",
             "active_window_changed"
@@ -299,10 +299,10 @@ fn a_tile_moved_to_another_window_is_told_to_both() {
         "{:?}",
         said(&events)
     );
-    let left = app(vec![kitchen(vec![tile(v), opened(tile(u))])]);
+    let left = app(vec![kitchen(vec![block(v), opened(block(u))])]);
     assert_eq!(
         kinds(&changes(&after, &left)),
-        ["tile_closed", "window_closed", "active_window_changed"],
+        ["block_closed", "window_closed", "active_window_changed"],
         "one not moved is closed"
     );
 }
@@ -310,19 +310,19 @@ fn a_tile_moved_to_another_window_is_told_to_both() {
 #[test]
 fn how_a_file_plays_is_told_once_it_has_opened() {
     let t = Id::next();
-    let opening = tile(t);
-    let playing = TileSeen {
+    let opening = block(t);
+    let playing = BlockSeen {
         playing: true,
         ..opening.clone()
     };
     assert!(
-        tile_changes(&opening, &playing).is_empty(),
+        block_changes(&opening, &playing).is_empty(),
         "nothing plays till it has opened"
     );
 
     let open = opened(playing);
     assert_eq!(
-        said(&tile_changes(&opening, &open)),
+        said(&block_changes(&opening, &open)),
         [
             ("opened", json!({"title": "clip.mp4", "duration": 10.0})),
             ("playing", json!({"position": 0.0, "time": 0.0, "frame": 0})),
@@ -330,55 +330,55 @@ fn how_a_file_plays_is_told_once_it_has_opened() {
     );
 
     // Where it went, though it shows from the frame before.
-    let sought = TileSeen {
+    let sought = BlockSeen {
         seeks: 1,
         sought: 5.0,
         position: 4.96,
         ..open.clone()
     };
     assert_eq!(
-        said(&tile_changes(&open, &sought)),
+        said(&block_changes(&open, &sought)),
         [(
             "seeked",
             json!({"position": 0.5, "time": 5.0, "frame": 125})
         )]
     );
 
-    let ended = TileSeen {
+    let ended = BlockSeen {
         playing: false,
         ended: true,
         position: 10.0,
         ..sought.clone()
     };
     assert_eq!(
-        said(&tile_changes(&sought, &ended)),
+        said(&block_changes(&sought, &ended)),
         [(
             "ended",
             json!({"position": 1.0, "time": 10.0, "frame": 250})
         )],
         "not paused"
     );
-    let again = TileSeen {
+    let again = BlockSeen {
         playing: true,
         ended: false,
         position: 0.0,
         ..ended.clone()
     };
     assert_eq!(
-        said(&tile_changes(&ended, &again)),
+        said(&block_changes(&ended, &again)),
         [("playing", json!({"position": 0.0, "time": 0.0, "frame": 0}))]
     );
-    let paused = TileSeen {
+    let paused = BlockSeen {
         playing: false,
         position: 1.0,
         ..again.clone()
     };
     assert_eq!(
-        said(&tile_changes(&again, &paused)),
+        said(&block_changes(&again, &paused)),
         [("paused", json!({"position": 0.1, "time": 1.0, "frame": 25}))]
     );
 
-    let mut changed = TileSeen {
+    let mut changed = BlockSeen {
         volume: 50.0,
         muted: true,
         chapter: Some(2),
@@ -387,7 +387,7 @@ fn how_a_file_plays_is_told_once_it_has_opened() {
     changed.tracks[1] = Some(2);
     changed.tracks[2] = Some(1);
     assert_eq!(
-        said(&tile_changes(&paused, &changed)),
+        said(&block_changes(&paused, &changed)),
         [
             ("volume_changed", json!({"volume": 50.0, "muted": true})),
             ("track_changed", json!({"kind": "audio", "track": 2})),
@@ -395,7 +395,7 @@ fn how_a_file_plays_is_told_once_it_has_opened() {
             ("chapter_changed", json!({"chapter": 2})),
         ]
     );
-    assert!(tile_changes(&changed, &changed).is_empty());
+    assert!(block_changes(&changed, &changed).is_empty());
 }
 
 #[test]
@@ -403,9 +403,9 @@ fn files_dropped_together_are_each_told_opening_and_playing_however_looks_fall()
     let w = Id::next();
     let ids = [Id::next(), Id::next(), Id::next()];
     let playing = |id| {
-        opened(TileSeen {
+        opened(BlockSeen {
             playing: true,
-            ..tile(id)
+            ..block(id)
         })
     };
     let each: Vec<(&str, Value)> = ids
@@ -421,7 +421,7 @@ fn files_dropped_together_are_each_told_opening_and_playing_however_looks_fall()
         events
             .iter()
             .filter(|event| matches!(event.kind, "opened" | "playing"))
-            .map(|event| (event.kind, event.payload["tile_id"].clone()))
+            .map(|event| (event.kind, event.payload["block_id"].clone()))
             .collect()
     };
     let empty = app(vec![window(w, Vec::new())]);
@@ -432,11 +432,11 @@ fn files_dropped_together_are_each_told_opening_and_playing_however_looks_fall()
     assert_eq!(
         kinds(&events),
         [
-            "tile_created",
-            "tile_created",
-            "tile_created",
+            "block_created",
+            "block_created",
+            "block_created",
             "window_layout_changed",
-            "active_tile_changed",
+            "active_block_changed",
             "opened",
             "playing",
             "opened",
@@ -449,9 +449,9 @@ fn files_dropped_together_are_each_told_opening_and_playing_however_looks_fall()
 
     // Looks between: each told as it opens, none twice, though each says
     // it plays before it has opened, as a file played on dropping does.
-    let starting = |id| TileSeen {
+    let starting = |id| BlockSeen {
         playing: true,
-        ..tile(id)
+        ..block(id)
     };
     let made = app(vec![window(w, ids.map(starting).to_vec())]);
     let first = app(vec![window(
@@ -511,26 +511,26 @@ fn where_a_file_plays_is_told_from_0_to_1_in_seconds_and_by_its_frame() {
 
 #[test]
 fn a_file_opened_in_place_of_another_is_told_as_it_opens_or_fails() {
-    let first = TileSeen {
+    let first = BlockSeen {
         playing: true,
         volume: 50.0,
-        ..opened(tile(Id::next()))
+        ..opened(block(Id::next()))
     };
     // The next one waits to be known, then starts out as the first was.
-    let next = TileSeen {
+    let next = BlockSeen {
         opening: 1,
         opened: None,
         playing: false,
         ..first.clone()
     };
-    assert!(tile_changes(&first, &next).is_empty());
-    let next_open = TileSeen {
+    assert!(block_changes(&first, &next).is_empty());
+    let next_open = BlockSeen {
         opened: Some(json!({"title": "next.mp4"})),
         playing: true,
         ..next.clone()
     };
     assert_eq!(
-        said(&tile_changes(&next, &next_open)),
+        said(&block_changes(&next, &next_open)),
         [
             ("opened", json!({"title": "next.mp4"})),
             ("playing", json!({"position": 0.0, "time": 0.0, "frame": 0})),
@@ -539,11 +539,11 @@ fn a_file_opened_in_place_of_another_is_told_as_it_opens_or_fails() {
     );
     // Straight from one to the next.
     assert_eq!(
-        kinds(&tile_changes(&first, &next_open)),
+        kinds(&block_changes(&first, &next_open)),
         ["opened", "playing"]
     );
 
-    let missing = TileSeen {
+    let missing = BlockSeen {
         opening: 2,
         opened: None,
         failed: Some("no such file".into()),
@@ -551,73 +551,73 @@ fn a_file_opened_in_place_of_another_is_told_as_it_opens_or_fails() {
         ..next_open.clone()
     };
     assert_eq!(
-        said(&tile_changes(&next_open, &missing)),
+        said(&block_changes(&next_open, &missing)),
         [("open_failed", json!({"error": "no such file"}))]
     );
-    assert!(tile_changes(&missing, &missing).is_empty());
+    assert!(block_changes(&missing, &missing).is_empty());
 
-    let broken = TileSeen {
+    let broken = BlockSeen {
         failed: Some("the connection dropped".into()),
         ..next_open.clone()
     };
     assert_eq!(
-        said(&tile_changes(&next_open, &broken)),
+        said(&block_changes(&next_open, &broken)),
         [("failed", json!({"error": "the connection dropped"}))]
     );
 }
 
 #[test]
 fn casts_and_picture_in_picture_are_told_as_they_start_and_end() {
-    let here = opened(tile(Id::next()));
+    let here = opened(block(Id::next()));
     let tv = json!({"id": "tv", "kind": "Chromecast", "name": "Living Room"});
     let speaker = json!({"id": "sp", "kind": "AirPlay", "name": "Kitchen"});
-    let on_tv = TileSeen {
+    let on_tv = BlockSeen {
         casting: Some(tv.clone()),
         ..here.clone()
     };
     assert_eq!(
-        said(&tile_changes(&here, &on_tv)),
+        said(&block_changes(&here, &on_tv)),
         [("cast_started", json!({"device": tv}))]
     );
-    let on_speaker = TileSeen {
+    let on_speaker = BlockSeen {
         casting: Some(speaker.clone()),
         ..here.clone()
     };
     assert_eq!(
-        said(&tile_changes(&on_tv, &on_speaker)),
+        said(&block_changes(&on_tv, &on_speaker)),
         [
             ("cast_ended", json!({"device": tv})),
             ("cast_started", json!({"device": speaker})),
         ]
     );
     // It goes on casting the next file.
-    let next = TileSeen {
+    let next = BlockSeen {
         opening: 1,
         ..on_speaker.clone()
     };
-    assert_eq!(kinds(&tile_changes(&on_speaker, &next)), ["opened"]);
-    let back = TileSeen {
+    assert_eq!(kinds(&block_changes(&on_speaker, &next)), ["opened"]);
+    let back = BlockSeen {
         casting: None,
         ..next.clone()
     };
     assert_eq!(
-        said(&tile_changes(&next, &back)),
+        said(&block_changes(&next, &back)),
         [("cast_ended", json!({"device": speaker}))]
     );
 
-    let pip = TileSeen {
+    let pip = BlockSeen {
         picture_in_picture: true,
         ..here.clone()
     };
     assert_eq!(
-        said(&tile_changes(&here, &pip)),
+        said(&block_changes(&here, &pip)),
         [(
             "picture_in_picture_changed",
             json!({"picture_in_picture": true})
         )]
     );
     assert_eq!(
-        said(&tile_changes(&pip, &here)),
+        said(&block_changes(&pip, &here)),
         [(
             "picture_in_picture_changed",
             json!({"picture_in_picture": false})
@@ -661,7 +661,7 @@ fn the_apps_outputs_sound_and_devices_are_its_own() {
 #[test]
 fn each_scope_hears_its_own() {
     let (w, x, t) = (Id::next(), Id::next(), Id::next());
-    let created = app(vec![window(w, vec![tile(t)])]);
+    let created = app(vec![window(w, vec![block(t)])]);
     let events = changes(&Seen::default(), &created);
     let heard = |scope| -> Vec<&str> {
         events
@@ -678,9 +678,9 @@ fn each_scope_hears_its_own() {
         heard(Scope::Window(w)),
         [
             "window_created",
-            "tile_created",
+            "block_created",
             "window_layout_changed",
-            "active_tile_changed",
+            "active_block_changed",
             "active_window_changed",
         ]
     );

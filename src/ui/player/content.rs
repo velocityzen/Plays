@@ -1,4 +1,4 @@
-//! What fills a tile: the video; cover art and a level meter for audio; or
+//! What fills a block: the video; cover art and a level meter for audio; or
 //! a line on what is happening (opening, an error).
 
 use gpui::prelude::*;
@@ -20,7 +20,7 @@ use crate::ui::theme::player::{
 use crate::ui::theme::{Theme, radius};
 
 impl PlayerView {
-    /// `framing` is how the video shows, `cover` whether it fills the tile.
+    /// `framing` is how the video shows, `cover` whether it fills the block.
     pub(super) fn render_content(
         &self,
         theme: &Theme,
@@ -120,7 +120,7 @@ impl PlayerView {
 }
 
 /// The frame, framed as `framing` says (as it is without), fitted in the
-/// tile or covering it. Where it goes is kept in `drawn_at`.
+/// block or covering it. Where it goes is kept in `drawn_at`.
 fn picture(
     frame: Picture,
     framing: Option<Framing>,

@@ -1,7 +1,7 @@
-//! Going from tile to tile, and moving tiles about the grid, from the
-//! keyboard: to the tile beside, above or below the one in front, or the
-//! one before or after it in the window's order. The tile focused so shows
-//! a ring until the mouse moves, as the tile under the mouse is in front
+//! Going from block to block, and moving blocks about the grid, from the
+//! keyboard: to the block beside, above or below the one in front, or the
+//! one before or after it in the window's order. The block focused so shows
+//! a ring until the mouse moves, as the block under the mouse is in front
 //! from then on.
 
 use gpui::{App, Context, EntityId};
@@ -11,7 +11,7 @@ use super::grid::columns;
 use crate::api;
 use crate::app::refresh_menus;
 
-/// Where to go from the tile in front.
+/// Where to go from the block in front.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Toward {
     Left,
@@ -23,102 +23,103 @@ pub enum Toward {
 }
 
 impl Workspace {
-    /// Put the tile `toward` the one in front in front. While one is
+    /// Put the block `toward` the one in front in front. While one is
     /// maximized, that one is shown instead.
-    pub fn focus_tile(&mut self, toward: Toward, cx: &mut Context<Self>) {
+    pub fn focus_block(&mut self, toward: Toward, cx: &mut Context<Self>) {
         let Some((_, to)) = self.step(toward, cx) else {
             return;
         };
-        let id = self.tiles[to].view.entity_id();
-        self.bring_tile(id, cx);
+        let id = self.blocks[to].view.entity_id();
+        self.bring_block(id, cx);
     }
 
-    /// Put the tile clicked or put in front from the keyboard last, before
+    /// Put the block clicked or put in front from the keyboard last, before
     /// the one in front, in front: twice over, the one in front first.
-    pub fn recent_tile(&mut self, cx: &mut Context<Self>) {
-        let tiles = self.tile_ids();
+    pub fn recent_block(&mut self, cx: &mut Context<Self>) {
+        let blocks = self.block_ids();
         let front = self.active_view().map(|view| view.entity_id());
-        if let Some(id) = self.tile_history.recent(front, |id| tiles.contains(&id)) {
-            self.bring_tile(id, cx);
+        if let Some(id) = self.block_history.recent(front, |id| blocks.contains(&id)) {
+            self.bring_block(id, cx);
         }
     }
 
-    /// Put the tile in front before the one in front in front; run again,
+    /// Put the block in front before the one in front in front; run again,
     /// with nothing else run between, the one before that, and so on,
     /// passing those it has been to.
-    pub fn back_tile(&mut self, cx: &mut Context<Self>) {
-        let tiles = self.tile_ids();
+    pub fn back_block(&mut self, cx: &mut Context<Self>) {
+        let blocks = self.block_ids();
         let front = self.active_view().map(|view| view.entity_id());
-        let walking = api::ran_before(cx) == Some("tile.back");
+        let walking = api::ran_before(cx) == Some("block.back");
         if let Some(id) = self
-            .tile_history
-            .back(front, walking, |id| tiles.contains(&id))
+            .block_history
+            .back(front, walking, |id| blocks.contains(&id))
         {
-            self.bring_tile(id, cx);
+            self.bring_block(id, cx);
         }
     }
 
-    /// The tile `id` was clicked, or put in front from the keyboard: not
+    /// The block `id` was clicked, or put in front from the keyboard: not
     /// as the mouse passes over it, on its way to another.
-    pub(super) fn note_front_tile(&mut self, id: EntityId) {
-        let tiles = self.tile_ids();
-        self.tile_history.note(id, |other| !tiles.contains(&other));
+    pub(super) fn note_front_block(&mut self, id: EntityId) {
+        let blocks = self.block_ids();
+        self.block_history
+            .note(id, |other| !blocks.contains(&other));
     }
 
-    /// Put the tile `id` in front from the keyboard, with a ring; while
+    /// Put the block `id` in front from the keyboard, with a ring; while
     /// one is maximized, that one is shown instead.
-    pub fn bring_tile(&mut self, id: EntityId, cx: &mut Context<Self>) {
+    pub fn bring_block(&mut self, id: EntityId, cx: &mut Context<Self>) {
         if self.maximized.is_some() {
             self.maximized = Some(id);
         }
         self.active = Some(id);
         self.keyboard_focus = true;
-        self.note_front_tile(id);
-        self.tiles_changed(cx);
+        self.note_front_block(id);
+        self.blocks_changed(cx);
         refresh_menus(cx);
     }
 
-    fn tile_ids(&self) -> Vec<EntityId> {
-        self.tiles
+    fn block_ids(&self) -> Vec<EntityId> {
+        self.blocks
             .iter()
-            .map(|tile| tile.view.entity_id())
+            .map(|block| block.view.entity_id())
             .collect()
     }
 
-    /// Swap the tile in front with the one `toward` it, staying in front.
+    /// Swap the block in front with the one `toward` it, staying in front.
     /// Not while one is maximized, where it wouldn't be seen.
-    pub fn move_front_tile(&mut self, toward: Toward, cx: &mut Context<Self>) {
+    pub fn move_front_block(&mut self, toward: Toward, cx: &mut Context<Self>) {
         if self.maximized.is_some() {
             return;
         }
         let Some((from, to)) = self.step(toward, cx) else {
             return;
         };
-        let id = self.tiles[from].view.entity_id();
-        self.tiles.swap(from, to);
+        let id = self.blocks[from].view.entity_id();
+        self.blocks.swap(from, to);
         self.active = Some(id);
         self.keyboard_focus = true;
-        self.tiles_changed(cx);
+        self.blocks_changed(cx);
         refresh_menus(cx);
     }
 
-    /// Where the tile in front is, and the tile `toward` it, if there's one
+    /// Where the block in front is, and the block `toward` it, if there's one
     /// there.
     fn step(&self, toward: Toward, cx: &App) -> Option<(usize, usize)> {
         let front = self.active_view()?.entity_id();
         let from = self
-            .tiles
+            .blocks
             .iter()
             .position(|t| t.view.entity_id() == front)?;
-        let count = self.tiles.len();
+        let count = self.blocks.len();
         let to = neighbor(from, count, columns(count, cx), toward)?;
         Some((from, to))
     }
 }
 
-/// The place `toward` place `index` among `count` tiles in rows of
-/// `columns`, as the grid lays them out, if there's a tile there: across a
-/// row and down a column, stopping at the edges, with the last tile for
+/// The place `toward` place `index` among `count` blocks in rows of
+/// `columns`, as the grid lays them out, if there's a block there: across a
+/// row and down a column, stopping at the edges, with the last block for
 /// the one below in a last row too short to have it; or round the
 /// window's order, back to the start after the last.
 fn neighbor(index: usize, count: usize, columns: usize, toward: Toward) -> Option<usize> {

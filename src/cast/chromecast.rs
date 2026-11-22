@@ -7,7 +7,7 @@
 //! Subtitles go as a WebVTT track beside the media, looking as Settings
 //! say. Turning them off and on, or how they look, is changed on the
 //! track; other subtitles, which a track can't be changed to, load the
-//! media again from where it is. The tile's volume is the stream's own,
+//! media again from where it is. The block's volume is the stream's own,
 //! so the device's stays as it is.
 
 use ::chromecast::{
@@ -286,7 +286,7 @@ struct ChromecastSession {
     state: PlayerState,
     position: f64,
     duration: Option<f64>,
-    /// The tile's volume, which is the stream's.
+    /// The block's volume, which is the stream's.
     volume: f32,
     muted: bool,
     /// Whether it was told to play.
@@ -344,7 +344,7 @@ impl ChromecastSession {
         }
     }
 
-    /// What went wrong, as the tile is told: a session that ended says
+    /// What went wrong, as the block is told: a session that ended says
     /// how.
     fn failed(&mut self, err: ::chromecast::Error) -> Error {
         match err {
@@ -391,7 +391,7 @@ impl ChromecastSession {
         Ok(())
     }
 
-    /// Set the stream's volume to the tile's.
+    /// Set the stream's volume to the block's.
     fn turn(&mut self) -> Result<(), Error> {
         let turned = self.session()?.set_stream_volume(self.volume, self.muted);
         self.answered(turned)

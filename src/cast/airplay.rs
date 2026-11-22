@@ -125,7 +125,7 @@ impl Target for AirPlayTarget {
     }
 }
 
-/// What went wrong, as the tile is told.
+/// What went wrong, as the block is told.
 fn failed(err: &::airplay::Error) -> Error {
     if err.is_gone() {
         Error::Gone
@@ -268,7 +268,7 @@ struct AirPlaySession {
     finished: bool,
     /// Where it was sent since, to play from.
     start_over: Option<f64>,
-    /// The tile's volume, which is the receiver's.
+    /// The block's volume, which is the receiver's.
     volume: f32,
     muted: bool,
     /// It went away, or ended the session.
@@ -345,7 +345,7 @@ impl AirPlaySession {
         Ok(())
     }
 
-    /// Set its volume to the tile's.
+    /// Set its volume to the block's.
     fn turn(&mut self) -> Result<(), Error> {
         let (volume, muted) = (self.volume, self.muted);
         self.session()?
@@ -465,7 +465,7 @@ impl Session for AirPlaySession {
     }
 }
 
-/// What a tile makes of what a receiver says it's doing.
+/// What a block makes of what a receiver says it's doing.
 fn state(state: PlaybackState) -> State {
     match state {
         PlaybackState::Loading => State::Buffering,

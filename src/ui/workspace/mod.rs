@@ -1,6 +1,7 @@
-//! A window: the toolbar, and a grid with one tile per open file, or the
+//! A window: the toolbar, and a grid with one block per open file, or the
 //! empty window's ring. Each part is in its own file.
 
+mod blocks;
 mod command_palette;
 mod commands;
 mod display;
@@ -20,7 +21,6 @@ mod sound;
 #[cfg(test)]
 #[path = "tests/mod.rs"]
 mod tests;
-mod tiles;
 mod toolbar;
 
 use std::sync::Arc;
@@ -50,7 +50,7 @@ use crate::progress;
 use crate::settings::{AudioDevice, Settings};
 
 pub use focus::Toward;
-pub use naming::tile_label_taken;
+pub use naming::block_label_taken;
 pub use on_top::float_with_players;
 #[cfg(test)]
 pub use place::forget_settings_place;
@@ -64,19 +64,19 @@ const TITLE: &str = "Plays";
 /// Linux has no menu bar, and the toolbar is what moves the window there
 /// when it draws its own decorations.
 const TOOLBAR: bool = cfg!(not(target_os = "macos"));
-/// The height the toolbar takes over the tiles. The line under it is
+/// The height the toolbar takes over the blocks. The line under it is
 /// inside its height, as gpui sizes boxes with their borders.
 pub const TOOLBAR_SPACE: Pixels = if TOOLBAR { TOOLBAR_HEIGHT } else { px(0.) };
 /// The area under the toolbar, which files are dropped on.
 const CONTENT_GROUP: &str = "content";
 
-struct Tile {
+struct Block {
     view: Entity<PlayerView>,
     _subscription: Subscription,
 }
 
-/// A window: a toolbar and a grid with one tile per open file. Every window
-/// is one of these; a tile can move to a new one and keep playing.
+/// A window: a toolbar and a grid with one block per open file. Every window
+/// is one of these; a block can move to a new one and keep playing.
 pub struct Workspace {
     /// What the API knows it by.
     id: Id,
@@ -87,25 +87,25 @@ pub struct Workspace {
     window: AnyWindowHandle,
     /// Files just opened, whose sizes the window waits for.
     fitting: Option<fit::Fitting>,
-    tiles: Vec<Tile>,
-    /// Gamma for SDR and HDR video, as last applied to the tiles.
+    blocks: Vec<Block>,
+    /// Gamma for SDR and HDR video, as last applied to the blocks.
     gamma: [f32; 2],
     maximized: Option<EntityId>,
-    /// The tile the mouse was last over, or clicked, or the keys went to,
+    /// The block the mouse was last over, or clicked, or the keys went to,
     /// which shortcuts go to.
     active: Option<EntityId>,
     /// It was put in front from the keyboard, and the mouse hasn't moved
     /// since: it shows a ring.
     keyboard_focus: bool,
-    /// When each tile was last clicked or put in front from the keyboard.
-    tile_history: FocusHistory<EntityId>,
+    /// When each block was last clicked or put in front from the keyboard.
+    block_history: FocusHistory<EntityId>,
     graveyard: Graveyard,
     open_url: Option<(Entity<OpenUrlDialog>, Subscription)>,
     /// The sheet asking what to call the window.
     naming: Option<(Entity<NameSheet>, Subscription)>,
     /// The command palette.
     palette: Option<(Entity<Palette>, Subscription)>,
-    /// The sheet asking for the PIN a TV a tile was cast to shows.
+    /// The sheet asking for the PIN a TV a block was cast to shows.
     pairing: Option<pairing::Pairing>,
     /// A sheet closed: the window takes the keys back when next drawn.
     refocus: bool,
@@ -141,7 +141,7 @@ pub struct Workspace {
     /// output's mixer.
     sound: Option<(AudioDevice, Arc<Mixer>)>,
     _settings_subscription: Subscription,
-    /// Tiles show a cast button while there are devices to cast to.
+    /// Blocks show a cast button while there are devices to cast to.
     _casting_subscription: Subscription,
     _activation_subscription: Subscription,
     _bounds_subscription: Subscription,
@@ -206,8 +206,9 @@ impl Workspace {
             if gamma != this.gamma {
                 this.gamma = gamma;
                 picture::set_gamma(gamma[0], gamma[1]);
-                for tile in &this.tiles {
-                    tile.view
+                for block in &this.blocks {
+                    block
+                        .view
                         .update(cx, |view, _| view.picture_settings_changed());
                 }
             }
@@ -256,11 +257,11 @@ impl Workspace {
             focus_handle,
             window: window.window_handle(),
             fitting: None,
-            tiles: Vec::new(),
+            blocks: Vec::new(),
             maximized: None,
             active: None,
             keyboard_focus: false,
-            tile_history: FocusHistory::default(),
+            block_history: FocusHistory::default(),
             graveyard: Graveyard::default(),
             open_url: None,
             naming: None,
@@ -302,8 +303,8 @@ fn keep_ticking(window: &mut Window, cx: &mut Context<Workspace>) {
                 .timer(Duration::from_millis(200))
                 .await;
             let alive = this.update_in(cx, |this, window, cx| {
-                for tile in &this.tiles {
-                    tile.view.update(cx, |view, cx| view.background_tick(cx));
+                for block in &this.blocks {
+                    block.view.update(cx, |view, cx| view.background_tick(cx));
                 }
                 this.update_on_top(window, cx);
                 this.finish_moving(window, cx);
@@ -326,12 +327,12 @@ impl Workspace {
         self.label.as_deref()
     }
 
-    /// The tiles' players, in the order the grid shows them.
+    /// The blocks' players, in the order the grid shows them.
     pub fn players(&self) -> Vec<Entity<PlayerView>> {
-        self.tiles.iter().map(|tile| tile.view.clone()).collect()
+        self.blocks.iter().map(|block| block.view.clone()).collect()
     }
 
-    /// The player of the tile keys go to.
+    /// The player of the block keys go to.
     pub fn active_player(&self) -> Option<Entity<PlayerView>> {
         self.active_view()
     }
@@ -357,7 +358,7 @@ impl Render for Workspace {
         self.finish_moving(window, cx);
         let theme = Theme::get(window, cx);
         let drop_highlight = theme.drop_highlight;
-        let empty = self.tiles.is_empty();
+        let empty = self.blocks.is_empty();
         // Something was opened another way while the empty window's form was
         // up; it goes away with the ring, and so does its focus.
         if !empty && self.url_form_open {
@@ -389,7 +390,7 @@ impl Render for Workspace {
                     .group(CONTENT_GROUP)
                     .flex_1()
                     .min_h_0()
-                    // Tiles cover the whole window, so a drag over them shows a
+                    // Blocks cover the whole window, so a drag over them shows a
                     // frame around them; an empty window lights up as a whole.
                     .drag_over::<ExternalPaths>(move |style, _, _, _| {
                         let style = style.bg(drop_highlight);

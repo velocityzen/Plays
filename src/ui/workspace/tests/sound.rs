@@ -1,5 +1,5 @@
 //! A window playing through an audio output of its own, picked from a
-//! tile's menu or the speakers of the display it was sent to, as someone
+//! block's menu or the speakers of the display it was sent to, as someone
 //! at the screen would.
 
 use std::sync::Arc;
@@ -20,7 +20,7 @@ use crate::ui::testing::{self, click, fixture, hover, painted, shows, wait_until
 use crate::ui::workspace::Workspace;
 use crate::ui::workspace::tests::open;
 
-/// Every tile's mixer in `window`, and the device it plays through.
+/// Every block's mixer in `window`, and the device it plays through.
 fn sound(
     window: WindowHandle<Workspace>,
     cx: &TestAppContext,
@@ -28,9 +28,9 @@ fn sound(
     window
         .read_with(cx, |workspace, cx| {
             let mixers = workspace
-                .tiles
+                .blocks
                 .iter()
-                .filter_map(|tile| tile.view.read(cx).player().mixer())
+                .filter_map(|block| block.view.read(cx).player().mixer())
                 .collect();
             let device = workspace.sound_device().map(|device| device.name.clone());
             (mixers, device)
@@ -54,7 +54,7 @@ fn a_speaker_found_with_airplay_and_dlna_shows_under_both_saying_which(cx: &mut 
         AudioEngine::set_devices(outputs, cx);
     });
     click(&mut cx, "cast");
-    // Cast to, saying its kind, under what the tile plays on, and as an
+    // Cast to, saying its kind, under what the block plays on, and as an
     // output under what the window's sound plays on, saying AirPlay.
     let headings: Vec<_> = painted(&mut cx)
         .into_iter()
@@ -63,7 +63,7 @@ fn a_speaker_found_with_airplay_and_dlna_shows_under_both_saying_which(cx: &mut 
         .collect();
     assert_eq!(
         headings,
-        ["Play This Tile On", "Play This Window's Sound On"]
+        ["Play This Block On", "Play This Window's Sound On"]
     );
     assert!(shows(&mut cx, "cast-0"), "the speaker to cast to");
     assert!(shows(&mut cx, "sound-1"), "the AirPlay speaker");
@@ -105,7 +105,7 @@ fn a_window_plays_through_an_output_of_its_own(cx: &mut TestAppContext) {
     let (mixers, device) = sound(window, &cx);
     assert_eq!(device.as_deref(), Some("TV"));
     assert!(shows(&mut cx, "cast-selected"), "lit, playing elsewhere");
-    assert!(!Arc::ptr_eq(&mixers[0], &app), "the tile plays through it");
+    assert!(!Arc::ptr_eq(&mixers[0], &app), "the block plays through it");
     assert_eq!(outputs(&mut cx), 1);
     let tv = mixers[0].clone();
 
@@ -120,9 +120,9 @@ fn a_window_plays_through_an_output_of_its_own(cx: &mut TestAppContext) {
     let (mixers, _) = sound(window, &cx);
     assert!(mixers.iter().all(|mixer| Arc::ptr_eq(mixer, &tv)));
 
-    // A tile popped out takes the device along, sharing its output.
+    // A block popped out takes the device along, sharing its output.
     let before = cx.windows();
-    hover(&mut cx, "tile-0");
+    hover(&mut cx, "block-0");
     click(&mut cx, "pop-out");
     cx.run_until_parked();
     let popped = cx
@@ -130,7 +130,7 @@ fn a_window_plays_through_an_output_of_its_own(cx: &mut TestAppContext) {
         .into_iter()
         .find(|window| !before.contains(window))
         .and_then(|window| window.downcast::<Workspace>())
-        .expect("a window for the tile");
+        .expect("a window for the block");
     let (mixers, device) = sound(popped, &cx);
     assert_eq!(device.as_deref(), Some("TV"));
     assert!(Arc::ptr_eq(&mixers[0], &tv));

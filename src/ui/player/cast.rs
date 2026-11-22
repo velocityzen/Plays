@@ -1,5 +1,5 @@
-//! Casting a tile: playing its file on a TV or a speaker instead, from
-//! where it is, with its tracks. While it casts, the tile's controls and
+//! Casting a block: playing its file on a TV or a speaker instead, from
+//! where it is, with its tracks. While it casts, the block's controls and
 //! shortcuts drive the device and its bar follows the device; its own
 //! playback waits, paused, and goes on from where the device was once the
 //! cast ends. A video cast to a speaker sends only its sound, and the
@@ -33,7 +33,7 @@ use crate::ui::theme::motion::{CAST_POLL, NEXT_CAST_POLL};
 use crate::ui::theme::player::{CAST_MENU_WIDTH, ERROR_MAX_WIDTH, PIP_ICON, TRACK_MENU_OFFSET};
 use crate::ui::theme::text::TextStyle;
 
-/// A tile's cast.
+/// A block's cast.
 pub(super) struct Cast {
     pub(super) link: Link,
     /// It has played there, so its ending is the device going away rather
@@ -41,7 +41,7 @@ pub(super) struct Cast {
     on: bool,
     /// Only the sound goes; the picture plays here, following the device.
     pub(super) picture_here: bool,
-    /// Keeps the tile up to date with the device.
+    /// Keeps the block up to date with the device.
     _follow: Task<()>,
 }
 
@@ -97,7 +97,7 @@ impl PlayerView {
         self.send_run(cast::to(device), cx);
     }
 
-    /// Cast to `device` from where the tile is, playing if it plays; or
+    /// Cast to `device` from where the block is, playing if it plays; or
     /// with none, play here again from where the device was.
     pub fn cast_to(&mut self, device: Option<Device>, cx: &mut Context<Self>) {
         self.cast_open = false;
@@ -212,7 +212,7 @@ impl PlayerView {
     }
 
     /// Play here again, from where the device was, playing if it was.
-    /// Whether the tile was casting.
+    /// Whether the block was casting.
     pub fn end_cast(&mut self, cx: &mut Context<Self>) -> bool {
         let ended = self.playback.end_cast();
         if ended {
@@ -277,7 +277,7 @@ impl PlayerView {
         true
     }
 
-    /// What of the tile the device doesn't get, while it casts.
+    /// What of the block the device doesn't get, while it casts.
     #[cfg(test)]
     pub fn cast_stays_here(&self, cx: &App) -> Vec<&'static str> {
         self.playback
@@ -313,7 +313,7 @@ impl PlayerView {
         .collect()
     }
 
-    /// What fills the tile while it casts: where it plays, how the media
+    /// What fills the block while it casts: where it plays, how the media
     /// gets there, what stays here, and a button to play it here again.
     pub(super) fn render_cast(&self, theme: &Theme, cx: &mut Context<Self>) -> Option<AnyElement> {
         let cast = self
@@ -361,7 +361,7 @@ impl PlayerView {
 
     /// The cast button, while there are devices to cast to, displays or
     /// audio outputs to pick, and the menu of them it opens. It's lit while
-    /// the tile plays elsewhere: cast to a device (or about to go on
+    /// the block plays elsewhere: cast to a device (or about to go on
     /// casting with the file just opened), or its window's sound playing
     /// through an output of its own.
     pub(super) fn render_cast_button(
@@ -421,7 +421,7 @@ impl PlayerView {
     /// This computer, or each display (`screens`) with the window's
     /// (`here`) checked, and the devices: the one playing checked. A
     /// speaker says it takes only a video's sound. Picking a display puts
-    /// the window full screen there (`window.show_on_display`), or plays the tile
+    /// the window full screen there (`window.show_on_display`), or plays the block
     /// here again while it casts, if the window is on it; Wayland may keep
     /// it on its own display, which the menu says. Then the window's sound
     /// (`render_window_sound`), with `outputs` to pick from.
@@ -483,7 +483,7 @@ impl PlayerView {
             .w(CAST_MENU_WIDTH)
             .pb_1()
             .when(play_on, |this| {
-                this.child(heading("Play This Tile On", theme))
+                this.child(heading("Play This Block On", theme))
                     .children(this_computer)
                     .children(screens)
                     .when(wayland, |this| {

@@ -1,4 +1,4 @@
-//! The tiles: adding and closing them, telling them where they are,
+//! The blocks: adding and closing them, telling them where they are,
 //! putting one in another's place, maximizing one, and moving one to
 //! another window or one of its own.
 
@@ -6,50 +6,50 @@ use anyhow::Result;
 use gpui::{App, Context, Entity, EntityId, Pixels, Size, Window, WindowHandle, px, size};
 use serde_json::Value;
 
-use super::{TOOLBAR_SPACE, Tile, Workspace};
+use super::{Block, TOOLBAR_SPACE, Workspace};
 use crate::api::{self, Invocation};
 use crate::app::{Awake, refresh_menus};
 use crate::cast::Device;
 use crate::progress::{self, Note};
 use crate::settings::AudioDevice;
 use crate::ui::displays;
-use crate::ui::player::{PlayerEvent, PlayerView, TileLayout};
+use crate::ui::player::{BlockLayout, PlayerEvent, PlayerView};
 use crate::ui::theme::layout::{
     AUDIO_WINDOW_SIZE, VIDEO_WINDOW_SIZE, WINDOW_MIN_SIZE, WINDOW_SIZE,
 };
 
 impl Workspace {
-    pub(super) fn add_tile(&mut self, view: Entity<PlayerView>, cx: &mut Context<Self>) {
+    pub(super) fn add_block(&mut self, view: Entity<PlayerView>, cx: &mut Context<Self>) {
         self.play_here(&view, cx);
         let subscription = cx.subscribe(&view, |this, view, event, cx| match event {
             PlayerEvent::Activate => {
                 this.active = Some(view.entity_id());
                 this.keyboard_focus = false;
-                this.tiles_changed(cx);
+                this.blocks_changed(cx);
                 // Video → Aspect Ratio and Crop check this one's now.
                 refresh_menus(cx);
             }
-            PlayerEvent::Pressed => this.note_front_tile(view.entity_id()),
+            PlayerEvent::Pressed => this.note_front_block(view.entity_id()),
         });
-        self.tiles.push(Tile {
+        self.blocks.push(Block {
             view,
             _subscription: subscription,
         });
     }
 
-    /// Tell the tiles where they are and whether the mouse is in the window.
+    /// Tell the blocks where they are and whether the mouse is in the window.
     /// The one in the top-left corner is under the traffic lights.
-    pub(super) fn tiles_changed(&mut self, cx: &mut Context<Self>) {
-        let alone = self.tiles.len() == 1;
+    pub(super) fn blocks_changed(&mut self, cx: &mut Context<Self>) {
+        let alone = self.blocks.len() == 1;
         let top_left = self
             .maximized
-            .or_else(|| self.tiles.first().map(|t| t.view.entity_id()));
+            .or_else(|| self.blocks.first().map(|t| t.view.entity_id()));
         let active = self.active_view().map(|view| view.entity_id());
-        // A ring tells which tile the keys went to, among others.
+        // A ring tells which block the keys went to, among others.
         let ring = self.keyboard_focus && self.maximized.is_none() && !alone;
-        for tile in &self.tiles {
-            let id = Some(tile.view.entity_id());
-            let layout = TileLayout {
+        for block in &self.blocks {
+            let id = Some(block.view.entity_id());
+            let layout = BlockLayout {
                 active: active == id,
                 focus_ring: ring && active == id,
                 maximized: self.maximized == id,
@@ -58,18 +58,20 @@ impl Workspace {
                 mouse_in_window: self.mouse_inside,
                 mouse_idle: self.mouse_idle,
             };
-            tile.view.update(cx, |view, cx| view.set_layout(layout, cx));
+            block
+                .view
+                .update(cx, |view, cx| view.set_layout(layout, cx));
         }
         cx.notify();
     }
 
-    /// Close the tile `id`; the window stays, empty after the last.
+    /// Close the block `id`; the window stays, empty after the last.
     pub fn close(&mut self, id: EntityId, cx: &mut Context<Self>) {
-        if let Some(index) = self.tiles.iter().position(|t| t.view.entity_id() == id) {
-            let tile = self.tiles.remove(index);
-            let note = tile.view.read(cx).progress();
+        if let Some(index) = self.blocks.iter().position(|t| t.view.entity_id() == id) {
+            let block = self.blocks.remove(index);
+            let note = block.view.read(cx).progress();
             progress::note(note, true, cx);
-            tile.view.update(cx, |view, _| view.release_pictures());
+            block.view.update(cx, |view, _| view.release_pictures());
         }
         if self.maximized == Some(id) {
             self.maximized = None;
@@ -77,17 +79,21 @@ impl Workspace {
         if self.active == Some(id) {
             self.active = None;
         }
-        self.tiles_changed(cx);
+        self.blocks_changed(cx);
     }
 
-    /// Run `command` on the tile `id`, given `args` (null for none), once
-    /// the event is handled: what the window does to its tiles, a drop say.
-    pub(super) fn send_to_tile(&self, id: EntityId, command: &str, args: Value, cx: &mut App) {
-        let Some(tile) = self.tiles.iter().find(|tile| tile.view.entity_id() == id) else {
+    /// Run `command` on the block `id`, given `args` (null for none), once
+    /// the event is handled: what the window does to its blocks, a drop say.
+    pub(super) fn send_to_block(&self, id: EntityId, command: &str, args: Value, cx: &mut App) {
+        let Some(block) = self
+            .blocks
+            .iter()
+            .find(|block| block.view.entity_id() == id)
+        else {
             return;
         };
-        let name = tile.view.read(cx).id().to_string();
-        api::dispatch(Invocation::new(command).with_args(args).on_tile(name), cx);
+        let name = block.view.read(cx).id().to_string();
+        api::dispatch(Invocation::new(command).with_args(args).on_block(name), cx);
     }
 
     /// Run `command` in this window, given `args` (null for none), once the
@@ -99,7 +105,7 @@ impl Workspace {
         api::dispatch(invocation, cx);
     }
 
-    /// Move the tile `id` to a new window, sized for it, where it keeps
+    /// Move the block `id` to a new window, sized for it, where it keeps
     /// playing through what this one plays through: beside this one, on
     /// its display. The window, or why none opened.
     pub fn move_to_new_window(
@@ -108,10 +114,10 @@ impl Workspace {
         window: &Window,
         cx: &mut Context<Self>,
     ) -> Result<Option<WindowHandle<Self>>> {
-        let Some(tile) = self.tiles.iter().find(|t| t.view.entity_id() == id) else {
+        let Some(block) = self.blocks.iter().find(|t| t.view.entity_id() == id) else {
             return Ok(None);
         };
-        let window_size = window_size_for(tile.view.read(cx));
+        let window_size = window_size_for(block.view.read(cx));
         let here = window.display(cx).map(|display| (display, window.bounds()));
         let opened = match here {
             Some((display, from)) => {
@@ -121,7 +127,7 @@ impl Workspace {
             None => Self::open_window(window_size, cx),
         };
         let opened = opened?;
-        let Some(view) = self.release_tile(id, cx) else {
+        let Some(view) = self.release_block(id, cx) else {
             return Ok(None);
         };
         let sound = self.sound_device().cloned();
@@ -129,37 +135,37 @@ impl Workspace {
         Ok(Some(opened))
     }
 
-    /// Let go of the tile `id`, for another window to take in (`take_tile`).
-    pub fn release_tile(
+    /// Let go of the block `id`, for another window to take in (`take_block`).
+    pub fn release_block(
         &mut self,
         id: EntityId,
         cx: &mut Context<Self>,
     ) -> Option<Entity<PlayerView>> {
-        let index = self.tiles.iter().position(|t| t.view.entity_id() == id)?;
-        let tile = self.tiles.remove(index);
+        let index = self.blocks.iter().position(|t| t.view.entity_id() == id)?;
+        let block = self.blocks.remove(index);
         if self.maximized == Some(id) {
             self.maximized = None;
         }
         if self.active == Some(id) {
             self.active = None;
         }
-        self.tiles_changed(cx);
-        Some(tile.view)
+        self.blocks_changed(cx);
+        Some(block.view)
     }
 
-    /// Take in a tile another window let go of, playing on through what
+    /// Take in a block another window let go of, playing on through what
     /// this one plays through, last among them; keys go to it.
-    pub fn take_tile(&mut self, view: Entity<PlayerView>, cx: &mut Context<Self>) {
+    pub fn take_block(&mut self, view: Entity<PlayerView>, cx: &mut Context<Self>) {
         let graveyard = self.graveyard.clone();
         view.update(cx, |view, _| view.move_to_window(graveyard));
         self.active = Some(view.entity_id());
-        self.note_front_tile(view.entity_id());
-        self.add_tile(view, cx);
-        self.tiles_changed(cx);
+        self.note_front_block(view.entity_id());
+        self.add_block(view, cx);
+        self.blocks_changed(cx);
         refresh_menus(cx);
     }
 
-    /// Take in a tile from another window, with the device that window
+    /// Take in a block from another window, with the device that window
     /// plays through instead of the app's output.
     fn adopt(
         &mut self,
@@ -168,15 +174,15 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) {
         self.set_sound_device(sound, cx);
-        self.take_tile(view, cx);
+        self.take_block(view, cx);
     }
 
-    /// Close every tile but `id`.
+    /// Close every block but `id`.
     pub fn close_others(&mut self, id: EntityId, cx: &mut Context<Self>) {
         let others: Vec<EntityId> = self
-            .tiles
+            .blocks
             .iter()
-            .map(|tile| tile.view.entity_id())
+            .map(|block| block.view.entity_id())
             .filter(|&other| other != id)
             .collect();
         for other in others {
@@ -187,66 +193,66 @@ impl Workspace {
     pub fn close_all(&mut self, cx: &mut Context<Self>) {
         let notes = self.progress(cx);
         progress::note(notes, true, cx);
-        for tile in self.tiles.drain(..) {
-            tile.view.update(cx, |view, _| view.release_pictures());
+        for block in self.blocks.drain(..) {
+            block.view.update(cx, |view, _| view.release_pictures());
         }
         self.maximized = None;
         self.active = None;
-        self.tiles_changed(cx);
+        self.blocks_changed(cx);
     }
 
-    /// Put the tile `id` at `place` among them, from 0, the tiles between
-    /// moving over, as a tile dragged onto another goes; past the last is
+    /// Put the block `id` at `place` among them, from 0, the blocks between
+    /// moving over, as a block dragged onto another goes; past the last is
     /// last. Shortcuts go to it there.
-    pub fn move_tile_to(&mut self, id: EntityId, place: usize, cx: &mut Context<Self>) {
-        let Some(from) = self.tiles.iter().position(|t| t.view.entity_id() == id) else {
+    pub fn move_block_to(&mut self, id: EntityId, place: usize, cx: &mut Context<Self>) {
+        let Some(from) = self.blocks.iter().position(|t| t.view.entity_id() == id) else {
             return;
         };
-        let to = place.min(self.tiles.len() - 1);
+        let to = place.min(self.blocks.len() - 1);
         if from != to {
-            let tile = self.tiles.remove(from);
-            self.tiles.insert(to, tile);
+            let block = self.blocks.remove(from);
+            self.blocks.insert(to, block);
             self.active = Some(id);
-            self.tiles_changed(cx);
+            self.blocks_changed(cx);
             refresh_menus(cx);
         }
     }
 
-    /// Show the tile `id` alone, or every tile again if it is; a window's
-    /// only tile fills the screen instead, or no longer does.
+    /// Show the block `id` alone, or every block again if it is; a window's
+    /// only block fills the screen instead, or no longer does.
     pub fn zoom(&mut self, id: EntityId, window: &mut Window, cx: &mut Context<Self>) {
-        if self.tiles.len() == 1 {
+        if self.blocks.len() == 1 {
             window.toggle_fullscreen();
         } else {
             self.maximized = (self.maximized != Some(id)).then_some(id);
-            self.tiles_changed(cx);
+            self.blocks_changed(cx);
         }
     }
 
-    /// How many tiles it has.
-    pub fn tile_count(&self) -> usize {
-        self.tiles.len()
+    /// How many blocks it has.
+    pub fn block_count(&self) -> usize {
+        self.blocks.len()
     }
 
-    /// The tile shortcuts go to: the maximized one, else the one the mouse
+    /// The block shortcuts go to: the maximized one, else the one the mouse
     /// was last over (or clicked), else the first.
     pub(super) fn active_view(&self) -> Option<Entity<PlayerView>> {
-        let find = |id: EntityId| self.tiles.iter().find(|t| t.view.entity_id() == id);
+        let find = |id: EntityId| self.blocks.iter().find(|t| t.view.entity_id() == id);
         self.maximized
             .and_then(find)
             .or_else(|| self.active.and_then(find))
-            .or_else(|| self.tiles.first())
-            .map(|tile| tile.view.clone())
+            .or_else(|| self.blocks.first())
+            .map(|block| block.view.clone())
     }
 
     /// What its players keep awake: the screen while a video plays, the
-    /// computer while only sound does, or a tile casts (the media is
+    /// computer while only sound does, or a block casts (the media is
     /// served from here).
     pub fn keeps_awake(&self, cx: &App) -> Awake {
-        self.tiles
+        self.blocks
             .iter()
-            .map(|tile| {
-                let view = tile.view.read(cx);
+            .map(|block| {
+                let view = block.view.read(cx);
                 let player = view.player();
                 if view.casting().is_some() {
                     Awake::Computer
@@ -262,7 +268,7 @@ impl Workspace {
             .unwrap_or_default()
     }
 
-    /// The names of the chapters of the tile shortcuts go to, and the one
+    /// The names of the chapters of the block shortcuts go to, and the one
     /// it's in.
     pub fn active_chapters(&self, cx: &App) -> (Vec<String>, Option<usize>) {
         self.active_view().map_or((Vec::new(), None), |view| {
@@ -277,21 +283,21 @@ impl Workspace {
         })
     }
 
-    /// Where its tiles' files are, for resuming them.
+    /// Where its blocks' files are, for resuming them.
     pub fn progress(&self, cx: &App) -> Vec<Note> {
-        self.tiles
+        self.blocks
             .iter()
-            .filter_map(|tile| tile.view.read(cx).progress())
+            .filter_map(|block| block.view.read(cx).progress())
             .collect()
     }
 
-    /// The device the tile shortcuts go to casts to.
+    /// The device the block shortcuts go to casts to.
     pub fn active_casting(&self, cx: &App) -> Option<Device> {
         self.active_view()?.read(cx).casting().cloned()
     }
 
-    /// Whether the tile shortcuts go to has sound, or isn't yet known to
-    /// have none; with no tile, whether one would.
+    /// Whether the block shortcuts go to has sound, or isn't yet known to
+    /// have none; with no block, whether one would.
     pub fn active_has_audio(&self, cx: &App) -> bool {
         self.active_view().is_none_or(|view| {
             view.read(cx)
@@ -301,23 +307,23 @@ impl Workspace {
         })
     }
 
-    /// Play the tile shortcuts go to here again, if it casts; whether it
+    /// Play the block shortcuts go to here again, if it casts; whether it
     /// did.
     pub fn end_active_cast(&mut self, cx: &mut Context<Self>) -> bool {
         self.active_view()
             .is_some_and(|view| view.update(cx, |view, cx| view.end_cast(cx)))
     }
 
-    /// Stop every device its tiles cast to, as the app quits or the window
+    /// Stop every device its blocks cast to, as the app quits or the window
     /// closes, handing back the threads stopping them.
     pub fn stop_casts(&mut self, cx: &mut App) -> Vec<std::thread::JoinHandle<()>> {
-        self.tiles
+        self.blocks
             .iter()
-            .filter_map(|tile| tile.view.update(cx, |view, _| view.stop_cast()))
+            .filter_map(|block| block.view.update(cx, |view, _| view.stop_cast()))
             .collect()
     }
 
-    /// Run `f` on the tile shortcuts go to.
+    /// Run `f` on the block shortcuts go to.
     #[cfg(test)]
     pub fn with_active(
         &mut self,

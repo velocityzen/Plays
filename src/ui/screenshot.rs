@@ -1,9 +1,9 @@
-//! Screenshots: the frame a tile shows, saved as a PNG or JPEG file at the
+//! Screenshots: the frame a block shows, saved as a PNG or JPEG file at the
 //! video's full resolution, turned, reshaped and cropped as it shows, with
 //! the subtitles showing drawn in.
 //!
 //! The frame is decoded again on its own (`media::still`), since what the
-//! tile has may be scaled down or on the GPU. Bitmap subtitles go onto it
+//! block has may be scaled down or on the GPU. Bitmap subtitles go onto it
 //! where the stream places them, before the picture is turned and cropped,
 //! as on screen; text subtitles after, as `ui::overlay` draws them. HDR video is tone mapped, or kept
 //! in a 16-bit PNG whose cICP chunk says it is BT.2020 PQ or HLG; subtitles

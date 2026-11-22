@@ -29,7 +29,7 @@ fn names_by_id_then_label_then_position_then_the_end_of_the_id() {
         &[Some("left"), None, Some("2"), Some("2222bbbb")],
     );
     let positions = [0, 1, 2, 3];
-    let pick = |name| pick("tile", name, &among, &positions);
+    let pick = |name| pick("block", name, &among, &positions);
     assert_eq!(pick("2222bbbb"), Ok(1), "by id, before a label");
     assert_eq!(pick("left"), Ok(0), "by label");
     assert_eq!(pick("2"), Ok(2), "a label before a position");
@@ -38,27 +38,27 @@ fn names_by_id_then_label_then_position_then_the_end_of_the_id() {
     assert_eq!(pick("cccc"), Ok(2), "by the end of its id");
     assert_eq!(pick("BBB"), Ok(1), "in either case");
     assert_eq!(pick(" left "), Ok(0), "spaces aside");
-    assert_eq!(pick("5"), Err(Error::not_found("tile", "5")));
-    assert_eq!(pick("eeee"), Err(Error::not_found("tile", "eeee")));
-    assert_eq!(pick(""), Err(Error::not_found("tile", "with no name")));
+    assert_eq!(pick("5"), Err(Error::not_found("block", "5")));
+    assert_eq!(pick("eeee"), Err(Error::not_found("block", "eeee")));
+    assert_eq!(pick(""), Err(Error::not_found("block", "with no name")));
 
     // By position alone, as ⌘1 to ⌘9 name windows.
     assert_eq!(pick("#2"), Ok(1), "not the one labeled 2");
     assert_eq!(pick(" #4 "), Ok(3));
     assert_eq!(
         pick("#5"),
-        Err(Error::not_found("tile", "#5")),
+        Err(Error::not_found("block", "#5")),
         "none fifth"
     );
     assert_eq!(
         pick("#dddd"),
-        Err(Error::not_found("tile", "#dddd")),
+        Err(Error::not_found("block", "#dddd")),
         "not by the end of an id"
     );
-    assert_eq!(pick("#0"), Err(Error::not_found("tile", "#0")));
-    assert_eq!(pick("#"), Err(Error::not_found("tile", "#")));
+    assert_eq!(pick("#0"), Err(Error::not_found("block", "#0")));
+    assert_eq!(pick("#"), Err(Error::not_found("block", "#")));
     assert_eq!(
-        super::pick("tile", "#1", &among, &[2, 3]),
+        super::pick("block", "#1", &among, &[2, 3]),
         Ok(2),
         "counting only those given"
     );
@@ -72,9 +72,9 @@ fn a_name_that_could_be_several_lists_them() {
     );
     let positions = [0, 1, 2];
     assert_eq!(
-        pick("tile", "a1", &among, &positions),
+        pick("block", "a1", &among, &positions),
         Err(Error::Ambiguous {
-            what: "tile".into(),
+            what: "block".into(),
             name: "a1".into(),
             matches: vec!["111100a1".into(), "222200a1".into()],
         })
@@ -87,22 +87,22 @@ fn a_name_that_could_be_several_lists_them() {
             matches: vec!["111100a1".into(), "222200a1".into()],
         })
     );
-    assert_eq!(pick("tile", "b1", &among, &positions), Ok(2));
+    assert_eq!(pick("block", "b1", &among, &positions), Ok(2));
 }
 
 #[test]
 fn positions_count_only_those_given() {
-    // Every tile, of which the window in front has the last two.
+    // Every block, of which the window in front has the last two.
     let among = named(&[0x10, 0x20, 0x31], &[None, None, None]);
-    assert_eq!(pick("tile", "1", &among, &[1, 2]), Ok(1));
-    assert_eq!(pick("tile", "2", &among, &[1, 2]), Ok(2));
-    assert_eq!(pick("tile", "00000010", &among, &[1, 2]), Ok(0), "by id");
+    assert_eq!(pick("block", "1", &among, &[1, 2]), Ok(1));
+    assert_eq!(pick("block", "2", &among, &[1, 2]), Ok(2));
+    assert_eq!(pick("block", "00000010", &among, &[1, 2]), Ok(0), "by id");
     // Not a 31st there: the end of an id instead.
-    assert_eq!(pick("tile", "31", &among, &[1, 2]), Ok(2));
+    assert_eq!(pick("block", "31", &among, &[1, 2]), Ok(2));
     assert_eq!(
-        pick("tile", "0", &among, &[1, 2]),
+        pick("block", "0", &among, &[1, 2]),
         Err(Error::Ambiguous {
-            what: "tile".into(),
+            what: "block".into(),
             name: "0".into(),
             matches: vec!["00000010".into(), "00000020".into()],
         }),

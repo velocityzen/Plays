@@ -25,20 +25,20 @@ pub const COMMANDS: &[Spec] = &[
         "List Windows",
         "List the player windows, in the order ⌘1 to ⌘9 number them.",
         Scope::App,
-        "[{id, label, title, number, front, tiles}]: each window's id, label (or null) \
+        "[{id, label, title, number, front, blocks}]: each window's id, label (or null) \
          and title, as its title bar shows it, its number from 1, whether it's in front, \
-         and how many tiles it has.",
+         and how many blocks it has.",
         |_, _, cx| Ok(Value::from(summaries(cx)?)),
     )
     .keywords(&["list", "ls", "windows"]),
     Spec::query(
         "window.inspect",
         "Inspect Window",
-        "Say all about the window: where it is, how it shows, its output and its tiles.",
+        "Say all about the window: where it is, how it shows, its output and its blocks.",
         Scope::Window,
-        "{id, label, title, number, front, tiles: [as tile.ls], bounds: {x, y, width, height}, \
+        "{id, label, title, number, front, blocks: [as block.ls], bounds: {x, y, width, height}, \
          display, full_screen, on_top, output: {id, name} or null}: as window.ls says, \
-         its tiles as tile.ls lists them, where it is in points, the id of the display \
+         its blocks as block.ls lists them, where it is in points, the id of the display \
          it's on, whether it's full screen and floats on top, and its own output.",
         inspect,
     )
@@ -94,9 +94,9 @@ pub const COMMANDS: &[Spec] = &[
     Spec::custom(
         palette::GO_TO,
         "Go to…",
-        "List the windows, their tiles, the files in the front tile's folder and those \
+        "List the windows, their blocks, the files in the front block's folder and those \
          played lately, to find one by name and go there: bring it to the front, play \
-         the file in the tile, or open it.",
+         the file in the block, or open it.",
         Scope::Window,
         show_go_to,
     )
@@ -106,7 +106,7 @@ pub const COMMANDS: &[Spec] = &[
         "files",
         "recent",
         "windows",
-        "tiles",
+        "blocks",
         "quick open",
     ])
     .keys(&["secondary-p"])
@@ -120,7 +120,7 @@ pub const COMMANDS: &[Spec] = &[
         Scope::AnyWindow,
         close,
     )
-    .tells(&["tile_closed", "window_closed", "active_window_changed"])
+    .tells(&["block_closed", "window_closed", "active_window_changed"])
     // ⌘W closes the file in front, and this where there's none.
     .keys(&["secondary-alt-w", "secondary-w"]),
     Spec::custom(
@@ -130,7 +130,7 @@ pub const COMMANDS: &[Spec] = &[
         Scope::Window,
         close_others,
     )
-    .tells(&["tile_closed", "window_closed"])
+    .tells(&["block_closed", "window_closed"])
     .keywords(&["close all", "others", "keep"]),
     Spec::window_with(
         "window.rename",
@@ -321,7 +321,7 @@ pub const EVENTS: &[EventKind] = &[
     ),
     EventKind::of_window(
         "window_closed",
-        "A player window closed: told after each of its tiles is told closed.",
+        "A player window closed: told after each of its blocks is told closed.",
         &[],
     )
     .causes(&["Plays quitting"]),
@@ -351,16 +351,16 @@ pub const EVENTS: &[EventKind] = &[
     .causes(&["the window's own full screen button"]),
     EventKind::window(
         "window_layout_changed",
-        "Tiles came into a window, went, or changed places, or one filled it or stopped \
+        "Blocks came into a window, went, or changed places, or one filled it or stopped \
          filling it.",
         &[
             EventField::new(
-                "tiles",
-                "The ids of its tiles, in the order its grid shows them.",
+                "blocks",
+                "The ids of its blocks, in the order its grid shows them.",
             ),
             EventField::new(
                 "maximized",
-                "The id of the tile filling it; none if none does.",
+                "The id of the block filling it; none if none does.",
             ),
         ],
     )
@@ -378,8 +378,8 @@ fn show_palette(_: Args, target: &Target, cx: &mut App) -> Outcome {
     show(listing, &here, cx)
 }
 
-/// Show Go to… over the window, listing the windows, the tiles, the files
-/// in the front tile's folder and those played lately.
+/// Show Go to… over the window, listing the windows, the blocks, the files
+/// in the front block's folder and those played lately.
 fn show_go_to(_: Args, target: &Target, cx: &mut App) -> Outcome {
     let here = here(target, cx)?;
     let listing = Listing::Places(palette::places(&here, cx));
@@ -391,7 +391,7 @@ fn here(target: &Target, cx: &App) -> Result<Target, Error> {
     let window = target::window(target, cx)?;
     Ok(Target {
         window: Some(target::read(window, cx)?.id().to_string()),
-        tile: None,
+        block: None,
     })
 }
 

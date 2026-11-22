@@ -34,7 +34,7 @@ const NOT_RUN: [(&str, &str); 2] = [
 /// Events commands tell that can't be heard here, and why.
 const NOT_HEARD: [(&str, &str, &str); 4] = [
     (
-        "tile.toggle_picture_in_picture",
+        "block.toggle_picture_in_picture",
         "picture_in_picture_changed",
         "Picture in Picture is the system's",
     ),
@@ -59,8 +59,8 @@ const NOT_HEARD: [(&str, &str, &str); 4] = [
 const QUIET: Duration = Duration::from_millis(300);
 
 /// What each command runs in: two player windows, the front one, in
-/// front, with a file of several tracks (tile 1, keys going to it) and
-/// one of a picture and sound (tile 2); the back one, first by number,
+/// front, with a file of several tracks (block 1, keys going to it) and
+/// one of a picture and sound (block 2); the back one, first by number,
 /// with sound alone.
 struct World {
     back: String,
@@ -111,9 +111,9 @@ impl Plan<'_> {
         Invocation::new(self.id)
     }
 
-    /// It, on the tile numbered `tile` in the window in front.
-    fn on(&self, tile: &str) -> Invocation {
-        self.it().on_tile(tile)
+    /// It, on the block numbered `block` in the window in front.
+    fn on(&self, block: &str) -> Invocation {
+        self.it().on_block(block)
     }
 
     fn with(&self, args: serde_json::Value) -> Invocation {
@@ -141,12 +141,12 @@ fn chapters() -> Invocation {
     open(&["clip-chapters.mkv"])
 }
 
-/// Seek the tile keys go to to `time`.
+/// Seek the block keys go to to `time`.
 fn at(time: f64) -> Invocation {
     command("playback.seek").with_args(json!({"time": time}))
 }
 
-/// Four tiles in the front window, two to a row.
+/// Four blocks in the front window, two to a row.
 fn four() -> Invocation {
     open(&["clip-ip.mkv", "clip-subs.mkv"])
 }
@@ -157,7 +157,7 @@ fn ways(spec: &Spec, world: &World) -> Vec<Way> {
     let plan = Plan { id: spec.id, world };
     match spec.namespace() {
         "app" | "window" => window_ways(&plan),
-        "tile" => tile_ways(&plan),
+        "block" => block_ways(&plan),
         "playback" => playback_ways(&plan),
         _ => other_ways(&plan),
     }
@@ -193,31 +193,31 @@ fn window_ways(plan: &Plan) -> Option<Vec<Way>> {
     })
 }
 
-fn tile_ways(plan: &Plan) -> Option<Vec<Way>> {
-    let third = || command("tile.focus").on_tile("3");
+fn block_ways(plan: &Plan) -> Option<Vec<Way>> {
+    let third = || command("block.focus").on_block("3");
     Some(match plan.id {
-        "tile.focus" => vec![
+        "block.focus" => vec![
             way(Vec::new(), vec![plan.on("2")]),
-            way(Vec::new(), vec![plan.back().on_tile("1")]),
+            way(Vec::new(), vec![plan.back().on_block("1")]),
         ],
-        "tile.focus.left" | "tile.move.left" => {
-            vec![way(vec![command("tile.focus.right")], vec![plan.it()])]
+        "block.focus.left" | "block.move.left" => {
+            vec![way(vec![command("block.focus.right")], vec![plan.it()])]
         }
-        // Gone to the second tile, then back to the first.
-        "tile.back" | "tile.recent" => vec![way(
-            vec![command("tile.focus.right"), command("tile.focus.left")],
+        // Gone to the second block, then back to the first.
+        "block.back" | "block.recent" => vec![way(
+            vec![command("block.focus.right"), command("block.focus.left")],
             vec![plan.it()],
         )],
-        "tile.focus.up" | "tile.move.up" => vec![way(vec![four(), third()], vec![plan.it()])],
-        "tile.focus.down" | "tile.move.down" => vec![way(vec![four()], vec![plan.it()])],
-        "tile.zoom" => vec![
+        "block.focus.up" | "block.move.up" => vec![way(vec![four(), third()], vec![plan.it()])],
+        "block.focus.down" | "block.move.down" => vec![way(vec![four()], vec![plan.it()])],
+        "block.zoom" => vec![
             way(Vec::new(), vec![plan.it(), plan.it()]),
-            // A window's only tile fills the screen.
+            // A window's only block fills the screen.
             way(Vec::new(), vec![plan.back()]),
         ],
-        "tile.rename" => Plan::twice(plan.with(json!({"label": "Low"}))),
-        "tile.move" => Plan::twice(plan.with(json!({"position": 2}))),
-        "tile.move_to_window" => Plan::twice(plan.with(json!({"window": plan.world.back}))),
+        "block.rename" => Plan::twice(plan.with(json!({"label": "Low"}))),
+        "block.move" => Plan::twice(plan.with(json!({"position": 2}))),
+        "block.move_to_window" => Plan::twice(plan.with(json!({"window": plan.world.back}))),
         _ => return None,
     })
 }
@@ -230,7 +230,7 @@ fn playback_ways(plan: &Plan) -> Option<Vec<Way>> {
         "playback.seek" => vec![
             way(
                 vec![chapters()],
-                vec![plan.with(json!({"time": 1})).on_tile("3")],
+                vec![plan.with(json!({"time": 1})).on_block("3")],
             ),
             way(Vec::new(), vec![plan.with(json!({"time": 100}))]),
         ],
@@ -239,14 +239,14 @@ fn playback_ways(plan: &Plan) -> Option<Vec<Way>> {
         }
         "playback.seek_forward_all" => vec![way(vec![chapters()], vec![it(), it()])],
         "playback.seek_backward" | "playback.restart" | "playback.previous_chapter" => {
-            vec![way(vec![chapters(), at(1.5).on_tile("3")], vec![third()])]
+            vec![way(vec![chapters(), at(1.5).on_block("3")], vec![third()])]
         }
         "playback.seek_backward_all" | "playback.restart_all" => {
-            vec![way(vec![chapters(), at(1.5).on_tile("3")], vec![it()])]
+            vec![way(vec![chapters(), at(1.5).on_block("3")], vec![it()])]
         }
         "playback.go_to_chapter" => vec![way(
             vec![chapters()],
-            vec![plan.with(json!({"number": 2})).on_tile("3")],
+            vec![plan.with(json!({"number": 2})).on_block("3")],
         )],
         "playback.next_frame"
         | "playback.previous_frame"
@@ -383,7 +383,7 @@ fn all_open(cx: &mut TestAppContext) -> bool {
 }
 
 /// Run what's left to, wait for the files to open, and draw every
-/// window, which the test platform does only when asked: a tile shows a
+/// window, which the test platform does only when asked: a block shows a
 /// frame, to step from, only once drawn.
 fn settle(cx: &mut TestAppContext) {
     for _ in 0..3 {
@@ -537,7 +537,7 @@ namespaces! {
     app_commands_tell_what_they_say: "app",
     window_commands_tell_what_they_say: "window",
     view_commands_tell_what_they_say: "view",
-    tile_commands_tell_what_they_say: "tile",
+    block_commands_tell_what_they_say: "block",
     playback_commands_tell_what_they_say: "playback",
     audio_commands_tell_what_they_say: "audio",
     subtitles_commands_tell_what_they_say: "subtitles",

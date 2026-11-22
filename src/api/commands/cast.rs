@@ -1,4 +1,4 @@
-//! `cast`: playing a tile on a TV or speaker found on the network.
+//! `cast`: playing a block on a TV or speaker found on the network.
 
 use std::collections::BTreeMap;
 
@@ -46,10 +46,10 @@ pub const COMMANDS: &[Spec] = &[
         "dlna",
         "speaker",
     ]),
-    Spec::tile_with(
+    Spec::block_with(
         "cast.to",
         "Play On",
-        "Play the tile on a TV or speaker found on the network, from where it is.",
+        "Play the block on a TV or speaker found on the network, from where it is.",
         DEVICE,
         |args, player, _, cx| {
             let device = find(args, player.casting(), cx)?;
@@ -69,7 +69,7 @@ pub const COMMANDS: &[Spec] = &[
     ])
     // The device it casts to, if any.
     .state(|target, cx| {
-        target::read_tile(target, cx, |player, _| {
+        target::read_block(target, cx, |player, _| {
             json!(player.casting().map(|device| json!({
                 "id": device.id,
                 "kind": device.kind,
@@ -77,10 +77,10 @@ pub const COMMANDS: &[Spec] = &[
             })))
         })
     }),
-    Spec::tile(
+    Spec::block(
         "cast.stop",
         "Play Here",
-        "Stop casting the tile, and play it here from where the device got to.",
+        "Stop casting the block, and play it here from where the device got to.",
         |player, _, cx| player.cast_to(None, cx),
     )
     .tells(&["cast_ended"])
@@ -89,8 +89,8 @@ pub const COMMANDS: &[Spec] = &[
         "cast.pair",
         "Pair and Play On",
         "Pair with a TV that shows a PIN to type, such as an Apple TV, then play the \
-         tile on it.",
-        Scope::Tile,
+         block on it.",
+        Scope::Block,
         DEVICE,
         pair_with,
     )
@@ -108,18 +108,18 @@ pub const EVENTS: &[EventKind] = &[
         )],
     )
     .causes(&["devices found on the network or gone from it"]),
-    EventKind::tile(
+    EventKind::block(
         "cast_started",
-        "A tile began playing on a TV or speaker.",
+        "A block began playing on a TV or speaker.",
         &[EventField::new(
             "device",
             "The device: its id, kind and name.",
         )],
     )
     .causes(&["a TV paired with `cast.pair` once its PIN is typed"]),
-    EventKind::tile(
+    EventKind::block(
         "cast_ended",
-        "A tile stopped playing on a TV or speaker.",
+        "A block stopped playing on a TV or speaker.",
         &[EventField::new(
             "device",
             "The device it played on: its id, kind and name.",
@@ -160,7 +160,7 @@ struct To {
     kind: Option<String>,
 }
 
-/// The device `args` name, among those found and the one the tile casts
+/// The device `args` name, among those found and the one the block casts
 /// to, `casting`, which stays one while it isn't found.
 fn find(args: Args, casting: Option<&Device>, cx: &App) -> Result<Device, Error> {
     let To { device, kind } = args.read()?;
@@ -178,18 +178,18 @@ fn find(args: Args, casting: Option<&Device>, cx: &App) -> Result<Device, Error>
         .ok_or_else(|| Error::not_found("device", device.clone()))
 }
 
-/// Ask for the PIN the device shows, over the tile's window, then cast the
-/// tile there.
+/// Ask for the PIN the device shows, over the block's window, then cast the
+/// block there.
 fn pair_with(args: Args, target: &Target, cx: &mut App) -> Outcome {
-    let (window, tile) = target::tile(target, cx)?;
-    let device = find(args, tile.read(cx).casting(), cx)?;
+    let (window, block) = target::block(target, cx)?;
+    let device = find(args, block.read(cx).casting(), cx)?;
     window
-        .update(cx, |workspace, _, cx| workspace.pair(&tile, device, cx))
+        .update(cx, |workspace, _, cx| workspace.pair(&block, device, cx))
         .map_err(|_| Error::failed("the window has closed"))?;
     done()
 }
 
-/// Cast the tile in front to `device`, or play it here again.
+/// Cast the block in front to `device`, or play it here again.
 pub fn to(device: Option<&Device>) -> Run {
     match device {
         Some(device) => Run::with("cast.to", json!({"device": device.id, "kind": device.kind})),
@@ -197,7 +197,7 @@ pub fn to(device: Option<&Device>) -> Run {
     }
 }
 
-/// Pair with `device`, then cast the tile in front to it.
+/// Pair with `device`, then cast the block in front to it.
 pub fn pair(device: &Device) -> Run {
     Run::with(
         "cast.pair",

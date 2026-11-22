@@ -1,5 +1,5 @@
 //! Opening files, the media files in folders, and streams, from the open
-//! panel, a drop or the "Open URL" form: several at once in a tile each,
+//! panel, a drop or the "Open URL" form: several at once in a block each,
 //! or in one playing them in turn, as Settings → Playback say.
 
 use std::path::PathBuf;
@@ -23,7 +23,7 @@ impl Workspace {
 
     /// Open files, the media files in folders, and streams. What is a
     /// folder, and what is in it, is found in the background (it may be on
-    /// a network drive), then the tiles open in the order given.
+    /// a network drive), then the blocks open in the order given.
     pub fn open_sources(&mut self, sources: Vec<Source>, cx: &mut Context<Self>) {
         let listing = cx.background_spawn(async move { expand_folders(sources) });
         cx.spawn(async move |this, cx| {
@@ -34,21 +34,21 @@ impl Workspace {
         .detach();
     }
 
-    /// A tile for each of `sources`, or one playing them one after
+    /// A block for each of `sources`, or one playing them one after
     /// another, as Settings → Playback say.
     fn add_players(&mut self, sources: Vec<Source>, cx: &mut Context<Self>) {
         let Some(first) = sources.first() else {
             return;
         };
         let in_turn = cx.global::<Settings>().several_files == SeveralFiles::Playlist;
-        let (tiles, playlist) = if in_turn {
+        let (blocks, playlist) = if in_turn {
             (vec![first.clone()], sources)
         } else {
             (sources, Vec::new())
         };
         let mixer = self.mixer(cx);
         let mut opened = Vec::new();
-        for source in tiles {
+        for source in blocks {
             log::info!("opening {source}");
             if let Source::File(path) = &source {
                 recents::note_file(path, cx);
@@ -64,11 +64,11 @@ impl Workspace {
                 view
             });
             opened.push(view.entity_id());
-            self.add_tile(view, cx);
+            self.add_block(view, cx);
         }
-        // What's opened shows, with the tiles there already.
+        // What's opened shows, with the blocks there already.
         self.maximized = None;
-        self.tiles_changed(cx);
+        self.blocks_changed(cx);
         self.fit_when_known(opened, cx);
     }
 
@@ -90,7 +90,7 @@ impl Workspace {
     /// Show the "Open URL" form: in place of the empty window's buttons, or
     /// in a sheet over a window that is playing. Focuses it if already up.
     pub fn show_open_url(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.tiles.is_empty() {
+        if self.blocks.is_empty() {
             self.url_form_open = true;
             self.url_form.update(cx, |form, cx| form.focus(window, cx));
             cx.notify();

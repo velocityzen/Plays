@@ -35,7 +35,7 @@ fn of(listed: &[(Kind, String)], kind: Kind) -> Vec<&str> {
         .collect()
 }
 
-/// The file `window`'s front tile plays.
+/// The file `window`'s front block plays.
 fn front_file(window: WindowHandle<Workspace>, cx: &VisualTestContext) -> Option<String> {
     window
         .read_with(cx, |workspace, cx| {
@@ -45,7 +45,7 @@ fn front_file(window: WindowHandle<Workspace>, cx: &VisualTestContext) -> Option
         .unwrap()
 }
 
-/// Wait until `window`'s front tile has looked through its folder.
+/// Wait until `window`'s front block has looked through its folder.
 fn wait_for_folder(window: WindowHandle<Workspace>, cx: &mut VisualTestContext) {
     let looked = wait_until(cx, |cx| {
         window
@@ -67,7 +67,7 @@ fn second_window(label: &str, cx: &mut VisualTestContext) -> (WindowHandle<Works
         .unwrap();
     let target = Target {
         window: Some(id),
-        tile: None,
+        block: None,
     };
     let mut rename = Invocation::new("window.rename").with_args(json!({"label": label}));
     rename.target = target.clone();
@@ -77,7 +77,7 @@ fn second_window(label: &str, cx: &mut VisualTestContext) -> (WindowHandle<Works
 }
 
 #[gpui::test]
-fn its_keys_list_the_windows_their_tiles_the_files_in_the_folder_and_those_played(
+fn its_keys_list_the_windows_their_blocks_the_files_in_the_folder_and_those_played(
     cx: &mut TestAppContext,
 ) {
     let (window, mut cx) = testing::start(cx);
@@ -104,7 +104,7 @@ fn its_keys_list_the_windows_their_tiles_the_files_in_the_folder_and_those_playe
     let listed = places(window, &cx);
     assert_eq!(of(&listed, Kind::Window), ["Window 1", "Stage"]);
     assert_eq!(
-        of(&listed, Kind::Tile),
+        of(&listed, Kind::Block),
         ["clip.mp4", "clip-subs.mkv", "tone.m4a"]
     );
     let folder = of(&listed, Kind::InFolder);
@@ -118,25 +118,28 @@ fn its_keys_list_the_windows_their_tiles_the_files_in_the_folder_and_those_playe
         ["tone.m4a", "clip-subs.mkv", "clip.mp4"],
         "the latest first"
     );
-    let order = [Kind::Window, Kind::Tile, Kind::InFolder, Kind::Recent];
+    let order = [Kind::Window, Kind::Block, Kind::InFolder, Kind::Recent];
     let kinds: Vec<usize> = listed
         .iter()
         .map(|(kind, _)| order.iter().position(|other| other == kind).unwrap())
         .collect();
-    assert!(kinds.is_sorted(), "windows, tiles, the folder, then lately");
+    assert!(
+        kinds.is_sorted(),
+        "windows, blocks, the folder, then lately"
+    );
     let headings: Vec<String> = read(window, &cx, Palette::sections)
         .into_iter()
         .map(|(heading, _)| heading)
         .collect();
-    assert_eq!(headings, ["Windows", "Tiles", "In Folder", "Recent"]);
+    assert_eq!(headings, ["Windows", "Blocks", "In Folder", "Recent"]);
     assert!(painted(&mut cx, "Go"), "Return goes there");
     assert_eq!(
         read(window, &cx, Palette::current),
         ["Window 1".to_owned(), front.clone(), front.clone()],
-        "this window, its tile in front, and the file it plays"
+        "this window, its block in front, and the file it plays"
     );
 
-    // What a window has; where a tile is, there being two windows; and a
+    // What a window has; where a block is, there being two windows; and a
     // file's folder.
     let picked = |typed: &str, cx: &mut VisualTestContext| {
         type_in(cx, typed);
@@ -147,9 +150,9 @@ fn its_keys_list_the_windows_their_tiles_the_files_in_the_folder_and_those_playe
     let detail = |text: &str| Some(text.to_owned());
     assert_eq!(picked("window 1", &mut cx).1, detail("2 files"));
     assert_eq!(picked("window stage", &mut cx).1, detail("1 file"));
-    assert_eq!(picked("tile clip.mp4", &mut cx).1, detail("Window 1"));
+    assert_eq!(picked("block clip.mp4", &mut cx).1, detail("Window 1"));
     assert_eq!(
-        picked("tile tone", &mut cx),
+        picked("block tone", &mut cx),
         ("tone.m4a".to_owned(), detail("Stage"))
     );
     type_in(&mut cx, "recent clip.mp4");
@@ -177,7 +180,7 @@ fn typing_finds_places_by_name_kind_or_where_they_are(cx: &mut TestAppContext) {
     assert_eq!(
         found,
         [
-            (Kind::Tile, subs.clone()),
+            (Kind::Block, subs.clone()),
             (Kind::InFolder, subs.clone()),
             (Kind::Recent, subs.clone())
         ],
@@ -216,7 +219,7 @@ fn typing_finds_places_by_name_kind_or_where_they_are(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn return_goes_to_a_tile_or_window_plays_a_file_in_the_folder_or_opens_one_played(
+fn return_goes_to_a_block_or_window_plays_a_file_in_the_folder_or_opens_one_played(
     cx: &mut TestAppContext,
 ) {
     let (window, mut cx) = testing::start(cx);
@@ -233,7 +236,7 @@ fn return_goes_to_a_tile_or_window_plays_a_file_in_the_folder_or_opens_one_playe
         invocation
     };
 
-    // The tile not in front.
+    // The block not in front.
     let front = front_file(window, &cx).unwrap();
     let other = if front == "clip.mp4" {
         "clip-subs.mkv"
@@ -251,14 +254,17 @@ fn return_goes_to_a_tile_or_window_plays_a_file_in_the_folder_or_opens_one_playe
         .unwrap()
         .unwrap();
     open_go_to(&mut cx);
-    type_in(&mut cx, &format!("tile {other}"));
+    type_in(&mut cx, &format!("block {other}"));
     press_and_wait(&mut cx, "enter");
     assert!(palette(window, &cx).is_none(), "it closes");
-    let tile = Target {
-        tile: Some(other_id),
+    let block = Target {
+        block: Some(other_id),
         ..here.clone()
     };
-    assert_eq!(ran(&mut cx), [palette_ran("tile.focus", json!(null), tile)]);
+    assert_eq!(
+        ran(&mut cx),
+        [palette_ran("block.focus", json!(null), block)]
+    );
     assert_eq!(front_file(window, &cx).as_deref(), Some(other), "in front");
 
     // A file in its folder, in its place.
@@ -276,14 +282,14 @@ fn return_goes_to_a_tile_or_window_plays_a_file_in_the_folder_or_opens_one_playe
         )]
     );
     assert_eq!(front_file(window, &cx).as_deref(), Some("clip-opus.mkv"));
-    let tiles = |cx: &VisualTestContext| {
+    let blocks = |cx: &VisualTestContext| {
         window
             .read_with(cx, |workspace, _| workspace.players().len())
             .unwrap()
     };
-    assert_eq!(tiles(&cx), 2, "none added");
+    assert_eq!(blocks(&cx), 2, "none added");
 
-    // One played lately, in a tile of its own.
+    // One played lately, in a block of its own.
     open_go_to(&mut cx);
     type_in(&mut cx, "recent clip.mp4");
     press_and_wait(&mut cx, "enter");
@@ -298,7 +304,7 @@ fn return_goes_to_a_tile_or_window_plays_a_file_in_the_folder_or_opens_one_playe
     );
     let opened = wait_until(&mut cx, |cx| {
         let cx = VisualTestContext::from_window(window.into(), cx);
-        tiles(&cx) == 3
+        blocks(&cx) == 3
     });
     assert!(opened, "it opens in the window");
 
@@ -326,16 +332,16 @@ fn it_and_the_command_palette_take_each_others_place(cx: &mut TestAppContext) {
         "the palette runs it"
     );
 
-    type_in(&mut cx, "tile");
+    type_in(&mut cx, "block");
     assert_eq!(
         read(window, &cx, Palette::picked_place),
-        Some((Kind::Tile, "clip.mp4".to_owned(), None)),
+        Some((Kind::Block, "clip.mp4".to_owned(), None)),
         "a window alone isn't said"
     );
     open_go_to(&mut cx);
     assert_eq!(
         places(window, &cx),
-        [(Kind::Tile, "clip.mp4".to_owned())],
+        [(Kind::Block, "clip.mp4".to_owned())],
         "⌘P again keeps it, with what's typed"
     );
     open_palette(&mut cx);
@@ -352,8 +358,8 @@ fn files_opened_or_played_in_place_are_noted_once_the_latest_first(cx: &mut Test
     let (window, mut cx) = testing::start(cx);
     let noted = |cx: &mut VisualTestContext| cx.update(|_, cx| recents::FILES.list(cx));
     let path = |file: &str| fixture(file).to_string_lossy().into_owned();
-    // Another tile with `file`, and wait until there are `tiles`.
-    let add = |cx: &mut VisualTestContext, file: &str, tiles: usize| {
+    // Another block with `file`, and wait until there are `blocks`.
+    let add = |cx: &mut VisualTestContext, file: &str, blocks: usize| {
         window
             .update(cx, |workspace, _, cx| {
                 workspace.open_paths(vec![fixture(file)], cx)
@@ -361,7 +367,7 @@ fn files_opened_or_played_in_place_are_noted_once_the_latest_first(cx: &mut Test
             .unwrap();
         let added = wait_until(cx, |cx| {
             window
-                .read_with(cx, |workspace, _| workspace.players().len() == tiles)
+                .read_with(cx, |workspace, _| workspace.players().len() == blocks)
                 .unwrap()
         });
         assert!(added, "{file} opens");
@@ -377,15 +383,15 @@ fn files_opened_or_played_in_place_are_noted_once_the_latest_first(cx: &mut Test
     );
 
     // The next file in clip.mp4's folder, in its place.
-    let tile = window
+    let block = window
         .read_with(&cx, |workspace, _| workspace.players()[1].clone())
         .unwrap();
     let looked = wait_until(&mut cx, |cx| {
-        tile.read_with(cx, |view, _| view.knows_neighbors())
+        block.read_with(cx, |view, _| view.knows_neighbors())
     });
     assert!(looked);
-    let name = tile.read_with(&cx, |view, _| view.id().to_string());
-    let next = Invocation::new("playback.next_file").on_tile(name);
+    let name = block.read_with(&cx, |view, _| view.id().to_string());
+    let next = Invocation::new("playback.next_file").on_block(name);
     TestAppContext::update(&cx, |cx| api::run(next, cx)).unwrap();
     cx.run_until_parked();
     assert_eq!(

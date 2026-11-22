@@ -45,7 +45,7 @@ impl Panel {
     }
 
     /// Take the mouse, so clicks and hovers don't reach what is under it:
-    /// for menus and dialogs, but not for notes, which would stop the tile
+    /// for menus and dialogs, but not for notes, which would stop the block
     /// under them counting as hovered.
     pub fn occlude(mut self) -> Self {
         self.occlude = true;

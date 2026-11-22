@@ -423,7 +423,7 @@ fn subscribe(
         Heard::Window(name) => {
             let named = Target {
                 window: Some(name.clone()),
-                tile: None,
+                block: None,
             };
             let id = target::read(target::window(&named, cx)?, cx)?.id();
             (Scope::Window(id), json!({"window": id.to_string()}))

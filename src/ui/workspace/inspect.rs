@@ -1,5 +1,5 @@
-//! What `window.ls`, `window.inspect`, `tile.ls` and `tile.inspect` say
-//! of a window and its tiles, as JSON; and what events see of them.
+//! What `window.ls`, `window.inspect`, `block.ls` and `block.inspect` say
+//! of a window and its blocks, as JSON; and what events see of them.
 
 use gpui::{App, Entity, Window};
 use serde_json::{Map, Value, json};
@@ -12,7 +12,7 @@ use crate::ui::player::PlayerView;
 impl Workspace {
     /// What `window.ls` says of it: its id, label and title, its `number`
     /// (from 1, as ⌘1 to ⌘9 go to it), whether it's in `front`, and how
-    /// many tiles it has.
+    /// many blocks it has.
     pub fn summary(&self, number: usize, front: bool) -> Map<String, Value> {
         let mut summary = Map::new();
         summary.insert("id".into(), json!(self.id().to_string()));
@@ -20,13 +20,13 @@ impl Workspace {
         summary.insert("title".into(), json!(self.title()));
         summary.insert("number".into(), json!(number));
         summary.insert("front".into(), json!(front));
-        summary.insert("tiles".into(), json!(self.tiles.len()));
+        summary.insert("blocks".into(), json!(self.blocks.len()));
         summary
     }
 
     /// All `window.inspect` says of it: its summary; where it is, in
     /// points, and on which display; whether it's full screen and floats
-    /// on top; its own output, if it has one; and its tiles, as `tile.ls`
+    /// on top; its own output, if it has one; and its blocks, as `block.ls`
     /// says.
     pub fn inspect(
         &self,
@@ -51,66 +51,66 @@ impl Workspace {
             ("full_screen".into(), json!(window.is_fullscreen())),
             ("on_top".into(), json!(self.on_top)),
             ("output".into(), json!(self.sound_device())),
-            ("tiles".into(), Value::from(self.tiles_listed(cx))),
+            ("blocks".into(), Value::from(self.blocks_listed(cx))),
         ]);
         inspected
     }
 
-    /// What `tile.ls` says of each tile, in the grid's order: its summary,
+    /// What `block.ls` says of each block, in the grid's order: its summary,
     /// its number there (from 1), and whether keys go to it.
-    pub fn tiles_listed(&self, cx: &App) -> Vec<Value> {
+    pub fn blocks_listed(&self, cx: &App) -> Vec<Value> {
         let front = self.active_view().map(|view| view.entity_id());
-        self.tiles
+        self.blocks
             .iter()
             .enumerate()
-            .map(|(at, tile)| {
-                let view = tile.view.read(cx);
-                let front = Some(tile.view.entity_id()) == front;
+            .map(|(at, block)| {
+                let view = block.view.read(cx);
+                let front = Some(block.view.entity_id()) == front;
                 Value::Object(placed(view.summary(), at, front))
             })
             .collect()
     }
 
-    /// What events see of it: its label, full screen, its tiles, the one
+    /// What events see of it: its label, full screen, its blocks, the one
     /// filling it and the one keys go to.
     pub fn seen(&self, window: &Window, cx: &App) -> WindowSeen {
         let id = |view: Entity<PlayerView>| view.read(cx).id();
         let maximized = self
             .maximized
             .and_then(|maximized| {
-                self.tiles
+                self.blocks
                     .iter()
-                    .find(|tile| tile.view.entity_id() == maximized)
+                    .find(|block| block.view.entity_id() == maximized)
             })
-            .map(|tile| id(tile.view.clone()));
+            .map(|block| id(block.view.clone()));
         WindowSeen {
             id: self.id(),
             label: self.label.clone(),
             title: self.title().to_owned(),
             full_screen: window.is_fullscreen(),
-            tiles: self
-                .tiles
+            blocks: self
+                .blocks
                 .iter()
-                .map(|tile| tile.view.read(cx).seen())
+                .map(|block| block.view.read(cx).seen())
                 .collect(),
             maximized,
             active: self.active_view().map(id),
         }
     }
 
-    /// All `tile.inspect` says of `tile`, as `tile.ls` does and more, with
+    /// All `block.inspect` says of `block`, as `block.ls` does and more, with
     /// its window's id and title; none if it isn't here.
-    pub fn inspect_tile(&self, tile: &Entity<PlayerView>, cx: &App) -> Option<Value> {
-        let at = self.tiles.iter().position(|t| t.view == *tile)?;
-        let front = self.active_view().as_ref() == Some(tile);
-        let mut inspected = placed(tile.read(cx).inspect(), at, front);
+    pub fn inspect_block(&self, block: &Entity<PlayerView>, cx: &App) -> Option<Value> {
+        let at = self.blocks.iter().position(|t| t.view == *block)?;
+        let front = self.active_view().as_ref() == Some(block);
+        let mut inspected = placed(block.read(cx).inspect(), at, front);
         inspected.insert("window".into(), json!(self.id().to_string()));
         inspected.insert("window_title".into(), json!(self.title()));
         Some(Value::Object(inspected))
     }
 }
 
-/// `about` a tile, with its number in the grid (it's at `at`, from 0) and
+/// `about` a block, with its number in the grid (it's at `at`, from 0) and
 /// whether it's in `front`.
 fn placed(mut about: Map<String, Value>, at: usize, front: bool) -> Map<String, Value> {
     about.insert("number".into(), json!(at + 1));

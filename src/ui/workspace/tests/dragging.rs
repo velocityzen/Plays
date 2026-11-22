@@ -1,5 +1,5 @@
-//! Dragging a tile by its picture, as someone at the screen would: onto
-//! another tile, or, with no other tile showing, the window with it; and
+//! Dragging a block by its picture, as someone at the screen would: onto
+//! another block, or, with no other block showing, the window with it; and
 //! an empty window, by anything but its buttons and field.
 
 use gpui::{Modifiers, MouseButton, TestAppContext, VisualTestContext, WindowHandle, point, px};
@@ -10,21 +10,21 @@ use crate::ui::testing::{
 };
 use crate::ui::workspace::Workspace;
 
-/// How many times each tile's picture has moved the window.
+/// How many times each block's picture has moved the window.
 fn window_moves(window: WindowHandle<Workspace>, cx: &VisualTestContext) -> Vec<usize> {
     window
         .read_with(cx, |workspace, cx| {
             workspace
-                .tiles
+                .blocks
                 .iter()
-                .map(|tile| tile.view.read(cx).window_moves)
+                .map(|block| block.view.read(cx).window_moves)
                 .collect()
         })
         .unwrap()
 }
 
 #[gpui::test]
-fn a_tile_dragged_onto_another_takes_its_place(cx: &mut TestAppContext) {
+fn a_block_dragged_onto_another_takes_its_place(cx: &mut TestAppContext) {
     let (window, mut cx) = testing::start(cx);
     open(
         window,
@@ -32,55 +32,58 @@ fn a_tile_dragged_onto_another_takes_its_place(cx: &mut TestAppContext) {
         &["clip.mp4", "clip-ip.mkv", "clip.mp4"],
         true,
     );
-    let tiles = |cx: &VisualTestContext| -> Vec<_> {
-        players(window, cx).iter().map(|&(tile, ..)| tile).collect()
+    let blocks = |cx: &VisualTestContext| -> Vec<_> {
+        players(window, cx)
+            .iter()
+            .map(|&(block, ..)| block)
+            .collect()
     };
-    let [a, b, c] = tiles(&cx)[..] else {
-        panic!("three tiles");
+    let [a, b, c] = blocks(&cx)[..] else {
+        panic!("three blocks");
     };
 
-    drag(&mut cx, "tile-0", "tile-2");
-    assert_eq!(tiles(&cx), [b, c, a], "the ones between move over");
+    drag(&mut cx, "block-0", "block-2");
+    assert_eq!(blocks(&cx), [b, c, a], "the ones between move over");
     let (active, maximized) = window
         .read_with(&cx, |workspace, _| {
             let active = workspace.active_view().map(|view| view.entity_id());
             (active, workspace.maximized)
         })
         .unwrap();
-    assert_eq!(active, Some(a), "the tile dragged is the one in front");
+    assert_eq!(active, Some(a), "the block dragged is the one in front");
     assert_eq!(maximized, None, "a drag is no double click");
     assert!(
         players(window, &cx).iter().all(|&(_, playing, _)| playing),
         "dragging mustn't pause"
     );
 
-    drag(&mut cx, "tile-2", "tile-1");
-    assert_eq!(tiles(&cx), [b, a, c]);
+    drag(&mut cx, "block-2", "block-1");
+    assert_eq!(blocks(&cx), [b, a, c]);
 
     // Let go over itself, it stays.
-    drag_by(&mut cx, "tile-0", point(px(20.), px(20.)));
-    assert_eq!(tiles(&cx), [b, a, c]);
+    drag_by(&mut cx, "block-0", point(px(20.), px(20.)));
+    assert_eq!(blocks(&cx), [b, a, c]);
     assert_eq!(
         window_moves(window, &cx),
         [0, 0, 0],
-        "tiles, not the window"
+        "blocks, not the window"
     );
 }
 
 #[gpui::test]
-fn with_no_other_tile_showing_the_picture_drags_the_window(cx: &mut TestAppContext) {
+fn with_no_other_block_showing_the_picture_drags_the_window(cx: &mut TestAppContext) {
     let (window, mut cx) = testing::start(cx);
     open(window, &mut cx, &["clip.mp4"], true);
     let by = point(px(40.), px(30.));
 
-    drag_by(&mut cx, "tile-0", by);
+    drag_by(&mut cx, "block-0", by);
     assert_eq!(window_moves(window, &cx), [1]);
-    drag_by(&mut cx, "tile-0", point(px(1.), px(1.)));
+    drag_by(&mut cx, "block-0", point(px(1.), px(1.)));
     assert_eq!(window_moves(window, &cx), [1], "a press that barely moves");
 
     // Full screen, the window stays put.
     cx.update(|window, _| window.toggle_fullscreen());
-    drag_by(&mut cx, "tile-0", by);
+    drag_by(&mut cx, "block-0", by);
     assert_eq!(window_moves(window, &cx), [1]);
     cx.update(|window, _| window.toggle_fullscreen());
 
@@ -93,16 +96,16 @@ fn with_no_other_tile_showing_the_picture_drags_the_window(cx: &mut TestAppConte
     let opened = wait_until(&mut cx, |cx| {
         window
             .read_with(cx, |workspace, cx| {
-                workspace.tiles.len() == 2 && workspace.tiles[1].view.read(cx).player().is_known()
+                workspace.blocks.len() == 2 && workspace.blocks[1].view.read(cx).player().is_known()
             })
             .unwrap()
     });
     assert!(opened, "the second file didn't open");
-    double_click(&mut cx, "tile-1");
-    assert!(!shows(&mut cx, "tile-0"));
-    drag_by(&mut cx, "tile-1", by);
+    double_click(&mut cx, "block-1");
+    assert!(!shows(&mut cx, "block-0"));
+    drag_by(&mut cx, "block-1", by);
     assert_eq!(window_moves(window, &cx), [1, 1]);
-    assert_eq!(players(window, &cx).len(), 2, "no tile moved");
+    assert_eq!(players(window, &cx).len(), 2, "no block moved");
 }
 
 #[gpui::test]

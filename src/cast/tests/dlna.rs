@@ -209,7 +209,7 @@ fn a_mime_goes_by_the_name_the_renderer_lists() {
 }
 
 #[test]
-fn the_tiles_volume_scales_the_renderers() {
+fn the_blocks_volume_scales_the_renderers() {
     let at = |level, muted| Volume { level, muted };
     let mut loudness = Loudness::new(at(0.3, false), 0.5);
     assert!((loudness.full - 0.6).abs() < 1e-6);
@@ -219,7 +219,7 @@ fn the_tiles_volume_scales_the_renderers() {
     );
     assert!(
         (Loudness::new(at(0.3, false), 0.0).full - 0.3).abs() < 1e-6,
-        "a silent tile leaves the renderer where it is"
+        "a silent block leaves the renderer where it is"
     );
 
     loudness.heard(at(0.4, true));

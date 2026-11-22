@@ -1,7 +1,7 @@
 //! Go to…: the places the palette goes to, one list of the windows, the
-//! tiles in them, the media files in the front tile's folder and the files
-//! played lately. Each runs a command: Go to Window or Go to Tile, Play
-//! File Instead in the front tile, or Open Paths or URLs in the window.
+//! blocks in them, the media files in the front block's folder and the files
+//! played lately. Each runs a command: Go to Window or Go to Block, Play
+//! File Instead in the front block, or Open Paths or URLs in the window.
 
 use std::path::{Path, PathBuf};
 
@@ -18,8 +18,8 @@ use crate::recents;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
     Window,
-    Tile,
-    /// A media file in the front tile's folder.
+    Block,
+    /// A media file in the front block's folder.
     InFolder,
     /// A file played lately.
     Recent,
@@ -29,7 +29,7 @@ impl Kind {
     pub fn name(self) -> &'static str {
         match self {
             Self::Window => "Window",
-            Self::Tile => "Tile",
+            Self::Block => "Block",
             Self::InFolder => "In Folder",
             Self::Recent => "Recent",
         }
@@ -39,7 +39,7 @@ impl Kind {
     pub fn heading(self) -> &'static str {
         match self {
             Self::Window => "Windows",
-            Self::Tile => "Tiles",
+            Self::Block => "Blocks",
             Self::InFolder => "In Folder",
             Self::Recent => "Recent",
         }
@@ -51,10 +51,10 @@ impl Kind {
 pub struct Place {
     pub kind: Kind,
     pub label: SharedString,
-    /// Where it is: a tile's window, a recent file's folder.
+    /// Where it is: a block's window, a recent file's folder.
     pub detail: Option<SharedString>,
     pub run: Invocation,
-    /// Where it is already: this window, its tile in front, the file it
+    /// Where it is already: this window, its block in front, the file it
     /// plays.
     pub current: bool,
 }
@@ -91,7 +91,7 @@ fn invocation(command: &str, args: Value, target: Target) -> Invocation {
 }
 
 /// Everywhere to go from `window` (a target naming one): the windows, in
-/// their order, the tiles in each, the media files in its front tile's
+/// their order, the blocks in each, the media files in its front block's
 /// folder, once it has been looked through, and the files played lately,
 /// the latest first.
 pub fn places(window: &Target, cx: &mut App) -> Vec<Place> {
@@ -103,8 +103,8 @@ pub fn places(window: &Target, cx: &mut App) -> Vec<Place> {
             continue;
         };
         let here = window.window.as_deref() == Some(id);
-        let tiles = listed["tiles"].as_u64().unwrap_or_default();
-        let files = match tiles {
+        let blocks = listed["blocks"].as_u64().unwrap_or_default();
+        let files = match blocks {
             0 => "Empty".to_owned(),
             1 => "1 file".to_owned(),
             n => format!("{n} files"),
@@ -124,24 +124,24 @@ pub fn places(window: &Target, cx: &mut App) -> Vec<Place> {
             continue;
         };
         let here = window.window.as_deref() == Some(id);
-        // Which window a tile is in, if there's more than one.
+        // Which window a block is in, if there's more than one.
         let within = (windows.len() > 1).then(|| window_name(listed));
-        let tiles = query("tile.ls", named(id, None), cx);
-        for tile in tiles.as_array().into_iter().flatten() {
-            let Some(tile_id) = tile["id"].as_str() else {
+        let blocks = query("block.ls", named(id, None), cx);
+        for block in blocks.as_array().into_iter().flatten() {
+            let Some(block_id) = block["id"].as_str() else {
                 continue;
             };
-            let label = text(&tile["label"])
-                .or_else(|| text(&tile["title"]))
+            let label = text(&block["label"])
+                .or_else(|| text(&block["title"]))
                 .unwrap_or("Untitled");
             places.push(
                 Place::new(
-                    Kind::Tile,
+                    Kind::Block,
                     label.to_owned(),
-                    invocation("tile.focus", Value::Null, named(id, Some(tile_id))),
+                    invocation("block.focus", Value::Null, named(id, Some(block_id))),
                 )
                 .detail(within.clone())
-                .current(here && tile["front"] == true),
+                .current(here && block["front"] == true),
             );
         }
     }
@@ -150,10 +150,10 @@ pub fn places(window: &Target, cx: &mut App) -> Vec<Place> {
     places
 }
 
-/// The media files in `window`'s front tile's folder, by name, and the
+/// The media files in `window`'s front block's folder, by name, and the
 /// one it plays; none until it has been looked through, or for a stream.
 pub fn folder_files(window: &Target, cx: &App) -> (Vec<PathBuf>, Option<PathBuf>) {
-    api::read_tile(window, cx, |player, _| {
+    api::read_block(window, cx, |player, _| {
         (
             player.folder_files().map(<[_]>::to_vec).unwrap_or_default(),
             player.file().map(Path::to_owned),
@@ -162,7 +162,7 @@ pub fn folder_files(window: &Target, cx: &App) -> (Vec<PathBuf>, Option<PathBuf>
     .unwrap_or_default()
 }
 
-/// The media files in `window`'s front tile's folder, the one it plays
+/// The media files in `window`'s front block's folder, the one it plays
 /// picked.
 fn in_folder(window: &Target, cx: &App) -> Vec<Place> {
     let (files, playing) = folder_files(window, cx);
@@ -234,11 +234,11 @@ fn query(command: &str, target: Target, cx: &mut App) -> Value {
     api::run(invocation(command, Value::Null, target), cx).unwrap_or_default()
 }
 
-/// The target naming the window `window`, and its tile `tile`.
-fn named(window: &str, tile: Option<&str>) -> Target {
+/// The target naming the window `window`, and its block `block`.
+fn named(window: &str, block: Option<&str>) -> Target {
     Target {
         window: Some(window.to_owned()),
-        tile: tile.map(str::to_owned),
+        block: block.map(str::to_owned),
     }
 }
 

@@ -37,7 +37,7 @@ fn checked(menu: &Menu) -> Vec<String> {
 }
 
 #[test]
-fn lists_the_chapters_checking_the_one_the_tile_is_in() {
+fn lists_the_chapters_checking_the_one_the_block_is_in() {
     assert!(
         chapter_menu(&[], &Value::Null).is_none(),
         "none for a file without"
@@ -87,7 +87,7 @@ fn lists_the_displays_as_last_looked_at(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn the_chapters_menu_follows_the_tile_in_front(cx: &mut TestAppContext) {
+fn the_chapters_menu_follows_the_block_in_front(cx: &mut TestAppContext) {
     let (window, mut cx) = testing::start(cx);
     window
         .update(&mut cx, |workspace, _, cx| {
@@ -316,14 +316,14 @@ fn the_window_menu_opens_names_closes_goes_back_to_and_moves_windows() {
 }
 
 #[test]
-fn the_menus_close_copy_maximize_name_and_move_the_tile_in_front() {
+fn the_menus_close_copy_maximize_name_and_move_the_block_in_front() {
     let state = MenuState {
-        tiles: 3,
+        blocks: 3,
         others: vec![
             ("a1".into(), "Window 1".into()),
             ("c3".into(), "Stage".into()),
         ],
-        states: BTreeMap::from([("tile.move", json!(3))]),
+        states: BTreeMap::from([("block.move", json!(3))]),
         ..MenuState::default()
     };
     let has = |menu: &Menu, title: &str, command: &str| {
@@ -336,19 +336,19 @@ fn the_menus_close_copy_maximize_name_and_move_the_tile_in_front() {
     };
     let file = file_menu(&state);
     for (title, command) in [
-        ("Close Other Files", "tile.close_others"),
-        ("Copy File Path", "tile.copy_path"),
-        ("Copy Current Time", "tile.copy_time"),
+        ("Close Other Files", "block.close_others"),
+        ("Copy File Path", "block.copy_path"),
+        ("Copy Current Time", "block.copy_time"),
     ] {
         assert!(has(&file, title, command), "no {title}");
     }
     let window = window_menu(&state);
     for (title, command) in [
-        ("Maximize Tile", "tile.zoom"),
-        ("Rename Tile…", "tile.rename"),
-        ("Move Tile to New Window", "tile.move_to_new_window"),
-        ("Go Back One Tile", "tile.back"),
-        ("Go to Recent Tile", "tile.recent"),
+        ("Maximize Block", "block.zoom"),
+        ("Rename Block…", "block.rename"),
+        ("Move Block to New Window", "block.move_to_new_window"),
+        ("Go Back One Block", "block.back"),
+        ("Go to Recent Block", "block.recent"),
     ] {
         assert!(has(&window, title, command), "no {title}");
     }
@@ -375,40 +375,40 @@ fn the_menus_close_copy_maximize_name_and_move_the_tile_in_front() {
             _ => None,
         })
     };
-    // A place for each tile, the one in front's checked.
-    let places = submenu(&window, "Move Tile To").expect("no Move Tile To");
+    // A place for each block, the one in front's checked.
+    let places = submenu(&window, "Move Block To").expect("no Move Block To");
     let expected: Vec<(String, bool, Run)> = [(1, false), (2, false), (3, true)]
         .into_iter()
-        .map(|(place, checked)| (place.to_string(), checked, tile::move_to(place)))
+        .map(|(place, checked)| (place.to_string(), checked, block::move_to(place)))
         .collect();
     assert_eq!(places, expected);
     // The other windows, by label or number.
-    let others = submenu(&window, "Move Tile to Window").expect("no Move Tile to Window");
+    let others = submenu(&window, "Move Block to Window").expect("no Move Block to Window");
     let expected = vec![
-        ("Window 1".to_owned(), false, tile::move_to_window("a1")),
-        ("Stage".to_owned(), false, tile::move_to_window("c3")),
+        ("Window 1".to_owned(), false, block::move_to_window("a1")),
+        ("Stage".to_owned(), false, block::move_to_window("c3")),
     ];
     assert_eq!(others, expected);
 
-    // A tile alone has nowhere else to go in its window; a window alone,
+    // A block alone has nowhere else to go in its window; a window alone,
     // no other window; and none in front, nothing to move.
     let alone = window_menu(&MenuState {
-        tiles: 1,
+        blocks: 1,
         ..state.clone()
     });
-    assert!(submenu(&alone, "Move Tile To").is_none());
-    assert!(submenu(&alone, "Move Tile to Window").is_some());
+    assert!(submenu(&alone, "Move Block To").is_none());
+    assert!(submenu(&alone, "Move Block to Window").is_some());
     let one_window = window_menu(&MenuState {
         others: Vec::new(),
         ..state.clone()
     });
-    assert!(submenu(&one_window, "Move Tile to Window").is_none());
-    let empty = window_menu(&MenuState { tiles: 0, ..state });
-    assert!(submenu(&empty, "Move Tile to Window").is_none());
+    assert!(submenu(&one_window, "Move Block to Window").is_none());
+    let empty = window_menu(&MenuState { blocks: 0, ..state });
+    assert!(submenu(&empty, "Move Block to Window").is_none());
 }
 
 #[test]
-fn checks_the_aspect_ratio_and_crop_of_the_tile_in_front() {
+fn checks_the_aspect_ratio_and_crop_of_the_block_in_front() {
     let state = MenuState::default();
     assert_eq!(
         checked(&aspect_menu(&Value::Null, &state)),
@@ -422,7 +422,7 @@ fn checks_the_aspect_ratio_and_crop_of_the_tile_in_front() {
 }
 
 #[gpui::test]
-fn the_menus_know_the_tiles_in_front_and_the_other_windows(cx: &mut TestAppContext) {
+fn the_menus_know_the_blocks_in_front_and_the_other_windows(cx: &mut TestAppContext) {
     let (first, mut cx) = testing::start(cx);
     let now = |cx: &VisualTestContext| TestAppContext::update(cx, MenuState::now);
     let open = |cx: &mut VisualTestContext| {
@@ -443,7 +443,7 @@ fn the_menus_know_the_tiles_in_front_and_the_other_windows(cx: &mut TestAppConte
     cx.run_until_parked();
 
     let state = now(&cx);
-    assert_eq!(state.tiles, 1, "the window in front's");
+    assert_eq!(state.blocks, 1, "the window in front's");
     let others = |names: [(WindowHandle<Workspace>, &str); 2], cx: &VisualTestContext| {
         names.map(|(window, title)| (name(window, cx), title.to_owned()))
     };
@@ -487,7 +487,7 @@ fn the_menus_number_the_windows_as_they_open_and_close(cx: &mut TestAppContext) 
 }
 
 #[gpui::test]
-fn the_menus_follow_the_picture_of_the_tile_in_front_at_once(cx: &mut TestAppContext) {
+fn the_menus_follow_the_picture_of_the_block_in_front_at_once(cx: &mut TestAppContext) {
     let (window, mut cx) = testing::start(cx);
     window
         .update(&mut cx, |workspace, _, cx| {
@@ -496,13 +496,13 @@ fn the_menus_follow_the_picture_of_the_tile_in_front_at_once(cx: &mut TestAppCon
         })
         .unwrap();
     let start = Instant::now();
-    while !testing::shows(&mut cx, "tile-1") {
+    while !testing::shows(&mut cx, "block-1") {
         assert!(start.elapsed() < OPEN_WAIT, "the files didn't open");
         std::thread::sleep(Duration::from_millis(5));
     }
-    // Each tile's media known, the mouse over it.
-    for tile in ["tile-1", "tile-0"] {
-        testing::hover(&mut cx, tile);
+    // Each block's media known, the mouse over it.
+    for block in ["block-1", "block-0"] {
+        testing::hover(&mut cx, block);
         let known = testing::wait_until(&mut cx, |cx| {
             let mut known = false;
             window
@@ -512,7 +512,7 @@ fn the_menus_follow_the_picture_of_the_tile_in_front_at_once(cx: &mut TestAppCon
                 .unwrap();
             known
         });
-        assert!(known, "{tile}'s media is known");
+        assert!(known, "{block}'s media is known");
     }
     let shown = |cx: &mut VisualTestContext| {
         let state = cx.update(|_, cx| cx.try_global::<MenuState>().cloned());
@@ -529,21 +529,21 @@ fn the_menus_follow_the_picture_of_the_tile_in_front_at_once(cx: &mut TestAppCon
     cx.run_until_parked();
     assert_eq!(shown(&mut cx), Some((none.clone(), json!(crop.name))));
 
-    testing::hover(&mut cx, "tile-1");
+    testing::hover(&mut cx, "block-1");
     assert_eq!(
         shown(&mut cx),
         Some((none.clone(), none.clone())),
-        "the other tile's"
+        "the other block's"
     );
     cx.dispatch_action(Run::command("video.next_aspect_ratio"));
     cx.run_until_parked();
     assert_eq!(shown(&mut cx), Some((ratio.clone(), none.clone())));
 
-    testing::hover(&mut cx, "tile-0");
+    testing::hover(&mut cx, "block-0");
     assert_eq!(shown(&mut cx), Some((none.clone(), json!(crop.name))));
 
-    // Gone to from the keyboard: the other tile's again.
-    cx.dispatch_action(Run::command("tile.focus.next"));
+    // Gone to from the keyboard: the other block's again.
+    cx.dispatch_action(Run::command("block.focus.next"));
     cx.run_until_parked();
     assert_eq!(shown(&mut cx), Some((ratio, none)));
 }
@@ -667,7 +667,7 @@ fn checks_the_display_the_window_in_front_is_on() {
 }
 
 #[test]
-fn checks_the_device_the_tile_in_front_casts_to_instead() {
+fn checks_the_device_the_block_in_front_casts_to_instead() {
     let mut outputs = MenuState {
         displays: vec![display(1, "Built-in Display")],
         front: Some(1),
@@ -829,7 +829,7 @@ fn lists_the_devices_with_video_and_checks_the_one_cast_to(cx: &mut TestAppConte
         })
         .unwrap();
     let start = Instant::now();
-    while !testing::shows(&mut cx, "tile-0") {
+    while !testing::shows(&mut cx, "block-0") {
         assert!(start.elapsed() < OPEN_WAIT, "clip.mp4 didn't open");
         std::thread::sleep(Duration::from_millis(5));
     }
@@ -883,7 +883,7 @@ fn open_with_devices(cx: &mut TestAppContext, file: &str) -> VisualTestContext {
 }
 
 #[gpui::test]
-fn lists_the_speakers_for_a_tile_with_sound(cx: &mut TestAppContext) {
+fn lists_the_speakers_for_a_block_with_sound(cx: &mut TestAppContext) {
     let cx = open_with_devices(cx, "clip.mp4");
     let outputs = TestAppContext::update(&cx, MenuState::now);
     let names = |devices: &[Device]| {
@@ -897,7 +897,7 @@ fn lists_the_speakers_for_a_tile_with_sound(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn lists_no_speakers_for_a_tile_without_sound(cx: &mut TestAppContext) {
+fn lists_no_speakers_for_a_block_without_sound(cx: &mut TestAppContext) {
     let cx = open_with_devices(cx, "clip-ip.mkv");
     let outputs = TestAppContext::update(&cx, MenuState::now);
     assert!(outputs.speakers.is_empty(), "{:?}", outputs.speakers);
@@ -1009,7 +1009,7 @@ fn checks_what_is_on_and_enables_what_can_run(cx: &mut TestAppContext) {
     };
     // An empty window: nothing to play.
     assert!(!enabled("playback.play_pause", &mut cx));
-    assert!(!enabled("tile.close", &mut cx));
+    assert!(!enabled("block.close", &mut cx));
     assert!(enabled("window.open_files", &mut cx));
     assert!(enabled("app.quit", &mut cx));
 
@@ -1020,9 +1020,9 @@ fn checks_what_is_on_and_enables_what_can_run(cx: &mut TestAppContext) {
         .unwrap();
     let opened = testing::wait_until(&mut cx, |cx| enabled("playback.play_pause", cx));
     assert!(opened, "a file to play");
-    assert!(enabled("tile.close", &mut cx));
+    assert!(enabled("block.close", &mut cx));
     assert_eq!(
-        enabled("tile.toggle_picture_in_picture", &mut cx),
+        enabled("block.toggle_picture_in_picture", &mut cx),
         cfg!(target_os = "macos")
     );
 

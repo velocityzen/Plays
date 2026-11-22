@@ -237,7 +237,7 @@ impl Workspace {
     /// being typed into it, and the screensaver is on. Each of those
     /// changing draws it.
     fn may_rest(&self, window: &Window, cx: &App) -> bool {
-        self.tiles.is_empty()
+        self.blocks.is_empty()
             && !self.url_form_open
             && window.is_window_active()
             && cx.global::<Settings>().screensaver

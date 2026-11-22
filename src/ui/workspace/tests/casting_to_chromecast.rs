@@ -1,4 +1,4 @@
-//! Casting a tile to the Chromecast crate's fake device, as someone at the
+//! Casting a block to the Chromecast crate's fake device, as someone at the
 //! screen would. The stream server is the real one, serving this computer
 //! only.
 
@@ -8,7 +8,7 @@ use chromecast::fake::{FakeDevice, Kind};
 use gpui::{TestAppContext, VisualTestContext, WindowHandle};
 use serde_json::Value;
 
-use super::casting::{get, tile, wait};
+use super::casting::{block, get, wait};
 use super::open;
 use crate::cast::chromecast::ChromecastTarget;
 use crate::cast::{Casting, Shows};
@@ -33,7 +33,7 @@ fn start(
     cx.update(|_, cx| cx.set_global(Casting::local(vec![Arc::new(target)])));
     open(window, &mut cx, &[file], playing);
     if !playing {
-        tile(window, &cx).update(&mut cx, |view, cx| {
+        block(window, &cx).update(&mut cx, |view, cx| {
             view.pause();
             cx.notify();
         });
@@ -56,7 +56,7 @@ fn last(device: &FakeDevice, kind: &str) -> Value {
     sent(device, kind).pop().unwrap_or_default()
 }
 
-/// The tile's cast to the device, from its menu, and wait for it to be
+/// The block's cast to the device, from its menu, and wait for it to be
 /// given the media.
 fn cast(cx: &mut VisualTestContext, device: &FakeDevice) {
     click(cx, "cast");
@@ -67,7 +67,7 @@ fn cast(cx: &mut VisualTestContext, device: &FakeDevice) {
 }
 
 #[gpui::test]
-fn picking_a_tv_casts_the_front_tile_there_from_where_it_is_with_styled_subtitles(
+fn picking_a_tv_casts_the_front_block_there_from_where_it_is_with_styled_subtitles(
     cx: &mut TestAppContext,
 ) {
     let tv = FakeDevice::start(Kind::Tv);
@@ -79,7 +79,7 @@ fn picking_a_tv_casts_the_front_tile_there_from_where_it_is_with_styled_subtitle
         subtitles.edge = SubtitleEdge::Shadow;
         subtitles.background_opacity = 0.5;
     });
-    let view = tile(window, &cx);
+    let view = block(window, &cx);
     view.update(&mut cx, |view, cx| {
         view.select_track(TrackKind::Subtitle, Some(2), cx);
         view.seek(1.0);
@@ -92,7 +92,7 @@ fn picking_a_tv_casts_the_front_tile_there_from_where_it_is_with_styled_subtitle
     let start = load["currentTime"].as_f64().unwrap();
     assert!(
         start >= 1.0 && (start - here).abs() < 0.01,
-        "from where the tile was: {start} against {here}"
+        "from where the block was: {start} against {here}"
     );
     assert_eq!(load["autoplay"], true);
     assert_eq!(
@@ -135,7 +135,7 @@ fn picking_a_tv_casts_the_front_tile_there_from_where_it_is_with_styled_subtitle
     assert_eq!(style["edgeType"], "DROP_SHADOW");
     assert_eq!(style["backgroundColor"], "#00000080");
 
-    wait(&mut cx, "the tile to say where it plays", |cx| {
+    wait(&mut cx, "the block to say where it plays", |cx| {
         shows(cx, "play-here")
     });
 }
@@ -155,7 +155,7 @@ fn a_speaker_is_offered_for_anything_with_sound_and_gets_a_file_of_it(cx: &mut T
     cast(&mut cx, &speaker);
     let load = last(&speaker, "LOAD");
     assert_eq!(load["media"]["contentType"], "audio/mp4");
-    assert_eq!(load["autoplay"], false, "a paused tile stays paused there");
+    assert_eq!(load["autoplay"], false, "a paused block stays paused there");
     assert!(load["media"].get("hlsSegmentFormat").is_none());
     let (status, body) = get(load["media"]["contentId"].as_str().unwrap());
     assert_eq!(status, 200);
@@ -178,16 +178,16 @@ fn a_videos_sound_goes_to_a_speaker_as_hls_of_the_sound_alone(cx: &mut TestAppCo
         "the sound alone: {master}"
     );
     assert!(
-        tile(window, &cx).read_with(&cx, |view, _| view.player().is_sound_elsewhere()),
+        block(window, &cx).read_with(&cx, |view, _| view.player().is_sound_elsewhere()),
         "the picture stays here"
     );
 }
 
 #[gpui::test]
-fn the_tiles_controls_reach_it_and_its_status_moves_the_bar(cx: &mut TestAppContext) {
+fn the_blocks_controls_reach_it_and_its_status_moves_the_bar(cx: &mut TestAppContext) {
     let tv = FakeDevice::start(Kind::Tv);
     let (window, mut cx) = start(cx, &tv, "clip.mp4", false);
-    let view = tile(window, &cx);
+    let view = block(window, &cx);
     cast(&mut cx, &tv);
     let load = last(&tv, "LOAD");
     assert_eq!(load["media"]["contentType"], "video/mp4");
@@ -197,7 +197,7 @@ fn the_tiles_controls_reach_it_and_its_status_moves_the_bar(cx: &mut TestAppCont
         std::fs::read(testing::fixture("clip.mp4")).unwrap(),
         "an MP4 file goes as it is"
     );
-    wait(&mut cx, "the tile to say where it plays", |cx| {
+    wait(&mut cx, "the block to say where it plays", |cx| {
         shows(cx, "play-here")
     });
 
@@ -229,7 +229,7 @@ fn the_tiles_controls_reach_it_and_its_status_moves_the_bar(cx: &mut TestAppCont
     wait(&mut cx, "it to pause", |_| !sent(&tv, "PAUSE").is_empty());
     assert!(
         !view.read_with(&cx, |view, _| view.player().is_playing()),
-        "the shortcuts drive it, not the tile's own playback"
+        "the shortcuts drive it, not the block's own playback"
     );
 
     tv.state().playing.as_mut().unwrap().position = 1.0;
@@ -279,10 +279,10 @@ fn the_tiles_controls_reach_it_and_its_status_moves_the_bar(cx: &mut TestAppCont
 }
 
 #[gpui::test]
-fn subtitles_picked_on_the_tile_load_it_again_then_turn_off_and_on(cx: &mut TestAppContext) {
+fn subtitles_picked_on_the_block_load_it_again_then_turn_off_and_on(cx: &mut TestAppContext) {
     let tv = FakeDevice::start(Kind::Tv);
     let (window, mut cx) = start(cx, &tv, "clip-subs.mkv", true);
-    let view = tile(window, &cx);
+    let view = block(window, &cx);
     view.update(&mut cx, |view, cx| {
         view.select_track(TrackKind::Subtitle, None, cx);
     });
@@ -355,7 +355,7 @@ fn other_subtitles_load_it_again_with_them(cx: &mut TestAppContext) {
     .unwrap();
     let tv = FakeDevice::start(Kind::Tv);
     let (window, mut cx) = start(cx, &tv, file.to_str().unwrap(), true);
-    let view = tile(window, &cx);
+    let view = block(window, &cx);
     let beside = view.read_with(&cx, |view, _| {
         let info = view.player().info().unwrap();
         info.tracks(TrackKind::Subtitle)
@@ -386,14 +386,14 @@ fn other_subtitles_load_it_again_with_them(cx: &mut TestAppContext) {
     assert!(sent(&tv, "EDIT_TRACKS_INFO").is_empty());
 }
 
-/// Cast `clip.mp4` to a TV and end it there as `end` does: the tile's
+/// Cast `clip.mp4` to a TV and end it there as `end` does: the block's
 /// cast ends too, leaving what plays there as it is.
 fn ends_the_cast(cx: &mut TestAppContext, end: impl FnOnce(&FakeDevice)) {
     let tv = FakeDevice::start(Kind::Tv);
     let (window, mut cx) = start(cx, &tv, "clip.mp4", true);
-    let view = tile(window, &cx);
+    let view = block(window, &cx);
     cast(&mut cx, &tv);
-    wait(&mut cx, "the tile to say where it plays", |cx| {
+    wait(&mut cx, "the block to say where it plays", |cx| {
         shows(cx, "play-here")
     });
 

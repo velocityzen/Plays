@@ -1,8 +1,8 @@
-//! Casting a tile to a TV or a speaker. Each protocol is a `Target`, which
+//! Casting a block to a TV or a speaker. Each protocol is a `Target`, which
 //! finds devices and connects to one for a `Session` that plays what the
 //! stream server serves. `Casting` keeps the protocols, looking with those
 //! Settings have on, the devices they have found, and the stream server,
-//! started for the first cast; a tile's `Link` drives its device on a
+//! started for the first cast; a block's `Link` drives its device on a
 //! thread of its own.
 
 pub mod airplay;
@@ -258,8 +258,8 @@ impl Casting {
             .map_or(&[], |casting| casting.devices.as_slice())
     }
 
-    /// The devices a tile can cast to: those that show video, and for a
-    /// tile with sound, speakers too, which a video sends its sound to.
+    /// The devices a block can cast to: those that show video, and for a
+    /// block with sound, speakers too, which a video sends its sound to.
     pub fn devices_for(cx: &App, has_audio: bool) -> Vec<Device> {
         Self::devices(cx)
             .iter()

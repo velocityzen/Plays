@@ -18,12 +18,12 @@ fn each_kind_has_its_exit_status_and_says_what_went_wrong() {
         (Error::not_found("window", "9"), 3, "no window 9"),
         (
             Error::Ambiguous {
-                what: "tile".into(),
+                what: "block".into(),
                 name: "a1".into(),
                 matches: vec!["0000ffa1".into(), "1234aaa1".into()],
             },
             3,
-            "a1 could be the tile 0000ffa1 or 1234aaa1",
+            "a1 could be the block 0000ffa1 or 1234aaa1",
         ),
         (Error::failed("the window closed"), 1, "the window closed"),
         (
@@ -36,7 +36,7 @@ fn each_kind_has_its_exit_status_and_says_what_went_wrong() {
         assert_eq!(error.exit_status(), status, "{error:?}");
         assert_eq!(error.to_string(), message);
     }
-    assert!(Error::not_found("tile", "x").is_not_found());
+    assert!(Error::not_found("block", "x").is_not_found());
     assert!(!Error::failed("x").is_not_found());
 }
 

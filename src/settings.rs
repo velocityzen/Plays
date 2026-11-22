@@ -33,7 +33,7 @@ pub enum ThemeMode {
 pub enum VideoFit {
     /// Show the whole picture, letterboxed.
     Contain,
-    /// Fill the tile, cropping the edges.
+    /// Fill the block, cropping the edges.
     Cover,
 }
 
@@ -142,10 +142,10 @@ impl FloatOnTop {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SeveralFiles {
-    /// Each opens in a tile of its own, all playing.
+    /// Each opens in a block of its own, all playing.
     #[default]
     Together,
-    /// They open in one tile, which plays them one after another.
+    /// They open in one block, which plays them one after another.
     Playlist,
 }
 
@@ -202,8 +202,8 @@ pub enum SubtitleEdge {
 pub enum SubtitleArea {
     /// The picture, so text stays on it.
     Picture,
-    /// The whole tile, so text can go in the bars around a letterboxed picture.
-    Tile,
+    /// The whole block, so text can go in the bars around a letterboxed picture.
+    Block,
 }
 
 /// A color, written as `"#rrggbb"` in the settings file.

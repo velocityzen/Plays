@@ -1,7 +1,7 @@
 //! Labels: a window's (`window.rename`), which its title shows, and a
-//! tile's (`tile.rename`), which its header shows; what the API names
+//! block's (`block.rename`), which its header shows; what the API names
 //! either by besides its id. No two windows have the same one, nor two
-//! tiles, in whichever windows.
+//! blocks, in whichever windows.
 
 use gpui::{App, AppContext, Context, EntityId, Window};
 use serde_json::json;
@@ -53,29 +53,33 @@ impl Workspace {
         );
     }
 
-    /// Ask what to call the tile `id`, in a sheet over the window, holding
+    /// Ask what to call the block `id`, in a sheet over the window, holding
     /// its label.
-    pub fn ask_for_tile_label(
+    pub fn ask_for_block_label(
         &mut self,
         id: EntityId,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(tile) = self.tiles.iter().find(|tile| tile.view.entity_id() == id) else {
+        let Some(block) = self
+            .blocks
+            .iter()
+            .find(|block| block.view.entity_id() == id)
+        else {
             return;
         };
-        let label = tile.view.read(cx).label().map(str::to_owned);
+        let label = block.view.read(cx).label().map(str::to_owned);
         self.ask(
-            "rename-tile",
-            "Rename Tile",
+            "rename-block",
+            "Rename Block",
             label.as_deref(),
             window,
             cx,
             move |this, label, cx| {
-                if this.tile_label_taken(label, id, cx) {
-                    return Err(format!("Another tile is called {label}."));
+                if this.block_label_taken(label, id, cx) {
+                    return Err(format!("Another block is called {label}."));
                 }
-                this.send_to_tile(id, "tile.rename", json!({"label": label}), cx);
+                this.send_to_block(id, "block.rename", json!({"label": label}), cx);
                 Ok(())
             },
         );
@@ -125,23 +129,23 @@ impl Workspace {
                 .any(|other| other.label.as_deref() == Some(label))
     }
 
-    /// Whether a tile but `id`, here or in another window, is labeled
+    /// Whether a block but `id`, here or in another window, is labeled
     /// `label`. This window, being updated, can't be read as the others
-    /// are, so its tiles are looked at here.
-    fn tile_label_taken(&self, label: &str, id: EntityId, cx: &App) -> bool {
-        self.tiles
+    /// are, so its blocks are looked at here.
+    fn block_label_taken(&self, label: &str, id: EntityId, cx: &App) -> bool {
+        self.blocks
             .iter()
-            .any(|tile| tile.view.entity_id() != id && tile.view.read(cx).label() == Some(label))
-            || tile_label_taken(label, id, cx)
+            .any(|block| block.view.entity_id() != id && block.view.read(cx).label() == Some(label))
+            || block_label_taken(label, id, cx)
     }
 }
 
-/// Whether a tile but `id`, in any player window that can be read, is
-/// labeled `label`. Blank, none is, as no tile is labeled so.
-pub fn tile_label_taken(label: &str, id: EntityId, cx: &App) -> bool {
+/// Whether a block but `id`, in any player window that can be read, is
+/// labeled `label`. Blank, none is, as no block is labeled so.
+pub fn block_label_taken(label: &str, id: EntityId, cx: &App) -> bool {
     player_windows(cx)
         .into_iter()
         .filter_map(|window| window.downcast::<Workspace>()?.read(cx).ok())
         .flat_map(Workspace::players)
-        .any(|tile| tile.entity_id() != id && tile.read(cx).label() == Some(label))
+        .any(|block| block.entity_id() != id && block.read(cx).label() == Some(label))
 }

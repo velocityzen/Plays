@@ -1,5 +1,5 @@
 //! The displays a player window can show on, for Output Device (Video →
-//! Output Device, and the tile's cast menu), and where new windows open. On
+//! Output Device, and the block's cast menu), and where new windows open. On
 //! macOS an AirPlay display is one of them once it is connected (Control
 //! Center → Screen Mirroring, as a separate display), and macOS sends the
 //! sound to it too; names and moves there go to AppKit. On X11 each monitor
@@ -9,7 +9,7 @@
 //! only as far as it agrees.
 //!
 //! New windows open on the display in use, not always on the main one: a
-//! tile's own window beside the window it left, and others on the display
+//! block's own window beside the window it left, and others on the display
 //! of Plays' window in front, or with the mouse when none is. A window's
 //! bounds are relative to its display, as gpui opens and reports them.
 

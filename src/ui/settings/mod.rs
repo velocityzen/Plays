@@ -230,7 +230,7 @@ impl SettingsView {
                 SIDEBAR_TOP
             })
             .pb_2p5()
-            .bg(theme.tile)
+            .bg(theme.block)
             .border_r_1()
             .border_color(theme.border)
             .children(PANES.iter().enumerate().map(|(index, pane)| {

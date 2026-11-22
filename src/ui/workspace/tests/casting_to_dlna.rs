@@ -1,4 +1,4 @@
-//! Casting a tile to the DLNA crate's fake renderer, found as on the
+//! Casting a block to the DLNA crate's fake renderer, found as on the
 //! network, as someone at the screen would. The stream server is the real
 //! one, serving this computer only.
 
@@ -8,7 +8,7 @@ use std::time::Duration;
 use dlna::fake::{FakeRenderer, Kind};
 use gpui::{TestAppContext, VisualTestContext, WindowHandle};
 
-use super::casting::{get, tile, wait};
+use super::casting::{block, get, wait};
 use super::open;
 use crate::cast::dlna::DlnaTarget;
 use crate::cast::{Casting, Shows};
@@ -35,7 +35,7 @@ fn start(
     });
     open(window, &mut cx, &[file], playing);
     if !playing {
-        tile(window, &cx).update(&mut cx, |view, cx| {
+        block(window, &cx).update(&mut cx, |view, cx| {
             view.pause();
             cx.notify();
         });
@@ -58,7 +58,7 @@ fn last_arg(renderer: &FakeRenderer, action: &str, arg: &str) -> Option<String> 
         .map(str::to_owned)
 }
 
-/// The tile's cast to the renderer, from its menu, and wait for it to be
+/// The block's cast to the renderer, from its menu, and wait for it to be
 /// given the media.
 fn cast(cx: &mut VisualTestContext, renderer: &FakeRenderer) {
     click(cx, "cast");
@@ -69,12 +69,12 @@ fn cast(cx: &mut VisualTestContext, renderer: &FakeRenderer) {
 }
 
 #[gpui::test]
-fn picking_a_tv_casts_the_front_tile_there_from_where_it_is_with_subtitles(
+fn picking_a_tv_casts_the_front_block_there_from_where_it_is_with_subtitles(
     cx: &mut TestAppContext,
 ) {
     let tv = FakeRenderer::start(Kind::Tv);
     let (window, mut cx) = start(cx, &tv, "clip-subs.mkv", true);
-    let view = tile(window, &cx);
+    let view = block(window, &cx);
     view.update(&mut cx, |view, cx| {
         view.select_track(TrackKind::Subtitle, Some(2), cx);
         view.seek(1.0);
@@ -96,7 +96,7 @@ fn picking_a_tv_casts_the_front_tile_there_from_where_it_is_with_subtitles(
     assert_eq!(
         actions,
         ["SetAVTransportURI", "Seek", "Play"],
-        "it goes where the tile was, then plays"
+        "it goes where the block was, then plays"
     );
     assert_eq!(last_arg(&tv, "Seek", "Target").as_deref(), Some("0:00:01"));
     assert_eq!(
@@ -135,7 +135,7 @@ fn picking_a_tv_casts_the_front_tile_there_from_where_it_is_with_subtitles(
         "the file's cues, as SRT: {cues}"
     );
 
-    wait(&mut cx, "the tile to say where it plays", |cx| {
+    wait(&mut cx, "the block to say where it plays", |cx| {
         shows(cx, "play-here")
     });
 }
@@ -201,7 +201,7 @@ fn a_speaker_is_offered_for_anything_with_sound_and_gets_a_file_of_it(cx: &mut T
     assert_eq!(
         asked(&speaker, "Play"),
         0,
-        "a paused tile stays paused there"
+        "a paused block stays paused there"
     );
 }
 
@@ -224,7 +224,7 @@ fn a_videos_sound_goes_to_a_speaker_as_a_stream_asked_where_it_is_often(cx: &mut
     assert_eq!(status, 200);
     assert!(body.starts_with(b"fLaC"), "FLAC");
     assert!(
-        tile(window, &cx).read_with(&cx, |view, _| view.player().is_sound_elsewhere()),
+        block(window, &cx).read_with(&cx, |view, _| view.player().is_sound_elsewhere()),
         "the picture stays here"
     );
 
@@ -236,7 +236,7 @@ fn a_videos_sound_goes_to_a_speaker_as_a_stream_asked_where_it_is_often(cx: &mut
 
     // Seen moving, it plays on from when it was first heard where it is,
     // as a renderer moves its position on only now and then.
-    let view = tile(window, &cx);
+    let view = block(window, &cx);
     {
         let mut state = speaker.state();
         state.transport = "PLAYING".into();
@@ -258,10 +258,12 @@ fn a_videos_sound_goes_to_a_speaker_as_a_stream_asked_where_it_is_often(cx: &mut
 }
 
 #[gpui::test]
-fn a_speaker_is_given_the_stream_from_where_the_tile_is_and_again_to_seek(cx: &mut TestAppContext) {
+fn a_speaker_is_given_the_stream_from_where_the_block_is_and_again_to_seek(
+    cx: &mut TestAppContext,
+) {
     let speaker = FakeRenderer::start(Kind::Speaker);
     let (window, mut cx) = start(cx, &speaker, "clip.mp4", false);
-    let view = tile(window, &cx);
+    let view = block(window, &cx);
     view.update(&mut cx, |view, _| view.seek(1.0));
     cast(&mut cx, &speaker);
     let (uri, metadata) = {
@@ -322,12 +324,12 @@ fn a_speaker_is_given_the_stream_from_where_the_tile_is_and_again_to_seek(cx: &m
 }
 
 #[gpui::test]
-fn the_tiles_controls_reach_the_tv_and_its_status_moves_the_bar(cx: &mut TestAppContext) {
+fn the_blocks_controls_reach_the_tv_and_its_status_moves_the_bar(cx: &mut TestAppContext) {
     let tv = FakeRenderer::start(Kind::Tv);
     let (window, mut cx) = start(cx, &tv, "clip.mp4", false);
-    let view = tile(window, &cx);
+    let view = block(window, &cx);
     cast(&mut cx, &tv);
-    wait(&mut cx, "the tile to say where it plays", |cx| {
+    wait(&mut cx, "the block to say where it plays", |cx| {
         shows(cx, "play-here")
     });
 
@@ -345,13 +347,13 @@ fn the_tiles_controls_reach_the_tv_and_its_status_moves_the_bar(cx: &mut TestApp
     let volume = tv.state().volume;
     assert!(
         (1..20).contains(&volume),
-        "the tile's volume scales the TV's, which was 20: {volume}"
+        "the block's volume scales the TV's, which was 20: {volume}"
     );
     press(&mut cx, "space");
     wait(&mut cx, "the TV to pause", |_| asked(&tv, "Pause") > 0);
     assert!(
         !view.read_with(&cx, |view, _| view.player().is_playing()),
-        "the shortcuts drive the TV, not the tile's own playback"
+        "the shortcuts drive the TV, not the block's own playback"
     );
 
     tv.state().position = 1.0;
@@ -383,7 +385,7 @@ fn the_tiles_controls_reach_the_tv_and_its_status_moves_the_bar(cx: &mut TestApp
 fn something_else_playing_on_the_tv_ends_the_cast(cx: &mut TestAppContext) {
     let tv = FakeRenderer::start(Kind::Tv);
     let (window, mut cx) = start(cx, &tv, "clip.mp4", true);
-    let view = tile(window, &cx);
+    let view = block(window, &cx);
     cast(&mut cx, &tv);
     wait(&mut cx, "the TV to play", |_| asked(&tv, "Play") > 0);
 
@@ -402,9 +404,9 @@ fn something_else_playing_on_the_tv_ends_the_cast(cx: &mut TestAppContext) {
 fn the_tv_going_away_ends_the_cast(cx: &mut TestAppContext) {
     let mut tv = FakeRenderer::start(Kind::Tv);
     let (window, mut cx) = start(cx, &tv, "clip.mp4", false);
-    let view = tile(window, &cx);
+    let view = block(window, &cx);
     cast(&mut cx, &tv);
-    wait(&mut cx, "the tile to say where it plays", |cx| {
+    wait(&mut cx, "the block to say where it plays", |cx| {
         shows(cx, "play-here")
     });
 
@@ -415,10 +417,10 @@ fn the_tv_going_away_ends_the_cast(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn subtitles_picked_on_the_tile_load_it_again_from_where_it_is(cx: &mut TestAppContext) {
+fn subtitles_picked_on_the_block_load_it_again_from_where_it_is(cx: &mut TestAppContext) {
     let tv = FakeRenderer::start(Kind::Tv);
     let (window, mut cx) = start(cx, &tv, "clip-subs.mkv", true);
-    let view = tile(window, &cx);
+    let view = block(window, &cx);
     view.update(&mut cx, |view, cx| {
         view.select_track(TrackKind::Subtitle, None, cx);
     });
@@ -455,12 +457,12 @@ fn a_tv_that_wont_seek_while_stopped_goes_there_once_it_plays(cx: &mut TestAppCo
     // As Rygel's renderers refuse.
     tv.state().refuse.push(("Seek".into(), 711));
     let (window, mut cx) = start(cx, &tv, "clip.mp4", true);
-    let view = tile(window, &cx);
+    let view = block(window, &cx);
     view.update(&mut cx, |view, _| view.seek(1.0));
 
     cast(&mut cx, &tv);
     wait(&mut cx, "the TV to play", |_| asked(&tv, "Play") > 0);
-    // What it says, once asked, rather than what the tile asked for.
+    // What it says, once asked, rather than what the block asked for.
     let polls = asked(&tv, "GetPositionInfo");
     wait(&mut cx, "the TV to be asked where it is", |_| {
         asked(&tv, "GetPositionInfo") > polls
@@ -468,7 +470,7 @@ fn a_tv_that_wont_seek_while_stopped_goes_there_once_it_plays(cx: &mut TestAppCo
     std::thread::sleep(std::time::Duration::from_millis(600));
     assert!(
         view.read_with(&cx, |view, _| view.position()) >= 1.0,
-        "the bar stays where the tile was"
+        "the bar stays where the block was"
     );
     assert_eq!(tv.state().position, 0.0, "it refused");
 

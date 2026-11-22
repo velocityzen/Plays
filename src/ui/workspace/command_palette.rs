@@ -21,7 +21,7 @@ impl Workspace {
         }
         let here = Target {
             window: Some(self.id().to_string()),
-            tile: None,
+            block: None,
         };
         let palette = cx.new(|cx| Palette::new(here, listing, window, cx));
         let subscription = cx.subscribe_in(&palette, window, |this, _, event, window, cx| {

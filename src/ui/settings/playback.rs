@@ -48,8 +48,8 @@ impl Pane for PlaybackPane {
                 row(
                     "Play several files",
                     Some(
-                        "Opened or dropped at once, or a folder's: a tile each, all \
-                         playing, or one tile playing them in turn"
+                        "Opened or dropped at once, or a folder's: a block each, all \
+                         playing, or one block playing them in turn"
                             .into(),
                     ),
                     theme,

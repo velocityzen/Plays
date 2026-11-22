@@ -29,9 +29,9 @@ pub enum Heard {
     AppAndWindow,
     /// Those listening to the window it names.
     Window,
-    /// Those listening to the window of the tile it names, by `tile_id`
-    /// and `tile_title` too.
-    Tile,
+    /// Those listening to the window of the block it names, by `block_id`
+    /// and `block_title` too.
+    Block,
     /// Every listener, whatever it listens to.
     Everyone,
 }
@@ -42,7 +42,7 @@ impl Heard {
         match self {
             Self::App | Self::Everyone => &[],
             Self::AppAndWindow | Self::Window => &["window_id", "window_title"],
-            Self::Tile => &["window_id", "window_title", "tile_id", "tile_title"],
+            Self::Block => &["window_id", "window_title", "block_id", "block_title"],
         }
     }
 }
@@ -118,13 +118,13 @@ impl EventKind {
         Self::new(name, description, Heard::Window, fields)
     }
 
-    /// One of a tile's.
-    pub const fn tile(
+    /// One of a block's.
+    pub const fn block(
         name: &'static str,
         description: &'static str,
         fields: &'static [EventField],
     ) -> Self {
-        Self::new(name, description, Heard::Tile, fields)
+        Self::new(name, description, Heard::Block, fields)
     }
 
     /// One every listener hears.
@@ -200,7 +200,7 @@ fn fits(event: &super::Event) -> Result<(), String> {
     let heard = match kind.heard {
         Heard::App => reach.app && reach.windows.is_empty() && !reach.everyone,
         Heard::AppAndWindow => reach.app && !reach.everyone && first.as_deref() == window,
-        Heard::Window | Heard::Tile => {
+        Heard::Window | Heard::Block => {
             !reach.app && !reach.everyone && first.is_some() && first.as_deref() == window
         }
         Heard::Everyone => reach.everyone,

@@ -1,7 +1,7 @@
 //! A window's sound: through the app's output, or a device of its own,
-//! picked from a tile's cast menu or Audio → Window Output Device. Its
-//! tiles play there, the rest of the app's windows through the app's
-//! output, and a tile moved to a new window takes the device along.
+//! picked from a block's cast menu or Audio → Window Output Device. Its
+//! blocks play there, the rest of the app's windows through the app's
+//! output, and a block moved to a new window takes the device along.
 //!
 //! A window Output Device puts full screen on another display plays
 //! through that display's speakers, such as a TV's, until it comes back,
@@ -27,7 +27,7 @@ impl Workspace {
         self.sound.as_ref().map(|(device, _)| device)
     }
 
-    /// The mixer its tiles play into.
+    /// The mixer its blocks play into.
     pub(super) fn mixer(&self, cx: &App) -> Option<Arc<Mixer>> {
         match &self.sound {
             Some((_, mixer)) => Some(mixer.clone()),
@@ -35,7 +35,7 @@ impl Workspace {
         }
     }
 
-    /// Play its tiles through `device` from now on, or with `None` through
+    /// Play its blocks through `device` from now on, or with `None` through
     /// the app's output, as picked from a menu: its sound no longer follows
     /// the display it was sent to.
     pub fn set_sound_device(&mut self, device: Option<AudioDevice>, cx: &mut Context<Self>) {
@@ -80,7 +80,7 @@ impl Workspace {
         self.play_through(speakers.or(before), cx);
     }
 
-    /// Play its tiles through `device`, or with `None` through the app's
+    /// Play its blocks through `device`, or with `None` through the app's
     /// output.
     pub(super) fn play_through(&mut self, device: Option<AudioDevice>, cx: &mut Context<Self>) {
         let id = |device: Option<&AudioDevice>| device.map(|device| device.id.clone());
@@ -92,10 +92,10 @@ impl Workspace {
             let mixer = AudioEngine::window_mixer(&device, cx)?;
             Some((device, mixer))
         });
-        for tile in &self.tiles {
-            self.play_here(&tile.view, cx);
+        for block in &self.blocks {
+            self.play_here(&block.view, cx);
         }
-        // Once its tiles have left it.
+        // Once its blocks have left it.
         if let Some((device, _)) = old {
             AudioEngine::let_go(&device, cx);
         }
@@ -104,7 +104,7 @@ impl Workspace {
         cx.notify();
     }
 
-    /// Have the tile of `view` play into its mixer, and know its device.
+    /// Have the block of `view` play into its mixer, and know its device.
     pub(super) fn play_here(&self, view: &Entity<PlayerView>, cx: &mut App) {
         let (mixer, device) = (self.mixer(cx), self.sound_device().cloned());
         view.update(cx, |view, _| view.play_into(mixer, device));

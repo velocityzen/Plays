@@ -34,13 +34,13 @@ flowchart TB
         settings["Settings window<br/>src/ui/settings"]
         subgraph windows ["Windows"]
             workspace["Workspace<br/>src/ui/workspace: toolbar,<br/>grid, fitting, placing, sound"]
-            tiles["Tiles (src/ui/player)<br/>picture, subtitles, controls, console"]
+            blocks["Blocks (src/ui/player)<br/>picture, subtitles, controls, console"]
         end
         pip["Picture in Picture<br/>src/ui/pip, macOS"]
     end
 
     subgraph media ["Media engine (src/media)"]
-        player["Player<br/>one per tile"]
+        player["Player<br/>one per block"]
         threads["Demux and decode threads<br/>two per file or stream"]
         clock["Clock<br/>one per player"]
     end
@@ -53,7 +53,7 @@ flowchart TB
 
     subgraph cast ["Casting (src/cast)"]
         casting["Casting<br/>protocols and the devices found"]
-        link["Link<br/>a thread per casting tile"]
+        link["Link<br/>a thread per casting block"]
         targets["Targets and sessions<br/>one adapter per protocol"]
     end
 
@@ -67,10 +67,10 @@ flowchart TB
     app --> settings
     app -->|"actions"| api
     api --> workspace
-    api --> tiles
-    workspace --> tiles
-    tiles --> player
-    tiles --> pip
+    api --> blocks
+    workspace --> blocks
+    blocks --> player
+    blocks --> pip
     player --> threads
     threads --> ffmpeg
     threads -->|"sound"| mixers
@@ -79,7 +79,7 @@ flowchart TB
     engine --> outputs
     mixers --> outputs
     outputs --> speakers
-    tiles --> link
+    blocks --> link
     casting --> targets
     link --> targets
     link --> server
@@ -91,12 +91,12 @@ flowchart TB
 
 gpui runs the app on one thread: windows, views, menus and settings.
 Every action, from a key, a menu or a button, runs a command of the API by
-name, on the window or tile it names or the one in front. Each
-open file or stream is a `Player`, owned by its tile, with two threads of
+name, on the window or block it names or the one in front. Each
+open file or stream is a `Player`, owned by its block, with two threads of
 its own that read and decode it. Decoded sound goes into a mixer, which an
 audio output plays; the output tells each player's clock what is being
-heard, and the tile shows the frame the clock has reached each time gpui
-draws. A tile that casts hands its file to a link thread, which drives the
+heard, and the block shows the frame the clock has reached each time gpui
+draws. A block that casts hands its file to a link thread, which drives the
 device through its protocol's crate, while the stream server serves the
 device the file.
 
@@ -113,7 +113,7 @@ The threads, then:
   read its subtitle files (`src/media/external.rs`);
 - for a sound file with no cover art of its own, one that looks for a
   cover file beside it and decodes it (`src/media/decoder/cover_file.rs`);
-- one per casting tile (`src/cast/link.rs`), and the threads each protocol's
+- one per casting block (`src/cast/link.rs`), and the threads each protocol's
   crate runs its sessions and discovery on;
 - the stream server's: one per HTTP connection, and one per job making
   segments (`crates/stream-server`).
@@ -146,12 +146,12 @@ Inside `src/`:
 | Path | What it is |
 | --- | --- |
 | `main.rs` | Starts the app, runs the command line, or hands what it was given to the Plays already running. |
-| `api/` | Every command Plays has, by name: what each does and takes, and running one on the window or tile named. Every action goes through it. The events it tells whoever listens, and the socket the command line reaches it over. |
+| `api/` | Every command Plays has, by name: what each does and takes, and running one on the window or block named. Every action goes through it. The events it tells whoever listens, and the socket the command line reaches it over. |
 | `cli.rs`, `cli/` | The command line: `plays` with a subcommand asks the Plays running over the socket and prints what it answers. |
 | `app/` | Starting the app, its menus, keymap, audio outputs and the AirPlay speakers and Bluetooth devices among them, keeping the computer awake, smoke runs. |
 | `media/` | The playback engine: FFmpeg decoding, the mixers, clocks, subtitles, HDR. |
-| `ui/` | gpui views: windows, tiles, Settings, Picture in Picture, components and theme. |
-| `cast/` | Casting tiles to TVs and speakers. |
+| `ui/` | gpui views: windows, blocks, Settings, Picture in Picture, components and theme. |
+| `cast/` | Casting blocks to TVs and speakers. |
 | `settings.rs` | The settings, saved as `plays/settings.json` in the user's config folder. |
 | `progress.rs` | Where each file was when it last played, and the tracks picked in it, kept for 30 days in `plays/progress.json`, so it starts there with them again. |
 | `files.rs` | The folder those two files and the AirPlay pairings are kept in, and writing them whole, so a crash never leaves one half written. |
@@ -228,7 +228,7 @@ the sound being heard. A file with no sound plays on wall time.
   so the new track starts where playback is. The other subtitle tracks'
   packets are kept for a few seconds, so a subtitle track picked starts
   with them, without a seek. Either thread failing, by an error or a
-  panic, says why for the tile to show, the first to fail standing, and
+  panic, says why for the block to show, the first to fail standing, and
   the player stops waiting for more. `mod.rs` has the decode thread and
   what it is told: it opens the file's streams, then each time round takes
   the commands, carries out a seek, waits for a skip to land and decodes a
@@ -249,8 +249,8 @@ the sound being heard. A file with no sound plays on wall time.
   selection, buffering after seeks (and, for streams, until a second is
   read ahead or when the network runs dry), end-of-file and looping, and
   the console's figures: frames shown and dropped, lateness, and what is
-  queued. A tile ticks its player each time it is drawn; while the window
-  isn't drawing (hidden or minimized), the window ticks every tile five
+  queued. A block ticks its player each time it is drawn; while the window
+  isn't drawing (hidden or minimized), the window ticks every block five
   times a second so playback, end of file and looping go on.
 - `src/media/clock.rs`: per-player clock that runs on wall time and is
   eased toward the audio position on every audio callback, unless another
@@ -267,7 +267,7 @@ A decoded picture reaches gpui in one of three forms (`src/media/picture.rs`):
 | Y'CbCr planes | Most frames on Linux, hardware-decoded ones copied back first | Uploaded as planes, converted (and HDR tone mapped) by gpui's Vulkan shader. |
 
 gpui's Linux renderer can't draw GPU surfaces such as DMA-BUFs, which is
-why hardware-decoded frames are copied back there. Either way the tile
+why hardware-decoded frames are copied back there. Either way the block
 paints them itself, framed. Replaced frames are kept a
 few display frames in case the GPU is still reading them, then released
 (images with `Window::drop_image`, from `src/ui/player/graveyard.rs`), and
@@ -412,7 +412,7 @@ flowchart LR
   listed or opened; those for speakers give the engine one output of this
   computer's, which plays nowhere, and fake speakers.
 - `src/ui/workspace/sound.rs`: a window's sound, through the app's output
-  or a device of its own. Its tiles play there, and a tile moved to a new
+  or a device of its own. Its blocks play there, and a block moved to a new
   window takes the device along. A window Output Device sends full screen
   to another display plays through the output named after that display,
   its speakers, while there, unless a device was picked for it; coming back,
@@ -441,12 +441,12 @@ flowchart LR
   it is. Its packets are decoded two seconds ahead of the playhead, from
   30 seconds before it once read and after a seek, so cues already showing
   are there.
-- `src/ui/subtitles.rs`: paints a tile's cues on the picture it frames, in
+- `src/ui/subtitles.rs`: paints a block's cues on the picture it frames, in
   the style from Settings, turning and cropping bitmap ones with it; the
   settings' Subtitles pane draws its preview with the same code.
 - `src/ui/overlay.rs`: draws subtitles into pixels rather than with gpui,
   for screenshots and Picture in Picture: text laid out by `subtitles` as
-  on a tile showing just the picture, drawn with the glyphs gpui
+  on a block showing just the picture, drawn with the glyphs gpui
   rasterizes, and bitmaps stretched where the stream places them.
 
 ## The rest of the media engine
@@ -474,7 +474,7 @@ flowchart LR
   keeps), if it has them, or none if its subtitles were hidden; else in
   the first language Settings → Audio or Subtitles prefer that it has;
   else the audio FFmpeg finds best, and a subtitle file beside the video,
-  else the file's default subtitles or forced ones. A tile notes what is
+  else the file's default subtitles or forced ones. A block notes what is
   picked in it, from the track menu, a shortcut or a command, as
   `select_track` plays it.
 - `src/media/chapters.rs`: a file's chapters, read with its info (their
@@ -491,37 +491,37 @@ flowchart LR
 
 - `src/api/`: every command Plays has, which every action runs by name,
   as the command line and the command palette do. Each namespace
-  (`app`, `window`, `view`, `tile`, `playback`, `audio`, `subtitles`,
+  (`app`, `window`, `view`, `block`, `playback`, `audio`, `subtitles`,
   `video`, `cast`, `output`, `display`, `settings`, `cli`) is a file in
   `commands/`, a
   list of `Spec`s: the command's id (`playback.toggle_loop`), title,
   description and keywords,
-  what it acts on (the app, a window, every tile in one, or a tile), the
+  what it acts on (the app, a window, every block in one, or a block), the
   arguments it takes, the keys it starts out with and where they work
   (`Reach`: anywhere, in a window with files, or there but not while
   typing), what it does, its state (on or off, the chapter) where it
   has one, and what it hands back (`returns`), where it hands back
   something: the JSON's shape, which `describe` gives with the rest. A
   query (`Spec::query`: `app.inspect`, `window.ls` and `window.inspect`,
-  `tile.ls` and `tile.inspect`, `output.ls`, `display.ls`, `cast.ls`,
+  `block.ls` and `block.inspect`, `output.ls`, `display.ls`, `cast.ls`,
   `settings.ls`, `settings.get`, and `settings.keymap`, every command's
   keys as they are now) only reads: it takes no keys, and running one between two others
   leaves `api::ran_before` as it was, so a walk back goes on. What they
-  say of a window and its tiles is in `workspace::inspect` (a window's
-  title as its title bar shows it, and a tile's window's), and of a
-  tile in `player::inspect`: tracks and chapters numbered from 1, the
+  say of a window and its blocks is in `workspace::inspect` (a window's
+  title as its title bar shows it, and a block's window's), and of a
+  block in `player::inspect`: tracks and chapters numbered from 1, the
   volume in percent, the delays to the millisecond, the video's frame
-  rate, and a stream's URL as the tile shows it, without its user,
+  rate, and a stream's URL as the block shows it, without its user,
   password or query.
   `registry` finds them; `args` checks the arguments given against what
   the command takes before it runs, then reads them into a type of the
-  command's own, which also has where it was run from (`Source`); `target` finds the window and tile named: by id, then by
-  label, then by position from 1 (windows in the order they opened, tiles
+  command's own, which also has where it was run from (`Source`); `target` finds the window and block named: by id, then by
+  label, then by position from 1 (windows in the order they opened, blocks
   in the window named or in front), then by the end of an id, with an
   error if none is or several are; `#` and a number name by position
   alone, as ⌘1 to ⌘9 name windows (`window::focus`); named by nothing,
   the window in front
-  and the tile in it keys go to. Windows and tiles get an id as they're
+  and the block in it keys go to. Windows and blocks get an id as they're
   made, a number never given again, mixed so ids made one after another
   differ at the end, and shown as eight hex digits. `api::run` runs an
   `Invocation` (the command, its arguments, what it's aimed at and where
@@ -534,13 +534,13 @@ flowchart LR
   with `dispatch`, and enables a menu item only when its command can run
   (`api::can_run`), through the menu validator Plays adds to gpui. A
   command needs nothing more to take keys or be in a menu. A window's
-  controls run their commands too, aimed at their own tile
+  controls run their commands too, aimed at their own block
   (`PlayerView::send`) or window (`Workspace::send`): the buttons, the
   tracks and cast menus, the toolbar, the empty window's buttons, the
-  Open URL form (`app.open`), a tile dropped on another (`tile.move`) and
-  a tile asking to pair (`cast.pair`), and casting there again once
+  Open URL form (`app.open`), a block dropped on another (`block.move`) and
+  a block asking to pair (`cast.pair`), and casting there again once
   paired. Dragged, the seek bar and the volume slider follow the mouse
-  in the tile, and send `playback.seek` or `audio.set_volume` once let
+  in the block, and send `playback.seek` or `audio.set_volume` once let
   go. What the app does in a window that is no command, asking for an
   output's PIN, goes through the same target resolution once the event is
   handled (`api::in_window_later`). In tests, `api::record` notes every
@@ -552,17 +552,17 @@ flowchart LR
   to the front; the outputs, where the sound goes and the devices to cast
   to; settings by key and shortcuts by command; each command run, from
   where; and the socket's clients connecting and leaving), one window's
-  (its label and full screen; its tiles coming, moving in from another
-  window or going; its layout, the tile filling it and the one keys go
-  to; and how each tile plays: opened, or not, playing, paused, ended,
+  (its label and full screen; its blocks coming, moving in from another
+  window or going; its layout, the block filling it and the one keys go
+  to; and how each block plays: opened, or not, playing, paused, ended,
   sought, its volume, tracks and chapter, casting and Picture in
-  Picture), or all of them (`Scope`). A payload about a window or a tile
-  starts with its `window_id` and `window_title`, and `tile_id` and
-  `tile_title`: the title its title bar or header shows (`WindowSeen` and
-  `TileSeen` keep it), a window's its label or else Plays
-  (`Workspace::title`), a tile's its label or else what it plays; one
+  Picture), or all of them (`Scope`). A payload about a window or a block
+  starts with its `window_id` and `window_title`, and `block_id` and
+  `block_title`: the title its title bar or header shows (`WindowSeen` and
+  `BlockSeen` keep it), a window's its label or else Plays
+  (`Workspace::title`), a block's its label or else what it plays; one
   closed is named as it was. Readers ignore what they don't know. Where
-  each tile is goes only to those who ask, at most once
+  each block is goes only to those who ask, at most once
   a second (`POSITION_EVERY`), and only once it has moved. Each event of
   how a file plays says where it is as `seen::playhead` does: how far
   through it is from 0 to 1, the time, and the frame showing, counted at
@@ -570,10 +570,10 @@ flowchart LR
   frame's own time multiplied back can fall a hair short of it.
 
   What changed is found by looking: `events::look` reads the app, every
-  window (`Workspace::seen`) and tile (`PlayerView::seen`) into a `Seen`
+  window (`Workspace::seen`) and block (`PlayerView::seen`) into a `Seen`
   and tells what differs from the last look (`seen::changes`), in order:
-  the app's, the windows opened, each window's own, then its tiles coming
-  and going, its layout, then how each tile plays, the windows closed,
+  the app's, the windows opened, each window's own, then its blocks coming
+  and going, its layout, then how each block plays, the windows closed,
   and the one in front. So each change is told once, whatever made it: a
   command, a click, a file opening or reaching its end. It looks once a
   command has run and what it set off has settled (`api::run` defers it:
@@ -582,12 +582,12 @@ flowchart LR
   and forgets what it saw. A command is told before it runs, aimed where
   and from where; a query, which only reads, isn't. Settings, kept apart
   from the windows, are told from an observer as they change
-  (`fields::changed` says which). A tile tells the file opened in place of
+  (`fields::changed` says which). A block tells the file opened in place of
   another apart by `Playback`'s count of openings, and a seek, here or on
   the device it casts to, by its count of seeks; a file opened starts out
   paused, as its `opened` says the rest, so one that plays tells
   `playing` and no more. As Plays quits, the socket has `events::quit`
-  look a last time, then tell each window still open closing, its tiles
+  look a last time, then tell each window still open closing, its blocks
   first, as closing it would, then `quit`, which every listener hears,
   one window's too (`Reach::everyone`).
 
@@ -662,20 +662,20 @@ flowchart LR
   folders and URLs are handed to Plays as before. clap reads it (`args`).
   A `Session` connects as it first needs Plays (`connect_or_start`, with
   nothing to start under `--no-autostart`) and runs the API's commands with `-w`
-  and `-t` as their `Target`. `do` reads each `KEY=VALUE` as the
+  and `-b` as their `Target`. `do` reads each `KEY=VALUE` as the
   command's argument takes it, from the registry compiled in: text as
   given, the rest as JSON if it reads as JSON; a key given again makes a
-  list. `windows` lists windows with their tiles and runs the window and
-  tile subcommands: those named are found by id first, so closing or
+  list. `windows` lists windows with their blocks and runs the window and
+  block subcommands: those named are found by id first, so closing or
   moving one doesn't change which window the next number names, and a
   place beside another counts from where the others are once the one
   moving has left its own. `events` subscribes to everything
   (`Heard::All`), or to the window `-w` names, and prints each event, a
   line of `type key=value…` or of JSON, until `quit`; `wait` subscribes
-  before it looks at the tile, so nothing happens unheard in between: a
-  tile that has ended already prints its `ended` at once, as the event
-  says it, from `tile.inspect`'s position, duration and frame rate; the
-  tile or window closing first, Plays quitting, or the time running out,
+  before it looks at the block, so nothing happens unheard in between: a
+  block that has ended already prints its `ended` at once, as the event
+  says it, from `block.inspect`'s position, duration and frame rate; the
+  block or window closing first, Plays quitting, or the time running out,
   fails the wait. `reference`
   lists the commands from the registry compiled in, Plays running or not,
   and writes `docs/commands.md` (`plays actions --markdown`): each
@@ -695,7 +695,7 @@ flowchart LR
   3 not found, 4 unreachable, 5 control from the command line off), 2 for
   a bad command line, clap's or one of its own checks; output closed
   (`| head`) ends it quietly with 0.
-  Commands it relies on: `tile.focus` puts a tile in front and its window
+  Commands it relies on: `block.focus` puts a block in front and its window
   too; `cli.install` links `/usr/local/bin/plays` to the program running,
   through a link made beside it and renamed over, replacing a link but
   nothing else, and says what to type with `sudo` where it can't write
@@ -712,10 +712,10 @@ flowchart LR
   run; set again after a command runs, as settings change, and as
   outputs, displays, devices to cast to or player windows come and go; a
   menu named Window, which macOS adds its own window items to, opens,
-  names and closes windows, maximizes, names and moves the tile in front,
-  goes from tile to tile and window to window, and back, and numbers
-  windows; Move Tile To has a place for each tile in the window in front,
-  Move Tile to Window each other window, by label or number, and Move
+  names and closes windows, maximizes, names and moves the block in front,
+  goes from block to block and window to window, and back, and numbers
+  windows; Move Block To has a place for each block in the window in front,
+  Move Block to Window each other window, by label or number, and Move
   Window To a number for each window; File → Open Recent the files played
   lately, each by its name, with its folder where two share one, sending
   `app.open`, and set again as they change). `windows`
@@ -724,7 +724,7 @@ flowchart LR
   steps from the window in front to the next or the one before for
   Ctrl+Tab and Ctrl+Shift+Tab; and keeps when each was last in front, as
   each comes to the front, in a `history::FocusHistory`, which each
-  window's tiles have one of too. From that, `window.recent` (⌘') brings
+  window's blocks have one of too. From that, `window.recent` (⌘') brings
   back the newest before the one in front, so twice comes back, and
   `window.back` walks back: each step goes only to windows in front
   before the one it last went to, until another window comes to the front
@@ -782,14 +782,14 @@ flowchart LR
 - `src/recents.rs`: what was used lately, the latest first, each once, a
   list in a file of its own beside the settings: the last 8 commands run
   from the palette (`recent-commands.json`) and the last 20 files played
-  (`recent-files.json`), by full path, noted as a tile opens one or plays
+  (`recent-files.json`), by full path, noted as a block opens one or plays
   another in its place. File → Open Recent and Go to… offer them, and
   `app.clear_recent_files` forgets them.
 - `src/progress.rs`: where each file was when it last played, and the
   audio and subtitles picked in it (`picking::Picked`), by its whole
-  path, kept for 30 days in `progress.json` beside the settings. Tiles
+  path, kept for 30 days in `progress.json` beside the settings. Blocks
   note it as they close or open another file, every 10 seconds while
-  files are open, and as the app quits; a tile opening a file seeks to
+  files are open, and as the app quits; a block opening a file seeks to
   it and plays the tracks picked. A file barely begun, or played nearly
   to its end, keeps no place, only its picks if it has any; with neither
   it isn't kept.
@@ -799,10 +799,10 @@ flowchart LR
   search does its magnifier. `name_sheet`
   asks what to call something, holding its name: Return names it, blank
   for none, and what it names can refuse a name, the sheet saying why;
-  `window.rename` and `tile.rename` with no label show it. A window's
-  label (`workspace/naming`) is its title, a tile's shows in its header in
+  `window.rename` and `block.rename` with no label show it. A window's
+  label (`workspace/naming`) is its title, a block's shows in its header in
   place of its file's name, titles off or on, and each is a name the API
-  knows it by, no two windows' the same and no two tiles', in whichever
+  knows it by, no two windows' the same and no two blocks', in whichever
   windows.
   - `displays` lists the displays by the names macOS gives them (on X11,
     each monitor by its product's name; on Wayland, each output by the
@@ -811,10 +811,10 @@ flowchart LR
     where each is, once a second and keeps what it saw for the menus and
     Black out, as asking is slow on X11, a few round trips to the X server
     for each.
-  - `framing` works out how a tile's picture shows: the file's
-    orientation, then the tile's turns, flips, aspect ratio and crop, as a
+  - `framing` works out how a block's picture shows: the file's
+    orientation, then the block's turns, flips, aspect ratio and crop, as a
     size to fit and where to sample the frame.
-  - `screenshot` saves a tile's frame: bitmap subtitles laid on it, then
+  - `screenshot` saves a block's frame: bitmap subtitles laid on it, then
     turned and cropped on the CPU as `framing` says, then text subtitles,
     and written as PNG (with `png`, which can tag HDR) or JPEG.
   - `blackout` covers the other displays while a window is full screen,
@@ -828,23 +828,23 @@ flowchart LR
     `system_colors` reads macOS's own colors and the accent color from
     AppKit. `about` is the About window.
 - `src/ui/workspace/`: a window, one per window, a file per part: opening
-  files, folders and streams (`opening`: a tile each, or, as Settings say,
-  one with them all as its playlist), the tiles, putting one in
+  files, folders and streams (`opening`: a block each, or, as Settings say,
+  one with them all as its playlist), the blocks, putting one in
   another's place, maximizing one, and moving one to another window or
-  one of its own, where it plays on (`tiles`), sizing the
+  one of its own, where it plays on (`blocks`), sizing the
   window for its videos (`fit`: as they open, unless the window was
   resized meanwhile or is zoomed, and when Video → Match Video Size asks,
-  zoomed or not; never in full screen), the grid, where a tile
-  dragged onto another lands (`grid`), going from tile to tile and moving
-  them about the grid from the keyboard (`focus`: the tile beside, above
+  zoomed or not; never in full screen), the grid, where a block
+  dragged onto another lands (`grid`), going from block to block and moving
+  them about the grid from the keyboard (`focus`: the block beside, above
   or below the one in front, as the grid lays them out, or the one before
-  or after it in turn; and back to one in front before, by `tile.recent`
-  and `tile.back`, as for windows, from when each was clicked, gone to
+  or after it in turn; and back to one in front before, by `block.recent`
+  and `block.back`, as for windows, from when each was clicked, gone to
   from the keys or moved in from another window, but not as the mouse
   passes over it, which only puts it in front), the empty window (`empty`: the app's logo, from
   `assets/icon.svg`, with the open buttons or the URL form under it;
   pressed anywhere but those, which keep their presses, and dragged, it
-  moves the window as a lone tile's picture does), its screensaver
+  moves the window as a lone block's picture does), its screensaver
   (`screensaver`: left alone in front, the window fades its buttons out
   and the logo bounces off its edges, a new color at each, from the one it
   rests in (a click on it picks the next; back from bouncing, it keeps
@@ -860,15 +860,15 @@ flowchart LR
   `window.json`, and Settings as it moves, saved in `settings-window.json`
   as it closes, which quitting does too), going full screen on another display (`display`: out
   of full screen, across, and in again), the window's sound (`sound`), and
-  what the Playback commands do to every tile (`commands`).
-- `src/ui/player/`: a player's tile, a file per part: what fills it
+  what the Playback commands do to every block (`commands`).
+- `src/ui/player/`: a player's block, a file per part: what fills it
   (`content`), the header, the controls, the track menu, notes on what
   shortcuts did (`osd`, with the track reel), the `console`, what
   shortcuts do to it (`commands`, `adjust` for the picture, `sync` for
   delays and `screenshot`; `pip` runs Picture in Picture for it, `cast`
   casts it), dragging it by its picture (`drag`: with gpui's drag and drop
-  onto another tile, or the window with `Window::start_window_move` when
-  no other tile shows, once the mouse has gone further than a click would,
+  onto another block, or the window with `Window::start_window_move` when
+  no other block shows, once the mouse has gone further than a click would,
   which the empty window shares), the graveyard frames wait in before
   they are released, and its `playlist`: the files opened with it, to
   play one after another. The window's tick plays the next once the
@@ -882,27 +882,27 @@ flowchart LR
   which always shows, and `note_change` for what a shortcut changed, which
   hidden notes leave unsaid, as a hidden track switcher leaves the reel
   unrolled.
-  `playback` holds the tile's player and the device it casts to, and every
-  command the tile sends goes through it: only that file can command the
-  player, the rest of the tile reading it. While a tile casts, its play,
+  `playback` holds the block's player and the device it casts to, and every
+  command the block sends goes through it: only that file can command the
+  player, the rest of the block reading it. While a block casts, its play,
   pause, seek, volume, loop and track changes go to the device, Picture in
   Picture's buttons too, and what it shows (position, playing, the end)
   comes from it; the slider seeks the device once it's let go, and frame
   steps and delays do nothing. Where the player here is commanded while
-  the tile casts, its method says so: the picture following sound heard
+  the block casts, its method says so: the picture following sound heard
   elsewhere, and the player taking over again when the cast ends. Picture
   in Picture closes, and isn't offered, while the picture plays on the
   device.
-  The window tells each tile where it is, in one `TileLayout`: in front,
-  with a ring round it (put in front from the keyboard, among other tiles,
+  The window tells each block where it is, in one `BlockLayout`: in front,
+  with a ring round it (put in front from the keyboard, among other blocks,
   until the mouse moves or clicks), maximized, alone, in the top-left
-  corner, and whether the mouse is in the window and resting. The tile redraws when that changes.
-- `src/ui/pip/` (macOS): Picture in Picture. The tile's frames go, as they
-  are due, to an `AVSampleBufferDisplayLayer` hidden over the tile, which
+  corner, and whether the mouse is in the window and resting. The block redraws when that changes.
+- `src/ui/pip/` (macOS): Picture in Picture. The block's frames go, as they
+  are due, to an `AVSampleBufferDisplayLayer` hidden over the block, which
   AVKit's `AVPictureInPictureController` shows in the system's window; a
   delegate of Plays' own answers its buttons. The layer's timebase runs
   and stops with playback, whichever buttons played or paused it, and
-  moves the window's progress bar. The tile pumps its player on a timer of
+  moves the window's progress bar. The block pumps its player on a timer of
   its own, since gpui stops drawing a covered window: until the next frame
   is due while it plays, ten times a second while paused, and at once when
   the window's buttons are pressed. VideoToolbox surfaces go tagged with
@@ -950,7 +950,7 @@ flowchart LR
   (`asking`): from a list where there is one (tracks, chapters, windows,
   displays, devices, outputs, settings and their values, an argument's
   own choices), what's picked now first and checked, asked by running
-  the queries (`tile.inspect`, `display.ls` and so on) once the window
+  the queries (`block.inspect`, `display.ls` and so on) once the window
   is free; or typed, a time, a number in range, a path or a URL, read as
   the argument takes it and said why not until it will do. Change
   Shortcut (`shortcut`) lists the command's keys in place of the rows,
@@ -978,13 +978,13 @@ flowchart LR
   its room (`max_h_full`) and the list, the one part that can give way,
   shrinking, so the field and the footer stay whole and the list scrolls. Go to… (`window.go_to`, ⌘P) is
   the same sheet listing places (`places`): the windows (`window.ls`),
-  the tiles in each (`tile.ls`, with their window where there are two or
-  more), the media files in the front tile's folder, as it last looked
+  the blocks in each (`block.ls`, with their window where there are two or
+  more), the media files in the front block's folder, as it last looked
   through it, and the files played lately (with their folder), under a
   heading for each kind, and found as commands are, by its name, its
   kind or where it is. Each runs
-  its command from the palette: `window.focus`, `tile.focus`,
-  `playback.play_file` in the front tile, or `app.open` in the window.
+  its command from the palette: `window.focus`, `block.focus`,
+  `playback.play_file` in the front block, or `app.open` in the window.
   ⌘P over the command palette, or ⇧⌘P over Go to…, puts one in the
   other's place.
 - `src/ui/components/`: the reusable components, one `RenderOnce`
@@ -1010,8 +1010,8 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-    tile["Tile<br/>src/ui/player/playback.rs"] -->|"play, pause, seek,<br/>volume, tracks"| link["Link<br/>a thread of its own"]
-    link -->|"what the device does"| tile
+    block["Block<br/>src/ui/player/playback.rs"] -->|"play, pause, seek,<br/>volume, tracks"| link["Link<br/>a thread of its own"]
+    link -->|"what the device does"| block
     casting["Casting<br/>asks the targets every second"] --> target["Target<br/>each protocol Settings have on"]
     target -->|"finds"| device(["TV or speaker"])
     link -->|"connect"| target
@@ -1026,7 +1026,7 @@ flowchart LR
 
 ```mermaid
 sequenceDiagram
-    participant T as Tile
+    participant T as Block
     participant L as Link thread
     participant S as Stream server
     participant D as TV or speaker
@@ -1034,7 +1034,7 @@ sequenceDiagram
     L->>D: connect (Target → Session)
     L->>S: serve the file for the device's profile
     S-->>L: URL
-    L->>D: load the URL at the tile's position
+    L->>D: load the URL at the block's position
     D->>S: GET (byte ranges, segments, subtitles)
     loop twice a second, ten times while the picture follows the sound
         L->>D: status?
@@ -1063,16 +1063,16 @@ sequenceDiagram
   devices goes on, its link holding the target. It asks the targets every
   second what they have found, and starts the stream server for the first
   cast, on every interface.
-- `src/cast/link.rs`: a tile's `Link` runs its session on a thread of its
+- `src/cast/link.rs`: a block's `Link` runs its session on a thread of its
   own, as every call may wait on the network: it connects, has the stream
-  server serve the file with the tracks the tile plays, and loads it at
-  the tile's position; then it does what the tile sends it (of seeks in a
+  server serve the file with the tracks the block plays, and loads it at
+  the block's position; then it does what the block sends it (of seeks in a
   row only the last, and of what it sent while the device was being told
   something else only the last volume, looping and subtitles), asks the
   device what it is doing twice a second (ten times while the picture
-  follows the sound), and shows the tile what it asked for until the
+  follows the sound), and shows the block what it asked for until the
   device has done it. A video's sound sent to a speaker is the one cast
-  with the picture here: the tile keeps playing with its sound unheard,
+  with the picture here: the block keeps playing with its sound unheard,
   playing and pausing as the speaker is seen to and following where it
   says it is, the time it said it at moved on to now; its clock eases
   there, and seeks where it is far off. Dropping the link stops the device
@@ -1097,7 +1097,7 @@ sequenceDiagram
   other subtitles load the file again from where it is. The renderer
   stopping after it played is the end; a seek it refuses while stopped is
   made once it plays; something else playing there ends the cast. DLNA has
-  no volume for the media apart from the renderer's own, so the tile's
+  no volume for the media apart from the renderer's own, so the block's
   scales that.
 - `src/cast/chromecast.rs` adapts the Chromecast crate: devices that show
   video are offered for anything, speakers and groups for sound; the model
@@ -1105,7 +1105,7 @@ sequenceDiagram
   it says its kind of segments, which the receiver otherwise takes for
   MPEG-TS. Subtitles go as a WebVTT track styled from Settings, beside the
   HLS rather than in it; off and on is the track's, other subtitles load the
-  media again with a track at a URL it hasn't fetched. The tile's volume
+  media again with a track at a URL it hasn't fetched. The block's volume
   is the stream's. Played to the end, it's loaded again to play again; it
   going idle stopped, or unable to play, ends the cast, as the crate's ways
   of ending do.
@@ -1121,7 +1121,7 @@ sequenceDiagram
   other makes' TVs) with the subtitles in the playlist, which the receiver
   draws in its own style. It reads the playlist only once, so other
   subtitles give it the media again from where it is, at a URL with a
-  query of its own, which the stream server ignores. The tile's volume is
+  query of its own, which the stream server ignores. The block's volume is
   the receiver's. Played to the end it says nothing of what it played, and
   is given the media again to play again, from where it was sent since.
 - `src/cast/pairings.rs`: what pairing with AirPlay receivers left, kept
@@ -1131,14 +1131,14 @@ sequenceDiagram
   speakers and Settings → Casting, which lists the receivers paired with and forgets
   one. Tests and smoke runs keep them in memory only.
 - `src/ui/pairing.rs`, `src/ui/workspace/pairing.rs`: the pairing sheet. A
-  tile whose cast was turned down for want of a PIN ends its cast and asks
+  block whose cast was turned down for want of a PIN ends its cast and asks
   to pair (`cast.pair`), and the audio engine asks the window in front for
   an output's speaker that wants one, unless a sheet is up already. The
   window puts a sheet over itself, which pairs on a thread of its own, as
   each step waits on the network, and looks at how it goes ten times a
   second. A wrong PIN has the TV show another, which the sheet asks for.
-  Paired, the tile casts to it again (`cast.to`), or the outputs that want
-  the speaker play through it. Closed without pairing, cancelled or failed, the tile
+  Paired, the block casts to it again (`cast.to`), or the outputs that want
+  the speaker play through it. Closed without pairing, cancelled or failed, the block
   plays on here, and what picked the speaker picks it no longer
   (`AudioEngine::not_paired`, once the window is done updating): the
   app's output goes back to the system's default, and a window's to the

@@ -5,7 +5,7 @@
 //! whenever it changes; so does each command run, the audio engine as
 //! outputs come and go, Settings as they change, the displays as they come
 //! and go or the window in front moves to another, the devices to cast to
-//! as they come and go or the tile in front casts to one, the tile in
+//! as they come and go or the block in front casts to one, the block in
 //! front's chapters as another is in front, and the files played lately
 //! as they change.
 
@@ -17,7 +17,7 @@ use serde_json::{Value, json};
 
 use super::speakers::output_kind;
 use super::{AudioEngine, player_windows};
-use crate::api::commands::{cast, output, playback, tile, video, window};
+use crate::api::commands::{block, cast, output, playback, video, window};
 use crate::api::{self, Run, Target, front_window};
 use crate::cast::{Casting, Device, Shows};
 use crate::files;
@@ -117,13 +117,13 @@ fn file_menu(state: &MenuState) -> Menu {
     items.extend(self::items(
         &[
             "",
-            "tile.close",
-            "tile.close_others",
-            "tile.close_all",
+            "block.close",
+            "block.close_others",
+            "block.close_all",
             "window.close",
             "",
-            "tile.copy_path",
-            "tile.copy_time",
+            "block.copy_path",
+            "block.copy_time",
         ],
         state,
     ));
@@ -171,7 +171,7 @@ fn recent_menu(state: &MenuState) -> Option<Menu> {
     })
 }
 
-/// Playing the tile in front, its chapters, and every tile.
+/// Playing the block in front, its chapters, and every block.
 fn playback_menu(state: &MenuState) -> Menu {
     let mut menu = items(
         &[
@@ -214,13 +214,13 @@ fn playback_menu(state: &MenuState) -> Menu {
     }
 }
 
-/// The window and its display, and the tile in front's picture.
+/// The window and its display, and the block in front's picture.
 fn video_menu(state: &MenuState) -> Menu {
     let mut menu = items(
         &[
             "window.toggle_full_screen",
             "window.match_video_size",
-            "tile.toggle_picture_in_picture",
+            "block.toggle_picture_in_picture",
             "window.toggle_float_on_top",
             "window.toggle_float_on_top_while_playing",
         ],
@@ -255,7 +255,7 @@ fn video_menu(state: &MenuState) -> Menu {
             "view.toggle_top_bar",
             "view.toggle_track_switcher",
             "view.toggle_notes",
-            "tile.toggle_console",
+            "block.toggle_console",
         ],
         state,
     ));
@@ -265,7 +265,7 @@ fn video_menu(state: &MenuState) -> Menu {
     }
 }
 
-/// The sound of the tile in front and every tile, and where it plays.
+/// The sound of the block in front and every block, and where it plays.
 fn audio_menu(outputs: Menu, window_outputs: Menu, state: &MenuState) -> Menu {
     let mut menu = items(
         &[
@@ -296,7 +296,7 @@ fn audio_menu(outputs: Menu, window_outputs: Menu, state: &MenuState) -> Menu {
     }
 }
 
-/// The subtitles of the tile in front.
+/// The subtitles of the block in front.
 fn subtitles_menu(state: &MenuState) -> Menu {
     Menu {
         name: "Subtitles".into(),
@@ -320,7 +320,7 @@ fn subtitles_menu(state: &MenuState) -> Menu {
 }
 
 /// Opening, naming and closing windows; maximizing, naming and moving the
-/// tile in front, going from tile to tile in the window in front and back,
+/// block in front, going from block to block in the window in front and back,
 /// and moving them about; and going from window to window and back, and
 /// numbering them. Named so, macOS adds its own window items to it.
 fn window_menu(state: &MenuState) -> Menu {
@@ -333,9 +333,9 @@ fn window_menu(state: &MenuState) -> Menu {
             "window.rename",
             "window.close_others",
             "",
-            "tile.zoom",
-            "tile.rename",
-            "tile.move_to_new_window",
+            "block.zoom",
+            "block.rename",
+            "block.move_to_new_window",
         ],
         state,
     );
@@ -344,19 +344,19 @@ fn window_menu(state: &MenuState) -> Menu {
     items.extend(self::items(
         &[
             "",
-            "tile.focus.left",
-            "tile.focus.right",
-            "tile.focus.up",
-            "tile.focus.down",
-            "tile.focus.previous",
-            "tile.focus.next",
-            "tile.back",
-            "tile.recent",
+            "block.focus.left",
+            "block.focus.right",
+            "block.focus.up",
+            "block.focus.down",
+            "block.focus.previous",
+            "block.focus.next",
+            "block.back",
+            "block.recent",
             "",
-            "tile.move.left",
-            "tile.move.right",
-            "tile.move.up",
-            "tile.move.down",
+            "block.move.left",
+            "block.move.right",
+            "block.move.up",
+            "block.move.down",
             "",
             // ⌘1 to ⌘9 go to a window by its number; macOS lists the
             // windows below.
@@ -392,30 +392,30 @@ fn number_menu(state: &MenuState) -> Option<Menu> {
     })
 }
 
-/// A place for each tile in the window in front, the tile in front's
-/// checked, to put it there instead; none for a tile alone.
+/// A place for each block in the window in front, the block in front's
+/// checked, to put it there instead; none for a block alone.
 fn place_menu(state: &MenuState) -> Option<Menu> {
-    let front = state.state("tile.move").as_u64();
-    (state.tiles > 1).then(|| Menu {
-        name: title("tile.move").into(),
-        items: (1..=state.tiles)
+    let front = state.state("block.move").as_u64();
+    (state.blocks > 1).then(|| Menu {
+        name: title("block.move").into(),
+        items: (1..=state.blocks)
             .map(|place| {
                 let checked = front == u64::try_from(place).ok();
-                MenuItem::action(place.to_string(), tile::move_to(place)).checked(checked)
+                MenuItem::action(place.to_string(), block::move_to(place)).checked(checked)
             })
             .collect(),
     })
 }
 
-/// Each other player window, by its label or number, to move the tile in
+/// Each other player window, by its label or number, to move the block in
 /// front to; none without one or the other.
 fn other_window_menu(state: &MenuState) -> Option<Menu> {
-    (state.tiles > 0 && !state.others.is_empty()).then(|| Menu {
-        name: title("tile.move_to_window").into(),
+    (state.blocks > 0 && !state.others.is_empty()).then(|| Menu {
+        name: title("block.move_to_window").into(),
         items: state
             .others
             .iter()
-            .map(|(name, title)| MenuItem::action(title.clone(), tile::move_to_window(name)))
+            .map(|(name, title)| MenuItem::action(title.clone(), block::move_to_window(name)))
             .collect(),
     })
 }
@@ -430,28 +430,28 @@ pub(super) fn watch_settings(cx: &mut App) {
 /// What the menus show that changes without them hearing of it: besides
 /// this computer's outputs, Video → Output Device and Audio → Output Device
 /// show the displays, the one the window in front is on, the devices that
-/// show video, the speakers, and the one the tile in front casts to;
-/// Playback → Chapters lists the tile in front's chapters; and what each
-/// command changes, for the window and tile in front, checks its items.
+/// show video, the speakers, and the one the block in front casts to;
+/// Playback → Chapters lists the block in front's chapters; and what each
+/// command changes, for the window and block in front, checks its items.
 #[derive(Clone, Default, PartialEq, Debug)]
 struct MenuState {
     displays: Vec<DisplayInfo>,
     front: Option<u32>,
     devices: Vec<Device>,
-    /// Those for the tile in front: none when it has no sound.
+    /// Those for the block in front: none when it has no sound.
     speakers: Vec<Device>,
     casting: Option<Device>,
-    /// The tile in front's chapters, by name.
+    /// The block in front's chapters, by name.
     chapters: Vec<String>,
     /// How many player windows are open, each a number to move one to.
     windows: usize,
-    /// How many tiles the window in front has, each a place to put one.
-    tiles: usize,
-    /// The other player windows, to move the tile in front to: the API's
+    /// How many blocks the window in front has, each a place to put one.
+    blocks: usize,
+    /// The other player windows, to move the block in front to: the API's
     /// name for each, and its label, else its number, to show.
     others: Vec<(String, String)>,
     /// The state of each command that has one, as it is for the window
-    /// and tile in front.
+    /// and block in front.
     states: BTreeMap<&'static str, Value>,
     /// The full paths of the files played lately, the latest first.
     recent_files: Vec<String>,
@@ -462,7 +462,7 @@ impl Global for MenuState {}
 impl MenuState {
     fn now(cx: &mut App) -> Self {
         let window = front_window(cx);
-        let (front, casting, has_audio, chapters, tiles) = window
+        let (front, casting, has_audio, chapters, blocks) = window
             .and_then(|handle| {
                 handle
                     .update(cx, |workspace, window, cx| {
@@ -471,7 +471,7 @@ impl MenuState {
                             workspace.active_casting(cx),
                             workspace.active_has_audio(cx),
                             workspace.active_chapters(cx).0,
-                            workspace.tile_count(),
+                            workspace.block_count(),
                         )
                     })
                     .ok()
@@ -501,7 +501,7 @@ impl MenuState {
             .collect();
         Self {
             // As last looked at: asking the system is slow on X11, and this
-            // is made every second and as the mouse goes between tiles.
+            // is made every second and as the mouse goes between blocks.
             displays: displays::connected(cx),
             front,
             devices,
@@ -509,7 +509,7 @@ impl MenuState {
             casting,
             chapters,
             windows: player_windows(cx).len(),
-            tiles,
+            blocks,
             others,
             states,
             recent_files: recents::FILES.list(cx),
@@ -533,7 +533,7 @@ impl MenuState {
 }
 
 /// Set the menus again when a display or a device comes or goes, the
-/// window in front is on another display, or the tile in front casts.
+/// window in front is on another display, or the block in front casts.
 pub(super) fn watch_outputs(cx: &mut App) {
     cx.spawn(async move |cx| {
         loop {
@@ -547,7 +547,7 @@ pub(super) fn watch_outputs(cx: &mut App) {
 }
 
 /// Set the menus again once the current event is handled, if what they
-/// show has changed: from a window or tile, which can't be read while
+/// show has changed: from a window or block, which can't be read while
 /// they're being changed.
 pub fn refresh(cx: &mut App) {
     cx.defer(refresh_outputs);
@@ -560,7 +560,7 @@ fn refresh_outputs(cx: &mut App) {
     }
 }
 
-/// The tile in front's chapters, the one it's in, `chapter` (from 1),
+/// The block in front's chapters, the one it's in, `chapter` (from 1),
 /// checked; none for a file without.
 fn chapter_menu(chapters: &[String], chapter: &Value) -> Option<Menu> {
     (!chapters.is_empty()).then(|| Menu {
@@ -577,7 +577,7 @@ fn chapter_menu(chapters: &[String], chapter: &Value) -> Option<Menu> {
     })
 }
 
-/// The aspect ratios, the tile in front's, `aspect` (by name, null as the
+/// The aspect ratios, the block in front's, `aspect` (by name, null as the
 /// file is), checked.
 fn aspect_menu(aspect: &Value, state: &MenuState) -> Menu {
     Menu {
@@ -594,7 +594,7 @@ fn aspect_menu(aspect: &Value, state: &MenuState) -> Menu {
     }
 }
 
-/// The crops, the tile in front's, `crop` (by name, null for none),
+/// The crops, the block in front's, `crop` (by name, null for none),
 /// checked.
 fn crop_menu(crop: &Value, state: &MenuState) -> Menu {
     Menu {
@@ -621,10 +621,10 @@ fn title(command: &'static str) -> &'static str {
 }
 
 /// Every display, the one the window in front is on checked, then the
-/// devices that show video, the one the tile in front casts to checked
+/// devices that show video, the one the block in front casts to checked
 /// instead (a speaker it casts to leaves its picture here). Picking a
 /// display shows the window there, full screen; picking a device casts the
-/// tile in front to it.
+/// block in front to it.
 fn display_menu(outputs: &MenuState) -> Menu {
     let casting = outputs
         .casting
@@ -681,8 +681,8 @@ fn told_apart(name: &str, kind: Option<&str>, names: &[&str]) -> String {
 
 /// The system's default and every output connected, with the one picked
 /// checked; one picked that isn't connected is listed too, as it is still
-/// what the sound waits for. Then the speakers, and the device the tile in
-/// front casts to, checked instead: picking one casts the tile in front to
+/// what the sound waits for. Then the speakers, and the device the block in
+/// front casts to, checked instead: picking one casts the block in front to
 /// it.
 fn output_menu(devices: &[DeviceInfo], picked: Option<&AudioDevice>, outputs: &MenuState) -> Menu {
     let casting = outputs.casting.as_ref();

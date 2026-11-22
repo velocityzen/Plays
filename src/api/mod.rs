@@ -6,8 +6,8 @@
 //! A command (`registry`, with the commands themselves in `commands`) has
 //! an id such as `playback.play_pause`, a title, a description, keywords,
 //! its keys, the arguments it takes (`args`) and what it acts on: the app,
-//! a window, every tile in a window, or a tile, by default the window in
-//! front and the tile in it that keys go to, or as an invocation names
+//! a window, every block in a window, or a block, by default the window in
+//! front and the block in it that keys go to, or as an invocation names
 //! them (`target`). It hands back a JSON value, or an `Error`.
 //!
 //! What a command, or anything else, changes is told to whoever listens
@@ -31,7 +31,7 @@ use serde_json::Value;
 
 pub use error::Error;
 pub use registry::{Reach, Scope, Spec, all, find};
-pub use target::{Id, Target, front_window, read_tile};
+pub use target::{Id, Target, front_window, read_block};
 
 use crate::ui::workspace::Workspace;
 
@@ -117,9 +117,9 @@ impl Invocation {
         self
     }
 
-    /// Aimed at the tile `name` names.
-    pub fn on_tile(mut self, name: impl Into<String>) -> Self {
-        self.target.tile = Some(name.into());
+    /// Aimed at the block `name` names.
+    pub fn on_block(mut self, name: impl Into<String>) -> Self {
+        self.target.block = Some(name.into());
         self
     }
 
@@ -210,11 +210,11 @@ fn run_spec(spec: &Spec, invocation: Invocation, cx: &mut App) -> Result<Value, 
                 run(args, workspace, window, cx)
             })
         }
-        registry::Run::Tile(run) => target::on_tile(&target, cx, |player, window, cx| {
+        registry::Run::Block(run) => target::on_block(&target, cx, |player, window, cx| {
             run(player, window, cx);
             Ok(Value::Null)
         }),
-        registry::Run::TileWith(run) => target::on_tile(&target, cx, |player, window, cx| {
+        registry::Run::BlockWith(run) => target::on_block(&target, cx, |player, window, cx| {
             run(args, player, window, cx)
         }),
         registry::Run::Custom(run) => run(args, &target, cx),
@@ -323,8 +323,8 @@ pub fn can_run(command: &str, target: &Target, cx: &mut App) -> bool {
             target.window.is_none() && cx.active_window().is_some()
                 || target::window(target, cx).is_ok()
         }
-        registry::Scope::Window | registry::Scope::Tiles => target::window(target, cx).is_ok(),
-        registry::Scope::Tile => target::tile(target, cx).is_ok(),
+        registry::Scope::Window | registry::Scope::Blocks => target::window(target, cx).is_ok(),
+        registry::Scope::Block => target::block(target, cx).is_ok(),
     };
     there && spec.check_target(target).is_ok() && (spec.available)()
 }

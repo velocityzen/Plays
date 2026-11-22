@@ -1,4 +1,4 @@
-//! When each of some things, windows or the tiles in one, was last in
+//! When each of some things, windows or the blocks in one, was last in
 //! front, to go back to them: the newest but the one in front
 //! (`recent`), or walking back from it (`back`). As on a desktop, going
 //! back to one puts it in front, newest of all: this isn't undo.

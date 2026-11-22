@@ -106,7 +106,7 @@ fn binds_each_key_where_its_command_works() {
     assert_eq!(run("space", &empty), None);
     // ⌘W: the file in front in a player window with files; else, typing
     // in one too, the window in front.
-    assert_eq!(run("secondary-w", &player).as_deref(), Some("tile.close"));
+    assert_eq!(run("secondary-w", &player).as_deref(), Some("block.close"));
     assert_eq!(run("secondary-w", &typing).as_deref(), Some("window.close"));
     assert_eq!(
         run("secondary-w", &elsewhere).as_deref(),
@@ -115,7 +115,7 @@ fn binds_each_key_where_its_command_works() {
     assert_eq!(run("secondary-w", &empty).as_deref(), Some("window.close"));
     assert_eq!(
         run("secondary-shift-w", &typing).as_deref(),
-        Some("tile.close_all")
+        Some("block.close_all")
     );
     assert_eq!(run("secondary-shift-w", &elsewhere), None);
     // ⌘O anywhere, typing too, but not while Settings records a key.
@@ -139,16 +139,16 @@ fn binds_each_key_where_its_command_works() {
     let keymap = Keymap::new(hotkeys.bindings());
     assert_eq!(
         bound(&keymap, "secondary-w", &typing).as_deref(),
-        Some("tile.close")
+        Some("block.close")
     );
 
     // A key that types, given a command that works anywhere or on the
     // file in front, leaves typing alone.
     let mut hotkeys = Hotkeys::default();
     hotkeys.add("app.settings", "k");
-    hotkeys.add("tile.close", "x");
+    hotkeys.add("block.close", "x");
     let keymap = Keymap::new(hotkeys.bindings());
-    assert_eq!(bound(&keymap, "x", &player).as_deref(), Some("tile.close"));
+    assert_eq!(bound(&keymap, "x", &player).as_deref(), Some("block.close"));
     assert_eq!(bound(&keymap, "x", &typing), None);
     assert_eq!(
         bound(&keymap, "k", &elsewhere).as_deref(),
@@ -185,12 +185,12 @@ fn a_key_moves_only_among_commands_that_work_where_it_does() {
     let mut hotkeys = Hotkeys::default();
     let w = normalize("secondary-w").unwrap();
     // Given back to the file in front, the window in front keeps it.
-    hotkeys.remove("tile.close", &w);
-    assert_eq!(hotkeys.add("tile.close", &w), None);
+    hotkeys.remove("block.close", &w);
+    assert_eq!(hotkeys.add("block.close", &w), None);
     assert_eq!(hotkeys.keys("window.close").last(), Some(&w));
     // Given to another in a player window, the file in front's goes.
-    assert_eq!(hotkeys.add("playback.restart", &w), Some("tile.close"));
-    assert!(!hotkeys.keys("tile.close").contains(&w));
+    assert_eq!(hotkeys.add("playback.restart", &w), Some("block.close"));
+    assert!(!hotkeys.keys("block.close").contains(&w));
     assert!(hotkeys.keys("window.close").contains(&w));
     // And to another that works anywhere, the window in front's.
     assert_eq!(hotkeys.add("app.about", &w), Some("window.close"));
@@ -285,12 +285,12 @@ fn every_name_saved_before_commands_had_ids_still_names_one() {
         "focus_right",
         "focus_up",
         "focus_down",
-        "focus_previous_tile",
-        "focus_next_tile",
-        "move_tile_left",
-        "move_tile_right",
-        "move_tile_up",
-        "move_tile_down",
+        "focus_previous_block",
+        "focus_next_block",
+        "move_block_left",
+        "move_block_right",
+        "move_block_up",
+        "move_block_down",
         "play_pause_all",
         "seek_forward_all",
         "seek_backward_all",

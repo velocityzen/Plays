@@ -1,5 +1,5 @@
 //! `plays events` and `plays wait`: what changes in Plays, printed as it
-//! does, and waiting for one change, such as a tile ending.
+//! does, and waiting for one change, such as a block ending.
 
 use std::time::{Duration, Instant};
 
@@ -30,9 +30,9 @@ pub fn events(session: &mut Session, positions: bool, count: Option<usize>) -> D
     Ok(())
 }
 
-/// Wait for an event of type `kind` from the tile `-t` names, or else the
+/// Wait for an event of type `kind` from the block `-b` names, or else the
 /// window `-w` names, or from anything, and print it; at most `timeout`
-/// seconds, if given. A tile that has ended already has, and one closing
+/// seconds, if given. A block that has ended already has, and one closing
 /// first, or Plays quitting, fails the wait.
 pub fn wait(session: &mut Session, kind: &str, timeout: Option<f64>) -> Done {
     let by = match timeout {
@@ -42,7 +42,7 @@ pub fn wait(session: &mut Session, kind: &str, timeout: Option<f64>) -> Done {
         },
         None => None,
     };
-    // Hearing first, so nothing happens unheard while the tile is looked at.
+    // Hearing first, so nothing happens unheard while the block is looked at.
     session
         .client()?
         .subscribe(Heard::All, kind == "position")?;
@@ -81,22 +81,22 @@ pub fn wait(session: &mut Session, kind: &str, timeout: Option<f64>) -> Done {
     }
 }
 
-/// What a wait watches: a tile, a window, or anything.
+/// What a wait watches: a block, a window, or anything.
 struct Watched {
     window: Value,
-    tile: Value,
-    /// The tile as inspected, for whether it has ended.
+    block: Value,
+    /// The block as inspected, for whether it has ended.
     state: Value,
 }
 
-/// What `-t` or `-w` names, by id; anything, with neither.
+/// What `-b` or `-w` names, by id; anything, with neither.
 fn watched(session: &mut Session) -> Result<Watched, Stop> {
     let target = session.target();
-    if target.tile.is_some() {
-        let state = session.call_on("tile.inspect", Value::Null, target)?;
+    if target.block.is_some() {
+        let state = session.call_on("block.inspect", Value::Null, target)?;
         return Ok(Watched {
             window: state["window"].clone(),
-            tile: state["id"].clone(),
+            block: state["id"].clone(),
             state,
         });
     }
@@ -105,27 +105,27 @@ fn watched(session: &mut Session) -> Result<Watched, Stop> {
             "window.inspect",
             Value::Null,
             Target {
-                tile: None,
+                block: None,
                 ..target
             },
         )?;
         return Ok(Watched {
             window: window["id"].clone(),
-            tile: Value::Null,
+            block: Value::Null,
             state: Value::Null,
         });
     }
     Ok(Watched {
         window: Value::Null,
-        tile: Value::Null,
+        block: Value::Null,
         state: Value::Null,
     })
 }
 
 impl Watched {
-    /// The event of type `kind` the tile watched had before the wait
+    /// The event of type `kind` the block watched had before the wait
     /// began, as it would have been heard: only its ending, as it ended,
-    /// the tile titled by its label, or else what it plays.
+    /// the block titled by its label, or else what it plays.
     fn already(&self, kind: &str) -> Option<Value> {
         let state = &self.state;
         (kind == "ended" && state["ended"] == true).then(|| {
@@ -141,8 +141,8 @@ impl Watched {
             json!({
                 "window_id": self.window,
                 "window_title": state["window_title"],
-                "tile_id": self.tile,
-                "tile_title": title,
+                "block_id": self.block,
+                "block_title": title,
                 "position": at["position"],
                 "time": at["time"],
                 "frame": at["frame"],
@@ -150,11 +150,11 @@ impl Watched {
         })
     }
 
-    /// Whether an event with `payload` is about what's watched: a tile's
+    /// Whether an event with `payload` is about what's watched: a block's
     /// by its id, in whichever window it moves to.
     fn hears(&self, payload: &Value) -> bool {
-        if !self.tile.is_null() {
-            return payload["tile_id"] == self.tile;
+        if !self.block.is_null() {
+            return payload["block_id"] == self.block;
         }
         self.window.is_null() || payload["window_id"] == self.window
     }
@@ -163,8 +163,8 @@ impl Watched {
     /// watched has.
     fn gone(&self, kind: &str, payload: &Value) -> Option<&'static str> {
         match kind {
-            "tile_closed" if !self.tile.is_null() && payload["tile_id"] == self.tile => {
-                Some("tile")
+            "block_closed" if !self.block.is_null() && payload["block_id"] == self.block => {
+                Some("block")
             }
             "window_closed" if !self.window.is_null() => Some("window"),
             _ => None,

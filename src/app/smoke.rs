@@ -2,7 +2,7 @@
 //! through a scenario that checks what headless tests can't reach, as
 //! their windows have no native window behind them. After a window fits
 //! its files, gpui must lay it out at the size it really is;
-//! playing tiles must show frames; the sound must have a device to go
+//! playing blocks must show frames; the sound must have a device to go
 //! to; and nothing may log an error, whatever `RUST_LOG` lets through.
 //!
 //! Built with the `smoke` feature, whose settings are the defaults and
@@ -68,7 +68,7 @@ pub enum Scenario {
     FirstOpen,
     /// Two videos and a sound in one window.
     Several,
-    /// ⌘W closes the tiles, then the window, and the app quits.
+    /// ⌘W closes the blocks, then the window, and the app quits.
     Close,
     /// Subtitles beside the video turn off and on again.
     Subtitles,
@@ -293,12 +293,12 @@ async fn close(cx: &mut AsyncApp) -> Result<(), String> {
     let close = "secondary-w";
 
     press(cx, close)?;
-    wait_for(cx, "⌘W to close a tile", |cx| players(cx).len() == 1).await?;
+    wait_for(cx, "⌘W to close a block", |cx| players(cx).len() == 1).await?;
     settle(cx).await?;
     check_playing(cx).await?;
 
     press(cx, close)?;
-    wait_for(cx, "⌘W to close the last tile", |cx| {
+    wait_for(cx, "⌘W to close the last block", |cx| {
         players(cx).is_empty()
     })
     .await?;
@@ -486,34 +486,34 @@ async fn cli(cx: &mut AsyncApp) -> Result<(), String> {
         players(cx).len() == 1
     })
     .await?;
-    let tiles = json(&succeeds(cx, &["--json", "tile", "ls"]).await?)?;
-    if tiles[0]["file"] != clip {
-        return Err(format!("plays tile ls listed {tiles}"));
+    let blocks = json(&succeeds(cx, &["--json", "block", "ls"]).await?)?;
+    if blocks[0]["file"] != clip {
+        return Err(format!("plays block ls listed {blocks}"));
     }
 
     succeeds(cx, &["do", "playback.toggle_loop"]).await?;
-    let tile = json(&succeeds(cx, &["--json", "tile", "inspect"]).await?)?;
-    if tile["looping"] != false {
-        return Err(format!("the tile still loops: {tile}"));
+    let block = json(&succeeds(cx, &["--json", "block", "inspect"]).await?)?;
+    if block["looping"] != false {
+        return Err(format!("the block still loops: {block}"));
     }
-    let ended = succeeds(cx, &["wait", "ended", "-t", "1", "--timeout", "10"]).await?;
+    let ended = succeeds(cx, &["wait", "ended", "-b", "1", "--timeout", "10"]).await?;
     // Where it ended: how far through, in seconds and by frame.
     let said = |field| ended.contains(&format!(" {field}="));
     if !ended.starts_with("ended window_id=") || !["position", "time", "frame"].iter().all(said) {
         return Err(format!("plays wait ended printed {ended:?}"));
     }
-    let tile = json(&succeeds(cx, &["--json", "tile", "inspect"]).await?)?;
-    if tile["ended"] != true {
-        return Err(format!("the tile hasn't ended: {tile}"));
+    let block = json(&succeeds(cx, &["--json", "block", "inspect"]).await?)?;
+    if block["ended"] != true {
+        return Err(format!("the block hasn't ended: {block}"));
     }
     // Over already: no waiting.
     let again = succeeds(
         cx,
-        &["--json", "wait", "ended", "--timeout", "0.5", "-t", "1"],
+        &["--json", "wait", "ended", "--timeout", "0.5", "-b", "1"],
     )
     .await?;
     let again = json(&again)?;
-    // As the event said it, from what the tile says of itself.
+    // As the event said it, from what the block says of itself.
     let through = again["payload"]["position"].as_f64().unwrap_or_default();
     if again["type"] != "ended" || through < 0.9 || !again["payload"]["frame"].is_u64() {
         return Err(format!("waiting again printed {again}"));
@@ -524,10 +524,10 @@ async fn cli(cx: &mut AsyncApp) -> Result<(), String> {
     if !version.contains(&process) {
         return Err(format!("plays version printed {version:?}"));
     }
-    let (status, _, said) = command_line(cx, &["tile", "inspect", "Attic"]).await?;
+    let (status, _, said) = command_line(cx, &["block", "inspect", "Attic"]).await?;
     if status != Some(3) {
         return Err(format!(
-            "plays tile inspect Attic exited {status:?}: {said}"
+            "plays block inspect Attic exited {status:?}: {said}"
         ));
     }
     Ok(())
@@ -706,12 +706,12 @@ fn sizes(cx: &mut AsyncApp) -> Result<(Size<Pixels>, Size<Pixels>), String> {
     .map_err(|_| "the app went away")?
 }
 
-/// Check that every tile with video plays, and that the window draws
+/// Check that every block with video plays, and that the window draws
 /// each of its frames.
 async fn check_playing(cx: &mut AsyncApp) -> Result<(), String> {
-    let start = video_tiles(cx)?;
+    let start = video_blocks(cx)?;
     sleep(cx, WATCH).await;
-    let end = video_tiles(cx)?;
+    let end = video_blocks(cx)?;
     for (before, after) in start.into_iter().zip(end) {
         let name = after.name;
         if !after.playing {
@@ -728,21 +728,21 @@ async fn check_playing(cx: &mut AsyncApp) -> Result<(), String> {
     Ok(())
 }
 
-/// How a tile with video plays.
-struct VideoTile {
+/// How a block with video plays.
+struct VideoBlock {
     name: String,
     playing: bool,
     /// Frames shown since it opened.
     shown: u64,
 }
 
-fn video_tiles(cx: &mut AsyncApp) -> Result<Vec<VideoTile>, String> {
+fn video_blocks(cx: &mut AsyncApp) -> Result<Vec<VideoBlock>, String> {
     cx.update(|cx| {
         players(cx)
             .iter()
             .map(|view| view.read(cx).player())
             .filter(|player| player.has_video())
-            .map(|player| VideoTile {
+            .map(|player| VideoBlock {
                 name: player.source().name(),
                 playing: player.is_playing(),
                 shown: player.stats().shown,
@@ -785,7 +785,7 @@ fn selected_subtitles(cx: &mut App) -> Option<usize> {
     info.selected(TrackKind::Subtitle)
 }
 
-/// The text of the subtitles showing in the first tile.
+/// The text of the subtitles showing in the first block.
 fn showing(cx: &mut App) -> Vec<String> {
     players(cx).first().map_or(Vec::new(), |view| {
         view.read(cx)
@@ -801,13 +801,13 @@ fn player_state(cx: &mut App, state: impl Fn(&PlayerView) -> bool) -> bool {
     players(cx).first().is_some_and(|view| state(view.read(cx)))
 }
 
-/// Change the first tile's player.
+/// Change the first block's player.
 fn with_player<R>(
     cx: &mut AsyncApp,
     change: impl FnOnce(&mut PlayerView, &mut gpui::Context<PlayerView>) -> R,
 ) -> Result<R, String> {
     cx.update(|cx| {
-        let view = players(cx).into_iter().next().ok_or("no tile")?;
+        let view = players(cx).into_iter().next().ok_or("no block")?;
         Ok(view.update(cx, change))
     })
     .map_err(|_| "the app went away".to_string())?
@@ -817,7 +817,7 @@ fn workspace(cx: &App) -> Result<WindowHandle<Workspace>, String> {
     api::front_window(cx).ok_or_else(|| "no window".to_string())
 }
 
-/// The window's tiles' players, in order.
+/// The window's blocks' players, in order.
 fn players(cx: &App) -> Vec<Entity<PlayerView>> {
     workspace(cx)
         .ok()

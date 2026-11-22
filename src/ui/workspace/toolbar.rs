@@ -19,7 +19,7 @@ impl Workspace {
         theme: &Theme,
     ) -> impl IntoElement {
         let client_decorated = matches!(window.window_decorations(), Decorations::Client { .. });
-        let count = self.tiles.len();
+        let count = self.blocks.len();
         let playing = self.any_playing(cx);
         let compact = window.viewport_size().width < COMPACT_WIDTH;
         let status = self.status(cx);
@@ -72,7 +72,7 @@ impl Workspace {
                     "close-all",
                     "close",
                     "Close all",
-                    cx.listener(|this, _, _, cx| this.send("tile.close_all", Value::Null, cx)),
+                    cx.listener(|this, _, _, cx| this.send("block.close_all", Value::Null, cx)),
                 ))
             })
             .child(
@@ -124,9 +124,9 @@ impl Workspace {
 
     /// What is open, as the toolbar says it: how many files and streams.
     fn status(&self, cx: &App) -> String {
-        let count = self.tiles.len();
+        let count = self.blocks.len();
         let streams = self
-            .tiles
+            .blocks
             .iter()
             .filter(|t| t.view.read(cx).player().is_network())
             .count();

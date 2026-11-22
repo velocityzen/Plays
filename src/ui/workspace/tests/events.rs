@@ -1,4 +1,4 @@
-//! The events told for what windows and tiles do, as the UI and commands
+//! The events told for what windows and blocks do, as the UI and commands
 //! do it: each once, in order.
 
 use std::sync::Arc;
@@ -71,14 +71,14 @@ fn window_id(window: WindowHandle<Workspace>, cx: &VisualTestContext) -> Id {
     window.read_with(cx, |workspace, _| workspace.id()).unwrap()
 }
 
-fn tile_id(window: WindowHandle<Workspace>, cx: &VisualTestContext) -> Id {
+fn block_id(window: WindowHandle<Workspace>, cx: &VisualTestContext) -> Id {
     window
-        .read_with(cx, |workspace, cx| workspace.tiles[0].view.read(cx).id())
+        .read_with(cx, |workspace, cx| workspace.blocks[0].view.read(cx).id())
         .unwrap()
 }
 
 #[gpui::test]
-fn a_tile_opened_renamed_and_its_window_full_screen_are_told_once_in_order(
+fn a_block_opened_renamed_and_its_window_full_screen_are_told_once_in_order(
     cx: &mut TestAppContext,
 ) {
     let (window, mut cx) = testing::start(cx);
@@ -89,19 +89,19 @@ fn a_tile_opened_renamed_and_its_window_full_screen_are_told_once_in_order(
     // Dropped on the window, as Finder does.
     open(window, &mut cx, &["clip.mp4"], true);
     look(&mut cx);
-    let t = tile_id(window, &cx);
+    let t = block_id(window, &cx);
     let opened = told(&mut all);
     assert_eq!(
         opened.iter().map(|event| event.kind).collect::<Vec<_>>(),
         [
-            "tile_created",
+            "block_created",
             "window_layout_changed",
-            "active_tile_changed",
+            "active_block_changed",
             "opened",
             "playing",
         ]
     );
-    assert_eq!(opened[3].payload["tile_id"], json!(t.to_string()));
+    assert_eq!(opened[3].payload["block_id"], json!(t.to_string()));
     assert_eq!(opened[3].payload["title"], json!("clip.mp4"));
     assert!(opened[3].payload["duration"].as_f64().unwrap() > 0.0);
     assert!(kinds(&mut app).is_empty(), "a window's own");
@@ -110,7 +110,7 @@ fn a_tile_opened_renamed_and_its_window_full_screen_are_told_once_in_order(
 
     run(
         &mut cx,
-        Invocation::new("tile.rename").with_args(json!({"label": "left"})),
+        Invocation::new("block.rename").with_args(json!({"label": "left"})),
     );
     run(
         &mut cx,
@@ -127,15 +127,15 @@ fn a_tile_opened_renamed_and_its_window_full_screen_are_told_once_in_order(
         [
             (
                 "command_run",
-                json!({"command": "tile.rename", "source": "ui", "args": {"label": "left"}})
+                json!({"command": "block.rename", "source": "ui", "args": {"label": "left"}})
             ),
             (
-                "tile_label_changed",
+                "block_label_changed",
                 json!({
                     "window_id": w,
                     "window_title": "Plays",
-                    "tile_id": t,
-                    "tile_title": "left",
+                    "block_id": t,
+                    "block_title": "left",
                     "label": "left",
                 })
             ),
@@ -173,18 +173,18 @@ fn a_tile_opened_renamed_and_its_window_full_screen_are_told_once_in_order(
 }
 
 #[gpui::test]
-fn a_tile_moved_to_a_window_of_its_own_and_the_window_closed_are_told_in_order(
+fn a_block_moved_to_a_window_of_its_own_and_the_window_closed_are_told_in_order(
     cx: &mut TestAppContext,
 ) {
     let (window, mut cx) = testing::start(cx);
     open(window, &mut cx, &["clip.mp4"], true);
-    let (w, t) = (window_id(window, &cx), tile_id(window, &cx));
+    let (w, t) = (window_id(window, &cx), block_id(window, &cx));
     let mut all = listen(&mut cx, Scope::All, false);
     let mut app = listen(&mut cx, Scope::App, false);
     let mut first = listen(&mut cx, Scope::Window(w), false);
 
     // To a window of its own, where it plays on.
-    run(&mut cx, Invocation::new("tile.move_to_new_window"));
+    run(&mut cx, Invocation::new("block.move_to_new_window"));
     let moved = told(&mut all);
     assert_eq!(
         moved.iter().map(|event| event.kind).collect::<Vec<_>>(),
@@ -192,10 +192,10 @@ fn a_tile_moved_to_a_window_of_its_own_and_the_window_closed_are_told_in_order(
             "command_run",
             "window_created",
             "window_layout_changed",
-            "active_tile_changed",
-            "tile_moved",
+            "active_block_changed",
+            "block_moved",
             "window_layout_changed",
-            "active_tile_changed",
+            "active_block_changed",
         ]
     );
     let x = moved[1].payload["window_id"].clone();
@@ -205,8 +205,8 @@ fn a_tile_moved_to_a_window_of_its_own_and_the_window_closed_are_told_in_order(
         json!({
             "window_id": x,
             "window_title": "Plays",
-            "tile_id": t.to_string(),
-            "tile_title": "clip.mp4",
+            "block_id": t.to_string(),
+            "block_title": "clip.mp4",
             "from_window_id": w.to_string(),
             "from_window_title": "Plays",
         })
@@ -214,7 +214,11 @@ fn a_tile_moved_to_a_window_of_its_own_and_the_window_closed_are_told_in_order(
     assert_eq!(kinds(&mut app), ["command_run", "window_created"]);
     assert_eq!(
         kinds(&mut first),
-        ["window_layout_changed", "active_tile_changed", "tile_moved"],
+        [
+            "window_layout_changed",
+            "active_block_changed",
+            "block_moved"
+        ],
         "the window it left hears it go"
     );
 
@@ -241,7 +245,7 @@ fn a_tile_moved_to_a_window_of_its_own_and_the_window_closed_are_told_in_order(
         kinds(&mut all),
         [
             "command_run",
-            "tile_closed",
+            "block_closed",
             "window_closed",
             "active_window_changed",
         ]
@@ -259,14 +263,14 @@ fn a_tile_moved_to_a_window_of_its_own_and_the_window_closed_are_told_in_order(
 }
 
 #[gpui::test]
-fn a_tile_maximized_is_told_as_the_layout_changes(cx: &mut TestAppContext) {
+fn a_block_maximized_is_told_as_the_layout_changes(cx: &mut TestAppContext) {
     let (window, mut cx) = testing::start(cx);
     open(window, &mut cx, &["clip.mp4", "clip-chapters.mkv"], false);
     let w = window_id(window, &cx);
     let mut heard = listen(&mut cx, Scope::Window(w), false);
-    let t = tile_id(window, &cx).to_string();
+    let t = block_id(window, &cx).to_string();
 
-    run(&mut cx, Invocation::new("tile.zoom").on_tile("1"));
+    run(&mut cx, Invocation::new("block.zoom").on_block("1"));
     let zoomed = told(&mut heard);
     let layout: Vec<&Event> = zoomed
         .iter()
@@ -275,7 +279,7 @@ fn a_tile_maximized_is_told_as_the_layout_changes(cx: &mut TestAppContext) {
     assert_eq!(layout.len(), 1, "{zoomed:?}");
     assert_eq!(layout[0].payload["maximized"], json!(t));
 
-    run(&mut cx, Invocation::new("tile.zoom").on_tile("1"));
+    run(&mut cx, Invocation::new("block.zoom").on_block("1"));
     let back = told(&mut heard);
     assert_eq!(
         back.iter().map(|event| event.kind).collect::<Vec<_>>(),
@@ -325,7 +329,7 @@ fn how_a_file_plays_is_told_for_its_controls_and_commands(cx: &mut TestAppContex
     let shown = play_until(&mut cx, |cx| {
         window
             .read_with(cx, |workspace, cx| {
-                workspace.tiles[0]
+                workspace.blocks[0]
                     .view
                     .read(cx)
                     .player()
@@ -370,7 +374,7 @@ fn how_a_file_plays_is_told_for_its_controls_and_commands(cx: &mut TestAppContex
     assert_eq!(chapter[1].payload["chapter"], json!(2));
 
     // Played to its end, it says so, not that it paused.
-    let duration = run(&mut cx, Invocation::new("tile.inspect"))["duration"]
+    let duration = run(&mut cx, Invocation::new("block.inspect"))["duration"]
         .as_f64()
         .unwrap();
     run(
@@ -380,7 +384,7 @@ fn how_a_file_plays_is_told_for_its_controls_and_commands(cx: &mut TestAppContex
     run(&mut cx, Invocation::new("playback.play_pause"));
     let ended = play_until(&mut cx, |cx| {
         let inspected =
-            TestAppContext::update(cx, |cx| api::run(Invocation::new("tile.inspect"), cx));
+            TestAppContext::update(cx, |cx| api::run(Invocation::new("block.inspect"), cx));
         inspected.unwrap()["ended"] == json!(true)
     });
     assert!(ended, "it didn't play to its end");
@@ -560,10 +564,10 @@ fn tracks_and_a_file_opened_in_place_of_another_are_told_as_they_change(cx: &mut
     );
     assert!(tracks.len() <= 3, "{tracks:?}");
 
-    // The next file in the folder, in the same tile: it opens, as itself.
+    // The next file in the folder, in the same block: it opens, as itself.
     run(&mut cx, Invocation::new("playback.next_file"));
     let inspect = |cx: &mut VisualTestContext| {
-        TestAppContext::update(cx, |cx| api::run(Invocation::new("tile.inspect"), cx)).unwrap()
+        TestAppContext::update(cx, |cx| api::run(Invocation::new("block.inspect"), cx)).unwrap()
     };
     let next = play_until(&mut cx, |cx| {
         let inspected = inspect(cx);
@@ -581,19 +585,19 @@ fn tracks_and_a_file_opened_in_place_of_another_are_told_as_they_change(cx: &mut
     let at = kinds.iter().position(|&kind| kind == "opened").unwrap();
     assert_eq!(opened[at].payload["title"], json!("clip.mp4"));
     assert!(
-        !kinds.contains(&"track_changed") && !kinds.contains(&"tile_created"),
-        "the same tile, its tracks as the file has them: {kinds:?}"
+        !kinds.contains(&"track_changed") && !kinds.contains(&"block_created"),
+        "the same block, its tracks as the file has them: {kinds:?}"
     );
 
     // Opened in place by no command, and known before the app looks: told
     // as another file still.
     let view = window
-        .read_with(&cx, |workspace, _| workspace.tiles[0].view.clone())
+        .read_with(&cx, |workspace, _| workspace.blocks[0].view.clone())
         .unwrap();
     view.update(&mut cx, |view, cx| view.open_neighbor(-1, cx));
     let back = wait_until(&mut cx, |cx| {
         let inspected = cx
-            .update(|cx| api::run(Invocation::new("tile.inspect"), cx))
+            .update(|cx| api::run(Invocation::new("block.inspect"), cx))
             .unwrap();
         inspected["title"] == json!("clip-subs.mkv") && inspected["duration"].is_number()
     });
@@ -623,9 +627,9 @@ fn a_file_that_cant_open_is_told_so_and_where_it_is_isnt(cx: &mut TestAppContext
         window
             .read_with(cx, |workspace, cx| {
                 workspace
-                    .tiles
+                    .blocks
                     .first()
-                    .is_some_and(|tile| tile.view.read(cx).player().error().is_some())
+                    .is_some_and(|block| block.view.read(cx).player().error().is_some())
             })
             .unwrap()
     });
@@ -636,9 +640,9 @@ fn a_file_that_cant_open_is_told_so_and_where_it_is_isnt(cx: &mut TestAppContext
     assert_eq!(
         events.iter().map(|event| event.kind).collect::<Vec<_>>(),
         [
-            "tile_created",
+            "block_created",
             "window_layout_changed",
-            "active_tile_changed",
+            "active_block_changed",
             "open_failed",
         ]
     );
@@ -651,7 +655,7 @@ fn as_the_app_quits_each_window_is_told_closing_then_quit_to_everyone(cx: &mut T
     // No one listening, nothing to tell.
     TestAppContext::update(&cx, events::quit);
     open(window, &mut cx, &["clip.mp4"], true);
-    let (w, t) = (window_id(window, &cx), tile_id(window, &cx));
+    let (w, t) = (window_id(window, &cx), block_id(window, &cx));
     let mut all = listen(&mut cx, Scope::All, false);
     let mut app = listen(&mut cx, Scope::App, false);
     let mut first = listen(&mut cx, Scope::Window(w), false);
@@ -669,7 +673,7 @@ fn as_the_app_quits_each_window_is_told_closing_then_quit_to_everyone(cx: &mut T
         quitting.iter().map(|event| event.kind).collect::<Vec<_>>(),
         [
             "window_created",
-            "tile_closed",
+            "block_closed",
             "window_closed",
             "window_closed",
             "active_window_changed",
@@ -682,8 +686,8 @@ fn as_the_app_quits_each_window_is_told_closing_then_quit_to_everyone(cx: &mut T
         json!({
             "window_id": w,
             "window_title": "Plays",
-            "tile_id": t.to_string(),
-            "tile_title": "clip.mp4",
+            "block_id": t.to_string(),
+            "block_title": "clip.mp4",
         })
     );
     assert_eq!(
@@ -708,7 +712,7 @@ fn as_the_app_quits_each_window_is_told_closing_then_quit_to_everyone(cx: &mut T
     );
     assert_eq!(
         kinds(&mut first),
-        ["tile_closed", "window_closed", "quit"],
+        ["block_closed", "window_closed", "quit"],
         "its own closing, and quit"
     );
     assert_eq!(

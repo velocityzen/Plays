@@ -1,5 +1,5 @@
 //! The registry, and commands run through `run` as the command line and
-//! palette are to run them: aimed at a window or tile by name, or at the
+//! palette are to run them: aimed at a window or block by name, or at the
 //! window in front, and turned away as they should be.
 
 use std::collections::HashSet;
@@ -22,7 +22,7 @@ const NAMESPACES: [&str; 13] = [
     "app",
     "window",
     "view",
-    "tile",
+    "block",
     "playback",
     "audio",
     "subtitles",
@@ -101,8 +101,8 @@ fn queries_say_what_they_hand_back_and_take_no_keys() {
             "app.inspect",
             "window.ls",
             "window.inspect",
-            "tile.ls",
-            "tile.inspect",
+            "block.ls",
+            "block.inspect",
             "cast.ls",
             "output.ls",
             "display.ls",
@@ -141,7 +141,7 @@ fn describes_each_command() {
             "description": "Play from the start of a chapter.",
             "keywords": ["chapters", "jump", "skip"],
             "namespace": "playback",
-            "scope": "tile",
+            "scope": "block",
             "keys": [],
             "setting": null,
             "args": [{
@@ -166,7 +166,7 @@ fn describes_each_command() {
     );
     assert_eq!(play["state"], false);
     let all = find("playback.play_all").unwrap().describe();
-    assert_eq!(all["scope"], "tiles");
+    assert_eq!(all["scope"], "blocks");
     let quit = find("app.quit").unwrap().describe();
     assert_eq!(quit["keys"], json!(["secondary-q"]));
     assert_eq!(quit["scope"], "app");
@@ -236,7 +236,7 @@ fn an_invocation_reads_and_writes_as_json() {
     let invocation = Invocation::new("playback.go_to_chapter")
         .with_args(json!({"number": 2}))
         .in_window("2")
-        .on_tile("a1")
+        .on_block("a1")
         .from(Source::Cli);
     let json = serde_json::to_value(&invocation).unwrap();
     assert_eq!(
@@ -244,7 +244,7 @@ fn an_invocation_reads_and_writes_as_json() {
         json!({
             "command": "playback.go_to_chapter",
             "args": {"number": 2},
-            "target": {"window": "2", "tile": "a1"},
+            "target": {"window": "2", "block": "a1"},
             "source": "cli",
         })
     );
@@ -267,7 +267,7 @@ fn players(window: WindowHandle<Workspace>, cx: &mut VisualTestContext) -> Vec<E
     TestAppContext::update(cx, |cx| window.read(cx).unwrap().players())
 }
 
-/// Open `files` in `window`, and wait for its tiles and what's in them to
+/// Open `files` in `window`, and wait for its blocks and what's in them to
 /// be known.
 fn open(
     window: WindowHandle<Workspace>,
@@ -344,7 +344,7 @@ fn a_command_knows_where_it_was_run_from(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn a_command_aimed_at_a_tile_acts_on_it_not_on_the_one_in_front(cx: &mut TestAppContext) {
+fn a_command_aimed_at_a_block_acts_on_it_not_on_the_one_in_front(cx: &mut TestAppContext) {
     let (front, mut cx) = testing::start(cx);
     let [first, second] = <[_; 2]>::try_from(open(front, &["clip.mp4", "clip-ip.mkv"], &mut cx))
         .ok()
@@ -354,16 +354,16 @@ fn a_command_aimed_at_a_tile_acts_on_it_not_on_the_one_in_front(cx: &mut TestApp
 
     // By id.
     assert_eq!(
-        run_now(toggle_loop().on_tile(&second_id), &mut cx),
+        run_now(toggle_loop().on_block(&second_id), &mut cx),
         Ok(Value::Null)
     );
     assert!(looping(&second, &mut cx));
     assert!(!looping(&first, &mut cx), "not the one in front");
     // By position, in grid order.
-    run_now(toggle_loop().on_tile("2"), &mut cx).unwrap();
+    run_now(toggle_loop().on_block("2"), &mut cx).unwrap();
     assert!(!looping(&second, &mut cx));
     // By the end of its id.
-    run_now(toggle_loop().on_tile(&second_id[2..]), &mut cx).unwrap();
+    run_now(toggle_loop().on_block(&second_id[2..]), &mut cx).unwrap();
     assert!(looping(&second, &mut cx));
     assert!(!looping(&first, &mut cx));
     // Named by neither, the one keys go to: the first.
@@ -372,14 +372,14 @@ fn a_command_aimed_at_a_tile_acts_on_it_not_on_the_one_in_front(cx: &mut TestApp
     let loops = |target: Target, cx: &mut VisualTestContext| {
         TestAppContext::update(cx, |cx| state("playback.toggle_loop", &target, cx))
     };
-    let tile = |name: &str| Target {
+    let block = |name: &str| Target {
         window: None,
-        tile: Some(name.into()),
+        block: Some(name.into()),
     };
-    assert_eq!(loops(tile(&second_id), &mut cx), Ok(json!(true)));
-    assert_eq!(loops(tile("1"), &mut cx), Ok(json!(true)));
-    run_now(toggle_loop().on_tile("1"), &mut cx).unwrap();
-    assert_eq!(loops(tile("1"), &mut cx), Ok(json!(false)));
+    assert_eq!(loops(block(&second_id), &mut cx), Ok(json!(true)));
+    assert_eq!(loops(block("1"), &mut cx), Ok(json!(true)));
+    run_now(toggle_loop().on_block("1"), &mut cx).unwrap();
+    assert_eq!(loops(block("1"), &mut cx), Ok(json!(false)));
 
     // Another window, behind the first, as the test platform leaves it.
     let back = cx
@@ -392,45 +392,45 @@ fn a_command_aimed_at_a_tile_acts_on_it_not_on_the_one_in_front(cx: &mut TestApp
     let in_front = |cx: &mut VisualTestContext| TestAppContext::update(cx, |cx| front_window(cx));
     assert_eq!(in_front(&mut cx), Some(front));
 
-    // The window by its position, ⌘2's, and the tile keys go to in it.
+    // The window by its position, ⌘2's, and the block keys go to in it.
     let mute = || Invocation::new("audio.toggle_mute");
     run_now(mute().in_window("2"), &mut cx).unwrap();
     assert!(muted(&other, &mut cx));
     assert!(!muted(&first, &mut cx), "not the window in front's");
-    // A tile in any window, by id.
-    run_now(mute().on_tile(&other_id), &mut cx).unwrap();
+    // A block in any window, by id.
+    run_now(mute().on_block(&other_id), &mut cx).unwrap();
     assert!(!muted(&other, &mut cx));
     // A position counts in the window in front, or the one named.
-    run_now(mute().on_tile("1"), &mut cx).unwrap();
+    run_now(mute().on_block("1"), &mut cx).unwrap();
     assert!(muted(&first, &mut cx));
     assert!(!muted(&other, &mut cx));
     let back_id = TestAppContext::update(&cx, |cx| back.read(cx).unwrap().id().to_string());
-    run_now(mute().in_window(&back_id).on_tile("1"), &mut cx).unwrap();
+    run_now(mute().in_window(&back_id).on_block("1"), &mut cx).unwrap();
     assert!(muted(&other, &mut cx));
     assert_eq!(
-        TestAppContext::update(&cx, |cx| state("audio.toggle_mute", &tile(&other_id), cx)),
+        TestAppContext::update(&cx, |cx| state("audio.toggle_mute", &block(&other_id), cx)),
         Ok(json!(true))
     );
     assert_eq!(in_front(&mut cx), Some(front), "none brought to the front");
 
-    // A window brought to the front by its position, whose tiles positions
+    // A window brought to the front by its position, whose blocks positions
     // count in then.
     run_now(Invocation::new("window.focus").in_window("2"), &mut cx).unwrap();
     assert_eq!(in_front(&mut cx), Some(back));
-    run_now(mute().on_tile("1"), &mut cx).unwrap();
+    run_now(mute().on_block("1"), &mut cx).unwrap();
     assert!(!muted(&other, &mut cx));
     assert!(muted(&first, &mut cx), "not the first window's");
     // As commands named nothing are.
     run_now(mute(), &mut cx).unwrap();
     assert!(muted(&other, &mut cx));
-    // Every tile in a window.
+    // Every block in a window.
     run_now(Invocation::new("playback.play_all").in_window("1"), &mut cx).unwrap();
     let playing = |player: &Entity<PlayerView>, cx: &mut VisualTestContext| {
         TestAppContext::update(cx, |cx| player.read(cx).is_playing())
     };
     assert!(playing(&first, &mut cx) && playing(&second, &mut cx));
-    // A tile closed in a window behind.
-    run_now(Invocation::new("tile.close").on_tile(&second_id), &mut cx).unwrap();
+    // A block closed in a window behind.
+    run_now(Invocation::new("block.close").on_block(&second_id), &mut cx).unwrap();
     assert_eq!(players(front, &mut cx), [first]);
 }
 
@@ -519,14 +519,14 @@ fn each_kind_of_error_comes_back(cx: &mut TestAppContext) {
         run_now(Invocation::new("app.quit").in_window("1"), &mut cx),
         Err(Error::bad_args(
             "app.quit",
-            "acts on the app, not on a window or tile"
+            "acts on the app, not on a window or block"
         ))
     );
     assert_eq!(
-        run_now(Invocation::new("tile.focus.left").on_tile("1"), &mut cx),
+        run_now(Invocation::new("block.focus.left").on_block("1"), &mut cx),
         Err(Error::bad_args(
-            "tile.focus.left",
-            "acts on a window: name it with window, not tile"
+            "block.focus.left",
+            "acts on a window: name it with window, not block"
         ))
     );
     assert_eq!(
@@ -541,7 +541,7 @@ fn each_kind_of_error_comes_back(cx: &mut TestAppContext) {
     let play = || Invocation::new("playback.play_pause");
     assert_eq!(
         run_now(play(), &mut cx),
-        Err(Error::not_found("tile", format!("in window {window_id}"))),
+        Err(Error::not_found("block", format!("in window {window_id}"))),
         "an empty window"
     );
     let past = past_the_last(&window_id);
@@ -552,8 +552,8 @@ fn each_kind_of_error_comes_back(cx: &mut TestAppContext) {
     open(window, &["clip.mp4"], &mut cx);
     assert_eq!(run_now(play(), &mut cx), Ok(Value::Null));
     assert_eq!(
-        run_now(play().on_tile("zz"), &mut cx),
-        Err(Error::not_found("tile", "zz"))
+        run_now(play().on_block("zz"), &mut cx),
+        Err(Error::not_found("block", "zz"))
     );
     assert_eq!(
         run_now(chapter(json!({"number": 1})), &mut cx),
@@ -575,7 +575,7 @@ fn each_kind_of_error_comes_back(cx: &mut TestAppContext) {
         Err(Error::not_found("device", "tv"))
     );
     // Picture in Picture is macOS's.
-    let pip = run_now(Invocation::new("tile.toggle_picture_in_picture"), &mut cx);
+    let pip = run_now(Invocation::new("block.toggle_picture_in_picture"), &mut cx);
     if !cfg!(target_os = "macos") {
         assert_eq!(
             pip,
@@ -593,7 +593,7 @@ fn says_what_can_run_and_what_its_state_is(cx: &mut TestAppContext) {
     let none = Target::default;
     let named = |window: &str| Target {
         window: Some(window.into()),
-        tile: None,
+        block: None,
     };
     assert!(can("app.quit", none(), &mut cx));
     assert!(!can("app.quit", named("1"), &mut cx), "it takes none");
@@ -608,7 +608,7 @@ fn says_what_can_run_and_what_its_state_is(cx: &mut TestAppContext) {
     open(window, &["clip.mp4"], &mut cx);
     assert!(can("playback.play_pause", none(), &mut cx));
     assert_eq!(
-        can("tile.toggle_picture_in_picture", none(), &mut cx),
+        can("block.toggle_picture_in_picture", none(), &mut cx),
         cfg!(target_os = "macos")
     );
 
@@ -664,7 +664,7 @@ fn says_what_can_run_and_what_its_state_is(cx: &mut TestAppContext) {
         TestAppContext::update(&cx, |cx| state("app.quit", &named("1"), cx)),
         Err(Error::bad_args(
             "app.quit",
-            "acts on the app, not on a window or tile"
+            "acts on the app, not on a window or block"
         ))
     );
 }
@@ -675,7 +675,7 @@ fn scopes_are_what_their_commands_act_on() {
     assert_eq!(scope("app.quit"), Scope::App);
     assert_eq!(scope("window.close"), Scope::AnyWindow);
     assert_eq!(scope("window.focus"), Scope::Window);
-    assert_eq!(scope("tile.close_all"), Scope::Tiles);
-    assert_eq!(scope("playback.play_pause"), Scope::Tile);
-    assert_eq!(scope("tile.close"), Scope::Tile);
+    assert_eq!(scope("block.close_all"), Scope::Blocks);
+    assert_eq!(scope("playback.play_pause"), Scope::Block);
+    assert_eq!(scope("block.close"), Scope::Block);
 }

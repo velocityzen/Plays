@@ -1,15 +1,15 @@
-//! What `tile.ls` and `tile.inspect` say of a tile, as JSON: what it plays,
+//! What `block.ls` and `block.inspect` say of a block, as JSON: what it plays,
 //! where it is, and how it's set to play; and what events see of it.
 
 use serde_json::{Map, Value, json};
 
 use super::PlayerView;
-use crate::api::events::{TRACKS, TileSeen};
+use crate::api::events::{BlockSeen, TRACKS};
 use crate::cast::Device;
 use crate::media::Source;
 use crate::media::tracks::{Track, TrackKind};
 
-/// The kinds of track, as `tile.inspect` names them.
+/// The kinds of track, as `block.inspect` names them.
 const KINDS: [(TrackKind, &str); 3] = [
     (TrackKind::Video, "video"),
     (TrackKind::Audio, "audio"),
@@ -39,7 +39,7 @@ impl PlayerView {
         summary
     }
 
-    /// All `tile.inspect` says of it: its summary; where it is, how long
+    /// All `block.inspect` says of it: its summary; where it is, how long
     /// it is, its video's frame rate and whether it ended; its volume (in
     /// percent), mute and loop; its tracks (numbered from 1 within each
     /// kind) and those picked; the delays and picture adjustments; its
@@ -123,7 +123,7 @@ impl PlayerView {
     }
 
     /// What events see of it: what it plays, once it has opened, and how.
-    pub fn seen(&self) -> TileSeen {
+    pub fn seen(&self) -> BlockSeen {
         let player = self.player();
         let summary = self.summary();
         let opened = player.is_known().then(|| {
@@ -139,7 +139,7 @@ impl PlayerView {
             let &(kind, _) = KINDS.iter().find(|&&(_, kind)| kind == name)?;
             self.picked(kind)
         };
-        TileSeen {
+        BlockSeen {
             id: self.id(),
             label: self.label().map(str::to_owned),
             title: self.header_title().to_string(),
@@ -163,7 +163,7 @@ impl PlayerView {
     }
 }
 
-/// A device it casts to, as `tile.inspect` and events say.
+/// A device it casts to, as `block.inspect` and events say.
 fn device_json(device: &Device) -> Value {
     json!({
         "id": device.id,

@@ -1,5 +1,5 @@
-//! A tile's link to the device it casts to. Every call to a device may wait
-//! on the network, so the session runs on a thread of its own: the tile
+//! A block's link to the device it casts to. Every call to a device may wait
+//! on the network, so the session runs on a thread of its own: the block
 //! sends it what to do and reads what the device last said, showing what
 //! it asked for until the device has done it.
 
@@ -87,7 +87,7 @@ enum Command {
     },
 }
 
-/// What the link's thread tells the tile.
+/// What the link's thread tells the block.
 struct Shared {
     phase: Phase,
     /// What the device last said, and when it was there.
@@ -99,11 +99,11 @@ struct Shared {
     done: u64,
     /// How long the media is, as the stream server read it.
     duration: Option<f64>,
-    /// What last went wrong, for the tile to say.
+    /// What last went wrong, for the block to say.
     failure: Option<String>,
 }
 
-/// What the tile last asked for: where the device should be, and whether
+/// What the block last asked for: where the device should be, and whether
 /// it should play.
 #[derive(Clone, Copy, Debug)]
 struct Asked {
@@ -424,8 +424,8 @@ impl Worker {
         Ok(worker)
     }
 
-    /// Do what the tile asks, and ask the device what it's doing, until
-    /// the tile lets go or the device goes away.
+    /// Do what the block asks, and ask the device what it's doing, until
+    /// the block lets go or the device goes away.
     fn serve(mut self, commands: Receiver<Command>) {
         let mut done = 0;
         let poll = if self.load.picture_here {
@@ -621,7 +621,7 @@ fn on(cast: &Cast) -> Phase {
     }
 }
 
-/// What a device is told of a cast, before the tile's part.
+/// What a device is told of a cast, before the block's part.
 fn load_for(cast: &Cast) -> Load {
     Load {
         url: cast.url(),

@@ -1,5 +1,5 @@
 //! Subtitles: text and bitmap subtitle streams decoded into cues, which the
-//! tile draws over the video.
+//! block draws over the video.
 //!
 //! FFmpeg turns every text format (SRT, WebVTT, MP4 timed text, ASS) into
 //! ASS dialogue lines; only their words, line breaks, italics, bold and

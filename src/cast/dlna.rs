@@ -8,8 +8,8 @@
 //!
 //! Subtitles go as SRT beside the media, which a renderer takes only with
 //! the media, so changing them loads it again from where it is. DLNA has
-//! no volume for the media apart from the renderer's own, so the tile's
-//! scales that: at the tile's volume when cast, the renderer stays where
+//! no volume for the media apart from the renderer's own, so the block's
+//! scales that: at the block's volume when cast, the renderer stays where
 //! it was.
 
 use std::collections::HashMap;
@@ -401,44 +401,44 @@ fn over(ended: Ended) -> Error {
     }
 }
 
-/// The tile's volume on a renderer that has only its own: the tile's
+/// The block's volume on a renderer that has only its own: the block's
 /// scales the renderer's.
 #[derive(Clone, Copy, Debug)]
 struct Loudness {
-    /// The renderer's volume at the tile's full one, 0 to 1.
+    /// The renderer's volume at the block's full one, 0 to 1.
     full: f32,
-    /// The tile's volume, as last set.
-    tile: f32,
+    /// The block's volume, as last set.
+    block: f32,
     /// The renderer's, as last set or heard.
     level: f32,
     muted: bool,
 }
 
 impl Loudness {
-    fn new(heard: Volume, tile: f32) -> Self {
+    fn new(heard: Volume, block: f32) -> Self {
         Self {
-            full: Self::full_at(heard.level, tile),
-            tile,
+            full: Self::full_at(heard.level, block),
+            block,
             level: heard.level,
             muted: heard.muted,
         }
     }
 
-    /// The renderer's volume at the tile's full one, where it is at `level`
-    /// with the tile at `tile`.
-    fn full_at(level: f32, tile: f32) -> f32 {
-        if tile > 0.01 {
-            (level / tile).min(1.0)
+    /// The renderer's volume at the block's full one, where it is at `level`
+    /// with the block at `block`.
+    fn full_at(level: f32, block: f32) -> f32 {
+        if block > 0.01 {
+            (level / block).min(1.0)
         } else {
             level
         }
     }
 
-    /// Its volume, turned on the renderer: the tile's now scales from
+    /// Its volume, turned on the renderer: the block's now scales from
     /// there.
     fn heard(&mut self, heard: Volume) {
         if (heard.level - self.level).abs() > 0.005 {
-            self.full = Self::full_at(heard.level, self.tile);
+            self.full = Self::full_at(heard.level, self.block);
             self.level = heard.level;
         }
         self.muted = heard.muted;
@@ -500,7 +500,7 @@ impl DlnaSession {
         }
     }
 
-    /// What went wrong, as the tile is told: a session that ended says
+    /// What went wrong, as the block is told: a session that ended says
     /// how.
     fn failed(&mut self, err: ::dlna::Error) -> Error {
         match err {
@@ -676,10 +676,10 @@ impl Session for DlnaSession {
             done = session.set_muted(muted);
             loudness.muted = muted;
         }
-        if done.is_ok() && (volume - loudness.tile).abs() > f32::EPSILON {
+        if done.is_ok() && (volume - loudness.block).abs() > f32::EPSILON {
             let level = (loudness.full * volume).clamp(0.0, 1.0);
             done = session.set_volume(level);
-            loudness.tile = volume;
+            loudness.block = volume;
             loudness.level = level;
         }
         self.loudness = Some(Some(loudness));

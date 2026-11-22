@@ -41,11 +41,11 @@ pub struct Options {
     /// number alone), or the end of its id. The one in front by default.
     #[arg(short, long, global = true, value_name = "WINDOW")]
     pub window: Option<String>,
-    /// The tile to act on: its id, its label, its place in the window from 1
+    /// The block to act on: its id, its label, its place in the window from 1
     /// (#2 by place alone), or the end of its id. The one keys go to by
     /// default.
-    #[arg(short, long, global = true, value_name = "TILE")]
-    pub tile: Option<String>,
+    #[arg(short, long, global = true, value_name = "BLOCK")]
+    pub block: Option<String>,
 }
 
 #[derive(Debug, Subcommand)]
@@ -67,14 +67,14 @@ pub enum Command {
     /// List, describe and call the API's commands, with JSON arguments.
     #[command(subcommand)]
     Api(Api),
-    /// List the windows, each with its tiles.
+    /// List the windows, each with its blocks.
     Ls,
     /// List, inspect, go to, open, close, rename and move windows.
     #[command(subcommand)]
     Window(Window),
-    /// List, inspect, go to, close, maximize, move and rename tiles.
+    /// List, inspect, go to, close, maximize, move and rename blocks.
     #[command(subcommand)]
-    Tile(Tile),
+    Block(Block),
     /// Open files, folders and streams, in the window in front or the one
     /// named.
     Open {
@@ -85,20 +85,20 @@ pub enum Command {
         new_window: bool,
     },
     /// Print what changes, as it does: everything, the app's, its windows'
-    /// and their tiles', or the window's named (-w).
+    /// and their blocks', or the window's named (-w).
     Events {
-        /// Each tile's position too, once a second.
+        /// Each block's position too, once a second.
         #[arg(long)]
         positions: bool,
         /// Stop after this many.
         #[arg(long, value_name = "N")]
         count: Option<usize>,
     },
-    /// Wait for an event from the tile (-t) or window (-w) named, such as
+    /// Wait for an event from the block (-b) or window (-w) named, such as
     /// ended, and print it.
     Wait {
         /// The event's type, as plays events prints it: ended, paused,
-        /// tile_closed…
+        /// block_closed…
         event: String,
         /// Give up after this many seconds, with exit status 1.
         // So -1 is read as a time, and refused as one, not as an option.
@@ -178,31 +178,31 @@ pub enum Window {
 }
 
 #[derive(Debug, Subcommand)]
-pub enum Tile {
-    /// List the window's tiles, in the grid's order.
+pub enum Block {
+    /// List the window's blocks, in the grid's order.
     Ls,
-    /// Say all about a tile.
-    Inspect { tile: Option<String> },
-    /// Put a tile in front, keys going to it, and its window too.
-    Focus { tile: Option<String> },
-    /// Close tiles: those named, or the one keys go to.
-    Close { tiles: Vec<String> },
-    /// Fill the window with a tile, or show every tile again.
-    Zoom { tile: Option<String> },
-    /// Put a tile in another place in its window's grid.
+    /// Say all about a block.
+    Inspect { block: Option<String> },
+    /// Put a block in front, keys going to it, and its window too.
+    Focus { block: Option<String> },
+    /// Close blocks: those named, or the one keys go to.
+    Close { blocks: Vec<String> },
+    /// Fill the window with a block, or show every block again.
+    Zoom { block: Option<String> },
+    /// Put a block in another place in its window's grid.
     Move {
-        tile: Option<String>,
+        block: Option<String>,
         #[command(flatten)]
         to: Place,
     },
-    /// Label a tile: [TILE] LABEL. A blank label takes it away.
+    /// Label a block: [BLOCK] LABEL. A blank label takes it away.
     Rename {
-        #[arg(num_args = 1..=2, required = true, value_names = ["TILE", "LABEL"])]
+        #[arg(num_args = 1..=2, required = true, value_names = ["BLOCK", "LABEL"])]
         names: Vec<String>,
     },
 }
 
-/// Where a window or tile moves to.
+/// Where a window or block moves to.
 #[derive(Debug, Args)]
 #[group(required = true, multiple = false)]
 pub struct Place {

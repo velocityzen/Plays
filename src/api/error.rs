@@ -11,9 +11,9 @@ use serde::{Deserialize, Serialize};
 pub enum Error {
     /// There's no command by that id.
     NoSuchCommand { command: String },
-    /// Its arguments, or the window or tile named, aren't ones it takes.
+    /// Its arguments, or the window or block named, aren't ones it takes.
     BadArgs { command: String, message: String },
-    /// Nothing goes by that name: a window, a tile, a device.
+    /// Nothing goes by that name: a window, a block, a device.
     NotFound { what: String, name: String },
     /// More than one thing goes by that name; `matches` are their ids.
     Ambiguous {

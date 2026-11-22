@@ -110,7 +110,7 @@ pub(super) fn aimed_at(window: WindowHandle<Workspace>, cx: &VisualTestContext) 
                 .read_with(cx, |workspace, _| workspace.id().to_string())
                 .unwrap(),
         ),
-        tile: None,
+        block: None,
     }
 }
 
@@ -561,7 +561,7 @@ fn the_outputs_are_audio_and_a_window_goes_back_to_the_apps_as_the_menus_say(
     assert_eq!(
         listed(window, &cx).first().map(String::as_str),
         Some("Same as the App"),
-        "as Audio → Window Output Device and a tile's menu say"
+        "as Audio → Window Output Device and a block's menu say"
     );
     assert_eq!(read(window, &cx, Palette::current), ["Same as the App"]);
 }
@@ -867,7 +867,7 @@ fn every_argument_is_picked_from_a_list_but_times_volumes_paths_and_names(cx: &m
         .collect();
     assert_eq!(
         unasked,
-        ["window.rename", "tile.rename"],
+        ["window.rename", "block.rename"],
         "these ask for a name themselves"
     );
 }
@@ -939,7 +939,7 @@ fn lists_offer_what_there_is_with_what_is_picked_now(cx: &mut TestAppContext) {
     assert!(ratios[0].current, "none set");
     assert!(labels(&ratios).contains(&"16:9".to_owned()));
 
-    let windows = choices("tile.move_to_window", &mut cx);
+    let windows = choices("block.move_to_window", &mut cx);
     assert!(windows.is_empty(), "no other window to move to");
     let places = choices("window.move", &mut cx);
     assert_eq!(labels(&places), ["1"]);

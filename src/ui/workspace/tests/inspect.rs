@@ -1,4 +1,4 @@
-//! The commands that list and inspect windows, tiles and devices, as the
+//! The commands that list and inspect windows, blocks and devices, as the
 //! command line reads them: what each hands back, shape and all.
 
 use std::sync::Arc;
@@ -25,9 +25,9 @@ fn query(cx: &mut VisualTestContext, invocation: Invocation) -> Value {
     done.unwrap_or_else(|err| panic!("{err:?}"))
 }
 
-/// Run `command`, given `args`, on the tile `name` names.
-fn on_tile(cx: &mut VisualTestContext, command: &str, args: Value, name: &str) -> Value {
-    query(cx, Invocation::new(command).with_args(args).on_tile(name))
+/// Run `command`, given `args`, on the block `name` names.
+fn on_block(cx: &mut VisualTestContext, command: &str, args: Value, name: &str) -> Value {
+    query(cx, Invocation::new(command).with_args(args).on_block(name))
 }
 
 fn id(window: WindowHandle<Workspace>, cx: &VisualTestContext) -> String {
@@ -36,14 +36,14 @@ fn id(window: WindowHandle<Workspace>, cx: &VisualTestContext) -> String {
         .unwrap()
 }
 
-/// The ids of `window`'s tiles, in order.
-fn tile_ids(window: WindowHandle<Workspace>, cx: &VisualTestContext) -> Vec<String> {
+/// The ids of `window`'s blocks, in order.
+fn block_ids(window: WindowHandle<Workspace>, cx: &VisualTestContext) -> Vec<String> {
     window
         .read_with(cx, |workspace, cx| {
             workspace
                 .players()
                 .iter()
-                .map(|tile| tile.read(cx).id().to_string())
+                .map(|block| block.read(cx).id().to_string())
                 .collect()
         })
         .unwrap()
@@ -68,14 +68,14 @@ fn window_ls_and_inspect_say_what_each_window_is(cx: &mut TestAppContext) {
     assert_eq!(
         query(&mut cx, Invocation::new("window.ls")),
         json!([
-            {"id": one, "label": null, "title": "Plays", "number": 1, "front": true, "tiles": 2},
-            {"id": two, "label": "Stage", "title": "Stage", "number": 2, "front": false, "tiles": 0},
+            {"id": one, "label": null, "title": "Plays", "number": 1, "front": true, "blocks": 2},
+            {"id": two, "label": "Stage", "title": "Stage", "number": 2, "front": false, "blocks": 0},
         ])
     );
 
     let bounds = cx.update(|window, _| window.bounds());
     let display = cx.update(|window, cx| displays::of(window, cx));
-    let tiles = query(&mut cx, Invocation::new("tile.ls"));
+    let blocks = query(&mut cx, Invocation::new("block.ls"));
     assert_eq!(
         query(&mut cx, Invocation::new("window.inspect")),
         json!({
@@ -84,7 +84,7 @@ fn window_ls_and_inspect_say_what_each_window_is(cx: &mut TestAppContext) {
             "title": "Plays",
             "number": 1,
             "front": true,
-            "tiles": tiles,
+            "blocks": blocks,
             "bounds": {
                 "x": f32::from(bounds.origin.x),
                 "y": f32::from(bounds.origin.y),
@@ -102,7 +102,7 @@ fn window_ls_and_inspect_say_what_each_window_is(cx: &mut TestAppContext) {
         Invocation::new("window.inspect").in_window("Stage"),
     );
     assert_eq!(
-        (&other["number"], &other["front"], &other["tiles"]),
+        (&other["number"], &other["front"], &other["blocks"]),
         (&json!(2), &json!(false), &json!([])),
         "named"
     );
@@ -128,7 +128,7 @@ fn window_ls_and_inspect_say_what_each_window_is(cx: &mut TestAppContext) {
 }
 
 /// A window with a file with chapters and one with subtitles, and the
-/// ids of their tiles.
+/// ids of their blocks.
 struct TwoFiles {
     window: WindowHandle<Workspace>,
     cx: VisualTestContext,
@@ -144,7 +144,7 @@ fn two_files(cx: &mut TestAppContext) -> TwoFiles {
         &["clip-chapters.mkv", "clip-subs.mkv"],
         false,
     );
-    let [chapters, subs] = <[String; 2]>::try_from(tile_ids(window, &cx)).expect("two tiles");
+    let [chapters, subs] = <[String; 2]>::try_from(block_ids(window, &cx)).expect("two blocks");
     TwoFiles {
         window,
         cx,
@@ -154,7 +154,7 @@ fn two_files(cx: &mut TestAppContext) -> TwoFiles {
 }
 
 #[gpui::test]
-fn tile_ls_says_what_each_tile_is(cx: &mut TestAppContext) {
+fn block_ls_says_what_each_block_is(cx: &mut TestAppContext) {
     let TwoFiles {
         mut cx,
         chapters,
@@ -162,10 +162,10 @@ fn tile_ls_says_what_each_tile_is(cx: &mut TestAppContext) {
         ..
     } = two_files(cx);
     query(&mut cx, Invocation::new("playback.play_all"));
-    let listed = query(&mut cx, Invocation::new("tile.ls"));
+    let listed = query(&mut cx, Invocation::new("block.ls"));
     assert_eq!(listed[0]["playing"], true);
     query(&mut cx, Invocation::new("playback.pause_all"));
-    let listed = query(&mut cx, Invocation::new("tile.ls"));
+    let listed = query(&mut cx, Invocation::new("block.ls"));
     assert_eq!(
         listed,
         json!([
@@ -194,7 +194,7 @@ fn tile_ls_says_what_each_tile_is(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn tile_inspect_says_how_a_tile_plays(cx: &mut TestAppContext) {
+fn block_inspect_says_how_a_block_plays(cx: &mut TestAppContext) {
     let TwoFiles {
         window,
         mut cx,
@@ -203,7 +203,7 @@ fn tile_inspect_says_how_a_tile_plays(cx: &mut TestAppContext) {
     } = two_files(cx);
     query(&mut cx, Invocation::new("playback.pause_all"));
     for (command, args) in [
-        ("tile.rename", json!({"label": "Subs"})),
+        ("block.rename", json!({"label": "Subs"})),
         ("playback.seek", json!({"time": 1.0})),
         ("playback.toggle_loop", Value::Null),
         ("audio.set_volume", json!({"volume": 50})),
@@ -217,7 +217,7 @@ fn tile_inspect_says_how_a_tile_plays(cx: &mut TestAppContext) {
         ("video.set_aspect_ratio", json!({"ratio": "4:3"})),
         ("video.set_crop", json!({"crop": "16:9"})),
     ] {
-        on_tile(&mut cx, command, args, &subs);
+        on_block(&mut cx, command, args, &subs);
     }
     let track = |codec: &str, format: Option<&str>| {
         json!({
@@ -275,24 +275,24 @@ fn tile_inspect_says_how_a_tile_plays(cx: &mut TestAppContext) {
         "casting": null,
     });
     assert_eq!(
-        on_tile(&mut cx, "tile.inspect", Value::Null, "Subs"),
+        on_block(&mut cx, "block.inspect", Value::Null, "Subs"),
         expected
     );
 }
 
 #[gpui::test]
-fn tile_inspect_says_its_chapters_and_its_end(cx: &mut TestAppContext) {
+fn block_inspect_says_its_chapters_and_its_end(cx: &mut TestAppContext) {
     let TwoFiles {
         mut cx, chapters, ..
     } = two_files(cx);
     // The chapters, and the one it's in, from 1.
-    on_tile(
+    on_block(
         &mut cx,
         "playback.go_to_chapter",
         json!({"number": 2}),
         &chapters,
     );
-    let inspected = on_tile(&mut cx, "tile.inspect", Value::Null, &chapters);
+    let inspected = on_block(&mut cx, "block.inspect", Value::Null, &chapters);
     assert_eq!(
         (&inspected["chapter"], &inspected["chapters"]),
         (
@@ -311,8 +311,8 @@ fn tile_inspect_says_its_chapters_and_its_end(cx: &mut TestAppContext) {
     );
 
     // At its end, it says so.
-    on_tile(&mut cx, "playback.seek", json!({"time": 3.0}), &chapters);
-    let inspected = on_tile(&mut cx, "tile.inspect", Value::Null, &chapters);
+    on_block(&mut cx, "playback.seek", json!({"time": 3.0}), &chapters);
+    let inspected = on_block(&mut cx, "block.inspect", Value::Null, &chapters);
     assert_eq!(
         (&inspected["position"], &inspected["ended"]),
         (&json!(2.021), &json!(true))
@@ -389,13 +389,13 @@ fn output_display_and_cast_ls_list_whats_there(cx: &mut TestAppContext) {
         "by protocol, then name"
     );
 
-    // What a tile casts to, it says.
+    // What a block casts to, it says.
     open(window, &mut cx, &["clip.mp4"], false);
-    let tile = Invocation::new("cast.to")
+    let block = Invocation::new("cast.to")
         .with_args(json!({"device": tv.id}))
-        .on_tile("1");
-    query(&mut cx, tile);
-    let inspected = on_tile(&mut cx, "tile.inspect", Value::Null, "1");
+        .on_block("1");
+    query(&mut cx, block);
+    let inspected = on_block(&mut cx, "block.inspect", Value::Null, "1");
     assert_eq!(
         inspected["casting"],
         json!({"id": "fake-0", "kind": "Fake", "name": "Living Room"})
@@ -447,11 +447,11 @@ fn a_streams_url_shows_without_its_user_password_or_query(cx: &mut TestAppContex
         .unwrap();
     let opened = wait_until(&mut cx, |cx| {
         window
-            .read_with(cx, |workspace, _| workspace.tile_count() == 1)
+            .read_with(cx, |workspace, _| workspace.block_count() == 1)
             .unwrap()
     });
-    assert!(opened, "no tile for the stream");
-    let listed = query(&mut cx, Invocation::new("tile.ls"));
+    assert!(opened, "no block for the stream");
+    let listed = query(&mut cx, Invocation::new("block.ls"));
     assert_eq!(
         (&listed[0]["file"], &listed[0]["url"]),
         (&Value::Null, &json!("http://192.0.2.10:8080/live/clip.mp4"))

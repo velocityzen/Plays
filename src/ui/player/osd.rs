@@ -1,4 +1,4 @@
-//! Notes over a tile on what a shortcut did: a line of text, or the reel of
+//! Notes over a block on what a shortcut did: a line of text, or the reel of
 //! tracks rolling to the one picked. They show for a moment, then fade out.
 
 use std::time::{Duration, Instant};
@@ -14,7 +14,7 @@ use crate::ui::theme::motion::{OSD_DURATION, OSD_FADE, REEL_ROLL};
 use crate::ui::theme::player::{NOTE_TOP, REEL_FADED, TRACK_MENU_WIDTH};
 use crate::ui::theme::{menu, panel};
 
-/// The note over a tile on what a shortcut did.
+/// The note over a block on what a shortcut did.
 pub(super) enum Osd {
     Text(SharedString),
     /// A track picked with a shortcut.

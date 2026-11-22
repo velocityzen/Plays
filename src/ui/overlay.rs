@@ -1,6 +1,6 @@
 //! Subtitles drawn into pixels by Plays rather than by gpui: into
 //! screenshots, and into the frames Picture in Picture shows. Text is laid
-//! out as on a tile showing just the picture, `TEXT_HEIGHT` pixels tall,
+//! out as on a block showing just the picture, `TEXT_HEIGHT` pixels tall,
 //! then drawn at the size of the pixels with the glyphs gpui draws on
 //! screen; bitmaps are stretched over where the stream places them.
 
@@ -29,7 +29,7 @@ pub enum Paint {
 }
 
 /// Lay out the text of `cues` for a picture shown at `picture` size, as
-/// on a tile showing just that picture, `TEXT_HEIGHT` pixels tall.
+/// on a block showing just that picture, `TEXT_HEIGHT` pixels tall.
 pub fn text_overlay(
     cues: &[Arc<CueContent>],
     style: &SubtitleStyle,

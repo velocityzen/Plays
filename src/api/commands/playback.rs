@@ -1,5 +1,5 @@
-//! `playback`: playing a tile, its chapters and the files beside it in its
-//! folder, and every tile in a window at once.
+//! `playback`: playing a block, its chapters and the files beside it in its
+//! folder, and every block in a window at once.
 
 use std::path::PathBuf;
 
@@ -16,17 +16,17 @@ use crate::api::{Error, Run};
 use crate::settings::Settings;
 
 pub const COMMANDS: &[Spec] = &[
-    Spec::tile(
+    Spec::block(
         "playback.play_pause",
         "Play/Pause",
-        "Pause the tile if it plays, else play it.",
+        "Pause the block if it plays, else play it.",
         |player, _, cx| player.play_pause(cx),
     )
     .tells(&["playing", "paused"])
     .keywords(&["play", "pause", "resume", "stop"])
     .setting("play_pause")
     .keys(&["space", "p"]),
-    Spec::tile_with(
+    Spec::block_with(
         "playback.seek",
         "Seek To",
         "Play from a time in the file, here or on the device it's cast to.",
@@ -46,7 +46,7 @@ pub const COMMANDS: &[Spec] = &[
     )
     .tells(&["seeked", "ended", "chapter_changed"])
     .keywords(&["jump", "position", "time", "go to", "scrub"]),
-    Spec::tile(
+    Spec::block(
         "playback.seek_forward",
         "Seek Forward",
         "Skip ahead by the seek step set in Settings.",
@@ -59,7 +59,7 @@ pub const COMMANDS: &[Spec] = &[
     .keywords(&["skip", "forward", "jump"])
     .setting("seek_forward")
     .keys(&["right"]),
-    Spec::tile(
+    Spec::block(
         "playback.seek_backward",
         "Seek Backward",
         "Skip back by the seek step set in Settings.",
@@ -72,7 +72,7 @@ pub const COMMANDS: &[Spec] = &[
     .keywords(&["skip", "back", "rewind", "jump"])
     .setting("seek_backward")
     .keys(&["left"]),
-    Spec::tile(
+    Spec::block(
         "playback.next_frame",
         "Next Frame",
         "Pause and show the next frame.",
@@ -82,7 +82,7 @@ pub const COMMANDS: &[Spec] = &[
     .keywords(&["step"])
     .setting("next_frame")
     .keys(&["alt-right", ".", ">"]),
-    Spec::tile(
+    Spec::block(
         "playback.previous_frame",
         "Previous Frame",
         "Pause and show the frame before.",
@@ -92,7 +92,7 @@ pub const COMMANDS: &[Spec] = &[
     .keywords(&["step", "back"])
     .setting("previous_frame")
     .keys(&["alt-left", ",", "<"]),
-    Spec::tile(
+    Spec::block(
         "playback.next_chapter",
         "Next Chapter",
         "Play from the start of the next chapter.",
@@ -102,7 +102,7 @@ pub const COMMANDS: &[Spec] = &[
     .keywords(&["skip"])
     .setting("next_chapter")
     .keys(&["pagedown"]),
-    Spec::tile(
+    Spec::block(
         "playback.previous_chapter",
         "Previous Chapter",
         "Play from the start of this chapter, or of the one before near its start.",
@@ -112,7 +112,7 @@ pub const COMMANDS: &[Spec] = &[
     .keywords(&["back"])
     .setting("previous_chapter")
     .keys(&["pageup"]),
-    Spec::tile_with(
+    Spec::block_with(
         "playback.go_to_chapter",
         "Go to Chapter",
         "Play from the start of a chapter.",
@@ -134,13 +134,13 @@ pub const COMMANDS: &[Spec] = &[
     .keywords(&["chapters", "jump", "skip"])
     // The chapter it's in, from 1.
     .state(|target, cx| {
-        target::read_tile(target, cx, |player, _| {
+        target::read_block(target, cx, |player, _| {
             player
                 .chapter()
                 .map_or(Value::Null, |index| json!(index + 1))
         })
     }),
-    Spec::tile(
+    Spec::block(
         "playback.restart",
         "Restart",
         "Play from the start.",
@@ -150,7 +150,7 @@ pub const COMMANDS: &[Spec] = &[
     .keywords(&["beginning", "rewind"])
     .setting("restart")
     .keys(&["home"]),
-    Spec::tile(
+    Spec::block(
         "playback.previous_file",
         "Previous File",
         "Play the file before this one in its playlist, or else its folder, instead.",
@@ -160,7 +160,7 @@ pub const COMMANDS: &[Spec] = &[
     .keywords(&["folder", "episode", "back"])
     .setting("previous_file")
     .keys(&["secondary-left"]),
-    Spec::tile(
+    Spec::block(
         "playback.next_file",
         "Next File",
         "Play the file after this one in its playlist, or else its folder, instead.",
@@ -170,10 +170,10 @@ pub const COMMANDS: &[Spec] = &[
     .keywords(&["folder", "episode", "skip"])
     .setting("next_file")
     .keys(&["secondary-right"]),
-    Spec::tile_with(
+    Spec::block_with(
         "playback.play_file",
         "Play File Instead",
-        "Play another file in the tile instead, one in its folder say, at the same volume, \
+        "Play another file in the block instead, one in its folder say, at the same volume, \
          muted and looping as this one is, and playing if it is.",
         &[Arg::required("path", Kind::Text, "The file's full path.")],
         |args, player, _, cx| {
@@ -188,7 +188,7 @@ pub const COMMANDS: &[Spec] = &[
     )
     .tells(&["opened", "playing"])
     .keywords(&["open", "folder", "episode", "switch", "replace"]),
-    Spec::tile(
+    Spec::block(
         "playback.toggle_loop",
         "Loop",
         "Play the file again from the start at its end, or stop at its end.",
@@ -198,9 +198,9 @@ pub const COMMANDS: &[Spec] = &[
     .setting("loop")
     .keys(&["secondary-shift-l"])
     .state(|target, cx| {
-        target::read_tile(target, cx, |player, _| json!(player.player().is_looping()))
+        target::read_block(target, cx, |player, _| json!(player.player().is_looping()))
     }),
-    Spec::tiles(
+    Spec::blocks(
         "playback.play_pause_all",
         "Play/Pause All",
         "Pause every file in the window if any plays, else play them all.",
@@ -210,7 +210,7 @@ pub const COMMANDS: &[Spec] = &[
     .keywords(&["every", "play", "pause"])
     .setting("play_pause_all")
     .keys(&["shift-space"]),
-    Spec::tiles(
+    Spec::blocks(
         "playback.play_all",
         "Play All",
         "Play every file in the window.",
@@ -218,7 +218,7 @@ pub const COMMANDS: &[Spec] = &[
     )
     .tells(&["playing"])
     .keywords(&["every", "resume"]),
-    Spec::tiles(
+    Spec::blocks(
         "playback.pause_all",
         "Pause All",
         "Pause every file in the window.",
@@ -226,7 +226,7 @@ pub const COMMANDS: &[Spec] = &[
     )
     .tells(&["paused"])
     .keywords(&["every", "stop"]),
-    Spec::tiles(
+    Spec::blocks(
         "playback.restart_all",
         "Restart All",
         "Play every file in the window from the start.",
@@ -236,7 +236,7 @@ pub const COMMANDS: &[Spec] = &[
     .keywords(&["every", "beginning", "rewind"])
     .setting("restart_all")
     .keys(&["shift-home"]),
-    Spec::tiles(
+    Spec::blocks(
         "playback.seek_forward_all",
         "Seek All Forward",
         "Skip every file in the window ahead by the seek step.",
@@ -246,7 +246,7 @@ pub const COMMANDS: &[Spec] = &[
     .keywords(&["every", "skip", "jump"])
     .setting("seek_forward_all")
     .keys(&["shift-right"]),
-    Spec::tiles(
+    Spec::blocks(
         "playback.seek_backward_all",
         "Seek All Backward",
         "Skip every file in the window back by the seek step.",
@@ -256,7 +256,7 @@ pub const COMMANDS: &[Spec] = &[
     .keywords(&["every", "rewind", "jump"])
     .setting("seek_backward_all")
     .keys(&["shift-left"]),
-    Spec::tiles(
+    Spec::blocks(
         "playback.next_frame_all",
         "Next Frame on All",
         "Pause every file in the window and show its next frame.",
@@ -266,7 +266,7 @@ pub const COMMANDS: &[Spec] = &[
     .keywords(&["every", "step"])
     .setting("next_frame_all")
     .keys(&["alt-shift-right"]),
-    Spec::tiles(
+    Spec::blocks(
         "playback.previous_frame_all",
         "Previous Frame on All",
         "Pause every file in the window and show the frame before.",
@@ -276,10 +276,10 @@ pub const COMMANDS: &[Spec] = &[
     .keywords(&["every", "step", "back"])
     .setting("previous_frame_all")
     .keys(&["alt-shift-left"]),
-    Spec::tiles(
+    Spec::blocks(
         "playback.sync_all",
-        "Sync All to This Tile",
-        "Bring every file in the window to where the tile keys go to is, playing or \
+        "Sync All to This Block",
+        "Bring every file in the window to where the block keys go to is, playing or \
          paused as it is.",
         |workspace, _, cx| workspace.sync_all(cx),
     )
@@ -307,11 +307,11 @@ const PLAYHEAD: &[EventField] = &[
     ),
 ];
 
-/// How files play: the tiles' events about them.
+/// How files play: the blocks' events about them.
 pub const EVENTS: &[EventKind] = &[
-    EventKind::tile(
+    EventKind::block(
         "opened",
-        "A file opened in a tile, paused at its start.",
+        "A file opened in a block, paused at its start.",
         &[
             EventField::new(
                 "title",
@@ -326,33 +326,33 @@ pub const EVENTS: &[EventKind] = &[
         ],
     )
     .causes(&[super::DROPPED, NEXT]),
-    EventKind::tile(
+    EventKind::block(
         "open_failed",
         "A file couldn't be opened.",
         &[EventField::new("error", "Why.")],
     )
     .causes(&["a file Plays can't play or a stream it can't reach"]),
-    EventKind::tile(
+    EventKind::block(
         "failed",
         "A file stopped playing on an error.",
         &[EventField::new("error", "Why.")],
     )
     .causes(&["a file that's damaged or a stream that went"]),
-    EventKind::tile("playing", "A file began playing.", PLAYHEAD)
+    EventKind::block("playing", "A file began playing.", PLAYHEAD)
         .causes(&["a file opening while Autoplay is on", NEXT]),
-    EventKind::tile("paused", "A file paused.", PLAYHEAD),
-    EventKind::tile(
+    EventKind::block("paused", "A file paused.", PLAYHEAD),
+    EventKind::block(
         "seeked",
         "A file was sought to another time, here or on the device it's cast to: where it went.",
         PLAYHEAD,
     ),
-    EventKind::tile(
+    EventKind::block(
         "ended",
         "A file played to its end, and stopped there.",
         PLAYHEAD,
     )
     .causes(&["a file playing to its end"]),
-    EventKind::tile(
+    EventKind::block(
         "position",
         "Where a file is as it plays: told only to those who ask for positions, at most once \
          a second, and only once it has moved.",
@@ -374,7 +374,7 @@ pub const EVENTS: &[EventKind] = &[
         ],
     )
     .causes(&["a file playing"]),
-    EventKind::tile(
+    EventKind::block(
         "chapter_changed",
         "A file is in another chapter.",
         &[EventField::new(
@@ -383,7 +383,7 @@ pub const EVENTS: &[EventKind] = &[
         )],
     )
     .causes(&["a file playing into its next chapter"]),
-    EventKind::tile(
+    EventKind::block(
         "track_changed",
         "Another of a file's tracks plays, or none of its kind.",
         &[
@@ -417,7 +417,7 @@ fn seek_step(cx: &App) -> f64 {
     f64::from(cx.global::<Settings>().seek_step_seconds)
 }
 
-/// Play the tile in front from the start of chapter `number`, from 1.
+/// Play the block in front from the start of chapter `number`, from 1.
 pub fn go_to_chapter(number: usize) -> Run {
     Run::with("playback.go_to_chapter", json!({"number": number}))
 }

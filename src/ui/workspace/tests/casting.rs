@@ -1,4 +1,4 @@
-//! Casting a tile to a fake device, as someone at the screen would. The
+//! Casting a block to a fake device, as someone at the screen would. The
 //! stream server is the real one, serving this computer only, so what it
 //! tells the device to fetch is fetched.
 
@@ -44,7 +44,7 @@ fn start(
     cx.update(|_, cx| cx.set_global(Casting::local(vec![Arc::new(fake.clone())])));
     open(window, &mut cx, &[file], playing);
     if !playing {
-        tile(window, &cx).update(&mut cx, |view, cx| {
+        block(window, &cx).update(&mut cx, |view, cx| {
             view.pause();
             cx.notify();
         });
@@ -52,9 +52,9 @@ fn start(
     (window, cx, fake, tv)
 }
 
-pub(super) fn tile(window: WindowHandle<Workspace>, cx: &VisualTestContext) -> Entity<PlayerView> {
+pub(super) fn block(window: WindowHandle<Workspace>, cx: &VisualTestContext) -> Entity<PlayerView> {
     window
-        .read_with(cx, |workspace, _| workspace.tiles[0].view.clone())
+        .read_with(cx, |workspace, _| workspace.blocks[0].view.clone())
         .unwrap()
 }
 
@@ -80,7 +80,7 @@ fn say(fake: &FakeTarget, device: &Device, state: State, position: f64) {
     screen.status.position = position;
 }
 
-/// Run until `done`, moving the clock on so the tile follows its device,
+/// Run until `done`, moving the clock on so the block follows its device,
 /// and giving the link's thread real time, for at most `OPEN_WAIT`.
 pub(super) fn wait(
     cx: &mut VisualTestContext,
@@ -99,14 +99,14 @@ pub(super) fn wait(
     panic!("{what} didn't happen in {OPEN_WAIT:?}");
 }
 
-/// Cast the tile to `device`, and wait for it to play there.
+/// Cast the block to `device`, and wait for it to play there.
 fn cast(
     window: WindowHandle<Workspace>,
     cx: &mut VisualTestContext,
     fake: &FakeTarget,
     device: &Device,
 ) -> Load {
-    let view = tile(window, cx);
+    let view = block(window, cx);
     let to = device.clone();
     view.update(cx, |view, cx| view.cast_to(Some(to), cx));
     wait(cx, "the device to load it", |_| {
@@ -146,7 +146,7 @@ pub(super) fn get(url: &str) -> (u16, Vec<u8>) {
 #[gpui::test]
 fn the_cast_command_plays_on_a_device_found_by_its_id(cx: &mut TestAppContext) {
     let (window, mut cx, fake, tv) = start(cx, "clip.mp4", true);
-    let view = tile(window, &cx);
+    let view = block(window, &cx);
     let run = |args: serde_json::Value, cx: &mut VisualTestContext| {
         let invocation = Invocation::new("cast.to").with_args(args);
         TestAppContext::update(cx, |cx| api::run(invocation, cx))
@@ -217,13 +217,13 @@ fn the_cast_menu_closes_as_the_controls_are_hidden(cx: &mut TestAppContext) {
     show_controls(false, &mut cx);
     assert!(!shows(&mut cx, "cast-0"), "it goes with them");
     show_controls(true, &mut cx);
-    hover(&mut cx, "tile-0");
+    hover(&mut cx, "block-0");
     assert!(shows(&mut cx, "cast"));
     assert!(!shows(&mut cx, "cast-0"), "closed when they're back");
 }
 
 #[gpui::test]
-fn the_cast_button_is_lit_while_the_tile_casts(cx: &mut TestAppContext) {
+fn the_cast_button_is_lit_while_the_block_casts(cx: &mut TestAppContext) {
     let (window, mut cx, fake, tv) = start(cx, "clip.mp4", false);
     assert!(shows(&mut cx, "cast"));
     assert!(!shows(&mut cx, "cast-selected"), "it plays here");
@@ -231,7 +231,7 @@ fn the_cast_button_is_lit_while_the_tile_casts(cx: &mut TestAppContext) {
     assert!(shows(&mut cx, "cast-selected"));
 
     // And while another file opens, drawn before it goes on there.
-    let view = tile(window, &cx);
+    let view = block(window, &cx);
     cx.update(|window, cx| {
         let next = testing::fixture("clip-ip.mkv");
         view.update(cx, |view, cx| view.play_instead(next, cx));
@@ -278,11 +278,11 @@ fn a_name_too_long_for_the_menu_is_cut_short_with_an_ellipsis(cx: &mut TestAppCo
 }
 
 #[gpui::test]
-fn picking_a_device_plays_the_file_there_from_where_it_is_and_pauses_the_tile(
+fn picking_a_device_plays_the_file_there_from_where_it_is_and_pauses_the_block(
     cx: &mut TestAppContext,
 ) {
     let (window, mut cx, fake, tv) = start(cx, "clip.mp4", true);
-    let view = tile(window, &cx);
+    let view = block(window, &cx);
     let name = view.read_with(&cx, |view, _| view.id().to_string());
     cx.update(|_, cx| api::record(cx));
 
@@ -295,8 +295,8 @@ fn picking_a_device_plays_the_file_there_from_where_it_is_and_pauses_the_tile(
         cx.update(|_, cx| api::recorded(cx)),
         [Invocation::new("cast.to")
             .with_args(json!({"device": tv.id, "kind": KIND}))
-            .on_tile(name)],
-        "the menu casts the tile with cast.to"
+            .on_block(name)],
+        "the menu casts the block with cast.to"
     );
 
     let load = loads(&fake, &tv).remove(0);
@@ -308,10 +308,10 @@ fn picking_a_device_plays_the_file_there_from_where_it_is_and_pauses_the_tile(
         )
     });
     assert_eq!(casting, Some(tv.clone()));
-    assert!(!playing_here, "the tile waits while the device plays");
+    assert!(!playing_here, "the block waits while the device plays");
     assert!(
         (load.start - position_here).abs() < 0.01,
-        "it starts where the tile was: {} against {position_here}",
+        "it starts where the block was: {} against {position_here}",
         load.start
     );
     assert!(load.autoplay, "it plays there, as it played here");
@@ -322,17 +322,17 @@ fn picking_a_device_plays_the_file_there_from_where_it_is_and_pauses_the_tile(
     let file = std::fs::read(testing::fixture("clip.mp4")).unwrap();
     assert_eq!(body, file, "an MP4 the device plays goes as it is");
 
-    wait(&mut cx, "the tile to say where it plays", |cx| {
+    wait(&mut cx, "the block to say where it plays", |cx| {
         shows(cx, "play-here")
     });
 }
 
 #[gpui::test]
-fn the_tiles_controls_reach_the_device_and_its_status_moves_the_bar(cx: &mut TestAppContext) {
+fn the_blocks_controls_reach_the_device_and_its_status_moves_the_bar(cx: &mut TestAppContext) {
     let (window, mut cx, fake, tv) = start(cx, "clip.mp4", false);
-    let view = tile(window, &cx);
+    let view = block(window, &cx);
     let load = cast(window, &mut cx, &fake, &tv);
-    assert!(!load.autoplay, "a paused tile stays paused there");
+    assert!(!load.autoplay, "a paused block stays paused there");
 
     press(&mut cx, "space");
     wait(&mut cx, "the device to play", |_| {
@@ -356,7 +356,7 @@ fn the_tiles_controls_reach_the_device_and_its_status_moves_the_bar(cx: &mut Tes
     });
     assert!(
         !view.read_with(&cx, |view, _| view.player().is_playing()),
-        "the shortcuts drive the device, not the tile's own playback"
+        "the shortcuts drive the device, not the block's own playback"
     );
 
     say(&fake, &tv, State::Paused, 1.25);
@@ -370,7 +370,7 @@ fn the_slider_frame_steps_and_delays_leave_the_player_here_alone_while_it_casts(
     cx: &mut TestAppContext,
 ) {
     let (window, mut cx, fake, tv) = start(cx, "clip-subs.mkv", false);
-    let view = tile(window, &cx);
+    let view = block(window, &cx);
     cast(window, &mut cx, &fake, &tv);
     let here = |cx: &mut VisualTestContext| {
         view.read_with(cx, |view, _| {
@@ -420,17 +420,17 @@ fn pip_button(cx: &mut VisualTestContext, view: &Entity<PlayerView>, event: PipE
 #[gpui::test]
 fn picture_in_pictures_buttons_drive_the_device_and_it_isnt_offered(cx: &mut TestAppContext) {
     let (window, mut cx, fake, tv) = start(cx, "clip.mp4", false);
-    let view = tile(window, &cx);
+    let view = block(window, &cx);
     if pip::supported() {
         wait(&mut cx, "a picture", |cx| {
             view.read_with(cx, |view, _| view.player().frame().is_some())
         });
-        hover(&mut cx, "tile-0");
+        hover(&mut cx, "block-0");
         assert!(shows(&mut cx, "pip"), "offered while it plays here");
     }
     cast(window, &mut cx, &fake, &tv);
     if pip::supported() {
-        hover(&mut cx, "tile-0");
+        hover(&mut cx, "block-0");
         assert!(!shows(&mut cx, "pip"), "no picture here to show");
     }
 
@@ -450,7 +450,7 @@ fn picture_in_pictures_buttons_drive_the_device_and_it_isnt_offered(cx: &mut Tes
     });
     assert!(
         !view.read_with(&cx, |view, _| view.player().is_playing()),
-        "the tile's own playback stays paused"
+        "the block's own playback stays paused"
     );
 }
 
@@ -458,7 +458,7 @@ fn picture_in_pictures_buttons_drive_the_device_and_it_isnt_offered(cx: &mut Tes
 fn picture_in_pictures_buttons_drive_a_speaker_the_sound_is_cast_to(cx: &mut TestAppContext) {
     let (window, mut cx, fake, _) = start(cx, "clip.mp4", false);
     let speaker = speaker(&fake, "Kitchen");
-    let view = tile(window, &cx);
+    let view = block(window, &cx);
     cast(window, &mut cx, &fake, &speaker);
 
     pip_button(&mut cx, &view, PipEvent::SetPlaying(true));
@@ -475,14 +475,14 @@ fn picture_in_pictures_buttons_drive_a_speaker_the_sound_is_cast_to(cx: &mut Tes
 #[gpui::test]
 fn ending_the_cast_plays_on_here_from_where_the_device_was(cx: &mut TestAppContext) {
     let (window, mut cx, fake, tv) = start(cx, "clip.mp4", true);
-    let view = tile(window, &cx);
+    let view = block(window, &cx);
     let load = cast(window, &mut cx, &fake, &tv);
     say(&fake, &tv, State::Paused, 1.5);
     wait(&mut cx, "the bar to follow the device", |cx| {
         view.read_with(cx, |view, _| (view.position() - 1.5).abs() < 1e-9)
     });
 
-    wait(&mut cx, "the tile to say where it plays", |cx| {
+    wait(&mut cx, "the block to say where it plays", |cx| {
         shows(cx, "play-here")
     });
     let name = view.read_with(&cx, |view, _| view.id().to_string());
@@ -491,7 +491,7 @@ fn ending_the_cast_plays_on_here_from_where_the_device_was(cx: &mut TestAppConte
     cx.run_until_parked();
     assert_eq!(
         cx.update(|_, cx| api::recorded(cx)),
-        [Invocation::new("cast.stop").on_tile(name)]
+        [Invocation::new("cast.stop").on_block(name)]
     );
 
     let (casting, position, playing) = view.read_with(&cx, |view, _| {
@@ -516,7 +516,7 @@ fn ending_the_cast_plays_on_here_from_where_the_device_was(cx: &mut TestAppConte
 #[gpui::test]
 fn a_device_going_away_ends_the_cast(cx: &mut TestAppContext) {
     let (window, mut cx, fake, tv) = start(cx, "clip.mp4", false);
-    let view = tile(window, &cx);
+    let view = block(window, &cx);
     cast(window, &mut cx, &fake, &tv);
     say(&fake, &tv, State::Paused, 0.75);
     wait(&mut cx, "the bar to follow the device", |cx| {
@@ -542,7 +542,7 @@ fn a_device_going_away_ends_the_cast(cx: &mut TestAppContext) {
 #[gpui::test]
 fn turning_its_protocol_off_leaves_a_cast_going(cx: &mut TestAppContext) {
     let (window, mut cx, fake, tv) = start(cx, "clip.mp4", false);
-    let view = tile(window, &cx);
+    let view = block(window, &cx);
     cast(window, &mut cx, &fake, &tv);
 
     cx.update(|_, cx| {
@@ -566,9 +566,9 @@ fn turning_its_protocol_off_leaves_a_cast_going(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn subtitles_picked_on_the_tile_change_on_the_device(cx: &mut TestAppContext) {
+fn subtitles_picked_on_the_block_change_on_the_device(cx: &mut TestAppContext) {
     let (window, mut cx, fake, tv) = start(cx, "clip-subs.mkv", false);
-    let view = tile(window, &cx);
+    let view = block(window, &cx);
     view.update(&mut cx, |view, cx| {
         view.select_track(TrackKind::Subtitle, None, cx)
     });
@@ -614,7 +614,7 @@ fn subtitles_picked_on_the_tile_change_on_the_device(cx: &mut TestAppContext) {
 #[gpui::test]
 fn another_track_loads_it_again_with_the_subtitles(cx: &mut TestAppContext) {
     let (window, mut cx, fake, tv) = start(cx, "clip-subs.mkv", false);
-    let view = tile(window, &cx);
+    let view = block(window, &cx);
     view.update(&mut cx, |view, cx| {
         view.select_track(TrackKind::Subtitle, Some(2), cx)
     });
@@ -637,13 +637,13 @@ fn another_track_loads_it_again_with_the_subtitles(cx: &mut TestAppContext) {
 const PICTURES_STAY: &str = "Picture subtitles stay on this computer";
 
 fn stays_here(window: WindowHandle<Workspace>, cx: &mut VisualTestContext) -> Vec<&'static str> {
-    tile(window, cx).read_with(cx, |view, cx| view.cast_stays_here(cx))
+    block(window, cx).read_with(cx, |view, cx| view.cast_stays_here(cx))
 }
 
 #[gpui::test]
 fn picture_subtitles_stay_here_when_the_video_goes_as_it_is(cx: &mut TestAppContext) {
     let (window, mut cx, fake, tv) = start(cx, "clip-dvdsub.mkv", false);
-    let view = tile(window, &cx);
+    let view = block(window, &cx);
     view.update(&mut cx, |view, cx| {
         view.select_track(TrackKind::Subtitle, None, cx)
     });
@@ -670,7 +670,7 @@ fn picture_subtitles_are_drawn_into_video_it_re_encodes(cx: &mut TestAppContext)
         max_size: Some((80, 60)),
         ..stream_server::Profile::default()
     };
-    let view = tile(window, &cx);
+    let view = block(window, &cx);
     view.update(&mut cx, |view, cx| {
         view.select_track(TrackKind::Subtitle, None, cx)
     });
@@ -694,7 +694,7 @@ fn picture_subtitles_are_drawn_into_video_it_re_encodes(cx: &mut TestAppContext)
     assert!((drawn.start - 1.25).abs() < 0.01, "from where it was");
     assert_eq!(get(&first.url).0, 404, "the first is no longer served");
     assert_eq!(get(&drawn.url).0, 200);
-    wait(&mut cx, "the tile to say they go", |cx| {
+    wait(&mut cx, "the block to say they go", |cx| {
         !stays_here(window, cx).contains(&PICTURES_STAY)
     });
 
@@ -710,10 +710,10 @@ fn picture_subtitles_are_drawn_into_video_it_re_encodes(cx: &mut TestAppContext)
     assert_eq!(get(&drawn.url).0, 404);
 }
 
-/// Open the file before (`-1`) or after (`1`) the tile's in its folder,
+/// Open the file before (`-1`) or after (`1`) the block's in its folder,
 /// once it knows which they are.
 fn open_neighbor(view: &Entity<PlayerView>, cx: &mut VisualTestContext, direction: i32) {
-    wait(cx, "the tile to look through its folder", |cx| {
+    wait(cx, "the block to look through its folder", |cx| {
         view.read_with(cx, |view, _| view.knows_neighbors())
     });
     view.update(cx, |view, cx| view.open_neighbor(direction, cx));
@@ -722,7 +722,7 @@ fn open_neighbor(view: &Entity<PlayerView>, cx: &mut VisualTestContext, directio
 #[gpui::test]
 fn the_next_file_goes_to_the_device_with_the_subtitles_beside_it(cx: &mut TestAppContext) {
     let (window, mut cx, fake, tv) = start(cx, "clip-subs.mkv", false);
-    let view = tile(window, &cx);
+    let view = block(window, &cx);
     let first = cast(window, &mut cx, &fake, &tv);
     assert_eq!(first.subtitles, None, "none are picked in that one");
     open_neighbor(&view, &mut cx, 1);
@@ -744,7 +744,7 @@ fn the_next_file_goes_to_the_device_with_the_subtitles_beside_it(cx: &mut TestAp
 fn the_previous_files_sound_goes_to_the_speaker_its_picture_staying_here(cx: &mut TestAppContext) {
     let (window, mut cx, fake, _) = start(cx, "clip.mp4", false);
     let speaker = speaker(&fake, "Kitchen");
-    let view = tile(window, &cx);
+    let view = block(window, &cx);
     assert!(cast(window, &mut cx, &fake, &speaker).picture_here);
     open_neighbor(&view, &mut cx, -1);
     wait(&mut cx, "the previous file to load there", |_| {
@@ -756,7 +756,7 @@ fn the_previous_files_sound_goes_to_the_speaker_its_picture_staying_here(cx: &mu
     assert!(view.read_with(&cx, |view, _| view.casts_sound_only()));
     assert!(
         !shows(&mut cx, "play-here"),
-        "the picture stays on the tile"
+        "the picture stays on the block"
     );
 }
 
@@ -803,7 +803,7 @@ fn speakers_are_offered_for_anything_with_sound(cx: &mut TestAppContext) {
 fn a_video_without_sound_doesnt_go_to_a_speaker(cx: &mut TestAppContext) {
     let (window, mut cx, fake, _) = start(cx, "clip-ip.mkv", false);
     let speaker = speaker(&fake, "Kitchen");
-    let view = tile(window, &cx);
+    let view = block(window, &cx);
     view.update(&mut cx, |view, cx| view.cast_to(Some(speaker.clone()), cx));
     assert_eq!(view.read_with(&cx, |view, _| view.casting().cloned()), None);
     std::thread::sleep(Duration::from_millis(100));
@@ -814,7 +814,7 @@ fn a_video_without_sound_doesnt_go_to_a_speaker(cx: &mut TestAppContext) {
 fn the_sound_going_to_a_speaker_is_said_unless_notes_are_hidden(cx: &mut TestAppContext) {
     let (window, mut cx, fake, _) = start(cx, "clip.mp4", false);
     let kitchen = speaker(&fake, "Kitchen");
-    let view = tile(window, &cx);
+    let view = block(window, &cx);
     let noted = |cx: &mut VisualTestContext| view.read_with(cx, |view, _| view.noted());
     cast(window, &mut cx, &fake, &kitchen);
     wait(&mut cx, "a note on where the sound is", |cx| {
@@ -838,10 +838,10 @@ fn the_sound_going_to_a_speaker_is_said_unless_notes_are_hidden(cx: &mut TestApp
 fn a_videos_sound_goes_to_a_speaker_and_the_picture_here_follows_it(cx: &mut TestAppContext) {
     let (window, mut cx, fake, _) = start(cx, "clip.mp4", false);
     let speaker = speaker(&fake, "Kitchen");
-    let view = tile(window, &cx);
+    let view = block(window, &cx);
     let load = cast(window, &mut cx, &fake, &speaker);
     assert!(load.picture_here);
-    assert!(!load.autoplay, "a paused tile stays paused there");
+    assert!(!load.autoplay, "a paused block stays paused there");
     assert_eq!(load.mime, "audio/aac");
     assert_eq!(load.subtitles, None);
     let (status, body) = get(&load.url);
@@ -860,7 +860,7 @@ fn a_videos_sound_goes_to_a_speaker_and_the_picture_here_follows_it(cx: &mut Tes
     assert!(!view.read_with(&cx, |view, _| view.player().is_playing()));
     assert!(
         !shows(&mut cx, "play-here"),
-        "the picture stays on the tile, not a panel saying where it went"
+        "the picture stays on the block, not a panel saying where it went"
     );
 
     // Heard moving, the picture plays with it.
@@ -876,7 +876,7 @@ fn a_videos_sound_goes_to_a_speaker_and_the_picture_here_follows_it(cx: &mut Tes
         })
     });
 
-    // The tile's controls reach the speaker, and stop the picture at once.
+    // The block's controls reach the speaker, and stop the picture at once.
     press(&mut cx, "space");
     wait(&mut cx, "the speaker to play", |_| {
         calls(&fake, &speaker).contains(&Call::Play)
@@ -919,7 +919,7 @@ fn the_picture_here_shows_where_the_slider_is_dragged_and_the_speaker_goes_there
 ) {
     let (window, mut cx, fake, _) = start(cx, "clip.mp4", false);
     let speaker = speaker(&fake, "Kitchen");
-    let view = tile(window, &cx);
+    let view = block(window, &cx);
     cast(window, &mut cx, &fake, &speaker);
     say(&fake, &speaker, State::Paused, 0.25);
     wait(&mut cx, "the picture to be where the sound is", |cx| {
@@ -933,7 +933,7 @@ fn the_picture_here_shows_where_the_slider_is_dragged_and_the_speaker_goes_there
     cx.simulate_mouse_move(at(0.8), MouseButton::Left, Modifiers::none());
     let shown = view.read_with(&cx, |view, _| view.player().position());
     assert!(shown > 1.2, "the picture shows {shown}");
-    // However often the tile hears where the speaker is meanwhile.
+    // However often the block hears where the speaker is meanwhile.
     for _ in 0..10 {
         cx.executor().advance_clock(CAST_POLL);
         cx.run_until_parked();
@@ -966,7 +966,7 @@ fn the_picture_here_shows_where_the_slider_is_dragged_and_the_speaker_goes_there
 #[gpui::test]
 fn quitting_stops_the_device(cx: &mut TestAppContext) {
     let (window, mut cx, fake, tv) = start(cx, "clip.mp4", false);
-    let view = tile(window, &cx);
+    let view = block(window, &cx);
     cast(window, &mut cx, &fake, &tv);
     say(&fake, &tv, State::Playing, 1.5);
     wait(&mut cx, "the bar to follow the device", |cx| {

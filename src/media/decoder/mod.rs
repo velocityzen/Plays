@@ -182,7 +182,7 @@ pub fn spawn(
 }
 
 /// Run a decoder thread's `body`, saying why it failed, a panic as much
-/// as an error, so the tile says it can't play rather than waiting for
+/// as an error, so the block says it can't play rather than waiting for
 /// ever. The first thread to fail says why.
 fn guarded(shared: &Shared, source: &impl Display, body: impl FnOnce() -> Result<()>) {
     let failed = match panic::catch_unwind(AssertUnwindSafe(body)) {

@@ -92,7 +92,7 @@ pub const EDGES: [(SubtitleEdge, &str); 3] = [
 
 pub const AREAS: [(SubtitleArea, &str); 2] = [
     (SubtitleArea::Picture, "Picture"),
-    (SubtitleArea::Tile, "Tile"),
+    (SubtitleArea::Block, "Block"),
 ];
 
 pub const FORMATS: [(ScreenshotFormat, &str); 2] = [

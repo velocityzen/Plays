@@ -114,7 +114,7 @@ pub struct Theme {
     pub accent: Hsla,
     pub danger: Hsla,
     pub track: Hsla,
-    pub tile: Hsla,
+    pub block: Hsla,
     pub drop_highlight: Hsla,
 }
 
@@ -169,7 +169,7 @@ impl Theme {
             accent,
             danger,
             track: text.opacity(0.2),
-            tile: background.blend(text.opacity(0.04)),
+            block: background.blend(text.opacity(0.04)),
             drop_highlight: accent.opacity(0.15),
         }
     }
@@ -343,7 +343,7 @@ pub mod motion {
     pub const OSD_FADE: Duration = Duration::from_millis(200);
     /// How long the track reel takes to roll to the track picked.
     pub const REEL_ROLL: Duration = Duration::from_millis(220);
-    /// How long the mouse can rest before a playing tile's header and
+    /// How long the mouse can rest before a playing block's header and
     /// controls fade (and the pointer hides), as if it had left the window.
     pub const MOUSE_IDLE: Duration = Duration::from_millis(2500);
     /// How long files just opened get to say how big their videos are
@@ -354,7 +354,7 @@ pub mod motion {
     /// How much of the audio level meter's reading is kept each frame as
     /// the sound gets quieter; it rises at once.
     pub const LEVEL_FALLOFF: f32 = 0.88;
-    /// How often a casting tile looks at what its device last said, which
+    /// How often a casting block looks at what its device last said, which
     /// moves its bar.
     pub const CAST_POLL: Duration = Duration::from_millis(250);
     /// How often a pairing sheet looks at how pairing with its TV goes.
@@ -373,24 +373,24 @@ pub mod motion {
     /// How long a covered display shows after the mouse moved or clicked
     /// on it, as it rests there.
     pub const BLACKOUT_PEEK: Duration = Duration::from_secs(3);
-    /// How often the displays, and the tile in front's cast, are looked at:
+    /// How often the displays, and the block in front's cast, are looked at:
     /// nothing tells when a display connects, as an AirPlay display does.
     pub const DISPLAYS_POLL: Duration = Duration::from_secs(1);
 }
 
-/// Windows and how tiles fill them.
+/// Windows and how blocks fill them.
 pub mod layout {
     use gpui::{Pixels, Point, Size, point, px, size};
 
     /// The first window, and the most a popped-out video's window opens at.
     pub const WINDOW_SIZE: Size<Pixels> = size(px(1280.), px(800.));
-    /// The smallest a window gets, which fits the controls of one tile.
+    /// The smallest a window gets, which fits the controls of one block.
     pub const WINDOW_MIN_SIZE: Size<Pixels> = size(px(480.), px(320.));
     /// A popped-out audio file's window.
     pub const AUDIO_WINDOW_SIZE: Size<Pixels> = size(px(420.), px(420.));
-    /// A popped-out tile's window before the size of its video is known.
+    /// A popped-out block's window before the size of its video is known.
     pub const VIDEO_WINDOW_SIZE: Size<Pixels> = size(px(960.), px(540.));
-    /// How far a popped-out tile's window keeps from the window it left.
+    /// How far a popped-out block's window keeps from the window it left.
     pub const WINDOW_GAP: Pixels = px(12.);
     /// Room a window sized for its videos leaves on its screen, for the
     /// panels and docks of desktops gpui can't ask (macOS tells).
@@ -406,14 +406,14 @@ pub mod layout {
     pub const TOOLBAR_HEIGHT: Pixels = px(44.);
     /// Below this window width the toolbar's buttons lose their labels.
     pub const COMPACT_WIDTH: Pixels = px(760.);
-    /// The gap between tiles.
-    pub const TILE_GAP: Pixels = px(2.);
+    /// The gap between blocks.
+    pub const BLOCK_GAP: Pixels = px(2.);
     /// Around the grid while files are dragged over it.
     pub const DROP_INSET: Pixels = px(6.);
     /// How far the mouse goes with its button down on a picture before it
-    /// drags the tile or the window, as gpui's own drags start.
+    /// drags the block or the window, as gpui's own drags start.
     pub const DRAG_START: Pixels = px(2.);
-    /// Where a dragged tile's title goes from the mouse, and the most it
+    /// Where a dragged block's title goes from the mouse, and the most it
     /// is wide.
     pub const DRAG_TITLE_OFFSET: Point<Pixels> = point(px(12.), px(12.));
     pub const DRAG_TITLE_MAX_WIDTH: Pixels = px(240.);
@@ -526,11 +526,11 @@ pub mod controls {
     pub const SELECTION: f32 = 0.3;
 }
 
-/// A player's tile.
+/// A player's block.
 pub mod player {
     use gpui::{Pixels, Point, point, px};
 
-    /// How far the controls' panel floats from the tile's sides and bottom.
+    /// How far the controls' panel floats from the block's sides and bottom.
     pub const CONTROLS_INSET: Pixels = px(10.);
     /// The gap between the seek bar and the buttons under it.
     pub const CONTROLS_GAP: Pixels = px(2.);
@@ -544,7 +544,7 @@ pub mod player {
     pub const TRACK_MENU_MAX_HEIGHT: Pixels = px(320.);
     /// How bright the tracks before and after the one picked are on the reel.
     pub const REEL_FADED: f32 = 0.4;
-    /// How far from the tile's top notes show, below the title bar.
+    /// How far from the block's top notes show, below the title bar.
     pub const NOTE_TOP: Pixels = px(44.);
     /// The most an error message is wide.
     pub const ERROR_MAX_WIDTH: Pixels = px(420.);
@@ -553,20 +553,20 @@ pub mod player {
     /// The circle standing in for missing cover art, and its icon.
     pub const NO_COVER_SIZE: Pixels = px(96.);
     pub const NO_COVER_ICON: Pixels = px(40.);
-    /// The icon in a tile whose video is in Picture in Picture, or that
+    /// The icon in a block whose video is in Picture in Picture, or that
     /// plays on another device.
     pub const PIP_ICON: Pixels = px(40.);
     /// The cast menu, and how far it goes from its button.
     pub const CAST_MENU_WIDTH: Pixels = px(240.);
 }
 
-/// The console over a tile (`~`).
+/// The console over a block (`~`).
 pub mod console {
     use std::time::Duration;
 
     use gpui::{Pixels, px};
 
-    /// Where it sits in the tile: under the header, on the left.
+    /// Where it sits in the block: under the header, on the left.
     pub const TOP: Pixels = px(44.);
     pub const INSET: Pixels = px(12.);
     /// The labels' column, and the most it is wide.
@@ -577,7 +577,7 @@ pub mod console {
     pub const FONT: &str = "Menlo";
     #[cfg(not(target_os = "macos"))]
     pub const FONT: &str = "DejaVu Sans Mono";
-    /// How often it updates while nothing else redraws the tile.
+    /// How often it updates while nothing else redraws the block.
     pub const REFRESH: Duration = Duration::from_millis(250);
 }
 
@@ -683,10 +683,10 @@ pub mod settings {
     /// The most a credit's license takes in About, such as "MIT OR
     /// Apache-2.0".
     pub const CREDIT_LICENSE_MAX_WIDTH: Pixels = px(220.);
-    /// The subtitle preview's tile, 16:9.
+    /// The subtitle preview's block, 16:9.
     pub const PREVIEW_SIZE: Size<Pixels> = size(px(284.), px(160.));
     /// The shape of the picture in the subtitle preview: a wide film, so it
-    /// shows the bars that "Place on: Tile" lets subtitles go in.
+    /// shows the bars that "Place on: Block" lets subtitles go in.
     pub const PREVIEW_PICTURE: (u32, u32) = (2390, 1000);
     /// The preview's dusk sky, from the top down, bright near the bottom
     /// where the subtitles go, so the edge settings show.
@@ -766,7 +766,7 @@ pub mod subtitles {
     /// The background box's padding either side and corner radius, in em.
     pub const BACKGROUND_PADDING: f32 = 0.3;
     pub const BACKGROUND_RADIUS: f32 = 0.12;
-    /// Screenshots lay subtitles out as on a tile showing just the picture,
+    /// Screenshots lay subtitles out as on a block showing just the picture,
     /// this tall: tall enough that the font size isn't held to its least
     /// or most, so it is `FONT_SIZE` of the picture.
     pub const TEXT_HEIGHT: f32 = 720.;

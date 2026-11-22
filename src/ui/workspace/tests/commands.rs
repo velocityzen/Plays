@@ -1,5 +1,5 @@
 //! The commands a window's controls send, run as the API runs them: what
-//! each does to the tile or window it's aimed at.
+//! each does to the block or window it's aimed at.
 
 use std::slice;
 
@@ -25,19 +25,19 @@ fn run(cx: &mut VisualTestContext, invocation: Invocation) -> Result<Value, Erro
     done
 }
 
-/// Run `command`, given `args`, on `tile`.
+/// Run `command`, given `args`, on `block`.
 fn run_on(
     cx: &mut VisualTestContext,
-    tile: &Entity<PlayerView>,
+    block: &Entity<PlayerView>,
     command: &str,
     args: Value,
 ) -> Result<Value, Error> {
-    let name = tile.read_with(cx, |view, _| view.id().to_string());
-    run(cx, Invocation::new(command).with_args(args).on_tile(name))
+    let name = block.read_with(cx, |view, _| view.id().to_string());
+    run(cx, Invocation::new(command).with_args(args).on_block(name))
 }
 
-/// `window`'s tiles.
-fn tiles(window: WindowHandle<Workspace>, cx: &VisualTestContext) -> Vec<Entity<PlayerView>> {
+/// `window`'s blocks.
+fn blocks(window: WindowHandle<Workspace>, cx: &VisualTestContext) -> Vec<Entity<PlayerView>> {
     window
         .read_with(cx, |workspace, _| workspace.players())
         .unwrap()
@@ -67,19 +67,19 @@ fn named(name: &str, cx: &VisualTestContext) -> WindowHandle<Workspace> {
 fn seeking_plays_from_the_time_given_no_later_than_the_end(cx: &mut TestAppContext) {
     let (window, mut cx) = testing::start(cx);
     open(window, &mut cx, &["clip.mp4"], false);
-    let tile = tiles(window, &cx)[0].clone();
-    let duration = tile.read_with(&cx, |view, _| view.duration()).unwrap();
-    let position = |cx: &VisualTestContext| tile.read_with(cx, |view, _| view.player().position());
+    let block = blocks(window, &cx)[0].clone();
+    let duration = block.read_with(&cx, |view, _| view.duration()).unwrap();
+    let position = |cx: &VisualTestContext| block.read_with(cx, |view, _| view.player().position());
 
-    run_on(&mut cx, &tile, "playback.seek", json!({"time": 1.0})).unwrap();
+    run_on(&mut cx, &block, "playback.seek", json!({"time": 1.0})).unwrap();
     assert!((position(&cx) - 1.0).abs() < 1e-9, "at {}", position(&cx));
-    run_on(&mut cx, &tile, "playback.seek", json!({"time": 1e6})).unwrap();
+    run_on(&mut cx, &block, "playback.seek", json!({"time": 1e6})).unwrap();
     assert!(
         position(&cx) <= duration,
         "no further than the end, {duration}: {}",
         position(&cx)
     );
-    let before = run_on(&mut cx, &tile, "playback.seek", json!({"time": -1}));
+    let before = run_on(&mut cx, &block, "playback.seek", json!({"time": -1}));
     assert_eq!(
         before,
         Err(Error::bad_args("playback.seek", "time is at least 0"))
@@ -90,11 +90,12 @@ fn seeking_plays_from_the_time_given_no_later_than_the_end(cx: &mut TestAppConte
 fn the_seek_bar_dragged_holds_and_let_go_seeks_and_plays_on(cx: &mut TestAppContext) {
     let (window, mut cx) = testing::start(cx);
     open(window, &mut cx, &["clip.mp4"], true);
-    let tile = tiles(window, &cx)[0].clone();
-    let duration = tile.read_with(&cx, |view, _| view.duration()).unwrap();
-    let playing = |cx: &VisualTestContext| tile.read_with(cx, |view, _| view.player().is_playing());
+    let block = blocks(window, &cx)[0].clone();
+    let duration = block.read_with(&cx, |view, _| view.duration()).unwrap();
+    let playing =
+        |cx: &VisualTestContext| block.read_with(cx, |view, _| view.player().is_playing());
     cx.update(|_, cx| api::record(cx));
-    hover(&mut cx, "tile-0");
+    hover(&mut cx, "block-0");
     let bar = find(&mut cx, "seek");
     let from = point(bar.left() + bar.size.width * 0.2, bar.center().y);
     let to = point(from.x + bar.size.width * 0.5, from.y);
@@ -117,13 +118,13 @@ fn the_seek_bar_dragged_holds_and_let_go_seeks_and_plays_on(cx: &mut TestAppCont
     assert_eq!(sent[0].command, "playback.seek");
     let time = sent[0].args["time"].as_f64().unwrap();
     assert!((time / duration - 0.7).abs() < 0.1, "{time} of {duration}");
-    let at = tile.read_with(&cx, |view, _| view.player().position());
+    let at = block.read_with(&cx, |view, _| view.player().position());
     assert!((at - time).abs() < 0.5, "at {at}, sent {time}");
     assert!(playing(&cx), "it plays on, as it played before the drag");
 
     // Played from there, the bar follows playback again.
-    run_on(&mut cx, &tile, "playback.seek", json!({"time": 0.25})).unwrap();
-    let (bar, at) = tile.read_with(&cx, |view, _| (view.bar_position(), view.position()));
+    run_on(&mut cx, &block, "playback.seek", json!({"time": 0.25})).unwrap();
+    let (bar, at) = block.read_with(&cx, |view, _| (view.bar_position(), view.position()));
     assert!(
         (at - 0.25).abs() < 0.2 && (bar - at).abs() < 1e-9,
         "the bar at {bar}, playing at {at}"
@@ -134,19 +135,19 @@ fn the_seek_bar_dragged_holds_and_let_go_seeks_and_plays_on(cx: &mut TestAppCont
 fn set_volume_sets_it_in_percent_and_unmutes_unless_none(cx: &mut TestAppContext) {
     let (window, mut cx) = testing::start(cx);
     open(window, &mut cx, &["clip.mp4"], false);
-    let tile = tiles(window, &cx)[0].clone();
+    let block = blocks(window, &cx)[0].clone();
     let sound = |cx: &VisualTestContext| {
-        tile.read_with(cx, |view, _| {
+        block.read_with(cx, |view, _| {
             (view.player().volume(), view.player().is_muted())
         })
     };
-    tile.update(&mut cx, |view, _| view.set_muted(true));
+    block.update(&mut cx, |view, _| view.set_muted(true));
 
-    run_on(&mut cx, &tile, "audio.set_volume", json!({"volume": 0})).unwrap();
+    run_on(&mut cx, &block, "audio.set_volume", json!({"volume": 0})).unwrap();
     assert_eq!(sound(&cx), (0.0, true), "none leaves it muted");
-    run_on(&mut cx, &tile, "audio.set_volume", json!({"volume": 40})).unwrap();
+    run_on(&mut cx, &block, "audio.set_volume", json!({"volume": 40})).unwrap();
     assert_eq!(sound(&cx), (0.4, false));
-    let loud = run_on(&mut cx, &tile, "audio.set_volume", json!({"volume": 101}));
+    let loud = run_on(&mut cx, &block, "audio.set_volume", json!({"volume": 101}));
     assert_eq!(
         loud,
         Err(Error::bad_args("audio.set_volume", "volume is at most 100"))
@@ -154,30 +155,30 @@ fn set_volume_sets_it_in_percent_and_unmutes_unless_none(cx: &mut TestAppContext
 }
 
 #[gpui::test]
-fn play_file_instead_plays_another_in_the_tile_as_this_one_was(cx: &mut TestAppContext) {
+fn play_file_instead_plays_another_in_the_block_as_this_one_was(cx: &mut TestAppContext) {
     let (window, mut cx) = testing::start(cx);
     open(window, &mut cx, &["clip.mp4"], false);
-    let tile = tiles(window, &cx)[0].clone();
-    tile.update(&mut cx, |view, cx| {
+    let block = blocks(window, &cx)[0].clone();
+    block.update(&mut cx, |view, cx| {
         view.set_muted(true);
         view.toggle_loop(cx);
     });
-    run_on(&mut cx, &tile, "audio.set_volume", json!({"volume": 0})).unwrap();
+    run_on(&mut cx, &block, "audio.set_volume", json!({"volume": 0})).unwrap();
     let opus = fixture("clip-opus.mkv");
 
-    run_on(&mut cx, &tile, "playback.play_file", json!({"path": opus})).unwrap();
+    run_on(&mut cx, &block, "playback.play_file", json!({"path": opus})).unwrap();
     assert_eq!(
-        tiles(window, &cx),
-        slice::from_ref(&tile),
-        "in the same tile"
+        blocks(window, &cx),
+        slice::from_ref(&block),
+        "in the same block"
     );
     let playing = wait_until(&mut cx, |cx| {
-        tile.read_with(cx, |view, _| {
+        block.read_with(cx, |view, _| {
             view.file() == Some(opus.as_path()) && view.player().is_known()
         })
     });
     assert!(playing, "it plays the file given");
-    tile.read_with(&cx, |view, _| {
+    block.read_with(&cx, |view, _| {
         let player = view.player();
         assert_eq!(player.volume(), 0.0);
         assert!(player.is_muted() && player.is_looping(), "as the other was");
@@ -187,7 +188,7 @@ fn play_file_instead_plays_another_in_the_tile_as_this_one_was(cx: &mut TestAppC
 
     let relative = run_on(
         &mut cx,
-        &tile,
+        &block,
         "playback.play_file",
         json!({"path": "clip.mp4"}),
     );
@@ -204,9 +205,9 @@ fn play_file_instead_plays_another_in_the_tile_as_this_one_was(cx: &mut TestAppC
 fn tracks_are_picked_by_number_and_subtitles_by_none_too(cx: &mut TestAppContext) {
     let (window, mut cx) = testing::start(cx);
     open(window, &mut cx, &["clip-subs.mkv"], false);
-    let tile = tiles(window, &cx)[0].clone();
+    let block = blocks(window, &cx)[0].clone();
     let selected = |cx: &VisualTestContext, kind| {
-        tile.read_with(cx, |view, _| {
+        block.read_with(cx, |view, _| {
             view.player().info().and_then(|info| info.selected(kind))
         })
     };
@@ -214,7 +215,7 @@ fn tracks_are_picked_by_number_and_subtitles_by_none_too(cx: &mut TestAppContext
     // after the other, the first may show for a moment.
     let settles = |cx: &mut VisualTestContext, kind, track: Option<usize>| {
         wait_until(cx, |cx| {
-            tile.read_with(cx, |view, _| {
+            block.read_with(cx, |view, _| {
                 view.player().info().and_then(|info| info.selected(kind))
             }) == track
         })
@@ -222,7 +223,7 @@ fn tracks_are_picked_by_number_and_subtitles_by_none_too(cx: &mut TestAppContext
 
     run_on(
         &mut cx,
-        &tile,
+        &block,
         "subtitles.select_track",
         json!({"number": 1}),
     )
@@ -232,35 +233,35 @@ fn tracks_are_picked_by_number_and_subtitles_by_none_too(cx: &mut TestAppContext
         Some(2),
         "stream 2, its first"
     );
-    run_on(&mut cx, &tile, "subtitles.select_track", Value::Null).unwrap();
+    run_on(&mut cx, &block, "subtitles.select_track", Value::Null).unwrap();
     assert!(settles(&mut cx, TrackKind::Subtitle, None), "none, none");
     run_on(
         &mut cx,
-        &tile,
+        &block,
         "subtitles.select_track",
         json!({"number": 1}),
     )
     .unwrap();
     run_on(
         &mut cx,
-        &tile,
+        &block,
         "subtitles.select_track",
         json!({"number": null}),
     )
     .unwrap();
     assert!(settles(&mut cx, TrackKind::Subtitle, None), "null, none");
 
-    run_on(&mut cx, &tile, "audio.select_track", json!({"number": 1})).unwrap();
+    run_on(&mut cx, &block, "audio.select_track", json!({"number": 1})).unwrap();
     assert_eq!(selected(&cx, TrackKind::Audio), Some(1));
     for (command, number) in [
         ("audio.select_track", 2),
         ("video.select_track", 2),
         ("subtitles.select_track", 2),
     ] {
-        let missing = run_on(&mut cx, &tile, command, json!({"number": number}));
+        let missing = run_on(&mut cx, &block, command, json!({"number": number}));
         assert_eq!(missing, Err(Error::not_found("track", "2")), "{command}");
     }
-    let none = run_on(&mut cx, &tile, "audio.select_track", Value::Null);
+    let none = run_on(&mut cx, &block, "audio.select_track", Value::Null);
     assert!(
         matches!(none, Err(Error::BadArgs { .. })),
         "audio needs a number: {none:?}"
@@ -268,7 +269,7 @@ fn tracks_are_picked_by_number_and_subtitles_by_none_too(cx: &mut TestAppContext
 }
 
 #[gpui::test]
-fn a_tile_is_maximized_and_moved_about_its_grid(cx: &mut TestAppContext) {
+fn a_block_is_maximized_and_moved_about_its_grid(cx: &mut TestAppContext) {
     let (window, mut cx) = testing::start(cx);
     open(
         window,
@@ -276,8 +277,8 @@ fn a_tile_is_maximized_and_moved_about_its_grid(cx: &mut TestAppContext) {
         &["clip.mp4", "clip-ip.mkv", "tone.m4a"],
         false,
     );
-    let [a, b, c] = &tiles(window, &cx)[..] else {
-        panic!("three tiles");
+    let [a, b, c] = &blocks(window, &cx)[..] else {
+        panic!("three blocks");
     };
     let maximized = |cx: &VisualTestContext| {
         window
@@ -285,52 +286,52 @@ fn a_tile_is_maximized_and_moved_about_its_grid(cx: &mut TestAppContext) {
             .unwrap()
     };
 
-    run_on(&mut cx, b, "tile.zoom", Value::Null).unwrap();
+    run_on(&mut cx, b, "block.zoom", Value::Null).unwrap();
     assert_eq!(maximized(&cx), Some(b.entity_id()));
-    run_on(&mut cx, b, "tile.zoom", Value::Null).unwrap();
+    run_on(&mut cx, b, "block.zoom", Value::Null).unwrap();
     assert_eq!(maximized(&cx), None, "and back");
     assert!(
         !cx.update(|window, _| window.is_fullscreen()),
         "the window stays as it is among others"
     );
 
-    run_on(&mut cx, a, "tile.move", json!({"position": 3})).unwrap();
-    assert_eq!(tiles(window, &cx), [b.clone(), c.clone(), a.clone()]);
-    run_on(&mut cx, a, "tile.move", json!({"position": 1})).unwrap();
-    assert_eq!(tiles(window, &cx), [a.clone(), b.clone(), c.clone()]);
-    let past = run_on(&mut cx, a, "tile.move", json!({"position": 4}));
+    run_on(&mut cx, a, "block.move", json!({"position": 3})).unwrap();
+    assert_eq!(blocks(window, &cx), [b.clone(), c.clone(), a.clone()]);
+    run_on(&mut cx, a, "block.move", json!({"position": 1})).unwrap();
+    assert_eq!(blocks(window, &cx), [a.clone(), b.clone(), c.clone()]);
+    let past = run_on(&mut cx, a, "block.move", json!({"position": 4}));
     assert_eq!(
         past,
         Err(Error::bad_args(
-            "tile.move",
-            "position is at most 3, as many as the window has tiles"
+            "block.move",
+            "position is at most 3, as many as the window has blocks"
         ))
     );
 
     // Alone, it fills the screen.
-    for tile in [b, c] {
-        run_on(&mut cx, tile, "tile.close", Value::Null).unwrap();
+    for block in [b, c] {
+        run_on(&mut cx, block, "block.close", Value::Null).unwrap();
     }
-    run_on(&mut cx, a, "tile.zoom", Value::Null).unwrap();
+    run_on(&mut cx, a, "block.zoom", Value::Null).unwrap();
     assert!(cx.update(|window, _| window.is_fullscreen()));
     assert_eq!(maximized(&cx), None);
 }
 
 #[gpui::test]
-fn a_tile_moves_to_another_window_or_one_of_its_own_and_plays_on(cx: &mut TestAppContext) {
+fn a_block_moves_to_another_window_or_one_of_its_own_and_plays_on(cx: &mut TestAppContext) {
     let (first, mut cx) = testing::start(cx);
     open(first, &mut cx, &["clip.mp4", "tone.m4a"], true);
-    let [a, b] = &tiles(first, &cx)[..] else {
-        panic!("two tiles");
+    let [a, b] = &blocks(first, &cx)[..] else {
+        panic!("two blocks");
     };
     let second = cx
         .update(|_, cx| Workspace::open_window(WINDOW_SIZE, cx))
         .unwrap();
     let mut second_cx = VisualTestContext::from_window(second.into(), &cx);
     open(second, &mut second_cx, &["clip-ip.mkv"], false);
-    let c = tiles(second, &cx)[0].clone();
-    let playing = |tile: &Entity<PlayerView>, cx: &VisualTestContext| {
-        tile.read_with(cx, |view, _| view.player().is_playing())
+    let c = blocks(second, &cx)[0].clone();
+    let playing = |block: &Entity<PlayerView>, cx: &VisualTestContext| {
+        block.read_with(cx, |view, _| view.player().is_playing())
     };
     let in_front = |cx: &VisualTestContext| {
         second
@@ -339,21 +340,21 @@ fn a_tile_moves_to_another_window_or_one_of_its_own_and_plays_on(cx: &mut TestAp
     };
 
     let to = json!({"window": name(second, &cx)});
-    run_on(&mut cx, a, "tile.move_to_window", to.clone()).unwrap();
-    assert_eq!(tiles(first, &cx), slice::from_ref(b));
-    assert_eq!(tiles(second, &cx), [c.clone(), a.clone()], "last there");
+    run_on(&mut cx, a, "block.move_to_window", to.clone()).unwrap();
+    assert_eq!(blocks(first, &cx), slice::from_ref(b));
+    assert_eq!(blocks(second, &cx), [c.clone(), a.clone()], "last there");
     assert!(playing(a, &cx), "it plays on");
     assert_eq!(in_front(&cx), Some(a.clone()), "keys go to it there");
-    run_on(&mut cx, &c, "tile.move_to_window", to).unwrap();
+    run_on(&mut cx, &c, "block.move_to_window", to).unwrap();
     assert_eq!(
-        tiles(second, &cx),
+        blocks(second, &cx),
         [c.clone(), a.clone()],
         "one there already stays where it is"
     );
     let nowhere = run_on(
         &mut cx,
         a,
-        "tile.move_to_window",
+        "block.move_to_window",
         json!({"window": "nowhere"}),
     );
     assert!(
@@ -361,12 +362,12 @@ fn a_tile_moves_to_another_window_or_one_of_its_own_and_plays_on(cx: &mut TestAp
         "{nowhere:?}"
     );
 
-    let opened = run_on(&mut cx, b, "tile.move_to_new_window", Value::Null).unwrap();
+    let opened = run_on(&mut cx, b, "block.move_to_new_window", Value::Null).unwrap();
     let own = named(opened["window"].as_str().expect("its window"), &cx);
     assert_ne!(own, first);
     assert_ne!(own, second);
-    assert_eq!(tiles(own, &cx), slice::from_ref(b));
-    assert!(tiles(first, &cx).is_empty());
+    assert_eq!(blocks(own, &cx), slice::from_ref(b));
+    assert!(blocks(first, &cx).is_empty());
     assert!(playing(b, &cx), "it plays on");
 }
 
@@ -393,7 +394,7 @@ fn open_plays_paths_and_urls_in_the_window_named_or_in_front(cx: &mut TestAppCon
             .unwrap()
     });
     assert!(both, "a path and a file:// URL open in the window named");
-    assert!(tiles(first, &cx).is_empty());
+    assert!(blocks(first, &cx).is_empty());
 
     for (url, why) in [
         ("clip.mp4", "clip.mp4: give a file's full path, or a URL"),

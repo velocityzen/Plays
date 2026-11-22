@@ -1,21 +1,21 @@
-//! Events: what changes in the app, its windows and their tiles, told to
+//! Events: what changes in the app, its windows and their blocks, told to
 //! whoever listens (`listen`), as the command line does through the
 //! socket. Each is a JSON object, `{type, payload}`; the payload of one
-//! about a window or a tile has its `window_id` and `window_title`, and
-//! `tile_id` and `tile_title`: each id with the title it shows.
+//! about a window or a block has its `window_id` and `window_title`, and
+//! `block_id` and `block_title`: each id with the title it shows.
 //!
 //! A listener hears the app's events (`Scope::App`: windows opening,
 //! closing, renamed and coming to the front, outputs, devices, settings,
 //! keys, commands run, and the socket's clients connecting and leaving),
-//! one window's (`Scope::Window`: its own, its tiles' and how they play),
+//! one window's (`Scope::Window`: its own, its blocks' and how they play),
 //! or all of them. Where a file plays is told as how far through it is,
-//! from 0 to 1, in seconds and by frame (`playhead`). A tile's position
+//! from 0 to 1, in seconds and by frame (`playhead`). A block's position
 //! is told only to those who ask for it, at most once a second. Readers
 //! ignore events and fields they don't know, so later versions can add
 //! them.
 //!
 //! What changed is found by looking (`look`): at what the app, its windows
-//! and tiles are like, against what the last look saw (`seen`), once each
+//! and blocks are like, against what the last look saw (`seen`), once each
 //! command has run and every `LOOK_EVERY` while anyone listens. So each change
 //! is told once, whatever made it: a command, a click, or the file itself,
 //! opening or ending. Settings, which change where they're kept, are told
@@ -35,7 +35,7 @@ use serde::Serialize;
 use serde_json::{Value, json};
 
 pub use kinds::{EventField, EventKind, Heard};
-pub use seen::{Seen, TRACKS, TileSeen, WindowSeen, playhead};
+pub use seen::{BlockSeen, Seen, TRACKS, WindowSeen, playhead};
 
 use super::commands::{self, cast, output};
 use super::{Id, Invocation, target};
@@ -43,11 +43,11 @@ use crate::hotkeys;
 use crate::settings::{Settings, fields};
 
 /// How often the app is looked at while anyone listens, for what changed
-/// that no command did: a file opening or ending, a tile the mouse goes
+/// that no command did: a file opening or ending, a block the mouse goes
 /// to, a window coming to the front.
 pub const LOOK_EVERY: Duration = Duration::from_millis(250);
 
-/// How often a tile's position is told, at most, to those who ask.
+/// How often a block's position is told, at most, to those who ask.
 pub const POSITION_EVERY: Duration = Duration::from_secs(1);
 
 /// Something that changed.
@@ -116,11 +116,11 @@ impl Event {
         event
     }
 
-    /// One of `tile`'s, in `window`.
-    fn tile(kind: &'static str, window: &WindowSeen, tile: &TileSeen, payload: Value) -> Self {
+    /// One of `block`'s, in `window`.
+    fn block(kind: &'static str, window: &WindowSeen, block: &BlockSeen, payload: Value) -> Self {
         Self {
             kind,
-            payload: with_ids(payload, window, Some(tile)),
+            payload: with_ids(payload, window, Some(block)),
             reach: Reach {
                 windows: vec![window.id],
                 ..Reach::default()
@@ -138,14 +138,14 @@ impl Event {
     }
 }
 
-/// `payload` with `window`'s id and title, and `tile`'s, put first.
-fn with_ids(payload: Value, window: &WindowSeen, tile: Option<&TileSeen>) -> Value {
+/// `payload` with `window`'s id and title, and `block`'s, put first.
+fn with_ids(payload: Value, window: &WindowSeen, block: Option<&BlockSeen>) -> Value {
     let mut ids = serde_json::Map::new();
     ids.insert("window_id".into(), json!(window.id.to_string()));
     ids.insert("window_title".into(), json!(window.title));
-    if let Some(tile) = tile {
-        ids.insert("tile_id".into(), json!(tile.id.to_string()));
-        ids.insert("tile_title".into(), json!(tile.title));
+    if let Some(block) = block {
+        ids.insert("block_id".into(), json!(block.id.to_string()));
+        ids.insert("block_title".into(), json!(block.title));
     }
     if let Value::Object(fields) = payload {
         ids.extend(fields);
@@ -160,7 +160,7 @@ pub enum Scope {
     /// front; outputs, where the sound goes, devices to cast to, settings,
     /// keys, and commands run.
     App,
-    /// One window's: its own, its tiles', and how they play.
+    /// One window's: its own, its blocks', and how they play.
     Window(Id),
     /// Everything.
     All,
@@ -188,7 +188,7 @@ struct Events {
     seen: Option<Seen>,
     /// The settings as last told.
     settings: Option<Settings>,
-    /// When each tile's position was told last, and what it was.
+    /// When each block's position was told last, and what it was.
     told: HashMap<Id, (Instant, f64)>,
     /// It looks every `LOOK_EVERY`.
     looking: bool,
@@ -202,7 +202,7 @@ pub fn register(cx: &mut App) {
 }
 
 /// Hear `scope`'s events from now on, and, with `positions`, where each
-/// tile is as it plays. Dropping what this hands back stops them.
+/// block is as it plays. Dropping what this hands back stops them.
 pub fn listen(scope: Scope, positions: bool, cx: &mut App) -> UnboundedReceiver<Event> {
     let (sender, receiver) = unbounded();
     if !listened(cx) {
@@ -292,7 +292,7 @@ fn tell(event: &Event, cx: &App) {
 
 /// Look at the app, and tell what changed since it was last looked at.
 ///
-/// Not while a window or a tile is being updated: it reads every one, as
+/// Not while a window or a block is being updated: it reads every one, as
 /// `api::run` runs a command.
 pub fn look(cx: &mut App) {
     if !listened(cx) {
@@ -330,7 +330,7 @@ fn see(cx: &mut App) -> Seen {
 }
 
 /// The app quits: what changed since the last look is told, then each
-/// window still open closing, its tiles first, as closing it would, then
+/// window still open closing, its blocks first, as closing it would, then
 /// `quit`, which every listener hears. The socket writes them out as it
 /// quits (`socket::server`), as nothing else runs then.
 pub fn quit(cx: &mut App) {
@@ -352,7 +352,7 @@ pub fn quit(cx: &mut App) {
     tell(&Event::to_everyone("quit", json!({})), cx);
 }
 
-/// Tell where each tile that has opened is, to those who asked, at most
+/// Tell where each block that has opened is, to those who asked, at most
 /// once every `POSITION_EVERY`, and only once it has moved.
 fn positions(seen: &Seen, cx: &mut App) {
     let now = cx.background_executor().now();
@@ -365,18 +365,18 @@ fn positions(seen: &Seen, cx: &mut App) {
     told.retain(|id, _| {
         seen.windows
             .iter()
-            .any(|window| window.tiles.iter().any(|tile| tile.id == *id))
+            .any(|window| window.blocks.iter().any(|block| block.id == *id))
     });
     for window in &seen.windows {
-        for tile in window.tiles.iter().filter(|tile| tile.opened.is_some()) {
-            let due = told.get(&tile.id).is_none_or(|&(at, position)| {
-                now.duration_since(at) >= POSITION_EVERY && position != tile.position
+        for block in window.blocks.iter().filter(|block| block.opened.is_some()) {
+            let due = told.get(&block.id).is_none_or(|&(at, position)| {
+                now.duration_since(at) >= POSITION_EVERY && position != block.position
             });
             if due {
-                told.insert(tile.id, (now, tile.position));
-                let mut payload = tile.playhead(tile.position);
-                payload["duration"] = json!(tile.duration);
-                tell(&Event::tile("position", window, tile, payload), cx);
+                told.insert(block.id, (now, block.position));
+                let mut payload = block.playhead(block.position);
+                payload["duration"] = json!(block.duration);
+                tell(&Event::block("position", window, block, payload), cx);
             }
         }
     }

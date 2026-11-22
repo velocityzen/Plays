@@ -20,16 +20,16 @@ const GERMAN_AUDIO: usize = 2;
 const ENGLISH_SUBTITLES: usize = 3;
 const FRENCH_SUBTITLES: usize = 4;
 
-/// `window`'s first tile.
-fn tile(window: WindowHandle<Workspace>, cx: &VisualTestContext) -> Entity<PlayerView> {
+/// `window`'s first block.
+fn block(window: WindowHandle<Workspace>, cx: &VisualTestContext) -> Entity<PlayerView> {
     window
         .read_with(cx, |workspace, _| workspace.players()[0].clone())
         .unwrap()
 }
 
-/// The audio and subtitle tracks `tile` plays.
-fn playing(tile: &Entity<PlayerView>, cx: &VisualTestContext) -> (Option<usize>, Option<usize>) {
-    tile.read_with(cx, |view, _| {
+/// The audio and subtitle tracks `block` plays.
+fn playing(block: &Entity<PlayerView>, cx: &VisualTestContext) -> (Option<usize>, Option<usize>) {
+    block.read_with(cx, |view, _| {
         let info = view.player().info().expect("known");
         (info.audio_track, info.subtitle_track)
     })
@@ -41,10 +41,10 @@ fn opened(
     cx: &mut VisualTestContext,
 ) -> (Option<usize>, Option<usize>) {
     open(window, cx, &["clip-languages.mkv"], false);
-    playing(&tile(window, cx), cx)
+    playing(&block(window, cx), cx)
 }
 
-/// Close `window`'s tiles, which leaves where their files were.
+/// Close `window`'s blocks, which leaves where their files were.
 fn close_all(window: WindowHandle<Workspace>, cx: &mut VisualTestContext) {
     window
         .update(cx, |workspace, _, cx| workspace.close_all(cx))
@@ -63,11 +63,11 @@ fn prefer(audio: &[&str], subtitles: &[&str], cx: &mut VisualTestContext) {
     });
 }
 
-/// Run `command` with `args` on `tile`, as its menus do.
-fn on(tile: &Entity<PlayerView>, command: &str, args: Value, cx: &mut VisualTestContext) {
-    let name = tile.read_with(cx, |view, _| view.id().to_string());
+/// Run `command` with `args` on `block`, as its menus do.
+fn on(block: &Entity<PlayerView>, command: &str, args: Value, cx: &mut VisualTestContext) {
+    let name = block.read_with(cx, |view, _| view.id().to_string());
     TestAppContext::update(cx, |cx| {
-        api::run(Invocation::new(command).with_args(args).on_tile(name), cx)
+        api::run(Invocation::new(command).with_args(args).on_block(name), cx)
     })
     .unwrap();
     cx.run_until_parked();
@@ -102,7 +102,7 @@ fn the_tracks_picked_in_a_file_play_again_as_it_opens_again(cx: &mut TestAppCont
     let (window, mut cx) = testing::start(cx);
     prefer(&["eng"], &[], &mut cx);
     assert_eq!(opened(window, &mut cx), (Some(ENGLISH_AUDIO), None));
-    let first = tile(window, &cx);
+    let first = block(window, &cx);
     on(&first, "audio.select_track", json!({"number": 2}), &mut cx);
     on(
         &first,
@@ -118,7 +118,7 @@ fn the_tracks_picked_in_a_file_play_again_as_it_opens_again(cx: &mut TestAppCont
     );
 
     // Hidden, they stay hidden, whatever's preferred.
-    on(&tile(window, &cx), "subtitles.toggle", json!({}), &mut cx);
+    on(&block(window, &cx), "subtitles.toggle", json!({}), &mut cx);
     close_all(window, &mut cx);
     prefer(&["eng"], &["eng"], &mut cx);
     assert_eq!(opened(window, &mut cx), (Some(GERMAN_AUDIO), None));
@@ -138,25 +138,25 @@ fn a_file_played_instead_opens_with_its_own_tracks(cx: &mut TestAppContext) {
     let (window, mut cx) = testing::start(cx);
     prefer(&["ger"], &["fre"], &mut cx);
     open(window, &mut cx, &["clip.mp4"], false);
-    let tile = tile(window, &cx);
+    let block = block(window, &cx);
     let play_instead = |file: &str, cx: &mut VisualTestContext| {
-        tile.update(cx, |view, cx| view.play_instead(fixture(file), cx));
+        block.update(cx, |view, cx| view.play_instead(fixture(file), cx));
         let known = testing::wait_until(cx, |cx| {
-            tile.read_with(cx, |view, _| view.player().is_known())
+            block.read_with(cx, |view, _| view.player().is_known())
         });
         assert!(known, "{file} didn't open");
-        playing(&tile, cx)
+        playing(&block, cx)
     };
     assert_eq!(
         play_instead("clip-languages.mkv", &mut cx),
         (Some(GERMAN_AUDIO), Some(FRENCH_SUBTITLES)),
         "as Settings prefer"
     );
-    on(&tile, "audio.select_track", json!({"number": 1}), &mut cx);
-    on(&tile, "subtitles.select_track", json!({}), &mut cx);
+    on(&block, "audio.select_track", json!({"number": 1}), &mut cx);
+    on(&block, "subtitles.select_track", json!({}), &mut cx);
 
     play_instead("clip.mp4", &mut cx);
-    let picked = tile.read_with(&cx, |view, _| view.progress().map(|note| note.picked));
+    let picked = block.read_with(&cx, |view, _| view.progress().map(|note| note.picked));
     assert_eq!(picked, Some(Picked::default()), "none picked in this one");
     assert_eq!(
         play_instead("clip-languages.mkv", &mut cx),

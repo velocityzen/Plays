@@ -1,4 +1,4 @@
-//! Pairing with what asked for the PIN it shows: the TV a tile was cast
+//! Pairing with what asked for the PIN it shows: the TV a block was cast
 //! to, cast there again once it's paired, or a speaker the sound was to
 //! play through, played through then, and not paired with, no longer
 //! picked. A sheet over the window.
@@ -25,15 +25,15 @@ pub(super) struct Pairing {
 
 /// What's done once paired.
 enum Then {
-    /// Cast the tile to the device again.
-    Cast { tile: EntityId, device: Device },
+    /// Cast the block to the device again.
+    Cast { block: EntityId, device: Device },
     /// Play the audio outputs that want this device through it; not
     /// paired with, they no longer want it.
     Play(AudioDevice),
 }
 
 impl Workspace {
-    /// Pair with `device`, which the tile `view` was cast to; it's cast
+    /// Pair with `device`, which the block `view` was cast to; it's cast
     /// there again (`cast.to`), from where it is then, once paired. Another
     /// TV asked for meanwhile takes the sheet's place.
     pub fn pair(&mut self, view: &Entity<PlayerView>, device: Device, cx: &mut Context<Self>) {
@@ -49,8 +49,8 @@ impl Workspace {
             let device = device.clone();
             Arc::new(move || target.pair(&device))
         };
-        let tile = view.entity_id();
-        self.ask_for_pin(device.name.clone(), start, Then::Cast { tile, device }, cx);
+        let block = view.entity_id();
+        self.ask_for_pin(device.name.clone(), start, Then::Cast { block, device }, cx);
     }
 
     /// Pair with audio output `device`, which wants the PIN it shows,
@@ -80,9 +80,9 @@ impl Workspace {
                 return;
             };
             match (event, pairing.then) {
-                (PairingEvent::Paired, Then::Cast { tile, device }) => {
+                (PairingEvent::Paired, Then::Cast { block, device }) => {
                     let Run(cast) = cast::to(Some(&device));
-                    this.send_to_tile(tile, &cast.command, cast.args, cx);
+                    this.send_to_block(block, &cast.command, cast.args, cx);
                 }
                 (PairingEvent::Paired, Then::Play(_)) => AudioEngine::paired(cx),
                 // Not paired with: the sound doesn't wait for it, silent.

@@ -1,4 +1,4 @@
-//! A player's tile: the picture (or cover art) and subtitles, and over
+//! A player's block: the picture (or cover art) and subtitles, and over
 //! them a header with the file's name, the controls, and notes on what
 //! shortcuts did. Each part is in its own file; `render` puts them together.
 
@@ -33,7 +33,7 @@ use gpui::{
 };
 
 pub use controls::format_time;
-pub use drag::{DraggedTile, move_window_once_dragged};
+pub use drag::{DraggedBlock, move_window_once_dragged};
 pub use graveyard::Graveyard;
 
 use super::components::Panel;
@@ -54,34 +54,34 @@ use osd::Osd;
 use playback::Playback;
 use playlist::Playlist;
 
-/// What a tile tells its window. What its controls do, they run as
+/// What a block tells its window. What its controls do, they run as
 /// commands (`send`).
 pub enum PlayerEvent {
     /// The mouse came over it, or it was clicked: shortcuts go to this
-    /// tile now.
+    /// block now.
     Activate,
-    /// It was clicked: it's the tile Go Back One Tile comes back to.
+    /// It was clicked: it's the block Go Back One Block comes back to.
     Pressed,
 }
 
-/// Where a tile is in its window, and where the mouse is, as the window
+/// Where a block is in its window, and where the mouse is, as the window
 /// last said (`PlayerView::set_layout`).
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct TileLayout {
-    /// Shortcuts go to this tile: the one the mouse was last over, or
+pub struct BlockLayout {
+    /// Shortcuts go to this block: the one the mouse was last over, or
     /// clicked, or the keys went to.
     pub active: bool,
-    /// It was put in front from the keyboard, among other tiles, and the
+    /// It was put in front from the keyboard, among other blocks, and the
     /// mouse hasn't moved since: a ring shows which it is.
     pub focus_ring: bool,
-    /// It fills the grid, the other tiles hidden.
+    /// It fills the grid, the other blocks hidden.
     pub maximized: bool,
-    /// The only tile in its window: there is nowhere to expand it to, and
+    /// The only block in its window: there is nowhere to expand it to, and
     /// popping it out would leave the window empty.
     pub alone: bool,
     /// In its window's top-left corner, where the macOS traffic lights are.
     pub top_left: bool,
-    /// The controls show only while the mouse is over the tile, which needs
+    /// The controls show only while the mouse is over the block, which needs
     /// the mouse in the window, and not resting (`mouse_idle`) unless it is
     /// on the header or controls.
     pub mouse_in_window: bool,
@@ -132,7 +132,7 @@ pub struct PlayerView {
     /// Picture in Picture, while it is open or opening.
     pip: Option<pip::PipSession>,
     /// Where it is in its window, as the window last said.
-    layout: TileLayout,
+    layout: BlockLayout,
     over_header: bool,
     over_controls: bool,
     /// The console, while it shows: what keeps it up to date.
@@ -151,22 +151,22 @@ pub struct PlayerView {
 
 impl EventEmitter<PlayerEvent> for PlayerView {}
 
-/// What the API knows a tile by.
+/// What the API knows a block by.
 impl PlayerView {
     pub fn id(&self) -> Id {
         self.id
     }
 
-    /// Run `command` on this tile, given `args` (null for none), once the
+    /// Run `command` on this block, given `args` (null for none), once the
     /// event is handled: what its controls do.
     pub(super) fn send(&self, command: &str, args: serde_json::Value, cx: &mut gpui::App) {
         let invocation = Invocation::new(command)
             .with_args(args)
-            .on_tile(self.id.to_string());
+            .on_block(self.id.to_string());
         api::dispatch(invocation, cx);
     }
 
-    /// Run on this tile what `run` runs on the tile in front, as a menu
+    /// Run on this block what `run` runs on the block in front, as a menu
     /// item does.
     pub(super) fn send_run(&self, Run(invocation): Run, cx: &mut gpui::App) {
         self.send(&invocation.command, invocation.args, cx);
@@ -176,7 +176,7 @@ impl PlayerView {
         self.label.as_deref()
     }
 
-    /// Label the tile, or take its label away: its header shows the label
+    /// Label the block, or take its label away: its header shows the label
     /// in place of the file's name.
     pub fn set_label(&mut self, label: Option<String>, cx: &mut Context<Self>) {
         self.label = label;
@@ -246,7 +246,7 @@ impl PlayerView {
             adjustments: Adjustments::default(),
             picture_bounds: Rc::default(),
             pip: None,
-            layout: TileLayout {
+            layout: BlockLayout {
                 active: false,
                 focus_ring: false,
                 maximized: false,
@@ -434,18 +434,18 @@ impl PlayerView {
         cx.notify();
     }
 
-    /// Take where the tile is in its window, and where the mouse is, as
+    /// Take where the block is in its window, and where the mouse is, as
     /// the window says; it redraws if that changed.
-    pub fn set_layout(&mut self, layout: TileLayout, cx: &mut Context<Self>) {
+    pub fn set_layout(&mut self, layout: BlockLayout, cx: &mut Context<Self>) {
         if self.layout != layout {
             self.layout = layout;
             cx.notify();
         }
     }
 
-    /// Where the tile is in its window, as the window last said.
+    /// Where the block is in its window, as the window last said.
     #[cfg(test)]
-    pub fn layout(&self) -> TileLayout {
+    pub fn layout(&self) -> BlockLayout {
         self.layout
     }
 
@@ -549,7 +549,7 @@ impl PlayerView {
         self.window_sound = device;
     }
 
-    /// Move this tile to another window, whose frames are released through
+    /// Move this block to another window, whose frames are released through
     /// `graveyard`.
     pub fn move_to_window(&mut self, graveyard: Graveyard) {
         // Picture in Picture's layer is in the old window.
@@ -567,7 +567,7 @@ impl PlayerView {
         self.graveyard = graveyard;
     }
 
-    /// Hand every frame this tile drew to the graveyard; call before dropping it.
+    /// Hand every frame this block drew to the graveyard; call before dropping it.
     pub fn release_pictures(&mut self) {
         self.close_picture_in_picture();
         for picture in self.playback.take_pictures() {
@@ -579,10 +579,10 @@ impl PlayerView {
     }
 
     fn on_surface_click(&mut self, event: &ClickEvent, _: &mut Window, cx: &mut Context<Self>) {
-        // A single click only makes the tile the one shortcuts go to (on
+        // A single click only makes the block the one shortcuts go to (on
         // mouse down); a double click expands it.
         if event.click_count() == 2 {
-            self.send("tile.zoom", serde_json::Value::Null, cx);
+            self.send("block.zoom", serde_json::Value::Null, cx);
         }
     }
 
@@ -594,11 +594,11 @@ impl PlayerView {
 }
 
 /// Whether the header and controls show: always while pinned, otherwise
-/// while the mouse is over the tile.
+/// while the mouse is over the block.
 struct Reveal {
     pinned: bool,
     mouse_in_window: bool,
-    /// The tile's hover group.
+    /// The block's hover group.
     group: SharedString,
 }
 
@@ -643,7 +643,7 @@ impl Render for PlayerView {
         let reveal = Reveal {
             pinned,
             mouse_in_window,
-            group: format!("tile-{}", cx.entity_id()).into(),
+            group: format!("block-{}", cx.entity_id()).into(),
         };
 
         let bars = self.render_bars(&reveal, info.as_deref(), &theme, window, cx);
@@ -665,8 +665,8 @@ impl Render for PlayerView {
                 }
                 cx.emit(PlayerEvent::Pressed);
             }))
-            // Shortcuts go to the tile the mouse is over, as its controls
-            // show there; not while it drags something of another tile's.
+            // Shortcuts go to the block the mouse is over, as its controls
+            // show there; not while it drags something of another block's.
             .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, _, cx| {
                 if !this.layout.active && event.pressed_button.is_none() {
                     cx.emit(PlayerEvent::Activate);
@@ -676,7 +676,7 @@ impl Render for PlayerView {
                 if !casting && (has_video || info.as_ref().is_some_and(|i| i.has_video)) {
                     black()
                 } else {
-                    theme.tile
+                    theme.block
                 },
             )
             .child(surface.child(match self.render_cast(&theme, cx) {
@@ -736,7 +736,7 @@ impl PlayerView {
             .controls
             .then(|| self.render_controls(reveal, info, theme, window, cx));
         // Presses on the bars mustn't reach the surface underneath (which
-        // expands the tile and drags it), but they can't `occlude()`
+        // expands the block and drags it), but they can't `occlude()`
         // either: an occluding child stops its parent counting as hovered,
         // which would hide the bars as soon as the pointer moved onto them.
         let header = header.map(|header| {
@@ -795,8 +795,8 @@ impl PlayerView {
             || self.playback.local().error().is_some()
     }
 
-    /// What the picture shows on, filling the tile: a double click on it
-    /// expands the tile, and dragging it drags the tile.
+    /// What the picture shows on, filling the block: a double click on it
+    /// expands the block, and dragging it drags the block.
     fn render_surface(&self, window: &Window, cx: &mut Context<Self>) -> Stateful<Div> {
         let surface = div()
             .id("surface")
@@ -811,7 +811,7 @@ impl PlayerView {
         self.drag_by_picture(surface, window, cx)
     }
 
-    /// How far up the tile its subtitles keep clear of, for the controls
+    /// How far up the block its subtitles keep clear of, for the controls
     /// while they show: none when Settings has them hidden.
     pub fn subtitle_clearance(&self, cx: &App) -> Pixels {
         let live = self.playback.local().info().is_some_and(|info| info.live);
@@ -819,7 +819,7 @@ impl PlayerView {
     }
 
     /// The cues showing, placed on the picture and kept above the controls
-    /// while they show, `controls_height` up the tile.
+    /// while they show, `controls_height` up the block.
     fn render_subtitles(
         &self,
         reveal: &Reveal,
@@ -844,7 +844,7 @@ impl PlayerView {
     }
 }
 
-/// A ring round the tile the keys went to, over everything in it.
+/// A ring round the block the keys went to, over everything in it.
 fn render_focus_ring(color: Hsla) -> Div {
     div()
         .debug_selector(|| "focus-ring".into())
@@ -854,7 +854,7 @@ fn render_focus_ring(color: Hsla) -> Div {
         .border_color(color)
 }
 
-/// Says a stream is buffering, in the middle of the tile.
+/// Says a stream is buffering, in the middle of the block.
 fn render_buffering() -> Div {
     div()
         .absolute()

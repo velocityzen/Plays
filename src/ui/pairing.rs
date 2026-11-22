@@ -1,6 +1,6 @@
 //! Pairing with a TV or speaker that asks for the PIN it shows, as an
 //! AirPlay receiver does the first time: a modal sheet over the window
-//! whose tile was cast to it, or in front as it's played through. It shows
+//! whose block was cast to it, or in front as it's played through. It shows
 //! a PIN once the sheet opens; a wrong one has it show another. Each step
 //! waits on the network, so pairing goes on on a thread of its own, which
 //! the sheet looks at as it goes.

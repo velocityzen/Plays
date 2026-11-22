@@ -1,4 +1,4 @@
-//! What the picture shortcuts and menu items do to a tile: turning and
+//! What the picture shortcuts and menu items do to a block: turning and
 //! flipping it, another aspect ratio, a crop, and back to as the file is.
 
 use gpui::Context;
@@ -62,7 +62,7 @@ impl PlayerView {
         self.adjust("Picture reset", cx, |a| *a = Adjustments::default());
     }
 
-    /// Change the adjustments and say how, if the tile shows a video.
+    /// Change the adjustments and say how, if the block shows a video.
     fn adjust(
         &mut self,
         note: impl Into<gpui::SharedString>,

@@ -120,7 +120,7 @@ pub struct Load {
     /// Where to start, in seconds.
     pub start: f64,
     pub autoplay: bool,
-    /// The tile's volume, 0 to 1.
+    /// The block's volume, 0 to 1.
     pub volume: f32,
     pub muted: bool,
     pub subtitles: Option<Subtitles>,
@@ -144,7 +144,7 @@ pub struct Subtitles {
     pub srt_url: String,
     /// ISO 639-2, as the file has it.
     pub language: Option<String>,
-    /// What the tile's track menu calls them.
+    /// What the block's track menu calls them.
     pub name: String,
     /// How Settings say subtitles look, for devices that draw them as told.
     pub style: SubtitleStyle,
@@ -185,7 +185,7 @@ pub trait Session: Send {
 
     fn seek(&mut self, time: f64) -> Result<(), Error>;
 
-    /// The tile's volume, 0 to 1. Where the protocol has a volume for the
+    /// The block's volume, 0 to 1. Where the protocol has a volume for the
     /// media apart from the device's own, it is that one.
     fn set_volume(&mut self, volume: f32, muted: bool) -> Result<(), Error>;
 

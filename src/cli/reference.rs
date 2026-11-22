@@ -44,7 +44,7 @@ pub fn reference() -> String {
         "# Commands\n\n\
          Every command Plays has, by namespace, as `plays actions --markdown` writes \
          them. A terminal runs one with `plays do ID [KEY=VALUE…]`, naming the window \
-         or tile it acts on with `-w` and `-t`; keys run those that have them, and \
+         or block it acts on with `-w` and `-b`; keys run those that have them, and \
          Settings → Hotkeys changes those. The keys here are macOS's: elsewhere Ctrl \
          stands for ⌘, and Alt for ⌥. What each tells is in [Events](#events).\n",
     );
@@ -58,11 +58,11 @@ pub fn reference() -> String {
     }
     text.push_str(
         "\n# Events\n\n\
-         What changes in Plays, its windows and their tiles, by namespace: `plays events` \
+         What changes in Plays, its windows and their blocks, by namespace: `plays events` \
          prints each as it comes, and `plays wait` waits for one. Each is a JSON object, \
          `{type, payload}`. The payload of one about a window starts with `window_id` and \
-         `window_title`, as its title bar shows it; of one about a tile, with `tile_id` \
-         and `tile_title` too, as its header shows it. A listener hears the app's, one \
+         `window_title`, as its title bar shows it; of one about a block, with `block_id` \
+         and `block_title` too, as its header shows it. A listener hears the app's, one \
          window's, or all of them. Readers ignore events and fields they don't know.\n",
     );
     let mut namespace = "";
@@ -88,7 +88,7 @@ fn event(text: &mut String, kind: &EventKind) {
     let heard = match kind.heard {
         Heard::App => "those listening to the app's events",
         Heard::AppAndWindow => "those listening to the app's events, and to its window's",
-        Heard::Window | Heard::Tile => "those listening to its window's events",
+        Heard::Window | Heard::Block => "those listening to its window's events",
         Heard::Everyone => "every listener",
     };
     writeln!(text, "- Heard by {heard}.").ok();
@@ -100,8 +100,8 @@ fn event(text: &mut String, kind: &EventKind) {
     }
     if !ids.is_empty() {
         let names: Vec<String> = ids.iter().map(|id| format!("`{id}`")).collect();
-        let whose = if kind.heard == Heard::Tile {
-            "its window's and its tile's"
+        let whose = if kind.heard == Heard::Block {
+            "its window's and its block's"
         } else {
             "its window's"
         };
@@ -170,8 +170,8 @@ fn acts_on(scope: Scope) -> &'static str {
         Scope::App => "the app",
         Scope::AnyWindow => "a window, Settings and About too",
         Scope::Window => "a player window",
-        Scope::Tiles => "every tile in a window",
-        Scope::Tile => "a tile",
+        Scope::Blocks => "every block in a window",
+        Scope::Block => "a block",
     }
 }
 

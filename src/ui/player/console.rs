@@ -1,6 +1,6 @@
-//! The console: what plays in a tile, stream by stream as the file has
+//! The console: what plays in a block, stream by stream as the file has
 //! them, and how playback is going, kept up to date while it shows. `~`
-//! shows and hides it on the tile in front.
+//! shows and hides it on the block in front.
 
 use gpui::prelude::*;
 use gpui::{Context, Div, div};
@@ -18,12 +18,12 @@ use crate::ui::theme::overlay;
 type Row = (&'static str, String);
 
 impl PlayerView {
-    /// Show the console on this tile, or hide it.
+    /// Show the console on this block, or hide it.
     pub fn toggle_console(&mut self, cx: &mut Context<Self>) {
         self.console = match self.console.take() {
             Some(_) => None,
             // What it shows changes while paused too (reading ahead, say),
-            // when nothing else redraws the tile.
+            // when nothing else redraws the block.
             None => Some(cx.spawn(async move |this, cx| {
                 loop {
                     cx.background_executor().timer(REFRESH).await;

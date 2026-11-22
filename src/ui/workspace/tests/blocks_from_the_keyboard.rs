@@ -1,5 +1,5 @@
-//! Going from tile to tile, and moving tiles about the grid, with the keys
-//! someone at the screen would press: the tile they go to is the one
+//! Going from block to block, and moving blocks about the grid, with the keys
+//! someone at the screen would press: the block they go to is the one
 //! shortcuts go to, with a ring round it till the mouse moves.
 
 use gpui::{EntityId, Modifiers, TestAppContext, VisualTestContext, WindowHandle};
@@ -19,38 +19,41 @@ const MOVE_RIGHT: &str = "secondary-alt-shift-right";
 const MOVE_UP: &str = "secondary-alt-shift-up";
 const MOVE_DOWN: &str = "secondary-alt-shift-down";
 
-/// The tiles, in order.
-fn tiles(window: WindowHandle<Workspace>, cx: &VisualTestContext) -> Vec<EntityId> {
-    players(window, cx).iter().map(|&(tile, ..)| tile).collect()
+/// The blocks, in order.
+fn blocks(window: WindowHandle<Workspace>, cx: &VisualTestContext) -> Vec<EntityId> {
+    players(window, cx)
+        .iter()
+        .map(|&(block, ..)| block)
+        .collect()
 }
 
-/// Where the tile in front is in the window's order.
+/// Where the block in front is in the window's order.
 fn in_front(window: WindowHandle<Workspace>, cx: &VisualTestContext) -> usize {
     window
         .read_with(cx, |workspace, _| {
             let front = workspace.active_view().map(|view| view.entity_id());
             workspace
-                .tiles
+                .blocks
                 .iter()
-                .position(|tile| Some(tile.view.entity_id()) == front)
+                .position(|block| Some(block.view.entity_id()) == front)
         })
         .unwrap()
-        .expect("a tile in front")
+        .expect("a block in front")
 }
 
-/// Which tile the ring is round, if one is.
+/// Which block the ring is round, if one is.
 fn ringed(cx: &mut VisualTestContext) -> Option<usize> {
     if !shows(cx, "focus-ring") {
         return None;
     }
     let ring = find(cx, "focus-ring");
-    let tiles = ["tile-0", "tile-1", "tile-2", "tile-3"];
-    tiles
+    let blocks = ["block-0", "block-1", "block-2", "block-3"];
+    blocks
         .iter()
-        .position(|&tile| shows(cx, tile) && find(cx, tile) == ring)
+        .position(|&block| shows(cx, block) && find(cx, block) == ring)
 }
 
-/// Which tiles are muted, in order.
+/// Which blocks are muted, in order.
 fn muted(window: WindowHandle<Workspace>, cx: &VisualTestContext) -> Vec<bool> {
     players(window, cx)
         .iter()
@@ -59,7 +62,7 @@ fn muted(window: WindowHandle<Workspace>, cx: &VisualTestContext) -> Vec<bool> {
 }
 
 #[gpui::test]
-fn keys_go_from_tile_to_tile_across_the_grid_and_stop_at_its_edges(cx: &mut TestAppContext) {
+fn keys_go_from_block_to_block_across_the_grid_and_stop_at_its_edges(cx: &mut TestAppContext) {
     let (window, mut cx) = testing::start(cx);
     // Two rows of two:
     // 0 1
@@ -78,7 +81,7 @@ fn keys_go_from_tile_to_tile_across_the_grid_and_stop_at_its_edges(cx: &mut Test
 
     press(&mut cx, RIGHT);
     press(&mut cx, DOWN);
-    assert_eq!(ringed(&mut cx), Some(3), "a ring round the tile gone to");
+    assert_eq!(ringed(&mut cx), Some(3), "a ring round the block gone to");
     press(&mut cx, "m");
     assert_eq!(
         muted(window, &cx),
@@ -86,16 +89,16 @@ fn keys_go_from_tile_to_tile_across_the_grid_and_stop_at_its_edges(cx: &mut Test
         "shortcuts go to it"
     );
 
-    // Closed down to one: no ring round a tile alone.
+    // Closed down to one: no ring round a block alone.
     for _ in 0..3 {
         press(&mut cx, "secondary-w");
     }
-    assert_eq!(tiles(window, &cx).len(), 1);
+    assert_eq!(blocks(window, &cx).len(), 1);
     assert_eq!(ringed(&mut cx), None);
 }
 
 #[gpui::test]
-fn next_and_previous_go_round_every_tile(cx: &mut TestAppContext) {
+fn next_and_previous_go_round_every_block(cx: &mut TestAppContext) {
     let (window, mut cx) = testing::start(cx);
     open(
         window,
@@ -122,31 +125,31 @@ fn the_ring_goes_once_the_mouse_moves_or_clicks(cx: &mut TestAppContext) {
         false,
     );
 
-    // Over the tile the keys went to: it stays in front, without a ring.
+    // Over the block the keys went to: it stays in front, without a ring.
     press(&mut cx, NEXT);
     assert_eq!(ringed(&mut cx), Some(1));
-    hover(&mut cx, "tile-1");
+    hover(&mut cx, "block-1");
     assert_eq!(ringed(&mut cx), None);
     assert_eq!(in_front(window, &cx), 1);
 
     // Over another: that one's in front.
     press(&mut cx, NEXT);
     assert_eq!(ringed(&mut cx), Some(2));
-    hover(&mut cx, "tile-0");
+    hover(&mut cx, "block-0");
     assert_eq!(ringed(&mut cx), None);
     assert_eq!(in_front(window, &cx), 0);
 
     // Clicked where the mouse rests, without moving it.
     press(&mut cx, NEXT);
     assert_eq!(ringed(&mut cx), Some(1));
-    let at = find(&mut cx, "tile-0").center();
+    let at = find(&mut cx, "block-0").center();
     cx.simulate_click(at, Modifiers::none());
     assert_eq!(ringed(&mut cx), None);
     assert_eq!(in_front(window, &cx), 0);
 }
 
 #[gpui::test]
-fn a_tile_moves_about_the_grid_staying_in_front(cx: &mut TestAppContext) {
+fn a_block_moves_about_the_grid_staying_in_front(cx: &mut TestAppContext) {
     let (window, mut cx) = testing::start(cx);
     // Two rows, the last one short:
     // a b
@@ -157,13 +160,13 @@ fn a_tile_moves_about_the_grid_staying_in_front(cx: &mut TestAppContext) {
         &["clip.mp4", "clip-ip.mkv", "tone.m4a"],
         false,
     );
-    let [a, b, c] = tiles(window, &cx)[..] else {
-        panic!("three tiles");
+    let [a, b, c] = blocks(window, &cx)[..] else {
+        panic!("three blocks");
     };
     let playing = |cx: &VisualTestContext| {
         let mut playing: Vec<_> = players(window, cx)
             .iter()
-            .map(|&(tile, playing, _)| (tile, playing))
+            .map(|&(block, playing, _)| (block, playing))
             .collect();
         playing.sort();
         playing
@@ -171,11 +174,11 @@ fn a_tile_moves_about_the_grid_staying_in_front(cx: &mut TestAppContext) {
     let was_playing = playing(&cx);
 
     press(&mut cx, MOVE_RIGHT);
-    assert_eq!(tiles(window, &cx), [b, a, c]);
+    assert_eq!(blocks(window, &cx), [b, a, c]);
     press(&mut cx, MOVE_RIGHT);
-    assert_eq!(tiles(window, &cx), [b, a, c], "not past the edge");
+    assert_eq!(blocks(window, &cx), [b, a, c], "not past the edge");
     press(&mut cx, MOVE_DOWN);
-    assert_eq!(tiles(window, &cx), [b, c, a], "to the last tile below");
+    assert_eq!(blocks(window, &cx), [b, c, a], "to the last block below");
     assert_eq!(in_front(window, &cx), 2);
     assert_eq!(ringed(&mut cx), Some(2));
     press(&mut cx, "m");
@@ -186,18 +189,18 @@ fn a_tile_moves_about_the_grid_staying_in_front(cx: &mut TestAppContext) {
     );
 
     press(&mut cx, MOVE_LEFT);
-    assert_eq!(tiles(window, &cx), [b, c, a], "nothing to its left");
+    assert_eq!(blocks(window, &cx), [b, c, a], "nothing to its left");
     press(&mut cx, MOVE_UP);
-    assert_eq!(tiles(window, &cx), [a, c, b]);
+    assert_eq!(blocks(window, &cx), [a, c, b]);
     press(&mut cx, MOVE_RIGHT);
     press(&mut cx, MOVE_LEFT);
-    assert_eq!(tiles(window, &cx), [a, c, b], "and back");
+    assert_eq!(blocks(window, &cx), [a, c, b], "and back");
     assert_eq!(in_front(window, &cx), 0);
     assert_eq!(playing(&cx), was_playing, "moving neither plays nor pauses");
 }
 
 #[gpui::test]
-fn with_a_tile_maximized_the_keys_show_another_and_move_none(cx: &mut TestAppContext) {
+fn with_a_block_maximized_the_keys_show_another_and_move_none(cx: &mut TestAppContext) {
     let (window, mut cx) = testing::start(cx);
     open(
         window,
@@ -205,11 +208,11 @@ fn with_a_tile_maximized_the_keys_show_another_and_move_none(cx: &mut TestAppCon
         &["clip.mp4", "clip-ip.mkv", "tone.m4a"],
         false,
     );
-    let [a, b, c] = tiles(window, &cx)[..] else {
-        panic!("three tiles");
+    let [a, b, c] = blocks(window, &cx)[..] else {
+        panic!("three blocks");
     };
     let first = window
-        .read_with(&cx, |workspace, _| workspace.tiles[0].view.clone())
+        .read_with(&cx, |workspace, _| workspace.blocks[0].view.clone())
         .unwrap();
     zoom(&first, &mut cx);
     cx.run_until_parked();
@@ -222,12 +225,12 @@ fn with_a_tile_maximized_the_keys_show_another_and_move_none(cx: &mut TestAppCon
 
     press(&mut cx, RIGHT);
     assert_eq!(maximized(&cx), Some(b), "the one beside fills the window");
-    assert!(shows(&mut cx, "tile-1") && !shows(&mut cx, "tile-0"));
+    assert!(shows(&mut cx, "block-1") && !shows(&mut cx, "block-0"));
     assert_eq!(in_front(window, &cx), 1);
-    assert_eq!(ringed(&mut cx), None, "no ring round a tile alone");
+    assert_eq!(ringed(&mut cx), None, "no ring round a block alone");
 
     press(&mut cx, MOVE_LEFT);
-    assert_eq!(tiles(window, &cx), [a, b, c], "none moves unseen");
+    assert_eq!(blocks(window, &cx), [a, b, c], "none moves unseen");
     press(&mut cx, PREVIOUS);
     assert_eq!(maximized(&cx), Some(a));
 }

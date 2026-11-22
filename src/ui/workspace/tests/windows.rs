@@ -273,7 +273,7 @@ fn move_puts_a_window_at_another_number(cx: &mut TestAppContext) {
     let place = TestAppContext::update(&cx, |cx| {
         let target = Target {
             window: Some("1".into()),
-            tile: None,
+            block: None,
         };
         api::state("window.move", &target, cx)
     });

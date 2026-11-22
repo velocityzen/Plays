@@ -106,11 +106,11 @@ fn the_progress_runs_as_playback_does_whichever_buttons_play_it() {
     };
     keep(true, 0.0);
     assert_eq!(rate(), 1.0, "running with playback");
-    // Paused from the window, which says so first, then the tile.
+    // Paused from the window, which says so first, then the block.
     told.lock().playing = false;
     keep(false, 0.1);
     assert_eq!(rate(), 0.0, "stopped with playback");
-    // Played and paused from the tile, then played from the window.
+    // Played and paused from the block, then played from the window.
     keep(true, 0.1);
     keep(false, 0.2);
     told.lock().playing = true;

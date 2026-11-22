@@ -1,6 +1,8 @@
 //! A workspace window driven as someone at the screen would, on gpui's
 //! test platform (see `ui::testing`).
 
+mod blocks;
+mod blocks_from_the_keyboard;
 mod casting;
 mod casting_to_airplay;
 mod casting_to_chromecast;
@@ -15,8 +17,6 @@ mod over_video;
 mod playlist;
 mod sound_to_airplay;
 mod sound_to_bluetooth;
-mod tiles;
-mod tiles_from_the_keyboard;
 mod windows;
 
 use std::cell::Cell;
@@ -42,7 +42,7 @@ use crate::ui::testing::{
 };
 use crate::ui::theme::backdrop;
 use crate::ui::theme::layout::{
-    AUDIO_WINDOW_SIZE, LOGO_MAX, TILE_GAP, WINDOW_GAP, WINDOW_MIN_SIZE, WINDOW_SIZE,
+    AUDIO_WINDOW_SIZE, BLOCK_GAP, LOGO_MAX, WINDOW_GAP, WINDOW_MIN_SIZE, WINDOW_SIZE,
 };
 use crate::ui::theme::motion::FIT_POLL;
 use crate::ui::{blackout, displays};
@@ -62,9 +62,9 @@ pub(super) fn open(
     let ready = wait_until(cx, |cx| {
         window
             .read_with(cx, |workspace, cx| {
-                workspace.tiles.len() == files.len()
-                    && workspace.tiles.iter().all(|tile| {
-                        let player = tile.view.read(cx).player();
+                workspace.blocks.len() == files.len()
+                    && workspace.blocks.iter().all(|block| {
+                        let player = block.view.read(cx).player();
                         player.is_known() && (!playing || player.is_playing())
                     })
             })
@@ -73,28 +73,28 @@ pub(super) fn open(
     assert!(ready, "{files:?} didn't open (and play) in {OPEN_WAIT:?}");
 }
 
-/// Maximize `tile`, or put it back, as its maximize button does
-/// (`tile.zoom`).
-fn zoom(tile: &Entity<PlayerView>, cx: &mut VisualTestContext) {
-    let name = tile.read_with(cx, |view, _| view.id().to_string());
+/// Maximize `block`, or put it back, as its maximize button does
+/// (`block.zoom`).
+fn zoom(block: &Entity<PlayerView>, cx: &mut VisualTestContext) {
+    let name = block.read_with(cx, |view, _| view.id().to_string());
     // Outside the window's update, as a deferred command runs.
     TestAppContext::update(cx, |cx| {
-        api::run(Invocation::new("tile.zoom").on_tile(name), cx)
+        api::run(Invocation::new("block.zoom").on_block(name), cx)
     })
     .unwrap();
 }
 
-/// The tiles' players, in order: (tile, playing, muted).
+/// The blocks' players, in order: (block, playing, muted).
 fn players(window: WindowHandle<Workspace>, cx: &VisualTestContext) -> Vec<(EntityId, bool, bool)> {
     window
         .read_with(cx, |workspace, cx| {
             workspace
-                .tiles
+                .blocks
                 .iter()
-                .map(|tile| {
-                    let player = tile.view.read(cx).player();
+                .map(|block| {
+                    let player = block.view.read(cx).player();
                     (
-                        tile.view.entity_id(),
+                        block.view.entity_id(),
                         player.is_playing(),
                         player.is_muted(),
                     )
@@ -105,12 +105,12 @@ fn players(window: WindowHandle<Workspace>, cx: &VisualTestContext) -> Vec<(Enti
 }
 
 #[gpui::test]
-fn opens_a_file_in_a_tile_and_fits_the_window_to_it(cx: &mut TestAppContext) {
+fn opens_a_file_in_a_block_and_fits_the_window_to_it(cx: &mut TestAppContext) {
     let (window, mut cx) = testing::start(cx);
     open(window, &mut cx, &["clip.mp4"], false);
     let info = window
         .read_with(&cx, |workspace, cx| {
-            workspace.tiles[0].view.read(cx).player().info()
+            workspace.blocks[0].view.read(cx).player().info()
         })
         .unwrap()
         .unwrap();
@@ -145,7 +145,7 @@ fn the_window_takes_its_videos_size_again_from_the_keys_or_the_menu(cx: &mut Tes
     cx.executor().advance_clock(FIT_POLL);
     cx.run_until_parked();
     let fitted = size(
-        AUDIO_WINDOW_SIZE.width * 2. + TILE_GAP,
+        AUDIO_WINDOW_SIZE.width * 2. + BLOCK_GAP,
         AUDIO_WINDOW_SIZE.height + TOOLBAR_SPACE,
     );
     assert_eq!(size_now(&mut cx), fitted, "as the files opened");
@@ -176,11 +176,11 @@ fn the_window_takes_its_videos_size_again_from_the_keys_or_the_menu(cx: &mut Tes
     let opened = wait_until(&mut cx, |cx| {
         window
             .read_with(cx, |workspace, cx| {
-                workspace.tiles.len() == 3
+                workspace.blocks.len() == 3
                     && workspace
-                        .tiles
+                        .blocks
                         .iter()
-                        .all(|tile| tile.view.read(cx).player().is_known())
+                        .all(|block| block.view.read(cx).player().is_known())
             })
             .unwrap()
     });
@@ -190,8 +190,8 @@ fn the_window_takes_its_videos_size_again_from_the_keys_or_the_menu(cx: &mut Tes
     assert_eq!(size_now(&mut cx), resized, "zoomed as it was");
     // Three in two rows.
     let three = size(
-        AUDIO_WINDOW_SIZE.width * 2. + TILE_GAP,
-        AUDIO_WINDOW_SIZE.height * 2. + TILE_GAP + TOOLBAR_SPACE,
+        AUDIO_WINDOW_SIZE.width * 2. + BLOCK_GAP,
+        AUDIO_WINDOW_SIZE.height * 2. + BLOCK_GAP + TOOLBAR_SPACE,
     );
     press(&mut cx, "secondary-alt-0");
     cx.run_until_parked();
@@ -207,47 +207,47 @@ fn the_window_takes_its_videos_size_again_from_the_keys_or_the_menu(cx: &mut Tes
 }
 
 #[gpui::test]
-fn a_click_picks_a_tile_without_pausing_it(cx: &mut TestAppContext) {
+fn a_click_picks_a_block_without_pausing_it(cx: &mut TestAppContext) {
     let (window, mut cx) = testing::start(cx);
     open(window, &mut cx, &["clip.mp4", "clip-ip.mkv"], true);
 
-    click(&mut cx, "tile-1");
+    click(&mut cx, "block-1");
     let [_, (second, playing, _)] = players(window, &cx)[..] else {
-        panic!("two tiles");
+        panic!("two blocks");
     };
-    assert!(playing, "a single click mustn't pause the tile");
+    assert!(playing, "a single click mustn't pause the block");
     let active = window
         .read_with(&cx, |workspace, _| workspace.active)
         .unwrap();
     assert_eq!(
         active,
         Some(second),
-        "the tile clicked is the one shortcuts go to"
+        "the block clicked is the one shortcuts go to"
     );
 }
 
 #[gpui::test]
-fn a_double_click_fills_the_window_with_a_tile_and_another_puts_it_back(cx: &mut TestAppContext) {
+fn a_double_click_fills_the_window_with_a_block_and_another_puts_it_back(cx: &mut TestAppContext) {
     let (window, mut cx) = testing::start(cx);
     open(window, &mut cx, &["clip.mp4", "clip-ip.mkv"], true);
     let viewport = cx.update(|window, _| window.viewport_size());
     let content = size(viewport.width, viewport.height - TOOLBAR_SPACE);
 
-    double_click(&mut cx, "tile-1");
-    assert!(!shows(&mut cx, "tile-0"), "the other tile is hidden");
-    assert_eq!(find(&mut cx, "tile-1").size, content);
+    double_click(&mut cx, "block-1");
+    assert!(!shows(&mut cx, "block-0"), "the other block is hidden");
+    assert_eq!(find(&mut cx, "block-1").size, content);
     assert!(
         players(window, &cx).iter().all(|&(_, playing, _)| playing),
         "double-clicking mustn't pause"
     );
 
-    double_click(&mut cx, "tile-1");
-    assert!(shows(&mut cx, "tile-0"));
-    assert!(find(&mut cx, "tile-1").size.width < content.width / 2.);
+    double_click(&mut cx, "block-1");
+    assert!(shows(&mut cx, "block-0"));
+    assert!(find(&mut cx, "block-1").size.width < content.width / 2.);
 }
 
 #[gpui::test]
-fn shortcuts_go_to_the_tile_last_clicked(cx: &mut TestAppContext) {
+fn shortcuts_go_to_the_block_last_clicked(cx: &mut TestAppContext) {
     let (window, mut cx) = testing::start(cx);
     open(window, &mut cx, &["clip.mp4", "clip-ip.mkv"], false);
     let muted = |cx: &VisualTestContext| {
@@ -257,25 +257,25 @@ fn shortcuts_go_to_the_tile_last_clicked(cx: &mut TestAppContext) {
             .collect::<Vec<_>>()
     };
 
-    click(&mut cx, "tile-1");
+    click(&mut cx, "block-1");
     press(&mut cx, "m");
     assert_eq!(muted(&cx), [false, true]);
 
-    click(&mut cx, "tile-0");
+    click(&mut cx, "block-0");
     press(&mut cx, "m");
     assert_eq!(muted(&cx), [true, true]);
 }
 
-/// The tiles' players, in order: (where each is, the frame it shows,
+/// The blocks' players, in order: (where each is, the frame it shows,
 /// playing).
 fn times(window: WindowHandle<Workspace>, cx: &impl AppContext) -> Vec<(f64, Option<f64>, bool)> {
     window
         .read_with(cx, |workspace, cx| {
             workspace
-                .tiles
+                .blocks
                 .iter()
-                .map(|tile| {
-                    let player = tile.view.read(cx).player();
+                .map(|block| {
+                    let player = block.view.read(cx).player();
                     (player.position(), player.frame_pts(), player.is_playing())
                 })
                 .collect()
@@ -283,7 +283,7 @@ fn times(window: WindowHandle<Workspace>, cx: &impl AppContext) -> Vec<(f64, Opt
         .unwrap()
 }
 
-/// Wait until every tile shows the frame at `pts`, paused.
+/// Wait until every block shows the frame at `pts`, paused.
 fn wait_for_frames(window: WindowHandle<Workspace>, cx: &mut VisualTestContext, pts: f64) {
     let shown = wait_until(cx, |cx| {
         // Frames show as the window draws.
@@ -292,29 +292,29 @@ fn wait_for_frames(window: WindowHandle<Workspace>, cx: &mut VisualTestContext, 
             !playing && frame.is_some_and(|frame| (frame - pts).abs() < 1e-3)
         })
     });
-    assert!(shown, "every tile at {pts}: {:?}", times(window, cx));
+    assert!(shown, "every block at {pts}: {:?}", times(window, cx));
 }
 
 #[gpui::test]
-fn sync_all_puts_every_tile_where_the_one_in_front_is_and_steps_them_together(
+fn sync_all_puts_every_block_where_the_one_in_front_is_and_steps_them_together(
     cx: &mut TestAppContext,
 ) {
     let (window, mut cx) = testing::start(cx);
     // Two seconds at 25 frames a second each.
     open(window, &mut cx, &["clip.mp4", "clip-ip.mkv"], false);
-    let tile = |index: usize, cx: &VisualTestContext| {
+    let block = |index: usize, cx: &VisualTestContext| {
         window
-            .read_with(cx, |workspace, _| workspace.tiles[index].view.clone())
+            .read_with(cx, |workspace, _| workspace.blocks[index].view.clone())
             .unwrap()
     };
     for (index, time) in [(0, 1.2), (1, 0.4)] {
-        tile(index, &cx).update(&mut cx, |view, _| {
+        block(index, &cx).update(&mut cx, |view, _| {
             view.pause();
             view.seek(time);
         });
     }
 
-    click(&mut cx, "tile-0");
+    click(&mut cx, "block-0");
     press(&mut cx, "shift-s");
     wait_for_frames(window, &mut cx, 1.2);
 
@@ -326,14 +326,14 @@ fn sync_all_puts_every_tile_where_the_one_in_front_is_and_steps_them_together(
     }
 
     // The one in front playing: the others go back to it, and play.
-    tile(1, &cx).update(&mut cx, |view, _| {
+    block(1, &cx).update(&mut cx, |view, _| {
         view.seek(0.2);
         view.play();
     });
-    click(&mut cx, "tile-1");
+    click(&mut cx, "block-1");
     press(&mut cx, "shift-s");
     let [(first, _, first_playing), (second, _, second_playing)] = times(window, &cx)[..] else {
-        panic!("two tiles");
+        panic!("two blocks");
     };
     assert!(first_playing && second_playing, "both play, as it does");
     assert!(
@@ -343,7 +343,7 @@ fn sync_all_puts_every_tile_where_the_one_in_front_is_and_steps_them_together(
 }
 
 #[gpui::test]
-fn shortcuts_go_to_the_tile_the_mouse_is_over(cx: &mut TestAppContext) {
+fn shortcuts_go_to_the_block_the_mouse_is_over(cx: &mut TestAppContext) {
     let (window, mut cx) = testing::start(cx);
     open(window, &mut cx, &["clip.mp4", "clip-ip.mkv"], false);
     let muted = |cx: &VisualTestContext| {
@@ -353,43 +353,43 @@ fn shortcuts_go_to_the_tile_the_mouse_is_over(cx: &mut TestAppContext) {
             .collect::<Vec<_>>()
     };
 
-    hover(&mut cx, "tile-1");
+    hover(&mut cx, "block-1");
     press(&mut cx, "m");
     assert_eq!(muted(&cx), [false, true]);
 
-    hover(&mut cx, "tile-0");
+    hover(&mut cx, "block-0");
     press(&mut cx, "m");
     assert_eq!(muted(&cx), [true, true]);
 
-    // Dragging, as a slider of the tile in front is, doesn't move them.
-    let over = find(&mut cx, "tile-1").center();
+    // Dragging, as a slider of the block in front is, doesn't move them.
+    let over = find(&mut cx, "block-1").center();
     cx.simulate_mouse_move(over, Some(MouseButton::Left), Modifiers::none());
     cx.run_until_parked();
     press(&mut cx, "m");
-    assert_eq!(muted(&cx), [false, true], "still the tile it came from");
+    assert_eq!(muted(&cx), [false, true], "still the block it came from");
 }
 
 #[gpui::test]
-fn shift_up_and_down_change_every_tiles_volume_from_its_own(cx: &mut TestAppContext) {
+fn shift_up_and_down_change_every_blocks_volume_from_its_own(cx: &mut TestAppContext) {
     let (window, mut cx) = testing::start(cx);
     open(window, &mut cx, &["clip.mp4", "clip-ip.mkv"], false);
     let volumes = |cx: &VisualTestContext| {
         window
             .read_with(cx, |workspace, cx| {
                 workspace
-                    .tiles
+                    .blocks
                     .iter()
-                    .map(|tile| (tile.view.read(cx).player().volume() * 100.0).round())
+                    .map(|block| (block.view.read(cx).player().volume() * 100.0).round())
                     .collect::<Vec<_>>()
             })
             .unwrap()
     };
     let quieter = window
-        .read_with(&cx, |workspace, _| workspace.tiles[1].view.clone())
+        .read_with(&cx, |workspace, _| workspace.blocks[1].view.clone())
         .unwrap();
     quieter.update(&mut cx, |view, _| view.set_volume(0.5));
 
-    hover(&mut cx, "tile-0");
+    hover(&mut cx, "block-0");
     press(&mut cx, "shift-up");
     assert_eq!(volumes(&cx), [85.0, 55.0]);
     press(&mut cx, "shift-down shift-down");
@@ -401,7 +401,7 @@ fn a_file_with_chapters_goes_from_one_to_the_next_and_marks_them(cx: &mut TestAp
     let (window, mut cx) = testing::start(cx);
     open(window, &mut cx, &["clip-chapters.mkv"], false);
     let view = window
-        .read_with(&cx, |workspace, _| workspace.tiles[0].view.clone())
+        .read_with(&cx, |workspace, _| workspace.blocks[0].view.clone())
         .unwrap();
     view.update(&mut cx, |view, _| view.pause());
     let chapters = view.read_with(&cx, |view, _| view.chapters());
@@ -419,7 +419,7 @@ fn a_file_with_chapters_goes_from_one_to_the_next_and_marks_them(cx: &mut TestAp
     );
     let position = |cx: &VisualTestContext| view.read_with(cx, |view, _| view.position());
 
-    hover(&mut cx, "tile-0");
+    hover(&mut cx, "block-0");
     for (key, expected) in [
         ("pagedown", 0.8),
         ("pagedown", 1.4),
@@ -455,7 +455,7 @@ fn panels_over_the_video_show_it_through_them_as_settings_say(cx: &mut TestAppCo
     let (window, mut cx) = testing::start(cx);
     open(window, &mut cx, &["clip.mp4"], false);
     let view = window
-        .read_with(&cx, |workspace, _| workspace.tiles[0].view.clone())
+        .read_with(&cx, |workspace, _| workspace.blocks[0].view.clone())
         .unwrap();
     // Paused, its controls show.
     view.update(&mut cx, |view, _| view.pause());
@@ -493,15 +493,15 @@ fn panels_over_the_video_show_it_through_them_as_settings_say(cx: &mut TestAppCo
 }
 
 #[gpui::test]
-fn command_w_closes_the_tile_in_front_then_the_window(cx: &mut TestAppContext) {
+fn command_w_closes_the_block_in_front_then_the_window(cx: &mut TestAppContext) {
     let (window, mut cx) = testing::start(cx);
     open(window, &mut cx, &["clip.mp4", "clip-ip.mkv"], false);
     let second = players(window, &cx)[1].0;
 
-    click(&mut cx, "tile-0");
+    click(&mut cx, "block-0");
     press(&mut cx, "secondary-w");
     let left: Vec<_> = players(window, &cx).iter().map(|&(id, ..)| id).collect();
-    assert_eq!(left, [second], "only the tile in front closes");
+    assert_eq!(left, [second], "only the block in front closes");
 
     press(&mut cx, "secondary-w");
     assert!(players(window, &cx).is_empty());
@@ -555,16 +555,17 @@ fn an_empty_window_shows_the_logo_with_the_open_buttons_alike_under_it(cx: &mut 
 }
 
 #[gpui::test]
-fn tiles_sit_in_the_grid(cx: &mut TestAppContext) {
+fn blocks_sit_in_the_grid(cx: &mut TestAppContext) {
     let (window, mut cx) = testing::start(cx);
-    // Four tiles make two rows of two.
+    // Four blocks make two rows of two.
     open(
         window,
         &mut cx,
         &["clip.mp4", "clip-ip.mkv", "clip.mp4", "tone.m4a"],
         false,
     );
-    let [a, b, c, d] = ["tile-0", "tile-1", "tile-2", "tile-3"].map(|tile| find(&mut cx, tile));
+    let [a, b, c, d] =
+        ["block-0", "block-1", "block-2", "block-3"].map(|block| find(&mut cx, block));
 
     assert_eq!((a.top(), c.top()), (b.top(), d.top()), "rows line up");
     assert_eq!(
@@ -574,8 +575,8 @@ fn tiles_sit_in_the_grid(cx: &mut TestAppContext) {
     );
     assert!(b.left() > a.right() && c.top() > a.bottom());
     assert!(
-        [b, c, d].iter().all(|tile| tile.size == a.size),
-        "every tile gets the same room"
+        [b, c, d].iter().all(|block| block.size == a.size),
+        "every block gets the same room"
     );
 }
 
@@ -611,12 +612,12 @@ fn floats_on_top_always_or_while_playing(cx: &mut TestAppContext) {
     );
     assert_eq!(on_top(&mut cx), (true, true), "playing");
 
-    click(&mut cx, "tile-0");
+    click(&mut cx, "block-0");
     press(&mut cx, "space");
     let paused = wait_until(&mut cx, |cx| {
         window
             .read_with(cx, |workspace, cx| {
-                !workspace.tiles[0].view.read(cx).player().is_playing()
+                !workspace.blocks[0].view.read(cx).player().is_playing()
             })
             .unwrap()
     });
@@ -639,11 +640,11 @@ fn floats_on_top_always_or_while_playing(cx: &mut TestAppContext) {
 fn picture_in_picture_going_back_brings_the_app_and_its_window_forward(cx: &mut TestAppContext) {
     let (window, mut cx) = testing::start(cx);
     open(window, &mut cx, &["clip.mp4"], false);
-    let tile = window
-        .read_with(&cx, |workspace, _| workspace.tiles[0].view.clone())
+    let block = window
+        .read_with(&cx, |workspace, _| workspace.blocks[0].view.clone())
         .unwrap();
     let pip_says = |cx: &mut VisualTestContext, event: PipEvent| {
-        cx.update(|window, cx| tile.update(cx, |view, cx| view.on_pip_event(event, window, cx)));
+        cx.update(|window, cx| block.update(cx, |view, cx| view.on_pip_event(event, window, cx)));
         cx.run_until_parked();
     };
     let before = cx.app_activations();
@@ -654,7 +655,7 @@ fn picture_in_picture_going_back_brings_the_app_and_its_window_forward(cx: &mut 
     assert_eq!(cx.app_activations(), before + 1, "the app comes forward");
     assert!(cx.update(|window, _| window.is_window_active()));
 
-    // One that never showed, or that this tile closed itself, leaves
+    // One that never showed, or that this block closed itself, leaves
     // everything where it is, full screen or not.
     cx.update(|window, _| window.toggle_fullscreen());
     pip_says(&mut cx, PipEvent::Stopped);
@@ -708,18 +709,18 @@ fn new_windows_open_on_the_display_in_use(cx: &mut TestAppContext) {
         "and Settings with it"
     );
 
-    // A tile popped out goes beside its window, on its display.
+    // A block popped out goes beside its window, on its display.
     open(there, &mut there_cx, &["clip.mp4", "tone.m4a"], false);
     let from = there_cx.update(|window, _| window.bounds());
     let before = there_cx.windows();
-    hover(&mut there_cx, "tile-0");
+    hover(&mut there_cx, "block-0");
     click(&mut there_cx, "pop-out");
     there_cx.run_until_parked();
     let popped = there_cx
         .windows()
         .into_iter()
         .find(|window| !before.contains(window))
-        .expect("a window for the tile");
+        .expect("a window for the block");
     assert_eq!(display_of(popped, &mut there_cx), Some(u32::from(second)));
     let bounds = popped
         .update(&mut there_cx, |_, window, _| window.bounds())
@@ -983,7 +984,7 @@ fn a_file_opened_again_starts_where_it_was_left(cx: &mut TestAppContext) {
         cx.run_until_parked();
         window
             .read_with(cx, |workspace, cx| {
-                workspace.tiles[0].view.read(cx).position()
+                workspace.blocks[0].view.read(cx).position()
             })
             .unwrap()
     };
@@ -998,7 +999,7 @@ fn a_file_opened_again_starts_where_it_was_left(cx: &mut TestAppContext) {
             .unwrap();
         cx.run_until_parked();
         // Outside the window's update, as a deferred command runs.
-        TestAppContext::update(cx, |cx| api::run(Invocation::new("tile.close"), cx)).unwrap();
+        TestAppContext::update(cx, |cx| api::run(Invocation::new("block.close"), cx)).unwrap();
     };
 
     // Paused where it opens, to read where that is.
@@ -1009,7 +1010,9 @@ fn a_file_opened_again_starts_where_it_was_left(cx: &mut TestAppContext) {
     assert_eq!(position(&mut cx), 1.0, "where it was left");
     let noted = |cx: &mut VisualTestContext| {
         window
-            .read_with(cx, |workspace, cx| workspace.tiles[0].view.read(cx).noted())
+            .read_with(cx, |workspace, cx| {
+                workspace.blocks[0].view.read(cx).noted()
+            })
             .unwrap()
     };
     assert_eq!(noted(&mut cx).as_deref(), Some("Resumed at 0:01"));
@@ -1086,7 +1089,7 @@ fn the_cast_menu_puts_the_window_full_screen_on_a_display(cx: &mut TestAppContex
 }
 
 #[gpui::test]
-fn a_tile_alone_expands_to_full_screen_while_it_floats(cx: &mut TestAppContext) {
+fn a_block_alone_expands_to_full_screen_while_it_floats(cx: &mut TestAppContext) {
     let (window, mut cx) = testing::start(cx);
     open(window, &mut cx, &["clip.mp4"], true);
     cx.dispatch_action(Run::command("window.toggle_float_on_top_while_playing"));
@@ -1096,9 +1099,9 @@ fn a_tile_alone_expands_to_full_screen_while_it_floats(cx: &mut TestAppContext) 
     };
     assert!(cx.update(|window, _| window.is_on_top()), "floating");
 
-    double_click(&mut cx, "tile-0");
+    double_click(&mut cx, "block-0");
     assert!(full_screen(&mut cx), "a double click goes full screen");
-    double_click(&mut cx, "tile-0");
+    double_click(&mut cx, "block-0");
     assert!(!full_screen(&mut cx), "and another comes back");
 
     click(&mut cx, "maximize");
@@ -1108,15 +1111,15 @@ fn a_tile_alone_expands_to_full_screen_while_it_floats(cx: &mut TestAppContext) 
 }
 
 #[gpui::test]
-fn files_opened_while_a_tile_is_maximized_show_beside_it(cx: &mut TestAppContext) {
+fn files_opened_while_a_block_is_maximized_show_beside_it(cx: &mut TestAppContext) {
     let (window, mut cx) = testing::start(cx);
     open(window, &mut cx, &["clip.mp4", "tone.m4a"], false);
     let first = window
-        .read_with(&cx, |workspace, _| workspace.tiles[0].view.clone())
+        .read_with(&cx, |workspace, _| workspace.blocks[0].view.clone())
         .unwrap();
     zoom(&first, &mut cx);
     cx.run_until_parked();
-    assert!(!shows(&mut cx, "tile-1"), "the maximized tile alone");
+    assert!(!shows(&mut cx, "block-1"), "the maximized block alone");
 
     window
         .update(&mut cx, |workspace, _, cx| {
@@ -1125,34 +1128,34 @@ fn files_opened_while_a_tile_is_maximized_show_beside_it(cx: &mut TestAppContext
         .unwrap();
     let opened = wait_until(&mut cx, |cx| {
         window
-            .read_with(cx, |workspace, _| workspace.tiles.len() == 3)
+            .read_with(cx, |workspace, _| workspace.blocks.len() == 3)
             .unwrap()
     });
     assert!(opened, "clip-subs.mkv didn't open");
-    for tile in ["tile-0", "tile-1", "tile-2"] {
-        assert!(shows(&mut cx, tile), "{tile} shows");
+    for block in ["block-0", "block-1", "block-2"] {
+        assert!(shows(&mut cx, block), "{block} shows");
     }
     let (maximized, flagged) = window
         .read_with(&cx, |workspace, cx| {
             let flagged = workspace
-                .tiles
+                .blocks
                 .iter()
-                .any(|tile| tile.view.read(cx).layout().maximized);
+                .any(|block| block.view.read(cx).layout().maximized);
             (workspace.maximized, flagged)
         })
         .unwrap();
     assert_eq!(maximized, None);
-    assert!(!flagged, "no tile says it's maximized");
+    assert!(!flagged, "no block says it's maximized");
 }
 
 #[gpui::test]
-fn a_tile_redraws_as_it_is_maximized_and_put_back(cx: &mut TestAppContext) {
+fn a_block_redraws_as_it_is_maximized_and_put_back(cx: &mut TestAppContext) {
     let (window, mut cx) = testing::start(cx);
     open(window, &mut cx, &["clip.mp4", "clip-ip.mkv"], false);
-    // The first tile is the one in front and in the top-left corner
+    // The first block is the one in front and in the top-left corner
     // either way, so only being maximized changes for it.
     let first = window
-        .read_with(&cx, |workspace, _| workspace.tiles[0].view.clone())
+        .read_with(&cx, |workspace, _| workspace.blocks[0].view.clone())
         .unwrap();
     let redraws = Rc::new(Cell::new(0));
     let _observing = cx.update(|_, cx| {
@@ -1171,7 +1174,7 @@ fn a_tile_redraws_as_it_is_maximized_and_put_back(cx: &mut TestAppContext) {
         );
         assert!(
             redraws.get() > 0,
-            "the tile redraws as it is {}",
+            "the block redraws as it is {}",
             if maximized { "maximized" } else { "put back" }
         );
     }
@@ -1182,7 +1185,7 @@ fn bitmap_subtitles_leave_the_gpu_once_they_are_off_screen(cx: &mut TestAppConte
     let (window, mut cx) = testing::start(cx);
     open(window, &mut cx, &["clip-dvdsub.mkv"], false);
     let view = window
-        .read_with(&cx, |workspace, _| workspace.tiles[0].view.clone())
+        .read_with(&cx, |workspace, _| workspace.blocks[0].view.clone())
         .unwrap();
     let dropped = |cx: &mut TestAppContext| {
         window

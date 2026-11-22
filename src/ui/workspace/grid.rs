@@ -1,14 +1,14 @@
-//! The grid of tiles, in rows as Settings says, or the maximized tile alone.
-//! A tile dragged by its picture onto another takes its place.
+//! The grid of blocks, in rows as Settings says, or the maximized block alone.
+//! A block dragged by its picture onto another takes its place.
 
 use gpui::prelude::*;
 use gpui::{App, Context, EntityId, Hsla, div};
 use serde_json::json;
 
-use super::{Tile, Workspace};
+use super::{Block, Workspace};
 use crate::settings::Settings;
-use crate::ui::player::DraggedTile;
-use crate::ui::theme::layout::TILE_GAP;
+use crate::ui::player::DraggedBlock;
+use crate::ui::theme::layout::BLOCK_GAP;
 
 impl Workspace {
     pub(super) fn render_grid(
@@ -18,10 +18,10 @@ impl Workspace {
     ) -> impl IntoElement {
         let maximized = self
             .maximized
-            .and_then(|id| self.tiles.iter().find(|t| t.view.entity_id() == id));
-        let visible: Vec<&Tile> = match maximized {
-            Some(tile) => vec![tile],
-            None => self.tiles.iter().collect(),
+            .and_then(|id| self.blocks.iter().find(|t| t.view.entity_id() == id));
+        let visible: Vec<&Block> = match maximized {
+            Some(block) => vec![block],
+            None => self.blocks.iter().collect(),
         };
         let columns = columns(visible.len(), cx);
         let reorder = visible.len() > 1;
@@ -30,26 +30,26 @@ impl Workspace {
             .size_full()
             .flex()
             .flex_col()
-            .gap(TILE_GAP)
+            .gap(BLOCK_GAP)
             .children(visible.chunks(columns).map(|row| {
                 div()
                     .flex()
                     .flex_1()
                     .min_h_0()
-                    .gap(TILE_GAP)
-                    .children(row.iter().map(|tile| {
-                        // Tests find a tile by where it is in the window's
-                        // list: "tile-0" first.
-                        let id = tile.view.entity_id();
-                        let index = self.tiles.iter().position(|t| t.view.entity_id() == id);
+                    .gap(BLOCK_GAP)
+                    .children(row.iter().map(|block| {
+                        // Tests find a block by where it is in the window's
+                        // list: "block-0" first.
+                        let id = block.view.entity_id();
+                        let index = self.blocks.iter().position(|t| t.view.entity_id() == id);
                         div()
-                            .debug_selector(move || format!("tile-{}", index.unwrap_or_default()))
+                            .debug_selector(move || format!("block-{}", index.unwrap_or_default()))
                             .relative()
                             .flex_1()
                             .min_w_0()
                             .h_full()
-                            .child(tile.view.clone())
-                            // Over the tile, where another dragged onto it
+                            .child(block.view.clone())
+                            // Over the block, where another dragged onto it
                             // goes.
                             .when(reorder, |cell| {
                                 cell.child(
@@ -58,7 +58,7 @@ impl Workspace {
                                         .top_0()
                                         .left_0()
                                         .size_full()
-                                        .drag_over::<DraggedTile>(move |style, dragged, _, _| {
+                                        .drag_over::<DraggedBlock>(move |style, dragged, _, _| {
                                             if dragged.0 == id {
                                                 style
                                             } else {
@@ -66,8 +66,8 @@ impl Workspace {
                                             }
                                         })
                                         .on_drop(cx.listener(
-                                            move |this, dragged: &DraggedTile, _, cx| {
-                                                this.drop_tile(dragged.0, id, cx);
+                                            move |this, dragged: &DraggedBlock, _, cx| {
+                                                this.drop_block(dragged.0, id, cx);
                                             },
                                         )),
                                 )
@@ -79,18 +79,18 @@ impl Workspace {
 }
 
 impl Workspace {
-    /// Move the tile `id`, dropped on the tile `onto`, to its place.
-    fn drop_tile(&self, id: EntityId, onto: EntityId, cx: &mut App) {
-        let place = self.tiles.iter().position(|t| t.view.entity_id() == onto);
+    /// Move the block `id`, dropped on the block `onto`, to its place.
+    fn drop_block(&self, id: EntityId, onto: EntityId, cx: &mut App) {
+        let place = self.blocks.iter().position(|t| t.view.entity_id() == onto);
         if let Some(place) = place
             && id != onto
         {
-            self.send_to_tile(id, "tile.move", json!({"position": place + 1}), cx);
+            self.send_to_block(id, "block.move", json!({"position": place + 1}), cx);
         }
     }
 }
 
-/// How many columns `count` tiles are laid out in, as Settings say.
+/// How many columns `count` blocks are laid out in, as Settings say.
 pub(super) fn columns(count: usize, cx: &App) -> usize {
     cx.global::<Settings>()
         .columns_for(count)

@@ -40,7 +40,7 @@ pub const COMMANDS: &[Spec] = &[
         "app.open",
         "Open Paths or URLs",
         "Play files, the media files in folders, and streams, in the window named, or \
-         the one in front, or a new one if none is open: each in a tile, or one after \
+         the one in front, or a new one if none is open: each in a block, or one after \
          another in one, as Settings say.",
         Scope::Window,
         &[Arg::required(
@@ -53,9 +53,9 @@ pub const COMMANDS: &[Spec] = &[
     .tells(&[
         "window_created",
         "active_window_changed",
-        "tile_created",
+        "block_created",
         "window_layout_changed",
-        "active_tile_changed",
+        "active_block_changed",
         "opened",
     ])
     .keywords(&["file", "folder", "stream", "url", "play", "add"])
@@ -95,7 +95,7 @@ pub const COMMANDS: &[Spec] = &[
         "app.copy_debug_info",
         "Copy Debug Info",
         "Copy what a bug report needs: Plays' version, the system, FFmpeg's version, \
-         where the sound goes, the windows and tiles, and the settings changed.",
+         where the sound goes, the windows and blocks, and the settings changed.",
         &[],
         |_, cx| {
             let info = debug_info(cx)?;
@@ -121,7 +121,7 @@ pub const COMMANDS: &[Spec] = &[
         |cx| cx.quit(),
     )
     .tells(&[
-        "tile_closed",
+        "block_closed",
         "window_closed",
         "active_window_changed",
         "quit",
@@ -145,7 +145,7 @@ pub const EVENTS: &[EventKind] = &[
             EventField::optional("args", "The arguments it was given, if any."),
             EventField::optional(
                 "target",
-                "The window and the tile it was aimed at, by name, if either was.",
+                "The window and the block it was aimed at, by name, if either was.",
             ),
         ],
     )
@@ -194,12 +194,12 @@ fn version_info() -> String {
 }
 
 /// The version, the system, FFmpeg's version, where the sound goes, how
-/// many windows and tiles there are, and each setting changed.
+/// many windows and blocks there are, and each setting changed.
 fn debug_info(cx: &App) -> Result<String, Error> {
     let windows = window::summaries(cx)?;
-    let tiles: u64 = windows
+    let blocks: u64 = windows
         .iter()
-        .filter_map(|window| window["tiles"].as_u64())
+        .filter_map(|window| window["blocks"].as_u64())
         .sum();
     let mut lines = vec![
         version_info(),
@@ -210,7 +210,7 @@ fn debug_info(cx: &App) -> Result<String, Error> {
         ),
         format!("FFmpeg: {}", ffmpeg_version()),
         format!("Sound: {}", AudioEngine::device_description(cx)),
-        format!("Windows: {}, tiles: {tiles}", windows.len()),
+        format!("Windows: {}, blocks: {blocks}", windows.len()),
     ];
     let changed = settings::changed(cx);
     if changed.is_empty() {

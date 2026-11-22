@@ -123,7 +123,7 @@ fn everything_goes_as_hls_with_subtitles_in_the_playlist() {
 }
 
 #[test]
-fn what_it_says_its_doing_is_what_the_tile_shows() {
+fn what_it_says_its_doing_is_what_the_block_shows() {
     assert_eq!(state(PlaybackState::Loading), State::Buffering);
     assert_eq!(state(PlaybackState::Playing), State::Playing);
     assert_eq!(state(PlaybackState::Paused), State::Paused);

@@ -1,4 +1,4 @@
-//! The AppKit side. The layer sits over the tile in the window's layer
+//! The AppKit side. The layer sits over the block in the window's layer
 //! tree, where AVKit wants it; `AVPictureInPictureController` shows what it
 //! is given in the floating window, and calls back a delegate of Plays' own
 //! (`PlaysPictureInPictureDelegate`) for its buttons and what happens to it.
@@ -6,9 +6,9 @@
 //! AVKit moves the layer's video into that window (one of this app's own),
 //! but at a size of its own rather than fitted to it, so while it is open
 //! the video is kept filling the window; the layer stays, hidden, over the
-//! tile.
+//! block.
 //!
-//! Frames go over as sample buffers marked to show at once, as the tile's
+//! Frames go over as sample buffers marked to show at once, as the block's
 //! player says they are due. The layer's timebase only follows playback for
 //! the window's progress bar. VideoToolbox surfaces go tagged with their
 //! colors (HDR included); converted frames are copied into BGRA buffers.
@@ -266,7 +266,7 @@ pub fn supported() -> bool {
     })
 }
 
-/// What the delegate shares with the tile.
+/// What the delegate shares with the block.
 struct Shared {
     playback: Mutex<Playback>,
     events: UnboundedSender<PipEvent>,
@@ -279,7 +279,7 @@ impl Shared {
 }
 
 /// The delegate's instance variable pointing at its `Shared`, null once the
-/// tile is done with it.
+/// block is done with it.
 const SHARED: &str = "playsShared";
 /// How often the layers over the video are looked through for one AVKit
 /// put there, while where the video goes stays the same.
@@ -307,7 +307,7 @@ impl Lookout {
     }
 }
 
-/// Its `Shared`, while the tile has it.
+/// Its `Shared`, while the block has it.
 fn shared(this: &Object) -> Option<&Shared> {
     // SAFETY: the variable is declared on the class, and points at a live
     // `Shared` until `Pip::drop` sets it to null.
@@ -515,7 +515,7 @@ fn delegate_class() -> &'static Class {
     unsafe { &*(class as *const Class) }
 }
 
-/// A tile in Picture in Picture: the layer its frames go to, and AVKit's
+/// A block in Picture in Picture: the layer its frames go to, and AVKit's
 /// controller showing it. Closes the window when dropped.
 pub struct Pip {
     layer: *mut Object,
@@ -549,7 +549,7 @@ pub struct Pip {
 }
 
 impl Pip {
-    /// Picture in Picture for a tile whose picture shows at `frame` in
+    /// Picture in Picture for a block whose picture shows at `frame` in
     /// `window`, which plays a live stream if `live`. It shows once it has
     /// frames (`show`) and AVKit is ready (`start_when_possible`); what
     /// happens then comes through `events`.
@@ -783,7 +783,7 @@ impl Pip {
         self.revision += 1;
     }
 
-    /// Show or hide the layer over the tile; hidden while the video is in
+    /// Show or hide the layer over the block; hidden while the video is in
     /// its own window.
     pub fn set_layer_visible(&self, visible: bool) {
         // SAFETY: the layer lives until `drop`.

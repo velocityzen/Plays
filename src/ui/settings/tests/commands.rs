@@ -420,7 +420,7 @@ fn copies_the_version_and_what_a_bug_report_needs(cx: &mut TestAppContext) {
         system.clone(),
         format!("FFmpeg: {}", ffmpeg_version()),
         format!("Sound: {sound}"),
-        "Windows: 1, tiles: 1".to_owned(),
+        "Windows: 1, blocks: 1".to_owned(),
         "Settings: as Plays starts them out".to_owned(),
     ];
     let copied = run(&mut cx, "app.copy_debug_info", Value::Null).unwrap();

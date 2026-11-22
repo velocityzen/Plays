@@ -182,7 +182,7 @@ fn edges_group(view: &mut SettingsView, style: &SubtitleStyle, theme: &Theme) ->
     )
 }
 
-/// Where the subtitles go on the tile.
+/// Where the subtitles go on the block.
 fn position_group(view: &mut SettingsView, style: &SubtitleStyle, theme: &Theme) -> AnyElement {
     group(
         Some("Position"),
@@ -191,7 +191,7 @@ fn position_group(view: &mut SettingsView, style: &SubtitleStyle, theme: &Theme)
             row(
                 "Place on",
                 Some(
-                    "Tile lets subtitles sit in the black bars around a letterboxed \
+                    "Block lets subtitles sit in the black bars around a letterboxed \
                      picture"
                         .into(),
                 ),
@@ -258,7 +258,7 @@ fn swatches(id: &'static str, key: &'static str, selected: Rgb, theme: &Theme) -
 
 const PREVIEW_TEXT: &str = r"Subtitles look like this,\N{\i1}and like this in italics.{\i0}";
 
-/// A 16:9 tile with a letterboxed picture and a cue on it, drawn the way a
+/// A 16:9 block with a letterboxed picture and a cue on it, drawn the way a
 /// player draws its subtitles.
 fn preview(style: &SubtitleStyle, theme: &Theme) -> AnyElement {
     let cues = parse_ass(PREVIEW_TEXT)

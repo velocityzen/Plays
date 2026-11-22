@@ -51,7 +51,7 @@ fn each_event_is_registered_once_and_said_whole() {
     }
     assert_eq!(
         find("volume_changed").map(|kind| kind.heard),
-        Some(Heard::Tile)
+        Some(Heard::Block)
     );
     assert!(find("volume").is_none());
 }
@@ -108,8 +108,8 @@ fn an_event_fits_only_as_registered() {
         let mut payload = json!({
             "window_id": window.to_string(),
             "window_title": "Plays",
-            "tile_id": Id::next().to_string(),
-            "tile_title": "clip.mp4",
+            "block_id": Id::next().to_string(),
+            "block_title": "clip.mp4",
         });
         let fields = fields.as_object().expect("fields").clone();
         payload.as_object_mut().expect("an object").extend(fields);

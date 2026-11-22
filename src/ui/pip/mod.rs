@@ -1,7 +1,7 @@
-//! Native Picture in Picture, on macOS 12 and later: a tile's video in the
+//! Native Picture in Picture, on macOS 12 and later: a block's video in the
 //! system's own floating window, over every app and Space, with its play,
 //! pause and skip buttons. Plays decodes the video itself, so the frames the
-//! tile would show go to an `AVSampleBufferDisplayLayer`, one by one as they
+//! block would show go to an `AVSampleBufferDisplayLayer`, one by one as they
 //! are due, which AVKit shows in that window (`mac`), with the subtitles
 //! showing burned in (`burn_in`). Elsewhere there is no Picture in Picture,
 //! and `Pip::new` says so.
@@ -25,7 +25,7 @@ mod mac;
 #[cfg(target_os = "macos")]
 pub use mac::{Pip, supported};
 
-/// What the Picture in Picture window asks of its tile, or says happened.
+/// What the Picture in Picture window asks of its block, or says happened.
 // Only macOS's sends them, and reads the subtitles.
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 #[derive(Debug)]
@@ -40,7 +40,7 @@ pub enum PipEvent {
     Stopped,
     /// It couldn't open.
     Failed(String),
-    /// Its button to go back: bring the tile's window forward.
+    /// Its button to go back: bring the block's window forward.
     Restore,
 }
 

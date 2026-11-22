@@ -136,17 +136,17 @@ fn places_bitmaps_where_the_picture_shows_them() {
 
 #[test]
 fn fits_or_covers() {
-    let tile = Bounds {
+    let block = Bounds {
         origin: point(px(10.), px(20.)),
         size: size(px(400.), px(400.)),
     };
-    let contain = fit(tile, (1920.0, 1080.0), false);
+    let contain = fit(block, (1920.0, 1080.0), false);
     assert_eq!(contain.size, size(px(400.), px(225.)));
     assert_eq!(contain.origin, point(px(10.), px(107.5)));
-    let cover = fit(tile, (1920.0, 1080.0), true);
+    let cover = fit(block, (1920.0, 1080.0), true);
     assert_eq!(cover.size.height, px(400.));
     assert!((f32::from(cover.size.width) - 711.11).abs() < 0.01);
-    assert_eq!(fit(tile, (0.0, 0.0), false), tile);
+    assert_eq!(fit(block, (0.0, 0.0), false), block);
 }
 
 #[test]

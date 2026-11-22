@@ -19,7 +19,7 @@ fn across_and_down_a_full_grid_stopping_at_its_edges() {
 }
 
 #[test]
-fn down_into_a_short_last_row_goes_to_its_last_tile() {
+fn down_into_a_short_last_row_goes_to_its_last_block() {
     // 0 1 2
     // 3 4
     assert_eq!(
@@ -40,11 +40,11 @@ fn previous_and_next_go_round_the_order() {
 }
 
 #[test]
-fn one_tile_or_one_row_goes_nowhere_it_has_none() {
+fn one_block_or_one_row_goes_nowhere_it_has_none() {
     for toward in [Left, Right, Up, Down, Previous, Next] {
         assert_eq!(from_each(1, 1, toward), [None], "{toward:?}");
     }
-    // More columns than tiles: one row.
+    // More columns than blocks: one row.
     assert_eq!(from_each(2, 4, Down), [None, None]);
     assert_eq!(from_each(2, 4, Right), [Some(1), None]);
     assert_eq!(neighbor(0, 0, 2, Next), None);

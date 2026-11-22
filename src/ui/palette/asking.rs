@@ -1,6 +1,6 @@
 //! What the palette asks for before running a command that takes
 //! arguments: each it needs, and each it can do without that there's a
-//! choice of. A choice is picked from a list, such as a tile's audio
+//! choice of. A choice is picked from a list, such as a block's audio
 //! tracks, the displays or a setting's values, read from the queries the
 //! command line reads too; anything else is typed, such as a time to seek
 //! to, as 1:23:45.
@@ -164,7 +164,7 @@ fn prompt_for(arg: &Arg) -> &'static str {
     arg.description.trim_end_matches('.')
 }
 
-/// The choices of `arg` of `spec`, and what the field says: a tile's
+/// The choices of `arg` of `spec`, and what the field says: a block's
 /// tracks, the displays, and so on; for one of a set of words, those.
 fn choices(
     spec: &Spec,
@@ -180,8 +180,8 @@ fn choices(
         ("playback.play_file", "path") => ("File", folder_files(on)),
         ("window.move", "position") => ("Where", window_places(on)),
         ("window.show_on_display", "display") => ("Display", displays(on)),
-        ("tile.move", "position") => ("Where", tile_places(on)),
-        ("tile.move_to_window", "window") => ("Window", other_windows(on)),
+        ("block.move", "position") => ("Where", block_places(on)),
+        ("block.move_to_window", "window") => ("Window", other_windows(on)),
         ("cast.to" | "cast.pair", "device") => ("Device", devices(on)),
         ("output.set_device", "id") => ("Output", outputs(spec.id, "System Default", on)),
         ("output.set_window_device", "id") => ("Output", outputs(spec.id, output::SAME_AS_APP, on)),
@@ -203,13 +203,13 @@ fn choices(
     Some(listed)
 }
 
-/// The front tile's tracks of `kind` (`audio`, `video`, `subtitles`),
+/// The front block's tracks of `kind` (`audio`, `video`, `subtitles`),
 /// after `none` for none, if they can be turned off.
 fn tracks(kind: &str, none: Option<&'static str>, on: &mut On) -> Vec<Choice> {
-    let tile = on.query("tile.inspect");
-    let picked = tile["picked"][kind].as_u64();
+    let block = on.query("block.inspect");
+    let picked = block["picked"][kind].as_u64();
     let off = none.map(|label| Choice::new(label, json!({})).current(picked.is_none()));
-    let listed = tile["tracks"][kind]
+    let listed = block["tracks"][kind]
         .as_array()
         .into_iter()
         .flatten()
@@ -222,7 +222,7 @@ fn tracks(kind: &str, none: Option<&'static str>, on: &mut On) -> Vec<Choice> {
     off.into_iter().chain(listed).collect()
 }
 
-/// The media files in the front tile's folder, the one it plays picked.
+/// The media files in the front block's folder, the one it plays picked.
 fn folder_files(on: &mut On) -> Vec<Choice> {
     let (files, playing) = places::folder_files(on.window, on.cx);
     files
@@ -234,11 +234,11 @@ fn folder_files(on: &mut On) -> Vec<Choice> {
         .collect()
 }
 
-/// The front tile's chapters, each with where it starts.
+/// The front block's chapters, each with where it starts.
 fn chapters(on: &mut On) -> Vec<Choice> {
-    let tile = on.query("tile.inspect");
-    let current = tile["chapter"].as_u64();
-    tile["chapters"]
+    let block = on.query("block.inspect");
+    let current = block["chapter"].as_u64();
+    block["chapters"]
         .as_array()
         .into_iter()
         .flatten()
@@ -275,21 +275,21 @@ fn window_places(on: &mut On) -> Vec<Choice> {
         .collect()
 }
 
-/// Each tile's place in the window, by the tile there now, the one keys
+/// Each block's place in the window, by the block there now, the one keys
 /// go to picked.
-fn tile_places(on: &mut On) -> Vec<Choice> {
-    let tiles = on.query("tile.ls");
-    tiles
+fn block_places(on: &mut On) -> Vec<Choice> {
+    let blocks = on.query("block.ls");
+    blocks
         .as_array()
         .into_iter()
         .flatten()
-        .filter_map(|tile| {
-            let number = tile["number"].as_u64()?;
-            let name = text(&tile["label"]).or_else(|| text(&tile["title"]));
+        .filter_map(|block| {
+            let number = block["number"].as_u64()?;
+            let name = text(&block["label"]).or_else(|| text(&block["title"]));
             Some(
                 Choice::new(number.to_string(), json!({ "position": number }))
                     .detail(name.map(str::to_owned))
-                    .current(tile["front"] == true),
+                    .current(block["front"] == true),
             )
         })
         .collect()
@@ -306,10 +306,10 @@ fn other_windows(on: &mut On) -> Vec<Choice> {
         .filter(|window| this.is_none_or(|this| window["id"] != this))
         .filter_map(|window| {
             let id = text(&window["id"])?;
-            let tiles = window["tiles"].as_u64().unwrap_or_default();
-            let files = match tiles {
+            let blocks = window["blocks"].as_u64().unwrap_or_default();
+            let files = match blocks {
                 1 => "1 file".to_owned(),
-                tiles => format!("{tiles} files"),
+                blocks => format!("{blocks} files"),
             };
             Some(Choice::new(window_name(window), json!({ "window": id })).detail(Some(files)))
         })

@@ -1,4 +1,4 @@
-//! What the sync shortcuts and menu items do to a tile: moving its sound
+//! What the sync shortcuts and menu items do to a block: moving its sound
 //! and its subtitles earlier or later against the picture, for files that
 //! are out of step.
 

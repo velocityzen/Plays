@@ -1,4 +1,4 @@
-//! Playing a tile in Picture in Picture (`ui::pip`). The window it came
+//! Playing a block in Picture in Picture (`ui::pip`). The window it came
 //! from may not be drawing (gpui stops while it is covered or minimized),
 //! so a pump of its own moves the player along and hands over each frame as
 //! it is due, with the subtitles showing laid out for it; and what the
@@ -33,10 +33,10 @@ const PUMP_IDLE: Duration = Duration::from_millis(100);
 /// How long AVKit gets to be ready to open the window.
 const START_WITHIN: Duration = Duration::from_secs(3);
 
-/// A tile in Picture in Picture, from asking for it until it closes.
+/// A block in Picture in Picture, from asking for it until it closes.
 pub(super) struct PipSession {
     pip: Pip,
-    /// Its window is open; the tile only says where the video is.
+    /// Its window is open; the block only says where the video is.
     pub(super) started: bool,
     asked_at: Instant,
     /// What the subtitles handed over were laid out for.
@@ -60,7 +60,7 @@ impl PlayerView {
         self.pip.as_ref().is_some_and(|session| session.started)
     }
 
-    /// Open Picture in Picture for this tile, or close it.
+    /// Open Picture in Picture for this block, or close it.
     pub fn toggle_picture_in_picture(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.pip.take().is_some() {
             cx.notify();
@@ -279,7 +279,7 @@ impl PlayerView {
     ) {
         log::debug!("Picture in Picture: {event:?}");
         match event {
-            // Its buttons drive the tile as its own do, and a cast with it.
+            // Its buttons drive the block as its own do, and a cast with it.
             PipEvent::SetPlaying(true) => self.play(),
             PipEvent::SetPlaying(false) => self.pause(),
             PipEvent::Skip(seconds) => self.seek_by(seconds, cx),
@@ -320,7 +320,7 @@ fn pump_wait(playing: bool, moving_picture: bool, next_frame: Option<Duration>) 
     }
 }
 
-/// Bring the tile's window forward, and with it its Space when it is full
+/// Bring the block's window forward, and with it its Space when it is full
 /// screen in one. Plays is often not the app in front then, as Picture in
 /// Picture floats over every app and Space, and a window of an app behind
 /// can't come forward alone: the app comes first.

@@ -1,4 +1,4 @@
-//! Video: how the picture fills its tile, its gamma, and decoding.
+//! Video: how the picture fills its block, its gamma, and decoding.
 
 use gpui::{AnyElement, Context, Window};
 

@@ -14,7 +14,7 @@ use crate::app::{AudioEngine, Route, output_kind};
 use crate::settings::{AudioDevice, Settings};
 
 /// What picking no output of a window's own is called, wherever it's
-/// picked: Audio → Window Output Device, a tile's menu, the palette.
+/// picked: Audio → Window Output Device, a block's menu, the palette.
 pub const SAME_AS_APP: &str = "Same as the App";
 
 /// What the output commands take: an output, or none.

@@ -1,6 +1,6 @@
 # Commands
 
-Every command Plays has, by namespace, as `plays actions --markdown` writes them. A terminal runs one with `plays do ID [KEY=VALUE…]`, naming the window or tile it acts on with `-w` and `-t`; keys run those that have them, and Settings → Hotkeys changes those. The keys here are macOS's: elsewhere Ctrl stands for ⌘, and Alt for ⌥. What each tells is in [Events](#events).
+Every command Plays has, by namespace, as `plays actions --markdown` writes them. A terminal runs one with `plays do ID [KEY=VALUE…]`, naming the window or block it acts on with `-w` and `-b`; keys run those that have them, and Settings → Hotkeys changes those. The keys here are macOS's: elsewhere Ctrl stands for ⌘, and Alt for ⌥. What each tells is in [Events](#events).
 
 ## app
 
@@ -13,13 +13,13 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 ### Open Paths or URLs
 
-`app.open`: Play files, the media files in folders, and streams, in the window named, or the one in front, or a new one if none is open: each in a tile, or one after another in one, as Settings say.
+`app.open`: Play files, the media files in folders, and streams, in the window named, or the one in front, or a new one if none is open: each in a block, or one after another in one, as Settings say.
 
 - Acts on a player window.
 - Arguments:
   - `urls` (a list of text): Each a file's or folder's full path, a file:// URL, or a stream's URL.
 - Hands back: {window}: the id of the window they open in.
-- Tells: `window_created`, `active_window_changed`, `tile_created`, `window_layout_changed`, `active_tile_changed`, `opened`.
+- Tells: `window_created`, `active_window_changed`, `block_created`, `window_layout_changed`, `active_block_changed`, `opened`.
 
 ### Clear Recent Files
 
@@ -49,7 +49,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 ### Copy Debug Info
 
-`app.copy_debug_info`: Copy what a bug report needs: Plays' version, the system, FFmpeg's version, where the sound goes, the windows and tiles, and the settings changed.
+`app.copy_debug_info`: Copy what a bug report needs: Plays' version, the system, FFmpeg's version, where the sound goes, the windows and blocks, and the settings changed.
 
 - Acts on the app.
 - Hands back: What it copied, a line for each thing.
@@ -60,7 +60,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 - Acts on the app.
 - Keys: ⌘Q
-- Tells: `tile_closed`, `window_closed`, `active_window_changed`, `quit`.
+- Tells: `block_closed`, `window_closed`, `active_window_changed`, `quit`.
 
 ## window
 
@@ -69,14 +69,14 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 `window.ls`: List the player windows, in the order ⌘1 to ⌘9 number them.
 
 - Acts on the app.
-- Hands back: [{id, label, title, number, front, tiles}]: each window's id, label (or null) and title, as its title bar shows it, its number from 1, whether it's in front, and how many tiles it has.
+- Hands back: [{id, label, title, number, front, blocks}]: each window's id, label (or null) and title, as its title bar shows it, its number from 1, whether it's in front, and how many blocks it has.
 
 ### Inspect Window
 
-`window.inspect`: Say all about the window: where it is, how it shows, its output and its tiles.
+`window.inspect`: Say all about the window: where it is, how it shows, its output and its blocks.
 
 - Acts on a player window.
-- Hands back: {id, label, title, number, front, tiles: [as tile.ls], bounds: {x, y, width, height}, display, full_screen, on_top, output: {id, name} or null}: as window.ls says, its tiles as tile.ls lists them, where it is in points, the id of the display it's on, whether it's full screen and floats on top, and its own output.
+- Hands back: {id, label, title, number, front, blocks: [as block.ls], bounds: {x, y, width, height}, display, full_screen, on_top, output: {id, name} or null}: as window.ls says, its blocks as block.ls lists them, where it is in points, the id of the display it's on, whether it's full screen and floats on top, and its own output.
 
 ### New Window
 
@@ -110,7 +110,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 ### Go to…
 
-`window.go_to`: List the windows, their tiles, the files in the front tile's folder and those played lately, to find one by name and go there: bring it to the front, play the file in the tile, or open it.
+`window.go_to`: List the windows, their blocks, the files in the front block's folder and those played lately, to find one by name and go there: bring it to the front, play the file in the block, or open it.
 
 - Acts on a player window.
 - Keys: ⌘P
@@ -121,14 +121,14 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 - Acts on a window, Settings and About too.
 - Keys: ⌥⌘W, ⌘W
-- Tells: `tile_closed`, `window_closed`, `active_window_changed`.
+- Tells: `block_closed`, `window_closed`, `active_window_changed`.
 
 ### Close Other Windows
 
 `window.close_others`: Close every player window but this one, and the files in them.
 
 - Acts on a player window.
-- Tells: `tile_closed`, `window_closed`.
+- Tells: `block_closed`, `window_closed`.
 
 ### Rename Window…
 
@@ -247,14 +247,14 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 ### Show Controls
 
-`view.toggle_controls`: Show the seek bar and buttons at the bottom of each tile, or never show them.
+`view.toggle_controls`: Show the seek bar and buttons at the bottom of each block, or never show them.
 
 - Acts on the app.
 - Tells: `settings_changed`.
 
 ### Show Top Bar
 
-`view.toggle_top_bar`: Show the file's name and buttons at the top of each tile, or never show them.
+`view.toggle_top_bar`: Show the file's name and buttons at the top of each block, or never show them.
 
 - Acts on the app.
 - Tells: `settings_changed`.
@@ -273,226 +273,226 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 - Acts on the app.
 - Tells: `settings_changed`.
 
-## tile
+## block
 
-### List Tiles
+### List Blocks
 
-`tile.ls`: List the tiles in the window, in the grid's order.
+`block.ls`: List the blocks in the window, in the grid's order.
 
 - Acts on a player window.
-- Hands back: [{id, label, title, file, url, playing, number, front}]: each tile's id and label (or null), its file's name, the file's path or the stream's URL (without a user, password or query; the other null), whether it plays, its place from 1, and whether keys go to it.
+- Hands back: [{id, label, title, file, url, playing, number, front}]: each block's id and label (or null), its file's name, the file's path or the stream's URL (without a user, password or query; the other null), whether it plays, its place from 1, and whether keys go to it.
 
-### Inspect Tile
+### Inspect Block
 
-`tile.inspect`: Say all about the tile: what it plays, where it is, and how it's set to play.
+`block.inspect`: Say all about the block: what it plays, where it is, and how it's set to play.
 
-- Acts on a tile.
-- Hands back: {as tile.ls, window, window_title, position, duration, frame_rate, ended, volume, muted, looping, tracks: {video, audio, subtitles: [{number, label, language, title, codec, format, default, forced, hearing_impaired, file}]}, picked: {video, audio, subtitles}, delays: {audio, subtitles}, picture: {turns, mirrored, aspect_ratio, crop}, chapter, chapters: [{number, name, start, end}], casting: {id, kind, name} or null}: its window's id and title, times in seconds (duration null for a live stream), frames a second (null for sound alone), volume from 0 to 100, tracks and chapters numbered from 1, the tracks picked and the chapter by number or null, delays in seconds, and quarter turns clockwise.
+- Acts on a block.
+- Hands back: {as block.ls, window, window_title, position, duration, frame_rate, ended, volume, muted, looping, tracks: {video, audio, subtitles: [{number, label, language, title, codec, format, default, forced, hearing_impaired, file}]}, picked: {video, audio, subtitles}, delays: {audio, subtitles}, picture: {turns, mirrored, aspect_ratio, crop}, chapter, chapters: [{number, name, start, end}], casting: {id, kind, name} or null}: its window's id and title, times in seconds (duration null for a live stream), frames a second (null for sound alone), volume from 0 to 100, tracks and chapters numbered from 1, the tracks picked and the chapter by number or null, delays in seconds, and quarter turns clockwise.
 
-### Go to Tile
+### Go to Block
 
-`tile.focus`: Put the tile in front, keys going to it, and bring its window to the front.
+`block.focus`: Put the block in front, keys going to it, and bring its window to the front.
 
-- Acts on a tile.
-- Tells: `active_window_changed`, `active_tile_changed`.
+- Acts on a block.
+- Tells: `active_window_changed`, `active_block_changed`.
 
 ### Close File
 
-`tile.close`: Close the tile's file. The window stays, empty after the last.
+`block.close`: Close the block's file. The window stays, empty after the last.
 
-- Acts on a tile.
+- Acts on a block.
 - Keys: ⌘W
-- Tells: `tile_closed`, `window_layout_changed`, `active_tile_changed`.
+- Tells: `block_closed`, `window_layout_changed`, `active_block_changed`.
 
 ### Close All Files
 
-`tile.close_all`: Close every file in the window. The window stays, empty.
+`block.close_all`: Close every file in the window. The window stays, empty.
 
-- Acts on every tile in a window.
+- Acts on every block in a window.
 - Keys: ⇧⌘W
-- Tells: `tile_closed`, `window_layout_changed`, `active_tile_changed`.
+- Tells: `block_closed`, `window_layout_changed`, `active_block_changed`.
 
 ### Close Other Files
 
-`tile.close_others`: Close every file in the window but the tile's.
+`block.close_others`: Close every file in the window but the block's.
 
-- Acts on a tile.
-- Tells: `tile_closed`, `window_layout_changed`.
+- Acts on a block.
+- Tells: `block_closed`, `window_layout_changed`.
 
-### Focus Tile to the Left
+### Focus Block to the Left
 
-`tile.focus.left`: Send keys to the tile left of the one they go to.
+`block.focus.left`: Send keys to the block left of the one they go to.
 
 - Acts on a player window.
 - Keys: ⌥⌘←
-- Tells: `active_tile_changed`.
+- Tells: `active_block_changed`.
 
-### Focus Tile to the Right
+### Focus Block to the Right
 
-`tile.focus.right`: Send keys to the tile right of the one they go to.
+`block.focus.right`: Send keys to the block right of the one they go to.
 
 - Acts on a player window.
 - Keys: ⌥⌘→
-- Tells: `active_tile_changed`.
+- Tells: `active_block_changed`.
 
-### Focus Tile Above
+### Focus Block Above
 
-`tile.focus.up`: Send keys to the tile above the one they go to.
+`block.focus.up`: Send keys to the block above the one they go to.
 
 - Acts on a player window.
 - Keys: ⌥⌘↑
-- Tells: `active_tile_changed`.
+- Tells: `active_block_changed`.
 
-### Focus Tile Below
+### Focus Block Below
 
-`tile.focus.down`: Send keys to the tile below the one they go to.
+`block.focus.down`: Send keys to the block below the one they go to.
 
 - Acts on a player window.
 - Keys: ⌥⌘↓
-- Tells: `active_tile_changed`.
+- Tells: `active_block_changed`.
 
-### Focus Previous Tile
+### Focus Previous Block
 
-`tile.focus.previous`: Send keys to the tile before the one they go to, the last before the first.
+`block.focus.previous`: Send keys to the block before the one they go to, the last before the first.
 
 - Acts on a player window.
 - Keys: ⌘[
-- Tells: `active_tile_changed`.
+- Tells: `active_block_changed`.
 
-### Focus Next Tile
+### Focus Next Block
 
-`tile.focus.next`: Send keys to the tile after the one they go to, the first after the last.
+`block.focus.next`: Send keys to the block after the one they go to, the first after the last.
 
 - Acts on a player window.
 - Keys: ⌘]
-- Tells: `active_tile_changed`.
+- Tells: `active_block_changed`.
 
-### Go Back One Tile
+### Go Back One Block
 
-`tile.back`: Send keys to the tile clicked or gone to before the one they go to; again, the one before that, and so on, until something else is done.
-
-- Acts on a player window.
-- Tells: `active_tile_changed`.
-
-### Go to Recent Tile
-
-`tile.recent`: Send keys to the tile clicked or gone to last but the one they go to; again, back to that one.
+`block.back`: Send keys to the block clicked or gone to before the one they go to; again, the one before that, and so on, until something else is done.
 
 - Acts on a player window.
-- Tells: `active_tile_changed`.
+- Tells: `active_block_changed`.
 
-### Move Tile Left
+### Go to Recent Block
 
-`tile.move.left`: Swap the tile keys go to with the one to its left.
+`block.recent`: Send keys to the block clicked or gone to last but the one they go to; again, back to that one.
+
+- Acts on a player window.
+- Tells: `active_block_changed`.
+
+### Move Block Left
+
+`block.move.left`: Swap the block keys go to with the one to its left.
 
 - Acts on a player window.
 - Keys: ⌥⇧⌘←
 - Tells: `window_layout_changed`.
 
-### Move Tile Right
+### Move Block Right
 
-`tile.move.right`: Swap the tile keys go to with the one to its right.
+`block.move.right`: Swap the block keys go to with the one to its right.
 
 - Acts on a player window.
 - Keys: ⌥⇧⌘→
 - Tells: `window_layout_changed`.
 
-### Move Tile Up
+### Move Block Up
 
-`tile.move.up`: Swap the tile keys go to with the one above it.
+`block.move.up`: Swap the block keys go to with the one above it.
 
 - Acts on a player window.
 - Keys: ⌥⇧⌘↑
 - Tells: `window_layout_changed`.
 
-### Move Tile Down
+### Move Block Down
 
-`tile.move.down`: Swap the tile keys go to with the one below it.
+`block.move.down`: Swap the block keys go to with the one below it.
 
 - Acts on a player window.
 - Keys: ⌥⇧⌘↓
 - Tells: `window_layout_changed`.
 
-### Maximize Tile
+### Maximize Block
 
-`tile.zoom`: Fill the window with the tile, or show every tile again; a window's only tile fills the screen instead.
+`block.zoom`: Fill the window with the block, or show every block again; a window's only block fills the screen instead.
 
-- Acts on a tile.
+- Acts on a block.
 - Keys: ⇧⌘↩
 - Tells: `full_screen_changed`, `window_layout_changed`.
 
-### Rename Tile…
+### Rename Block…
 
-`tile.rename`: Label the tile: its header shows the label in place of the file's name, and it can be named by it. A blank one takes the label away; with none given, the window asks for one.
+`block.rename`: Label the block: its header shows the label in place of the file's name, and it can be named by it. A blank one takes the label away; with none given, the window asks for one.
 
-- Acts on a tile.
+- Acts on a block.
 - Arguments:
-  - `label` (text, optional): What to call it; no two tiles are called the same, in whichever windows.
-- Tells: `tile_label_changed`.
+  - `label` (text, optional): What to call it; no two blocks are called the same, in whichever windows.
+- Tells: `block_label_changed`.
 
-### Move Tile To
+### Move Block To
 
-`tile.move`: Put the tile in another place in its window's grid, the tiles between moving over, as dragging it onto another does.
+`block.move`: Put the block in another place in its window's grid, the blocks between moving over, as dragging it onto another does.
 
-- Acts on a tile.
+- Acts on a block.
 - Arguments:
-  - `position` (a whole number, at least 1): Where, from 1, the first tile's place.
+  - `position` (a whole number, at least 1): Where, from 1, the first block's place.
 - Tells: `window_layout_changed`.
 
-### Move Tile to Window
+### Move Block to Window
 
-`tile.move_to_window`: Move the tile to another window, last there, where it plays on.
+`block.move_to_window`: Move the block to another window, last there, where it plays on.
 
-- Acts on a tile.
+- Acts on a block.
 - Arguments:
   - `window` (text): The window's id, its label, or its number, from 1.
-- Tells: `tile_moved`, `window_layout_changed`, `active_tile_changed`.
+- Tells: `block_moved`, `window_layout_changed`, `active_block_changed`.
 
-### Move Tile to New Window
+### Move Block to New Window
 
-`tile.move_to_new_window`: Move the tile to a window of its own beside this one, where it plays on.
+`block.move_to_new_window`: Move the block to a window of its own beside this one, where it plays on.
 
-- Acts on a tile.
+- Acts on a block.
 - Hands back: {window}: the new window's id.
-- Tells: `window_created`, `tile_moved`, `window_layout_changed`, `active_tile_changed`.
+- Tells: `window_created`, `block_moved`, `window_layout_changed`, `active_block_changed`.
 
 ### Copy File Path
 
-`tile.copy_path`: Copy the path of the tile's file, or the URL of its stream; hands back what was copied.
+`block.copy_path`: Copy the path of the block's file, or the URL of its stream; hands back what was copied.
 
-- Acts on a tile.
+- Acts on a block.
 - Keys: ⌥⌘C
 - Hands back: The path or URL copied.
 
 ### Copy Current Time
 
-`tile.copy_time`: Copy where the tile's file is, as its bar shows it, such as 1:23:45; hands back what was copied.
+`block.copy_time`: Copy where the block's file is, as its bar shows it, such as 1:23:45; hands back what was copied.
 
-- Acts on a tile.
+- Acts on a block.
 - Hands back: The time copied, such as 1:23:45.
 
 ### Picture in Picture
 
-`tile.toggle_picture_in_picture`: Play the tile in a small window floating above every app's, or in its tile again.
+`block.toggle_picture_in_picture`: Play the block in a small window floating above every app's, or in its block again.
 
-- Acts on a tile.
+- Acts on a block.
 - Keys: ⌃⌘P
 - Tells: `picture_in_picture_changed`.
 
 ### Show/Hide Console
 
-`tile.toggle_console`: Show what the tile's file is and how it plays, over its picture, or hide it.
+`block.toggle_console`: Show what the block's file is and how it plays, over its picture, or hide it.
 
-- Acts on a tile.
+- Acts on a block.
 - Keys: ~, `
 
 ## playback
 
 ### Play/Pause
 
-`playback.play_pause`: Pause the tile if it plays, else play it.
+`playback.play_pause`: Pause the block if it plays, else play it.
 
-- Acts on a tile.
+- Acts on a block.
 - Keys: Space, P
 - Tells: `playing`, `paused`.
 
@@ -500,7 +500,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 `playback.seek`: Play from a time in the file, here or on the device it's cast to.
 
-- Acts on a tile.
+- Acts on a block.
 - Arguments:
   - `time` (a number, at least 0): Seconds from the start; past the end is the end.
 - Tells: `seeked`, `ended`, `chapter_changed`.
@@ -509,7 +509,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 `playback.seek_forward`: Skip ahead by the seek step set in Settings.
 
-- Acts on a tile.
+- Acts on a block.
 - Keys: →
 - Tells: `seeked`, `ended`, `chapter_changed`.
 
@@ -517,7 +517,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 `playback.seek_backward`: Skip back by the seek step set in Settings.
 
-- Acts on a tile.
+- Acts on a block.
 - Keys: ←
 - Tells: `seeked`, `chapter_changed`.
 
@@ -525,7 +525,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 `playback.next_frame`: Pause and show the next frame.
 
-- Acts on a tile.
+- Acts on a block.
 - Keys: ⌥→, ., >
 - Tells: `paused`, `seeked`.
 
@@ -533,7 +533,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 `playback.previous_frame`: Pause and show the frame before.
 
-- Acts on a tile.
+- Acts on a block.
 - Keys: ⌥←, ,, <
 - Tells: `paused`, `seeked`.
 
@@ -541,7 +541,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 `playback.next_chapter`: Play from the start of the next chapter.
 
-- Acts on a tile.
+- Acts on a block.
 - Keys: ⇟
 - Tells: `seeked`, `chapter_changed`.
 
@@ -549,7 +549,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 `playback.previous_chapter`: Play from the start of this chapter, or of the one before near its start.
 
-- Acts on a tile.
+- Acts on a block.
 - Keys: ⇞
 - Tells: `seeked`, `chapter_changed`.
 
@@ -557,7 +557,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 `playback.go_to_chapter`: Play from the start of a chapter.
 
-- Acts on a tile.
+- Acts on a block.
 - Arguments:
   - `number` (a whole number, at least 1): Which chapter, from 1.
 - Tells: `seeked`, `chapter_changed`.
@@ -566,7 +566,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 `playback.restart`: Play from the start.
 
-- Acts on a tile.
+- Acts on a block.
 - Keys: ↖
 - Tells: `seeked`, `chapter_changed`.
 
@@ -574,7 +574,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 `playback.previous_file`: Play the file before this one in its playlist, or else its folder, instead.
 
-- Acts on a tile.
+- Acts on a block.
 - Keys: ⌘←
 - Tells: `opened`, `playing`.
 
@@ -582,15 +582,15 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 `playback.next_file`: Play the file after this one in its playlist, or else its folder, instead.
 
-- Acts on a tile.
+- Acts on a block.
 - Keys: ⌘→
 - Tells: `opened`, `playing`.
 
 ### Play File Instead
 
-`playback.play_file`: Play another file in the tile instead, one in its folder say, at the same volume, muted and looping as this one is, and playing if it is.
+`playback.play_file`: Play another file in the block instead, one in its folder say, at the same volume, muted and looping as this one is, and playing if it is.
 
-- Acts on a tile.
+- Acts on a block.
 - Arguments:
   - `path` (text): The file's full path.
 - Tells: `opened`, `playing`.
@@ -599,14 +599,14 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 `playback.toggle_loop`: Play the file again from the start at its end, or stop at its end.
 
-- Acts on a tile.
+- Acts on a block.
 - Keys: ⇧⌘L
 
 ### Play/Pause All
 
 `playback.play_pause_all`: Pause every file in the window if any plays, else play them all.
 
-- Acts on every tile in a window.
+- Acts on every block in a window.
 - Keys: ⇧Space
 - Tells: `playing`, `paused`.
 
@@ -614,21 +614,21 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 `playback.play_all`: Play every file in the window.
 
-- Acts on every tile in a window.
+- Acts on every block in a window.
 - Tells: `playing`.
 
 ### Pause All
 
 `playback.pause_all`: Pause every file in the window.
 
-- Acts on every tile in a window.
+- Acts on every block in a window.
 - Tells: `paused`.
 
 ### Restart All
 
 `playback.restart_all`: Play every file in the window from the start.
 
-- Acts on every tile in a window.
+- Acts on every block in a window.
 - Keys: ⇧↖
 - Tells: `seeked`, `chapter_changed`.
 
@@ -636,7 +636,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 `playback.seek_forward_all`: Skip every file in the window ahead by the seek step.
 
-- Acts on every tile in a window.
+- Acts on every block in a window.
 - Keys: ⇧→
 - Tells: `seeked`, `ended`, `chapter_changed`.
 
@@ -644,7 +644,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 `playback.seek_backward_all`: Skip every file in the window back by the seek step.
 
-- Acts on every tile in a window.
+- Acts on every block in a window.
 - Keys: ⇧←
 - Tells: `seeked`, `chapter_changed`.
 
@@ -652,7 +652,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 `playback.next_frame_all`: Pause every file in the window and show its next frame.
 
-- Acts on every tile in a window.
+- Acts on every block in a window.
 - Keys: ⌥⇧→
 - Tells: `paused`, `seeked`.
 
@@ -660,15 +660,15 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 `playback.previous_frame_all`: Pause every file in the window and show the frame before.
 
-- Acts on every tile in a window.
+- Acts on every block in a window.
 - Keys: ⌥⇧←
 - Tells: `paused`, `seeked`.
 
-### Sync All to This Tile
+### Sync All to This Block
 
-`playback.sync_all`: Bring every file in the window to where the tile keys go to is, playing or paused as it is.
+`playback.sync_all`: Bring every file in the window to where the block keys go to is, playing or paused as it is.
 
-- Acts on every tile in a window.
+- Acts on every block in a window.
 - Keys: ⇧S
 - Tells: `seeked`, `playing`, `paused`.
 
@@ -676,34 +676,34 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 ### Volume Up
 
-`audio.volume_up`: Turn the tile's volume up, unmuting it.
+`audio.volume_up`: Turn the block's volume up, unmuting it.
 
-- Acts on a tile.
+- Acts on a block.
 - Keys: ↑
 - Tells: `volume_changed`.
 
 ### Volume Down
 
-`audio.volume_down`: Turn the tile's volume down.
+`audio.volume_down`: Turn the block's volume down.
 
-- Acts on a tile.
+- Acts on a block.
 - Keys: ↓
 - Tells: `volume_changed`.
 
 ### Set Volume
 
-`audio.set_volume`: Set the tile's volume, unmuting it unless it's none.
+`audio.set_volume`: Set the block's volume, unmuting it unless it's none.
 
-- Acts on a tile.
+- Acts on a block.
 - Arguments:
   - `volume` (a number from 0 to 100): How loud, from 0 to 100.
 - Tells: `volume_changed`.
 
 ### Mute/Unmute
 
-`audio.toggle_mute`: Mute the tile, or play its sound again.
+`audio.toggle_mute`: Mute the block, or play its sound again.
 
-- Acts on a tile.
+- Acts on a block.
 - Keys: ⌘/, M
 - Tells: `volume_changed`.
 
@@ -711,7 +711,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 `audio.next_track`: Play the file's next audio track, the first after the last.
 
-- Acts on a tile.
+- Acts on a block.
 - Keys: ⌃⌘A
 - Tells: `track_changed`.
 
@@ -719,37 +719,37 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 `audio.select_track`: Play one of the file's audio tracks.
 
-- Acts on a tile.
+- Acts on a block.
 - Arguments:
   - `number` (a whole number, at least 1): Which, from 1, as the tracks menu lists them.
 - Tells: `track_changed`.
 
 ### Audio Earlier
 
-`audio.earlier`: Play the tile's sound a little earlier than its picture.
+`audio.earlier`: Play the block's sound a little earlier than its picture.
 
-- Acts on a tile.
+- Acts on a block.
 - Keys: ⌃-
 
 ### Audio Later
 
-`audio.later`: Play the tile's sound a little later than its picture.
+`audio.later`: Play the block's sound a little later than its picture.
 
-- Acts on a tile.
+- Acts on a block.
 - Keys: ⌃=
 
 ### Reset Audio Delay
 
-`audio.reset_delay`: Play the tile's sound with its picture again.
+`audio.reset_delay`: Play the block's sound with its picture again.
 
-- Acts on a tile.
+- Acts on a block.
 - Keys: ⌃⌫
 
 ### Volume Up on All
 
 `audio.volume_up_all`: Turn every file's volume in the window up, each from its own.
 
-- Acts on every tile in a window.
+- Acts on every block in a window.
 - Keys: ⇧↑
 - Tells: `volume_changed`.
 
@@ -757,7 +757,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 `audio.volume_down_all`: Turn every file's volume in the window down, each from its own.
 
-- Acts on every tile in a window.
+- Acts on every block in a window.
 - Keys: ⇧↓
 - Tells: `volume_changed`.
 
@@ -765,7 +765,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 `audio.toggle_mute_all`: Mute every file in the window if any plays its sound, else unmute them all.
 
-- Acts on every tile in a window.
+- Acts on every block in a window.
 - Keys: ⇧M
 - Tells: `volume_changed`.
 
@@ -775,7 +775,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 `subtitles.next_track`: Show the file's next subtitles, and none after the last.
 
-- Acts on a tile.
+- Acts on a block.
 - Keys: ⌃⌘S
 - Tells: `track_changed`.
 
@@ -783,7 +783,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 `subtitles.select_track`: Show one of the file's subtitles, or none.
 
-- Acts on a tile.
+- Acts on a block.
 - Arguments:
   - `number` (a whole number, at least 1, optional): Which, from 1, as the tracks menu lists them; none for no subtitles.
 - Tells: `track_changed`.
@@ -792,7 +792,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 `subtitles.toggle`: Hide the subtitles showing, or show the ones hidden.
 
-- Acts on a tile.
+- Acts on a block.
 - Keys: V
 - Tells: `track_changed`.
 
@@ -800,7 +800,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 `subtitles.bigger`: Make every file's subtitles bigger.
 
-- Acts on a tile.
+- Acts on a block.
 - Keys: ⇧G
 - Tells: `settings_changed`.
 
@@ -808,7 +808,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 `subtitles.smaller`: Make every file's subtitles smaller.
 
-- Acts on a tile.
+- Acts on a block.
 - Keys: ⇧F
 - Tells: `settings_changed`.
 
@@ -816,7 +816,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 `subtitles.up`: Show every file's subtitles higher up.
 
-- Acts on a tile.
+- Acts on a block.
 - Keys: R
 - Tells: `settings_changed`.
 
@@ -824,29 +824,29 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 `subtitles.down`: Show every file's subtitles lower down.
 
-- Acts on a tile.
+- Acts on a block.
 - Keys: ⇧R, T
 - Tells: `settings_changed`.
 
 ### Subtitles Earlier
 
-`subtitles.earlier`: Show the tile's subtitles a little earlier.
+`subtitles.earlier`: Show the block's subtitles a little earlier.
 
-- Acts on a tile.
+- Acts on a block.
 - Keys: Z
 
 ### Subtitles Later
 
-`subtitles.later`: Show the tile's subtitles a little later.
+`subtitles.later`: Show the block's subtitles a little later.
 
-- Acts on a tile.
+- Acts on a block.
 - Keys: X
 
 ### Reset Subtitle Delay
 
-`subtitles.reset_delay`: Show the tile's subtitles at their own times again.
+`subtitles.reset_delay`: Show the block's subtitles at their own times again.
 
-- Acts on a tile.
+- Acts on a block.
 - Keys: ⇧⌫
 
 ## video
@@ -855,7 +855,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 `video.next_track`: Show the file's next video track, the first after the last.
 
-- Acts on a tile.
+- Acts on a block.
 - Keys: ⌃⌘V
 - Tells: `track_changed`.
 
@@ -863,7 +863,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 `video.select_track`: Show one of the file's video tracks.
 
-- Acts on a tile.
+- Acts on a block.
 - Arguments:
   - `number` (a whole number, at least 1): Which, from 1, as the tracks menu lists them.
 - Tells: `track_changed`.
@@ -872,42 +872,42 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 `video.rotate_right`: Turn the picture a quarter turn clockwise.
 
-- Acts on a tile.
+- Acts on a block.
 - Keys: ⌘R
 
 ### Rotate Left
 
 `video.rotate_left`: Turn the picture a quarter turn counterclockwise.
 
-- Acts on a tile.
+- Acts on a block.
 - Keys: ⌘L
 
 ### Flip Horizontally
 
 `video.flip_horizontally`: Mirror the picture left to right.
 
-- Acts on a tile.
+- Acts on a block.
 - Keys: ⇧⌘H
 
 ### Flip Vertically
 
 `video.flip_vertically`: Turn the picture upside down, mirrored.
 
-- Acts on a tile.
+- Acts on a block.
 - Keys: ⇧⌘V
 
 ### Next Aspect Ratio
 
 `video.next_aspect_ratio`: Show the picture at the next aspect ratio, then as the file is.
 
-- Acts on a tile.
+- Acts on a block.
 - Keys: A
 
 ### Aspect Ratio
 
 `video.set_aspect_ratio`: Show the picture at an aspect ratio, or as the file is.
 
-- Acts on a tile.
+- Acts on a block.
 - Arguments:
   - `ratio` (one of 1:1, 4:3, 16:10, 16:9, 1.85:1, 2.35:1, optional): The aspect ratio; none for the file's own.
 
@@ -915,14 +915,14 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 `video.next_crop`: Crop the picture to the next shape, then not at all.
 
-- Acts on a tile.
+- Acts on a block.
 - Keys: C
 
 ### Crop
 
 `video.set_crop`: Crop the picture to a shape, or not at all.
 
-- Acts on a tile.
+- Acts on a block.
 - Arguments:
   - `crop` (one of 1:1, 4:3, 16:9, 1.85:1, 2.39:1, optional): The shape; none for no crop.
 
@@ -930,14 +930,14 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 `video.reset_picture`: Show the picture as the file is: not turned, flipped, reshaped or cropped.
 
-- Acts on a tile.
+- Acts on a block.
 - Keys: ⌘0
 
 ### Take Screenshot
 
 `video.take_screenshot`: Save the frame showing as a file, and say where it went.
 
-- Acts on a tile.
+- Acts on a block.
 - Keys: S
 
 ## cast
@@ -951,9 +951,9 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 ### Play On
 
-`cast.to`: Play the tile on a TV or speaker found on the network, from where it is.
+`cast.to`: Play the block on a TV or speaker found on the network, from where it is.
 
-- Acts on a tile.
+- Acts on a block.
 - Arguments:
   - `device` (text): The device's id.
   - `kind` (text, optional): How it's reached, such as Chromecast, AirPlay or DLNA, for an id two share.
@@ -961,16 +961,16 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 ### Play Here
 
-`cast.stop`: Stop casting the tile, and play it here from where the device got to.
+`cast.stop`: Stop casting the block, and play it here from where the device got to.
 
-- Acts on a tile.
+- Acts on a block.
 - Tells: `cast_ended`.
 
 ### Pair and Play On
 
-`cast.pair`: Pair with a TV that shows a PIN to type, such as an Apple TV, then play the tile on it.
+`cast.pair`: Pair with a TV that shows a PIN to type, such as an Apple TV, then play the block on it.
 
-- Acts on a tile.
+- Acts on a block.
 - Arguments:
   - `device` (text): The device's id.
   - `kind` (text, optional): How it's reached, such as Chromecast, AirPlay or DLNA, for an id two share.
@@ -1084,7 +1084,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 # Events
 
-What changes in Plays, its windows and their tiles, by namespace: `plays events` prints each as it comes, and `plays wait` waits for one. Each is a JSON object, `{type, payload}`. The payload of one about a window starts with `window_id` and `window_title`, as its title bar shows it; of one about a tile, with `tile_id` and `tile_title` too, as its header shows it. A listener hears the app's, one window's, or all of them. Readers ignore events and fields they don't know.
+What changes in Plays, its windows and their blocks, by namespace: `plays events` prints each as it comes, and `plays wait` waits for one. Each is a JSON object, `{type, payload}`. The payload of one about a window starts with `window_id` and `window_title`, as its title bar shows it; of one about a block, with `block_id` and `block_title` too, as its header shows it. A listener hears the app's, one window's, or all of them. Readers ignore events and fields they don't know.
 
 ## app
 
@@ -1097,7 +1097,7 @@ A command is about to run: told before anything it changes.
   - `command`: Its id.
   - `source`: Where it was run from: action (a key, a menu item, or a control that sends one), ui (a control that runs it itself), palette, or cli.
   - `args`, only sometimes: The arguments it was given, if any.
-  - `target`, only sometimes: The window and the tile it was aimed at, by name, if either was.
+  - `target`, only sometimes: The window and the block it was aimed at, by name, if either was.
 - Follows: every command, as it runs.
 
 ### client_connected
@@ -1136,11 +1136,11 @@ A player window opened.
 - Payload:
   - `window_id`, `window_title`: its window's.
   - `label`: Its label; none without one.
-- Follows: `app.open`, `window.new`, or `tile.move_to_new_window`.
+- Follows: `app.open`, `window.new`, or `block.move_to_new_window`.
 
 ### window_closed
 
-A player window closed: told after each of its tiles is told closed.
+A player window closed: told after each of its blocks is told closed.
 
 - Heard by those listening to the app's events, and to its window's.
 - Payload:
@@ -1164,7 +1164,7 @@ Another player window came to the front, or none is in front: its `window_id` an
 - Heard by those listening to the app's events, and to its window's.
 - Payload:
   - `window_id`, `window_title`: its window's.
-- Follows: `app.open`, `app.quit`, `window.new`, `window.close`, `window.focus`, `window.next`, `window.previous`, `window.back`, `window.recent`, `tile.focus`, or a click on another window.
+- Follows: `app.open`, `app.quit`, `window.new`, `window.close`, `window.focus`, `window.next`, `window.previous`, `window.back`, `window.recent`, `block.focus`, or a click on another window.
 
 ### full_screen_changed
 
@@ -1174,91 +1174,91 @@ A window went full screen, or came back from it.
 - Payload:
   - `window_id`, `window_title`: its window's.
   - `full_screen`: Whether it's full screen now.
-- Follows: `window.toggle_full_screen`, `window.exit_full_screen`, `window.show_on_display`, `tile.zoom`, or the window's own full screen button.
+- Follows: `window.toggle_full_screen`, `window.exit_full_screen`, `window.show_on_display`, `block.zoom`, or the window's own full screen button.
 
 ### window_layout_changed
 
-Tiles came into a window, went, or changed places, or one filled it or stopped filling it.
+Blocks came into a window, went, or changed places, or one filled it or stopped filling it.
 
 - Heard by those listening to its window's events.
 - Payload:
   - `window_id`, `window_title`: its window's.
-  - `tiles`: The ids of its tiles, in the order its grid shows them.
-  - `maximized`: The id of the tile filling it; none if none does.
-- Follows: `app.open`, `tile.close`, `tile.close_all`, `tile.close_others`, `tile.move.left`, `tile.move.right`, `tile.move.up`, `tile.move.down`, `tile.zoom`, `tile.move`, `tile.move_to_window`, `tile.move_to_new_window`, or files dropped on a window or picked when `window.open_files` or `window.open_url` asks.
+  - `blocks`: The ids of its blocks, in the order its grid shows them.
+  - `maximized`: The id of the block filling it; none if none does.
+- Follows: `app.open`, `block.close`, `block.close_all`, `block.close_others`, `block.move.left`, `block.move.right`, `block.move.up`, `block.move.down`, `block.zoom`, `block.move`, `block.move_to_window`, `block.move_to_new_window`, or files dropped on a window or picked when `window.open_files` or `window.open_url` asks.
 
-## tile
+## block
 
-### tile_created
+### block_created
 
-A tile came into a window, for a file to play in.
+A block came into a window, for a file to play in.
 
 - Heard by those listening to its window's events.
 - Payload:
-  - `window_id`, `window_title`, `tile_id`, `tile_title`: its window's and its tile's.
+  - `window_id`, `window_title`, `block_id`, `block_title`: its window's and its block's.
   - `label`: Its label; none without one.
 - Follows: `app.open`, or files dropped on a window or picked when `window.open_files` or `window.open_url` asks.
 
-### tile_moved
+### block_moved
 
-A tile moved to another window: those listening to the window it left hear it too.
+A block moved to another window: those listening to the window it left hear it too.
 
 - Heard by those listening to its window's events.
 - Payload:
-  - `window_id`, `window_title`, `tile_id`, `tile_title`: its window's and its tile's.
+  - `window_id`, `window_title`, `block_id`, `block_title`: its window's and its block's.
   - `from_window_id`: The id of the window it left.
   - `from_window_title`: That window's title.
-- Follows: `tile.move_to_window`, or `tile.move_to_new_window`.
+- Follows: `block.move_to_window`, or `block.move_to_new_window`.
 
-### tile_closed
+### block_closed
 
-A tile closed, and the file in it.
-
-- Heard by those listening to its window's events.
-- Payload:
-  - `window_id`, `window_title`, `tile_id`, `tile_title`: its window's and its tile's.
-- Follows: `app.quit`, `window.close`, `window.close_others`, `tile.close`, `tile.close_all`, `tile.close_others`, or Plays quitting.
-
-### tile_label_changed
-
-A tile was labeled, or its label taken away.
+A block closed, and the file in it.
 
 - Heard by those listening to its window's events.
 - Payload:
-  - `window_id`, `window_title`, `tile_id`, `tile_title`: its window's and its tile's.
+  - `window_id`, `window_title`, `block_id`, `block_title`: its window's and its block's.
+- Follows: `app.quit`, `window.close`, `window.close_others`, `block.close`, `block.close_all`, `block.close_others`, or Plays quitting.
+
+### block_label_changed
+
+A block was labeled, or its label taken away.
+
+- Heard by those listening to its window's events.
+- Payload:
+  - `window_id`, `window_title`, `block_id`, `block_title`: its window's and its block's.
   - `label`: Its label; none once it's taken away.
-- Follows: `tile.rename`.
+- Follows: `block.rename`.
 
-### active_tile_changed
+### active_block_changed
 
-Keys go to another tile in a window, or to none.
+Keys go to another block in a window, or to none.
 
 - Heard by those listening to its window's events.
 - Payload:
   - `window_id`, `window_title`: its window's.
-  - `tile_id`: The tile's id; none if keys go to none.
-  - `tile_title`: Its title, as its header shows it; none without a tile.
-- Follows: `app.open`, `tile.focus`, `tile.close`, `tile.close_all`, `tile.focus.left`, `tile.focus.right`, `tile.focus.up`, `tile.focus.down`, `tile.focus.previous`, `tile.focus.next`, `tile.back`, `tile.recent`, `tile.move_to_window`, `tile.move_to_new_window`, or a click on a tile or the mouse going to one.
+  - `block_id`: The block's id; none if keys go to none.
+  - `block_title`: Its title, as its header shows it; none without a block.
+- Follows: `app.open`, `block.focus`, `block.close`, `block.close_all`, `block.focus.left`, `block.focus.right`, `block.focus.up`, `block.focus.down`, `block.focus.previous`, `block.focus.next`, `block.back`, `block.recent`, `block.move_to_window`, `block.move_to_new_window`, or a click on a block or the mouse going to one.
 
 ### picture_in_picture_changed
 
-A tile began playing in a small window floating above every app's, or in its tile again.
+A block began playing in a small window floating above every app's, or in its block again.
 
 - Heard by those listening to its window's events.
 - Payload:
-  - `window_id`, `window_title`, `tile_id`, `tile_title`: its window's and its tile's.
+  - `window_id`, `window_title`, `block_id`, `block_title`: its window's and its block's.
   - `picture_in_picture`: Whether it plays in the small window now.
-- Follows: `tile.toggle_picture_in_picture`, or the small window's own buttons.
+- Follows: `block.toggle_picture_in_picture`, or the small window's own buttons.
 
 ## playback
 
 ### opened
 
-A file opened in a tile, paused at its start.
+A file opened in a block, paused at its start.
 
 - Heard by those listening to its window's events.
 - Payload:
-  - `window_id`, `window_title`, `tile_id`, `tile_title`: its window's and its tile's.
+  - `window_id`, `window_title`, `block_id`, `block_title`: its window's and its block's.
   - `title`: What its header shows without a label: the file's name, or the stream's.
   - `file`: Its path; none for a stream.
   - `url`: The stream's URL; none for a file.
@@ -1271,7 +1271,7 @@ A file couldn't be opened.
 
 - Heard by those listening to its window's events.
 - Payload:
-  - `window_id`, `window_title`, `tile_id`, `tile_title`: its window's and its tile's.
+  - `window_id`, `window_title`, `block_id`, `block_title`: its window's and its block's.
   - `error`: Why.
 - Follows: a file Plays can't play or a stream it can't reach.
 
@@ -1281,7 +1281,7 @@ A file stopped playing on an error.
 
 - Heard by those listening to its window's events.
 - Payload:
-  - `window_id`, `window_title`, `tile_id`, `tile_title`: its window's and its tile's.
+  - `window_id`, `window_title`, `block_id`, `block_title`: its window's and its block's.
   - `error`: Why.
 - Follows: a file that's damaged or a stream that went.
 
@@ -1291,7 +1291,7 @@ A file began playing.
 
 - Heard by those listening to its window's events.
 - Payload:
-  - `window_id`, `window_title`, `tile_id`, `tile_title`: its window's and its tile's.
+  - `window_id`, `window_title`, `block_id`, `block_title`: its window's and its block's.
   - `position`: How far through the file it is, from 0 to 1; none while its duration isn't known, as a live stream's.
   - `time`: Where it is, in seconds.
   - `frame`: The number of the frame showing then, from 0; none for sound alone.
@@ -1303,7 +1303,7 @@ A file paused.
 
 - Heard by those listening to its window's events.
 - Payload:
-  - `window_id`, `window_title`, `tile_id`, `tile_title`: its window's and its tile's.
+  - `window_id`, `window_title`, `block_id`, `block_title`: its window's and its block's.
   - `position`: How far through the file it is, from 0 to 1; none while its duration isn't known, as a live stream's.
   - `time`: Where it is, in seconds.
   - `frame`: The number of the frame showing then, from 0; none for sound alone.
@@ -1315,7 +1315,7 @@ A file was sought to another time, here or on the device it's cast to: where it 
 
 - Heard by those listening to its window's events.
 - Payload:
-  - `window_id`, `window_title`, `tile_id`, `tile_title`: its window's and its tile's.
+  - `window_id`, `window_title`, `block_id`, `block_title`: its window's and its block's.
   - `position`: How far through the file it is, from 0 to 1; none while its duration isn't known, as a live stream's.
   - `time`: Where it is, in seconds.
   - `frame`: The number of the frame showing then, from 0; none for sound alone.
@@ -1327,7 +1327,7 @@ A file played to its end, and stopped there.
 
 - Heard by those listening to its window's events.
 - Payload:
-  - `window_id`, `window_title`, `tile_id`, `tile_title`: its window's and its tile's.
+  - `window_id`, `window_title`, `block_id`, `block_title`: its window's and its block's.
   - `position`: How far through the file it is, from 0 to 1; none while its duration isn't known, as a live stream's.
   - `time`: Where it is, in seconds.
   - `frame`: The number of the frame showing then, from 0; none for sound alone.
@@ -1339,7 +1339,7 @@ Where a file is as it plays: told only to those who ask for positions, at most o
 
 - Heard by those listening to its window's events.
 - Payload:
-  - `window_id`, `window_title`, `tile_id`, `tile_title`: its window's and its tile's.
+  - `window_id`, `window_title`, `block_id`, `block_title`: its window's and its block's.
   - `position`: How far through the file it is, from 0 to 1; none while its duration isn't known, as a live stream's.
   - `time`: Where it is, in seconds.
   - `frame`: The number of the frame showing then, from 0; none for sound alone.
@@ -1352,7 +1352,7 @@ A file is in another chapter.
 
 - Heard by those listening to its window's events.
 - Payload:
-  - `window_id`, `window_title`, `tile_id`, `tile_title`: its window's and its tile's.
+  - `window_id`, `window_title`, `block_id`, `block_title`: its window's and its block's.
   - `chapter`: The chapter, from 1; none before the first.
 - Follows: `playback.seek`, `playback.seek_forward`, `playback.seek_backward`, `playback.next_chapter`, `playback.previous_chapter`, `playback.go_to_chapter`, `playback.restart`, `playback.restart_all`, `playback.seek_forward_all`, `playback.seek_backward_all`, or a file playing into its next chapter.
 
@@ -1362,7 +1362,7 @@ Another of a file's tracks plays, or none of its kind.
 
 - Heard by those listening to its window's events.
 - Payload:
-  - `window_id`, `window_title`, `tile_id`, `tile_title`: its window's and its tile's.
+  - `window_id`, `window_title`, `block_id`, `block_title`: its window's and its block's.
   - `kind`: The track's: video, audio or subtitles.
   - `track`: The one playing, from 1 among its kind's, as the tracks menu lists them; none for none.
 - Follows: `audio.next_track`, `audio.select_track`, `subtitles.next_track`, `subtitles.select_track`, `subtitles.toggle`, `video.next_track`, or `video.select_track`.
@@ -1371,11 +1371,11 @@ Another of a file's tracks plays, or none of its kind.
 
 ### volume_changed
 
-A tile's volume changed, or it was muted or unmuted.
+A block's volume changed, or it was muted or unmuted.
 
 - Heard by those listening to its window's events.
 - Payload:
-  - `window_id`, `window_title`, `tile_id`, `tile_title`: its window's and its tile's.
+  - `window_id`, `window_title`, `block_id`, `block_title`: its window's and its block's.
   - `volume`: Its volume, in percent, as `audio.set_volume` takes it.
   - `muted`: Whether it's muted.
 - Follows: `audio.volume_up`, `audio.volume_down`, `audio.set_volume`, `audio.toggle_mute`, `audio.volume_up_all`, `audio.volume_down_all`, or `audio.toggle_mute_all`.
@@ -1393,21 +1393,21 @@ TVs or speakers to cast to were found on the network, or went.
 
 ### cast_started
 
-A tile began playing on a TV or speaker.
+A block began playing on a TV or speaker.
 
 - Heard by those listening to its window's events.
 - Payload:
-  - `window_id`, `window_title`, `tile_id`, `tile_title`: its window's and its tile's.
+  - `window_id`, `window_title`, `block_id`, `block_title`: its window's and its block's.
   - `device`: The device: its id, kind and name.
 - Follows: `cast.to`, or a TV paired with `cast.pair` once its PIN is typed.
 
 ### cast_ended
 
-A tile stopped playing on a TV or speaker.
+A block stopped playing on a TV or speaker.
 
 - Heard by those listening to its window's events.
 - Payload:
-  - `window_id`, `window_title`, `tile_id`, `tile_title`: its window's and its tile's.
+  - `window_id`, `window_title`, `block_id`, `block_title`: its window's and its block's.
   - `device`: The device it played on: its id, kind and name.
 - Follows: `cast.stop`, or the device stopping or leaving the network.
 

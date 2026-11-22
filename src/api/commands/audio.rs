@@ -1,4 +1,4 @@
-//! `audio`: a tile's sound and its tracks, and every tile's in a window.
+//! `audio`: a block's sound and its tracks, and every block's in a window.
 
 use serde::Deserialize;
 use serde_json::json;
@@ -10,36 +10,36 @@ use crate::api::registry::{Spec, on_mac};
 use crate::api::target;
 use crate::media::tracks::TrackKind;
 
-/// How far the volume commands change a tile's volume.
+/// How far the volume commands change a block's volume.
 const VOLUME_STEP: f32 = 0.05;
 /// How far the delay commands move the sound.
 const DELAY_STEP: f64 = 0.05;
 
 pub const COMMANDS: &[Spec] = &[
-    Spec::tile(
+    Spec::block(
         "audio.volume_up",
         "Volume Up",
-        "Turn the tile's volume up, unmuting it.",
+        "Turn the block's volume up, unmuting it.",
         |player, _, cx| player.change_volume(VOLUME_STEP, cx),
     )
     .tells(&["volume_changed"])
     .keywords(&["louder", "sound"])
     .setting("volume_up")
     .keys(&["up"]),
-    Spec::tile(
+    Spec::block(
         "audio.volume_down",
         "Volume Down",
-        "Turn the tile's volume down.",
+        "Turn the block's volume down.",
         |player, _, cx| player.change_volume(-VOLUME_STEP, cx),
     )
     .tells(&["volume_changed"])
     .keywords(&["quieter", "softer", "sound"])
     .setting("volume_down")
     .keys(&["down"]),
-    Spec::tile_with(
+    Spec::block_with(
         "audio.set_volume",
         "Set Volume",
-        "Set the tile's volume, unmuting it unless it's none.",
+        "Set the block's volume, unmuting it unless it's none.",
         &[Arg::required(
             "volume",
             Kind::Number {
@@ -57,10 +57,10 @@ pub const COMMANDS: &[Spec] = &[
     )
     .tells(&["volume_changed"])
     .keywords(&["loudness", "sound", "level"]),
-    Spec::tile(
+    Spec::block(
         "audio.toggle_mute",
         "Mute/Unmute",
-        "Mute the tile, or play its sound again.",
+        "Mute the block, or play its sound again.",
         |player, _, cx| player.toggle_mute(cx),
     )
     .tells(&["volume_changed"])
@@ -68,9 +68,9 @@ pub const COMMANDS: &[Spec] = &[
     .setting("mute")
     .keys(&["secondary-/", "m"])
     .state(|target, cx| {
-        target::read_tile(target, cx, |player, _| json!(player.player().is_muted()))
+        target::read_block(target, cx, |player, _| json!(player.player().is_muted()))
     }),
-    Spec::tile(
+    Spec::block(
         "audio.next_track",
         "Next Audio Track",
         "Play the file's next audio track, the first after the last.",
@@ -80,7 +80,7 @@ pub const COMMANDS: &[Spec] = &[
     .keywords(&["language", "dub", "commentary"])
     .setting("next_audio_track")
     .keys(on_mac(&["ctrl-cmd-a"], &["ctrl-alt-a"])),
-    Spec::tile_with(
+    Spec::block_with(
         "audio.select_track",
         "Pick Audio Track",
         "Play one of the file's audio tracks.",
@@ -93,34 +93,34 @@ pub const COMMANDS: &[Spec] = &[
     )
     .tells(&["track_changed"])
     .keywords(&["language", "dub", "commentary"]),
-    Spec::tile(
+    Spec::block(
         "audio.earlier",
         "Audio Earlier",
-        "Play the tile's sound a little earlier than its picture.",
+        "Play the block's sound a little earlier than its picture.",
         |player, _, cx| player.shift_audio(-DELAY_STEP, cx),
     )
     .keywords(&["delay", "sync", "offset", "lip sync"])
     .setting("audio_earlier")
     .keys(&["ctrl--"]),
-    Spec::tile(
+    Spec::block(
         "audio.later",
         "Audio Later",
-        "Play the tile's sound a little later than its picture.",
+        "Play the block's sound a little later than its picture.",
         |player, _, cx| player.shift_audio(DELAY_STEP, cx),
     )
     .keywords(&["delay", "sync", "offset", "lip sync"])
     .setting("audio_later")
     .keys(&["ctrl-="]),
-    Spec::tile(
+    Spec::block(
         "audio.reset_delay",
         "Reset Audio Delay",
-        "Play the tile's sound with its picture again.",
+        "Play the block's sound with its picture again.",
         |player, _, cx| player.set_audio_delay(0.0, cx),
     )
     .keywords(&["sync", "offset"])
     .setting("reset_audio_delay")
     .keys(&["ctrl-backspace"]),
-    Spec::tiles(
+    Spec::blocks(
         "audio.volume_up_all",
         "Volume Up on All",
         "Turn every file's volume in the window up, each from its own.",
@@ -130,7 +130,7 @@ pub const COMMANDS: &[Spec] = &[
     .keywords(&["every", "louder"])
     .setting("volume_up_all")
     .keys(&["shift-up"]),
-    Spec::tiles(
+    Spec::blocks(
         "audio.volume_down_all",
         "Volume Down on All",
         "Turn every file's volume in the window down, each from its own.",
@@ -140,7 +140,7 @@ pub const COMMANDS: &[Spec] = &[
     .keywords(&["every", "quieter"])
     .setting("volume_down_all")
     .keys(&["shift-down"]),
-    Spec::tiles(
+    Spec::blocks(
         "audio.toggle_mute_all",
         "Mute/Unmute All",
         "Mute every file in the window if any plays its sound, else unmute them all.",
@@ -152,10 +152,10 @@ pub const COMMANDS: &[Spec] = &[
     .keys(&["shift-m"]),
 ];
 
-/// The tiles' events about their sound.
-pub const EVENTS: &[EventKind] = &[EventKind::tile(
+/// The blocks' events about their sound.
+pub const EVENTS: &[EventKind] = &[EventKind::block(
     "volume_changed",
-    "A tile's volume changed, or it was muted or unmuted.",
+    "A block's volume changed, or it was muted or unmuted.",
     &[
         EventField::new(
             "volume",

@@ -39,7 +39,7 @@ impl Pane for CommandLinePane {
             "Allow control from the command line",
             Some(
                 "Lets plays in a terminal, and scripts, run any command, list the \
-                 windows and tiles, and hear what changes. plays FILE opens files \
+                 windows and blocks, and hear what changes. plays FILE opens files \
                  either way."
                     .into(),
             ),

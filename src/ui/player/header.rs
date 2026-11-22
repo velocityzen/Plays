@@ -1,6 +1,6 @@
-//! The bar over the top of a tile: the file's name, where it is in its
+//! The bar over the top of a block: the file's name, where it is in its
 //! playlist and what it is, and buttons for Picture in Picture, to pop the
-//! tile out, expand it and close it.
+//! block out, expand it and close it.
 
 use gpui::prelude::*;
 use gpui::{Context, Div, Window, div, linear_color_stop, linear_gradient};
@@ -65,7 +65,7 @@ impl PlayerView {
                             .overlay()
                             .selected(self.pip.is_some())
                             .on_click(cx.listener(|this, _, _, cx| {
-                                this.send("tile.toggle_picture_in_picture", Value::Null, cx);
+                                this.send("block.toggle_picture_in_picture", Value::Null, cx);
                             })),
                     )
                 },
@@ -75,7 +75,7 @@ impl PlayerView {
                     Button::icon("pop-out", "pop-out")
                         .overlay()
                         .on_click(cx.listener(|this, _, _, cx| {
-                            this.send("tile.move_to_new_window", Value::Null, cx);
+                            this.send("block.move_to_new_window", Value::Null, cx);
                         })),
                 )
             })
@@ -83,14 +83,14 @@ impl PlayerView {
                 Button::icon("maximize", if expanded { "minimize" } else { "maximize" })
                     .overlay()
                     .on_click(cx.listener(|this, _, _, cx| {
-                        this.send("tile.zoom", Value::Null, cx);
+                        this.send("block.zoom", Value::Null, cx);
                     })),
             )
             .child(
                 Button::icon("close", "close")
                     .overlay()
                     .on_click(cx.listener(|this, _, _, cx| {
-                        this.send("tile.close", Value::Null, cx);
+                        this.send("block.close", Value::Null, cx);
                     })),
             )
     }
@@ -115,7 +115,7 @@ impl PlayerView {
             .when(show_titles || self.label.is_some(), |this| {
                 this.child(
                     div()
-                        .debug_selector(|| "tile-title".into())
+                        .debug_selector(|| "block-title".into())
                         .min_w_0()
                         .truncate()
                         .text_sm()
@@ -124,7 +124,7 @@ impl PlayerView {
                 )
             })
             .when_some(self.playlist_counter(), |this, counter| {
-                this.child(aside(counter).debug_selector(|| "tile-playlist".into()))
+                this.child(aside(counter).debug_selector(|| "block-playlist".into()))
             })
             .when_some(
                 info.map(details).filter(|details| !details.is_empty()),

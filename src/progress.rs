@@ -3,7 +3,7 @@
 //! `KEEP_DAYS` days, so it starts there with them when opened again. A
 //! file barely begun, or played nearly to its end, starts over, with the
 //! tracks picked in it if any. Saved to `progress.json` beside the
-//! settings as tiles close or play another file, every `SAVE_EVERY` while
+//! settings as blocks close or play another file, every `SAVE_EVERY` while
 //! files are open, and as the app quits.
 
 use std::collections::HashMap;
@@ -51,7 +51,7 @@ pub struct Progress {
 
 impl Global for Progress {}
 
-/// A file's place, as a tile has it.
+/// A file's place, as a block has it.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Note {
     pub file: PathBuf,

@@ -1,20 +1,20 @@
-//! `plays ls`, `plays window …` and `plays tile …`: the windows and their
-//! tiles, listed, inspected and changed by the commands the app has for
+//! `plays ls`, `plays window …` and `plays block …`: the windows and their
+//! blocks, listed, inspected and changed by the commands the app has for
 //! them. Those named by number are looked up by id first, so closing or
 //! moving one doesn't change which the next name names.
 
 use serde_json::{Value, json};
 
-use super::args::{Place, Tile, Window};
+use super::args::{Block, Place, Window};
 use super::{Done, Session, Stop, listed, show};
 use crate::api::Target;
 
-/// The windows, each with its tiles.
+/// The windows, each with its blocks.
 pub fn ls(session: &mut Session) -> Done {
     let mut windows = session.call_on("window.ls", Value::Null, Target::default())?;
     for window in windows.as_array_mut().into_iter().flatten() {
-        let tiles = session.call_on("tile.ls", Value::Null, in_window(&window["id"]))?;
-        window["tiles"] = tiles;
+        let blocks = session.call_on("block.ls", Value::Null, in_window(&window["id"]))?;
+        window["blocks"] = blocks;
     }
     if session.options.json {
         return session.result(&windows);
@@ -28,14 +28,14 @@ pub fn ls(session: &mut Session) -> Done {
             show::text(&window["id"])
         );
         writeln!(session.out, "{}", line.trim_end())?;
-        for tile in listed(&window["tiles"]) {
+        for block in listed(&window["blocks"]) {
             let line = format!(
                 "    {:1} {}  {}  {}  {}",
-                show::front(tile),
-                tile["number"],
-                show::text(&tile["id"]),
-                name(tile),
-                playing(tile)
+                show::front(block),
+                block["number"],
+                show::text(&block["id"]),
+                name(block),
+                playing(block)
             );
             writeln!(session.out, "{}", line.trim_end())?;
         }
@@ -57,13 +57,13 @@ pub fn window(session: &mut Session, window: Window) -> Done {
                         window["number"].to_string(),
                         show::text(&window["id"]),
                         show::cell(&window["label"]),
-                        window["tiles"].to_string(),
+                        window["blocks"].to_string(),
                     ]
                 })
                 .collect();
             Ok(show::table(
                 session.out,
-                &["", "#", "ID", "LABEL", "TILES"],
+                &["", "#", "ID", "LABEL", "BLOCKS"],
                 &rows,
             )?)
         }
@@ -126,21 +126,21 @@ pub fn window(session: &mut Session, window: Window) -> Done {
     }
 }
 
-pub fn tile(session: &mut Session, tile: Tile) -> Done {
-    match tile {
-        Tile::Ls => {
-            let tiles = session.call("tile.ls", Value::Null)?;
+pub fn block(session: &mut Session, block: Block) -> Done {
+    match block {
+        Block::Ls => {
+            let blocks = session.call("block.ls", Value::Null)?;
             if session.options.json {
-                return session.result(&tiles);
+                return session.result(&blocks);
             }
-            let rows: Vec<Vec<String>> = listed(&tiles)
-                .map(|tile| {
+            let rows: Vec<Vec<String>> = listed(&blocks)
+                .map(|block| {
                     vec![
-                        show::front(tile),
-                        tile["number"].to_string(),
-                        show::text(&tile["id"]),
-                        name(tile),
-                        playing(tile).to_owned(),
+                        show::front(block),
+                        block["number"].to_string(),
+                        show::text(&block["id"]),
+                        name(block),
+                        playing(block).to_owned(),
                     ]
                 })
                 .collect();
@@ -150,56 +150,56 @@ pub fn tile(session: &mut Session, tile: Tile) -> Done {
                 &rows,
             )?)
         }
-        Tile::Inspect { tile } => {
-            let target = named_tile(session, tile);
-            let inspected = session.call_on("tile.inspect", Value::Null, target)?;
+        Block::Inspect { block } => {
+            let target = named_block(session, block);
+            let inspected = session.call_on("block.inspect", Value::Null, target)?;
             Ok(show::pretty(session.out, &inspected)?)
         }
-        Tile::Focus { tile } => run_on_tile(session, "tile.focus", tile),
-        Tile::Zoom { tile } => run_on_tile(session, "tile.zoom", tile),
-        Tile::Close { tiles } => {
-            for target in tile_ids(session, tiles)? {
-                session.call_on("tile.close", Value::Null, target)?;
+        Block::Focus { block } => run_on_block(session, "block.focus", block),
+        Block::Zoom { block } => run_on_block(session, "block.zoom", block),
+        Block::Close { blocks } => {
+            for target in block_ids(session, blocks)? {
+                session.call_on("block.close", Value::Null, target)?;
             }
             Ok(())
         }
-        Tile::Rename { mut names } => {
+        Block::Rename { mut names } => {
             let label = names.pop().unwrap_or_default();
-            let target = named_tile(session, names.pop());
-            session.call_on("tile.rename", json!({"label": label}), target)?;
+            let target = named_block(session, names.pop());
+            session.call_on("block.rename", json!({"label": label}), target)?;
             Ok(())
         }
-        Tile::Move { tile, to } => {
-            let mover = named_tile(session, tile);
-            let moving = session.call_on("tile.inspect", Value::Null, mover)?;
+        Block::Move { block, to } => {
+            let mover = named_block(session, block);
+            let moving = session.call_on("block.inspect", Value::Null, mover)?;
             let position = match place(&to) {
                 Ok(index) => index,
                 Err((other, after)) => {
-                    let named = named_tile(session, Some(other));
-                    let other = session.call_on("tile.inspect", Value::Null, named)?;
+                    let named = named_block(session, Some(other));
+                    let other = session.call_on("block.inspect", Value::Null, named)?;
                     if other["window"] != moving["window"] {
                         return Err(Stop::Usage(format!(
-                            "{} is in another window: move tiles between windows with \
-                             plays do tile.move_to_window",
+                            "{} is in another window: move blocks between windows with \
+                             plays do block.move_to_window",
                             show::text(&other["id"])
                         )));
                     }
-                    beside(&moving, &other, after, "tile")?
+                    beside(&moving, &other, after, "block")?
                 }
             };
             let id = Target {
                 window: None,
-                tile: Some(show::text(&moving["id"])),
+                block: Some(show::text(&moving["id"])),
             };
-            session.call_on("tile.move", json!({"position": position}), id)?;
+            session.call_on("block.move", json!({"position": position}), id)?;
             Ok(())
         }
     }
 }
 
-/// Run `command` on the tile `tile` names, or `-t`'s.
-fn run_on_tile(session: &mut Session, command: &str, tile: Option<String>) -> Done {
-    let target = named_tile(session, tile);
+/// Run `command` on the block `block` names, or `-b`'s.
+fn run_on_block(session: &mut Session, command: &str, block: Option<String>) -> Done {
+    let target = named_block(session, block);
     session.call_on(command, Value::Null, target)?;
     Ok(())
 }
@@ -208,7 +208,7 @@ fn run_on_tile(session: &mut Session, command: &str, tile: Option<String>) -> Do
 fn in_window(id: &Value) -> Target {
     Target {
         window: Some(show::text(id)),
-        tile: None,
+        block: None,
     }
 }
 
@@ -216,15 +216,15 @@ fn in_window(id: &Value) -> Target {
 fn named_window(session: &Session, name: Option<String>) -> Target {
     Target {
         window: name.or_else(|| session.options.window.clone()),
-        tile: None,
+        block: None,
     }
 }
 
-/// The tile `name` names, in `-w`'s window if named, or `-t`'s.
-fn named_tile(session: &Session, name: Option<String>) -> Target {
+/// The block `name` names, in `-w`'s window if named, or `-b`'s.
+fn named_block(session: &Session, name: Option<String>) -> Target {
     Target {
         window: session.options.window.clone(),
-        tile: name.or_else(|| session.options.tile.clone()),
+        block: name.or_else(|| session.options.block.clone()),
     }
 }
 
@@ -247,20 +247,23 @@ fn window_ids(session: &mut Session, names: Vec<String>) -> Result<Vec<Target>, 
         .collect()
 }
 
-/// The tiles `names` name, by id, found before any changes: or `-t`'s,
+/// The blocks `names` name, by id, found before any changes: or `-b`'s,
 /// with none.
-fn tile_ids(session: &mut Session, names: Vec<String>) -> Result<Vec<Target>, Stop> {
+fn block_ids(session: &mut Session, names: Vec<String>) -> Result<Vec<Target>, Stop> {
     if names.is_empty() {
-        return Ok(vec![named_tile(session, None)]);
+        return Ok(vec![named_block(session, None)]);
     }
     names
         .into_iter()
         .map(|name| {
-            let inspected =
-                session.call_on("tile.inspect", Value::Null, named_tile(session, Some(name)))?;
+            let inspected = session.call_on(
+                "block.inspect",
+                Value::Null,
+                named_block(session, Some(name)),
+            )?;
             Ok(Target {
                 window: None,
-                tile: Some(show::text(&inspected["id"])),
+                block: Some(show::text(&inspected["id"])),
             })
         })
         .collect()
@@ -295,17 +298,17 @@ fn beside(moving: &Value, other: &Value, after: bool, what: &str) -> Result<usiz
     })
 }
 
-/// What a tile is called: its label, or its file's name.
-fn name(tile: &Value) -> String {
-    match &tile["label"] {
-        Value::Null => show::cell(&tile["title"]),
+/// What a block is called: its label, or its file's name.
+fn name(block: &Value) -> String {
+    match &block["label"] {
+        Value::Null => show::cell(&block["title"]),
         label => show::text(label),
     }
 }
 
-/// Whether a tile plays.
-fn playing(tile: &Value) -> &'static str {
-    if tile["playing"] == true {
+/// Whether a block plays.
+fn playing(block: &Value) -> &'static str {
+    if block["playing"] == true {
         "playing"
     } else {
         "paused"

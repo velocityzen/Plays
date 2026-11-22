@@ -1,4 +1,4 @@
-//! Subtitles drawn over a tile's picture: text centered near its bottom (or
+//! Subtitles drawn over a block's picture: text centered near its bottom (or
 //! top, or middle, if the cue says), sized to the picture, styled as the
 //! settings say, and lifted above the controls while they show; bitmaps go
 //! where the stream places them on the picture, and turn and crop with it.
@@ -20,15 +20,15 @@ use super::theme::subtitles::{
 use crate::media::subtitles::{CueContent, Placement, Text};
 use crate::settings::{SubtitleArea, SubtitleEdge, SubtitleStyle};
 
-/// How the tile around the subtitles is laid out, and how they look.
+/// How the block around the subtitles is laid out, and how they look.
 pub struct Layout {
-    /// How the picture shows, which is fitted to the tile.
+    /// How the picture shows, which is fitted to the block.
     pub framing: Option<Framing>,
-    /// The picture fills the tile (cropped) rather than fitting in it.
+    /// The picture fills the block (cropped) rather than fitting in it.
     pub cover: bool,
-    /// How tall the controls are at the bottom of the tile.
+    /// How tall the controls are at the bottom of the block.
     pub controls_height: Pixels,
-    /// The controls show whether or not the mouse is over the tile.
+    /// The controls show whether or not the mouse is over the block.
     pub controls_pinned: bool,
     pub mouse_in_window: bool,
     /// The font when the style doesn't name one.
@@ -36,7 +36,7 @@ pub struct Layout {
     pub style: SubtitleStyle,
 }
 
-/// An element covering the tile that draws `cues`.
+/// An element covering the block that draws `cues`.
 pub fn overlay(cues: Vec<Arc<CueContent>>, layout: Layout) -> impl IntoElement {
     canvas(
         |_, _, _| {},
@@ -118,12 +118,12 @@ pub(crate) fn paint(
     });
 
     let style = layout.style.clamped();
-    // Text is sized by the part of the picture that is in the tile, and
-    // goes on it or anywhere in the tile.
+    // Text is sized by the part of the picture that is in the block, and
+    // goes on it or anywhere in the block.
     let visible = picture.intersect(&bounds);
     let area = match style.area {
         SubtitleArea::Picture => visible,
-        SubtitleArea::Tile => bounds,
+        SubtitleArea::Block => bounds,
     };
     let controls_showing = layout.controls_pinned
         || (layout.mouse_in_window && bounds.contains(&window.mouse_position()));

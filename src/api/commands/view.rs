@@ -1,4 +1,4 @@
-//! `view`: which panels show over the video in every tile, each turned
+//! `view`: which panels show over the video in every block, each turned
 //! off to keep the picture clear of it, as Settings → Appearance has them.
 
 use gpui::App;
@@ -11,7 +11,7 @@ pub const COMMANDS: &[Spec] = &[
     Spec::app(
         "view.toggle_controls",
         "Show Controls",
-        "Show the seek bar and buttons at the bottom of each tile, or never show them.",
+        "Show the seek bar and buttons at the bottom of each block, or never show them.",
         |cx| toggle(cx, |shown| &mut shown.controls),
     )
     .tells(&["settings_changed"])
@@ -20,7 +20,7 @@ pub const COMMANDS: &[Spec] = &[
     Spec::app(
         "view.toggle_top_bar",
         "Show Top Bar",
-        "Show the file's name and buttons at the top of each tile, or never show them.",
+        "Show the file's name and buttons at the top of each block, or never show them.",
         |cx| toggle(cx, |shown| &mut shown.top_bar),
     )
     .tells(&["settings_changed"])

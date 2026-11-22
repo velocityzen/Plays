@@ -1,4 +1,4 @@
-//! The panels over the video, each shown or hidden in every tile with a
+//! The panels over the video, each shown or hidden in every block with a
 //! `view` command, as Settings → Appearance has them: hidden bars aren't
 //! drawn, and hidden notes and the track switcher leave unsaid what a
 //! shortcut changed, but not what's wrong.
@@ -33,8 +33,8 @@ fn shown(cx: &mut VisualTestContext) -> OverVideo {
     cx.update(|_, cx| cx.global::<Settings>().over_video)
 }
 
-/// `window`'s first tile.
-fn tile(window: WindowHandle<Workspace>, cx: &VisualTestContext) -> Entity<PlayerView> {
+/// `window`'s first block.
+fn block(window: WindowHandle<Workspace>, cx: &VisualTestContext) -> Entity<PlayerView> {
     window
         .read_with(cx, |workspace, _| workspace.players()[0].clone())
         .unwrap()
@@ -79,16 +79,16 @@ fn each_panel_over_the_video_is_shown_or_hidden_on_its_own(cx: &mut TestAppConte
 fn hidden_bars_are_not_drawn_and_the_mouse_is_not_over_them(cx: &mut TestAppContext) {
     let (window, mut cx) = testing::start(cx);
     open(window, &mut cx, &["clip-subs.mkv"], false);
-    let tile = tile(window, &cx);
-    let over_bars = |cx: &mut VisualTestContext| tile.read_with(cx, |view, _| view.over_bars());
+    let block = block(window, &cx);
+    let over_bars = |cx: &mut VisualTestContext| block.read_with(cx, |view, _| view.over_bars());
     let clearance =
-        |cx: &mut VisualTestContext| tile.read_with(cx, |view, cx| view.subtitle_clearance(cx));
+        |cx: &mut VisualTestContext| block.read_with(cx, |view, cx| view.subtitle_clearance(cx));
     assert!(
         clearance(&mut cx) > px(0.),
         "subtitles keep clear of the controls"
     );
-    hover(&mut cx, "tile-0");
-    for bar in ["tile-title", "maximize", "seek", "volume"] {
+    hover(&mut cx, "block-0");
+    for bar in ["block-title", "maximize", "seek", "volume"] {
         assert!(shows(&mut cx, bar), "{bar} shows at first");
     }
 
@@ -98,16 +98,16 @@ fn hidden_bars_are_not_drawn_and_the_mouse_is_not_over_them(cx: &mut TestAppCont
     assert!(!shows(&mut cx, "seek") && !shows(&mut cx, "volume"));
     assert!(!over_bars(&mut cx), "nor over what isn't there");
     assert_eq!(clearance(&mut cx), px(0.), "nor of what isn't there");
-    assert!(shows(&mut cx, "tile-title") && shows(&mut cx, "maximize"));
+    assert!(shows(&mut cx, "block-title") && shows(&mut cx, "maximize"));
 
     hover(&mut cx, "maximize");
     assert!(over_bars(&mut cx));
     run(&mut cx, "view.toggle_top_bar").unwrap();
-    assert!(!shows(&mut cx, "tile-title") && !shows(&mut cx, "maximize"));
+    assert!(!shows(&mut cx, "block-title") && !shows(&mut cx, "maximize"));
     assert!(!over_bars(&mut cx));
 
     run(&mut cx, "view.toggle_controls").unwrap();
-    hover(&mut cx, "tile-0");
+    hover(&mut cx, "block-0");
     assert!(shows(&mut cx, "seek") && !shows(&mut cx, "maximize"));
     // The tracks menu goes with the controls, and is closed when they're
     // back.
@@ -116,7 +116,7 @@ fn hidden_bars_are_not_drawn_and_the_mouse_is_not_over_them(cx: &mut TestAppCont
     run(&mut cx, "view.toggle_controls").unwrap();
     assert!(!shows(&mut cx, "track-0"));
     run(&mut cx, "view.toggle_controls").unwrap();
-    hover(&mut cx, "tile-0");
+    hover(&mut cx, "block-0");
     assert!(shows(&mut cx, "tracks") && !shows(&mut cx, "track-0"));
     run(&mut cx, "view.toggle_top_bar").unwrap();
     assert!(shows(&mut cx, "maximize"), "both again");
@@ -146,80 +146,80 @@ fn hidden_notes_and_switcher_leave_changes_unsaid_but_not_whats_wrong(cx: &mut T
         &["clip-subs.mkv", "clip-chapters.mkv"],
         false,
     );
-    let tiles = window
+    let blocks = window
         .read_with(&cx, |workspace, _| workspace.players())
         .unwrap();
-    let noted = |tile: &Entity<PlayerView>, cx: &mut VisualTestContext| {
-        tile.read_with(cx, |view, _| view.noted())
+    let noted = |block: &Entity<PlayerView>, cx: &mut VisualTestContext| {
+        block.read_with(cx, |view, _| view.noted())
     };
-    let reels = |tile: &Entity<PlayerView>, cx: &mut VisualTestContext| {
-        tile.read_with(cx, |view, _| view.reels())
+    let reels = |block: &Entity<PlayerView>, cx: &mut VisualTestContext| {
+        block.read_with(cx, |view, _| view.reels())
     };
     let subtitles = |view: &PlayerView| {
         view.player()
             .info()
             .and_then(|info| info.selected(TrackKind::Subtitle))
     };
-    let on = |tile: &Entity<PlayerView>, command: &str, cx: &mut VisualTestContext| {
-        let name = tile.read_with(cx, |view, _| view.id().to_string());
+    let on = |block: &Entity<PlayerView>, command: &str, cx: &mut VisualTestContext| {
+        let name = block.read_with(cx, |view, _| view.id().to_string());
         TestAppContext::update(cx, |cx| {
-            api::run(Invocation::new(command).on_tile(name), cx)
+            api::run(Invocation::new(command).on_block(name), cx)
         })
         .unwrap();
         cx.run_until_parked();
     };
-    let (tile, chapters) = (&tiles[0], &tiles[1]);
+    let (block, chapters) = (&blocks[0], &blocks[1]);
     run(&mut cx, "view.toggle_notes").unwrap();
     run(&mut cx, "view.toggle_track_switcher").unwrap();
 
-    on(tile, "audio.toggle_mute", &mut cx);
+    on(block, "audio.toggle_mute", &mut cx);
     assert!(
-        tile.read_with(&cx, |view, _| view.player().is_muted()),
+        block.read_with(&cx, |view, _| view.player().is_muted()),
         "it changed"
     );
-    on(tile, "audio.toggle_mute", &mut cx);
+    on(block, "audio.toggle_mute", &mut cx);
     for command in CHANGES {
-        on(tile, command, &mut cx);
-        assert_eq!(noted(tile, &mut cx), None, "{command}: unsaid");
+        on(block, command, &mut cx);
+        assert_eq!(noted(block, &mut cx), None, "{command}: unsaid");
     }
     on(chapters, "playback.next_chapter", &mut cx);
     assert_eq!(noted(chapters, &mut cx), None, "the chapter: unsaid");
-    let before = tile.read_with(&cx, |view, _| subtitles(view));
-    on(tile, "subtitles.next_track", &mut cx);
+    let before = block.read_with(&cx, |view, _| subtitles(view));
+    on(block, "subtitles.next_track", &mut cx);
     let switched = testing::wait_until(&mut cx, |cx| {
-        tile.read_with(cx, |view, _| subtitles(view)) != before
+        block.read_with(cx, |view, _| subtitles(view)) != before
     });
     assert!(switched, "the track changed");
     assert!(
-        !reels(tile, &mut cx) && noted(tile, &mut cx).is_none(),
+        !reels(block, &mut cx) && noted(block, &mut cx).is_none(),
         "unshown"
     );
-    on(tile, "playback.next_chapter", &mut cx);
+    on(block, "playback.next_chapter", &mut cx);
     assert_eq!(
-        noted(tile, &mut cx).as_deref(),
+        noted(block, &mut cx).as_deref(),
         Some("No chapters"),
         "why nothing happened"
     );
 
     run(&mut cx, "view.toggle_notes").unwrap();
     for command in CHANGES {
-        let before = noted(tile, &mut cx);
-        on(tile, command, &mut cx);
-        let note = noted(tile, &mut cx);
+        let before = noted(block, &mut cx);
+        on(block, command, &mut cx);
+        let note = noted(block, &mut cx);
         assert!(note.is_some() && note != before, "{command}: {note:?}");
     }
     on(chapters, "playback.next_chapter", &mut cx);
     assert!(noted(chapters, &mut cx).is_some(), "the chapter");
     run(&mut cx, "view.toggle_track_switcher").unwrap();
-    on(tile, "subtitles.next_track", &mut cx);
-    assert!(reels(tile, &mut cx));
+    on(block, "subtitles.next_track", &mut cx);
+    assert!(reels(block, &mut cx));
 }
 
 #[gpui::test]
 fn a_screenshot_saved_is_unsaid_with_notes_hidden_but_one_failed_is_not(cx: &mut TestAppContext) {
     let (window, mut cx) = testing::start(cx);
     open(window, &mut cx, &["clip.mp4"], false);
-    let tile = tile(window, &cx);
+    let block = block(window, &cx);
     let folder = files::test_folder("over-video-shots");
     fs::create_dir_all(&folder).unwrap();
     let not_a_folder = folder.join("not-a-folder");
@@ -232,20 +232,20 @@ fn a_screenshot_saved_is_unsaid_with_notes_hidden_but_one_failed_is_not(cx: &mut
                 s.over_video.notes = notes;
             });
         });
-        let name = tile.read_with(cx, |view, _| view.id().to_string());
+        let name = block.read_with(cx, |view, _| view.id().to_string());
         TestAppContext::update(cx, |cx| {
-            api::run(Invocation::new("video.take_screenshot").on_tile(name), cx)
+            api::run(Invocation::new("video.take_screenshot").on_block(name), cx)
         })
         .unwrap();
     };
-    let noted = |cx: &mut VisualTestContext| tile.read_with(cx, |view, _| view.noted());
+    let noted = |cx: &mut VisualTestContext| block.read_with(cx, |view, _| view.noted());
     // Besides the file that isn't a folder.
     let saved = || fs::read_dir(&folder).unwrap().count() - 1;
     // A frame to take, once one is drawn.
     let start = Instant::now();
-    while tile.read_with(&cx, |view, _| view.player().frame().is_none()) {
+    while block.read_with(&cx, |view, _| view.player().frame().is_none()) {
         assert!(start.elapsed() < OPEN_WAIT, "no picture to take");
-        shows(&mut cx, "tile-0");
+        shows(&mut cx, "block-0");
         std::thread::sleep(Duration::from_millis(5));
     }
 
@@ -255,7 +255,7 @@ fn a_screenshot_saved_is_unsaid_with_notes_hidden_but_one_failed_is_not(cx: &mut
 
     shoot(&not_a_folder, false, &mut cx);
     let failed = testing::wait_until(&mut cx, |cx| {
-        tile.read_with(cx, |view, _| view.noted()).is_some()
+        block.read_with(cx, |view, _| view.noted()).is_some()
     });
     assert!(failed, "it says it failed");
     let note = noted(&mut cx).unwrap();
@@ -263,7 +263,8 @@ fn a_screenshot_saved_is_unsaid_with_notes_hidden_but_one_failed_is_not(cx: &mut
 
     shoot(&folder, true, &mut cx);
     let said = testing::wait_until(&mut cx, |cx| {
-        tile.read_with(cx, |view, _| view.noted())
+        block
+            .read_with(cx, |view, _| view.noted())
             .is_some_and(|note| note.contains("saved"))
     });
     assert!(said, "saved, said so: {:?}", noted(&mut cx));

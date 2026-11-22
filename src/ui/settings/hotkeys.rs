@@ -59,7 +59,7 @@ impl Pane for HotkeysPane {
             vec![row(
                 "Default shortcuts",
                 Some(
-                    "Shortcuts go to the tile last clicked. Click + and press keys to add one."
+                    "Shortcuts go to the block last clicked. Click + and press keys to add one."
                         .into(),
                 ),
                 theme,

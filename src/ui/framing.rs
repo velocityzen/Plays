@@ -1,4 +1,4 @@
-//! How a tile shows its video: turned and mirrored as the file says and
+//! How a block shows its video: turned and mirrored as the file says and
 //! then as the viewer asks, at another aspect ratio if asked, and cropped to
 //! another shape. All of it happens as the picture is drawn (gpui samples
 //! its texture turned and cropped), so a change shows at once, paused or
@@ -47,7 +47,7 @@ pub fn next_ratio(current: Option<Ratio>, ratios: &[Ratio]) -> Option<Ratio> {
     }
 }
 
-/// What the viewer changed about a tile's picture.
+/// What the viewer changed about a block's picture.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Adjustments {
     /// Turned and mirrored, after the file's own orientation.

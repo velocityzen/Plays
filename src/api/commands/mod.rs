@@ -2,6 +2,7 @@
 
 mod app;
 mod audio;
+pub mod block;
 pub mod cast;
 mod cli;
 mod display;
@@ -9,7 +10,6 @@ pub mod output;
 pub mod playback;
 pub mod settings;
 mod subtitles;
-pub mod tile;
 pub mod video;
 mod view;
 pub mod window;
@@ -29,7 +29,7 @@ pub const ALL: [&[Spec]; 13] = [
     app::COMMANDS,
     window::COMMANDS,
     view::COMMANDS,
-    tile::COMMANDS,
+    block::COMMANDS,
     playback::COMMANDS,
     audio::COMMANDS,
     subtitles::COMMANDS,
@@ -45,7 +45,7 @@ pub const ALL: [&[Spec]; 13] = [
 pub const EVENTS: [(&str, &[EventKind]); 8] = [
     ("app", app::EVENTS),
     ("window", window::EVENTS),
-    ("tile", tile::EVENTS),
+    ("block", block::EVENTS),
     ("playback", playback::EVENTS),
     ("audio", audio::EVENTS),
     ("cast", cast::EVENTS),
@@ -66,7 +66,7 @@ pub const NAMESPACES: [(&str, &str); 12] = [
     ("video", "Video"),
     ("view", "Over the video"),
     ("window", "Windows"),
-    ("tile", "Tiles in a window"),
+    ("block", "Blocks in a window"),
     ("cast", "Casting"),
     ("output", "Audio Output"),
     ("settings", "Settings"),

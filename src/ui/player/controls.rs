@@ -1,4 +1,4 @@
-//! The controls floating over the bottom of a tile: the seek bar, and under
+//! The controls floating over the bottom of a block: the seek bar, and under
 //! it the time, in the middle the previous file, skip back, play, skip
 //! forward and the next file, and tracks, loop and volume.
 
@@ -21,7 +21,7 @@ use crate::ui::theme::{Theme, controls, overlay, panel};
 /// corners.
 const PANEL_SIZE: ComponentSize = ComponentSize::Small;
 
-/// How far up the tile the controls reach: the seek bar and the buttons in
+/// How far up the block the controls reach: the seek bar and the buttons in
 /// the panel's padding, and the gap below it. Subtitles stay above them
 /// while they show.
 pub(super) fn height(live: bool) -> Pixels {
@@ -35,7 +35,7 @@ pub(super) fn height(live: bool) -> Pixels {
         }
 }
 
-/// How far up the tile subtitles keep clear of, for the controls: none
+/// How far up the block subtitles keep clear of, for the controls: none
 /// when they're hidden, as they're never drawn.
 pub(super) fn clearance(shown: bool, live: bool) -> Pixels {
     if shown { height(live) } else { px(0.) }
@@ -71,7 +71,7 @@ impl PlayerView {
         };
         let cast = self.render_cast_button(info, theme, window, cx);
 
-        // The controls float on a panel over the bottom of the tile. Its
+        // The controls float on a panel over the bottom of the block. Its
         // corners are less round than other panels', as it is short and
         // buttons sit close to them.
         reveal
