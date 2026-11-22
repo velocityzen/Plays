@@ -37,12 +37,13 @@ pub struct Options {
     /// Don't start Plays if it isn't running.
     #[arg(long, global = true)]
     pub no_autostart: bool,
-    /// The window to act on: its id, its label, its number from 1, or the end
-    /// of its id. The one in front by default.
+    /// The window to act on: its id, its label, its number from 1 (#2 by
+    /// number alone), or the end of its id. The one in front by default.
     #[arg(short, long, global = true, value_name = "WINDOW")]
     pub window: Option<String>,
-    /// The tile to act on: its id, its label, its place in the window from 1,
-    /// or the end of its id. The one keys go to by default.
+    /// The tile to act on: its id, its label, its place in the window from 1
+    /// (#2 by place alone), or the end of its id. The one keys go to by
+    /// default.
     #[arg(short, long, global = true, value_name = "TILE")]
     pub tile: Option<String>,
 }

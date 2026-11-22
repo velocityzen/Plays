@@ -444,8 +444,9 @@ windows.
 
 `⌘N` (`Ctrl+N` on Linux) opens an empty player window. `⌘1` to `⌘9`
 (`Ctrl+1` to `Ctrl+9`) bring player window 1 to 9 to the front, numbered
-in the order they opened; when one closes, those after it move up a
-number. Window → Move Window Backward and Move Window Forward give the
+in the order they opened, whatever one is labeled; when one closes,
+those after it move up a number. Window → Move Window Backward and
+Move Window Forward give the
 window in front the number before or after its own, and Move Window To
 any number. `Ctrl+Tab` and `Ctrl+Shift+Tab` bring the next player window
 or the one before to the front, from the last round to the first and
@@ -854,7 +855,8 @@ plays actions                             # every command, Plays or not
 
 - `-w` names a window and `-t` a tile: by id, label, number (from 1, as
   ⌘1 to ⌘9 count windows and the grid counts tiles), or the end of an
-  id. Without them, it's the window in front and the tile keys go to.
+  id; `#2` names the second alone, as ⌘2 does. Without them, it's the
+  window in front and the tile keys go to.
 - `--json` prints what comes back as JSON, one line an event for
   `events` and `wait`.
 - `do` takes each argument as `KEY=VALUE`, read as the command takes it:

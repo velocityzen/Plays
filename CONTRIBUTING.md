@@ -417,8 +417,9 @@ What the window tests check:
   maximize the one they go to, without a ring, and move none. Unit tests
   check where each key goes from each place in a full grid, one with a
   short last row, one row and one tile.
-- Windows from the keyboard: with three player windows, ⌘2 and ⌘3 bring
-  those to the front and ⌘9 nothing; Ctrl+Tab and Ctrl+Shift+Tab go round
+- Windows from the keyboard: with three player windows, the first
+  labeled 9 and the third 2, ⌘2 and ⌘3 bring those to the front by
+  number alone and ⌘9 nothing; Ctrl+Tab and Ctrl+Shift+Tab go round
   them both ways; from Settings, they go to the first and the last, and ⌘2
   to the second. With the second closed, the third is ⌘2, one opened next
   is ⌘3, and Ctrl+Tab skips the closed one. The keymap test checks the
@@ -543,7 +544,9 @@ check:
   change; Clear Recent Files forgets them.
 - A command aimed at a tile acts on it, not on the one in front: a tile
   named by its id, its position or the end of its id, in a window named by
-  its position or in any; positions count in the window in front, and
+  its position or in any; `#` and a number name by position alone, not a
+  label or an id ending so (`target::pick`); positions count in the
+  window in front, and
   after another window comes to the front, in that one. A window's
   commands act on the window named; Close Window closes the window in
   front, Settings too, or the player window named.

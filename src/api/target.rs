@@ -75,11 +75,19 @@ pub struct Named<'a> {
 
 /// Which of `among` `name` names, a `what`: the one with that id, else
 /// that label, else at that position (from 1) in `positions` (places in
-/// `among`, in their order), else the one whose id ends so.
+/// `among`, in their order), else the one whose id ends so. `#` and a
+/// number name by position alone, as ⌘1 to ⌘9 do: none is labeled so
+/// or has an id ending so.
 pub fn pick(what: &str, name: &str, among: &[Named], positions: &[usize]) -> Result<usize, Error> {
     let name = name.trim();
     if name.is_empty() {
         return Err(Error::not_found(what, "with no name"));
+    }
+    if let Some(number) = name.strip_prefix('#') {
+        let place = number.parse::<usize>().ok().and_then(|n| n.checked_sub(1));
+        return place
+            .and_then(|place| positions.get(place).copied())
+            .ok_or_else(|| Error::not_found(what, name));
     }
     if let Some(at) = among.iter().position(|named| named.id.to_string() == name) {
         return Ok(at);

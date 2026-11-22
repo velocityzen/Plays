@@ -214,7 +214,7 @@ fn what_menus_and_controls_send_is_what_their_commands_take() {
             .unwrap_or_else(|err| panic!("{command}: {err}"));
         assert_eq!(invocation.source, Source::Action, "{command}");
     }
-    assert_eq!(window::focus(3).0.target.window.as_deref(), Some("3"));
+    assert_eq!(window::focus(3).0.target.window.as_deref(), Some("#3"));
     assert_eq!(
         cast::to(Some(&tv)).0.args,
         json!({"device": "living-room", "kind": "Chromecast"})

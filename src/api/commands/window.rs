@@ -467,10 +467,11 @@ fn floats(mode: FloatOnTop, cx: &App) -> bool {
 }
 
 /// Bring player window `number`, from 1 in the order they opened, to the
-/// front.
+/// front: by its number alone (`#`), none if there's none, whatever is
+/// labeled so or has an id ending so.
 pub fn focus(number: usize) -> Run {
     Run(Invocation::new("window.focus")
-        .in_window(number.to_string())
+        .in_window(format!("#{number}"))
         .from(Source::Action))
 }
 

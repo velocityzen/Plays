@@ -510,7 +510,9 @@ flowchart LR
   command's own, which also has where it was run from (`Source`); `target` finds the window and tile named: by id, then by
   label, then by position from 1 (windows in the order they opened, tiles
   in the window named or in front), then by the end of an id, with an
-  error if none is or several are; named by nothing, the window in front
+  error if none is or several are; `#` and a number name by position
+  alone, as ⌘1 to ⌘9 name windows (`window::focus`); named by nothing,
+  the window in front
   and the tile in it keys go to. Windows and tiles get an id as they're
   made, a number never given again, mixed so ids made one after another
   differ at the end, and shown as eight hex digits. `api::run` runs an

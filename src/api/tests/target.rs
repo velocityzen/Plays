@@ -41,6 +41,27 @@ fn names_by_id_then_label_then_position_then_the_end_of_the_id() {
     assert_eq!(pick("5"), Err(Error::not_found("tile", "5")));
     assert_eq!(pick("eeee"), Err(Error::not_found("tile", "eeee")));
     assert_eq!(pick(""), Err(Error::not_found("tile", "with no name")));
+
+    // By position alone, as ⌘1 to ⌘9 name windows.
+    assert_eq!(pick("#2"), Ok(1), "not the one labeled 2");
+    assert_eq!(pick(" #4 "), Ok(3));
+    assert_eq!(
+        pick("#5"),
+        Err(Error::not_found("tile", "#5")),
+        "none fifth"
+    );
+    assert_eq!(
+        pick("#dddd"),
+        Err(Error::not_found("tile", "#dddd")),
+        "not by the end of an id"
+    );
+    assert_eq!(pick("#0"), Err(Error::not_found("tile", "#0")));
+    assert_eq!(pick("#"), Err(Error::not_found("tile", "#")));
+    assert_eq!(
+        super::pick("tile", "#1", &among, &[2, 3]),
+        Ok(2),
+        "counting only those given"
+    );
 }
 
 #[test]

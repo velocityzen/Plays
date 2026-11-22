@@ -15,6 +15,19 @@ fn open_player(cx: &mut VisualTestContext) -> AnyWindowHandle {
     window.into()
 }
 
+/// Label the player window `window` as Rename Window does.
+fn label(window: AnyWindowHandle, label: &str, cx: &mut VisualTestContext) {
+    window
+        .downcast::<Workspace>()
+        .expect("a player window")
+        .update(cx, |workspace, window, cx| {
+            workspace.set_label(label, window, cx)
+        })
+        .expect("the window")
+        .expect("a label of its own");
+    cx.run_until_parked();
+}
+
 fn in_front(cx: &mut VisualTestContext) -> Option<WindowId> {
     cx.update(|_, cx| cx.active_window().map(|window| window.window_id()))
 }
@@ -50,6 +63,9 @@ fn the_number_keys_and_ctrl_tab_bring_player_windows_to_the_front(cx: &mut TestA
     let second = open_player(&mut cx);
     let third = open_player(&mut cx);
     assert_eq!(in_front(&mut cx), Some(first.window_id()));
+    // Numbers that aren't theirs: ⌘N goes by number alone.
+    label(first, "9", &mut cx);
+    label(third, "2", &mut cx);
 
     press_in_front(&mut cx, "secondary-3");
     assert_eq!(in_front(&mut cx), Some(third.window_id()), "⌘3");
