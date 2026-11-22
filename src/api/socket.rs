@@ -21,6 +21,7 @@ use std::os::unix::fs::{DirBuilderExt, FileTypeExt, PermissionsExt};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 
+pub use protocol::Heard;
 pub use server::serve;
 
 /// The socket's name, in the folder `path` finds.
@@ -34,11 +35,24 @@ const LOCK: &str = "plays.lock";
 /// looks.
 const TRIES: usize = 3;
 
-/// Where the socket is: in the app's folder on macOS, in
-/// `$XDG_RUNTIME_DIR/plays` on Linux (the app's folder if there's none).
-/// None in tests and smoke runs, which run alone, as they have no settings
-/// folder either.
+/// The environment variable naming a socket of Plays' own, where `path`
+/// would find another: for a second Plays running apart, a smoke run's,
+/// and the command line talking to either.
+pub const VARIABLE: &str = "PLAYS_SOCKET";
+
+/// Where the socket is: where `PLAYS_SOCKET` says, else in the app's
+/// folder on macOS, in `$XDG_RUNTIME_DIR/plays` on Linux (the app's folder
+/// if there's none). None in tests and smoke runs, unless named, as they
+/// run alone, with no settings folder either.
 pub fn path() -> Option<PathBuf> {
+    path_named(std::env::var_os(VARIABLE))
+}
+
+/// Where the socket is, `named` there or not.
+fn path_named(named: Option<OsString>) -> Option<PathBuf> {
+    if let Some(named) = named.filter(|named| !named.is_empty()) {
+        return Some(named.into());
+    }
     if cfg!(any(test, feature = "smoke")) {
         return None;
     }
@@ -152,4 +166,4 @@ fn start_at(path: Option<PathBuf>, args: &[OsString]) -> Start {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

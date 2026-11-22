@@ -26,6 +26,8 @@ workspace = true
 
 [dependencies]
 anyhow = "1"
+# The command line's subcommands, options and help (`src/cli`).
+clap = { version = "4", features = ["derive"] }
 cpal = "0.18"
 dirs = "6"
 env_logger = "0.11"

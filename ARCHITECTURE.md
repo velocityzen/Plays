@@ -142,8 +142,9 @@ Inside `src/`:
 
 | Path | What it is |
 | --- | --- |
-| `main.rs` | Starts the app, or hands what it was given to the Plays already running. |
+| `main.rs` | Starts the app, runs the command line, or hands what it was given to the Plays already running. |
 | `api/` | Every command Plays has, by name: what each does and takes, and running one on the window or tile named. Every action goes through it. The events it tells whoever listens, and the socket the command line reaches it over. |
+| `cli.rs`, `cli/` | The command line: `plays` with a subcommand asks the Plays running over the socket and prints what it answers. |
 | `app/` | Starting the app, its menus, keymap, audio outputs and the AirPlay speakers and Bluetooth devices among them, keeping the computer awake, smoke runs. |
 | `media/` | The playback engine: FFmpeg decoding, the mixers, clocks, subtitles, HDR. |
 | `ui/` | gpui views: windows, tiles, Settings, Picture in Picture, components and theme. |
@@ -471,7 +472,7 @@ flowchart LR
 - `src/api/`: every command Plays has, which every action runs by name,
   as a command line and a command palette are to. Each namespace
   (`app`, `window`, `tile`, `playback`, `audio`, `subtitles`, `video`,
-  `cast`, `output`, `display`, `settings`) is a file in `commands/`, a
+  `cast`, `output`, `display`, `settings`, `cli`) is a file in `commands/`, a
   list of `Spec`s: the command's id (`playback.toggle_loop`), title,
   description and keywords,
   what it acts on (the app, a window, every tile in one, or a tile), the
@@ -481,8 +482,9 @@ flowchart LR
   has one, and what it hands back (`returns`), where it hands back
   something: the JSON's shape, which `describe` gives with the rest. A
   query (`Spec::query`: `app.inspect`, `window.ls` and `window.inspect`,
-  `tile.ls` and `tile.inspect`, `output.ls`, `display.ls`, `cast.ls`)
-  only reads: it takes no keys, and running one between two others
+  `tile.ls` and `tile.inspect`, `output.ls`, `display.ls`, `cast.ls`,
+  `settings.ls`, `settings.get`, and `settings.keymap`, every command's
+  keys as they are now) only reads: it takes no keys, and running one between two others
   leaves `api::ran_before` as it was, so a walk back goes on. What they
   say of a window and its tiles is in `workspace::inspect`, and of a
   tile in `player::inspect`: tracks and chapters numbered from 1, the
@@ -565,7 +567,9 @@ flowchart LR
   one running may have started in another folder; URLs go as given. A
   socket no one answers, left by a Plays that crashed, is removed and
   taken. Only a socket is removed: anything else there is an error, and
-  Plays runs without a socket. Tests and smoke runs have none. The
+  Plays runs without a socket. Tests and smoke runs have none, unless
+  `PLAYS_SOCKET` names one, which any build takes in place of its own
+  (the `cli` smoke run does). The
   protocol (`protocol`) is JSON, an object a line. Each request has an id
   and a method: `hello`, `call`, `commands`, `describe`, `subscribe`,
   `unsubscribe` or `hand_over`. Each is answered in order, with its
@@ -587,9 +591,38 @@ flowchart LR
   `client_connected` and `client_left` are told to the app's listeners.
   The socket is removed as Plays quits. `client` is the other end: one
   request at a time, keeping the events that come meanwhile for
-  `next_event`. `connect_or_start`, for the command line, starts Plays
-  when none answers (`start_plays`, apart from the terminal) and waits up
-  to ten seconds for its socket.
+  `next_event`, or `next_event_by` a deadline, a line read in part kept
+  for the next read. `connect_or_start`, for the command line, starts
+  Plays when none answers (`start_plays`, apart from the terminal) and
+  waits up to ten seconds for its socket.
+- `src/cli/`: the command line. `main` asks `cli::wanted` before
+  anything else is set up, so it never starts gpui or FFmpeg: a
+  subcommand, one of its options, `help`, or a word that is no file or
+  folder there (a subcommand mistyped) is the command line's; files,
+  folders and URLs are handed to Plays as before. clap reads it (`args`).
+  A `Session` connects as it first needs Plays (`connect_or_start`, with
+  nothing to start under `--no-autostart`) and runs the API's commands with `-w`
+  and `-t` as their `Target`. `do` reads each `KEY=VALUE` as the
+  command's argument takes it, from the registry compiled in: text as
+  given, the rest as JSON if it reads as JSON; a key given again makes a
+  list. `windows` lists windows with their tiles and runs the window and
+  tile subcommands: those named are found by id first, so closing or
+  moving one doesn't change which window the next number names, and a
+  place beside another counts from where the others are once the one
+  moving has left its own. `events` subscribes and prints each event, a
+  line of `type key=value…` or of JSON; `wait` subscribes before it looks
+  at the tile, so nothing happens unheard in between: a tile that has
+  ended already prints its `ended` at once, and the tile or window closing
+  first, or the time running out, fails the wait. `reference` lists the
+  commands from the registry compiled in, Plays running or not, and
+  writes `docs/commands.md` (`plays actions --markdown`). `show` prints
+  tables, events and results. The exit status is the error's (1 failed,
+  3 not found, 4 unreachable), 2 for a bad command line, clap's or one
+  of its own checks; output closed (`| head`) ends it quietly with 0.
+  Commands it relies on: `tile.focus` puts a tile in front and its window
+  too; `cli.install` links `/usr/local/bin/plays` to the program running,
+  through a link made beside it and renamed over, replacing a link but
+  nothing else, and says what to type with `sudo` where it can't write.
 - `src/app/`: starting the app (`mod.rs`; files and links the system
   opens it with run `app.open`), the shared audio outputs (`audio`,
   above), the keymap (`keymap`: every command's

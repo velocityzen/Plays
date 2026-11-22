@@ -4,6 +4,7 @@ mod api;
 mod app;
 mod assets;
 mod cast;
+mod cli;
 mod files;
 mod hotkeys;
 mod media;
@@ -23,6 +24,10 @@ fn main() {
     let args: Vec<OsString> = std::env::args_os().skip(1).collect();
     #[cfg(feature = "smoke")]
     let (smoke, args) = app::smoke::from_args(args);
+    // The command line asks the Plays running, without a UI of its own.
+    if cli::wanted(&args) {
+        std::process::exit(cli::main(args).into());
+    }
     // Logs the same, keeping the errors for the smoke run to report.
     #[cfg(feature = "smoke")]
     app::smoke::init_logging();

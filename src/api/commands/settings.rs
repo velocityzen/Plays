@@ -10,6 +10,7 @@ use crate::api::args::{Arg, Kind};
 use crate::api::registry::{Args, Outcome, Scope, Spec};
 use crate::cast::Casting;
 use crate::files::Folder;
+use crate::hotkeys;
 use crate::settings::Settings;
 use crate::settings::fields::{self, Field};
 use crate::ui::settings::installed_fonts;
@@ -55,6 +56,18 @@ pub const COMMANDS: &[Spec] = &[
         },
     )
     .keywords(&["preferences", "options", "read"]),
+    Spec::query(
+        "settings.keymap",
+        "List Shortcuts",
+        "List each command keys can run, with the keys that run it now, as Settings → \
+         Hotkeys has them.",
+        Scope::App,
+        "[{command, title, keys, shown}]: each command's id and title, its keys as the \
+         settings file keeps them, and as the menus show them; none for a command with \
+         no keys.",
+        |_, _, cx| Ok(keymap(cx)),
+    )
+    .keywords(&["keys", "hotkeys", "shortcuts", "bindings", "keymap"]),
     Spec::app_with(
         "settings.set",
         "Change Setting",
@@ -117,6 +130,22 @@ pub fn changed(cx: &App) -> Vec<(String, Value)> {
 }
 
 /// What `settings.ls` says.
+/// Each command keys can run, with its keys now.
+fn keymap(cx: &App) -> Value {
+    let hotkeys = &cx.global::<Settings>().hotkeys;
+    hotkeys::commands()
+        .map(|spec| {
+            let keys = hotkeys.keys(spec.id);
+            json!({
+                "command": spec.id,
+                "title": spec.title,
+                "keys": keys,
+                "shown": keys.iter().map(|key| hotkeys::display(key)).collect::<Vec<_>>(),
+            })
+        })
+        .collect()
+}
+
 fn listing(cx: &App) -> Value {
     let settings = cx.global::<Settings>();
     let defaults = Settings::default();

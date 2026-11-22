@@ -50,6 +50,16 @@ pub const COMMANDS: &[Spec] = &[
     )
     .keywords(&["info", "details", "describe", "tracks", "position"]),
     Spec::custom(
+        "tile.focus",
+        "Go to Tile",
+        "Put the tile in front, keys going to it, and bring its window to the front.",
+        Scope::Tile,
+        focus,
+    )
+    .keywords(&["switch", "select", "show", "activate"])
+    // The tile in front is in front already.
+    .needs_target(),
+    Spec::custom(
         "tile.close",
         "Close File",
         "Close the tile's file. The window stays, empty after the last.",
@@ -350,6 +360,19 @@ fn zoom(_: Args, target: &Target, cx: &mut App) -> Outcome {
     let id = Entity::entity_id(&tile);
     window
         .update(cx, |workspace, window, cx| workspace.zoom(id, window, cx))
+        .map_err(|_| closed())?;
+    done()
+}
+
+/// Put the tile in front, from the keyboard, its window too.
+fn focus(_: Args, target: &Target, cx: &mut App) -> Outcome {
+    let (window, tile) = target::tile(target, cx)?;
+    let id = Entity::entity_id(&tile);
+    window
+        .update(cx, |workspace, window, cx| {
+            workspace.bring_tile(id, cx);
+            window.activate_window();
+        })
         .map_err(|_| closed())?;
     done()
 }

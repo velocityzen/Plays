@@ -3,6 +3,7 @@
 mod app;
 mod audio;
 pub mod cast;
+mod cli;
 mod display;
 pub mod output;
 pub mod playback;
@@ -22,7 +23,7 @@ use crate::media::tracks::TrackKind;
 use crate::ui::player::PlayerView;
 
 /// Every namespace's commands.
-pub const ALL: [&[Spec]; 11] = [
+pub const ALL: [&[Spec]; 12] = [
     app::COMMANDS,
     window::COMMANDS,
     tile::COMMANDS,
@@ -34,11 +35,12 @@ pub const ALL: [&[Spec]; 11] = [
     output::COMMANDS,
     display::COMMANDS,
     settings::COMMANDS,
+    cli::COMMANDS,
 ];
 
 /// The namespaces, in the order Settings → Hotkeys lists their commands,
 /// each with its title there.
-pub const NAMESPACES: [(&str, &str); 10] = [
+pub const NAMESPACES: [(&str, &str); 11] = [
     ("playback", "Playback"),
     ("audio", "Audio"),
     ("subtitles", "Subtitles"),
@@ -49,6 +51,7 @@ pub const NAMESPACES: [(&str, &str); 10] = [
     ("output", "Output"),
     ("settings", "Settings"),
     ("app", "Plays"),
+    ("cli", "Command line"),
 ];
 
 /// Done, with nothing to hand back.

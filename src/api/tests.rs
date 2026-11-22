@@ -16,7 +16,7 @@ use crate::ui::theme::layout::WINDOW_SIZE;
 use crate::ui::workspace::Workspace;
 
 /// The namespaces command ids start with.
-const NAMESPACES: [&str; 11] = [
+const NAMESPACES: [&str; 12] = [
     "app",
     "window",
     "tile",
@@ -28,6 +28,7 @@ const NAMESPACES: [&str; 11] = [
     "output",
     "display",
     "settings",
+    "cli",
 ];
 
 #[test]
@@ -104,6 +105,7 @@ fn queries_say_what_they_hand_back_and_take_no_keys() {
             "display.ls",
             "settings.ls",
             "settings.get",
+            "settings.keymap",
         ]
     );
     for spec in registry::all().filter(|spec| spec.query) {

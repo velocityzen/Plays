@@ -17,7 +17,7 @@
 //! (`socket`), only this user's, which runs commands as keys do and tells
 //! events to those who ask for them.
 
-mod args;
+pub mod args;
 pub mod commands;
 mod error;
 pub mod events;
@@ -30,7 +30,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 pub use error::Error;
-pub use registry::{Reach, Spec, all, find};
+pub use registry::{Reach, Scope, Spec, all, find};
 pub use target::{Id, Target, front_window};
 
 use crate::ui::workspace::Workspace;

@@ -176,6 +176,13 @@ GPU-accelerated UI framework.
   so on) too.
 - The menu bar (a toolbar on Linux) has them too.
 
+### Command line
+
+- `plays` in a terminal lists, opens, runs and watches what Plays is
+  doing: its windows and tiles, any command by its id, settings and
+  shortcuts, what changes as it does, and waiting for a file to end. It
+  prints tables or JSON.
+
 ### Settings
 
 - A Settings window for playback, audio, video, subtitles (with a live
@@ -737,6 +744,54 @@ and list them all with what each takes. Reload Settings reads the file
 again after it's been changed by hand, and Show Settings File shows it;
 Copy Version Info and Copy Debug Info copy the version, or what a bug
 report needs; Settings → Hotkeys can give those four keys.
+
+### Command line
+
+`plays` with a subcommand asks the Plays running and prints what it
+answers, starting Plays first if none is running (`--no-autostart` says
+so instead). Without one, `plays FILE…` opens files as before. On macOS,
+the Install Command Line Tool command links `/usr/local/bin/plays` to the
+app; if it can't write there, it says what to type in a terminal
+instead. To run it before then:
+
+```bash
+/Applications/Plays.app/Contents/MacOS/plays do cli.install
+```
+
+```bash
+plays ls                                  # windows, each with its tiles
+plays open ~/Movies/film.mkv              # in the window in front
+plays open --new-window a.mkv b.mkv
+plays -w Kitchen tile ls                  # the window labeled Kitchen
+plays do playback.seek time=90            # any command, by its id
+plays -t 2 do audio.set_volume volume=40  # on the second tile
+plays tile rename 2 Commentary
+plays window move Kitchen --after 1
+plays wait ended -t 1 --timeout 600       # until the first tile ends
+plays events --all --json                 # every change, a JSON line each
+plays settings set autoplay false
+plays keymap                              # the shortcuts as they are now
+plays actions                             # every command, Plays or not
+```
+
+- `-w` names a window and `-t` a tile: by id, label, number (from 1, as
+  ⌘1 to ⌘9 count windows and the grid counts tiles), or the end of an
+  id. Without them, it's the window in front and the tile keys go to.
+- `--json` prints what comes back as JSON, one line an event for
+  `events` and `wait`.
+- `do` takes each argument as `KEY=VALUE`, read as the command takes it:
+  text stays text (`label=1984`), anything else is read as JSON, and a
+  key given again makes a list. `api call` takes them as a JSON object.
+- `wait` prints the event once it comes (one that has ended already has),
+  and fails if the tile or window closes first or `--timeout` runs out.
+- [docs/commands.md](docs/commands.md) describes every command, as
+  `plays actions --markdown` writes it.
+- It exits with 0 when it's done, 1 when Plays couldn't do it, 2 for a
+  bad command line, 3 for nothing by the name given, and 4 when there's
+  no Plays to ask.
+- A word that is neither a subcommand nor a file or folder there is taken
+  for a mistyped subcommand, not handed to Plays.
+- `PLAYS_SOCKET` names another socket to ask at.
 
 ## Limitations
 

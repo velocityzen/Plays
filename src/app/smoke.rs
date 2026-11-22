@@ -12,12 +12,14 @@
 
 use std::ffi::OsString;
 use std::path::PathBuf;
+use std::process::Command;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use gpui::{
     AnyWindowHandle, App, AsyncApp, Entity, Global, Keystroke, Pixels, Size, WindowHandle, px, size,
 };
+use serde_json::Value;
 
 use super::{AudioEngine, Route};
 use crate::api;
@@ -76,10 +78,13 @@ pub enum Scenario {
     FloatOnTop,
     /// ⌘1 and Ctrl+Tab bringing player windows to the front.
     Windows,
+    /// The command line, run as another process, asking this Plays over
+    /// its socket.
+    Cli,
 }
 
 impl Scenario {
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 8] = [
         Self::FirstOpen,
         Self::Several,
         Self::Close,
@@ -87,6 +92,7 @@ impl Scenario {
         Self::StepBack,
         Self::FloatOnTop,
         Self::Windows,
+        Self::Cli,
     ];
 
     pub fn name(self) -> &'static str {
@@ -98,6 +104,7 @@ impl Scenario {
             Self::StepBack => "step-back",
             Self::FloatOnTop => "float-on-top",
             Self::Windows => "windows",
+            Self::Cli => "cli",
         }
     }
 }
@@ -121,7 +128,19 @@ pub fn from_args(args: Vec<OsString>) -> (Option<Scenario>, Vec<OsString>) {
         eprintln!("usage: plays --smoke <{}>", names.join("|"));
         std::process::exit(2);
     };
+    if scenario == Scenario::Cli {
+        // Smoke builds have no socket of their own: this one answers where
+        // the command line's processes, inheriting it, ask.
+        let socket = cli_folder().join("plays.sock");
+        // SAFETY: at start, before any other thread runs.
+        unsafe { std::env::set_var(api::socket::VARIABLE, socket) };
+    }
     (Some(scenario), args.into_iter().skip(2).collect())
+}
+
+/// The `cli` scenario's socket's folder, in the temporary folder.
+fn cli_folder() -> PathBuf {
+    std::env::temp_dir().join(format!("plays-smoke-{}", std::process::id()))
 }
 
 /// Log as `RUST_LOG` says, defaulting to Plays' info, and keep every
@@ -206,6 +225,7 @@ pub fn start(scenario: Scenario, cx: &mut App) {
             Scenario::StepBack => step_back(cx).await,
             Scenario::FloatOnTop => float_on_top(cx).await,
             Scenario::Windows => windows(cx).await,
+            Scenario::Cli => cli(cx).await,
         };
         finish(scenario, started, result)
     })
@@ -215,6 +235,10 @@ pub fn start(scenario: Scenario, cx: &mut App) {
 /// Report how `scenario` went, with any errors logged, and exit.
 fn finish(scenario: Scenario, started: Instant, result: Result<(), String>) -> ! {
     log::logger().flush();
+    if scenario == Scenario::Cli {
+        // Exiting here, the app doesn't remove its socket as it quits.
+        std::fs::remove_dir_all(cli_folder()).ok();
+    }
     let mut failures: Vec<String> = result.err().into_iter().collect();
     failures.extend(
         ERRORS
@@ -439,6 +463,107 @@ async fn windows(cx: &mut AsyncApp) -> Result<(), String> {
     check_route(cx)
 }
 
+/// `plays` in a terminal, a process of its own: opening a file in this
+/// Plays' window, listing it, turning its looping off and waiting for it
+/// to end, which takes playing for real.
+async fn cli(cx: &mut AsyncApp) -> Result<(), String> {
+    let clip = fixture("clip.mp4");
+    let clip = clip.to_str().ok_or("the fixture's path isn't UTF-8")?;
+    succeeds(cx, &["open", clip]).await?;
+    wait_for(cx, "the file the command line opened", |cx| {
+        players(cx).len() == 1
+    })
+    .await?;
+    let tiles = json(&succeeds(cx, &["--json", "tile", "ls"]).await?)?;
+    if tiles[0]["file"] != clip {
+        return Err(format!("plays tile ls listed {tiles}"));
+    }
+
+    succeeds(cx, &["do", "playback.toggle_loop"]).await?;
+    let tile = json(&succeeds(cx, &["--json", "tile", "inspect"]).await?)?;
+    if tile["looping"] != false {
+        return Err(format!("the tile still loops: {tile}"));
+    }
+    let ended = succeeds(cx, &["wait", "ended", "-t", "1", "--timeout", "10"]).await?;
+    if !ended.starts_with("ended window_id=") {
+        return Err(format!("plays wait ended printed {ended:?}"));
+    }
+    let tile = json(&succeeds(cx, &["--json", "tile", "inspect"]).await?)?;
+    if tile["ended"] != true {
+        return Err(format!("the tile hasn't ended: {tile}"));
+    }
+    // Over already: no waiting.
+    let again = succeeds(
+        cx,
+        &["--json", "wait", "ended", "--timeout", "0.5", "-t", "1"],
+    )
+    .await?;
+    if json(&again)?["type"] != "ended" {
+        return Err(format!("waiting again printed {again:?}"));
+    }
+
+    let version = succeeds(cx, &["version"]).await?;
+    let process = format!("process {}", std::process::id());
+    if !version.contains(&process) {
+        return Err(format!("plays version printed {version:?}"));
+    }
+    let (status, _, said) = command_line(cx, &["tile", "inspect", "Attic"]).await?;
+    if status != Some(3) {
+        return Err(format!(
+            "plays tile inspect Attic exited {status:?}: {said}"
+        ));
+    }
+    Ok(())
+}
+
+/// Run `plays ARGS` as another process, never starting a Plays of its
+/// own: its exit status, and what it printed and said was wrong.
+async fn command_line(
+    cx: &AsyncApp,
+    args: &[&str],
+) -> Result<(Option<i32>, String, String), String> {
+    let program = std::env::current_exe().map_err(|err| format!("where Plays is: {err}"))?;
+    let args: Vec<String> = std::iter::once("--no-autostart")
+        .chain(args.iter().copied())
+        .map(str::to_owned)
+        .collect();
+    let shown = format!("plays {}", args.join(" "));
+    let output = cx
+        .background_executor()
+        .spawn(async move { Command::new(program).args(args).output() })
+        .await
+        .map_err(|err| format!("{shown}: {err}"))?;
+    let text = |bytes: Vec<u8>| String::from_utf8_lossy(&bytes).into_owned();
+    Ok((
+        output.status.code(),
+        text(output.stdout),
+        text(output.stderr),
+    ))
+}
+
+/// What `plays ARGS` printed, as long as it succeeded.
+async fn succeeds(cx: &AsyncApp, args: &[&str]) -> Result<String, String> {
+    match command_line(cx, args).await? {
+        (Some(0), out, _) => Ok(out),
+        (status, _, said) => Err(format!(
+            "plays {} exited {status:?}: {}",
+            args.join(" "),
+            said.trim_end()
+        )),
+    }
+}
+
+fn json(text: &str) -> Result<Value, String> {
+    serde_json::from_str(text).map_err(|err| format!("{err}: {text:?}"))
+}
+
+/// A file in `tests/fixtures`.
+fn fixture(file: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures")
+        .join(file)
+}
+
 fn set_float_on_top(cx: &mut AsyncApp, mode: FloatOnTop) -> Result<(), String> {
     cx.update(|cx| Settings::update(cx, false, |s| s.float_on_top = mode))
         .map_err(|_| "the app went away".into())
@@ -488,12 +613,7 @@ fn player_or_settings(cx: &mut App, settings: bool) -> Option<AnyWindowHandle> {
 async fn open(cx: &mut AsyncApp, files: &[&str]) -> Result<(), String> {
     let sources = files
         .iter()
-        .map(|file| {
-            let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("tests/fixtures")
-                .join(file);
-            Source::from_arg(path)
-        })
+        .map(|file| Source::from_arg(fixture(file)))
         .collect();
     cx.update(|cx| {
         workspace(cx)?

@@ -102,7 +102,9 @@ decoding.
 One Plays runs at a time, on macOS and on Linux. With one already
 running, an installed one or another build, `cargo run -- FILE` hands
 `FILE` to it and exits, so quit it first to run your build. Builds with
-the `smoke` feature and tests take no socket, and run beside it.
+the `smoke` feature and tests take no socket, and run beside it, unless
+`PLAYS_SOCKET` names one. The command line (`cargo run -- ls`) asks
+whichever Plays is running, and starts your build if none is.
 
 ### The macOS app
 
@@ -624,6 +626,33 @@ check:
     client. In `server`, a client too far behind cut off.
   - Each test's socket is in a folder of its own in the temporary folder,
     removed as the test ends, pass or fail, even one it left shut.
+- The command line (`cli::tests`), run on a thread of its own against a
+  Plays of the test's own answering on its socket, as a terminal would
+  run it, with what it prints and its exit status:
+  - Which arguments are the command line's (subcommands, their options, a
+    word that is no file) and which are files and URLs for Plays.
+  - Help, the version, and a bad command line, each with what it says
+    and status 2. With no Plays, status 4, Plays started unless
+    `--no-autostart`, and `version` saying none runs without starting one.
+  - `do` with arguments read as the command takes them, and its statuses;
+    `ls`, the window and tile subcommands, `open` (in a new window, by
+    full paths), settings, the keymap and `api`, as tables and JSON.
+    Names given by number are found before anything closes or moves.
+  - `events` printing what other command lines do, and `wait` ending with
+    its event, failing when the tile closes first or the time runs out,
+    and naming a tile that isn't there with status 3. That a tile that has
+    ended has nothing to wait for is a unit test: the test platform's
+    timers don't play a file to its end, so the `cli` smoke run does.
+  - Output closed quietly ending it with 0.
+  - As a process of its own, the test binary again running only
+    `command_line_as_another_process`, otherwise ignored: printing to
+    its own standard output and exiting with the status it says.
+  - `docs/commands.md` as `plays actions --markdown` writes it now:
+    after changing a command, write it again with
+    `cargo run -- actions --markdown > docs/commands.md`.
+  - `cli.install` linking where a terminal finds it, replacing a link
+    but nothing else, and saying what to type where it can't write, each
+    in a folder of its own removed as the test ends.
 
 Unit tests check finding a name among ids, labels, positions and the ends
 of ids (an id first, positions only among those given, several matching
@@ -635,7 +664,8 @@ A command updates the window it acts on, so a test runs one outside that
 window's update: with `TestAppContext::update(cx, |cx| api::run(..))`,
 not `VisualTestContext::update`, which holds its window. Ids are hex, so
 a window number a test means not to be found mustn't be one its window's
-id could end with (`past_the_last`).
+id could end with (`past_the_last`); a name with letters past `f`, such
+as `Attic`, never is.
 
 ### Casting
 
@@ -981,7 +1011,11 @@ names), and the script exits non-zero if any failed:
   with it, in Mission Control too;
 - `windows` opens a second player window, which must come to the front,
   then ⌘1, Ctrl+Tab and Ctrl+Shift+Tab must each bring the one they go to
-  to the front, as the system has it.
+  to the front, as the system has it;
+- `cli` runs `plays`, a process of its own, against the app, over a socket
+  in the temporary folder that `PLAYS_SOCKET` names and the run removes
+  as it finishes: opening a clip, listing it, turning its looping off and
+  waiting for it to end, then waiting again to find it ended already.
 
 Throughout, a window that has fitted its files must be laid out at the
 size it really is, every playing video must show at least 15 of its 25

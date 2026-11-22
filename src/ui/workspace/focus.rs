@@ -67,7 +67,7 @@ impl Workspace {
 
     /// Put the tile `id` in front from the keyboard, with a ring; while
     /// one is maximized, that one is shown instead.
-    fn bring_tile(&mut self, id: EntityId, cx: &mut Context<Self>) {
+    pub fn bring_tile(&mut self, id: EntityId, cx: &mut Context<Self>) {
         if self.maximized.is_some() {
             self.maximized = Some(id);
         }

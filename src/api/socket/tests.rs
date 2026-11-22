@@ -15,7 +15,7 @@ use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use gpui::{TestAppContext, VisualTestContext, WindowHandle};
 use serde_json::{Value, json};
@@ -32,7 +32,7 @@ use crate::ui::workspace::Workspace;
 /// A socket of a test's own, in a folder not made yet, and removed as the
 /// test ends, pass or fail. Short: a socket's path has room for about a
 /// hundred bytes.
-fn socket(name: &str) -> PathBuf {
+pub(crate) fn socket(name: &str) -> PathBuf {
     let folder = std::env::temp_dir().join(format!("plays-{name}-{}", std::process::id()));
     fs::remove_dir_all(&folder).ok();
     MADE.with(|made| made.0.borrow_mut().push(folder.clone()));
@@ -81,7 +81,7 @@ fn a_tests_folders_are_removed_as_it_ends() {
 
 /// The app, with its first window in front, answering on a socket of its
 /// own.
-fn serving(
+pub(crate) fn serving(
     name: &str,
     cx: &mut TestAppContext,
 ) -> (PathBuf, WindowHandle<Workspace>, VisualTestContext) {
@@ -96,7 +96,7 @@ fn serving(
 
 /// Run `talk` on a thread of its own, as another process would, while
 /// the app answers it; what it came to.
-fn talk<T: Send + 'static>(
+pub(crate) fn talk<T: Send + 'static>(
     cx: &mut TestAppContext,
     talk: impl FnOnce() -> T + Send + 'static,
 ) -> T {
@@ -245,6 +245,17 @@ fn tests_run_alone_without_a_socket() {
 }
 
 #[test]
+fn a_socket_named_in_the_environment_is_taken_there() {
+    let named = |name: &str| path_named(Some(name.into()));
+    assert_eq!(
+        named("/run/other/plays.sock"),
+        Some("/run/other/plays.sock".into())
+    );
+    assert_eq!(named(""), None, "an empty one names none");
+    assert_eq!(path_named(None), None);
+}
+
+#[test]
 fn two_plays_starting_at_once_take_the_socket_in_turn() {
     let path = socket("turns");
     fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -301,6 +312,38 @@ fn a_client_passes_over_other_answers_and_keeps_the_events_that_come_first() {
 }
 
 #[test]
+fn an_event_half_read_by_the_time_given_is_read_whole_the_next_time() {
+    let path = socket("halves");
+    let Ok(Claimed::Ours(listener)) = claim(&path) else {
+        panic!("taking the socket")
+    };
+    let (go_on, told) = mpsc::channel();
+    let plays = thread::spawn(move || {
+        let (stream, _) = listener.listener.accept().unwrap();
+        let mut asked = String::new();
+        BufReader::new(&stream).read_line(&mut asked).unwrap();
+        writeln!(&stream, r#"{{"id": 1, "result": "hello"}}"#).unwrap();
+        write!(&stream, r#"{{"type": "ended", "pay"#).unwrap();
+        told.recv().unwrap();
+        writeln!(&stream, r#"load": {{"tile_id": "1"}}}}"#).unwrap();
+    });
+    let mut client = Client::connect(&path).unwrap();
+    client.request(Ask::Hello).unwrap();
+    let soon = Instant::now() + Duration::from_millis(100);
+    assert_eq!(
+        client.next_event_by(Some(soon)).unwrap(),
+        None,
+        "half by then"
+    );
+    go_on.send(()).unwrap();
+    assert_eq!(
+        client.next_event_by(None).unwrap(),
+        Some(("ended".into(), json!({"tile_id": "1"})))
+    );
+    plays.join().unwrap();
+}
+
+#[test]
 fn a_plays_going_without_an_answer_is_unreachable() {
     let path = socket("gone");
     let plays = answering(&path, &[]);
@@ -325,7 +368,7 @@ fn a_call_comes_back_with_its_result_or_why_not(cx: &mut TestAppContext) {
         let wrong = [
             client.call("window.dance", Value::Null, Target::default()),
             client.call("window.rename", json!({"label": 7}), Target::default()),
-            client.call("window.focus", Value::Null, in_window("9")),
+            client.call("window.focus", Value::Null, in_window("Attic")),
         ]
         .map(|failed| said(failed.unwrap_err()));
         (hello, listed.unwrap(), renamed.unwrap(), wrong)
@@ -347,7 +390,7 @@ fn a_call_comes_back_with_its_result_or_why_not(cx: &mut TestAppContext) {
     assert_eq!(none, (1, "no command window.dance".to_owned()));
     assert_eq!(bad.0, 2, "{}", bad.1);
     assert!(bad.1.starts_with("window.rename: "), "{}", bad.1);
-    assert_eq!(missing, (3, "no window 9".to_owned()));
+    assert_eq!(missing, (3, "no window Attic".to_owned()));
     assert_eq!(
         cx.app_activations(),
         activations,
@@ -720,11 +763,11 @@ fn a_subscriber_to_one_window_hears_only_its_events(cx: &mut TestAppContext) {
         let mut client = Client::connect(&path).unwrap();
         said(
             client
-                .subscribe(Heard::Window("9".into()), false)
+                .subscribe(Heard::Window("Attic".into()), false)
                 .unwrap_err(),
         )
     });
-    assert_eq!(none, (3, "no window 9".to_owned()));
+    assert_eq!(none, (3, "no window Attic".to_owned()));
 }
 
 #[gpui::test]

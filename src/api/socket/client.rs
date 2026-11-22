@@ -79,6 +79,9 @@ pub struct Client {
     /// Events that came while waiting for an answer, by type, with their
     /// payloads.
     events: VecDeque<(String, Value)>,
+    /// What's been read of a line not read whole yet, as waiting for it
+    /// ran out.
+    partial: Vec<u8>,
 }
 
 impl Client {
@@ -90,6 +93,7 @@ impl Client {
             writer,
             asked: 0,
             events: VecDeque::new(),
+            partial: Vec::new(),
         })
     }
 
@@ -121,11 +125,25 @@ impl Client {
         }
     }
 
+    /// What Plays is: its version, its process id, and this client's
+    /// number.
+    pub fn hello(&mut self) -> Result<Value, Failure> {
+        self.request(Ask::Hello)
+    }
+
+    /// Every command, described.
+    pub fn commands(&mut self) -> Result<Value, Failure> {
+        self.request(Ask::Commands)
+    }
+
+    /// The command `command`, described.
+    pub fn describe(&mut self, command: &str) -> Result<Value, Failure> {
+        self.request(Ask::Describe {
+            command: command.to_owned(),
+        })
+    }
+
     /// Run `command`, with `args` (null for none), on what `target` names.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "the command line's, once there is one")
-    )]
     pub fn call(&mut self, command: &str, args: Value, target: Target) -> Result<Value, Failure> {
         self.request(Ask::Call {
             command: command.to_owned(),
@@ -135,10 +153,6 @@ impl Client {
     }
 
     /// Hear `heard`'s events from now on, positions too with `positions`.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "the command line's, once there is one")
-    )]
     pub fn subscribe(&mut self, heard: Heard, positions: bool) -> Result<Value, Failure> {
         self.request(Ask::Subscribe {
             scope: heard,
@@ -148,18 +162,34 @@ impl Client {
 
     /// The next event heard, by type, with its payload, waiting for it as
     /// long as it takes.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "the command line's, once there is one")
-    )]
     pub fn next_event(&mut self) -> Result<(String, Value), Failure> {
-        if let Some(event) = self.events.pop_front() {
-            return Ok(event);
-        }
-        self.wait(None);
         loop {
-            if let Incoming::Event { kind, payload } = self.next()? {
-                return Ok((kind, payload));
+            if let Some(event) = self.next_event_by(None)? {
+                return Ok(event);
+            }
+        }
+    }
+
+    /// The next event heard, waiting for it until `by`, if given; none if
+    /// none came by then.
+    pub fn next_event_by(
+        &mut self,
+        by: Option<Instant>,
+    ) -> Result<Option<(String, Value)>, Failure> {
+        loop {
+            if let Some(event) = self.events.pop_front() {
+                return Ok(Some(event));
+            }
+            let left = by.map(|by| by.saturating_duration_since(Instant::now()));
+            if left.is_some_and(|left| left.is_zero()) {
+                return Ok(None);
+            }
+            self.wait(left);
+            match self.next() {
+                Ok(Incoming::Event { kind, payload }) => return Ok(Some((kind, payload))),
+                Ok(Incoming::Answer { id, .. }) => log::debug!("an answer to no request: {id}"),
+                Err(Failure::Unreachable(err)) if timed_out(&err) => return Ok(None),
+                Err(failure) => return Err(failure),
             }
         }
     }
@@ -179,14 +209,25 @@ impl Client {
         self.reader.get_ref().set_read_timeout(wait).ok();
     }
 
-    /// The next line Plays sends, read.
+    /// The next line Plays sends, read. What's read of it before waiting
+    /// for it runs out is kept for the next try.
     fn next(&mut self) -> Result<Incoming, Failure> {
-        let mut line = String::new();
-        if self.reader.read_line(&mut line)? == 0 {
-            return Err(Failure::Unreachable(io::ErrorKind::UnexpectedEof.into()));
+        self.reader.read_until(b'\n', &mut self.partial)?;
+        if self.partial.last() != Some(&b'\n') {
+            let went = io::Error::new(io::ErrorKind::UnexpectedEof, "it went");
+            return Err(Failure::Unreachable(went));
         }
-        Incoming::read(&line).map_err(Failure::BadRequest)
+        let line = std::mem::take(&mut self.partial);
+        Incoming::read(&String::from_utf8_lossy(&line)).map_err(Failure::BadRequest)
     }
+}
+
+/// Whether `err` says waiting for Plays ran out.
+fn timed_out(err: &io::Error) -> bool {
+    matches!(
+        err.kind(),
+        io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
+    )
 }
 
 /// Hand `args`, the files, folders and URLs a Plays was started with, to
@@ -200,7 +241,7 @@ pub fn hand_over(path: &Path, args: &[OsString]) -> Result<(), Failure> {
 
 /// What opens `arg` in a Plays that may have started elsewhere: a URL as
 /// given, which it opens or says why it can't, or a file by its full path.
-fn address(arg: &OsStr) -> String {
+pub fn address(arg: &OsStr) -> String {
     let text = arg.to_string_lossy();
     if text.contains("://") {
         return text.into_owned();
@@ -215,10 +256,6 @@ fn address(arg: &OsStr) -> String {
 /// Connect to the Plays answering at `path`; with none answering, start
 /// one with `start`, if given, and wait for it to answer, for at most
 /// `START_WAIT`.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "the command line's, once there is one")
-)]
 pub fn connect_or_start(
     path: &Path,
     start: Option<&dyn Fn() -> io::Result<()>>,
@@ -247,11 +284,11 @@ pub fn connect_or_start(
 }
 
 /// Start Plays, this program, apart from this process: it outlives it,
-/// out of the terminal's way, its output going nowhere. Not in tests,
-/// which would start themselves.
-#[expect(dead_code, reason = "the command line's, once there is one")]
+/// out of the terminal's way, its output going nowhere. By its own path,
+/// not the link a terminal ran it by, so on macOS it starts as the app
+/// it's in. Not in tests, which would start themselves.
 pub fn start_plays() -> io::Result<()> {
-    Command::new(std::env::current_exe()?)
+    Command::new(std::env::current_exe()?.canonicalize()?)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
