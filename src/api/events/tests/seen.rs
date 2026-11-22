@@ -8,6 +8,7 @@ fn tile(id: Id) -> TileSeen {
     TileSeen {
         id,
         label: None,
+        title: "clip.mp4".into(),
         opening: 0,
         opened: None,
         failed: None,
@@ -42,6 +43,7 @@ fn window(id: Id, tiles: Vec<TileSeen>) -> WindowSeen {
     WindowSeen {
         id,
         label: None,
+        title: "Plays".into(),
         full_screen: false,
         active: tiles.first().map(|tile| tile.id),
         maximized: None,
@@ -58,6 +60,15 @@ fn app(windows: Vec<WindowSeen>) -> Seen {
     }
 }
 
+/// `fields` with `more`.
+fn with(fields: &Value, more: Value) -> Value {
+    let mut fields = fields.clone();
+    if let (Value::Object(fields), Value::Object(more)) = (&mut fields, more) {
+        fields.extend(more);
+    }
+    fields
+}
+
 fn kinds(events: &[Event]) -> Vec<&str> {
     events.iter().map(|event| event.kind).collect()
 }
@@ -71,15 +82,16 @@ fn tile_changes(old: &TileSeen, new: &TileSeen) -> Vec<Event> {
     )
 }
 
-/// What `events` say, without the ids.
+/// What `events` say, without the ids and titles.
 fn said(events: &[Event]) -> Vec<(&str, Value)> {
     events
         .iter()
         .map(|event| {
             let mut payload = event.payload.clone();
             if let Value::Object(fields) = &mut payload {
-                fields.remove("window_id");
-                fields.remove("tile_id");
+                for name in ["window_id", "window_title", "tile_id", "tile_title"] {
+                    fields.remove(name);
+                }
             }
             (event.kind, payload)
         })
@@ -103,23 +115,33 @@ fn windows_and_tiles_are_told_as_they_open_and_close_once_each() {
             "active_window_changed",
         ]
     );
+    // Each named by its id and title.
+    let (w, t) = (w.to_string(), t.to_string());
     assert_eq!(
         events[0].payload,
-        json!({"window_id": w.to_string(), "label": null})
+        json!({"window_id": w, "window_title": "Plays", "label": null})
     );
-    assert_eq!(
-        events[1].payload,
-        json!({"window_id": w.to_string(), "tile_id": t.to_string(), "label": null})
-    );
+    let tile_ids = json!({
+        "window_id": w,
+        "window_title": "Plays",
+        "tile_id": t,
+        "tile_title": "clip.mp4",
+    });
+    assert_eq!(events[1].payload, with(&tile_ids, json!({"label": null})));
     assert_eq!(
         events[2].payload,
-        json!({"window_id": w.to_string(), "tiles": [t.to_string()], "maximized": null})
+        json!({
+            "window_id": w,
+            "window_title": "Plays",
+            "tiles": [t],
+            "maximized": null,
+        })
     );
+    assert_eq!(events[3].payload, tile_ids, "the tile keys go to");
     assert_eq!(
-        events[3].payload,
-        json!({"window_id": w.to_string(), "tile_id": t.to_string()})
+        events[4].payload,
+        json!({"window_id": w, "window_title": "Plays"})
     );
-    assert_eq!(events[4].payload, json!({"window_id": w.to_string()}));
     assert!(changes(&one, &one).is_empty(), "nothing told twice");
 
     let events = changes(&one, &none);
@@ -127,7 +149,15 @@ fn windows_and_tiles_are_told_as_they_open_and_close_once_each() {
         kinds(&events),
         ["tile_closed", "window_closed", "active_window_changed"]
     );
-    assert_eq!(events[2].payload, json!({"window_id": null}));
+    assert_eq!(events[0].payload, tile_ids, "as they were");
+    assert_eq!(
+        events[1].payload,
+        json!({"window_id": w, "window_title": "Plays"})
+    );
+    assert_eq!(
+        events[2].payload,
+        json!({"window_id": null, "window_title": null})
+    );
 }
 
 #[test]
@@ -137,14 +167,17 @@ fn labels_full_screen_the_layout_and_the_tile_keys_go_to_are_told_as_they_change
     let mut after = before.clone();
     let changed = &mut after.windows[0];
     changed.label = Some("news".into());
+    changed.title = "news".into();
     changed.full_screen = true;
     changed.tiles[1].label = Some("left".into());
+    changed.tiles[1].title = "left".into();
     changed.tiles.swap(0, 1);
     changed.maximized = Some(u);
     changed.active = Some(u);
 
+    let events = changes(&before, &after);
     assert_eq!(
-        said(&changes(&before, &after)),
+        said(&events),
         [
             ("window_label_changed", json!({"label": "news"})),
             ("full_screen_changed", json!({"full_screen": true})),
@@ -160,20 +193,71 @@ fn labels_full_screen_the_layout_and_the_tile_keys_go_to_are_told_as_they_change
             ("tile_label_changed", json!({"label": "left"})),
         ]
     );
+    // Each by its title as it now is.
+    assert!(
+        events
+            .iter()
+            .all(|event| event.payload["window_title"] == "news"),
+        "{events:?}"
+    );
+    assert_eq!(
+        events[3].payload["tile_title"], "left",
+        "the tile keys go to"
+    );
+    assert_eq!(events[4].payload["tile_title"], "left");
     assert!(changes(&after, &after).is_empty());
+}
+
+#[test]
+fn the_window_in_front_and_the_tile_keys_go_to_are_named_by_their_titles() {
+    let (w, x, t, u) = (Id::next(), Id::next(), Id::next(), Id::next());
+    let kitchen = WindowSeen {
+        title: "Kitchen".into(),
+        ..window(x, Vec::new())
+    };
+    let before = app(vec![window(w, vec![tile(t), tile(u)]), kitchen]);
+    let mut after = before.clone();
+    after.front = Some(x);
+    let changed = &mut after.windows[0];
+    changed.tiles[1].label = Some("left".into());
+    changed.tiles[1].title = "left".into();
+    changed.active = Some(u);
+
+    let events = changes(&before, &after);
+    let told = |kind| {
+        let event = events.iter().find(|event| event.kind == kind);
+        event.map(|event| event.payload.clone())
+    };
+    assert_eq!(
+        told("active_tile_changed"),
+        Some(json!({
+            "window_id": w.to_string(),
+            "window_title": "Plays",
+            "tile_id": u.to_string(),
+            "tile_title": "left",
+        }))
+    );
+    assert_eq!(
+        told("active_window_changed"),
+        Some(json!({"window_id": x.to_string(), "window_title": "Kitchen"}))
+    );
 }
 
 #[test]
 fn a_tile_moved_to_another_window_is_told_to_both() {
     let (w, x) = (Id::next(), Id::next());
     let (t, u, v) = (Id::next(), Id::next(), Id::next());
+    let kitchen = |tiles| WindowSeen {
+        title: "Kitchen".into(),
+        ..window(x, tiles)
+    };
     let before = app(vec![
         window(w, vec![tile(t), opened(tile(u))]),
-        window(x, vec![tile(v)]),
+        kitchen(vec![tile(v)]),
     ]);
     let after = app(vec![
         window(w, vec![tile(t)]),
-        window(x, vec![tile(v), opened(tile(u))]),
+        kitchen(vec![tile(v), opened(tile(u))]),
     ]);
 
     let events = changes(&before, &after);
@@ -191,15 +275,18 @@ fn a_tile_moved_to_another_window_is_told_to_both() {
         moved.payload,
         json!({
             "window_id": x.to_string(),
+            "window_title": "Kitchen",
             "tile_id": u.to_string(),
+            "tile_title": "clip.mp4",
             "from_window_id": w.to_string(),
+            "from_window_title": "Plays",
         })
     );
     assert!(moved.heard_in(Scope::Window(w)) && moved.heard_in(Scope::Window(x)));
     assert!(!moved.heard_in(Scope::App));
 
     // Its window closing as it goes, the rest close with it.
-    let gone = app(vec![window(x, vec![tile(v), opened(tile(u)), tile(t)])]);
+    let gone = app(vec![kitchen(vec![tile(v), opened(tile(u)), tile(t)])]);
     let events = changes(&after, &gone);
     assert_eq!(
         kinds(&events),
@@ -212,7 +299,7 @@ fn a_tile_moved_to_another_window_is_told_to_both() {
         "{:?}",
         said(&events)
     );
-    let left = app(vec![window(x, vec![tile(v), opened(tile(u))])]);
+    let left = app(vec![kitchen(vec![tile(v), opened(tile(u))])]);
     assert_eq!(
         kinds(&changes(&after, &left)),
         ["tile_closed", "window_closed", "active_window_changed"],

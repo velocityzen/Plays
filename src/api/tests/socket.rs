@@ -853,7 +853,7 @@ fn a_subscriber_to_one_window_hears_only_its_events(cx: &mut TestAppContext) {
         hearing.join().unwrap(),
         [(
             "window_label_changed".into(),
-            json!({"window_id": window_id(first, &cx), "label": "One"})
+            json!({"window_id": window_id(first, &cx), "window_title": "One", "label": "One"})
         )]
     );
     assert_ne!(window_id(second, &cx), window_id(first, &cx));

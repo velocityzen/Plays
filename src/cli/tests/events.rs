@@ -11,6 +11,9 @@ fn tile(state: Value) -> Watched {
 #[test]
 fn a_tile_that_has_ended_has_nothing_to_wait_for() {
     let ended = tile(json!({
+        "label": null,
+        "title": "clip.mp4",
+        "window_title": "Kitchen",
         "ended": true,
         "position": 12.5,
         "duration": 12.5,
@@ -20,12 +23,21 @@ fn a_tile_that_has_ended_has_nothing_to_wait_for() {
         ended.already("ended"),
         Some(json!({
             "window_id": "aaaa1111",
+            "window_title": "Kitchen",
             "tile_id": "bbbb2222",
+            "tile_title": "clip.mp4",
             "position": 1.0,
             "time": 12.5,
             "frame": 300,
         })),
         "as its ended event said"
+    );
+    let mut labeled = ended.state.clone();
+    labeled["label"] = json!("left");
+    assert_eq!(
+        tile(labeled).already("ended").unwrap()["tile_title"],
+        "left",
+        "its label, as its header shows"
     );
     assert_eq!(ended.already("paused"), None, "only its ending");
     let playing = tile(json!({"ended": false, "position": 3.0}));

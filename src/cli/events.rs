@@ -118,7 +118,8 @@ fn watched(session: &mut Session) -> Result<Watched, Stop> {
 
 impl Watched {
     /// The event of type `kind` the tile watched had before the wait
-    /// began, as it would have been heard: only its ending, as it ended.
+    /// began, as it would have been heard: only its ending, as it ended,
+    /// the tile titled by its label, or else what it plays.
     fn already(&self, kind: &str) -> Option<Value> {
         let state = &self.state;
         (kind == "ended" && state["ended"] == true).then(|| {
@@ -127,9 +128,15 @@ impl Watched {
                 state["duration"].as_f64(),
                 state["frame_rate"].as_f64(),
             );
+            let title = match &state["label"] {
+                Value::Null => &state["title"],
+                label => label,
+            };
             json!({
                 "window_id": self.window,
+                "window_title": state["window_title"],
                 "tile_id": self.tile,
+                "tile_title": title,
                 "position": at["position"],
                 "time": at["time"],
                 "frame": at["frame"],

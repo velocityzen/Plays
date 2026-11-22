@@ -24,9 +24,14 @@ impl Workspace {
             return Err(format!("another window is called {label}"));
         }
         self.label = (!label.is_empty()).then(|| label.to_owned());
-        window.set_window_title(self.label.as_deref().unwrap_or(TITLE));
+        window.set_window_title(self.title());
         cx.notify();
         Ok(())
+    }
+
+    /// What its title bar shows: its label, or else the app's name.
+    pub fn title(&self) -> &str {
+        self.label.as_deref().unwrap_or(TITLE)
     }
 
     /// Ask what to call the window, in a sheet over it, holding its label.

@@ -35,6 +35,8 @@ pub struct Seen {
 pub struct WindowSeen {
     pub id: Id,
     pub label: Option<String>,
+    /// What its title bar shows: its label, or else the app's name.
+    pub title: String,
     pub full_screen: bool,
     /// Its tiles, in the order its grid shows them.
     pub tiles: Vec<TileSeen>,
@@ -49,6 +51,9 @@ pub struct WindowSeen {
 pub struct TileSeen {
     pub id: Id,
     pub label: Option<String>,
+    /// What its header shows: its label, or else the title of what it
+    /// plays.
+    pub title: String,
     /// Counts the files opened in it, to tell one opened in place of
     /// another.
     pub opening: u64,
@@ -127,10 +132,15 @@ pub fn changes(old: &Seen, new: &Seen) -> Vec<Event> {
         ));
     }
     // Where each tile was, to tell one moved from one closed.
-    let was: HashMap<Id, (Id, &TileSeen)> = old
+    let was: HashMap<Id, (&WindowSeen, &TileSeen)> = old
         .windows
         .iter()
-        .flat_map(|window| window.tiles.iter().map(|tile| (tile.id, (window.id, tile))))
+        .flat_map(|window| {
+            window
+                .tiles
+                .iter()
+                .map(move |tile| (tile.id, (window, tile)))
+        })
         .collect();
     let is: HashSet<Id> = new
         .windows
@@ -142,7 +152,7 @@ pub fn changes(old: &Seen, new: &Seen) -> Vec<Event> {
         if before(window.id).is_none() {
             events.push(Event::of_window(
                 "window_created",
-                window.id,
+                window,
                 json!({"label": window.label}),
             ));
         }
@@ -155,14 +165,21 @@ pub fn changes(old: &Seen, new: &Seen) -> Vec<Event> {
             continue;
         }
         for tile in window.tiles.iter().filter(|tile| !is.contains(&tile.id)) {
-            events.push(Event::tile("tile_closed", window.id, tile.id, json!({})));
+            events.push(Event::tile("tile_closed", window, tile, json!({})));
         }
-        events.push(Event::of_window("window_closed", window.id, json!({})));
+        events.push(Event::of_window("window_closed", window, json!({})));
     }
     if old.front != new.front {
+        let front = new
+            .windows
+            .iter()
+            .find(|window| Some(window.id) == new.front);
         let mut event = Event::app(
             "active_window_changed",
-            json!({"window_id": new.front.map(|id| id.to_string())}),
+            json!({
+                "window_id": new.front.map(|id| id.to_string()),
+                "window_title": front.map(|window| &window.title),
+            }),
         );
         event.reach.windows.extend(new.front);
         events.push(event);
@@ -177,32 +194,31 @@ pub fn changes(old: &Seen, new: &Seen) -> Vec<Event> {
 fn window_changes(
     before: Option<&WindowSeen>,
     window: &WindowSeen,
-    was: &HashMap<Id, (Id, &TileSeen)>,
+    was: &HashMap<Id, (&WindowSeen, &TileSeen)>,
     is: &HashSet<Id>,
     events: &mut Vec<Event>,
 ) {
     // One just opened is as its `window_created` said.
     let opened = WindowSeen {
-        id: window.id,
-        label: window.label.clone(),
         full_screen: false,
         tiles: Vec::new(),
         maximized: None,
         active: None,
+        ..window.clone()
     };
     let before = before.unwrap_or(&opened);
     let id = window.id;
     if before.label != window.label {
         events.push(Event::of_window(
             "window_label_changed",
-            id,
+            window,
             json!({"label": window.label}),
         ));
     }
     if before.full_screen != window.full_screen {
         events.push(Event::window(
             "full_screen_changed",
-            id,
+            window,
             json!({"full_screen": window.full_screen}),
         ));
     }
@@ -212,21 +228,24 @@ fn window_changes(
             None => {
                 events.push(Event::tile(
                     "tile_created",
-                    id,
-                    tile.id,
+                    window,
+                    tile,
                     json!({"label": tile.label}),
                 ));
                 None
             }
             Some(&(from, old)) => {
-                if from != id {
+                if from.id != id {
                     let mut moved = Event::tile(
                         "tile_moved",
-                        id,
-                        tile.id,
-                        json!({"from_window_id": from.to_string()}),
+                        window,
+                        tile,
+                        json!({
+                            "from_window_id": from.id.to_string(),
+                            "from_window_title": from.title,
+                        }),
                     );
-                    moved.reach.windows.push(from);
+                    moved.reach.windows.push(from.id);
                     events.push(moved);
                 }
                 Some(old)
@@ -235,7 +254,7 @@ fn window_changes(
         olds.push(old);
     }
     for tile in before.tiles.iter().filter(|tile| !is.contains(&tile.id)) {
-        events.push(Event::tile("tile_closed", id, tile.id, json!({})));
+        events.push(Event::tile("tile_closed", window, tile, json!({})));
     }
     let ids = |window: &WindowSeen| window.tiles.iter().map(|tile| tile.id).collect::<Vec<_>>();
     let tiles = ids(window);
@@ -243,7 +262,7 @@ fn window_changes(
         let tiles: Vec<String> = tiles.iter().map(Id::to_string).collect();
         events.push(Event::window(
             "window_layout_changed",
-            id,
+            window,
             json!({
                 "tiles": tiles,
                 "maximized": window.maximized.map(|id| id.to_string()),
@@ -251,22 +270,34 @@ fn window_changes(
         ));
     }
     if before.active != window.active {
+        let active = window
+            .tiles
+            .iter()
+            .find(|tile| Some(tile.id) == window.active);
         events.push(Event::window(
             "active_tile_changed",
-            id,
-            json!({"tile_id": window.active.map(|id| id.to_string())}),
+            window,
+            json!({
+                "tile_id": window.active.map(|id| id.to_string()),
+                "tile_title": active.map(|tile| &tile.title),
+            }),
         ));
     }
     for (tile, old) in window.tiles.iter().zip(olds) {
-        tile_changes(old, tile, id, events);
+        tile_changes(old, tile, window, events);
     }
 }
 
 /// What changed in `tile`, in `window`, `old` as it was (none if it's
 /// new): its label, the device it casts to, the file opening or failing,
 /// then how that file plays.
-fn tile_changes(old: Option<&TileSeen>, tile: &TileSeen, window: Id, events: &mut Vec<Event>) {
-    let mut tell = |kind, payload| events.push(Event::tile(kind, window, tile.id, payload));
+fn tile_changes(
+    old: Option<&TileSeen>,
+    tile: &TileSeen,
+    window: &WindowSeen,
+    events: &mut Vec<Event>,
+) {
+    let mut tell = |kind, payload| events.push(Event::tile(kind, window, tile, payload));
     if let Some(old) = old
         && old.label != tile.label
     {

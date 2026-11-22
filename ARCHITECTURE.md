@@ -499,7 +499,8 @@ flowchart LR
   `settings.ls`, `settings.get`, and `settings.keymap`, every command's
   keys as they are now) only reads: it takes no keys, and running one between two others
   leaves `api::ran_before` as it was, so a walk back goes on. What they
-  say of a window and its tiles is in `workspace::inspect`, and of a
+  say of a window and its tiles is in `workspace::inspect` (a window's
+  title as its title bar shows it, and a tile's window's), and of a
   tile in `player::inspect`: tracks and chapters numbered from 1, the
   volume in percent, the delays to the millisecond, the video's frame
   rate, and a stream's URL as the tile shows it, without its user,
@@ -546,8 +547,12 @@ flowchart LR
   to; and how each tile plays: opened, or not, playing, paused, ended,
   sought, its volume, tracks and chapter, casting and Picture in
   Picture), or all of them (`Scope`). A payload about a window or a tile
-  starts with its `window_id`, and `tile_id`; readers ignore what they
-  don't know. Where each tile is goes only to those who ask, at most once
+  starts with its `window_id` and `window_title`, and `tile_id` and
+  `tile_title`: the title its title bar or header shows (`WindowSeen` and
+  `TileSeen` keep it), a window's its label or else Plays
+  (`Workspace::title`), a tile's its label or else what it plays; one
+  closed is named as it was. Readers ignore what they don't know. Where
+  each tile is goes only to those who ask, at most once
   a second (`POSITION_EVERY`), and only once it has moved. Each event of
   how a file plays says where it is as `seen::playhead` does: how far
   through it is from 0 to 1, the time, and the frame showing, counted at

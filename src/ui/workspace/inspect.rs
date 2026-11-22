@@ -10,13 +10,14 @@ use crate::ui::displays;
 use crate::ui::player::PlayerView;
 
 impl Workspace {
-    /// What `window.ls` says of it: its id and label, its `number` (from
-    /// 1, as ⌘1 to ⌘9 go to it), whether it's in `front`, and how many
-    /// tiles it has.
+    /// What `window.ls` says of it: its id, label and title, its `number`
+    /// (from 1, as ⌘1 to ⌘9 go to it), whether it's in `front`, and how
+    /// many tiles it has.
     pub fn summary(&self, number: usize, front: bool) -> Map<String, Value> {
         let mut summary = Map::new();
         summary.insert("id".into(), json!(self.id().to_string()));
         summary.insert("label".into(), json!(self.label));
+        summary.insert("title".into(), json!(self.title()));
         summary.insert("number".into(), json!(number));
         summary.insert("front".into(), json!(front));
         summary.insert("tiles".into(), json!(self.tiles.len()));
@@ -85,6 +86,7 @@ impl Workspace {
         WindowSeen {
             id: self.id(),
             label: self.label.clone(),
+            title: self.title().to_owned(),
             full_screen: window.is_fullscreen(),
             tiles: self
                 .tiles
@@ -97,12 +99,13 @@ impl Workspace {
     }
 
     /// All `tile.inspect` says of `tile`, as `tile.ls` does and more, with
-    /// its window's id; none if it isn't here.
+    /// its window's id and title; none if it isn't here.
     pub fn inspect_tile(&self, tile: &Entity<PlayerView>, cx: &App) -> Option<Value> {
         let at = self.tiles.iter().position(|t| t.view == *tile)?;
         let front = self.active_view().as_ref() == Some(tile);
         let mut inspected = placed(tile.read(cx).inspect(), at, front);
         inspected.insert("window".into(), json!(self.id().to_string()));
+        inspected.insert("window_title".into(), json!(self.title()));
         Some(Value::Object(inspected))
     }
 }

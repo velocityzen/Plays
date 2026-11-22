@@ -1,7 +1,8 @@
 //! Events: what changes in the app, its windows and their tiles, told to
 //! whoever listens (`listen`), as the command line does through the
 //! socket. Each is a JSON object, `{type, payload}`; the payload of one
-//! about a window or a tile has its `window_id`, and `tile_id`.
+//! about a window or a tile has its `window_id` and `window_title`, and
+//! `tile_id` and `tile_title`: each id with the title it shows.
 //!
 //! A listener hears the app's events (`Scope::App`: windows opening,
 //! closing, renamed and coming to the front, outputs, devices, settings,
@@ -78,33 +79,33 @@ impl Event {
     }
 
     /// One of `window`'s.
-    fn window(kind: &'static str, window: Id, payload: Value) -> Self {
+    fn window(kind: &'static str, window: &WindowSeen, payload: Value) -> Self {
         Self {
             kind,
             payload: with_ids(payload, window, None),
             reach: Reach {
                 app: false,
-                windows: vec![window],
+                windows: vec![window.id],
             },
         }
     }
 
     /// One of `window`'s that the app's listeners hear too: its opening,
     /// closing and label, as the windows are the app's.
-    fn of_window(kind: &'static str, window: Id, payload: Value) -> Self {
+    fn of_window(kind: &'static str, window: &WindowSeen, payload: Value) -> Self {
         let mut event = Self::window(kind, window, payload);
         event.reach.app = true;
         event
     }
 
     /// One of `tile`'s, in `window`.
-    fn tile(kind: &'static str, window: Id, tile: Id, payload: Value) -> Self {
+    fn tile(kind: &'static str, window: &WindowSeen, tile: &TileSeen, payload: Value) -> Self {
         Self {
             kind,
             payload: with_ids(payload, window, Some(tile)),
             reach: Reach {
                 app: false,
-                windows: vec![window],
+                windows: vec![window.id],
             },
         }
     }
@@ -119,12 +120,14 @@ impl Event {
     }
 }
 
-/// `payload` with `window`'s id, and `tile`'s, put first.
-fn with_ids(payload: Value, window: Id, tile: Option<Id>) -> Value {
+/// `payload` with `window`'s id and title, and `tile`'s, put first.
+fn with_ids(payload: Value, window: &WindowSeen, tile: Option<&TileSeen>) -> Value {
     let mut ids = serde_json::Map::new();
-    ids.insert("window_id".into(), json!(window.to_string()));
+    ids.insert("window_id".into(), json!(window.id.to_string()));
+    ids.insert("window_title".into(), json!(window.title));
     if let Some(tile) = tile {
-        ids.insert("tile_id".into(), json!(tile.to_string()));
+        ids.insert("tile_id".into(), json!(tile.id.to_string()));
+        ids.insert("tile_title".into(), json!(tile.title));
     }
     if let Value::Object(fields) = payload {
         ids.extend(fields);
@@ -320,7 +323,7 @@ fn positions(seen: &Seen, cx: &mut App) {
                 told.insert(tile.id, (now, tile.position));
                 let mut payload = tile.playhead(tile.position);
                 payload["duration"] = json!(tile.duration);
-                tell(&Event::tile("position", window.id, tile.id, payload), cx);
+                tell(&Event::tile("position", window, tile, payload), cx);
             }
         }
     }

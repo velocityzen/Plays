@@ -142,6 +142,7 @@ impl PlayerView {
         TileSeen {
             id: self.id(),
             label: self.label().map(str::to_owned),
+            title: self.header_title().to_string(),
             opening: self.playback.openings(),
             opened,
             failed: player.error(),

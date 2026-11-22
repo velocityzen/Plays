@@ -629,8 +629,9 @@ check:
   and each kind taken and turned away, saying what it takes
   (`settings::fields`).
 - What the queries hand back (`inspect`), as whole JSON: List Windows
-  and Inspect Window (the number, the window in front, its bounds and
-  display, full screen, floating on top, its own output and its tiles);
+  and Inspect Window (the number, its title, the window in front, its
+  bounds and display, full screen, floating on top, its own output and
+  its tiles);
   List Tiles and Inspect Tile, before and after a tile is renamed,
   sought, looped, its volume and mute, delays, track, picture and
   chapter changed, past its end, and casting; a subtitle file's path; a
@@ -642,7 +643,8 @@ check:
   (`api::tests`).
 - Events (`ui::workspace::tests::events`), each once and in order: a tile
   opened (created, the layout, the tile keys go to, opened, playing),
-  renamed, and its window renamed and full screen, each after its
+  renamed, and its window renamed and full screen, each by its id and
+  title as it is then, each after its
   `command_run`, the app hearing commands and windows' names; a tile moved
   to a window of its own (the window created, the one left hearing it go),
   that window brought to the front and closed, the one before in front
@@ -661,7 +663,8 @@ check:
   its tile ticks, so those tests advance it a step at a time
   (`play_until`). Unit tests check what each change of what was seen
   tells, and who hears it, a tile moved out of a window closing as it goes
-  told moved, not closed, and where a file plays told from 0 to 1, in
+  told moved, not closed, each window and tile named by its id and title,
+  one closed as it was, and where a file plays told from 0 to 1, in
   seconds and by frame, a frame's own time its own frame at 25 and NTSC
   rates (`api::events::seen`); settings told by key and
   shortcuts by command, a command before what it changes and a query not

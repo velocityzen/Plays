@@ -67,14 +67,14 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 `window.ls`: List the player windows, in the order ⌘1 to ⌘9 number them.
 
 - Acts on the app.
-- Hands back: [{id, label, number, front, tiles}]: each window's id and label (or null), its number from 1, whether it's in front, and how many tiles it has.
+- Hands back: [{id, label, title, number, front, tiles}]: each window's id, label (or null) and title, as its title bar shows it, its number from 1, whether it's in front, and how many tiles it has.
 
 ### Inspect Window
 
 `window.inspect`: Say all about the window: where it is, how it shows, its output and its tiles.
 
 - Acts on a player window.
-- Hands back: {id, label, number, front, tiles: [as tile.ls], bounds: {x, y, width, height}, display, full_screen, on_top, output: {id, name} or null}: as window.ls says, its tiles as tile.ls lists them, where it is in points, the id of the display it's on, whether it's full screen and floats on top, and its own output.
+- Hands back: {id, label, title, number, front, tiles: [as tile.ls], bounds: {x, y, width, height}, display, full_screen, on_top, output: {id, name} or null}: as window.ls says, its tiles as tile.ls lists them, where it is in points, the id of the display it's on, whether it's full screen and floats on top, and its own output.
 
 ### New Window
 
@@ -267,7 +267,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 `tile.inspect`: Say all about the tile: what it plays, where it is, and how it's set to play.
 
 - Acts on a tile.
-- Hands back: {as tile.ls, window, position, duration, frame_rate, ended, volume, muted, looping, tracks: {video, audio, subtitles: [{number, label, language, title, codec, format, default, forced, hearing_impaired, file}]}, picked: {video, audio, subtitles}, delays: {audio, subtitles}, picture: {turns, mirrored, aspect_ratio, crop}, chapter, chapters: [{number, name, start, end}], casting: {id, kind, name} or null}: times in seconds (duration null for a live stream), frames a second (null for sound alone), volume from 0 to 100, tracks and chapters numbered from 1, the tracks picked and the chapter by number or null, delays in seconds, and quarter turns clockwise.
+- Hands back: {as tile.ls, window, window_title, position, duration, frame_rate, ended, volume, muted, looping, tracks: {video, audio, subtitles: [{number, label, language, title, codec, format, default, forced, hearing_impaired, file}]}, picked: {video, audio, subtitles}, delays: {audio, subtitles}, picture: {turns, mirrored, aspect_ratio, crop}, chapter, chapters: [{number, name, start, end}], casting: {id, kind, name} or null}: its window's id and title, times in seconds (duration null for a live stream), frames a second (null for sound alone), volume from 0 to 100, tracks and chapters numbered from 1, the tracks picked and the chapter by number or null, delays in seconds, and quarter turns clockwise.
 
 ### Go to Tile
 

@@ -130,7 +130,13 @@ fn a_tile_opened_renamed_and_its_window_full_screen_are_told_once_in_order(
             ),
             (
                 "tile_label_changed",
-                json!({"window_id": w, "tile_id": t, "label": "left"})
+                json!({
+                    "window_id": w,
+                    "window_title": "Plays",
+                    "tile_id": t,
+                    "tile_title": "left",
+                    "label": "left",
+                })
             ),
             (
                 "command_run",
@@ -138,7 +144,7 @@ fn a_tile_opened_renamed_and_its_window_full_screen_are_told_once_in_order(
             ),
             (
                 "window_label_changed",
-                json!({"window_id": w, "label": "news"})
+                json!({"window_id": w, "window_title": "news", "label": "news"})
             ),
             (
                 "command_run",
@@ -146,7 +152,7 @@ fn a_tile_opened_renamed_and_its_window_full_screen_are_told_once_in_order(
             ),
             (
                 "full_screen_changed",
-                json!({"window_id": w, "full_screen": true})
+                json!({"window_id": w, "window_title": "news", "full_screen": true})
             ),
         ]
     );
@@ -195,7 +201,14 @@ fn a_tile_moved_to_a_window_of_its_own_and_the_window_closed_are_told_in_order(
     assert_ne!(x, json!(w.to_string()));
     assert_eq!(
         moved[4].payload,
-        json!({"window_id": x, "tile_id": t.to_string(), "from_window_id": w.to_string()})
+        json!({
+            "window_id": x,
+            "window_title": "Plays",
+            "tile_id": t.to_string(),
+            "tile_title": "clip.mp4",
+            "from_window_id": w.to_string(),
+            "from_window_title": "Plays",
+        })
     );
     assert_eq!(kinds(&mut app), ["command_run", "window_created"]);
     assert_eq!(
@@ -209,7 +222,10 @@ fn a_tile_moved_to_a_window_of_its_own_and_the_window_closed_are_told_in_order(
     let front = told(&mut app);
     assert_eq!(front.len(), 2, "{front:?}");
     assert_eq!(front[1].kind, "active_window_changed");
-    assert_eq!(front[1].payload, json!({"window_id": x}));
+    assert_eq!(
+        front[1].payload,
+        json!({"window_id": x, "window_title": "Plays"})
+    );
     assert_eq!(kinds(&mut all), ["command_run", "active_window_changed"]);
     assert_eq!(
         kinds(&mut first),
@@ -234,7 +250,10 @@ fn a_tile_moved_to_a_window_of_its_own_and_the_window_closed_are_told_in_order(
         closed.iter().map(|event| event.kind).collect::<Vec<_>>(),
         ["command_run", "window_closed", "active_window_changed"]
     );
-    assert_eq!(closed[2].payload, json!({"window_id": w.to_string()}));
+    assert_eq!(
+        closed[2].payload,
+        json!({"window_id": w.to_string(), "window_title": "Plays"})
+    );
     assert_eq!(kinds(&mut first), ["active_window_changed"]);
 }
 

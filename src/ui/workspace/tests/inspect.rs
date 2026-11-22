@@ -68,8 +68,8 @@ fn window_ls_and_inspect_say_what_each_window_is(cx: &mut TestAppContext) {
     assert_eq!(
         query(&mut cx, Invocation::new("window.ls")),
         json!([
-            {"id": one, "label": null, "number": 1, "front": true, "tiles": 2},
-            {"id": two, "label": "Stage", "number": 2, "front": false, "tiles": 0},
+            {"id": one, "label": null, "title": "Plays", "number": 1, "front": true, "tiles": 2},
+            {"id": two, "label": "Stage", "title": "Stage", "number": 2, "front": false, "tiles": 0},
         ])
     );
 
@@ -81,6 +81,7 @@ fn window_ls_and_inspect_say_what_each_window_is(cx: &mut TestAppContext) {
         json!({
             "id": one,
             "label": null,
+            "title": "Plays",
             "number": 1,
             "front": true,
             "tiles": tiles,
@@ -242,6 +243,7 @@ fn tile_inspect_says_how_a_tile_plays(cx: &mut TestAppContext) {
         "number": 2,
         "front": false,
         "window": id(window, &cx),
+        "window_title": "Plays",
         "position": 1.0,
         "duration": 2.021,
         "frame_rate": 25.0,

@@ -866,6 +866,10 @@ plays actions                             # every command, Plays or not
   `position`, how far through it is from 0 to 1 (none for a live
   stream); `time`, in seconds; and `frame`, the number of the frame
   showing then, from 0 (none for sound alone).
+- An event about a window or a tile names it by id and title:
+  `window_id` and `window_title`, as its title bar shows it (its label,
+  or else Plays), and `tile_id` and `tile_title`, as its header shows it
+  (its label, or else the title of what it plays).
 - [docs/commands.md](docs/commands.md) describes every command, as
   `plays actions --markdown` writes it.
 - It exits with 0 when it's done, 1 when Plays couldn't do it, 2 for a

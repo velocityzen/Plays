@@ -24,8 +24,9 @@ pub const COMMANDS: &[Spec] = &[
         "List Windows",
         "List the player windows, in the order ⌘1 to ⌘9 number them.",
         Scope::App,
-        "[{id, label, number, front, tiles}]: each window's id and label (or null), its \
-         number from 1, whether it's in front, and how many tiles it has.",
+        "[{id, label, title, number, front, tiles}]: each window's id, label (or null) \
+         and title, as its title bar shows it, its number from 1, whether it's in front, \
+         and how many tiles it has.",
         |_, _, cx| Ok(Value::from(summaries(cx)?)),
     )
     .keywords(&["list", "ls", "windows"]),
@@ -34,7 +35,7 @@ pub const COMMANDS: &[Spec] = &[
         "Inspect Window",
         "Say all about the window: where it is, how it shows, its output and its tiles.",
         Scope::Window,
-        "{id, label, number, front, tiles: [as tile.ls], bounds: {x, y, width, height}, \
+        "{id, label, title, number, front, tiles: [as tile.ls], bounds: {x, y, width, height}, \
          display, full_screen, on_top, output: {id, name} or null}: as window.ls says, \
          its tiles as tile.ls lists them, where it is in points, the id of the display \
          it's on, whether it's full screen and floats on top, and its own output.",
