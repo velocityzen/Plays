@@ -12,9 +12,22 @@ use std::process::{Command as Process, Output};
 use super::*;
 use crate::cast::{airplay, chromecast, dlna};
 
+/// A folder of a test's own, with the script for a shell in it: removed
+/// once the test is done with it, whether it passed or not.
+struct Scratch {
+    folder: PathBuf,
+    script: PathBuf,
+}
+
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.folder);
+    }
+}
+
 /// A folder of the test's own, named for it, with the script for `shell`
 /// in it, as `plays`.
-fn with_script(name: &str, shell: Shell) -> (PathBuf, PathBuf) {
+fn with_script(name: &str, shell: Shell) -> Scratch {
     let folder = std::env::temp_dir()
         .join("plays-tests")
         .join(format!("completions-{name}-{}", std::process::id()));
@@ -24,7 +37,19 @@ fn with_script(name: &str, shell: Shell) -> (PathBuf, PathBuf) {
     completions(&mut script, shell).unwrap();
     let path = folder.join("plays");
     fs::write(&path, script).unwrap();
-    (folder, path)
+    Scratch {
+        folder,
+        script: path,
+    }
+}
+
+#[test]
+fn a_tests_folder_goes_once_it_is_done_with() {
+    let scratch = with_script("gone", Shell::Bash);
+    let folder = scratch.folder.clone();
+    assert!(scratch.script.is_file());
+    drop(scratch);
+    assert!(!folder.exists());
 }
 
 /// Each line `output` printed, having printed nothing on stderr.
@@ -108,8 +133,8 @@ printf '%s\n' "${COMPREPLY[@]}""#;
 
 #[test]
 fn bash_completes_subcommands_commands_ids_setting_keys_and_shells() {
-    let (_, script) = with_script("bash", Shell::Bash);
-    let offers = |words: &[&str]| bash_offers(&script, words);
+    let scratch = with_script("bash", Shell::Bash);
+    let offers = |words: &[&str]| bash_offers(&scratch.script, words);
     assert_eq!(offers(&["plays", "wi"]), ["window"]);
     let seeks = offers(&["plays", "do", "playback.seek"]);
     assert!(
@@ -154,12 +179,12 @@ fn fish(folder: &Path, args: &[&str]) -> Option<Vec<String>> {
 
 #[test]
 fn fish_completes_commands_ids_setting_keys_and_shells_and_still_files() {
-    let (folder, script) = with_script("fish", Shell::Fish);
-    fs::write(folder.join("film.mkv"), b"").unwrap();
-    let script = script.to_str().unwrap();
+    let scratch = with_script("fish", Shell::Fish);
+    fs::write(scratch.folder.join("film.mkv"), b"").unwrap();
+    let script = scratch.script.to_str().unwrap();
     let offers = |line: &str| {
         fish(
-            &folder,
+            &scratch.folder,
             &["-c", "source $argv[1]; complete -C $argv[2]", script, line],
         )
     };
@@ -202,8 +227,8 @@ fn fish_completes_commands_ids_setting_keys_and_shells_and_still_files() {
 
 #[test]
 fn nushell_offers_the_commands_ids_and_setting_keys_each_with_what_it_is() {
-    let (_, script) = with_script("nushell", Shell::Nushell);
-    let text = fs::read_to_string(&script).unwrap();
+    let scratch = with_script("nushell", Shell::Nushell);
+    let text = fs::read_to_string(&scratch.script).unwrap();
     assert!(text.starts_with("module completions {"), "{text}");
     assert!(text.ends_with("export use completions *\n"));
     // What the completer called `name` offers, from its opening brace to
@@ -279,10 +304,10 @@ fn nu_offers(folder: &Path, line: &str) -> Option<Vec<String>> {
 
 #[test]
 fn nushell_completes_commands_ids_setting_keys_shells_and_files() {
-    let (folder, script) = with_script("nushell-asked", Shell::Nushell);
-    fs::copy(&script, folder.join("plays.nu")).unwrap();
-    fs::write(folder.join("film.mkv"), b"").unwrap();
-    let offers = |line: &str| nu_offers(&folder, line);
+    let scratch = with_script("nushell-asked", Shell::Nushell);
+    fs::copy(&scratch.script, scratch.folder.join("plays.nu")).unwrap();
+    fs::write(scratch.folder.join("film.mkv"), b"").unwrap();
+    let offers = |line: &str| nu_offers(&scratch.folder, line);
     let Some(seeks) = offers("plays do playback.seek") else {
         return;
     };
@@ -315,14 +340,15 @@ fn nushell_completes_commands_ids_setting_keys_shells_and_files() {
 
 #[test]
 fn zsh_reads_its_script_and_it_offers_the_commands_ids_and_files() {
-    let (_, script) = with_script("zsh", Shell::Zsh);
+    let scratch = with_script("zsh", Shell::Zsh);
+    let script = &scratch.script;
     let output = Process::new("zsh")
         .args(["--no-rcs", "-n"])
-        .arg(&script)
+        .arg(script)
         .output()
         .unwrap();
     printed(&output);
-    let text = fs::read_to_string(&script).unwrap();
+    let text = fs::read_to_string(script).unwrap();
     assert!(text.starts_with("#compdef plays"));
     // What each such word offers, from its name to the end of its names.
     let offers = |word: &str| -> Vec<&str> {

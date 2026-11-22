@@ -44,9 +44,22 @@ fn probe() -> Command {
         )
 }
 
+/// A folder of a test's own, with the script for a shell in it: removed
+/// once the test is done with it, whether it passed or not.
+struct Scratch {
+    folder: PathBuf,
+    script: PathBuf,
+}
+
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.folder);
+    }
+}
+
 /// A folder of the test's own, named for it, with the script for `shell`
 /// in it as `file`.
-fn with_script(name: &str, shell: Shell, file: &str) -> (PathBuf, PathBuf) {
+fn with_script(name: &str, shell: Shell, file: &str) -> Scratch {
     let folder = std::env::temp_dir()
         .join("completions-tests")
         .join(format!("{name}-{}", std::process::id()));
@@ -54,7 +67,19 @@ fn with_script(name: &str, shell: Shell, file: &str) -> (PathBuf, PathBuf) {
     fs::create_dir_all(&folder).unwrap();
     let path = folder.join(file);
     fs::write(&path, script(shell, &mut probe(), "my-probe")).unwrap();
-    (folder, path)
+    Scratch {
+        folder,
+        script: path,
+    }
+}
+
+#[test]
+fn a_tests_folder_goes_once_it_is_done_with() {
+    let scratch = with_script("gone", Shell::Bash, "my-probe.bash");
+    let folder = scratch.folder.clone();
+    assert!(scratch.script.is_file());
+    drop(scratch);
+    assert!(!folder.exists());
 }
 
 /// Each line `output` printed, having printed nothing on stderr.
@@ -110,9 +135,9 @@ fn fish_offers(folder: &Path, script: &Path, line: &str) -> Option<Vec<String>> 
 
 #[test]
 fn fish_offers_the_names_a_word_takes_until_one_is_given() {
-    let (folder, script) = with_script("fish", Shell::Fish, "my-probe.fish");
-    fs::write(folder.join("film.mkv"), b"").unwrap();
-    let offers = |line: &str| fish_offers(&folder, &script, line);
+    let scratch = with_script("fish", Shell::Fish, "my-probe.fish");
+    fs::write(scratch.folder.join("film.mkv"), b"").unwrap();
+    let offers = |line: &str| fish_offers(&scratch.folder, &scratch.script, line);
     let Some(words) = offers("my-probe play ") else {
         return;
     };
@@ -177,9 +202,9 @@ fn nu_offers(folder: &Path, line: &str) -> Option<Vec<String>> {
 
 #[test]
 fn nushell_offers_the_names_a_word_takes() {
-    let (folder, _) = with_script("nushell", Shell::Nushell, "my-probe.nu");
-    fs::write(folder.join("film.mkv"), b"").unwrap();
-    let offers = |line: &str| nu_offers(&folder, line);
+    let scratch = with_script("nushell", Shell::Nushell, "my-probe.nu");
+    fs::write(scratch.folder.join("film.mkv"), b"").unwrap();
+    let offers = |line: &str| nu_offers(&scratch.folder, line);
     let Some(mut words) = offers("my-probe play ") else {
         return;
     };
@@ -195,8 +220,8 @@ fn nushell_offers_the_names_a_word_takes() {
 
 #[test]
 fn nushell_lists_each_name_with_what_it_is() {
-    let (_, script) = with_script("nushell-text", Shell::Nushell, "my-probe.nu");
-    let text = fs::read_to_string(script).unwrap();
+    let scratch = with_script("nushell-text", Shell::Nushell, "my-probe.nu");
+    let text = fs::read_to_string(&scratch.script).unwrap();
     assert!(text.starts_with("module completions {"), "{text}");
     assert!(text.ends_with("export use completions *\n"));
     let quoted = r#"it's \"quoted\", $HOME, (not run), a back\\slash and two \\\\"#;

@@ -802,7 +802,8 @@ check:
     editor asks (`nu --ide-complete`: ids, after `-w` too, keys, shells and
     files to `open`). Quoting what they offer is `crates/completions`' to
     test. Without fish or Nushell installed, what
-    it offers goes unchecked.
+    it offers goes unchecked. Each test's folder goes once the test is
+    done with it, passed or failed (`Scratch`), which a test checks.
   - `docs/commands.md` as `plays actions --markdown` writes it now:
     after changing a command or an event, write it again with
     `cargo run -- actions --markdown > docs/commands.md`. Commands for
@@ -1047,7 +1048,9 @@ Nushell are asked what they offer, as a terminal and an editor ask
 is in fish, until one is given, the key a level down, and files. Nushell's
 completers list each name with what it is, as text; and both shells read
 a name with quotes, `$HOME`, parentheses and backslashes in it as it is.
-Without fish or Nushell installed, what it offers goes unchecked.
+Without fish or Nushell installed, what it offers goes unchecked. Each
+test's folder, in `completions-tests` in the temporary folder, goes once
+the test is done with it, passed or failed, which a test checks.
 
 The stream server's tests serve the fixtures over HTTP, as a device
 fetches them, and read what comes back with FFmpeg: the plan for each
