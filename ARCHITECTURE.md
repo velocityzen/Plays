@@ -133,6 +133,7 @@ clippy lints, in the root `Cargo.toml`, apply to all of them.
 | `crates/airplay` | Finds AirPlay receivers, pairs with them and sends to them. |
 | `crates/network` | What the three casting crates share on the network: connecting, reading HTTP and RTSP within bounds and in time, and finding devices over mDNS. |
 | `crates/ffmpeg-link` | Links the static FFmpeg into Plays and into the stream server's tests. |
+| `crates/completions` | The scripts that complete a clap command line in bash, zsh, fish and Nushell, with what clap's own leave out. |
 | `vendor/gpui` | gpui 0.2.2, patched for Plays. |
 | `vendor/xattr` | xattr 0.2.3, which gpui reaches, patched to build on Linux. |
 | `script/` | Building FFmpeg, bundling the macOS app, the credits, test fixtures and smoke runs. |
@@ -668,14 +669,15 @@ flowchart LR
   lists the commands from the registry compiled in, Plays running or not,
   and writes `docs/commands.md` (`plays actions --markdown`). `completions`
   writes the script that completes the command line in bash, zsh, fish or
-  Nushell (clap_complete, clap_complete_nushell), from clap's command with
-  the registry's ids, each with its title, as what `do`, `api describe` and
-  `api call` take, and the settings' keys for `settings get` and `set`, the
-  cast protocols' too, none of them started. clap's script for fish
-  completes options alone, so lines of its own offer those words, each
-  until one of its names is given; its script for Nushell offers names
-  alone, so each of its completers lists records instead, a name with its
-  title where it has one. `show` prints tables, events and results. The exit status is the error's (1 failed,
+  Nushell, from clap's command with the registry's ids, each with its
+  title, as what `do`, `api describe` and `api call` take, and the
+  settings' keys for `settings get` and `set`, the cast protocols' too,
+  none of them started. That command is Plays' own; `crates/completions`
+  writes the script for it: clap's (clap_complete, clap_complete_nushell),
+  with what clap's leave out. Its script for fish completes options alone,
+  so lines of the crate's own offer the names a word takes, each until one
+  is given; its script for Nushell offers names alone, so each of its
+  completers lists records instead, a name with what it is where it says. `show` prints tables, events and results. The exit status is the error's (1 failed,
   3 not found, 4 unreachable, 5 control from the command line off), 2 for
   a bad command line, clap's or one of its own checks; output closed
   (`| head`) ends it quietly with 0.

@@ -1,0 +1,19 @@
+[package]
+name = "completions"
+version = "0.1.0"
+edition = "2024"
+description = "Scripts that complete a clap command line in bash, zsh, fish and Nushell, with what clap's own leave out: in fish, the names a word takes; in Nushell, what each name is"
+license = "MIT"
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+clap = "4"
+clap_complete = "4"
+clap_complete_nushell = "4"
+
+[dev-dependencies]
+# What Nushell says it offers, as an editor asks it.
+serde_json = "1"

@@ -1,7 +1,8 @@
 //! The scripts that complete the command line: what clap is told each
 //! word can be, and what bash, fish and Nushell offer with the scripts
 //! loaded, as a terminal or an editor would ask them; zsh's is read for
-//! mistakes.
+//! mistakes. How names are quoted for each shell is crate `completions`'
+//! to test.
 
 use std::fs;
 use std::io;
@@ -200,19 +201,6 @@ fn fish_completes_commands_ids_setting_keys_and_shells_and_still_files() {
 }
 
 #[test]
-fn fish_reads_what_it_offers_as_it_is() {
-    let (folder, _) = with_script("fish-text", Shell::Fish);
-    let text = r#"it's "quoted", $HOME, a back\slash and two \\"#;
-    let offer = format!(
-        "complete -c probe -f -a \"word\\t'{}'\"; complete -C 'probe '",
-        fish_text(text)
-    );
-    if let Some(offers) = fish(&folder, &["-c", &offer]) {
-        assert_eq!(offers, [format!("word\t{text}")]);
-    }
-}
-
-#[test]
 fn nushell_offers_the_commands_ids_and_setting_keys_each_with_what_it_is() {
     let (_, script) = with_script("nushell", Shell::Nushell);
     let text = fs::read_to_string(&script).unwrap();
@@ -240,7 +228,7 @@ fn nushell_offers_the_commands_ids_and_setting_keys_each_with_what_it_is() {
     let size = fields::find("subtitles.size", &[]).unwrap();
     let size = format!(
         r#"{{ value: "subtitles.size", description: "{}" }}"#,
-        nu_text(&size.title)
+        size.title
     );
     for path in ["plays settings get", "plays settings set"] {
         let keys = offers(&format!("{path} key"));
@@ -323,23 +311,6 @@ fn nushell_completes_commands_ids_setting_keys_shells_and_files() {
         Some(vec!["nushell".to_owned()])
     );
     assert_eq!(offers("plays open fi"), Some(vec!["film.mkv".to_owned()]));
-}
-
-#[test]
-fn nushell_reads_what_it_offers_as_it_is() {
-    let text = r#"it's "quoted", $HOME, (not run) and a back\slash"#;
-    let quoted = r#"it's \"quoted\", $HOME, (not run) and a back\\slash"#;
-    let word = PossibleValue::new(text).help(text);
-    let arg = clap::Arg::new("word").value_parser(PossibleValuesParser::new([word]));
-    let records = nu_records(&arg);
-    assert_eq!(
-        records,
-        format!("\n    [\n      {{ value: \"{quoted}\", description: \"{quoted}\" }}\n    ]")
-    );
-    let read = format!("let offered = ({records}); print $offered.0.value $offered.0.description");
-    if let Some(printed) = nu(&std::env::temp_dir(), &["-c", &read]) {
-        assert_eq!(printed, [text, text]);
-    }
 }
 
 #[test]

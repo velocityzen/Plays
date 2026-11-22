@@ -1256,6 +1256,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "completions"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "clap_complete",
+ "clap_complete_nushell",
+ "serde_json",
+]
+
+[[package]]
 name = "compression-codecs"
 version = "0.4.47"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4697,8 +4707,7 @@ dependencies = [
  "chardetng",
  "chromecast",
  "clap",
- "clap_complete",
- "clap_complete_nushell",
+ "completions",
  "core-foundation 0.10.0",
  "core-video",
  "cpal",

@@ -771,13 +771,12 @@ check:
     the test's own: bash and fish asked what they offer for a line, as a
     terminal asks (subcommands, ids after options too, keys, shells, no
     ids once one is given or under `api list`, and fish still offering
-    files to `open`), fish reading quotes, `$` and backslashes in what it
-    offers as they are, and zsh reading its script with `-n`, its ids,
+    files to `open`), and zsh reading its script with `-n`, its ids,
     keys and shells checked in it. Nushell's script, each completer in it
     listing names with their titles; Nushell asked what it offers as an
     editor asks (`nu --ide-complete`: ids, after `-w` too, keys, shells and
-    files to `open`), and reading quotes, `$`, parentheses and backslashes
-    in what it offers as they are. Without fish or Nushell installed, what
+    files to `open`). Quoting what they offer is `crates/completions`' to
+    test. Without fish or Nushell installed, what
     it offers goes unchecked.
   - `docs/commands.md` as `plays actions --markdown` writes it now:
     after changing a command, write it again with
@@ -1013,6 +1012,17 @@ is broken.
 ffmpeg-link's tests check that `.cargo/config.toml` names the folder for
 the FFmpeg version `script/build-ffmpeg` builds, and that the compiler's
 runtime library is found when `CC` puts the compiler behind a wrapper.
+
+completions' tests write the scripts for a small command line of their
+own, run as `my-probe` (a dash in it, as clap's names for fish's
+functions change it), with names to offer for a word, a key a level
+down, and files. bash's and zsh's are clap's as they are. fish and
+Nushell are asked what they offer, as a terminal and an editor ask
+(`complete -C`, `nu --ide-complete`): each word's names, with what each
+is in fish, until one is given, the key a level down, and files. Nushell's
+completers list each name with what it is, as text; and both shells read
+a name with quotes, `$HOME`, parentheses and backslashes in it as it is.
+Without fish or Nushell installed, what it offers goes unchecked.
 
 The stream server's tests serve the fixtures over HTTP, as a device
 fetches them, and read what comes back with FFmpeg: the plan for each
