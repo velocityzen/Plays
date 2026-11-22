@@ -8,7 +8,7 @@ use crate::api::{self, Invocation, Source, Target};
 use crate::files;
 use crate::recents;
 use crate::ui::palette::tests::{
-    aimed_at, clear, open, open_palette, palette, press_and_wait, ran, read, type_in,
+    aimed_at, clear, open, open_palette, painted, palette, press_and_wait, ran, read, type_in,
 };
 use crate::ui::palette::{GO_TO, Palette};
 use crate::ui::testing::{self, fixture, press, shows, wait_until};
@@ -124,6 +124,12 @@ fn its_keys_list_the_windows_their_tiles_the_files_in_the_folder_and_those_playe
         .map(|(kind, _)| order.iter().position(|other| other == kind).unwrap())
         .collect();
     assert!(kinds.is_sorted(), "windows, tiles, the folder, then lately");
+    let headings: Vec<String> = read(window, &cx, Palette::sections)
+        .into_iter()
+        .map(|(heading, _)| heading)
+        .collect();
+    assert_eq!(headings, ["Windows", "Tiles", "In Folder", "Recent"]);
+    assert!(painted(&mut cx, "Go"), "Return goes there");
     assert_eq!(
         read(window, &cx, Palette::current),
         ["Window 1".to_owned(), front.clone(), front.clone()],

@@ -1,17 +1,20 @@
 //! The command palette: a sheet over a player window listing every
 //! command that can run there, which ⇧⌘P (`window.command_palette`)
-//! opens. Typing finds commands by their titles, groups and keywords
-//! (`search`), those run from it lately first (`recents`); each row shows
-//! a command's keys, and what it changes as it is (✓ Loop). Return runs
-//! the one picked, through the API as from the palette, asking first for
-//! the arguments it takes (`asking`), picked from a list or typed. ⌘Return,
-//! or Change Shortcut… on the row, changes its keys in Settings → Hotkeys.
-//! Escape, or a click outside, closes it.
+//! opens. With nothing typed, each group of commands is under its heading,
+//! those run from it lately (`recents`) first under Recent; typing finds
+//! commands by their titles, groups and keywords (`search`), best first
+//! with no headings, each saying its group. A row shows what a command
+//! changes as it is (✓ Loop) and its keys. The row picked is in the
+//! accent color, and pointing at a row picks it. Return runs the one
+//! picked, through the API as from the palette, asking first for the
+//! arguments it takes (`asking`), picked from a list or typed. ⌘Return
+//! changes its keys in Settings → Hotkeys. The footer says what both do,
+//! and either can be clicked. Escape, or a click outside, closes it.
 //!
 //! Go to… (⌘P, `window.go_to`) is the same sheet listing places instead
 //! (`places`): the windows, their tiles, the files in the front tile's
-//! folder and those played lately, found as commands are; Return goes
-//! there, running the command each has.
+//! folder and those played lately, under a heading for each, found as
+//! commands are; Return goes there, running the command each has.
 
 mod asking;
 mod places;
@@ -26,17 +29,18 @@ use std::ops::Range;
 use gpui::prelude::*;
 use gpui::{
     AnyElement, App, Context, Div, Entity, EventEmitter, Focusable, FontWeight, HighlightStyle,
-    Hsla, KeyBinding, MouseButton, ScrollStrategy, SharedString, StyledText, Subscription,
-    UniformListScrollHandle, Window, actions, black, div, uniform_list, white,
+    Hsla, KeyBinding, MouseButton, ScrollStrategy, SharedString, Stateful, StyledText,
+    Subscription, UniformListScrollHandle, Window, actions, black, div, uniform_list, white,
 };
 use serde_json::{Map, Value};
 
-use super::components::{Button, Panel, Sizable};
+use super::components::{Icon, Panel};
 use super::text_input::TextInput;
 use super::theme::palette::{
-    CHECK_WIDTH, DETAIL_SELECTED, GROUP_WIDTH, ROW_HEIGHT, ROWS, WIDTH as PALETTE_WIDTH,
+    CHECK_WIDTH, DETAIL_SELECTED, FIELD_HEIGHT, FIELD_RADIUS, KEYCAP_RADIUS, LIST_PADDING, RADIUS,
+    ROW_HEIGHT, ROW_RADIUS, ROWS, SEARCH_ICON, WIDTH as PALETTE_WIDTH,
 };
-use super::theme::{Theme, dialog, radius};
+use super::theme::{Theme, dialog};
 use crate::api::commands::NAMESPACES;
 use crate::api::{self, Invocation, Scope, Source, Spec, Target};
 use crate::hotkeys;
@@ -65,6 +69,9 @@ pub const GO_TO: &str = "window.go_to";
 /// goes before others found as well.
 const RECENT: i32 = 16;
 const RECENT_STEP: i32 = 2;
+
+/// The heading over the commands run lately.
+const RECENT_HEADING: &str = "Recent";
 
 pub fn bind_keys(cx: &mut App) {
     let context = Some(CONTEXT);
@@ -195,6 +202,31 @@ impl Listing {
             Self::Places(places) => places::order(query, places),
         }
     }
+
+    /// The heading what it lists at `index` goes under, with nothing
+    /// typed: Recent, for a command run lately, else its group's; a
+    /// place's kind's.
+    fn heading(&self, index: usize) -> &'static str {
+        match self {
+            Self::Commands { entries, recents } => {
+                let entry = &entries[index];
+                if recents.iter().any(|id| id == entry.spec.id) {
+                    RECENT_HEADING
+                } else {
+                    entry.group
+                }
+            }
+            Self::Places(places) => places[index].kind.heading(),
+        }
+    }
+}
+
+/// A line of the list: a heading, or a row by its place among those
+/// listed.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Line {
+    Heading(&'static str),
+    Row(usize),
 }
 
 /// A row: an entry, a place or a choice, by its place among them, and
@@ -298,8 +330,9 @@ struct RowParts {
     id: SharedString,
     check: bool,
     label: SharedString,
+    /// What it's in, said after its name while there are no headings.
+    group: Option<&'static str>,
     details: Div,
-    shortcut: Option<AnyElement>,
 }
 
 pub struct Palette {
@@ -309,6 +342,8 @@ pub struct Palette {
     input: Entity<TextInput>,
     /// What it lists now, best first.
     rows: Vec<Row>,
+    /// The rows, under their headings while nothing is typed.
+    lines: Vec<Line>,
     /// The row Return picks.
     selected: usize,
     asking: Option<Asking>,
@@ -335,21 +370,62 @@ impl Palette {
             Listing::Commands { .. } => "Search commands",
             Listing::Places(_) => "Go to a window, tile or file",
         };
-        let input = cx.new(|cx| TextInput::new(placeholder, cx).large());
+        let input = cx.new(|cx| TextInput::new(placeholder, cx).bare());
         window.focus(&input.focus_handle(cx));
         let input_changed = cx.observe(&input, |this, _, cx| this.filter(cx));
         let rows = listing.order("");
-        Self {
+        let mut palette = Self {
             window: window_target,
             listing,
             input,
             rows,
+            lines: Vec::new(),
             selected: 0,
             asking: None,
             waiting: false,
             error: None,
             scroll: UniformListScrollHandle::new(),
             _input_changed: input_changed,
+        };
+        palette.lines = palette.lay_out("");
+        palette
+    }
+
+    /// The rows, under a heading for each group while nothing is typed
+    /// and nothing asked for.
+    fn lay_out(&self, query: &str) -> Vec<Line> {
+        let headed = query.trim().is_empty() && self.asking.is_none();
+        let mut lines = Vec::with_capacity(self.rows.len());
+        let mut under = None;
+        for (at, row) in self.rows.iter().enumerate() {
+            if headed {
+                let heading = self.listing.heading(row.index);
+                if under != Some(heading) {
+                    lines.push(Line::Heading(heading));
+                    under = Some(heading);
+                }
+            }
+            lines.push(Line::Row(at));
+        }
+        lines
+    }
+
+    /// Whether its rows are under headings.
+    fn headed(&self) -> bool {
+        matches!(self.lines.first(), Some(Line::Heading(_)))
+    }
+
+    /// The line to scroll into view for the row `row`: the heading over
+    /// it, when it's the first under one and the list goes up.
+    fn line_of(&self, row: usize, upward: bool) -> usize {
+        let line = self
+            .lines
+            .iter()
+            .position(|line| *line == Line::Row(row))
+            .unwrap_or(0);
+        match line.checked_sub(1).map(|above| self.lines[above]) {
+            Some(Line::Heading(_)) if upward => line - 1,
+            _ => line,
         }
     }
 
@@ -382,8 +458,9 @@ impl Palette {
         {
             self.selected = at;
         }
+        self.lines = self.lay_out(&query);
         self.scroll
-            .scroll_to_item(self.selected, ScrollStrategy::Center);
+            .scroll_to_item(self.line_of(self.selected, true), ScrollStrategy::Center);
         cx.notify();
     }
 
@@ -402,8 +479,10 @@ impl Palette {
     }
 
     fn select(&mut self, row: usize, cx: &mut Context<Self>) {
+        let upward = row < self.selected;
         self.selected = row;
-        self.scroll.scroll_to_item(row, ScrollStrategy::Top);
+        self.scroll
+            .scroll_to_item(self.line_of(row, upward), ScrollStrategy::Top);
         cx.notify();
     }
 
@@ -560,28 +639,13 @@ impl Palette {
     }
 
     /// What a command's row shows.
-    fn command_row(
-        &self,
-        entry: &Entry,
-        selected: bool,
-        muted: Hsla,
-        cx: &mut Context<Self>,
-    ) -> RowParts {
+    fn command_row(entry: &Entry, muted: Hsla) -> RowParts {
         let spec = entry.spec;
         let state = match &entry.state {
             State::Is(value) => Some(value.clone()),
             State::On | State::Nothing => None,
         };
         let keys = (!entry.keys.is_empty()).then(|| SharedString::from(entry.keys.join("  ")));
-        let shortcut = (selected && spec.takes_keys()).then(|| {
-            Button::new("palette-change-shortcut", "Change Shortcut…")
-                .small()
-                .on_click(cx.listener(move |_, _, _, cx| {
-                    cx.stop_propagation();
-                    cx.emit(PaletteEvent::ChangeShortcut(spec.id));
-                }))
-                .into_any_element()
-        });
         let details = div()
             .flex_none()
             .flex()
@@ -589,21 +653,13 @@ impl Palette {
             .gap_3()
             .text_color(muted)
             .when_some(state, |this, state| this.child(state))
-            .when_some(keys, |this, keys| this.child(keys))
-            .child(
-                div()
-                    .w(GROUP_WIDTH)
-                    .flex_none()
-                    .truncate()
-                    .text_right()
-                    .child(entry.group),
-            );
+            .when_some(keys, |this, keys| this.child(keys));
         RowParts {
             id: format!("palette-row-{}", spec.id).into(),
             check: entry.state == State::On,
             label: spec.title.into(),
+            group: Some(entry.group),
             details,
-            shortcut,
         }
     }
 
@@ -613,21 +669,36 @@ impl Palette {
             id: format!("palette-choice-{}", choice.label).into(),
             check: choice.current,
             label: choice.label.clone(),
+            group: None,
             details: div()
                 .flex_none()
                 .text_color(muted)
                 .when_some(choice.detail.clone(), |this, detail| this.child(detail)),
-            shortcut: None,
         }
     }
 
-    /// The command asking, if one is, and the field.
+    /// The field, filled, with the magnifier and, while a command asks
+    /// for what it takes, the command, before what's typed.
     fn header(&self, theme: &Theme) -> Div {
-        div()
+        let field = div()
             .flex()
             .items_center()
             .gap_2()
-            .p_2()
+            .h(FIELD_HEIGHT)
+            .px_3()
+            .superellipse(FIELD_RADIUS)
+            .bg(theme.surface_hover)
+            .text_base()
+            .child(
+                div()
+                    .debug_selector(|| "palette-search-icon".into())
+                    .flex_none()
+                    .child(
+                        Icon::new("search")
+                            .size(SEARCH_ICON)
+                            .color(theme.text_muted),
+                    ),
+            )
             .when_some(self.asking.as_ref(), |this, asking| {
                 this.child(
                     div()
@@ -635,13 +706,63 @@ impl Palette {
                         .flex_none()
                         .px_2()
                         .py_0p5()
-                        .superellipse(radius::ITEM[2])
+                        .superellipse(ROW_RADIUS)
                         .bg(theme.surface_active)
                         .text_sm()
+                        .font_weight(FontWeight::MEDIUM)
                         .child(asking.spec.title),
                 )
             })
-            .child(div().flex_1().min_w_0().child(self.input.clone()))
+            .child(div().flex_1().min_w_0().h_full().child(self.input.clone()));
+        div()
+            .p_2()
+            .border_b_1()
+            .border_color(theme.border)
+            .child(field)
+    }
+
+    /// What Return does and, for a command that takes keys, ⌘Return, each
+    /// with its keys in a keycap, and each to be clicked as well.
+    fn footer(&self, theme: &Theme, typing: bool, cx: &mut Context<Self>) -> Div {
+        let returns = match (&self.asking, &self.listing) {
+            (Some(asking), _) => match asking.question.ask {
+                Ask::Choose(_) => "Pick",
+                Ask::Type(_) => "OK",
+            },
+            (None, Listing::Commands { .. }) => "Run",
+            (None, Listing::Places(_)) => "Go",
+        };
+        let changes = self.selected_spec().is_some_and(Spec::takes_keys);
+        div()
+            .flex()
+            .items_center()
+            .justify_end()
+            .gap_4()
+            .px_3()
+            .py_2()
+            .border_t_1()
+            .border_color(theme.border)
+            .text_sm()
+            .text_color(theme.text_muted)
+            .when(changes, |this| {
+                this.child(
+                    hint(
+                        "palette-change-shortcut",
+                        "Change Shortcut",
+                        hotkeys::display("secondary-enter"),
+                        theme,
+                    )
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.change_shortcut(&ChangeShortcut, window, cx);
+                    })),
+                )
+            })
+            .when(typing || !self.rows.is_empty(), |this| {
+                this.child(
+                    hint("palette-return", returns, hotkeys::display("enter"), theme)
+                        .on_click(cx.listener(|this, _, _, cx| this.pick(cx))),
+                )
+            })
     }
 
     /// The rows, building only those in view; or, with none, `empty`,
@@ -653,22 +774,25 @@ impl Palette {
         empty: &'static str,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let rows = self.rows.len();
-        if rows > 0 {
+        let lines = self.lines.len();
+        if lines > 0 {
             let theme = theme.clone();
             uniform_list(
                 "palette-rows",
-                rows,
+                lines,
                 cx.processor(move |this, range: Range<usize>, _, cx| {
                     range
-                        .map(|ix| this.render_row(ix, &theme, cx))
+                        .map(|line| match this.lines[line] {
+                            Line::Heading(heading) => this.render_heading(heading, &theme),
+                            Line::Row(row) => this.render_row(row, &theme, cx),
+                        })
                         .collect::<Vec<_>>()
                 }),
             )
             .track_scroll(self.scroll.clone())
             .w_full()
-            .h(ROW_HEIGHT * rows.min(ROWS) as f32)
-            .pb_1()
+            .h(ROW_HEIGHT * lines.min(ROWS) as f32 + LIST_PADDING * 2.)
+            .py(LIST_PADDING)
             .into_any_element()
         } else if typing {
             div().into_any_element()
@@ -676,38 +800,45 @@ impl Palette {
             div()
                 .debug_selector(|| "palette-empty".into())
                 .px_4()
-                .pb_3()
+                .py_3()
                 .text_color(theme.text_muted)
                 .child(empty)
                 .into_any_element()
         }
     }
 
-    /// What a place's row shows: where it is, and what it is.
+    /// What a place's row shows: what it is, and where.
     fn place_row(place: &Place, muted: Hsla) -> RowParts {
         RowParts {
             id: format!("palette-place-{}", place.label).into(),
             check: place.current,
             label: place.label.clone(),
+            group: Some(place.kind.name()),
             details: div()
                 .flex_none()
-                .flex()
-                .items_center()
-                .gap_3()
                 .text_color(muted)
                 .when_some(place.detail.clone(), |this, detail| {
                     this.child(div().max_w(PALETTE_WIDTH / 3.).truncate().child(detail))
-                })
-                .child(
-                    div()
-                        .w(GROUP_WIDTH)
-                        .flex_none()
-                        .truncate()
-                        .text_right()
-                        .child(place.kind.name()),
-                ),
-            shortcut: None,
+                }),
         }
+    }
+
+    /// A row or a heading, which start their names in the same place.
+    fn line() -> Div {
+        div().h(ROW_HEIGHT).mx_1p5().px_2().flex().gap_2()
+    }
+
+    fn render_heading(&self, heading: &'static str, theme: &Theme) -> AnyElement {
+        Self::line()
+            .debug_selector(move || format!("palette-heading-{heading}"))
+            .items_end()
+            .pb_1()
+            .text_sm()
+            .font_weight(FontWeight::MEDIUM)
+            .text_color(theme.text_muted)
+            .child(div().flex_none().w(CHECK_WIDTH))
+            .child(heading)
+            .into_any_element()
     }
 
     fn render_row(&self, ix: usize, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
@@ -722,11 +853,11 @@ impl Palette {
             id,
             check,
             label,
+            group,
             details,
-            shortcut,
         } = match (&self.asking, &self.listing) {
             (None, Listing::Commands { entries, .. }) => {
-                self.command_row(&entries[row.index], selected, muted, cx)
+                Self::command_row(&entries[row.index], muted)
             }
             (None, Listing::Places(places)) => Self::place_row(&places[row.index], muted),
             (Some(asking), _) => {
@@ -736,22 +867,23 @@ impl Palette {
                 Self::choice_row(&choices[row.index], muted)
             }
         };
+        let group = group.filter(|_| !self.headed());
         let accent = theme.accent;
-        let hover = theme.surface_hover;
         let selector = id.clone();
-        div()
+        Self::line()
             .id(id)
             .debug_selector(move || selector.to_string())
-            .h(ROW_HEIGHT)
-            .mx_1()
-            .px_2()
-            .flex()
             .items_center()
-            .gap_2()
-            .superellipse(radius::ITEM[2])
+            .superellipse(ROW_RADIUS)
             .cursor_pointer()
             .when(selected, |this| this.bg(accent).text_color(white()))
-            .when(!selected, |this| this.hover(move |style| style.bg(hover)))
+            // What's pointed at is picked: what Return runs.
+            .on_mouse_move(cx.listener(move |this, _, _, cx| {
+                if this.selected != ix {
+                    this.selected = ix;
+                    cx.notify();
+                }
+            }))
             .on_click(cx.listener(move |this, _, _, cx| {
                 this.selected = ix;
                 this.pick(cx);
@@ -768,13 +900,45 @@ impl Palette {
                 div()
                     .flex_1()
                     .min_w_0()
-                    .truncate()
-                    .child(highlighted(label, &row.at)),
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .child(
+                        div()
+                            .min_w_0()
+                            .truncate()
+                            .child(highlighted(label, &row.at)),
+                    )
+                    .when_some(group, |this, group| {
+                        this.child(div().flex_none().text_color(muted).child(group))
+                    }),
             )
-            .children(shortcut)
             .child(details)
             .into_any_element()
     }
+}
+
+/// A hint in the footer: what `keys` do, and the keys in a keycap.
+fn hint(id: &'static str, does: &'static str, keys: String, theme: &Theme) -> Stateful<Div> {
+    let text = theme.text;
+    div()
+        .id(id)
+        .debug_selector(move || id.into())
+        .flex()
+        .items_center()
+        .gap_1p5()
+        .cursor_pointer()
+        .hover(move |style| style.text_color(text))
+        .child(does)
+        .child(
+            div()
+                .px_1p5()
+                .border_1()
+                .border_color(theme.border)
+                .superellipse(KEYCAP_RADIUS)
+                .text_xs()
+                .child(keys),
+        )
 }
 
 #[cfg(test)]
@@ -793,6 +957,23 @@ impl Palette {
                 },
             })
             .collect()
+    }
+
+    /// Each heading and what it lists under it, as `listed` names them;
+    /// with no headings, all of it under "".
+    pub fn sections(&self) -> Vec<(String, Vec<String>)> {
+        let listed = self.listed();
+        let mut sections: Vec<(String, Vec<String>)> = Vec::new();
+        for line in &self.lines {
+            match *line {
+                Line::Heading(heading) => sections.push((heading.to_owned(), Vec::new())),
+                Line::Row(row) => match sections.last_mut() {
+                    Some((_, under)) => under.push(listed[row].clone()),
+                    None => sections.push((String::new(), vec![listed[row].clone()])),
+                },
+            }
+        }
+        sections
     }
 
     /// The row Return picks, as `listed` names it.
@@ -912,10 +1093,11 @@ impl Render for Palette {
 
         let header = self.header(&theme);
         let list = self.list(&theme, typing, empty, cx);
+        let footer = self.footer(&theme, typing, cx);
 
         let card = Panel::new()
             .occlude()
-            .superellipse(radius::DIALOG)
+            .superellipse(RADIUS)
             .w(PALETTE_WIDTH)
             .max_w_full()
             .flex()
@@ -932,7 +1114,8 @@ impl Render for Palette {
                         .text_color(color)
                         .child(note),
                 )
-            });
+            })
+            .child(footer);
 
         div()
             .id("palette")

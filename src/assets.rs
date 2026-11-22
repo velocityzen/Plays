@@ -42,6 +42,7 @@ icons!(
     "previous",
     "replay",
     "screenshot",
+    "search",
     "settings",
     "skip-back",
     "skip-forward",

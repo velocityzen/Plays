@@ -44,6 +44,33 @@ pub(super) fn listed(window: WindowHandle<Workspace>, cx: &VisualTestContext) ->
     read(window, cx, Palette::listed)
 }
 
+/// Each heading the palette over `window` shows, and what it lists under
+/// it: with no headings, all of it under "".
+pub(super) fn sections(
+    window: WindowHandle<Workspace>,
+    cx: &VisualTestContext,
+) -> Vec<(String, Vec<String>)> {
+    read(window, cx, Palette::sections)
+}
+
+/// Whether `text` is drawn.
+pub(super) fn painted(cx: &mut VisualTestContext, text: &str) -> bool {
+    times_painted(cx, text) > 0
+}
+
+/// How many times `text` is drawn.
+fn times_painted(cx: &mut VisualTestContext, text: &str) -> usize {
+    testing::painted(cx)
+        .iter()
+        .filter(|(drawn, _)| drawn == text)
+        .count()
+}
+
+/// Whether anything tagged `selector`, made as the test goes, is drawn.
+fn shows_made(cx: &mut VisualTestContext, selector: String) -> bool {
+    shows(cx, Box::leak(selector.into_boxed_str()))
+}
+
 /// Type `text` into the palette's field, after what's there.
 pub(super) fn type_in(cx: &mut VisualTestContext, text: &str) {
     cx.simulate_input(text);
@@ -267,7 +294,13 @@ fn a_command_taking_a_choice_asks_for_it_from_a_list(cx: &mut TestAppContext) {
         "it says which command asks"
     );
     assert_eq!(listed(window, &cx), ["Opening", "Middle", "End"]);
+    assert_eq!(
+        sections(window, &cx),
+        [(String::new(), listed(window, &cx))],
+        "choices have no headings"
+    );
     assert_eq!(read(window, &cx, Palette::current), ["Opening"]);
+    assert!(painted(&mut cx, "Pick"), "Return picks one");
     assert_eq!(
         read(window, &cx, Palette::picked).as_deref(),
         Some("Opening"),
@@ -305,6 +338,7 @@ fn a_command_taking_a_value_asks_for_it_typed_until_it_will_do(cx: &mut TestAppC
         Some(("audio.set_volume", "volume"))
     );
     assert!(shows(&mut cx, "palette-prompt"), "it says what to type");
+    assert!(painted(&mut cx, "OK"), "Return takes what's typed");
     type_in(&mut cx, "150");
     press_and_wait(&mut cx, "enter");
     assert!(shows(&mut cx, "palette-error"), "too loud");
@@ -425,9 +459,26 @@ fn commands_run_from_it_lately_come_first_and_are_kept(cx: &mut TestAppContext) 
     run(&mut cx, "float on top");
     open_palette(&mut cx);
     assert_eq!(listed(window, &cx)[..2], [FLOAT, COPY], "the latest first");
+    let headed = sections(window, &cx);
+    assert_eq!(
+        headed[0],
+        ("Recent".to_owned(), vec![FLOAT.to_owned(), COPY.to_owned()]),
+        "under a heading of their own"
+    );
+    assert!(
+        headed[1..]
+            .iter()
+            .all(|(_, ids)| !ids.contains(&FLOAT.to_owned())),
+        "and not again under their group's"
+    );
     // One run lately goes first, before one found by its title.
     type_in(&mut cx, "window");
     assert_eq!(listed_first_of(window, &cx, &[FLOAT, "window.new"]), FLOAT);
+    assert_eq!(
+        sections(window, &cx),
+        [(String::new(), listed(window, &cx))],
+        "found, they have no headings"
+    );
     press_and_wait(&mut cx, "escape");
 
     // The next launch reads them from their file.
@@ -439,6 +490,143 @@ fn commands_run_from_it_lately_come_first_and_are_kept(cx: &mut TestAppContext) 
     );
     open_palette(&mut cx);
     assert_eq!(listed(window, &cx)[..2], [FLOAT, COPY]);
+}
+
+#[gpui::test]
+fn with_nothing_typed_each_group_is_under_its_heading(cx: &mut TestAppContext) {
+    let (window, mut cx) = testing::start(cx);
+    open_palette(&mut cx);
+    let mut groups: Vec<(String, Vec<String>)> = Vec::new();
+    for id in &listed(window, &cx) {
+        let group = super::group(api::find(id).unwrap());
+        match groups.last_mut() {
+            Some((heading, ids)) if heading == group => ids.push(id.clone()),
+            _ => groups.push((group.to_owned(), vec![id.clone()])),
+        }
+    }
+    let headed = sections(window, &cx);
+    assert_eq!(headed, groups, "each command under its group's name");
+    let mut headings: Vec<&String> = headed.iter().map(|(heading, _)| heading).collect();
+    let shown = headings.len();
+    headings.sort();
+    headings.dedup();
+    assert_eq!(headings.len(), shown, "each group once: {headed:?}");
+    assert!(shows(&mut cx, "palette-heading-Windows"));
+    assert_eq!(
+        times_painted(&mut cx, "Windows"),
+        1,
+        "the heading, and not its rows again"
+    );
+    assert!(shows(&mut cx, "palette-search-icon"));
+
+    type_in(&mut cx, "new window");
+    assert_eq!(
+        sections(window, &cx),
+        [(String::new(), listed(window, &cx))]
+    );
+    assert!(!shows(&mut cx, "palette-heading-Windows"));
+    assert!(
+        painted(&mut cx, "Windows"),
+        "found, a row says its group after its name"
+    );
+}
+
+#[gpui::test]
+fn pointing_at_a_row_picks_it_and_the_arrows_go_on_from_there(cx: &mut TestAppContext) {
+    let (window, mut cx) = testing::start(cx);
+    open_palette(&mut cx);
+    type_in(&mut cx, "copy");
+    let listed = listed(window, &cx);
+    let debug = listed
+        .iter()
+        .position(|id| id == "app.copy_debug_info")
+        .expect("found");
+    assert_ne!(debug, 0, "not the one picked already: {listed:?}");
+    testing::hover(&mut cx, "palette-row-app.copy_debug_info");
+    assert_eq!(
+        read(window, &cx, Palette::picked).as_deref(),
+        Some("app.copy_debug_info"),
+        "what's pointed at is what Return runs"
+    );
+    press_and_wait(&mut cx, "up");
+    assert_eq!(
+        read(window, &cx, Palette::picked),
+        listed.get(debug - 1).cloned(),
+        "the mouse not moving, the arrows go on from it"
+    );
+}
+
+#[gpui::test]
+fn the_footer_says_what_return_and_command_return_do_and_each_can_be_clicked(
+    cx: &mut TestAppContext,
+) {
+    let (window, mut cx) = testing::start(cx);
+    cx.update(|_, cx| api::record(cx));
+    open_palette(&mut cx);
+    type_in(&mut cx, "change setting");
+    let enter = crate::hotkeys::display("enter");
+    assert!(painted(&mut cx, "Run") && painted(&mut cx, &enter));
+    assert!(
+        !painted(&mut cx, "Change Shortcut"),
+        "a command that takes no keys"
+    );
+    clear(&mut cx);
+    type_in(&mut cx, "zzz");
+    assert!(!painted(&mut cx, "Run"), "nothing to run");
+    clear(&mut cx);
+    type_in(&mut cx, "new window");
+    let change = crate::hotkeys::display("secondary-enter");
+    assert!(painted(&mut cx, "Change Shortcut") && painted(&mut cx, &change));
+    testing::click(&mut cx, "palette-return");
+    cx.run_until_parked();
+    assert!(palette(window, &cx).is_none());
+    assert_eq!(
+        ran(&mut cx),
+        [Invocation::new("window.new").from(Source::Palette)]
+    );
+
+    window
+        .update(&mut cx, |_, window, _| window.activate_window())
+        .unwrap();
+    open_palette(&mut cx);
+    type_in(&mut cx, "new window");
+    testing::click(&mut cx, "palette-change-shortcut");
+    cx.run_until_parked();
+    assert!(palette(window, &cx).is_none());
+    assert!(
+        cx.windows()
+            .into_iter()
+            .any(|window| window.downcast::<SettingsView>().is_some()),
+        "Settings opens"
+    );
+}
+
+#[gpui::test]
+fn the_row_picked_and_the_heading_over_it_stay_in_view(cx: &mut TestAppContext) {
+    let (window, mut cx) = testing::start(cx);
+    open(window, &mut cx, &["clip.mp4"]);
+    open_palette(&mut cx);
+    let listed = listed(window, &cx);
+    let headed = sections(window, &cx);
+    assert!(
+        listed.len() + headed.len() > crate::ui::theme::palette::ROWS,
+        "more than show at once"
+    );
+    for (at, id) in listed.iter().enumerate() {
+        if at > 0 {
+            press_and_wait(&mut cx, "down");
+        }
+        assert!(
+            shows_made(&mut cx, format!("palette-row-{id}")),
+            "{id}, going down"
+        );
+    }
+    press_and_wait(&mut cx, "down");
+    assert_eq!(read(window, &cx, Palette::picked), listed.first().cloned());
+    assert!(
+        shows_made(&mut cx, format!("palette-heading-{}", headed[0].0)),
+        "back at the first, its heading too"
+    );
 }
 
 /// Which of `ids` it lists first.
@@ -460,7 +648,7 @@ fn change_shortcut_records_one_in_settings(cx: &mut TestAppContext) {
     type_in(&mut cx, "new window");
     assert!(
         shows(&mut cx, "palette-change-shortcut"),
-        "on the row picked"
+        "in the footer, for the row picked"
     );
     press_and_wait(&mut cx, "secondary-enter");
     assert!(palette(window, &cx).is_none());

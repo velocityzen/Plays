@@ -742,7 +742,9 @@ flowchart LR
   to its end, keeps no place, only its picks if it has any; with neither
   it isn't kept.
 - `src/ui/`: gpui views (`open_url`, the player and Settings below) and a
-  text field based on gpui's input example (`text_input`). `name_sheet`
+  text field based on gpui's input example (`text_input`), framed as a
+  control, or bare inside a field that holds more, as the palette's
+  search does its magnifier. `name_sheet`
   asks what to call something, holding its name: Return names it, blank
   for none, and what it names can refuse a name, the sheet saying why;
   `window.rename` and `tile.rename` with no label show it. A window's
@@ -875,7 +877,7 @@ flowchart LR
   record, its key
   context has `Recording`, which the keys that work anywhere stay out of.
   `record_shortcut` opens it on Hotkeys waiting for a command's keys, its
-  row scrolled into view once drawn, as the palette's Change Shortcut…
+  row scrolled into view once drawn, as the palette's Change Shortcut
   does.
   About shows the version, Plays' license and what it is built with:
   FFmpeg, dav1d and GPUI, crediting the Zed team, from
@@ -897,12 +899,19 @@ flowchart LR
   the queries (`tile.inspect`, `display.ls` and so on) once the window
   is free; or typed, a time, a number in range, a path or a URL, read as
   the argument takes it and said why not until it will do. Change
-  Shortcut… hands the command to Settings. Go to… (`window.go_to`, ⌘P) is
+  Shortcut hands the command to Settings. With nothing typed, the rows
+  are under a heading for each namespace, Recent first (`Line`); found,
+  they're ranked with none, each saying its namespace after its name.
+  The row picked is filled with the accent color, and pointing at one
+  picks it, so the mouse and the arrows move the same row. A footer says
+  what Return does and Change Shortcut's ⌘↩, each in a keycap and each
+  clickable. Go to… (`window.go_to`, ⌘P) is
   the same sheet listing places (`places`): the windows (`window.ls`),
   the tiles in each (`tile.ls`, with their window where there are two or
   more), the media files in the front tile's folder, as it last looked
-  through it, and the files played lately (with their folder), each
-  found as commands are, by its name, its kind or where it is. Each runs
+  through it, and the files played lately (with their folder), under a
+  heading for each kind, and found as commands are, by its name, its
+  kind or where it is. Each runs
   its command from the palette: `window.focus`, `tile.focus`,
   `playback.play_file` in the front tile, or `app.open` in the window.
   ⌘P over the command palette, or ⇧⌘P over Go to…, puts one in the

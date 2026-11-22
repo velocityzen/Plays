@@ -71,6 +71,8 @@ pub struct TextInput {
     is_selecting: bool,
     colors: Colors,
     size: ComponentSize,
+    /// Drawn with no frame of its own, inside one that holds more.
+    bare: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -99,7 +101,16 @@ impl TextInput {
                 cursor: gpui::transparent_black(),
             },
             size: ComponentSize::Medium,
+            bare: false,
         }
+    }
+
+    /// With no frame of its own, and the text size of what it's in: for a
+    /// field that holds more than what's typed, as the palette's search
+    /// does its icon.
+    pub fn bare(mut self) -> Self {
+        self.bare = true;
+        self
     }
 
     pub fn text(&self) -> &str {
@@ -680,10 +691,17 @@ impl Render for TextInput {
             .on_mouse_up(MouseButton::Left, cx.listener(Self::on_mouse_up))
             .on_mouse_up_out(MouseButton::Left, cx.listener(Self::on_mouse_up))
             .on_mouse_move(cx.listener(Self::on_mouse_move))
-            .control_frame(self.size)
+            .map(|input| {
+                if self.bare {
+                    input.flex().items_center().h_full()
+                } else {
+                    input
+                        .control_frame(self.size)
+                        .border_color(if focused { theme.accent } else { theme.border })
+                        .bg(theme.background)
+                }
+            })
             .w_full()
-            .border_color(if focused { theme.accent } else { theme.border })
-            .bg(theme.background)
             .text_color(theme.text)
             .overflow_hidden()
             .child(TextElement { input: cx.entity() })

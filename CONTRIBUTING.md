@@ -761,6 +761,12 @@ check:
     the palette (`Source::Palette`), on the window it's over or, for an
     App command, on the app.
   - Rows saying what each command is set to now and its shortcut.
+  - With nothing typed, each command under its namespace's heading, each
+    heading once, and those run lately under Recent and not again; found
+    or asked for, no headings, a row saying its namespace after its name.
+  - Pointing at a row picking it, and the arrows going on from there.
+  - The footer saying what Return and ⌘Return do, only for a command that
+    takes keys, and a click on either doing it.
   - A command's arguments asked for in turn: a chapter from a list, a
     setting then its value as Settings offers them, a volume typed until
     it's in range, a time as `1:23` or seconds, and languages typed by
@@ -769,7 +775,7 @@ check:
     there is, what's picked now first and checked.
   - Commands run from it lately first, each once, the latest few kept in
     the app's folder (`Folder::for_test`).
-  - Change Shortcut… opening Settings on Hotkeys recording keys for the
+  - Change Shortcut opening Settings on Hotkeys recording keys for the
     command, and missing for a command that takes none.
   - Unit tests in `search` check where letters are found and how they
     score: in order, ignoring case, starting words and side by side
@@ -779,7 +785,7 @@ check:
   two files and a second window, labeled, with one:
   - Listing the windows, the tiles in each, the media files in the front
     tile's folder by name, and the files played lately, the latest first,
-    in that order; this window, its tile in front and the file it plays
+    in that order, under a heading for each; this window, its tile in front and the file it plays
     checked, but not another window's tile in front; a window's files, a
     tile's window (there being two, not one) and a recent file's folder.
   - Finding places by name, kind and where they are, best first.

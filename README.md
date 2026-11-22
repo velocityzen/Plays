@@ -183,17 +183,21 @@ GPU-accelerated UI framework.
 
 ### Command palette
 
-- ⇧⌘P lists every command that can run in the window: type a few
+- ⇧⌘P lists every command that can run in the window, under a heading
+  for each menu, those run from it lately first under Recent: type a few
   letters of its name, its menu or a word for it to find it, and Return
-  runs it. Those run from it lately come first.
+  runs the one picked, in your accent color. Pointing at a row picks it,
+  and a click runs it.
 - Each row says what its command is set to now (✓ when on) and its
   shortcut. What a command takes, it asks for next: a track, a chapter,
   a display, a setting and its value from a list, the one now picked
   first; a time, a volume or a path typed, and said why it won't do.
-- Change Shortcut… (⌘↩ on a row) records a new shortcut for it in
-  Settings → Hotkeys.
+- The footer says what Return does and, for a command that takes keys,
+  Change Shortcut (⌘↩), which records a new shortcut for it in
+  Settings → Hotkeys. Either can be clicked.
 - ⌘P (Go to…) lists the windows, their tiles, the files in the folder of
-  the tile in front and those played lately, found by name the same way.
+  the tile in front and those played lately, under a heading for each,
+  found by name the same way.
   Return brings a window or tile to the front, plays a file from the
   folder in that tile, or opens one played lately.
 

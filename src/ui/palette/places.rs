@@ -34,6 +34,16 @@ impl Kind {
             Self::Recent => "Recent",
         }
     }
+
+    /// What the heading over those of its kind says.
+    pub fn heading(self) -> &'static str {
+        match self {
+            Self::Window => "Windows",
+            Self::Tile => "Tiles",
+            Self::InFolder => "In Folder",
+            Self::Recent => "Recent",
+        }
+    }
 }
 
 /// A place to go to, and the command that goes there.

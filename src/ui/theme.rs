@@ -703,15 +703,27 @@ pub mod palette {
     use gpui::{Pixels, px};
 
     pub const WIDTH: Pixels = px(600.);
-    pub const ROW_HEIGHT: Pixels = px(30.);
-    /// How many rows show before the list scrolls.
-    pub const ROWS: usize = 10;
+    /// Its corners, rounder than a dialog's, around a field and rows
+    /// rounded too.
+    pub const RADIUS: Pixels = px(16.);
+    /// The search field: filled, with the magnifier before what's typed.
+    pub const FIELD_HEIGHT: Pixels = px(40.);
+    pub const FIELD_RADIUS: Pixels = px(10.);
+    pub const SEARCH_ICON: Pixels = px(16.);
+    /// A row's height, and a heading's.
+    pub const ROW_HEIGHT: Pixels = px(32.);
+    /// The row picked's corners, and the chip's in the field.
+    pub const ROW_RADIUS: Pixels = px(8.);
+    /// How many rows and headings show before the list scrolls.
+    pub const ROWS: usize = 12;
+    /// Above the first row and below the last.
+    pub const LIST_PADDING: Pixels = px(6.);
     /// Where a check goes, before the name.
     pub const CHECK_WIDTH: Pixels = px(14.);
-    /// What a command's group takes, at the end of its row.
-    pub const GROUP_WIDTH: Pixels = px(96.);
     /// A detail's opacity, white on the row picked.
     pub const DETAIL_SELECTED: f32 = 0.8;
+    /// A keycap's corners, in the footer.
+    pub const KEYCAP_RADIUS: Pixels = px(5.);
 }
 
 /// The Open URL dialog.
