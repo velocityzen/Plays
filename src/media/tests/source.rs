@@ -39,7 +39,7 @@ fn opens_file_urls_from_the_system() {
 
 #[test]
 fn finds_the_media_files_before_and_after_a_file_and_all_of_them() {
-    let folder = std::env::temp_dir().join(format!("plays-neighbors-{}", std::process::id()));
+    let folder = crate::files::test_folder("neighbors");
     std::fs::create_dir_all(&folder).unwrap();
     for name in ["a.mkv", "b.txt", "c.mp3", ".d.mp4", "e.MP4"] {
         std::fs::write(folder.join(name), b"").unwrap();
@@ -63,13 +63,11 @@ fn finds_the_media_files_before_and_after_a_file_and_all_of_them() {
         Source::Url("https://example.com/live.m3u8".into()).neighbors(),
         Neighbors::default()
     );
-    std::fs::remove_dir_all(&folder).unwrap();
 }
 
 #[test]
 fn lists_media_files_and_links_to_them_but_not_folders() {
-    let folder = std::env::temp_dir().join(format!("plays-media-in-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&folder);
+    let folder = crate::files::test_folder("media-in");
     std::fs::create_dir_all(folder.join("season.mkv")).unwrap();
     for name in ["b.mp4", "notes.txt"] {
         std::fs::write(folder.join(name), b"").unwrap();
@@ -90,7 +88,6 @@ fn lists_media_files_and_links_to_them_but_not_folders() {
         &["b.mp4"]
     };
     assert_eq!(names, expected);
-    std::fs::remove_dir_all(&folder).unwrap();
 }
 
 #[test]

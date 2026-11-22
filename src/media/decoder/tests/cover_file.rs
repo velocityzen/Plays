@@ -3,11 +3,7 @@ use super::*;
 /// A folder of its own holding `files`, empty ones, and `song.m4a`, the
 /// file whose cover is looked for.
 fn folder(name: &str, files: &[&str]) -> PathBuf {
-    let dir = std::env::temp_dir()
-        .join("plays-tests")
-        .join("cover-files")
-        .join(name);
-    let _ = fs::remove_dir_all(&dir);
+    let dir = crate::files::test_folder(&format!("cover-files-{name}"));
     fs::create_dir_all(&dir).unwrap();
     for file in files.iter().chain(&["song.m4a"]) {
         fs::write(dir.join(file), b"").unwrap();

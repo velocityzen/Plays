@@ -52,10 +52,7 @@ fn reads_names() {
 
 #[test]
 fn finds_files_for_a_video() {
-    let dir = std::env::temp_dir()
-        .join("plays-tests")
-        .join("find-external");
-    let _ = fs::remove_dir_all(&dir);
+    let dir = crate::files::test_folder("find-external");
     fs::create_dir_all(dir.join("Subs").join("movie")).unwrap();
     for name in [
         "Movie.mkv",
@@ -98,7 +95,7 @@ fn finds_files_for_a_video() {
 
 #[test]
 fn tells_text_encodings() {
-    let dir = std::env::temp_dir().join("plays-tests").join("encodings");
+    let dir = crate::files::test_folder("encodings");
     fs::create_dir_all(&dir).unwrap();
     let utf8 = dir.join("utf8.srt");
     fs::write(&utf8, "1\n00:00:01,000 --> 00:00:02,000\nПривет, мир\n").unwrap();

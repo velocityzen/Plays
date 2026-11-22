@@ -15,7 +15,7 @@ use crate::api::events::{self, Event, Scope as Heard};
 use crate::app::AudioEngine;
 use crate::cast::fake::FakeTarget;
 use crate::cast::{Casting, Shows};
-use crate::files::Folder;
+use crate::files::{self, Folder};
 use crate::media::output::DeviceInfo;
 use crate::settings::Settings;
 use crate::ui::testing::{self, fixture};
@@ -470,8 +470,7 @@ fn hear(
 /// Check that each command in `namespace` tells what it says it does.
 fn check(namespace: &str, cx: &mut TestAppContext) {
     let _ = testing::start(cx);
-    let screenshots =
-        std::env::temp_dir().join(format!("plays-tells-{namespace}-{}", std::process::id()));
+    let screenshots = files::test_folder(&format!("tells-shots-{namespace}"));
     std::fs::create_dir_all(&screenshots).unwrap();
     let fake = FakeTarget::default();
     let tv = fake.add("Living Room", Shows::Video);
@@ -517,7 +516,6 @@ fn check(namespace: &str, cx: &mut TestAppContext) {
             ));
         }
     }
-    std::fs::remove_dir_all(&screenshots).ok();
     assert!(wrong.is_empty(), "{}", wrong.join("\n"));
 }
 

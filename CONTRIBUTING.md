@@ -1310,5 +1310,11 @@ in real time; Vulkan can be software (lavapipe). It uses `Xvfb`,
   folder for them (`files::Folder`) is none in tests and smoke runs, and a
   test of them gives a folder of its own (`Folder::for_test`). Debug
   selectors exist only in test builds.
+- A test that needs a folder takes one of its own: `Folder::for_test` for
+  the app's, `files::test_folder` for any other. It's named for the test
+  and the run, in `plays-tests` in the temporary folder, and it goes, with
+  all the test put in it, as the test's thread ends, passed or failed
+  (`files::gone_as_test_ends`, which a test checks). Only the media made
+  for the tests there is kept, to be made once.
 - Each test has been checked to fail when what it covers is broken, and
   expected values for color math are worked out apart from Plays' code.

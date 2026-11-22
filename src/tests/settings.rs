@@ -4,11 +4,7 @@ use super::*;
 
 /// A settings file of a test's own, holding `text`.
 fn file(name: &str, text: &str) -> PathBuf {
-    let folder = std::env::temp_dir()
-        .join("plays-tests")
-        .join(format!("settings-{name}-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&folder);
-    let path = folder.join("settings.json");
+    let path = files::test_folder(&format!("settings-{name}")).join("settings.json");
     files::write_whole(&path, text.as_bytes()).unwrap();
     path
 }

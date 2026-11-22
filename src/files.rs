@@ -24,14 +24,10 @@ impl Folder {
         Self(dirs::config_dir().map(|dir| dir.join("plays")))
     }
 
-    /// An empty folder of a test's own, named for it.
+    /// A folder of a test's own, named for it: see `test_folder`.
     #[cfg(test)]
     pub fn for_test(name: &str) -> Self {
-        let dir = std::env::temp_dir()
-            .join("plays-tests")
-            .join(format!("{name}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
-        Self(Some(dir))
+        Self(Some(test_folder(name)))
     }
 
     /// The folder set for the app, or else the app's.
@@ -123,6 +119,62 @@ fn shown_from(path: &Path, home: Option<&Path>) -> String {
         Some(rest) if rest == Path::new("") => "~".to_owned(),
         Some(rest) => Path::new("~").join(rest).display().to_string(),
         None => path.display().to_string(),
+    }
+}
+
+/// A folder of a test's own: `name` and the process's id in `plays-tests`
+/// in the temp folder, with nothing in it yet. Nothing is left there
+/// either: it goes, with all the test put in it, as the test ends.
+#[cfg(test)]
+pub fn test_folder(name: &str) -> PathBuf {
+    let folder = std::env::temp_dir()
+        .join("plays-tests")
+        .join(format!("{name}-{}", std::process::id()));
+    gone_as_test_ends(folder)
+}
+
+#[cfg(test)]
+pub use test_folders::gone_as_test_ends;
+
+/// Folders of a test's own, removed as the test ends, whether it passed or
+/// failed: as its thread ends, each test running on one of its own.
+#[cfg(test)]
+mod test_folders {
+    use std::cell::RefCell;
+    use std::fs;
+    use std::path::{Path, PathBuf};
+
+    thread_local! {
+        /// The folders made for the test on this thread.
+        static MADE: Made = const { Made(RefCell::new(Vec::new())) };
+    }
+
+    struct Made(RefCell<Vec<PathBuf>>);
+
+    impl Drop for Made {
+        fn drop(&mut self) {
+            for folder in self.0.get_mut().drain(..) {
+                remove(&folder);
+            }
+        }
+    }
+
+    /// `folder`, rid of what a run before left there, and removed with
+    /// all in it as the test ends.
+    pub fn gone_as_test_ends(folder: PathBuf) -> PathBuf {
+        remove(&folder);
+        MADE.with(|made| made.0.borrow_mut().push(folder.clone()));
+        folder
+    }
+
+    fn remove(folder: &Path) {
+        // Opened first, as a test may have shut it.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(folder, fs::Permissions::from_mode(0o700)).ok();
+        }
+        fs::remove_dir_all(folder).ok();
     }
 }
 

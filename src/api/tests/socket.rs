@@ -4,7 +4,6 @@
 //! client runs on a thread of its own, as another process would, while
 //! the test runs the app.
 
-use std::cell::RefCell;
 use std::ffi::OsString;
 use std::fs;
 use std::io::{BufRead, BufReader, Write};
@@ -25,6 +24,7 @@ use super::protocol::{Ask, Heard};
 use super::server::LONGEST;
 use super::*;
 use crate::api::{self, Error, Invocation, Target};
+use crate::files;
 use crate::settings::Settings;
 use crate::ui::testing::{self, fixture, wait_until};
 use crate::ui::theme::layout::WINDOW_SIZE;
@@ -35,28 +35,7 @@ use crate::ui::workspace::Workspace;
 /// hundred bytes.
 pub(crate) fn socket(name: &str) -> PathBuf {
     let folder = std::env::temp_dir().join(format!("plays-{name}-{}", std::process::id()));
-    fs::remove_dir_all(&folder).ok();
-    MADE.with(|made| made.0.borrow_mut().push(folder.clone()));
-    folder.join(NAME)
-}
-
-thread_local! {
-    /// The folders made for the test on this thread: each test runs on a
-    /// thread of its own.
-    static MADE: Made = const { Made(RefCell::new(Vec::new())) };
-}
-
-/// Folders removed as the thread that made them ends.
-struct Made(RefCell<Vec<PathBuf>>);
-
-impl Drop for Made {
-    fn drop(&mut self) {
-        for folder in self.0.get_mut().drain(..) {
-            // Opened first, as a test may have failed with it shut.
-            fs::set_permissions(&folder, fs::Permissions::from_mode(0o700)).ok();
-            fs::remove_dir_all(&folder).ok();
-        }
-    }
+    files::gone_as_test_ends(folder).join(NAME)
 }
 
 #[test]

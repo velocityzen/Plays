@@ -344,7 +344,7 @@ fn subtitles_picked_on_the_tile_load_it_again_then_turn_off_and_on(cx: &mut Test
 #[gpui::test]
 fn other_subtitles_load_it_again_with_them(cx: &mut TestAppContext) {
     // The Matroska file with a French SRT beside it.
-    let dir = std::env::temp_dir().join(format!("plays-chromecast-{}", std::process::id()));
+    let dir = crate::files::test_folder("chromecast");
     std::fs::create_dir_all(&dir).unwrap();
     let file = dir.join("clip-subs.mkv");
     std::fs::copy(testing::fixture("clip-subs.mkv"), &file).unwrap();
@@ -384,7 +384,6 @@ fn other_subtitles_load_it_again_with_them(cx: &mut TestAppContext) {
         "the file's cues, not the track's"
     );
     assert!(sent(&tv, "EDIT_TRACKS_INFO").is_empty());
-    std::fs::remove_dir_all(&dir).ok();
 }
 
 /// Cast `clip.mp4` to a TV and end it there as `end` does: the tile's

@@ -35,15 +35,13 @@ fn names_files_by_media_and_position() {
 
 #[test]
 fn saves_without_replacing() {
-    let folder = std::env::temp_dir().join(format!("plays-shots-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&folder);
+    let folder = crate::files::test_folder("shots");
     let first = save(&folder, "clip 00-00-01.000", "png", b"one").unwrap();
     let second = save(&folder, "clip 00-00-01.000", "png", b"two").unwrap();
     assert_eq!(first.file_name().unwrap(), "clip 00-00-01.000.png");
     assert_eq!(second.file_name().unwrap(), "clip 00-00-01.000 2.png");
     assert_eq!(fs::read(&first).unwrap(), b"one");
     assert_eq!(fs::read(&second).unwrap(), b"two");
-    fs::remove_dir_all(&folder).unwrap();
 }
 
 #[test]

@@ -1,6 +1,34 @@
 use std::io::Read;
+use std::sync::mpsc;
+use std::thread;
 
 use super::*;
+
+#[test]
+fn a_tests_folder_goes_as_the_test_ends_whether_it_passed_or_failed() {
+    for fails in [false, true] {
+        let (sent, made) = mpsc::channel();
+        // A test of its own, on a thread of its own as each test is.
+        let ended = thread::spawn(move || {
+            let folder = Folder::for_test("gone");
+            let left = folder.file("left.json").unwrap();
+            write_whole(&left, b"{}").unwrap();
+            // Named for the test again, it's empty again.
+            let folder = Folder::for_test("gone");
+            assert!(!left.exists(), "what was left there is gone");
+            let path = folder.file("settings.json").unwrap();
+            write_whole(&path, b"{}").unwrap();
+            sent.send(path).unwrap();
+            assert!(!fails, "the test failed");
+        })
+        .join();
+        assert_eq!(ended.is_err(), fails);
+        let path = made.recv().unwrap();
+        let folder = path.parent().unwrap();
+        assert!(folder.starts_with(std::env::temp_dir().join("plays-tests")));
+        assert!(!folder.exists(), "{} is left", folder.display());
+    }
+}
 
 #[test]
 fn a_path_shows_the_home_folder_as_a_tilde() {
@@ -19,10 +47,7 @@ fn a_path_shows_the_home_folder_as_a_tilde() {
 
 #[test]
 fn a_file_is_replaced_whole_and_never_written_over() {
-    let folder = std::env::temp_dir()
-        .join("plays-tests")
-        .join(format!("files-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&folder);
+    let folder = test_folder("files");
     let path = folder.join("settings.json");
     write_whole(&path, b"{ \"old\": true }").unwrap();
     // What was there, as a reader that opened it before sees it.
@@ -37,7 +62,6 @@ fn a_file_is_replaced_whole_and_never_written_over() {
         .map(|entry| entry.unwrap().file_name())
         .collect();
     assert_eq!(left, ["settings.json"], "nothing else left beside it");
-    let _ = fs::remove_dir_all(&folder);
 }
 
 #[cfg(unix)]
@@ -45,10 +69,7 @@ fn a_file_is_replaced_whole_and_never_written_over() {
 fn a_private_file_is_its_owners_alone_though_one_left_beside_it_was_not() {
     use std::os::unix::fs::PermissionsExt;
 
-    let folder = std::env::temp_dir()
-        .join("plays-tests")
-        .join(format!("private-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&folder);
+    let folder = test_folder("private");
     let mode = |name: &str| {
         fs::metadata(folder.join(name))
             .unwrap()

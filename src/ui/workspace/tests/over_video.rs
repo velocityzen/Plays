@@ -11,7 +11,7 @@ use serde_json::{Value, json};
 
 use super::open;
 use crate::api::{self, Error, Invocation, Target};
-use crate::files::Folder;
+use crate::files::{self, Folder};
 use crate::media::tracks::TrackKind;
 use crate::settings::{OverVideo, Settings};
 use crate::ui::player::PlayerView;
@@ -220,10 +220,7 @@ fn a_screenshot_saved_is_unsaid_with_notes_hidden_but_one_failed_is_not(cx: &mut
     let (window, mut cx) = testing::start(cx);
     open(window, &mut cx, &["clip.mp4"], false);
     let tile = tile(window, &cx);
-    let folder = std::env::temp_dir()
-        .join("plays-tests")
-        .join(format!("over-video-shots-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&folder);
+    let folder = files::test_folder("over-video-shots");
     fs::create_dir_all(&folder).unwrap();
     let not_a_folder = folder.join("not-a-folder");
     fs::write(&not_a_folder, b"").unwrap();
