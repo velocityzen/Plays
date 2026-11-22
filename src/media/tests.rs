@@ -14,6 +14,7 @@ use super::decoder::output_size;
 use super::external;
 use super::orientation::Orientation;
 use super::output::{self, AudioOutput};
+use super::picking::{Picked, Subtitles, Wanted};
 use super::player::{Player, PlayerOptions};
 use super::source::Source;
 use super::tracks::TrackKind;
@@ -25,6 +26,7 @@ fn options(autoplay: bool, looping: bool) -> PlayerOptions {
         volume: 1.0,
         max_short_side: None,
         hardware_decoding: false,
+        wanted: Wanted::default(),
     }
 }
 
@@ -621,6 +623,61 @@ fn switches_audio_and_subtitle_tracks() {
     assert!(subtitle_text(&player).is_empty());
     assert_eq!(subtitles_at(&mut player, 1.5, &[]), Vec::<String>::new());
     assert_eq!(player.info().unwrap().subtitle_track, None);
+}
+
+/// `tracks_media` opened wanting `wanted`, once it's known: the audio and
+/// subtitle tracks it plays.
+fn opened_wanting(wanted: Wanted, mixer: &Arc<Mixer>) -> (Player, Option<usize>, Option<usize>) {
+    let mut player = Player::open(
+        Source::File(tracks_media()),
+        Some(mixer.clone()),
+        PlayerOptions {
+            wanted,
+            ..options(false, false)
+        },
+    );
+    assert!(wait_until(Duration::from_secs(5), || {
+        player.tick();
+        player.frame_pts().is_some()
+    }));
+    let info = player.info().unwrap();
+    let (audio, subtitles) = (info.audio_track, info.subtitle_track);
+    (player, audio, subtitles)
+}
+
+#[test]
+fn opens_with_the_tracks_wanted() {
+    // Video 0, English audio 1 and German 2, English subtitles 3 and
+    // French 4.
+    let mixer = Mixer::detached(48_000);
+    let languages = |audio: &[&str], subtitles: &[&str]| Wanted {
+        picked: Picked::default(),
+        audio_languages: audio.iter().map(|&l| l.to_owned()).collect(),
+        subtitle_languages: subtitles.iter().map(|&l| l.to_owned()).collect(),
+    };
+    let (_, audio, subtitles) = opened_wanting(Wanted::default(), &mixer);
+    assert_eq!((audio, subtitles), (Some(1), None), "as the file has it");
+
+    let (mut player, audio, subtitles) =
+        opened_wanting(languages(&["ita", "ger"], &["fre"]), &mixer);
+    assert_eq!((audio, subtitles), (Some(2), Some(4)), "German and French");
+    player.play();
+    let heard = mix(&mut player, &mixer, 400, 4800);
+    assert!(heard >= 4800, "the German tone: heard only {heard} frames");
+    player.pause();
+    assert_eq!(subtitles_at(&mut player, 1.2, &["Bonjour"]), ["Bonjour"]);
+    drop(player);
+
+    let mut picked = languages(&["ger"], &["fre"]);
+    picked.picked = Picked {
+        audio: Some(1),
+        subtitles: Some(Subtitles::Track(3)),
+    };
+    let (_, audio, subtitles) = opened_wanting(picked.clone(), &mixer);
+    assert_eq!((audio, subtitles), (Some(1), Some(3)), "as picked before");
+    picked.picked.subtitles = Some(Subtitles::Off);
+    let (_, audio, subtitles) = opened_wanting(picked, &mixer);
+    assert_eq!((audio, subtitles), (Some(1), None), "hidden before");
 }
 
 /// Seek or skip, and wait until the picture and the playhead are at `expected`.

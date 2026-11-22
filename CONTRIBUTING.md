@@ -194,9 +194,18 @@ start, that seeking back lands in a cue already showing, and that the
 Russian one reads right. With its subtitle files slow to open and read, as
 on a share far away, a clip must show its first frame without waiting to
 read them or to open them one by one, and play on while a picked one is
-read, showing it once it is. DVD subtitles drawn as a clip plays are
+read, showing it once it is. The same file opened wanting tracks plays
+the German audio and French subtitles when those languages are preferred,
+the English ones when picked before over them, and none when hidden
+before. DVD subtitles drawn as a clip plays are
 dropped from the GPU once they are off screen. Unit tests cover finding
-files for a video, reading their names and telling encodings, and the
+files for a video, reading their names and telling encodings; which
+audio and subtitles a file opens with (`picking`): picked before if it
+has them, else in the first language preferred, its default track in it,
+a subtitle file beside first and forced ones last, else as the file
+wants; picks kept with a file's place, or alone where it starts over,
+and saved short; languages kept by their first code, offered A to Z, and
+the same in any form or region; and the
 shortcuts: every command that takes keys has them and no other does, no
 default key used twice where it works, each key bound where its command
 works (a player window's not while typing nor elsewhere, ⌘W to the file
@@ -466,6 +475,15 @@ What the window tests check:
 - Settings → Appearance turns the screensaver off and on, and picks how
   long it waits, which shows only while it's on; and turns each panel over
   the video off and on, each on its own.
+- Settings → Audio and Subtitles each add a language from their menu,
+  which leaves out those listed and shuts once one is picked or another
+  pane shows, put it last, move it up or down and take it off.
+- A file opens with its audio and subtitles in the first languages
+  preferred that it has, else as the file says (`languages`, on
+  `clip-languages.mkv`); with the tracks picked in it before, over the
+  languages, and its subtitles hidden if they were, while files resume
+  where they were left; and a file played instead in a tile with its own
+  picks, not the last file's.
 - Settings → About credits Plays, FFmpeg, dav1d and GPUI; a license opens
   under its credit, one at a time, and closes, and leaving the pane
   closes it. `settings::about::tests` checks what each says: no crate
@@ -714,7 +732,8 @@ check:
   - Rows saying what each command is set to now and its shortcut.
   - A command's arguments asked for in turn: a chapter from a list, a
     setting then its value as Settings offers them, a volume typed until
-    it's in range and a time as `1:23` or seconds; and which arguments
+    it's in range, a time as `1:23` or seconds, and languages typed by
+    name or code until each is one; and which arguments
     are picked from a list, typed, or not asked at all. Lists offer what
     there is, what's picked now first and checked.
   - Commands run from it lately first, each once, the latest few kept in

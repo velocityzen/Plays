@@ -42,6 +42,7 @@ use super::theme::Theme;
 use super::theme::motion::LEVEL_FALLOFF;
 use crate::api::{self, Id, Invocation, Run};
 use crate::media::decoder::MediaInfo;
+use crate::media::picking::{Picked, Wanted};
 use crate::media::picture::PictureId;
 use crate::media::subtitles::CueContent;
 use crate::media::{Mixer, Neighbors, Picture, PlayerOptions, Source};
@@ -114,6 +115,9 @@ pub struct PlayerView {
     osd: Option<(Osd, Instant)>,
     /// The subtitles hidden with a shortcut, to show again.
     hidden_subtitles: Option<usize>,
+    /// The tracks picked in its file, since it opened or before, as
+    /// `progress` keeps them for it.
+    picked: Picked,
     /// How the picture is turned, reshaped and cropped.
     adjustments: Adjustments,
     /// Where the picture was last drawn in the window, for Picture in
@@ -181,14 +185,27 @@ impl PlayerView {
     }
 }
 
+/// The tracks to play as `source` opens: those picked in it before, if
+/// Settings say to resume files, else in the languages Settings prefer.
+fn wanted(source: &Source, cx: &App) -> Wanted {
+    let picked = match source {
+        Source::File(path) => progress::picked(path, cx),
+        Source::Url(_) => Picked::default(),
+    };
+    let languages = &cx.global::<Settings>().languages;
+    Wanted {
+        picked,
+        audio_languages: languages.audio.clone(),
+        subtitle_languages: languages.subtitles.clone(),
+    }
+}
+
 impl PlayerView {
-    pub fn new(
-        source: Source,
-        mixer: Option<Arc<Mixer>>,
-        settings: &Settings,
-        graveyard: Graveyard,
-    ) -> Self {
+    pub fn new(source: Source, mixer: Option<Arc<Mixer>>, graveyard: Graveyard, cx: &App) -> Self {
         let title = source.name().into();
+        let settings = cx.global::<Settings>();
+        let wanted = wanted(&source, cx);
+        let picked = wanted.picked;
         let playback = Playback::open(
             source,
             mixer,
@@ -198,6 +215,7 @@ impl PlayerView {
                 volume: settings.default_volume,
                 max_short_side: settings.max_resolution.short_side(),
                 hardware_decoding: settings.hardware_decoding,
+                wanted,
             },
         );
         Self {
@@ -217,6 +235,7 @@ impl PlayerView {
             tracks_open: false,
             osd: None,
             hidden_subtitles: None,
+            picked,
             adjustments: Adjustments::default(),
             picture_bounds: Rc::default(),
             pip: None,
@@ -313,12 +332,15 @@ impl PlayerView {
         let settings = cx.global::<Settings>();
         let autoplay = playing || settings.autoplay;
         let player = self.playback.local();
+        let wanted = wanted(&source, cx);
+        self.picked = wanted.picked;
         let options = PlayerOptions {
             autoplay: autoplay && casting.is_none(),
             looping: player.is_looping(),
             volume: player.volume(),
             max_short_side: settings.max_resolution.short_side(),
             hardware_decoding: settings.hardware_decoding,
+            wanted,
         };
         let muted = player.is_muted();
         self.release_pictures();
@@ -415,14 +437,19 @@ impl PlayerView {
         }
     }
 
-    /// Where its file is, of how long, once it has opened: to resume it
-    /// there. Only files, not streams.
+    /// Where its file is, of how long, once it has opened, and the tracks
+    /// picked in it: to resume it there with them. Only files, not
+    /// streams.
     pub fn progress(&self) -> Option<Note> {
         let Source::File(path) = self.playback.local().source() else {
             return None;
         };
-        let duration = self.duration()?;
-        Some((path.clone(), self.position(), duration))
+        Some(Note {
+            file: path.clone(),
+            position: self.position(),
+            duration: self.duration()?,
+            picked: self.picked,
+        })
     }
 
     /// Start its file where it was left, if Settings say to and it played

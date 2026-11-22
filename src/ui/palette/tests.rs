@@ -376,6 +376,40 @@ fn a_setting_is_picked_then_its_value_as_settings_offers_them(cx: &mut TestAppCo
 }
 
 #[gpui::test]
+fn languages_are_typed_by_name_or_code_until_each_is_one(cx: &mut TestAppContext) {
+    let (window, mut cx) = testing::start(cx);
+    let audio = |cx: &mut VisualTestContext| {
+        cx.update(|_, cx| cx.global::<Settings>().languages.audio.clone())
+    };
+    let ask = |cx: &mut VisualTestContext| {
+        open_palette(cx);
+        type_in(cx, "change setting");
+        press_and_wait(cx, "enter");
+        type_in(cx, "audio languages");
+        press_and_wait(cx, "enter");
+    };
+    ask(&mut cx);
+    assert_eq!(
+        read(window, &cx, Palette::asking),
+        Some(("settings.set", "value"))
+    );
+    assert!(shows(&mut cx, "palette-prompt"), "it says what to type");
+    type_in(&mut cx, "Japanese, Elvish");
+    press_and_wait(&mut cx, "enter");
+    assert!(shows(&mut cx, "palette-error"), "no such language");
+    assert!(palette(window, &cx).is_some(), "it asks again");
+    clear(&mut cx);
+    type_in(&mut cx, "Japanese, en ,, english");
+    press_and_wait(&mut cx, "enter");
+    assert!(palette(window, &cx).is_none());
+    assert_eq!(audio(&mut cx), ["jpn", "eng"], "by code, once each");
+
+    ask(&mut cx);
+    press_and_wait(&mut cx, "enter");
+    assert!(audio(&mut cx).is_empty(), "none: each file's own");
+}
+
+#[gpui::test]
 fn commands_run_from_it_lately_come_first_and_are_kept(cx: &mut TestAppContext) {
     let (window, mut cx) = testing::start(cx);
     let folder = Folder::for_test("palette-recents");

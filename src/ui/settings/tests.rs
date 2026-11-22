@@ -249,6 +249,87 @@ fn each_panel_over_the_video_is_switched_off_and_on(cx: &mut TestAppContext) {
     }
 }
 
+/// A pane's language list's buttons and menu rows, as tests click them:
+/// its pane, then Add Language, Afrikaans and Arabic in its menu, and
+/// the second's up, the first's down and the first's remove buttons.
+type LanguageButtons = [&'static str; 7];
+
+/// A pane's language list: its buttons, and the languages it has.
+type LanguageList = (LanguageButtons, fn(&Settings) -> Vec<String>);
+
+#[gpui::test]
+fn languages_are_added_moved_and_taken_off_in_audio_and_subtitles(cx: &mut TestAppContext) {
+    let (_, mut cx) = testing::start(cx);
+    let mut settings = open_settings(&mut cx);
+    // Tall enough for every row.
+    settings.simulate_resize(gpui::size(px(720.), px(1800.)));
+    let lists: [LanguageList; 2] = [
+        (
+            [
+                "pane-Audio",
+                "audio-languages-add",
+                "audio-languages-afr",
+                "audio-languages-ara",
+                "audio-languages-up-1",
+                "audio-languages-down-0",
+                "audio-languages-remove-0",
+            ],
+            |s| s.languages.audio.clone(),
+        ),
+        (
+            [
+                "pane-Subtitles",
+                "subtitle-languages-add",
+                "subtitle-languages-afr",
+                "subtitle-languages-ara",
+                "subtitle-languages-up-1",
+                "subtitle-languages-down-0",
+                "subtitle-languages-remove-0",
+            ],
+            |s| s.languages.subtitles.clone(),
+        ),
+    ];
+    for ([pane, add, afrikaans, arabic, up, down, remove], list) in lists {
+        let chosen = |cx: &mut VisualTestContext| cx.update(|_, cx| list(cx.global::<Settings>()));
+        click(&mut settings, pane);
+        assert!(chosen(&mut settings).is_empty(), "{pane}: none at first");
+        assert!(!shows(&mut settings, afrikaans), "{pane}: the menu is shut");
+        click(&mut settings, add);
+        assert!(shows(&mut settings, afrikaans) && shows(&mut settings, arabic));
+        click(&mut settings, afrikaans);
+        assert_eq!(chosen(&mut settings), ["afr"], "{pane}");
+        assert!(!shows(&mut settings, arabic), "{pane}: the menu shuts");
+
+        click(&mut settings, add);
+        assert!(!shows(&mut settings, afrikaans), "{pane}: chosen already");
+        click(&mut settings, arabic);
+        assert_eq!(chosen(&mut settings), ["afr", "ara"], "{pane}: added last");
+        click(&mut settings, up);
+        assert_eq!(chosen(&mut settings), ["ara", "afr"], "{pane}: up");
+        click(&mut settings, down);
+        assert_eq!(chosen(&mut settings), ["afr", "ara"], "{pane}: down");
+        click(&mut settings, remove);
+        assert_eq!(chosen(&mut settings), ["ara"], "{pane}: taken off");
+
+        // Left open, the menu is shut as another pane shows, as Change
+        // Shortcut… shows Hotkeys.
+        click(&mut settings, add);
+        assert!(shows(&mut settings, afrikaans), "{pane}: open");
+        // Outside the window's update, which it updates.
+        TestAppContext::update(&settings, |cx| {
+            SettingsView::record_shortcut("playback.play_pause", cx);
+        });
+        settings.run_until_parked();
+        assert!(
+            shows(&mut settings, "hotkey-recording-playback.play_pause"),
+            "{pane}: Hotkeys shows"
+        );
+        press(&mut settings, "escape");
+        click(&mut settings, pane);
+        assert!(!shows(&mut settings, afrikaans), "{pane}: shut since");
+    }
+}
+
 #[cfg(target_os = "macos")]
 #[gpui::test]
 fn picking_how_windows_go_full_screen_sets_it(cx: &mut TestAppContext) {

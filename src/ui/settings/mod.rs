@@ -9,6 +9,7 @@ mod command_line;
 mod file;
 mod form;
 mod hotkeys;
+mod languages;
 mod playback;
 mod screenshots;
 mod subtitles;
@@ -106,6 +107,8 @@ pub struct SettingsView {
     font_menu: subtitles::FontMenu,
     /// Whether the menu of audio outputs is open.
     device_menu: bool,
+    /// The list of languages whose menu of languages to add is open.
+    language_menu: Option<languages::List>,
     /// Whether the settings file's menu is open.
     file_menu: bool,
     recording: hotkeys::Recording,
@@ -183,6 +186,7 @@ impl SettingsView {
             drags: HashMap::new(),
             font_menu: subtitles::FontMenu::default(),
             device_menu: false,
+            language_menu: None,
             file_menu: false,
             recording: hotkeys::Recording::default(),
             scroll: ScrollHandle::new(),

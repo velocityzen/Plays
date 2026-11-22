@@ -111,6 +111,16 @@ impl Default for OverVideo {
     }
 }
 
+/// The languages to play a file's audio and show its subtitles in, first
+/// first, each by its code (`tracks::language`): a file opens with the
+/// first it has. None leaves it to the file.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Languages {
+    pub audio: Vec<String>,
+    pub subtitles: Vec<String>,
+}
+
 /// Whether player windows stay above other apps' windows.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -426,6 +436,7 @@ pub struct Settings {
     pub max_resolution: MaxResolution,
     /// Decode video on the GPU when the hardware supports it.
     pub hardware_decoding: bool,
+    pub languages: Languages,
     /// 0 picks a column count automatically.
     pub columns: u32,
     pub controls: ControlsVisibility,
@@ -474,6 +485,7 @@ impl Default for Settings {
             video_fit: VideoFit::Contain,
             max_resolution: MaxResolution::P1080,
             hardware_decoding: true,
+            languages: Languages::default(),
             columns: 0,
             controls: ControlsVisibility::OnHover,
             show_titles: true,

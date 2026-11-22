@@ -39,7 +39,8 @@ pub const COMMANDS: &[Spec] = &[
         Scope::App,
         "[{key, title, pane, kind, value, default}], in the order Settings has them: \
          kind is toggle, choice (with choices: [{value, label}]), number (with min and \
-         max), font, folder, output or keys.",
+         max), font, folder, output, keys or languages (a list, by name or code, kept \
+         by code).",
         |_, _, cx| Ok(listing(cx)),
     )
     .keywords(&["list", "ls", "preferences", "options"]),

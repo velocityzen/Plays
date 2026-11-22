@@ -20,6 +20,7 @@ icons!(
     "check",
     "chevron-down",
     "chevron-right",
+    "chevron-up",
     "chevron-up-down",
     "close",
     "display",

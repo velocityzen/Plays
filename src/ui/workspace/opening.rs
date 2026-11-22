@@ -11,7 +11,6 @@ use super::Workspace;
 use crate::media::Source;
 use crate::media::source::media_in;
 use crate::recents;
-use crate::settings::Settings;
 use crate::ui::open_url::{OpenUrlDialog, OpenUrlEvent};
 use crate::ui::player::PlayerView;
 
@@ -38,7 +37,6 @@ impl Workspace {
         if sources.is_empty() {
             return;
         }
-        let settings = cx.global::<Settings>().clone();
         let mixer = self.mixer(cx);
         let mut opened = Vec::new();
         for source in sources {
@@ -49,7 +47,7 @@ impl Workspace {
             let graveyard = self.graveyard.clone();
             let mixer = mixer.clone();
             let view = cx.new(|cx| {
-                let mut view = PlayerView::new(source, mixer, &settings, graveyard);
+                let mut view = PlayerView::new(source, mixer, graveyard, cx);
                 view.resume(cx);
                 view.find_neighbors(cx);
                 view

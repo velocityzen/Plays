@@ -1,10 +1,12 @@
-//! Audio: the volume of everything, the output it plays through, and
-//! whether a window sent to a display plays through its speakers.
+//! Audio: the volume of everything, the output it plays through, whether
+//! a window sent to a display plays through its speakers, and the
+//! languages to play files' audio in.
 
 use gpui::prelude::*;
 use gpui::{AnyElement, ClickEvent, Context, Corner, SharedString, Window, div, point};
 
 use super::form::{group, percent_slider, row, set};
+use super::languages::{List, languages_group};
 use super::{Pane, SettingsView};
 use crate::api::commands::output;
 use crate::app::{AudioEngine, Route};
@@ -101,7 +103,14 @@ impl Pane for AudioPane {
             Switch::new("sound-follows-display", s.sound_follows_display)
                 .on_toggle(|&on, _, cx| set("sound_follows_display", on, cx)),
         ));
-        vec![group(None, theme, rows)]
+        vec![
+            group(None, theme, rows),
+            languages_group(view, List::Audio, s, theme, cx),
+        ]
+    }
+
+    fn leave(&self, view: &mut SettingsView) {
+        view.language_menu = None;
     }
 }
 

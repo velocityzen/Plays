@@ -670,6 +670,14 @@ pub mod settings {
     pub const FONT_MENU_TOP: Pixels = px(32.);
     pub const FONT_MENU_WIDTH: Pixels = px(260.);
     pub const FONT_MENU_HEIGHT: Pixels = px(280.);
+    /// The button that adds a preferred language, which its menu lines up
+    /// with.
+    pub const LANGUAGE_BUTTON_WIDTH: Pixels = px(160.);
+    /// How far below that button's top its menu goes.
+    pub const LANGUAGE_MENU_TOP: Pixels = px(32.);
+    pub const LANGUAGE_MENU_WIDTH: Pixels = px(220.);
+    /// The most the menu of languages is tall before it scrolls.
+    pub const LANGUAGE_MENU_MAX_HEIGHT: Pixels = px(280.);
     /// The most a command's hotkey chips take before wrapping.
     pub const HOTKEY_KEYS_MAX_WIDTH: Pixels = px(280.);
     /// The most a credit's license takes in About, such as "MIT OR

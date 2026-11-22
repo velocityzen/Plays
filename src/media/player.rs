@@ -8,6 +8,7 @@ use gpui::RenderImage;
 
 use super::audio::Mixer;
 use super::decoder::{self, Command, DecodeOptions, MediaInfo, SeekMode, Shared, VideoFrame};
+use super::picking::Wanted;
 use super::picture::Picture;
 use super::source::Source;
 use super::subtitles::CueContent;
@@ -24,13 +25,15 @@ const STREAM_MAX_WAIT: Duration = Duration::from_secs(3);
 /// How far back the console's frame rate and lateness look.
 const RECENT: Duration = Duration::from_secs(1);
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct PlayerOptions {
     pub autoplay: bool,
     pub looping: bool,
     pub volume: f32,
     pub max_short_side: Option<u32>,
     pub hardware_decoding: bool,
+    /// The audio and subtitles to play as it opens.
+    pub wanted: Wanted,
 }
 
 /// What the view needs to do after advancing the player.
@@ -193,6 +196,7 @@ impl Player {
                 max_short_side: options.max_short_side,
                 hardware: options.hardware_decoding,
             },
+            options.wanted,
             receiver,
         );
         Self {

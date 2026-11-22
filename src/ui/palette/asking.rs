@@ -16,6 +16,7 @@ use crate::api::args::{Arg, Kind};
 use crate::api::commands::settings::protocols;
 use crate::api::{self, Invocation, Source, Spec, Target};
 use crate::files;
+use crate::media::tracks;
 use crate::settings::Settings;
 use crate::settings::fields::{self, Field};
 use crate::ui::player::format_time;
@@ -446,7 +447,10 @@ fn setting_values(args: &Map<String, Value>, on: &mut On) -> Option<Vec<Choice>>
                 )
                 .collect()
         }
-        fields::Kind::Number { .. } | fields::Kind::Folder | fields::Kind::Keys => return None,
+        fields::Kind::Number { .. }
+        | fields::Kind::Folder
+        | fields::Kind::Keys
+        | fields::Kind::Languages => return None,
     };
     Some(values)
 }
@@ -518,11 +522,30 @@ fn typed(
                         })
                     }),
                 )),
+                fields::Kind::Languages => Some((
+                    "Languages, first first, such as English, fr; none for each file's own"
+                        .to_owned(),
+                    Rc::new(|typed| languages_typed(typed).map(|codes| json!(codes))),
+                )),
                 _ => None,
             }
         }
         _ => None,
     }
+}
+
+/// The languages typed, by name or code and split by commas, as Settings
+/// keeps them; none is none.
+fn languages_typed(typed: &str) -> Result<Vec<&'static str>, String> {
+    let words: Vec<&str> = typed
+        .split(',')
+        .map(str::trim)
+        .filter(|word| !word.is_empty())
+        .collect();
+    if let Some(unknown) = words.iter().find(|word| tracks::language(word).is_none()) {
+        return Err(format!("{unknown} isn't a language Plays knows"));
+    }
+    fields::languages(&json!(words)).ok_or_else(|| "Type languages, such as English, fr".to_owned())
 }
 
 /// What's typed for `arg`, read as its kind says, and checked.

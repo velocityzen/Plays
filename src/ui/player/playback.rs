@@ -512,8 +512,9 @@ impl PlayerView {
     }
 
     /// Play another track, or turn subtitles off (`None`), here and on the
-    /// device.
+    /// device: picked, so its file plays it again as it opens again.
     pub fn select_track(&mut self, kind: TrackKind, index: Option<usize>, cx: &App) {
         self.playback.select_track(kind, index, cx);
+        self.picked.pick(kind, index);
     }
 }

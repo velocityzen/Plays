@@ -16,6 +16,9 @@
 # tone.m4a       1 s of 440 Hz, AAC, no picture
 # clip.srt       two cues, found beside clip.mp4
 # clip-subs.mkv  clip.mp4 with clip.srt in it, as an English track
+# clip-languages.mkv  clip.mp4 with its sound as English, a German tone
+#                at 660 Hz, and clip.srt as English and French subtitles,
+#                none of them a default
 # clip-chapters.mkv  clip.mp4 in three chapters: Opening, Middle (from
 #                0.8 s) and End (from 1.4 s)
 # clip-dvdsub.mkv  clip.mp4 with DVD subtitles at clip.srt's cue times: a
@@ -64,6 +67,19 @@ SRT
 "${ffmpeg[@]}" -i clip.mp4 -i clip.srt -map 0 -map 1 -c copy -c:s srt \
     -metadata:s:s:0 language=eng -metadata:s:s:0 title=English \
     -map_metadata -1 clip-subs.mkv
+
+sed -e 's/^First$/Premier/' -e 's/^Second$/Deuxième/' clip.srt > clip-fr.srt
+"${ffmpeg[@]}" -i clip.mp4 \
+    -f lavfi -i "sine=frequency=660:sample_rate=48000:duration=2" \
+    -i clip.srt -i clip-fr.srt \
+    -map 0:v -map 0:a -map 1:a -map 2 -map 3 \
+    -c:v copy -c:a:0 copy -c:a:1 aac -b:a:1 32k -ac:a:1 1 -c:s srt \
+    -metadata:s:a:0 language=eng -metadata:s:a:1 language=ger \
+    -metadata:s:s:0 language=eng -metadata:s:s:1 language=fre \
+    -disposition:a:0 default -disposition:a:1 0 \
+    -disposition:s:0 0 -disposition:s:1 0 \
+    -map_metadata -1 clip-languages.mkv
+rm clip-fr.srt
 
 cat > chapters.txt <<'META'
 ;FFMETADATA1

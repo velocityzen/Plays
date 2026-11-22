@@ -150,7 +150,7 @@ Inside `src/`:
 | `ui/` | gpui views: windows, tiles, Settings, Picture in Picture, components and theme. |
 | `cast/` | Casting tiles to TVs and speakers. |
 | `settings.rs` | The settings, saved as `plays/settings.json` in the user's config folder. |
-| `progress.rs` | Where each file was when it last played, kept for 30 days in `plays/progress.json`, so it starts there again. |
+| `progress.rs` | Where each file was when it last played, and the tracks picked in it, kept for 30 days in `plays/progress.json`, so it starts there with them again. |
 | `files.rs` | The folder those two files and the AirPlay pairings are kept in, and writing them whole, so a crash never leaves one half written. |
 | `hotkeys.rs` | The keys commands take, which Settings can change. |
 | `assets.rs` | Icons compiled into the binary, so the app needs no files next to it. |
@@ -457,7 +457,18 @@ flowchart LR
   FFmpeg has no name for is unspecified here instead. `clippy.toml` keeps
   ffmpeg-next's own getters for them out of the code.
 - `src/media/tracks.rs`: the tracks a file has, and their names for the
-  menu (language, title, forced and SDH, codec, channels).
+  menu (language, title, forced and SDH, codec, channels); the languages
+  Plays knows, each kept by its first code (`language`), offered A to Z
+  (`languages`), and the same in any form or region (`same_language`).
+- `src/media/picking.rs`: which tracks play as a file opens (`Wanted`,
+  which `PlayerOptions` hands the decoder thread, which opens them): the
+  audio and subtitles picked in it before (`Picked`, which `progress`
+  keeps), if it has them, or none if its subtitles were hidden; else in
+  the first language Settings → Audio or Subtitles prefer that it has;
+  else the audio FFmpeg finds best, and a subtitle file beside the video,
+  else the file's default subtitles or forced ones. A tile notes what is
+  picked in it, from the track menu, a shortcut or a command, as
+  `select_track` plays it.
 - `src/media/chapters.rs`: a file's chapters, read with its info (their
   times from the start of the file, in order), and which one a time is
   in, the next and the previous. Going back within the first couple of
@@ -698,8 +709,9 @@ flowchart LR
   the file (`subtitles.size`), with what the Settings window calls it, its
   pane, and what it takes: on or off, one of the choices the window offers
   (which the panes draw from the same lists), a number in the window's
-  range, a font the system has, a folder, an output, or the shortcuts
-  changed; and whether each protocol looks for devices
+  range, a font the system has, a folder, an output, the shortcuts
+  changed, or languages (by name or code, kept by code, each once); and
+  whether each protocol looks for devices
   (`casting.look_with.Chromecast`), for the protocols there are. `with`
   sets one, checked so, by laying the value into the settings as JSON and
   reading them back, which the type checks too. The `settings` commands
@@ -721,11 +733,14 @@ flowchart LR
   (`recent-files.json`), by full path, noted as a tile opens one or plays
   another in its place. File → Open Recent and Go to… offer them, and
   `app.clear_recent_files` forgets them.
-- `src/progress.rs`: where each file was when it last played, by its
-  whole path, kept for 30 days in `progress.json` beside the settings.
-  Tiles note it as they close or open another file, every 10 seconds
-  while files are open, and as the app quits; a tile opening a file seeks
-  to it. A file barely begun, or played nearly to its end, isn't kept.
+- `src/progress.rs`: where each file was when it last played, and the
+  audio and subtitles picked in it (`picking::Picked`), by its whole
+  path, kept for 30 days in `progress.json` beside the settings. Tiles
+  note it as they close or open another file, every 10 seconds while
+  files are open, and as the app quits; a tile opening a file seeks to
+  it and plays the tracks picked. A file barely begun, or played nearly
+  to its end, keeps no place, only its picks if it has any; with neither
+  it isn't kept.
 - `src/ui/`: gpui views (`open_url`, the player and Settings below) and a
   text field based on gpui's input example (`text_input`). `name_sheet`
   asks what to call something, holding its name: Return names it, blank
@@ -849,7 +864,9 @@ flowchart LR
   Line, About) is a
   file of its own with its name and icon for the sidebar; `form` has the
   cards, rows and sliders they are made of, and `file` the settings file's
-  menu at the sidebar's foot. Each control sets its setting with
+  menu at the sidebar's foot; `languages` the list of languages Audio
+  and Subtitles each prefer, whose rows move up or down or go, with Add
+  Language's menu. Each control sets its setting with
   `settings.set` (`form::set`), once the event is handled; a slider shows
   its setting as it's dragged, unsaved, and sets it once let go, and
   Hotkeys sets the shortcuts changed, or resets them. Importing a file and

@@ -10,6 +10,7 @@ mod controls;
 mod dragging;
 mod events;
 mod inspect;
+mod languages;
 mod over_video;
 mod screensaver;
 mod sound;

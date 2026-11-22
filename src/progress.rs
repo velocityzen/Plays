@@ -1,7 +1,8 @@
 //! Settings → Playback → Resume files where they were left: where each
-//! file was when it last played, kept for `KEEP_DAYS` days, so it starts
-//! there when opened again. A file barely begun, or played nearly to its
-//! end, isn't kept: it starts over. Saved to `progress.json` beside the
+//! file was when it last played, and the tracks picked in it, kept for
+//! `KEEP_DAYS` days, so it starts there with them when opened again. A
+//! file barely begun, or played nearly to its end, starts over, with the
+//! tracks picked in it if any. Saved to `progress.json` beside the
 //! settings as tiles close or play another file, every `SAVE_EVERY` while
 //! files are open, and as the app quits.
 
@@ -14,6 +15,7 @@ use gpui::{App, Global};
 use serde::{Deserialize, Serialize};
 
 use crate::files::Folder;
+use crate::media::picking::Picked;
 use crate::settings::Settings;
 
 /// How long a file's place is kept since it last played.
@@ -27,13 +29,16 @@ const BEGUN: f64 = 10.0;
 /// over.
 const MARGIN: f64 = 0.05;
 
-/// Where a file was.
+/// Where a file was, and the tracks picked in it.
 #[derive(Clone, Copy, PartialEq, Debug, Serialize, Deserialize)]
 struct Spot {
-    /// Seconds into it.
-    position: f64,
+    /// Seconds into it, unless it starts over.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    position: Option<f64>,
     /// When it last played there, in seconds since 1970.
     played: u64,
+    #[serde(default, skip_serializing_if = "Picked::is_empty")]
+    picked: Picked,
 }
 
 /// Where each file was, by its path.
@@ -46,9 +51,17 @@ pub struct Progress {
 
 impl Global for Progress {}
 
-/// A file's place, as a tile has it: the file, where it is, and how long it
-/// is.
-pub type Note = (PathBuf, f64, f64);
+/// A file's place, as a tile has it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Note {
+    pub file: PathBuf,
+    /// Where it is, in seconds.
+    pub position: f64,
+    /// How long it is.
+    pub duration: f64,
+    /// The tracks picked in it.
+    pub picked: Picked,
+}
 
 /// The places' file, in the app's folder beside the settings.
 const FILE: &str = "progress.json";
@@ -100,17 +113,18 @@ impl Progress {
         progress
     }
 
-    fn note(&mut self, file: &Path, position: f64, duration: f64, now: u64) {
-        let key = key(file);
-        if !worth_resuming(position, duration) {
+    fn note(&mut self, note: &Note, now: u64) {
+        let key = key(&note.file);
+        let position = worth_resuming(note.position, note.duration).then_some(note.position);
+        if position.is_none() && note.picked.is_empty() {
             self.changed |= self.files.remove(&key).is_some();
             return;
         }
-        // Left where it was: it didn't play since.
+        // Left as it was: it didn't play since.
         if self
             .files
             .get(&key)
-            .is_some_and(|spot| spot.position == position)
+            .is_some_and(|spot| spot.position == position && spot.picked == note.picked)
         {
             return;
         }
@@ -119,16 +133,24 @@ impl Progress {
             Spot {
                 position,
                 played: now,
+                picked: note.picked,
             },
         );
         self.changed = true;
     }
 
+    fn spot(&self, file: &Path, now: u64) -> Option<&Spot> {
+        self.files.get(&key(file)).filter(|spot| fresh(spot, now))
+    }
+
     fn recall(&self, file: &Path, now: u64) -> Option<f64> {
-        self.files
-            .get(&key(file))
-            .filter(|spot| fresh(spot, now))
-            .map(|spot| spot.position)
+        self.spot(file, now)?.position
+    }
+
+    fn picked(&self, file: &Path, now: u64) -> Picked {
+        self.spot(file, now)
+            .map(|spot| spot.picked)
+            .unwrap_or_default()
     }
 
     fn forget_old(&mut self, now: u64) {
@@ -165,8 +187,8 @@ pub fn note(notes: impl IntoIterator<Item = Note>, save: bool, cx: &mut App) {
     let folder = Folder::of(cx);
     let progress = cx.default_global::<Progress>();
     let now = now();
-    for (file, position, duration) in notes {
-        progress.note(&file, position, duration, now);
+    for note in notes {
+        progress.note(&note, now);
     }
     if save {
         progress.save(&folder);
@@ -180,6 +202,17 @@ pub fn recall(file: &Path, cx: &App) -> Option<f64> {
         return None;
     }
     cx.try_global::<Progress>()?.recall(file, now())
+}
+
+/// The tracks picked in `file`, if Settings say to resume files and it
+/// played within `KEEP_DAYS`.
+pub fn picked(file: &Path, cx: &App) -> Picked {
+    if !cx.global::<Settings>().resume_files {
+        return Picked::default();
+    }
+    cx.try_global::<Progress>()
+        .map(|progress| progress.picked(file, now()))
+        .unwrap_or_default()
 }
 
 /// Forget every file's place, the saved ones too, as Settings stop keeping
@@ -197,8 +230,27 @@ mod tests {
 
     use super::*;
     use crate::files;
+    use crate::media::picking::Subtitles;
 
     const DAY: u64 = 24 * 60 * 60;
+
+    /// `file` at `position` of `duration`, with no tracks picked.
+    fn at(file: &Path, position: f64, duration: f64) -> Note {
+        Note {
+            file: file.to_owned(),
+            position,
+            duration,
+            picked: Picked::default(),
+        }
+    }
+
+    /// `file` at `position` of `duration`, with `picked`.
+    fn with(file: &Path, position: f64, duration: f64, picked: Picked) -> Note {
+        Note {
+            picked,
+            ..at(file, position, duration)
+        }
+    }
 
     /// The app, as far as places go: Settings as they start out, which
     /// resume files, and the places loaded from `folder`, kept there.
@@ -233,37 +285,86 @@ mod tests {
     fn a_place_is_kept_for_thirty_days_since_it_last_played() {
         let mut progress = Progress::default();
         let file = Path::new("/videos/movie.mkv");
-        progress.note(file, 600.0, 7200.0, 0);
+        progress.note(&at(file, 600.0, 7200.0), 0);
         assert_eq!(progress.recall(file, 0), Some(600.0));
         assert!(progress.changed);
 
         progress.changed = false;
-        progress.note(file, 600.0, 7200.0, 10 * DAY);
+        progress.note(&at(file, 600.0, 7200.0), 10 * DAY);
         assert!(!progress.changed, "not played since: still from then");
         assert_eq!(progress.recall(file, 30 * DAY), Some(600.0));
         assert_eq!(progress.recall(file, 31 * DAY), None, "gone");
 
-        progress.note(file, 900.0, 7200.0, 20 * DAY);
+        progress.note(&at(file, 900.0, 7200.0), 20 * DAY);
         assert_eq!(progress.recall(file, 31 * DAY), Some(900.0), "played since");
         progress.forget_old(51 * DAY);
         assert!(progress.files.is_empty());
 
-        progress.note(file, 600.0, 7200.0, 0);
-        progress.note(file, 7190.0, 7200.0, 0);
+        progress.note(&at(file, 600.0, 7200.0), 0);
+        progress.note(&at(file, 7190.0, 7200.0), 0);
         assert_eq!(progress.recall(file, 0), None, "played to its end");
+    }
+
+    #[test]
+    fn the_tracks_picked_are_kept_with_the_place_or_without_one() {
+        let mut progress = Progress::default();
+        let file = Path::new("/videos/movie.mkv");
+        let picked = Picked {
+            audio: Some(2),
+            subtitles: Some(Subtitles::Track(4)),
+        };
+        progress.note(&with(file, 600.0, 7200.0, picked), 0);
+        assert_eq!(progress.recall(file, 0), Some(600.0));
+        assert_eq!(progress.picked(file, 0), picked);
+
+        progress.changed = false;
+        progress.note(&with(file, 600.0, 7200.0, picked), DAY);
+        assert!(!progress.changed, "as it was");
+        let hidden = Picked {
+            subtitles: Some(Subtitles::Off),
+            ..picked
+        };
+        progress.note(&with(file, 600.0, 7200.0, hidden), DAY);
+        assert!(progress.changed, "subtitles hidden since");
+        assert_eq!(progress.picked(file, 31 * DAY), hidden, "and played then");
+
+        for (position, why) in [(3.0, "barely begun"), (7190.0, "played to its end")] {
+            progress.note(&with(file, position, 7200.0, picked), 0);
+            assert_eq!(progress.recall(file, 0), None, "{why}: starts over");
+            assert_eq!(progress.picked(file, 0), picked, "{why}: with them");
+        }
+        assert_eq!(progress.picked(file, 31 * DAY), Picked::default(), "gone");
+        progress.note(&at(file, 3.0, 7200.0), 0);
+        assert!(progress.files.is_empty(), "nothing to keep");
+        assert_eq!(progress.picked(file, 0), Picked::default());
     }
 
     #[test]
     fn places_are_saved_by_whole_path() {
         let mut progress = Progress::default();
-        progress.note(Path::new("/videos/movie.mkv"), 600.0, 7200.0, 7);
+        progress.note(&at(Path::new("/videos/movie.mkv"), 600.0, 7200.0), 7);
         let json = serde_json::to_string(&progress.files).unwrap();
         assert_eq!(
             json,
             r#"{"/videos/movie.mkv":{"position":600.0,"played":7}}"#
         );
+        let picked = Picked {
+            audio: None,
+            subtitles: Some(Subtitles::Off),
+        };
+        progress.note(
+            &with(Path::new("/videos/movie.mkv"), 1.0, 7200.0, picked),
+            7,
+        );
+        let json = serde_json::to_string(&progress.files).unwrap();
+        assert_eq!(
+            json,
+            r#"{"/videos/movie.mkv":{"played":7,"picked":{"subtitles":"off"}}}"#
+        );
+        let read: HashMap<String, Spot> = serde_json::from_str(&json).unwrap();
+        assert_eq!(read, progress.files);
         let relative = Path::new("movie.mkv");
-        progress.note(relative, 60.0, 7200.0, 7);
+        progress.note(&at(relative, 60.0, 7200.0), 7);
         assert!(progress.files.contains_key(&key(relative)));
         assert!(Path::new(&key(relative)).is_absolute());
     }
@@ -275,7 +376,7 @@ mod tests {
         start(cx, &folder);
         let movie = Path::new("/videos/movie.mkv");
         cx.update(|cx| {
-            note([(movie.to_owned(), 600.0, 7200.0)], false, cx);
+            note([at(movie, 600.0, 7200.0)], false, cx);
             assert!(!path.exists(), "not saved unless asked");
             save_now(cx);
         });
@@ -322,7 +423,7 @@ mod tests {
         let folder = Folder::for_test("progress-half");
         start(cx, &folder);
         let movie = Path::new("/videos/movie.mkv");
-        cx.update(|cx| note([(movie.to_owned(), 600.0, 7200.0)], true, cx));
+        cx.update(|cx| note([at(movie, 600.0, 7200.0)], true, cx));
         assert_eq!(Progress::load(&folder).recall(movie, now()), Some(600.0));
     }
 
@@ -333,7 +434,7 @@ mod tests {
         start(cx, &folder);
         let movie = Path::new("/videos/movie.mkv");
         cx.update(|cx| {
-            note([(movie.to_owned(), 600.0, 7200.0)], true, cx);
+            note([at(movie, 600.0, 7200.0)], true, cx);
             assert!(path.exists());
             forget_all(cx);
             assert_eq!(recall(movie, cx), None);
@@ -343,13 +444,38 @@ mod tests {
     }
 
     #[gpui::test]
+    fn the_tracks_picked_are_saved_and_read_back(cx: &mut TestAppContext) {
+        let folder = Folder::for_test("progress-picked");
+        start(cx, &folder);
+        let movie = Path::new("/videos/movie.mkv");
+        let picked = Picked {
+            audio: Some(1),
+            subtitles: Some(Subtitles::Track(3)),
+        };
+        cx.update(|cx| {
+            note([with(movie, 1.0, 7200.0, picked)], true, cx);
+            assert_eq!(super::picked(movie, cx), picked);
+            assert_eq!(recall(movie, cx), None);
+        });
+        let loaded = Progress::load(&folder);
+        assert_eq!(loaded.picked(movie, now()), picked);
+    }
+
+    #[gpui::test]
     fn no_places_are_kept_when_settings_say_not_to(cx: &mut TestAppContext) {
         let folder = Folder::for_test("progress-off");
         start(cx, &folder);
         let movie = Path::new("/videos/movie.mkv");
+        let picked = Picked {
+            audio: Some(1),
+            subtitles: None,
+        };
         cx.update(|cx| {
+            note([with(movie, 600.0, 7200.0, picked)], false, cx);
+            assert_eq!(super::picked(movie, cx), picked);
             Settings::update(cx, false, |settings| settings.resume_files = false);
-            note([(movie.to_owned(), 600.0, 7200.0)], true, cx);
+            assert_eq!(super::picked(movie, cx), Picked::default(), "nor picks");
+            note([at(movie, 600.0, 7200.0)], true, cx);
             assert_eq!(recall(movie, cx), None);
         });
         assert!(!folder.file(FILE).unwrap().exists());

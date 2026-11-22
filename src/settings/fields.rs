@@ -10,6 +10,8 @@ use std::path::Path;
 use serde::Serialize;
 use serde_json::{Map, Value};
 
+use crate::media::tracks;
+
 use super::{
     ControlsVisibility, FloatOnTop, FullScreen, GAMMA_RANGE, JPEG_QUALITY_RANGE, MaxResolution,
     PanelLook, SUBTITLE_COLORS, SUBTITLE_POSITION_RANGE, SUBTITLE_SIZE_RANGE, ScreenshotFormat,
@@ -113,6 +115,8 @@ pub enum Kind {
     Output,
     /// The shortcuts changed, by command.
     Keys,
+    /// Languages, first first, each by its name or code: kept by its code.
+    Languages,
 }
 
 impl Kind {
@@ -126,6 +130,7 @@ impl Kind {
             Self::Folder => "folder",
             Self::Output => "output",
             Self::Keys => "keys",
+            Self::Languages => "languages",
         }
     }
 }
@@ -225,6 +230,12 @@ const FIELDS: &[Field] = &[
         Kind::Toggle,
     ),
     Field::new(
+        "languages.audio",
+        "Audio languages",
+        "Audio",
+        Kind::Languages,
+    ),
+    Field::new(
         "video_fit",
         "Scaling",
         "Video",
@@ -298,6 +309,12 @@ const FIELDS: &[Field] = &[
         "Height",
         "Subtitles",
         range(&SUBTITLE_POSITION_RANGE),
+    ),
+    Field::new(
+        "languages.subtitles",
+        "Subtitle languages",
+        "Subtitles",
+        Kind::Languages,
     ),
     Field::new("screenshots.folder", "Folder", "Screenshots", Kind::Folder),
     Field::new(
@@ -460,7 +477,7 @@ pub fn changed(old: &Settings, new: &Settings, protocols: &[&'static str]) -> Ve
 pub fn with(
     settings: &Settings,
     field: &Field,
-    value: Value,
+    mut value: Value,
     fonts: &[String],
 ) -> Result<Settings, String> {
     let key = &field.key;
@@ -495,11 +512,31 @@ pub fn with(
             return takes("an output, {id, name}, or null for the system's default");
         }
         Kind::Keys if !value.is_object() => return takes("the shortcuts changed, by command"),
+        Kind::Languages => match languages(&value) {
+            Some(codes) => value = Value::from(codes),
+            None => {
+                return takes("a list of languages by name or code, like [\"English\", \"fr\"]");
+            }
+        },
         Kind::Toggle | Kind::Output | Kind::Keys => {}
     }
     let mut json = serde_json::to_value(settings).map_err(|err| err.to_string())?;
     put(&mut json, key, value);
     serde_json::from_value(json).map_err(|err| format!("{key} can't be that: {err}"))
+}
+
+/// The languages `value` lists, each by its name or code, as Settings keeps
+/// them: by code (`tracks::language`), each once, in the order given.
+/// `None` if it isn't a list of languages.
+pub fn languages(value: &Value) -> Option<Vec<&'static str>> {
+    let mut codes = Vec::new();
+    for word in value.as_array()? {
+        let code = tracks::language(word.as_str()?.trim())?;
+        if !codes.contains(&code) {
+            codes.push(code);
+        }
+    }
+    Some(codes)
 }
 
 /// Put `value` at `key` in `json`, making the objects on the way.
@@ -624,6 +661,25 @@ mod tests {
         assert!(looking.looks_with("DLNA"), "the others left be");
         let unset = set("screenshots.folder", Value::Null);
         assert_eq!(unset.screenshots.folder, None::<PathBuf>);
+        assert_eq!(
+            set("languages.audio", json!(["Japanese", "en", " FRA ", "eng"]))
+                .languages
+                .audio,
+            ["jpn", "eng", "fre"],
+            "by name or code, kept by code, once each"
+        );
+        assert_eq!(
+            set("languages.subtitles", json!(["de"]))
+                .languages
+                .subtitles,
+            ["ger"]
+        );
+        assert!(
+            set("languages.subtitles", json!([]))
+                .languages
+                .subtitles
+                .is_empty()
+        );
     }
 
     #[test]
@@ -683,6 +739,16 @@ mod tests {
             set("hotkeys", json!(["cmd-p"])),
             "hotkeys is the shortcuts changed, by command"
         );
+        let languages =
+            r#"languages.audio is a list of languages by name or code, like ["English", "fr"]"#;
+        for wrong in [
+            json!("English"),
+            json!(["English", "Elvish"]),
+            json!([1]),
+            json!(null),
+        ] {
+            assert_eq!(set("languages.audio", wrong.clone()), languages, "{wrong}");
+        }
     }
 
     #[test]

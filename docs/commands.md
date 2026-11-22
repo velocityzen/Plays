@@ -934,7 +934,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 `settings.ls`: List every setting: its key, what Settings calls it and the pane it's on, what it takes, and its value.
 
 - Acts on the app.
-- Hands back: [{key, title, pane, kind, value, default}], in the order Settings has them: kind is toggle, choice (with choices: [{value, label}]), number (with min and max), font, folder, output or keys.
+- Hands back: [{key, title, pane, kind, value, default}], in the order Settings has them: kind is toggle, choice (with choices: [{value, label}]), number (with min and max), font, folder, output, keys or languages (a list, by name or code, kept by code).
 
 ### Get Setting
 

@@ -33,8 +33,9 @@ GPU-accelerated UI framework.
 - The previous and next media file in the folder open in the same tile.
 - File → Open Recent opens the files played lately (the last 20).
 - A file opened again starts where it was left, for 30 days since it last
-  played; one barely begun, or played nearly to its end, starts over.
-  Settings → Playback turns it off, which forgets every file's place.
+  played, with the audio and subtitles picked in it; one barely begun, or
+  played nearly to its end, starts over, still with them. Settings →
+  Playback turns it off, which forgets every file's place.
 - Audio-only files show their cover art (or a note) and a level meter.
 - While a video plays the screen doesn't sleep, and while only sound plays
   the computer doesn't. Paused or ended, they sleep as they would.
@@ -64,8 +65,9 @@ GPU-accelerated UI framework.
 - Subtitle files beside a video, or in a `Subs` or `Subtitles` folder, are
   tracks too, with their language read from their names. Text in legacy encodings is
   converted.
-- A file's default subtitles, or failing that its forced ones, show from
-  the start.
+- Audio and subtitles in the languages you prefer, in order, play from
+  the start (Settings → Audio and Subtitles → Languages); else a file's
+  default subtitles, or failing that its forced ones.
 - Move a file's sound (in 50 ms steps) or subtitles (in 100 ms steps)
   earlier or later against the picture, for files that are out of step.
 
@@ -512,6 +514,23 @@ Settings → Subtitles sets how text subtitles look: font, weight, size,
 color, outline or shadow and its color, a background box, on the picture
 or anywhere in the tile, and height, with a live preview.
 
+Settings → Audio → Languages and Settings → Subtitles → Languages list the
+languages to play a file's audio and show its subtitles in, first first:
+Add Language puts one last, and each moves up or down or goes. A file
+opens with its audio in the first of them it has (its default track in
+that language, else its first), and its subtitles in the first of theirs
+(a file beside the video, else its default track, else its first, forced
+ones last). With none it has, or none listed, audio plays as the file
+says, and subtitles are a file beside the video, else the file's default
+or forced ones. `settings.set` takes them by name or code
+(`plays settings set languages.audio '["Japanese", "en"]'`), and the
+command palette as a list typed, such as `Japanese, en`.
+
+The audio and subtitles picked in a file, from the track menu, a
+shortcut or a command, are kept with where it was left, hidden subtitles
+too, and it opens with them again over the languages listed, while
+Settings → Playback resumes files where they were left.
+
 ### Sound
 
 Audio from every file is mixed into one output. Settings → Audio picks it:
@@ -751,8 +770,8 @@ bitmap ones go where the stream puts them.
 The Settings window has panes for Playback, Audio, Video, Subtitles,
 Casting, Screenshots, Hotkeys, Appearance, Command Line and About: the theme, master
 volume, the audio output, playing a window sent to a display through its
-speakers, default volume, autoplay, loop, resuming files where they were
-left, seek step, chapter notches on the bar, fit/fill scaling, gamma for
+speakers, the languages to play audio and show subtitles in, default
+volume, autoplay, loop, resuming files where they were left, seek step, chapter notches on the bar, fit/fill scaling, gamma for
 SDR and for HDR video (applied to every open video as you drag), decode
 resolution limit, hardware decoding, subtitle style, the protocols that
 look for devices to cast to, what they found and the AirPlay receivers

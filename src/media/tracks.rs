@@ -310,6 +310,38 @@ pub fn language_code(word: &str) -> Option<String> {
     })
 }
 
+/// The language a word names, by a code in the table or its English name,
+/// as the table's first code for it: `eng` for `en`, `eng` or "English".
+pub fn language(word: &str) -> Option<&'static str> {
+    let lower = word.to_ascii_lowercase();
+    LANGUAGES
+        .iter()
+        .find(|(codes, name)| codes.contains(&lower.as_str()) || name.eq_ignore_ascii_case(word))
+        .map(|(codes, _)| codes[0])
+}
+
+/// Every language a file's tracks can be preferred in, by its first code
+/// and its English name, A to Z: those in the table, but "multiple".
+pub fn languages() -> Vec<(&'static str, &'static str)> {
+    let mut all: Vec<_> = LANGUAGES
+        .iter()
+        .filter(|(codes, _)| codes[0] != "mul")
+        .map(|(codes, name)| (codes[0], *name))
+        .collect();
+    all.sort_by_key(|(_, name)| *name);
+    all
+}
+
+/// Whether two language codes name the same language, whichever form each
+/// is in, and with any region aside: `eng`, `en` and `en-GB` do.
+pub fn same_language(a: &str, b: &str) -> bool {
+    let base = |code: &str| {
+        let tag = language_tag(code);
+        tag.split('-').next().unwrap_or_default().to_owned()
+    };
+    base(a) == base(b)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -382,6 +414,39 @@ mod tests {
         assert_eq!(language_code("EN").as_deref(), Some("en"));
         assert_eq!(language_code("English").as_deref(), Some("eng"));
         assert_eq!(language_code("british"), None);
+    }
+
+    #[test]
+    fn a_language_is_kept_by_its_first_code() {
+        assert_eq!(language("en"), Some("eng"));
+        assert_eq!(language("ENG"), Some("eng"));
+        assert_eq!(language("english"), Some("eng"));
+        assert_eq!(language("fra"), Some("fre"));
+        assert_eq!(language("Norwegian Bokmål"), Some("nob"));
+        assert_eq!(language("british"), None);
+        assert_eq!(language("pt-BR"), None, "no regions");
+    }
+
+    #[test]
+    fn languages_are_offered_a_to_z_but_multiple() {
+        let all = languages();
+        assert_eq!(all.len(), LANGUAGES.len() - 1);
+        assert_eq!(all.first(), Some(&("afr", "Afrikaans")));
+        assert_eq!(all.last(), Some(&("wel", "Welsh")));
+        assert!(all.windows(2).all(|pair| pair[0].1 < pair[1].1), "A to Z");
+        assert!(!all.iter().any(|(code, _)| *code == "mul"));
+    }
+
+    #[test]
+    fn a_language_is_the_same_in_any_form_and_region() {
+        assert!(same_language("eng", "en"));
+        assert!(same_language("en-GB", "eng"));
+        assert!(same_language("FRA", "fre"));
+        assert!(same_language("pt_BR", "por"));
+        assert!(!same_language("eng", "fre"));
+        assert!(!same_language("chi", "yue"), "Cantonese is its own");
+        assert!(same_language("xx", "xx-YY"), "unknown, by its code");
+        assert!(!same_language("xx", "xy"));
     }
 
     #[test]

@@ -929,9 +929,10 @@ fn quitting_stops_the_device(cx: &mut TestAppContext) {
     let kept = window
         .update(&mut cx, |workspace, _, cx| workspace.progress(cx))
         .unwrap();
-    let [(_, position, _)] = kept.as_slice() else {
+    let [kept] = kept.as_slice() else {
         panic!("one file's progress, not {kept:?}");
     };
+    let position = kept.position;
     assert!((position - 1.5).abs() < 0.05, "kept {position}");
 }
 

@@ -50,6 +50,7 @@ use super::chapters::Chapter;
 use super::details::{AudioDetails, ContainerDetails, VideoDetails};
 use super::external::{self, Reading, SubtitleFile};
 use super::orientation::Orientation;
+use super::picking::Wanted;
 use super::source::Source;
 use super::subtitles::{Cue, SubtitleDecoder};
 use super::tracks::{Track, TrackKind};
@@ -165,13 +166,14 @@ pub fn spawn(
     source: Source,
     shared: Arc<Shared>,
     options: DecodeOptions,
+    wanted: Wanted,
     commands: Receiver<Command>,
 ) -> JoinHandle<()> {
     thread::Builder::new()
         .name(format!("decode {}", source.name()))
         .spawn(move || {
             guarded(&shared, &source, || {
-                run(&source, &shared, options, &commands)
+                run(&source, &shared, options, &wanted, &commands)
             });
         })
         .expect("spawning a decoder thread")
@@ -512,6 +514,7 @@ fn run(
     source: &Source,
     shared: &Arc<Shared>,
     options: DecodeOptions,
+    wanted: &Wanted,
     commands: &Receiver<Command>,
 ) -> Result<()> {
     // The subtitle files beside it are looked for, and opened, while it
@@ -543,11 +546,17 @@ fn run(
     }
 
     let mut cover = open_best_video(&input, &mut decoders, options, source);
-    open_best_audio(&input, &mut decoders, shared, source)?;
+    let audio = wanted.audio_track(&tracks);
+    open_audio(&input, audio, &mut decoders, shared, source)?;
     if decoders.video.is_none() && decoders.audio.is_none() {
         bail!("no playable audio or video streams");
     }
-    start_subtitles(&tracks, &mut decoders, shared, source);
+    start_subtitles(
+        wanted.subtitle_track(&tracks),
+        &mut decoders,
+        shared,
+        source,
+    );
 
     let start_offset = media_start(&decoders);
     shared.set_info(media_info(source, &input, &decoders, tracks, start_offset));
@@ -658,22 +667,23 @@ fn open_best_video(
     cover
 }
 
-/// Play the best audio stream. With no audio device a video plays without
-/// it, and sound alone can't play.
-fn open_best_audio(
+/// Play the audio stream `wanted` (`picking::Wanted`), else the best one.
+/// With no audio device a video plays without it, and sound alone can't
+/// play.
+fn open_audio(
     input: &ffmpeg::format::context::Input,
+    wanted: Option<usize>,
     decoders: &mut Decoders,
     shared: &Shared,
     source: &Source,
 ) -> Result<()> {
-    if let Some(stream) = input.streams().best(media::Type::Audio) {
+    let best = || input.streams().best(media::Type::Audio).map(|s| s.index());
+    if let Some(index) = wanted.or_else(best) {
         match shared.audio() {
-            Some(output) => {
-                match AudioDecoder::new(&decoders.streams[stream.index()], output.clone()) {
-                    Ok(decoder) => decoders.audio = Some(decoder),
-                    Err(err) => log::warn!("{source}: skipping audio: {err:#}"),
-                }
-            }
+            Some(output) => match AudioDecoder::new(&decoders.streams[index], output.clone()) {
+                Ok(decoder) => decoders.audio = Some(decoder),
+                Err(err) => log::warn!("{source}: skipping audio: {err:#}"),
+            },
             None if decoders.video.is_none() => bail!("no audio output device is available"),
             None => log::warn!("{source}: no audio device, playing video only"),
         }
@@ -681,24 +691,15 @@ fn open_best_audio(
     Ok(())
 }
 
-/// Start the subtitles to show from the start: a subtitle file beside the
-/// video, which someone put there to be shown, else the ones the file wants
-/// shown, its default track or else a forced one.
+/// Start the subtitles to show from the start, track `index`, if any, as
+/// `picking::Wanted` picks them.
 fn start_subtitles(
-    tracks: &[Track],
+    index: Option<usize>,
     decoders: &mut Decoders,
     shared: &Arc<Shared>,
     source: &Source,
 ) {
-    let subtitles = || tracks.iter().filter(|t| t.kind == TrackKind::Subtitle);
-    let files = || subtitles().filter(|t| t.file.is_some() && !t.forced);
-    let subtitle = files()
-        .find(|t| t.default)
-        .or_else(|| files().next())
-        .or_else(|| subtitles().find(|t| t.default))
-        .or_else(|| subtitles().find(|t| t.forced));
-    if let Some(track) = subtitle {
-        let index = track.index;
+    if let Some(index) = index {
         let started = decoders.read_subtitles(index, shared).and_then(|read| {
             if !read {
                 decoders.subtitle = Some(decoders.open_subtitles(index)?);

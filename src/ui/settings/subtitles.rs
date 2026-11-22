@@ -1,5 +1,5 @@
 //! Subtitles: how they look and where they go, with a preview above that
-//! stays in view.
+//! stays in view, and the languages to show them in.
 
 use std::ops::Range;
 use std::rc::Rc;
@@ -13,6 +13,7 @@ use gpui::{
 };
 
 use super::form::{group, percent_slider, range_slider, row, set};
+use super::languages::{List, languages_group};
 use super::{Pane, SettingsView};
 use crate::media::Orientation;
 use crate::media::subtitles::{CueContent, parse_ass};
@@ -67,6 +68,7 @@ impl Pane for SubtitlesPane {
             text_group(view, &style, theme, cx),
             edges_group(view, &style, theme),
             position_group(view, &style, theme),
+            languages_group(view, List::Subtitles, s, theme, cx),
         ]
     }
 
@@ -77,6 +79,7 @@ impl Pane for SubtitlesPane {
 
     fn leave(&self, view: &mut SettingsView) {
         view.font_menu.open = false;
+        view.language_menu = None;
     }
 }
 

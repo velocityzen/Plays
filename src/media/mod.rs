@@ -12,6 +12,7 @@ pub mod hdr;
 mod hwaccel;
 pub mod orientation;
 pub mod output;
+pub mod picking;
 pub mod picture;
 pub mod player;
 pub mod source;
