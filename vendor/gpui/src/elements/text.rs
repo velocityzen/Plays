@@ -316,6 +316,8 @@ struct TextLayoutInner {
     lines: SmallVec<[WrappedLine; 1]>,
     line_height: Pixels,
     wrap_width: Option<Pixels>,
+    /// Plays: the width the text was cut short to fit, if it was.
+    truncate_width: Option<Pixels>,
     size: Option<Size<Pixels>>,
     bounds: Option<Bounds<Pixels>>,
 }
@@ -370,9 +372,14 @@ impl TextLayout {
                         (None, "".into())
                     };
 
+                // Plays: measured again for another width to truncate to, as
+                // for another to wrap to. Text that doesn't wrap was first
+                // measured whole, with no width known, and kept that size
+                // (and its untruncated line) once its width was known.
                 if let Some(text_layout) = element_state.0.borrow().as_ref()
                     && text_layout.size.is_some()
                     && (wrap_width.is_none() || wrap_width == text_layout.wrap_width)
+                    && (truncate_width.is_none() || truncate_width == text_layout.truncate_width)
                 {
                     return text_layout.size.unwrap();
                 }
@@ -406,6 +413,7 @@ impl TextLayout {
                         len: 0,
                         line_height,
                         wrap_width,
+                        truncate_width,
                         size: Some(Size::default()),
                         bounds: None,
                     });
@@ -424,6 +432,7 @@ impl TextLayout {
                     len,
                     line_height,
                     wrap_width,
+                    truncate_width,
                     size: Some(size),
                     bounds: None,
                 });
@@ -475,6 +484,12 @@ impl TextLayout {
                 cx,
             )
             .log_err();
+            // Plays: what's drawn, for tests to read.
+            #[cfg(any(test, feature = "test-support"))]
+            window.next_frame.painted_text.push((
+                line.text.clone(),
+                Bounds::new(line_origin, line.size(line_height)),
+            ));
             line_origin.y += line.size(line_height).height;
         }
     }

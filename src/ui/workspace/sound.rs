@@ -1,5 +1,5 @@
 //! A window's sound: through the app's output, or a device of its own,
-//! picked from a tile's Play On menu or Audio → Window Output Device. Its
+//! picked from a tile's cast menu or Audio → Window Output Device. Its
 //! tiles play there, the rest of the app's windows through the app's
 //! output, and a tile moved to a new window takes the device along.
 //!

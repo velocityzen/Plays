@@ -391,7 +391,11 @@ The track button (next to loop, on files that have subtitles or more than
 one audio or video track) opens the track menu: a column each for audio,
 subtitles and (when there are several) video. While there are devices to
 cast to, or more than one display or audio output, the cast button before
-it opens a menu of where to play.
+it opens a menu of where to play: the tile, under Play This Tile On, and
+its window's sound, under Play This Window's Sound On. The button is lit
+while the tile plays elsewhere: cast to a device, or with its window's
+sound through an output of its own. A name too long for the menu is cut
+short with "…".
 
 While a tile plays, its header and controls fade when the mouse leaves it,
 or rests on it for a couple of seconds; the pointer hides then too, until
@@ -542,16 +546,16 @@ silently, until it is (or, with Wait for it off, through the system's
 default), and the sound goes back to it as soon as it's there.
 
 A window can play through an output of its own instead, such as a TV's
-speakers while the desk keeps its own: pick it under Window Sound in a
-tile's Play On menu, which shows with more than one output, or on macOS
-from Audio → Window Output Device ("Same as the App" goes back). Its tiles,
-and files opened in it, play there, picking up where they are; the other
-windows keep the app's output. Windows that pick the same device share it,
-and a tile moved to a new window takes the device along. While it isn't
+speakers while the desk keeps its own: pick it under Play This Window's
+Sound On in a tile's cast menu, which shows with more than one output, or on
+macOS from Audio → Window Output Device ("Same as the App" goes back). Its
+tiles, and files opened in it, play there, picking up where they are; the
+other windows keep the app's output. Windows that pick the same device share
+it, and a tile moved to a new window takes the device along. While it isn't
 connected, its sound waits for it or goes through the system's default, as
 Settings → Audio says for the app's. It isn't remembered from run to run.
 
-A window that Play On (or Video → Output Device) puts full screen on
+A window that the cast menu (or Video → Output Device) puts full screen on
 another display plays through that display's speakers, such as a TV's over
 HDMI, until it comes back, and then through what it played through before.
 The display's speakers are the output named after it, as macOS names an
@@ -567,7 +571,7 @@ their sound, are outputs too, on macOS and Linux. Plays finds them and
 connects to them itself, without Control Center, and lists them with this
 computer's outputs as they come and go (but this computer itself, which
 macOS's AirPlay Receiver offers as one): in Settings → Audio, Audio →
-Output Device and a tile's Window Sound. The sound of everything playing
+Output Device and a tile's cast menu. The sound of everything playing
 through one goes straight to it, uncompressed, while the pictures stay
 here. AirPlay plays it a second and a half after it's sent, and later on
 a speaker that says it adds some; the picture is held back by as much, so
@@ -608,7 +612,7 @@ broadcast Plays' sound:
 
 - Plug in a USB Auracast transmitter. To the computer it's a USB sound
   output, on macOS and Linux alike: pick it in Settings → Audio, or for
-  one window under Window Sound, and have the headphones join its
+  one window in a tile's cast menu, and have the headphones join its
   broadcast as the transmitter says.
 - On Linux, a Bluetooth adapter that supports LE Audio can broadcast
   itself, with a recent BlueZ, PipeWire and WirePlumber set up for it
@@ -620,12 +624,12 @@ broadcast Plays' sound:
 ### Displays, full screen and AirPlay
 
 With more than one display, the cast button on a tile lists them by name
-under Play On, as Video → Output Device does on macOS, and puts the player
-window full screen on the one picked, picture, subtitles and all. Video →
-Output Device checks the display the window is on; picking that one just
-puts it full screen. Out of full screen, the window goes back where it
-was. On X11 each monitor is a display, named for the model it says it is.
-On Wayland the compositor is asked for the display picked but may keep the
+under Play This Tile On, as Video → Output Device does on macOS, and puts
+the player window full screen on the one picked, picture, subtitles and all.
+Video → Output Device checks the display the window is on; picking that one
+just puts it full screen. Out of full screen, the window goes back where it
+was. On X11 each monitor is a display, named for the model it says it is. On
+Wayland the compositor is asked for the display picked but may keep the
 window where it is, and places it itself once out of full screen.
 
 On macOS, full screen is macOS's own, in a Space of its own, unless
@@ -676,7 +680,7 @@ AirPlay](#displays-full-screen-and-airplay) for AirPlay displays.
 A device found by more than one protocol, such as a speaker with AirPlay
 and DLNA, shows under each. Settings → Casting lists it with each protocol
 (the AirPlay speakers while AirPlay looks), and the cast button's menu
-lists it to cast to with DLNA, and as an output under Window Sound,
+lists it to cast to with DLNA, and as an output for the window's sound,
 saying AirPlay. In the menu bar, where two items would have the same name,
 each device's protocol follows its name: Phantom (AirPlay), Phantom
 (DLNA).

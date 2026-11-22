@@ -22,7 +22,7 @@ use crate::media::tracks::TrackKind;
 use crate::settings::Settings;
 use crate::ui::pip::{self, PipEvent};
 use crate::ui::player::PlayerView;
-use crate::ui::testing::{self, OPEN_WAIT, click, find, hover, press, shows};
+use crate::ui::testing::{self, OPEN_WAIT, click, find, hover, painted, press, shows};
 use crate::ui::theme::motion::CAST_POLL;
 use crate::ui::workspace::Workspace;
 
@@ -220,6 +220,61 @@ fn the_cast_menu_closes_as_the_controls_are_hidden(cx: &mut TestAppContext) {
     hover(&mut cx, "tile-0");
     assert!(shows(&mut cx, "cast"));
     assert!(!shows(&mut cx, "cast-0"), "closed when they're back");
+}
+
+#[gpui::test]
+fn the_cast_button_is_lit_while_the_tile_casts(cx: &mut TestAppContext) {
+    let (window, mut cx, fake, tv) = start(cx, "clip.mp4", false);
+    assert!(shows(&mut cx, "cast"));
+    assert!(!shows(&mut cx, "cast-selected"), "it plays here");
+    cast(window, &mut cx, &fake, &tv);
+    assert!(shows(&mut cx, "cast-selected"));
+
+    // And while another file opens, drawn before it goes on there.
+    let view = tile(window, &cx);
+    cx.update(|window, cx| {
+        let next = testing::fixture("clip-ip.mkv");
+        view.update(cx, |view, cx| view.play_instead(next, cx));
+        assert!(view.read(cx).casting().is_some(), "about to go on casting");
+        window.draw(cx).clear();
+    });
+    assert!(
+        cx.debug_bounds("cast-selected").is_some(),
+        "lit as it waits"
+    );
+    wait(&mut cx, "the next file to load there", |_| {
+        loads(&fake, &tv).len() == 2
+    });
+    assert!(shows(&mut cx, "cast-selected"));
+
+    TestAppContext::update(&cx, |cx| api::run(Invocation::new("cast.stop"), cx)).unwrap();
+    cx.run_until_parked();
+    assert!(!shows(&mut cx, "cast-selected"), "back here");
+}
+
+#[gpui::test]
+fn a_name_too_long_for_the_menu_is_cut_short_with_an_ellipsis(cx: &mut TestAppContext) {
+    let (_, mut cx, fake, _) = start(cx, "clip.mp4", false);
+    let long = "Projector in the Basement Over the Old Fireplace";
+    fake.add(long, Shows::Video);
+    cx.update(|_, cx| Casting::refresh(cx));
+    click(&mut cx, "cast");
+    let row = find(&mut cx, "cast-0");
+    let lines = painted(&mut cx);
+    let (name, at) = lines
+        .iter()
+        .find(|(text, _)| text.starts_with("Projector"))
+        .expect("the projector in the menu");
+    let shown = name.strip_suffix('…').expect("cut short with an ellipsis");
+    assert!(
+        long.starts_with(shown) && shown.len() < long.len(),
+        "{name}"
+    );
+    assert!(at.right() <= row.right(), "inside its row");
+    // The kind beside it still shows whole.
+    let kinds: Vec<_> = lines.iter().filter(|(text, _)| text == KIND).collect();
+    assert_eq!(kinds.len(), 2, "both devices say theirs");
+    assert!(kinds.iter().all(|(_, at)| at.right() <= row.right()));
 }
 
 #[gpui::test]

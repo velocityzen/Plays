@@ -16,7 +16,7 @@ use crate::media::Mixer;
 use crate::media::output::DeviceInfo;
 use crate::settings::{AudioDevice, Settings};
 use crate::ui::displays;
-use crate::ui::testing::{self, click, fixture, hover, shows, wait_until};
+use crate::ui::testing::{self, click, fixture, hover, painted, shows, wait_until};
 use crate::ui::workspace::Workspace;
 
 /// Every tile's mixer in `window`, and the device it plays through.
@@ -53,8 +53,17 @@ fn a_speaker_found_with_airplay_and_dlna_shows_under_both_saying_which(cx: &mut 
         AudioEngine::set_devices(outputs, cx);
     });
     click(&mut cx, "cast");
-    // Cast to, under Play On, saying its kind, and as an output under
-    // Window Sound, saying AirPlay.
+    // Cast to, saying its kind, under what the tile plays on, and as an
+    // output under what the window's sound plays on, saying AirPlay.
+    let headings: Vec<_> = painted(&mut cx)
+        .into_iter()
+        .map(|(text, _)| text)
+        .filter(|text| text.starts_with("Play This"))
+        .collect();
+    assert_eq!(
+        headings,
+        ["Play This Tile On", "Play This Window's Sound On"]
+    );
     assert!(shows(&mut cx, "cast-0"), "the speaker to cast to");
     assert!(shows(&mut cx, "sound-1"), "the AirPlay speaker");
     assert!(shows(&mut cx, "sound-1-kind"), "saying it's AirPlay");
@@ -82,11 +91,13 @@ fn a_window_plays_through_an_output_of_its_own(cx: &mut TestAppContext) {
     click(&mut cx, "cast");
     assert!(shows(&mut cx, "sound-app") && shows(&mut cx, "sound-1"));
     assert!(!shows(&mut cx, "cast-here"), "nothing else to play on");
+    assert!(!shows(&mut cx, "cast-selected"), "it plays as the app does");
 
     click(&mut cx, "sound-1");
     cx.run_until_parked();
     let (mixers, device) = sound(window, &cx);
     assert_eq!(device.as_deref(), Some("TV"));
+    assert!(shows(&mut cx, "cast-selected"), "lit, playing elsewhere");
     assert!(!Arc::ptr_eq(&mixers[0], &app), "the tile plays through it");
     assert_eq!(outputs(&mut cx), 1);
     let tv = mixers[0].clone();
@@ -123,6 +134,7 @@ fn a_window_plays_through_an_output_of_its_own(cx: &mut TestAppContext) {
     cx.run_until_parked();
     let (mixers, device) = sound(window, &cx);
     assert_eq!(device, None);
+    assert!(!shows(&mut cx, "cast-selected"));
     assert!(Arc::ptr_eq(&mixers[0], &app));
     assert_eq!(outputs(&mut cx), 1);
 

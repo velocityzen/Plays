@@ -360,7 +360,10 @@ impl PlayerView {
     }
 
     /// The cast button, while there are devices to cast to, displays or
-    /// audio outputs to pick, and the menu of them it opens.
+    /// audio outputs to pick, and the menu of them it opens. It's lit while
+    /// the tile plays elsewhere: cast to a device (or about to go on
+    /// casting with the file just opened), or its window's sound playing
+    /// through an output of its own.
     pub(super) fn render_cast_button(
         &self,
         info: Option<&MediaInfo>,
@@ -388,7 +391,7 @@ impl PlayerView {
         }
         let button = Button::icon("cast", "cast")
             .overlay()
-            .selected(self.playback.cast.is_some())
+            .selected(self.casting().is_some() || self.window_sound.is_some())
             .on_click(cx.listener(|this, _, _, cx| {
                 this.cast_open = !this.cast_open;
                 // As Linux doesn't say when outputs come and go.
@@ -480,7 +483,7 @@ impl PlayerView {
             .w(CAST_MENU_WIDTH)
             .pb_1()
             .when(play_on, |this| {
-                this.child(heading("Play On", theme))
+                this.child(heading("Play This Tile On", theme))
                     .children(this_computer)
                     .children(screens)
                     .when(wayland, |this| {
@@ -496,7 +499,8 @@ impl PlayerView {
                     .children(rows)
             })
             .when_some(sound, |this, sound| {
-                this.child(heading("Window Sound", theme)).children(sound)
+                this.child(heading("Play This Window's Sound On", theme))
+                    .children(sound)
             })
             .into_any_element()
     }

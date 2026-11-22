@@ -330,8 +330,13 @@ impl RenderOnce for Button {
             IconSide::Right => (None, icon),
         };
         let (hover, active) = (look.hover, look.active);
-        // Tests find a button by its id.
+        // Tests find a button by its id, and tell it's selected by an empty
+        // mark in it tagged "{id}-selected".
         let selector = id.clone();
+        let mark = (cfg!(test) && selected).then(|| {
+            let selector = format!("{selector}-selected");
+            div().absolute().debug_selector(move || selector)
+        });
 
         let mut button = div()
             .id(id)
@@ -357,6 +362,7 @@ impl RenderOnce for Button {
             .children(label)
             .children(shortcut)
             .children(after)
+            .children(mark)
             .map(|this| {
                 if disabled {
                     return this.opacity(DISABLED);

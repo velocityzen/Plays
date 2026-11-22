@@ -748,7 +748,7 @@ impl AudioEngine {
     }
 
     /// List the output devices again, in the background, for Settings,
-    /// the Audio menu and the Play On menu.
+    /// the Audio menu and the cast menu.
     pub fn list_devices(cx: &mut App) {
         let Some(devices) = cx
             .try_global::<Self>()

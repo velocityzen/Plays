@@ -9,8 +9,8 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use gpui::{
-    Bounds, Modifiers, MouseButton, MouseDownEvent, MouseUpEvent, Pixels, Point, TestAppContext,
-    VisualTestContext, WindowHandle, point,
+    Bounds, Modifiers, MouseButton, MouseDownEvent, MouseUpEvent, Pixels, Point, SharedString,
+    TestAppContext, VisualTestContext, WindowHandle, point,
 };
 
 use crate::app;
@@ -77,6 +77,13 @@ pub fn find(cx: &mut VisualTestContext, selector: &'static str) -> Bounds<Pixels
 pub fn shows(cx: &mut VisualTestContext, selector: &'static str) -> bool {
     draw(cx);
     cx.debug_bounds(selector).is_some()
+}
+
+/// Each line of text drawn, as it reads (cut short with "…" where it
+/// didn't fit), and where.
+pub fn painted(cx: &mut VisualTestContext) -> Vec<(SharedString, Bounds<Pixels>)> {
+    draw(cx);
+    cx.update(|window, _| window.painted_text())
 }
 
 /// Move the mouse to the middle of the element tagged `selector`.

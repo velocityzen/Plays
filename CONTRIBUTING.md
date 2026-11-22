@@ -327,9 +327,13 @@ tile, and the window must then fit it.
 
 `ui::testing` clicks, double-clicks and types as someone at the screen
 would, finding what to click by its debug selector (`tile-0`, a menu row's
-or a button's id), set only in test builds. It draws the window before it
-looks, as what a file says once it opens doesn't draw it again by itself,
-and moves the mouse to what it clicks first.
+or a button's id), set only in test builds; a selected button also holds
+an empty mark tagged with its id and `-selected` (`cast-selected`). It
+draws the window before it looks, as what a file says once it opens
+doesn't draw it again by itself, and moves the mouse to what it clicks
+first. `testing::painted` lists the text a window drew, line by line and
+where, as it reads: cut short with "…" where it didn't fit. The test
+platform's text system gives every character the same width.
 
 What the window tests check:
 
@@ -776,60 +780,61 @@ as `Attic`, never is.
 
 ### Casting
 
-Casting is tested with a fake protocol whose devices keep what they are
-told and say what the test has them say, and the real stream server,
-serving this computer only. Picking a device from the cast button plays
-the file there from where the tile was, as it played (the device fetches
-the MP4 as it is), and pauses the tile. The next file goes there too, with
-the subtitles beside it, and the previous one to a speaker sends only its
-sound, the picture staying on the tile. Space, the arrows and `M` play,
-pause, seek and mute it, not the tile, and the bar follows where it says
-it is; so do the buttons of a Picture in Picture window, which isn't
-offered while the picture plays there, and they play and pause a speaker a
-video's sound is cast to. Dragging the slider moves only the bar, the
-device seeking once it's let go, and frame steps and audio or subtitle
-delays leave the tile's own player alone. Play Here goes on in the tile
-from where the device was, paused as it was, the device stops, and with no
-cast left the stream server stops listening. A device going away ends the
-cast the same way, and the cast button goes with the last device; quitting
-stops the device and keeps where it was to resume from, and closing the
-last window, which quits, waits for it to stop too. Subtitles picked on a
-Matroska file cast as HLS reach the device as WebVTT with the file's cues,
+Casting is tested with a fake protocol whose devices keep what they are told
+and say what the test has them say, and the real stream server, serving this
+computer only. Picking a device from the cast button plays the file there
+from where the tile was, as it played (the device fetches the MP4 as it is),
+and pauses the tile. The next file goes there too, with the subtitles beside
+it, and the previous one to a speaker sends only its sound, the picture
+staying on the tile. Space, the arrows and `M` play, pause, seek and mute
+it, not the tile, and the bar follows where it says it is; so do the buttons
+of a Picture in Picture window, which isn't offered while the picture plays
+there, and they play and pause a speaker a video's sound is cast to.
+Dragging the slider moves only the bar, the device seeking once it's let go,
+and frame steps and audio or subtitle delays leave the tile's own player
+alone. Play Here goes on in the tile from where the device was, paused as it
+was, the device stops, and with no cast left the stream server stops
+listening. A device going away ends the cast the same way, and the cast
+button goes with the last device. The button is lit while the tile casts,
+and while its window plays through an output of its own; a device's name too
+long for the menu ends in "…" inside its row, the kind beside it whole.
+Quitting stops the device and keeps where it was to resume from, and closing
+the last window, which quits, waits for it to stop too. Subtitles picked on
+a Matroska file cast as HLS reach the device as WebVTT with the file's cues,
 and turning them off hides them, without loading it again; another sound
-track loads it again with them still going along. DVD subtitles picked
-stay on this computer, the tile says, where the file goes as it is; where
-it is re-encoded they are drawn in, the file loaded again from where it
-was at a URL of its own, the first no longer served, and turning them off
-loads it again without them (macOS). Speakers are offered for anything
-with sound, and get a file of sound alone as it is. A video's sound goes
-to a speaker as a stream of AAC, its picture staying on the tile, which
-waits while the speaker plays but hasn't moved, plays once it's seen
-moving, pauses with it where it stopped (from the speaker or the tile),
-and keeps its place and its sound when the cast ends; dragging the slider
-shows the picture where it's dragged, however often the speaker says where
-it is, and the speaker seeks there once it's let go; a video without sound
-isn't sent to one. Video → Output Device lists the devices that show video
-after the displays, checking the one the tile in front casts to instead of
-the display; a speaker it casts to leaves the display checked. Audio →
-Output Device lists the speakers after this computer's outputs for a tile
-with sound and none for one without, checking the one cast to (or a TV)
-instead of the output. Settings → Casting lists the devices found, a new
-one as it's found, and turning a protocol off there saves it off, stops it
-looking (its target dropped), takes its devices away and leaves a cast to
-one going; turned on, it looks again and finds them. A protocol that takes
-a while to stop doesn't hold up the windows: it stops on another thread.
-One off from the start never looks, and other settings or protocols
-changing leave it as it is; one that can't start says why and tries again
-when turned off and on. It lists the AirPlay TVs paired with, and Forget
-forgets one, which then asks for its PIN again. A speaker found with
-AirPlay and another protocol is listed with each, the AirPlay one only
-while AirPlay looks; the cast button's menu offers it to cast to, and
-under Window Sound as an output saying AirPlay, where this computer's own
-outputs say nothing; the Output Device menus put the protocol after a
-name another item has too (an AirPlay speaker and a DLNA one, two
-protocols' TVs, a display and a TV), leaving this computer's own outputs
-and displays as they are; a unit test checks an Apple TV, cast to and an
-output, is listed once. Unit tests check that of
+track loads it again with them still going along. DVD subtitles picked stay
+on this computer, the tile says, where the file goes as it is; where it is
+re-encoded they are drawn in, the file loaded again from where it was at a
+URL of its own, the first no longer served, and turning them off loads it
+again without them (macOS). Speakers are offered for anything with sound,
+and get a file of sound alone as it is. A video's sound goes to a speaker as
+a stream of AAC, its picture staying on the tile, which waits while the
+speaker plays but hasn't moved, plays once it's seen moving, pauses with it
+where it stopped (from the speaker or the tile), and keeps its place and its
+sound when the cast ends; dragging the slider shows the picture where it's
+dragged, however often the speaker says where it is, and the speaker seeks
+there once it's let go; a video without sound isn't sent to one. Video →
+Output Device lists the devices that show video after the displays, checking
+the one the tile in front casts to instead of the display; a speaker it
+casts to leaves the display checked. Audio → Output Device lists the
+speakers after this computer's outputs for a tile with sound and none for
+one without, checking the one cast to (or a TV) instead of the output.
+Settings → Casting lists the devices found, a new one as it's found, and
+turning a protocol off there saves it off, stops it looking (its target
+dropped), takes its devices away and leaves a cast to one going; turned on,
+it looks again and finds them. A protocol that takes a while to stop doesn't
+hold up the windows: it stops on another thread. One off from the start
+never looks, and other settings or protocols changing leave it as it is; one
+that can't start says why and tries again when turned off and on. It lists
+the AirPlay TVs paired with, and Forget forgets one, which then asks for its
+PIN again. A speaker found with AirPlay and another protocol is listed with
+each, the AirPlay one only while AirPlay looks; the cast button's menu
+offers it to cast to, and under Play This Window's Sound On as an output
+saying AirPlay, where this computer's own outputs say nothing; the Output
+Device menus put the protocol after a name another item has too (an AirPlay
+speaker and a DLNA one, two protocols' TVs, a display and a TV), leaving
+this computer's own outputs and displays as they are; a unit test checks an
+Apple TV, cast to and an output, is listed once. Unit tests check that of
 what the tile sends at once, only the last of seeks in a row is done, and
 only the last volume, looping and subtitles asked for. Each test has been
 checked to fail when the behavior it covers is broken.

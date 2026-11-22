@@ -356,16 +356,16 @@ flowchart LR
   away, or ending the session, is heard as the device lost; let go of, it
   is stopped first.
 - `src/app/speakers.rs`: AirPlay speakers, and TVs for their sound, as
-  outputs, found by the crate's browser on every network and listed
-  beside this computer's under ids of their own (`airplay:` and the
-  receiver's). One is connected with what pairing with it left, kept in
-  the same `Pairings` as a TV cast to, and its own volume is set once, to
-  where it says it is. One that wants its PIN says so
-  (`OpenError::NeedsPin`); credentials it turns down are forgotten first.
-  `output_kind` says an output is reached by AirPlay, which the menus,
-  the cast button's Window Sound and Settings → Casting's devices found
-  show, so a speaker also found by DLNA is told apart; the menu bar adds
-  the protocol only where two items would share a name.
+  outputs, found by the crate's browser on every network and listed beside
+  this computer's under ids of their own (`airplay:` and the receiver's).
+  One is connected with what pairing with it left, kept in the same
+  `Pairings` as a TV cast to, and its own volume is set once, to where it
+  says it is. One that wants its PIN says so (`OpenError::NeedsPin`);
+  credentials it turns down are forgotten first. `output_kind` says an
+  output is reached by AirPlay, which the menus, the cast menu's outputs for
+  the window and Settings → Casting's devices found show, so a speaker also
+  found by DLNA is told apart; the menu bar adds the protocol only where two
+  items would share a name.
 - `src/app/bluetooth.rs`: the Bluetooth headphones and speakers paired
   with the Mac (IOBluetooth's paired devices, of the Audio/Video class and
   a minor class that plays sound), listed as outputs while they aren't

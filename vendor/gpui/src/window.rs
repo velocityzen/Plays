@@ -681,6 +681,9 @@ pub(crate) struct Frame {
     pub(crate) cursor_styles: Vec<CursorStyleRequest>,
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) debug_bounds: FxHashMap<String, Bounds<Pixels>>,
+    /// Plays: each line of text drawn, and where.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) painted_text: Vec<(SharedString, Bounds<Pixels>)>,
     #[cfg(any(feature = "inspector", debug_assertions))]
     pub(crate) next_inspector_instance_ids: FxHashMap<Rc<crate::InspectorElementPath>, usize>,
     #[cfg(any(feature = "inspector", debug_assertions))]
@@ -728,6 +731,8 @@ impl Frame {
 
             #[cfg(any(test, feature = "test-support"))]
             debug_bounds: FxHashMap::default(),
+            #[cfg(any(test, feature = "test-support"))]
+            painted_text: Vec::new(),
 
             #[cfg(any(feature = "inspector", debug_assertions))]
             next_inspector_instance_ids: FxHashMap::default(),
@@ -755,7 +760,10 @@ impl Frame {
         // Plays: only what this frame drew, so a test can tell something
         // is gone.
         #[cfg(any(test, feature = "test-support"))]
-        self.debug_bounds.clear();
+        {
+            self.debug_bounds.clear();
+            self.painted_text.clear();
+        }
 
         #[cfg(any(feature = "inspector", debug_assertions))]
         {
@@ -2887,6 +2895,13 @@ impl Window {
             self.scale_factor(),
         );
         self.next_frame.scene.insert_primitive(backdrop);
+    }
+
+    /// Plays: each line of text the window drew last, for tests, with the
+    /// bounds of its line: after any truncation, as it reads on screen.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn painted_text(&self) -> Vec<(SharedString, Bounds<Pixels>)> {
+        self.rendered_frame.painted_text.clone()
     }
 
     /// Plays: the backdrops the window drew last, for tests: each one's

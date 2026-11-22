@@ -127,6 +127,16 @@ the width it is aligned in, not just as wide as the text. Centered text
 (Plays' subtitles) used to fall outside its layer, so a popover drawn over
 it later could end up beneath it.
 
+`src/elements/text.rs`: text is measured again for another width to
+truncate to, as it is for another width to wrap to (`TextLayoutInner`
+keeps `truncate_width`). Text that doesn't wrap, such as a `truncate()`d
+label, was first measured whole with no width known, and kept that size
+and its whole line once its width was known, so a label in a row too
+narrow for it was clipped where the row ended, without its "…".
+`Window::painted_text` (test builds only, `src/window.rs`) lists each line
+of text the window drew last, as it reads once truncated, and where, so
+a test can tell.
+
 Text drawn into memory, for Plays' screenshots with subtitles:
 `WrappedLine::glyphs` (`src/text_system/line.rs`) lists the glyphs `paint`
 would draw, where, and in what color, the same way `paint_line` places
