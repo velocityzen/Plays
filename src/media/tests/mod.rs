@@ -39,9 +39,9 @@ fn media(name: &str, args: &[&str]) -> PathBuf {
 /// test fails if it can't.
 fn made_by(program: &str, name: &str, args: &[&str]) -> PathBuf {
     ffmpeg_next::init().unwrap();
-    let dir = std::env::temp_dir().join("plays-tests");
-    std::fs::create_dir_all(&dir).unwrap();
-    let path = dir.join(name);
+    let path = std::env::temp_dir().join("plays-tests").join(name);
+    // In a folder of its own, if `name` says.
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     if path.exists() {
         return path;
     }
@@ -1108,6 +1108,140 @@ fn opens_before_its_subtitle_files_are_read() {
         "showing {:?} once it was read",
         subtitle_text(&player)
     );
+}
+
+/// A second of sound, `dir/tone.m4a` in `plays-tests`, with a picture of
+/// `own` size in its tags, if any, as cover art.
+fn sound_in(dir: &str, own: Option<&str>) -> PathBuf {
+    let tone = "sine=frequency=440:sample_rate=48000:duration=1";
+    match own {
+        None => media(
+            &format!("{dir}/tone.m4a"),
+            &["-f", "lavfi", "-i", tone, "-c:a", "aac"],
+        ),
+        Some(size) => media(
+            &format!("{dir}/tone.m4a"),
+            &[
+                "-f",
+                "lavfi",
+                "-i",
+                tone,
+                "-f",
+                "lavfi",
+                "-i",
+                &format!("color=c=blue:size={size}"),
+                "-frames:v",
+                "1",
+                "-map",
+                "0:a",
+                "-map",
+                "1:v",
+                "-c:a",
+                "aac",
+                "-c:v",
+                "png",
+                "-disposition:v:0",
+                "attached_pic",
+            ],
+        ),
+    }
+}
+
+/// A picture of `size`, `dir/name` in `plays-tests`, in the format its
+/// extension says.
+fn picture_in(dir: &str, name: &str, size: &str) -> PathBuf {
+    media(
+        &format!("{dir}/{name}"),
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            &format!("color=c=red:size={size}"),
+            "-frames:v",
+            "1",
+        ],
+    )
+}
+
+/// The size of the cover `player` shows, once it shows one.
+fn cover_size(player: &mut Player) -> Option<(i32, i32)> {
+    wait_until(Duration::from_secs(5), || {
+        player.tick();
+        player.cover().is_some()
+    });
+    player.cover().map(|cover| {
+        let size = cover.size(0);
+        (size.width.0, size.height.0)
+    })
+}
+
+#[test]
+fn sound_with_no_cover_of_its_own_shows_the_one_beside_it() {
+    for (dir, name) in [
+        ("cover-png", "cover.png"),
+        ("cover-jpg", "Cover.JPG"),
+        ("cover-tiff", "cover.tiff"),
+    ] {
+        let path = sound_in(dir, None);
+        picture_in(dir, name, "64x48");
+        let mut player = Player::open(
+            Source::File(path),
+            Some(Mixer::detached(48_000)),
+            options(false, false),
+        );
+        assert_eq!(cover_size(&mut player), Some((64, 48)), "{name}");
+    }
+
+    // Scaled down as video is.
+    let path = sound_in("cover-png", None);
+    let options = PlayerOptions {
+        max_short_side: Some(24),
+        ..options(false, false)
+    };
+    let mut player = Player::open(Source::File(path), Some(Mixer::detached(48_000)), options);
+    assert_eq!(cover_size(&mut player), Some((32, 24)));
+}
+
+#[test]
+fn sound_with_a_cover_of_its_own_shows_that_one() {
+    // Large, so slower to decode than the one beside it, which would show
+    // first were it looked for.
+    let path = sound_in("cover-own-large", Some("2400x1600"));
+    picture_in("cover-own-large", "cover.png", "64x48");
+    let mut player = Player::open(
+        Source::File(path),
+        Some(Mixer::detached(48_000)),
+        options(false, false),
+    );
+    assert_eq!(cover_size(&mut player), Some((2400, 1600)));
+}
+
+#[test]
+fn video_shows_no_cover_beside_it() {
+    let path = media(
+        "cover-video/clip.mkv",
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc=size=160x120:rate=25:duration=1",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+        ],
+    );
+    picture_in("cover-video", "cover.png", "64x48");
+    let mut player = Player::open(Source::File(path), None, options(false, false));
+    assert!(wait_until(Duration::from_secs(5), || {
+        player.tick();
+        player.frame_pts().is_some()
+    }));
+    // Longer than sound takes to show the cover beside it.
+    assert!(!wait_until(Duration::from_millis(500), || {
+        player.tick();
+        player.cover().is_some()
+    }));
 }
 
 #[test]

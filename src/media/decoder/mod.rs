@@ -14,13 +14,15 @@
 //! or, from a subtitle file beside the video, a little ahead of the playhead
 //! (`external`). The other subtitle tracks' packets are kept for a few
 //! seconds, so one picked shows without a seek that would drop the frames
-//! queued.
+//! queued. Cover art in a file's tags shows for sound; for sound with none,
+//! a cover file beside it does (`cover_file`).
 //! It only decodes while an output queue has room, so memory stays bounded
 //! however much is read ahead. One video, one audio and one subtitle track
 //! play at a time; another can be picked while playing.
 
 mod audio;
 mod convert;
+mod cover_file;
 mod demux;
 mod shared;
 mod video;
@@ -550,6 +552,10 @@ fn run(
     open_audio(&input, audio, &mut decoders, shared, source)?;
     if decoders.video.is_none() && decoders.audio.is_none() {
         bail!("no playable audio or video streams");
+    }
+    // Sound with no picture of its own shows the one kept beside it.
+    if cover.is_none() && decoders.video.is_none() {
+        cover_file::show(source, shared, options.max_short_side);
     }
     start_subtitles(
         wanted.subtitle_track(&tracks),

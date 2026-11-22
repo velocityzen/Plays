@@ -36,7 +36,10 @@ GPU-accelerated UI framework.
   played, with the audio and subtitles picked in it; one barely begun, or
   played nearly to its end, starts over, still with them. Settings →
   Playback turns it off, which forgets every file's place.
-- Audio-only files show their cover art (or a note) and a level meter.
+- Audio-only files show their cover art and a level meter. With none in
+  its tags, a file shows the `cover.jpg` beside it (or `.jpeg`, `.png`,
+  `.tif` or `.tiff`, named in any case), as music folders often have it;
+  with neither, a note.
 - While a video plays the screen doesn't sleep, and while only sound plays
   the computer doesn't. Paused or ended, they sleep as they would.
 

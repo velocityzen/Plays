@@ -225,7 +225,12 @@ read, showing it once it is. The same file opened wanting tracks plays
 the German audio and French subtitles when those languages are preferred,
 the English ones when picked before over them, and none when hidden
 before. DVD subtitles drawn as a clip plays are
-dropped from the GPU once they are off screen. Unit tests cover finding
+dropped from the GPU once they are off screen. Sound with no cover art of
+its own shows the PNG, JPEG or TIFF beside it, at its size or scaled down
+to the resolution limit; sound with its own shows that one, and a video
+none. Unit tests cover which file beside sound is its cover (each
+extension in any case, the first extension of several, and no other name,
+picture or folder); finding
 files for a video, reading their names and telling encodings; which
 audio and subtitles a file opens with (`picking`): picked before if it
 has them, else in the first language preferred, its default track in it,

@@ -111,6 +111,8 @@ The threads, then:
   plays through a speaker;
 - while a video opens or a subtitle file is picked, a few that open and
   read its subtitle files (`src/media/external.rs`);
+- for a sound file with no cover art of its own, one that looks for a
+  cover file beside it and decodes it (`src/media/decoder/cover_file.rs`);
 - one per casting tile (`src/cast/link.rs`), and the threads each protocol's
   crate runs its sessions and discovery on;
 - the stream server's: one per HTTP connection, and one per job making
@@ -231,7 +233,12 @@ the sound being heard. A file with no sound plays on wall time.
   the commands, carries out a seek, waits for a skip to land and decodes a
   packet for each queue with room; `demux.rs` the demux thread and its
   packet queues; `video.rs` and `audio.rs` the two decoders; `convert.rs`
-  turning frames into pictures. `shared.rs` holds what a player and its
+  turning frames into pictures. Cover art in a file's tags is a picture
+  stream of its own, decoded once as it is read. A file with none and no
+  video shows a `cover` file beside it (`.jpg`, `.jpeg`, `.png`, `.tif` or
+  `.tiff`, in that order, named in any case), decoded as tag art is, but
+  on a thread of its own (`cover_file.rs`), as it can be large and its
+  folder on a share far away. `shared.rs` holds what a player and its
   threads share, behind methods: each seek starts a generation, numbered
   by a serial, and what was decoded or found for an earlier one (frames,
   sound, where a skip landed, the end of the file) is never handed out
