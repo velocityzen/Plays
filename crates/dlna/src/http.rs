@@ -5,7 +5,7 @@
 //! body.
 
 use std::io::{self, Write};
-use std::net::{IpAddr, SocketAddr, TcpStream, ToSocketAddrs, UdpSocket};
+use std::net::{IpAddr, Ipv6Addr, SocketAddr, TcpStream, ToSocketAddrs, UdpSocket};
 use std::time::Duration;
 
 pub use network::http::{Deadline, Head, Message};
@@ -15,7 +15,8 @@ const CONNECT: Duration = Duration::from_secs(3);
 
 pub const USER_AGENT: &str = "dlna/0.1 UPnP/1.0 DLNADOC/1.50";
 
-/// An `http://` URL.
+/// An `http://` URL, on a host by name or IPv4 address, or by IPv6 address
+/// written in brackets.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Url {
     pub host: String,
@@ -28,6 +29,41 @@ pub struct Url {
 /// space or control character, which would end it or start another.
 pub fn is_clean(text: &str) -> bool {
     !text.chars().any(|c| c.is_control() || c.is_whitespace())
+}
+
+/// Whether `host`, written without brackets, is a name or an IPv4
+/// address: of the characters a host may have (RFC 3986's, and any beyond
+/// ASCII), and none that would end it or start what's after it.
+fn is_name(host: &str) -> bool {
+    !host.is_empty()
+        && host
+            .chars()
+            .all(|c| !c.is_ascii() || c.is_ascii_alphanumeric() || "-._~%!$&'()*+,;=".contains(c))
+}
+
+/// Whether `host`, written in brackets, is an IPv6 address, with a zone or
+/// without: `fe80::1%5`, as a socket address with a scope writes itself.
+fn is_ipv6(host: &str) -> bool {
+    let (address, zone) = match host.split_once('%') {
+        Some((address, zone)) => (address, Some(zone)),
+        None => (host, None),
+    };
+    address.parse::<Ipv6Addr>().is_ok()
+        && zone.is_none_or(|zone| {
+            !zone.is_empty()
+                && zone
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || "-._~".contains(c))
+        })
+}
+
+/// A port: digits only, where `u16`'s own parse would take a sign too.
+fn parse_port(text: &str) -> Option<u16> {
+    if text.bytes().all(|b| b.is_ascii_digit()) {
+        text.parse().ok()
+    } else {
+        None
+    }
 }
 
 impl Url {
@@ -50,22 +86,27 @@ impl Url {
         } else {
             path.to_owned()
         };
-        let (host, port) = if let Some(v6) = authority.strip_prefix('[') {
-            let (host, rest) = v6.split_once(']')?;
-            (host, rest.strip_prefix(':'))
-        } else {
-            match authority.rsplit_once(':') {
-                Some((host, port)) => (host, Some(port)),
-                None => (authority, None),
+        let (host, port) = match authority.strip_prefix('[') {
+            Some(v6) => {
+                let (host, rest) = v6.split_once(']')?;
+                let port = match rest {
+                    "" => None,
+                    rest => Some(rest.strip_prefix(':')?),
+                };
+                (is_ipv6(host).then_some(host)?, port)
+            }
+            None => {
+                let (host, port) = match authority.split_once(':') {
+                    Some((host, port)) => (host, Some(port)),
+                    None => (authority, None),
+                };
+                (is_name(host).then_some(host)?, port)
             }
         };
         let port = match port {
-            Some(port) => port.parse().ok()?,
+            Some(port) => parse_port(port)?,
             None => 80,
         };
-        if host.is_empty() {
-            return None;
-        }
         Some(Self {
             host: host.to_owned(),
             port,

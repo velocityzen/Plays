@@ -1088,7 +1088,7 @@ refuses a body past the most before reading it and a head that never ends
 within the most, and holds no more than its bounds of an endless stream;
 DLNA's XML is never nested deeper than the most, an advert and a
 subscription last within their bounds, a URL read or joined goes into a
-request whole, and a description reaches only its own device whatever its
+request whole and reads back as itself, and a description reaches only its own device whatever its
 URLs say; Cast's framing gives messages back whole however they arrive,
 refuses a length past the most before waiting for it, and takes a message
 that isn't one out whole, keeping what follows; AirPlay's TLV8 gives

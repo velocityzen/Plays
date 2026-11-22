@@ -51,6 +51,47 @@ fn urls_with_spaces_or_line_breaks_are_refused() {
     assert_eq!(url.join("/upnp/control").unwrap().path, "/upnp/control");
 }
 
+#[test]
+fn a_host_is_a_name_or_an_address_and_reads_back_as_written() {
+    for text in [
+        // Its host would be `¡]:`, written `[¡]:]:1`, which reads as nothing.
+        "http://¡]::1",
+        "http://a:b:80/",
+        "http://192.0.2.1]/",
+        "http://192.0.2[1/",
+        "http://user@192.0.2.1/",
+        "http://192.0.2.1#here",
+        "http://192.0.2.1\"/",
+        "http://192.0.2.1:+80/",
+        "http://192.0.2.1:8_0/",
+        "http://[192.0.2.1/",
+        "http://[host]/",
+        "http://[2001:db8::1]x/",
+        "http://[2001:db8::1]]:80/",
+        "http://[2001:db8::1%]/",
+        "http://[2001:db8::1%a@b]/",
+        "http://[]/",
+    ] {
+        assert_eq!(Url::parse(text), None, "{text}");
+    }
+    for (text, host, port) in [
+        ("http://device.local:1400/", "device.local", 1400),
+        ("http://my-tv_1.example/", "my-tv_1.example", 80),
+        ("http://télé.example/", "télé.example", 80),
+        ("http://[2001:db8::1]:8080/x", "2001:db8::1", 8080),
+        ("http://[2001:db8::1]/", "2001:db8::1", 80),
+        ("http://[::ffff:192.0.2.1]:80/", "::ffff:192.0.2.1", 80),
+        // As the events callback's own address, with its scope, writes
+        // itself.
+        ("http://[fe80::1%5]:49152/events", "fe80::1%5", 49152),
+        ("http://[fe80::1%25en0]/", "fe80::1%25en0", 80),
+    ] {
+        let url = Url::parse(text).unwrap_or_else(|| panic!("{text}"));
+        assert_eq!((url.host.as_str(), url.port), (host, port), "{text}");
+        assert_eq!(Url::parse(&url.to_string()).as_ref(), Some(&url), "{text}");
+    }
+}
+
 /// A server that answers one request with `answer`, and hands back the
 /// request.
 fn serve_once(answer: &'static [u8]) -> (Url, thread::JoinHandle<Message>) {

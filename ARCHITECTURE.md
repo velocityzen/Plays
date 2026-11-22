@@ -1250,10 +1250,13 @@ happens over a channel.
   protocol info is read into capabilities: the protocol, MIME type and
   DLNA profile of each.
 - `http.rs`, `soap.rs`: just enough HTTP/1.1, read with `network`'s
-  reader, and SOAP actions on it. A response has its time as a whole,
-  however slowly it comes, and is at most a megabyte after its head. A
-  refusal's `UPnPError` becomes a typed fault, as each service numbers
-  them.
+  reader, and SOAP actions on it. A URL's host is a name or an IPv4
+  address, or an IPv6 one in brackets (with a zone, as the events
+  callback's own address may have), and its port is digits only, so
+  nothing else goes into the Host header and a URL reads back as it's
+  written. A response has its time as a whole, however slowly it comes,
+  and is at most a megabyte after its head. A refusal's `UPnPError`
+  becomes a typed fault, as each service numbers them.
 - `media.rs`: the DIDL-Lite that goes with a URL (title, class, `res`
   with its protocol info, duration and size), with subtitles both as a
   second `res` and as Samsung's `sec:CaptionInfoEx`, as DLNA has no
