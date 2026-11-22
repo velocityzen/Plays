@@ -86,6 +86,16 @@ pub const COMMANDS: &[Spec] = &[
     )
     .keywords(&["bug", "report", "diagnostics", "clipboard", "system"])
     .returns("What it copied, a line for each thing."),
+    // Debug builds only, from the Developer menu.
+    #[cfg(debug_assertions)]
+    Spec::app(
+        "app.show_components",
+        "Component Gallery",
+        "Show every component in each of its sizes and states, side by side.",
+        crate::ui::gallery::GalleryView::open_window,
+    )
+    .keywords(&["developer", "debug", "components", "gallery", "sizes"])
+    .developer(),
     Spec::app(
         "app.quit",
         "Quit Plays",

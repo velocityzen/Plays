@@ -246,6 +246,11 @@ fn the_command_reference_is_current() {
     );
     let ran = command_line(None, None, &["actions", "--markdown"]);
     assert_eq!(ran.out, reference::reference());
+    #[cfg(debug_assertions)]
+    assert!(
+        api::find("app.show_components").is_some() && !kept.contains("app.show_components"),
+        "but not the commands for working on Plays, which release builds don't have"
+    );
     let play = "### Play/Pause\n\n`playback.play_pause`: ";
     assert!(kept.contains(play), "each command under its title");
     assert!(kept.contains("- Keys: Space, P\n"));

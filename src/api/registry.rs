@@ -123,6 +123,9 @@ pub struct Spec {
     pub query: bool,
     /// Whether this system has what it does.
     pub available: fn() -> bool,
+    /// Whether it's for working on Plays itself, in debug builds only, and
+    /// so left out of the command reference.
+    pub developer: bool,
 }
 
 impl Spec {
@@ -154,6 +157,7 @@ impl Spec {
             returns: None,
             query: false,
             available: || true,
+            developer: false,
         }
     }
 
@@ -318,6 +322,13 @@ impl Spec {
 
     pub const fn only_if(mut self, available: fn() -> bool) -> Self {
         self.available = available;
+        self
+    }
+
+    /// For working on Plays itself, in debug builds only.
+    #[cfg(debug_assertions)]
+    pub const fn developer(mut self) -> Self {
+        self.developer = true;
         self
     }
 

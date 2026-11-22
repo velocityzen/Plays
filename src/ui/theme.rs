@@ -311,7 +311,7 @@ pub mod radius {
     pub const FRAME: Pixels = px(7.);
     /// Buttons, text fields and hotkey chips; the subtitle preview's
     /// picture has a medium one's corners.
-    pub const CONTROL: [Pixels; 3] = [px(5.), px(6.), px(8.)];
+    pub const CONTROL: [Pixels; 3] = [px(6.), px(8.), px(10.)];
     /// Rows in menus, segments (their frame adds its padding to theirs),
     /// and badges with an icon.
     pub const ITEM: [Pixels; 3] = [px(4.), px(5.), px(6.)];
@@ -597,6 +597,23 @@ pub mod about {
     pub const ICON_GLYPH: f32 = 0.86;
     pub const ICON_TOP: u32 = 0xfc0a6e;
     pub const ICON_BOTTOM: u32 = 0xf50060;
+}
+
+/// The component gallery, in debug builds only.
+#[cfg(debug_assertions)]
+pub mod gallery {
+    use gpui::{Pixels, Size, px, size};
+
+    pub const WINDOW_SIZE: Size<Pixels> = size(px(960.), px(760.));
+    pub const WINDOW_MIN_SIZE: Size<Pixels> = size(px(640.), px(400.));
+    /// The column naming each row's variant or state.
+    pub const LABEL_WIDTH: Pixels = px(150.);
+    /// The column each size is shown in.
+    pub const SIZE_WIDTH: Pixels = px(240.);
+    /// The width a slider, a meter, a text field or a menu row is given.
+    pub const FILL_WIDTH: Pixels = px(200.);
+    /// The badges' color.
+    pub const BADGE_COLOR: u32 = 0xff3b30;
 }
 
 /// The Settings window.

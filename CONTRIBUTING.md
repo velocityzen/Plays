@@ -649,7 +649,9 @@ check:
     its own standard output and exiting with the status it says.
   - `docs/commands.md` as `plays actions --markdown` writes it now:
     after changing a command, write it again with
-    `cargo run -- actions --markdown > docs/commands.md`.
+    `cargo run -- actions --markdown > docs/commands.md`. Commands for
+    working on Plays (`developer`), which debug builds alone have, aren't
+    in it.
   - `cli.install` linking where a terminal finds it, replacing a link
     but nothing else, and saying what to type where it can't write, each
     in a folder of its own removed as the test ends.
@@ -1054,6 +1056,9 @@ in real time; Vulkan can be software (lavapipe). It uses `Xvfb`,
   About lists them.
 - The test fixtures are committed; change them with
   `script/make-fixtures`.
+- Debug builds have a Developer menu, whose Component Gallery shows every
+  component in each of its sizes and states: look it over after changing
+  a component or `theme`.
 - Tests never read or write the real settings or progress files: the app's
   folder for them (`files::Folder`) is none in tests and smoke runs, and a
   test of them gives a folder of its own (`Folder::for_test`). Debug

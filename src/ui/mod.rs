@@ -3,6 +3,8 @@ pub mod blackout;
 pub mod components;
 pub mod displays;
 pub mod framing;
+#[cfg(debug_assertions)]
+pub mod gallery;
 pub mod name_sheet;
 pub mod open_url;
 mod overlay;

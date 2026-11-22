@@ -46,7 +46,8 @@ pub fn reference() -> String {
          stands for ⌘, and Alt for ⌥.\n",
     );
     let mut namespace = "";
-    for spec in api::all() {
+    // Those for working on Plays itself are in debug builds only.
+    for spec in api::all().filter(|spec| !spec.developer) {
         if spec.namespace() != namespace {
             namespace = spec.namespace();
             writeln!(text, "\n## {namespace}").ok();

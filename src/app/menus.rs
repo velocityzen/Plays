@@ -57,6 +57,8 @@ fn menus(cx: &mut App) -> Vec<Menu> {
         audio_menu(outputs, window_outputs, &state),
         subtitles_menu(&state),
         window_menu(&state),
+        #[cfg(debug_assertions)]
+        developer_menu(&state),
     ]
 }
 
@@ -88,6 +90,15 @@ fn plays_menu(state: &MenuState) -> Menu {
     Menu {
         name: "Plays".into(),
         items,
+    }
+}
+
+/// Tools for working on Plays itself, in debug builds only.
+#[cfg(debug_assertions)]
+fn developer_menu(state: &MenuState) -> Menu {
+    Menu {
+        name: "Developer".into(),
+        items: items(&["app.show_components"], state),
     }
 }
 

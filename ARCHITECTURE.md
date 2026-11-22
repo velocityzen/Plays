@@ -833,6 +833,12 @@ flowchart LR
   menu rows, and a popover that opens a menu from a button; a badge; a flat
   card; and a floating panel to put anything in, a menu's or a note's over
   the picture, which shows the picture through it as Settings say.
+- `src/ui/gallery.rs`: in debug builds only, the Developer menu's
+  Component Gallery (`app.show_components`): every component in each of
+  its sizes and states side by side, to check by eye, the switches,
+  segments, sliders and menu rows working. Commands for working on Plays,
+  as this one is, are marked `developer` and left out of the command
+  reference, which release builds would otherwise differ from.
 - `src/ui/theme.rs`: colors, every size, radius and duration the UI uses,
   the backdrop each look of the panels over the video has, and named text
   styles (`text_display`, `text_title`, `text_heading`, `text_label`).
