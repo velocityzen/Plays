@@ -16,6 +16,7 @@ use crate::cast::fake::FakeTarget;
 use crate::cast::{Casting, Shows};
 use crate::media::output::DeviceInfo;
 use crate::ui::testing::{self, click, wait_until};
+use crate::ui::theme::layout::WINDOW_SIZE;
 use crate::ui::workspace::Workspace;
 
 fn listen(cx: &mut VisualTestContext, scope: Scope, positions: bool) -> UnboundedReceiver<Event> {
@@ -642,4 +643,76 @@ fn a_file_that_cant_open_is_told_so_and_where_it_is_isnt(cx: &mut TestAppContext
         ]
     );
     assert!(!events[3].payload["error"].as_str().unwrap().is_empty());
+}
+
+#[gpui::test]
+fn as_the_app_quits_each_window_is_told_closing_then_quit_to_everyone(cx: &mut TestAppContext) {
+    let (window, mut cx) = testing::start(cx);
+    // No one listening, nothing to tell.
+    TestAppContext::update(&cx, events::quit);
+    open(window, &mut cx, &["clip.mp4"], true);
+    let (w, t) = (window_id(window, &cx), tile_id(window, &cx));
+    let mut all = listen(&mut cx, Scope::All, false);
+    let mut app = listen(&mut cx, Scope::App, false);
+    let mut first = listen(&mut cx, Scope::Window(w), false);
+    // Another, not looked at yet: told opening, then closing.
+    let other = cx
+        .update(|_, cx| Workspace::open_window(WINDOW_SIZE, cx))
+        .unwrap();
+    cx.run_until_parked();
+    let x = window_id(other, &cx);
+    let mut second = listen(&mut cx, Scope::Window(x), false);
+
+    TestAppContext::update(&cx, events::quit);
+    let quitting = told(&mut all);
+    assert_eq!(
+        quitting.iter().map(|event| event.kind).collect::<Vec<_>>(),
+        [
+            "window_created",
+            "tile_closed",
+            "window_closed",
+            "window_closed",
+            "active_window_changed",
+            "quit",
+        ]
+    );
+    let w = w.to_string();
+    assert_eq!(
+        quitting[1].payload,
+        json!({
+            "window_id": w,
+            "window_title": "Plays",
+            "tile_id": t.to_string(),
+            "tile_title": "clip.mp4",
+        })
+    );
+    assert_eq!(
+        quitting[3].payload,
+        json!({"window_id": x.to_string(), "window_title": "Plays"})
+    );
+    assert_eq!(
+        quitting[4].payload,
+        json!({"window_id": null, "window_title": null}),
+        "none in front"
+    );
+    assert_eq!(quitting[5].payload, json!({}));
+    assert_eq!(
+        kinds(&mut app),
+        [
+            "window_created",
+            "window_closed",
+            "window_closed",
+            "active_window_changed",
+            "quit",
+        ]
+    );
+    assert_eq!(
+        kinds(&mut first),
+        ["tile_closed", "window_closed", "quit"],
+        "its own closing, and quit"
+    );
+    assert_eq!(
+        kinds(&mut second),
+        ["window_created", "window_closed", "quit"]
+    );
 }

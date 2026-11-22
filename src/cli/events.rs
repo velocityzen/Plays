@@ -11,7 +11,7 @@ use crate::api::socket::Heard;
 use crate::api::{Error, Target};
 
 /// Print the events heard, everything's or the window's `-w` names, until
-/// `count` have been, if given, or Plays goes.
+/// `count` have been, if given, or Plays quits: `quit`, the last.
 pub fn events(session: &mut Session, positions: bool, count: Option<usize>) -> Done {
     let heard = session
         .options
@@ -23,6 +23,9 @@ pub fn events(session: &mut Session, positions: bool, count: Option<usize>) -> D
     for _ in 0..count.unwrap_or(usize::MAX) {
         let (kind, payload) = session.client()?.next_event()?;
         show::event(session.out, &kind, &payload, json)?;
+        if kind == "quit" {
+            break;
+        }
     }
     Ok(())
 }
@@ -30,7 +33,7 @@ pub fn events(session: &mut Session, positions: bool, count: Option<usize>) -> D
 /// Wait for an event of type `kind` from the tile `-t` names, or else the
 /// window `-w` names, or from anything, and print it; at most `timeout`
 /// seconds, if given. A tile that has ended already has, and one closing
-/// first fails the wait.
+/// first, or Plays quitting, fails the wait.
 pub fn wait(session: &mut Session, kind: &str, timeout: Option<f64>) -> Done {
     let by = match timeout {
         Some(seconds) => match Duration::try_from_secs_f64(seconds) {
@@ -67,6 +70,10 @@ pub fn wait(session: &mut Session, kind: &str, timeout: Option<f64>) -> Done {
                 &payload,
                 session.options.json,
             )?);
+        }
+        // What's watched, if anything, was told closing first.
+        if heard == "quit" {
+            return Err(Error::failed(format!("Plays quit before its {kind}")).into());
         }
         if let Some(what) = watched.gone(&heard, &payload) {
             return Err(Error::failed(format!("the {what} closed before its {kind}")).into());

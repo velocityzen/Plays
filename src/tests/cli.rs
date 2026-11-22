@@ -940,6 +940,75 @@ fn waiting_for_a_tile_ends_with_its_event_or_says_why_not(cx: &mut TestAppContex
     assert_eq!(ran.failed(), (1, "plays: the tile closed before its ended"));
 }
 
+/// As Plays quits, `events` prints each window closing, then `quit`, and
+/// ends; `wait` says Plays quit before what it waits for, or that what it
+/// watches closed first, unless it waits for `quit`.
+#[gpui::test]
+fn events_end_and_waits_fail_as_plays_quits(cx: &mut TestAppContext) {
+    let (path, window, mut cx) = serving("cli-quit", cx);
+    let w = window_id(window, &cx);
+    TestAppContext::update(&cx, api::record);
+    let lines: [&[&'static str]; 5] = [
+        &["--json", "events"],
+        &["-w", "1", "events"],
+        &["wait", "ended"],
+        &["wait", "quit"],
+        &["-w", "1", "wait", "ended"],
+    ];
+    let running: Vec<thread::JoinHandle<Ran>> = lines
+        .iter()
+        .map(|args| {
+            let (path, args) = (path.clone(), args.to_vec());
+            thread::spawn(move || command_line(Some(path), None, &args))
+        })
+        .collect();
+    let listening = wait_until(&mut cx, |cx| {
+        let inspected = cx
+            .update(api::recorded)
+            .iter()
+            .any(|invocation| invocation.command == "window.inspect");
+        inspected && cx.update(api::events::listeners) == lines.len()
+    });
+    assert!(listening, "each listens");
+
+    cx.quit();
+    let ended = wait_until(&mut cx, |_| {
+        running.iter().all(thread::JoinHandle::is_finished)
+    });
+    assert!(ended, "each ended");
+    let [all, first, ended, quit, closed] = running
+        .into_iter()
+        .map(|running| running.join().unwrap())
+        .collect::<Vec<_>>()
+        .try_into()
+        .unwrap();
+    assert_eq!(all.status, 0, "{all:?}");
+    let kinds: Vec<Value> = all
+        .out
+        .lines()
+        .map(|line| serde_json::from_str::<Value>(line).unwrap()["type"].clone())
+        .collect();
+    assert_eq!(
+        kinds[kinds.len() - 3..],
+        ["window_closed", "active_window_changed", "quit"],
+        "{all:?}"
+    );
+    assert_eq!(
+        (first.status, first.out.as_str()),
+        (
+            0,
+            format!("window_closed window_id={w} window_title=Plays\nquit\n").as_str()
+        ),
+        "{first:?}"
+    );
+    assert_eq!(ended.failed(), (1, "plays: Plays quit before its ended"));
+    assert_eq!((quit.status, quit.out.as_str()), (0, "quit\n"), "{quit:?}");
+    assert_eq!(
+        closed.failed(),
+        (1, "plays: the window closed before its ended")
+    );
+}
+
 #[gpui::test]
 fn settings_are_listed_read_and_changed(cx: &mut TestAppContext) {
     let (path, _, mut cx) = serving("cli-settings", cx);

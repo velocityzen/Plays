@@ -578,7 +578,10 @@ flowchart LR
   another apart by `Playback`'s count of openings, and a seek, here or on
   the device it casts to, by its count of seeks; a file opened starts out
   paused, as its `opened` says the rest, so one that plays tells
-  `playing` and no more.
+  `playing` and no more. As Plays quits, the socket has `events::quit`
+  look a last time, then tell each window still open closing, its tiles
+  first, as closing it would, then `quit`, which every listener hears,
+  one window's too (`Reach::everyone`).
 
   `api::socket` is how the command line, and another Plays, reach the
   one running. `main` takes the socket first (`socket::start`), before
@@ -621,12 +624,18 @@ flowchart LR
   each is taken off the list, so it hears nothing more, and told
   `client_left`, its connection closing once what it was sent is written.
   `client_connected` and `client_left` are told to the app's listeners.
-  The socket is removed as Plays quits. `client` is the other end: one
+  As Plays quits (`end_on_quit`), with no task running any more, each
+  client is sent what it was told and is still waiting, the windows
+  closing and `quit` among it, then the end of its connection
+  (`Outgoing::End`), which its writer closes once what came before is
+  written; the socket is removed, and quitting waits, as long as gpui
+  lets it, for each writer to finish. `client` is the other end: one
   request at a time, keeping the events that come meanwhile for
   `next_event`, or `next_event_by` a deadline, a line read in part kept
-  for the next read. `connect_or_start`, for the command line, starts
-  Plays when none answers (`start_plays`, apart from the terminal) and
-  waits up to ten seconds for its socket.
+  for the next read; a connection closed is `Failure::Closed`, exit
+  status 4 as for no Plays. `connect_or_start`, for the command line,
+  starts Plays when none answers (`start_plays`, apart from the
+  terminal) and waits up to ten seconds for its socket.
 - `src/cli/`: the command line. `main` asks `cli::wanted` before
   anything else is set up, so it never starts gpui or FFmpeg: a
   subcommand, one of its options, `help`, or a word that is no file or
@@ -643,11 +652,12 @@ flowchart LR
   place beside another counts from where the others are once the one
   moving has left its own. `events` subscribes to everything
   (`Heard::All`), or to the window `-w` names, and prints each event, a
-  line of `type key=value…` or of JSON; `wait` subscribes before it looks
-  at the tile, so nothing happens unheard in between: a tile that has
-  ended already prints its `ended` at once, as the event says it, from
-  `tile.inspect`'s position, duration and frame rate; the tile or window
-  closing first, or the time running out, fails the wait. `reference`
+  line of `type key=value…` or of JSON, until `quit`; `wait` subscribes
+  before it looks at the tile, so nothing happens unheard in between: a
+  tile that has ended already prints its `ended` at once, as the event
+  says it, from `tile.inspect`'s position, duration and frame rate; the
+  tile or window closing first, Plays quitting, or the time running out,
+  fails the wait. `reference`
   lists the commands from the registry compiled in, Plays running or not,
   and writes `docs/commands.md` (`plays actions --markdown`). `completions`
   writes the script that completes the command line in bash, zsh, fish or

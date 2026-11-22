@@ -866,9 +866,11 @@ plays actions                             # every command, Plays or not
   text stays text (`label=1984`), anything else is read as JSON, and a
   key given again makes a list. `api call` takes them as a JSON object.
 - `events` prints every change as it comes: the app's, and each window's
-  and tile's, or with `-w` only that window's and its tiles'.
+  and tile's, or with `-w` only that window's and its tiles'. As Plays
+  quits, it prints each window closing, then `quit`, and ends.
 - `wait` prints the event once it comes (one that has ended already has),
-  and fails if the tile or window closes first or `--timeout` runs out.
+  and fails if the tile or window closes first, Plays quits, or
+  `--timeout` runs out. `wait quit` waits for Plays to quit.
 - The events of how a file plays (`playing`, `paused`, `seeked`, `ended`,
   and `position` with `--positions`) say where it is three ways:
   `position`, how far through it is from 0 to 1 (none for a live
@@ -882,7 +884,8 @@ plays actions                             # every command, Plays or not
   `plays actions --markdown` writes it.
 - It exits with 0 when it's done, 1 when Plays couldn't do it, 2 for a
   bad command line, 3 for nothing by the name given, 4 when there's no
-  Plays to ask, and 5 while control from the command line is off.
+  Plays to ask, or it closed the connection before answering, and 5
+  while control from the command line is off.
 - A word that is neither a subcommand nor a file or folder there is taken
   for a mistyped subcommand, not handed to Plays.
 - `PLAYS_SOCKET` names another socket to ask at.

@@ -315,8 +315,11 @@ fn a_client_passes_over_other_answers_and_keeps_the_events_that_come_first() {
         ("playing".into(), json!({"tile_id": "1"}))
     );
     assert_eq!(client.next_event().unwrap(), ("paused".into(), Value::Null));
-    let (status, _) = said(client.next_event().unwrap_err());
-    assert_eq!(status, 4, "it went");
+    assert_eq!(
+        said(client.next_event().unwrap_err()),
+        (4, "Plays closed the connection".into()),
+        "it went"
+    );
 }
 
 #[test]
@@ -352,14 +355,15 @@ fn an_event_half_read_by_the_time_given_is_read_whole_the_next_time() {
 }
 
 #[test]
-fn a_plays_going_without_an_answer_is_unreachable() {
+fn a_plays_going_without_an_answer_closed_the_connection() {
     let path = socket("gone");
     let plays = answering(&path, &[]);
     let gone = Client::connect(&path).unwrap().request(Ask::Hello);
     plays.join().unwrap();
-    let (status, why) = said(gone.unwrap_err());
-    assert_eq!(status, 4);
-    assert!(why.starts_with("can't reach Plays: "), "{why}");
+    assert_eq!(
+        said(gone.unwrap_err()),
+        (4, "Plays closed the connection".into())
+    );
 }
 
 #[gpui::test]
@@ -965,6 +969,69 @@ fn the_socket_is_removed_as_the_app_quits(cx: &mut TestAppContext) {
     assert!(!path.exists());
 }
 
+/// What a client hears until `quit`, which its connection closes after.
+fn to_the_end(client: &mut Client) -> Vec<(String, Value)> {
+    let heard = until(client, "quit");
+    assert_eq!(
+        client.next_event().map_err(said),
+        Err((4, "Plays closed the connection".into())),
+        "then the end"
+    );
+    heard
+}
+
+#[gpui::test]
+fn as_the_app_quits_listeners_hear_the_windows_close_and_quit_then_the_end(
+    cx: &mut TestAppContext,
+) {
+    let (path, window, mut cx) = serving("quitting", cx);
+    let w = window_id(window, &cx);
+    let (_, all) = listening(
+        &mut cx,
+        &path,
+        |client| client.subscribe(Heard::All, false).unwrap(),
+        to_the_end,
+    );
+    let (_, first) = listening(
+        &mut cx,
+        &path,
+        |client| client.subscribe(Heard::Window("1".into()), false).unwrap(),
+        to_the_end,
+    );
+    // One that only asked: its connection closes too.
+    let (_, asked) = listening(
+        &mut cx,
+        &path,
+        |client| client.request(Ask::Hello).unwrap(),
+        |client| {
+            let end = client.next_event().map_err(said);
+            vec![("end".into(), json!(end.unwrap_err().1))]
+        },
+    );
+
+    cx.quit();
+    let all = all.join().expect("all heard to the end");
+    assert_eq!(
+        kinds(&all),
+        [
+            "client_connected",
+            "client_connected",
+            "window_closed",
+            "active_window_changed",
+            "quit",
+        ]
+    );
+    assert_eq!(all[2].1, json!({"window_id": w, "window_title": "Plays"}));
+    assert_eq!(all[4].1, json!({}));
+    let first = first.join().expect("the window's heard to the end");
+    assert_eq!(kinds(&first), ["window_closed", "quit"]);
+    assert_eq!(
+        asked.join().unwrap(),
+        [("end".into(), json!("Plays closed the connection"))]
+    );
+    assert!(!path.exists());
+}
+
 #[test]
 fn a_command_with_plays_running_reaches_it_without_starting_another() {
     let path = socket("reached");
@@ -1033,6 +1100,7 @@ fn a_plays_that_cant_be_reached_for_another_reason_isnt_started() {
 fn each_failure_has_its_exit_status() {
     let cases = [
         (Failure::Unreachable(io::ErrorKind::NotFound.into()), 4),
+        (Failure::Closed, 4),
         (Failure::Command(Error::failed("no")), 1),
         (Failure::Command(Error::bad_args("a.b", "no")), 2),
         (Failure::Command(Error::not_found("tile", "x")), 3),

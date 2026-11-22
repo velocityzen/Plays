@@ -661,7 +661,10 @@ check:
   and one more at most once paused; subtitles picked, and the next file opened in the same
   tile, told once, its tracks as it has them, and the one before, opened
   by no command and known before the app looks; a file that can't open;
-  and the outputs, devices to cast to, and a cast started and stopped. The
+  the outputs, devices to cast to, and a cast started and stopped; and the
+  app quitting: what changed since the last look told first, then each
+  window closing, its tiles first, and `quit` to every listener, one
+  window's too, nothing told with no one listening. The
   app's clock moves only as a test advances it: a file plays on only as
   its tile ticks, so those tests advance it a step at a time
   (`play_until`). Unit tests check what each change of what was seen
@@ -698,7 +701,10 @@ check:
     only that window's events. A subscriber running a command hears its
     `command_run` before the answer. Positions go only to those who ask,
     and nothing is heard after unsubscribing.
-  - The socket removed as the app quits.
+  - The socket removed as the app quits, and each client's connection
+    closed once what it was told is written: those listening hear their
+    windows closing and `quit`, then the end, and one that only asked
+    the end.
   - Control from the command line, which tests turn on as Settings does
     (`allow_control`): with it off, who answers, the commands there are
     and files handed over are answered, but calls and subscriptions are
@@ -706,13 +712,16 @@ check:
     it on. Turning it off cuts off a subscriber, as if Plays went.
   - The client, against a Plays of the test's own: answers to other
     requests passed over, events that come first kept, a Plays gone
-    unreachable. Autostart: a Plays answering isn't started again; with
-    none, it's started and waited for, or, with nothing to start, it says
-    so with exit status 4. A socket that can't be reached for another
-    reason, such as permissions, doesn't start one.
+    saying it closed the connection, with exit status 4. Autostart: a
+    Plays answering isn't started again; with none, it's started and
+    waited for, or, with nothing to start, it says so with exit status 4.
+    A socket that can't be reached for another reason, such as
+    permissions, doesn't start one.
   - In `protocol`, each request read with its defaults and written back,
     and answers, errors (each with its own message) and events read by a
-    client. In `server`, a client too far behind cut off.
+    client. In `server`, a client too far behind cut off, and one sent
+    the end written what came before, then its connection closed, and
+    nothing after.
   - Each test's socket is in a folder of its own in the temporary folder,
     removed as the test ends, pass or fail, even one it left shut.
 - The command line (`cli::tests`), run on a thread of its own against a
@@ -735,10 +744,13 @@ check:
     (`api::events::listeners`), and with `-w` that window's;
     and `wait` ending with
     its event, failing when the tile closes first or the time runs out,
-    and naming a tile that isn't there with status 3. That a tile that has
-    ended has nothing to wait for, its `ended` said as the event says it,
-    is a unit test: the test platform's
-    timers don't play a file to its end, so the `cli` smoke run does.
+    and naming a tile that isn't there with status 3. As Plays quits,
+    `events` printing each window closing, then `quit`, and ending with 0,
+    with `-w` that window's; `wait` failing as Plays quit, or as the
+    window it watches closed, and `wait quit` printing it. That a tile
+    that has ended has nothing to wait for, its `ended` said as the event
+    says it, is a unit test: the test platform's timers don't play a file
+    to its end, so the `cli` smoke run does.
   - Output closed quietly ending it with 0.
   - With control from the command line off, saying where to turn it on
     and exiting with 5, but `version` still answering.

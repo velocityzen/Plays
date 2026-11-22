@@ -3,7 +3,9 @@
 //! answers on the UI thread, as a key's command runs, in the order asked.
 //! Events a client hears go out as they're told, those told as a request
 //! runs before its answer. A client that stops reading, with `OUTBOX`
-//! lines waiting for it, is cut off rather than kept in memory.
+//! lines waiting for it, is cut off rather than kept in memory. As the
+//! app quits, each client is sent what it was told, the windows closing
+//! and `quit` among it, before its connection closes (`end_on_quit`).
 //!
 //! Commands run, and events are heard, only while Settings has control
 //! from the command line on (`allowed`); turning it off cuts off every
@@ -16,10 +18,11 @@ use std::future::poll_fn;
 use std::io::{self, BufRead, BufReader, BufWriter, Read, Write};
 use std::net::Shutdown;
 use std::os::unix::net::{UnixListener, UnixStream};
+use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
-use std::thread;
+use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use futures::StreamExt as _;
@@ -43,6 +46,10 @@ pub(super) const LONGEST: u64 = 1 << 20;
 /// failed: with no file descriptors left, say.
 const ACCEPT_PAUSE: Duration = Duration::from_millis(100);
 
+/// How often the app, quitting, looks whether each client has been sent
+/// all it was told.
+const WRITTEN_POLL: Duration = Duration::from_millis(2);
+
 /// A client's number, told with `client_connected` and `client_left`.
 type ClientId = u64;
 
@@ -51,25 +58,43 @@ type Clients = Rc<RefCell<HashMap<ClientId, Client>>>;
 
 /// What the threads tell the app.
 enum Message {
-    /// A client connected, and how to write to it.
-    Connected(ClientId, Out),
+    /// A client connected, how to write to it, and the thread writing.
+    Connected(ClientId, Out, JoinHandle<()>),
     /// A line from a client.
     Line(ClientId, String),
     /// A client went, or was cut off.
     Left(ClientId),
 }
 
+/// What goes out to a client: a line, or the end, once what's before it
+/// is written, of its connection.
+#[derive(Debug, PartialEq)]
+enum Outgoing {
+    Line(String),
+    End,
+}
+
 /// Writing to a client.
 #[derive(Clone)]
 struct Out {
-    lines: SyncSender<String>,
+    lines: SyncSender<Outgoing>,
     stream: Arc<UnixStream>,
 }
 
 impl Out {
-    /// Send `line`, or cut the client off if too much waits for it.
+    /// Send `line`.
     fn send(&self, line: String) {
-        if let Err(TrySendError::Full(_)) = self.lines.try_send(line) {
+        self.put(Outgoing::Line(line));
+    }
+
+    /// Close the connection once what was sent is written.
+    fn end(&self) {
+        self.put(Outgoing::End);
+    }
+
+    /// Send `outgoing`, or cut the client off if too much waits for it.
+    fn put(&self, outgoing: Outgoing) {
+        if let Err(TrySendError::Full(_)) = self.lines.try_send(outgoing) {
             log::warn!("cutting off a socket client that isn't reading");
             self.stream.shutdown(Shutdown::Both).ok();
         }
@@ -81,6 +106,20 @@ struct Client {
     out: Out,
     /// The events it hears, while it does.
     hearing: Option<Hearing>,
+    /// The thread writing to it, which ends once its connection closes.
+    writing: JoinHandle<()>,
+}
+
+impl Client {
+    /// Send what it was told and is still waiting to be, then close its
+    /// connection; what's handed back finishes once that's written.
+    fn end(self) -> JoinHandle<()> {
+        if let Some(hearing) = &self.hearing {
+            hearing.send_waiting(&self.out);
+        }
+        self.out.end();
+        self.writing
+    }
 }
 
 /// The events a client hears, and the task sending each as it's told.
@@ -122,6 +161,7 @@ pub fn serve(listener: Listener, cx: &mut App) {
     }
     let clients = Clients::default();
     cut_off_when_turned_off(&clients, cx);
+    end_on_quit(&clients, path, cx);
     cx.spawn(async move |cx| {
         while let Some(message) = received.next().await {
             let handled = cx.update(|cx| handle(message, &mut clients.borrow_mut(), cx));
@@ -131,9 +171,28 @@ pub fn serve(listener: Listener, cx: &mut App) {
         }
     })
     .detach();
-    cx.on_app_quit(move |_| {
+}
+
+/// As the app quits, tell those listening the windows closing and `quit`,
+/// send each client what it was told, as nothing else runs then, and
+/// close its connection; remove the socket, and wait, as long as quitting
+/// does, for what was sent to be written.
+fn end_on_quit(clients: &Clients, path: PathBuf, cx: &mut App) {
+    let clients = Rc::clone(clients);
+    cx.on_app_quit(move |cx| {
+        events::quit(cx);
+        let writing: Vec<JoinHandle<()>> = clients
+            .borrow_mut()
+            .drain()
+            .map(|(_, client)| client.end())
+            .collect();
         super::remove(&path).ok();
-        async {}
+        let executor = cx.background_executor().clone();
+        async move {
+            while !writing.iter().all(JoinHandle::is_finished) {
+                executor.timer(WRITTEN_POLL).await;
+            }
+        }
     })
     .detach();
 }
@@ -201,7 +260,7 @@ fn connect(
     let stream = Arc::new(stream);
     let (lines, outgoing) = mpsc::sync_channel(OUTBOX);
     let writing = Arc::clone(&stream);
-    thread::Builder::new()
+    let writing = thread::Builder::new()
         .name("plays-socket-out".into())
         .spawn(move || write(&writing, &outgoing))?;
     // Before anything it asks.
@@ -210,7 +269,7 @@ fn connect(
         stream: Arc::clone(&stream),
     };
     messages
-        .unbounded_send(Message::Connected(client, out))
+        .unbounded_send(Message::Connected(client, out, writing))
         .map_err(|_| io::Error::other("the app isn't answering"))?;
     let messages = messages.clone();
     thread::Builder::new()
@@ -250,16 +309,22 @@ fn read(client: ClientId, stream: &UnixStream, messages: &UnboundedSender<Messag
     messages.unbounded_send(Message::Left(client)).ok();
 }
 
-/// Write each line sent to the client, until it goes or is cut off.
-fn write(stream: &UnixStream, lines: &Receiver<String>) {
+/// Write each line sent to the client, until it goes, is cut off, or its
+/// connection's end is sent; then close it.
+fn write(stream: &UnixStream, outgoing: &Receiver<Outgoing>) {
     let mut out = BufWriter::new(stream);
-    while let Ok(line) = lines.recv() {
+    'writing: while let Ok(first) = outgoing.recv() {
         // Those waiting too, before flushing.
-        let written = std::iter::once(line)
-            .chain(lines.try_iter())
-            .try_for_each(|line| writeln!(out, "{line}"))
-            .and_then(|()| out.flush());
-        if written.is_err() {
+        for next in std::iter::once(first).chain(outgoing.try_iter()) {
+            let Outgoing::Line(line) = next else {
+                out.flush().ok();
+                break 'writing;
+            };
+            if writeln!(out, "{line}").is_err() {
+                break 'writing;
+            }
+        }
+        if out.flush().is_err() {
             break;
         }
     }
@@ -269,8 +334,13 @@ fn write(stream: &UnixStream, lines: &Receiver<String>) {
 /// Do what a thread tells.
 fn handle(message: Message, clients: &mut HashMap<ClientId, Client>, cx: &mut App) {
     match message {
-        Message::Connected(client, out) => {
-            clients.insert(client, Client { out, hearing: None });
+        Message::Connected(client, out, writing) => {
+            let connected = Client {
+                out,
+                hearing: None,
+                writing,
+            };
+            clients.insert(client, connected);
             events::client_connected(client, cx);
         }
         Message::Line(id, line) => {

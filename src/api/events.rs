@@ -19,7 +19,9 @@
 //! command has run and every `LOOK_EVERY` while anyone listens. So each change
 //! is told once, whatever made it: a command, a click, or the file itself,
 //! opening or ending. Settings, which change where they're kept, are told
-//! as they change. Nothing is looked at while no one listens.
+//! as they change. Nothing is looked at while no one listens. As the app
+//! quits (`quit`), each window still open is told closing, then `quit`,
+//! which every listener hears, one window's too.
 
 mod seen;
 
@@ -58,11 +60,12 @@ pub struct Event {
 }
 
 /// Who hears an event: those listening to the app's, those listening to
-/// one of `windows`, and those listening to all.
+/// one of `windows`, and those listening to all; or `everyone`.
 #[derive(Clone, Debug, Default, PartialEq)]
 struct Reach {
     app: bool,
     windows: Vec<Id>,
+    everyone: bool,
 }
 
 impl Event {
@@ -73,7 +76,20 @@ impl Event {
             payload,
             reach: Reach {
                 app: true,
+                ..Reach::default()
+            },
+        }
+    }
+
+    /// One every listener hears, whatever it listens to: the app quitting.
+    fn to_everyone(kind: &'static str, payload: Value) -> Self {
+        Self {
+            kind,
+            payload,
+            reach: Reach {
+                app: true,
                 windows: Vec::new(),
+                everyone: true,
             },
         }
     }
@@ -84,8 +100,8 @@ impl Event {
             kind,
             payload: with_ids(payload, window, None),
             reach: Reach {
-                app: false,
                 windows: vec![window.id],
+                ..Reach::default()
             },
         }
     }
@@ -104,8 +120,8 @@ impl Event {
             kind,
             payload: with_ids(payload, window, Some(tile)),
             reach: Reach {
-                app: false,
                 windows: vec![window.id],
+                ..Reach::default()
             },
         }
     }
@@ -115,7 +131,7 @@ impl Event {
         match scope {
             Scope::All => true,
             Scope::App => self.reach.app,
-            Scope::Window(id) => self.reach.windows.contains(&id),
+            Scope::Window(id) => self.reach.everyone || self.reach.windows.contains(&id),
         }
     }
 }
@@ -307,6 +323,29 @@ fn see(cx: &mut App) -> Seen {
         windows,
         front,
     }
+}
+
+/// The app quits: what changed since the last look is told, then each
+/// window still open closing, its tiles first, as closing it would, then
+/// `quit`, which every listener hears. The socket writes them out as it
+/// quits (`socket::server`), as nothing else runs then.
+pub fn quit(cx: &mut App) {
+    if !listened(cx) {
+        return;
+    }
+    look(cx);
+    let Some(seen) = cx.global::<Events>().seen.clone() else {
+        return;
+    };
+    let closed = Seen {
+        windows: Vec::new(),
+        front: None,
+        ..seen.clone()
+    };
+    for event in seen::changes(&seen, &closed) {
+        tell(&event, cx);
+    }
+    tell(&Event::to_everyone("quit", json!({})), cx);
 }
 
 /// Tell where each tile that has opened is, to those who asked, at most

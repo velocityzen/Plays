@@ -32,8 +32,11 @@ const START_POLL: Duration = Duration::from_millis(50);
 /// Why a request didn't do what it asked.
 #[derive(Debug)]
 pub enum Failure {
-    /// No Plays answers, or it went.
+    /// No Plays answers.
     Unreachable(io::Error),
+    /// Plays closed the connection: it quit, say, before answering, or
+    /// while listened to.
+    Closed,
     /// The command didn't run, or couldn't do it.
     Command(api::Error),
     /// Plays couldn't read the request, or this its answer.
@@ -42,10 +45,11 @@ pub enum Failure {
 
 impl Failure {
     /// The exit status the command line gives it, as Rex's does: those of
-    /// `api::Error`, 1 for what Plays couldn't read, 4 for no Plays.
+    /// `api::Error`, 1 for what Plays couldn't read, 4 for no Plays, or
+    /// none any more.
     pub fn exit_status(&self) -> u8 {
         match self {
-            Self::Unreachable(_) => 4,
+            Self::Unreachable(_) | Self::Closed => 4,
             Self::Command(err) => err.exit_status(),
             Self::BadRequest(_) => 1,
         }
@@ -56,6 +60,7 @@ impl fmt::Display for Failure {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Unreachable(err) => write!(f, "can't reach Plays: {err}"),
+            Self::Closed => f.write_str("Plays closed the connection"),
             Self::Command(err) => err.fmt(f),
             Self::BadRequest(why) => write!(f, "Plays didn't understand: {why}"),
         }
@@ -214,8 +219,7 @@ impl Client {
     fn next(&mut self) -> Result<Incoming, Failure> {
         self.reader.read_until(b'\n', &mut self.partial)?;
         if self.partial.last() != Some(&b'\n') {
-            let went = io::Error::new(io::ErrorKind::UnexpectedEof, "it went");
-            return Err(Failure::Unreachable(went));
+            return Err(Failure::Closed);
         }
         let line = std::mem::take(&mut self.partial);
         Incoming::read(&String::from_utf8_lossy(&line)).map_err(Failure::BadRequest)
