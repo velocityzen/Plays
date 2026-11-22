@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 use serde_json::{Value, json};
 
 use super::{Done, Session, Stop, show};
+use crate::api::events::playhead;
 use crate::api::socket::Heard;
 use crate::api::{Error, Target};
 
@@ -119,11 +120,19 @@ impl Watched {
     /// The event of type `kind` the tile watched had before the wait
     /// began, as it would have been heard: only its ending, as it ended.
     fn already(&self, kind: &str) -> Option<Value> {
-        (kind == "ended" && self.state["ended"] == true).then(|| {
+        let state = &self.state;
+        (kind == "ended" && state["ended"] == true).then(|| {
+            let at = playhead(
+                state["position"].as_f64().unwrap_or_default(),
+                state["duration"].as_f64(),
+                state["frame_rate"].as_f64(),
+            );
             json!({
                 "window_id": self.window,
                 "tile_id": self.tile,
-                "position": self.state["position"],
+                "position": at["position"],
+                "time": at["time"],
+                "frame": at["frame"],
             })
         })
     }

@@ -6,10 +6,12 @@
 //! A listener hears the app's events (`Scope::App`: windows opening,
 //! closing, renamed and coming to the front, outputs, devices, settings,
 //! keys, commands run, and the socket's clients connecting and leaving),
-//! one window's (`Scope::Window`: its own, its
-//! tiles' and how they play), or all of them. A tile's position is told
-//! only to those who ask for it, at most once a second. Readers ignore
-//! events and fields they don't know, so later versions can add them.
+//! one window's (`Scope::Window`: its own, its tiles' and how they play),
+//! or all of them. Where a file plays is told as how far through it is,
+//! from 0 to 1, in seconds and by frame (`playhead`). A tile's position
+//! is told only to those who ask for it, at most once a second. Readers
+//! ignore events and fields they don't know, so later versions can add
+//! them.
 //!
 //! What changed is found by looking (`look`): at what the app, its windows
 //! and tiles are like, against what the last look saw (`seen`), once each
@@ -28,7 +30,7 @@ use gpui::{App, Global};
 use serde::Serialize;
 use serde_json::{Value, json};
 
-pub use seen::{Seen, TRACKS, TileSeen, WindowSeen};
+pub use seen::{Seen, TRACKS, TileSeen, WindowSeen, playhead};
 
 use super::commands::{self, cast, output};
 use super::{Id, Invocation, target};
@@ -316,13 +318,9 @@ fn positions(seen: &Seen, cx: &mut App) {
             });
             if due {
                 told.insert(tile.id, (now, tile.position));
-                let event = Event::tile(
-                    "position",
-                    window.id,
-                    tile.id,
-                    json!({"position": tile.position, "duration": tile.duration}),
-                );
-                tell(&event, cx);
+                let mut payload = tile.playhead(tile.position);
+                payload["duration"] = json!(tile.duration);
+                tell(&Event::tile("position", window.id, tile.id, payload), cx);
             }
         }
     }

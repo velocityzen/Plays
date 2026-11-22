@@ -861,6 +861,11 @@ plays actions                             # every command, Plays or not
   key given again makes a list. `api call` takes them as a JSON object.
 - `wait` prints the event once it comes (one that has ended already has),
   and fails if the tile or window closes first or `--timeout` runs out.
+- The events of how a file plays (`playing`, `paused`, `seeked`, `ended`,
+  and `position` with `--positions`) say where it is three ways:
+  `position`, how far through it is from 0 to 1 (none for a live
+  stream); `time`, in seconds; and `frame`, the number of the frame
+  showing then, from 0 (none for sound alone).
 - [docs/commands.md](docs/commands.md) describes every command, as
   `plays actions --markdown` writes it.
 - It exits with 0 when it's done, 1 when Plays couldn't do it, 2 for a

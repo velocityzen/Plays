@@ -497,7 +497,9 @@ async fn cli(cx: &mut AsyncApp) -> Result<(), String> {
         return Err(format!("the tile still loops: {tile}"));
     }
     let ended = succeeds(cx, &["wait", "ended", "-t", "1", "--timeout", "10"]).await?;
-    if !ended.starts_with("ended window_id=") {
+    // Where it ended: how far through, in seconds and by frame.
+    let said = |field| ended.contains(&format!(" {field}="));
+    if !ended.starts_with("ended window_id=") || !["position", "time", "frame"].iter().all(said) {
         return Err(format!("plays wait ended printed {ended:?}"));
     }
     let tile = json(&succeeds(cx, &["--json", "tile", "inspect"]).await?)?;
@@ -510,8 +512,11 @@ async fn cli(cx: &mut AsyncApp) -> Result<(), String> {
         &["--json", "wait", "ended", "--timeout", "0.5", "-t", "1"],
     )
     .await?;
-    if json(&again)?["type"] != "ended" {
-        return Err(format!("waiting again printed {again:?}"));
+    let again = json(&again)?;
+    // As the event said it, from what the tile says of itself.
+    let through = again["payload"]["position"].as_f64().unwrap_or_default();
+    if again["type"] != "ended" || through < 0.9 || !again["payload"]["frame"].is_u64() {
+        return Err(format!("waiting again printed {again}"));
     }
 
     let version = succeeds(cx, &["version"]).await?;

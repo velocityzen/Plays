@@ -267,7 +267,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 `tile.inspect`: Say all about the tile: what it plays, where it is, and how it's set to play.
 
 - Acts on a tile.
-- Hands back: {as tile.ls, window, position, duration, ended, volume, muted, looping, tracks: {video, audio, subtitles: [{number, label, language, title, codec, format, default, forced, hearing_impaired, file}]}, picked: {video, audio, subtitles}, delays: {audio, subtitles}, picture: {turns, mirrored, aspect_ratio, crop}, chapter, chapters: [{number, name, start, end}], casting: {id, kind, name} or null}: times in seconds (duration null for a live stream), volume from 0 to 100, tracks and chapters numbered from 1, the tracks picked and the chapter by number or null, delays in seconds, and quarter turns clockwise.
+- Hands back: {as tile.ls, window, position, duration, frame_rate, ended, volume, muted, looping, tracks: {video, audio, subtitles: [{number, label, language, title, codec, format, default, forced, hearing_impaired, file}]}, picked: {video, audio, subtitles}, delays: {audio, subtitles}, picture: {turns, mirrored, aspect_ratio, crop}, chapter, chapters: [{number, name, start, end}], casting: {id, kind, name} or null}: times in seconds (duration null for a live stream), frames a second (null for sound alone), volume from 0 to 100, tracks and chapters numbered from 1, the tracks picked and the chapter by number or null, delays in seconds, and quarter turns clockwise.
 
 ### Go to Tile
 

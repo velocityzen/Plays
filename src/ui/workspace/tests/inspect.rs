@@ -244,6 +244,7 @@ fn tile_inspect_says_how_a_tile_plays(cx: &mut TestAppContext) {
         "window": id(window, &cx),
         "position": 1.0,
         "duration": 2.021,
+        "frame_rate": 25.0,
         "ended": false,
         "volume": 50.0,
         "muted": true,

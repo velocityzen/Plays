@@ -33,14 +33,15 @@ pub const COMMANDS: &[Spec] = &[
         "Inspect Tile",
         "Say all about the tile: what it plays, where it is, and how it's set to play.",
         Scope::Tile,
-        "{as tile.ls, window, position, duration, ended, volume, muted, looping, \
-         tracks: {video, audio, subtitles: [{number, label, language, title, codec, \
+        "{as tile.ls, window, position, duration, frame_rate, ended, volume, muted, \
+         looping, tracks: {video, audio, subtitles: [{number, label, language, title, codec, \
          format, default, forced, hearing_impaired, file}]}, picked: {video, audio, \
          subtitles}, delays: {audio, subtitles}, picture: {turns, mirrored, \
          aspect_ratio, crop}, chapter, chapters: [{number, name, start, end}], casting: \
          {id, kind, name} or null}: times in seconds (duration null for a live stream), \
-         volume from 0 to 100, tracks and chapters numbered from 1, the tracks picked and \
-         the chapter by number or null, delays in seconds, and quarter turns clockwise.",
+         frames a second (null for sound alone), volume from 0 to 100, tracks and \
+         chapters numbered from 1, the tracks picked and the chapter by number or null, \
+         delays in seconds, and quarter turns clockwise.",
         |_, target, cx| {
             let (window, tile) = target::tile(target, cx)?;
             target::read(window, cx)?

@@ -647,11 +647,13 @@ check:
   to a window of its own (the window created, the one left hearing it go),
   that window brought to the front and closed, the one before in front
   again; a tile maximized and back; how a file plays, by command and by
-  its play button: paused, playing, sought, a step back and a frame on,
-  volume and mute, a chapter, and played to its end (ended, not paused),
-  another window's listeners hearing none of it; positions, only to those
-  who ask, a second apart at most on the app's clock, and one more at most
-  once paused; subtitles picked, and the next file opened in the same
+  its play button: paused, playing, sought (its time, how far through and
+  frame), a step back to the start and a frame on (frame 1), volume and
+  mute, a chapter, and played to its end (ended, not paused), another
+  window's listeners hearing none of it; sound alone sought, with no
+  frame; positions, only to those who ask, each with its time, how far
+  through, frame and duration, a second apart at most on the app's clock,
+  and one more at most once paused; subtitles picked, and the next file opened in the same
   tile, told once, its tracks as it has them, and the one before, opened
   by no command and known before the app looks; a file that can't open;
   and the outputs, devices to cast to, and a cast started and stopped. The
@@ -659,7 +661,9 @@ check:
   its tile ticks, so those tests advance it a step at a time
   (`play_until`). Unit tests check what each change of what was seen
   tells, and who hears it, a tile moved out of a window closing as it goes
-  told moved, not closed (`api::events::seen`); settings told by key and
+  told moved, not closed, and where a file plays told from 0 to 1, in
+  seconds and by frame, a frame's own time its own frame at 25 and NTSC
+  rates (`api::events::seen`); settings told by key and
   shortcuts by command, a command before what it changes and a query not
   at all, and looking only while someone listens (`api::events`).
 - The socket (`api::socket::tests`), each client on a thread of its own
@@ -718,7 +722,8 @@ check:
   - `events` printing what other command lines do, and `wait` ending with
     its event, failing when the tile closes first or the time runs out,
     and naming a tile that isn't there with status 3. That a tile that has
-    ended has nothing to wait for is a unit test: the test platform's
+    ended has nothing to wait for, its `ended` said as the event says it,
+    is a unit test: the test platform's
     timers don't play a file to its end, so the `cli` smoke run does.
   - Output closed quietly ending it with 0.
   - With control from the command line off, saying where to turn it on

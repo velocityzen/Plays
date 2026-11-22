@@ -501,8 +501,9 @@ flowchart LR
   leaves `api::ran_before` as it was, so a walk back goes on. What they
   say of a window and its tiles is in `workspace::inspect`, and of a
   tile in `player::inspect`: tracks and chapters numbered from 1, the
-  volume in percent, the delays to the millisecond, and a stream's URL
-  as the tile shows it, without its user, password or query.
+  volume in percent, the delays to the millisecond, the video's frame
+  rate, and a stream's URL as the tile shows it, without its user,
+  password or query.
   `registry` finds them; `args` checks the arguments given against what
   the command takes before it runs, then reads them into a type of the
   command's own, which also has where it was run from (`Source`); `target` finds the window and tile named: by id, then by
@@ -547,7 +548,11 @@ flowchart LR
   Picture), or all of them (`Scope`). A payload about a window or a tile
   starts with its `window_id`, and `tile_id`; readers ignore what they
   don't know. Where each tile is goes only to those who ask, at most once
-  a second (`POSITION_EVERY`), and only once it has moved.
+  a second (`POSITION_EVERY`), and only once it has moved. Each event of
+  how a file plays says where it is as `seen::playhead` does: how far
+  through it is from 0 to 1, the time, and the frame showing, counted at
+  the video's frame rate with a millionth of a frame to spare, as a
+  frame's own time multiplied back can fall a hair short of it.
 
   What changed is found by looking: `events::look` reads the app, every
   window (`Workspace::seen`) and tile (`PlayerView::seen`) into a `Seen`
@@ -632,10 +637,11 @@ flowchart LR
   moving has left its own. `events` subscribes and prints each event, a
   line of `type key=value…` or of JSON; `wait` subscribes before it looks
   at the tile, so nothing happens unheard in between: a tile that has
-  ended already prints its `ended` at once, and the tile or window closing
-  first, or the time running out, fails the wait. `reference` lists the
-  commands from the registry compiled in, Plays running or not, and
-  writes `docs/commands.md` (`plays actions --markdown`). `completions`
+  ended already prints its `ended` at once, as the event says it, from
+  `tile.inspect`'s position, duration and frame rate; the tile or window
+  closing first, or the time running out, fails the wait. `reference`
+  lists the commands from the registry compiled in, Plays running or not,
+  and writes `docs/commands.md` (`plays actions --markdown`). `completions`
   writes the script that completes the command line in bash, zsh or fish
   (clap_complete), from clap's command with the registry's ids, each with
   its title, as what `do`, `api describe` and `api call` take, and the

@@ -40,10 +40,10 @@ impl PlayerView {
     }
 
     /// All `tile.inspect` says of it: its summary; where it is, how long
-    /// it is and whether it ended; its volume (in percent), mute and loop; its tracks
-    /// (numbered from 1 within each kind) and those picked; the delays and
-    /// picture adjustments; its chapters (from 1) and the one it's in; and
-    /// the device it casts to.
+    /// it is, its video's frame rate and whether it ended; its volume (in
+    /// percent), mute and loop; its tracks (numbered from 1 within each
+    /// kind) and those picked; the delays and picture adjustments; its
+    /// chapters (from 1) and the one it's in; and the device it casts to.
     pub fn inspect(&self) -> Map<String, Value> {
         let player = self.player();
         let info = player.info();
@@ -70,6 +70,7 @@ impl PlayerView {
         let more = json!({
             "position": self.position(),
             "duration": self.duration(),
+            "frame_rate": info.as_deref().and_then(|info| info.frame_rate),
             "ended": self.playback.has_ended(),
             // In percent, as `audio.set_volume` takes it.
             "volume": (f64::from(player.volume()) * 100.0).round(),
@@ -150,6 +151,7 @@ impl PlayerView {
             sought,
             position: self.position(),
             duration: self.duration(),
+            frame_rate: player.info().and_then(|info| info.frame_rate),
             volume: (f64::from(player.volume()) * 100.0).round(),
             muted: player.is_muted(),
             tracks: TRACKS.map(track),

@@ -288,13 +288,20 @@ fn how_a_file_plays_is_told_for_its_controls_and_commands(cx: &mut TestAppContex
     let sought = told(&mut heard);
     assert_eq!(sought.len(), 1);
     assert_eq!(sought[0].kind, "seeked");
-    assert_eq!(sought[0].payload["position"], json!(0.5));
+    // Its time in seconds, how far through from 0 to 1, and the frame at
+    // 25 a second.
+    assert_eq!(sought[0].payload["time"], json!(0.5));
+    assert_eq!(sought[0].payload["position"], json!(0.5 / 2.021));
+    assert_eq!(sought[0].payload["frame"], json!(12));
     // A step back from there goes to the start; a frame on, once one
     // shows, past it.
     run(&mut cx, Invocation::new("playback.seek_backward"));
     let back = told(&mut heard);
     assert_eq!(back.len(), 1, "{back:?}");
-    assert_eq!(back[0].payload["position"], json!(0.0));
+    let start = json!({"position": 0.0, "time": 0.0, "frame": 0});
+    assert_eq!(back[0].payload["position"], start["position"]);
+    assert_eq!(back[0].payload["time"], start["time"]);
+    assert_eq!(back[0].payload["frame"], start["frame"]);
     let shown = play_until(&mut cx, |cx| {
         window
             .read_with(cx, |workspace, cx| {
@@ -314,6 +321,7 @@ fn how_a_file_plays_is_told_for_its_controls_and_commands(cx: &mut TestAppContex
         stepped.iter().map(|event| event.kind).collect::<Vec<_>>(),
         ["seeked"]
     );
+    assert_eq!(stepped[0].payload["frame"], json!(1), "{stepped:?}");
     assert!(stepped[0].payload["position"].as_f64().unwrap() > 0.0);
 
     run(
@@ -373,11 +381,19 @@ fn positions_are_told_only_to_those_who_ask_once_a_second_at_most(cx: &mut TestA
     open(window, &mut cx, &["clip.mp4"], true);
     let mut asked = listen(&mut cx, Scope::All, true);
     let mut not_asked = listen(&mut cx, Scope::All, false);
+    // Each in seconds, with how far through it is and the frame.
     let positions = |listener: &mut UnboundedReceiver<Event>| -> Vec<f64> {
         told(listener)
             .into_iter()
             .filter(|event| event.kind == "position")
-            .map(|event| event.payload["position"].as_f64().unwrap())
+            .map(|event| {
+                let payload = &event.payload;
+                let time = payload["time"].as_f64().unwrap();
+                assert_eq!(payload["duration"], json!(2.0), "{payload}");
+                assert_eq!(payload["position"], json!(time / 2.0), "{payload}");
+                assert_eq!(payload["frame"], json!((time * 25.0) as u64), "{payload}");
+                time
+            })
             .collect()
     };
 
@@ -416,6 +432,22 @@ fn positions_are_told_only_to_those_who_ask_once_a_second_at_most(cx: &mut TestA
         false
     });
     assert!(after.len() <= 1, "{after:?}");
+}
+
+#[gpui::test]
+fn sound_alone_is_told_with_no_frame(cx: &mut TestAppContext) {
+    let (window, mut cx) = testing::start(cx);
+    open(window, &mut cx, &["tone.m4a"], false);
+    let mut heard = listen(&mut cx, Scope::All, false);
+    run(
+        &mut cx,
+        Invocation::new("playback.seek").with_args(json!({"time": 0.5})),
+    );
+    let sought = told(&mut heard);
+    let sought = sought.iter().find(|event| event.kind == "seeked").unwrap();
+    assert_eq!(sought.payload["time"], json!(0.5));
+    assert!(sought.payload["position"].as_f64().unwrap() > 0.0);
+    assert_eq!(sought.payload["frame"], Value::Null, "{sought:?}");
 }
 
 #[gpui::test]

@@ -10,10 +10,22 @@ fn tile(state: Value) -> Watched {
 
 #[test]
 fn a_tile_that_has_ended_has_nothing_to_wait_for() {
-    let ended = tile(json!({"ended": true, "position": 12.5}));
+    let ended = tile(json!({
+        "ended": true,
+        "position": 12.5,
+        "duration": 12.5,
+        "frame_rate": 24.0,
+    }));
     assert_eq!(
         ended.already("ended"),
-        Some(json!({"window_id": "aaaa1111", "tile_id": "bbbb2222", "position": 12.5}))
+        Some(json!({
+            "window_id": "aaaa1111",
+            "tile_id": "bbbb2222",
+            "position": 1.0,
+            "time": 12.5,
+            "frame": 300,
+        })),
+        "as its ended event said"
     );
     assert_eq!(ended.already("paused"), None, "only its ending");
     let playing = tile(json!({"ended": false, "position": 3.0}));

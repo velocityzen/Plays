@@ -11,6 +11,10 @@ use crate::api::Id;
 /// The kinds of track, as a tile's `tracks` has them and events name them.
 pub const TRACKS: [&str; 3] = ["video", "audio", "subtitles"];
 
+/// How far short of its frame's number a frame's own time, multiplied
+/// back by the frame rate, may fall: a millionth of a frame.
+const FRAME_SLACK: f64 = 1e-6;
+
 /// The app, as far as events tell of it.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Seen {
@@ -62,6 +66,8 @@ pub struct TileSeen {
     pub sought: f64,
     pub position: f64,
     pub duration: Option<f64>,
+    /// The video's frames a second; none for sound alone.
+    pub frame_rate: Option<f64>,
     /// In percent, as `audio.set_volume` takes it.
     pub volume: f64,
     pub muted: bool,
@@ -73,6 +79,29 @@ pub struct TileSeen {
     /// The device it casts to.
     pub casting: Option<Value>,
     pub picture_in_picture: bool,
+}
+
+impl TileSeen {
+    /// Where its file is at `time` seconds, as the events of how it plays
+    /// tell it (`playhead`).
+    pub fn playhead(&self, time: f64) -> Value {
+        playhead(time, self.duration, self.frame_rate)
+    }
+}
+
+/// Where a file is at `time` seconds, as the events of how it plays tell
+/// it: how far through it is, from 0 to 1 (none while its `duration`
+/// isn't known, as a live stream's), the time, and the number of the frame
+/// showing then, from 0 (none without a `frame_rate`, as for sound alone).
+pub fn playhead(time: f64, duration: Option<f64>, frame_rate: Option<f64>) -> Value {
+    let position = duration
+        .filter(|&duration| duration > 0.0)
+        .map(|duration| (time / duration).clamp(0.0, 1.0));
+    // A time before the start counts as the first frame's.
+    let frame = frame_rate
+        .filter(|&fps| fps > 0.0)
+        .map(|fps| (time * fps + FRAME_SLACK).floor() as u64);
+    json!({"position": position, "time": time, "frame": frame})
 }
 
 /// The events between `old` and `new`, in the order they're told: the
@@ -296,13 +325,13 @@ fn playing_changes(
     };
     let old = old.unwrap_or(&opened);
     if old.seeks != tile.seeks {
-        tell("seeked", json!({"position": tile.sought}));
+        tell("seeked", tile.playhead(tile.sought));
     }
     if tile.ended && !old.ended {
-        tell("ended", json!({"position": tile.position}));
+        tell("ended", tile.playhead(tile.position));
     } else if old.playing != tile.playing {
         let kind = if tile.playing { "playing" } else { "paused" };
-        tell(kind, json!({"position": tile.position}));
+        tell(kind, tile.playhead(tile.position));
     }
     if (old.volume, old.muted) != (tile.volume, tile.muted) {
         tell(

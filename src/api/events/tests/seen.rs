@@ -17,6 +17,7 @@ fn tile(id: Id) -> TileSeen {
         sought: 0.0,
         position: 0.0,
         duration: None,
+        frame_rate: None,
         volume: 100.0,
         muted: false,
         tracks: [None; 3],
@@ -31,6 +32,7 @@ fn opened(tile: TileSeen) -> TileSeen {
     TileSeen {
         opened: Some(json!({"title": "clip.mp4", "duration": 10.0})),
         duration: Some(10.0),
+        frame_rate: Some(25.0),
         ..tile
     }
 }
@@ -236,19 +238,23 @@ fn how_a_file_plays_is_told_once_it_has_opened() {
         said(&tile_changes(&opening, &open)),
         [
             ("opened", json!({"title": "clip.mp4", "duration": 10.0})),
-            ("playing", json!({"position": 0.0})),
+            ("playing", json!({"position": 0.0, "time": 0.0, "frame": 0})),
         ]
     );
 
+    // Where it went, though it shows from the frame before.
     let sought = TileSeen {
         seeks: 1,
         sought: 5.0,
-        position: 5.0,
+        position: 4.96,
         ..open.clone()
     };
     assert_eq!(
         said(&tile_changes(&open, &sought)),
-        [("seeked", json!({"position": 5.0}))]
+        [(
+            "seeked",
+            json!({"position": 0.5, "time": 5.0, "frame": 125})
+        )]
     );
 
     let ended = TileSeen {
@@ -259,7 +265,10 @@ fn how_a_file_plays_is_told_once_it_has_opened() {
     };
     assert_eq!(
         said(&tile_changes(&sought, &ended)),
-        [("ended", json!({"position": 10.0}))],
+        [(
+            "ended",
+            json!({"position": 1.0, "time": 10.0, "frame": 250})
+        )],
         "not paused"
     );
     let again = TileSeen {
@@ -268,12 +277,19 @@ fn how_a_file_plays_is_told_once_it_has_opened() {
         position: 0.0,
         ..ended.clone()
     };
-    assert_eq!(kinds(&tile_changes(&ended, &again)), ["playing"]);
+    assert_eq!(
+        said(&tile_changes(&ended, &again)),
+        [("playing", json!({"position": 0.0, "time": 0.0, "frame": 0}))]
+    );
     let paused = TileSeen {
         playing: false,
+        position: 1.0,
         ..again.clone()
     };
-    assert_eq!(kinds(&tile_changes(&again, &paused)), ["paused"]);
+    assert_eq!(
+        said(&tile_changes(&again, &paused)),
+        [("paused", json!({"position": 0.1, "time": 1.0, "frame": 25}))]
+    );
 
     let mut changed = TileSeen {
         volume: 50.0,
@@ -293,6 +309,51 @@ fn how_a_file_plays_is_told_once_it_has_opened() {
         ]
     );
     assert!(tile_changes(&changed, &changed).is_empty());
+}
+
+#[test]
+fn where_a_file_plays_is_told_from_0_to_1_in_seconds_and_by_its_frame() {
+    assert_eq!(
+        playhead(2.5, Some(10.0), Some(25.0)),
+        json!({"position": 0.25, "time": 2.5, "frame": 62}),
+        "the frame showing, not the next"
+    );
+    // A frame's own time is that frame's, though multiplied back it can
+    // fall a hair short.
+    for fps in [25.0, 24000.0 / 1001.0, 30000.0 / 1001.0] {
+        for frame in 0..10_000_u32 {
+            let time = f64::from(frame) / fps;
+            assert_eq!(
+                playhead(time, None, Some(fps))["frame"],
+                json!(frame),
+                "{time} at {fps}"
+            );
+        }
+    }
+    assert_eq!(
+        playhead(3.0, None, Some(25.0)),
+        json!({"position": null, "time": 3.0, "frame": 75}),
+        "a live stream has no end to be through to"
+    );
+    assert_eq!(
+        playhead(3.0, Some(0.0), Some(25.0))["position"],
+        Value::Null
+    );
+    assert_eq!(
+        playhead(3.0, Some(12.0), None),
+        json!({"position": 0.25, "time": 3.0, "frame": null}),
+        "sound alone has no frames"
+    );
+    assert_eq!(playhead(3.0, Some(12.0), Some(0.0))["frame"], Value::Null);
+    // A device cast to may say it's past either end.
+    assert_eq!(
+        playhead(10.5, Some(10.0), Some(25.0))["position"],
+        json!(1.0)
+    );
+    assert_eq!(
+        playhead(-0.5, Some(10.0), Some(25.0)),
+        json!({"position": 0.0, "time": -0.5, "frame": 0})
+    );
 }
 
 #[test]
@@ -319,7 +380,7 @@ fn a_file_opened_in_place_of_another_is_told_as_it_opens_or_fails() {
         said(&tile_changes(&next, &next_open)),
         [
             ("opened", json!({"title": "next.mp4"})),
-            ("playing", json!({"position": 0.0})),
+            ("playing", json!({"position": 0.0, "time": 0.0, "frame": 0})),
         ],
         "its volume as it was, and no seek"
     );
