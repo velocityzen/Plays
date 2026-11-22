@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
-"""Write resources/attributions.json, the credits in Settings > About: the
-Rust crates built into Plays on macOS and on Linux (not the ones that only
-run while building it, such as build scripts and procedural macros), and the
-FFmpeg and dav1d that script/build-ffmpeg builds, each with the license
-texts it comes with. A crate that comes with none gets the standard text of
-its license, from SPDX's license list. Run it again when the dependencies
-change.
+"""Write resources/attributions.json, the credits in Settings > About:
+FFmpeg and dav1d, as script/build-ffmpeg builds them, and GPUI, Zed's UI
+framework, from the crate Cargo.lock has, each with the license texts it
+comes with. Plays credits these, not every crate it is built with. Run it
+again when one of them changes.
 """
 
 import json
@@ -13,79 +11,12 @@ import os
 import re
 import subprocess
 import sys
-import urllib.request
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUTPUT = os.path.join(ROOT, "resources", "attributions.json")
-STANDARD = os.path.join(ROOT, "build", "licenses")
-SPDX = "https://raw.githubusercontent.com/spdx/license-list-data/v3.29.0/text/{}.txt"
 
-# The targets Plays is built for, by platform.
-TARGETS = {
-    "macos": ["aarch64-apple-darwin", "x86_64-apple-darwin"],
-    "linux": ["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"],
-}
-
-# License files at the top of a crate, or in a LICENSES folder.
+# License files at the top of a package, or in a LICENSES folder.
 LICENSE_FILE = re.compile(r"^(licen[cs]e|copying|notice|unlicense|copyright)([-._ ].*)?$", re.I)
-
-
-def built_packages(target):
-    """The name and version of each package a build of the app for `target`
-    compiles. `cargo metadata` resolves features as if the tests were built
-    too, so a feature only a dev-dependency asks for (gpui's `test-support`)
-    would bring in packages the app doesn't have; `cargo tree` resolves
-    them for the app alone.
-    """
-    output = subprocess.run(
-        ["cargo", "tree", "--edges", "normal", "--target", target, "--prefix", "none",
-         "--format", "{p}", "--locked"],
-        cwd=ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout
-    built = set()
-    for line in output.splitlines():
-        parts = line.split()
-        if len(parts) >= 2 and parts[1].startswith("v"):
-            built.add((parts[0], parts[1][1:]))
-    return built
-
-
-def linked_packages(target):
-    """The packages built into the app for `target`, by id."""
-    built = built_packages(target)
-    metadata = json.loads(
-        subprocess.run(
-            ["cargo", "metadata", "--format-version", "1", "--locked", "--filter-platform", target],
-            cwd=ROOT,
-            check=True,
-            capture_output=True,
-            text=True,
-        ).stdout
-    )
-    packages = {package["id"]: package for package in metadata["packages"]}
-    nodes = {node["id"]: node for node in metadata["resolve"]["nodes"]}
-    root = metadata["resolve"]["root"]
-    linked, stack = {}, [root]
-    while stack:
-        node = stack.pop()
-        if node in linked:
-            continue
-        linked[node] = packages[node]
-        for dependency in nodes[node]["deps"]:
-            package = packages[dependency["pkg"]]
-            # Normal dependencies only; a procedural macro runs in the
-            # compiler, so neither it nor what it uses ends up in the app.
-            normal = any(kind["kind"] is None for kind in dependency["dep_kinds"])
-            macro = any("proc-macro" in t["kind"] for t in package["targets"])
-            if normal and not macro and (package["name"], package["version"]) in built:
-                stack.append(dependency["pkg"])
-    # Plays and its own crates aren't credits.
-    for member in metadata["workspace_members"]:
-        linked.pop(member, None)
-    return linked
 
 
 def license_files(directory, named=None):
@@ -102,24 +33,6 @@ def license_files(directory, named=None):
         if os.path.isfile(path) and path not in paths:
             paths.append(path)
     return paths
-
-
-def standard_license(expression):
-    """The standard text of the license `expression` names, MIT if it
-    offers a choice of that, as a file downloaded once into build/licenses.
-    """
-    choices = [id.strip("() ") for id in re.split(r"\s+OR\s+|/", expression) if id.strip("() ")]
-    if not choices or any(" " in id for id in choices):
-        sys.exit(f"Can't pick a license from {expression!r}")
-    license = "MIT" if "MIT" in choices else choices[0]
-    path = os.path.join(STANDARD, f"{license}.txt")
-    if not os.path.isfile(path):
-        os.makedirs(STANDARD, exist_ok=True)
-        with urllib.request.urlopen(SPDX.format(license)) as response:
-            text = response.read()
-        with open(path, "wb") as file:
-            file.write(text)
-    return path
 
 
 class Texts:
@@ -175,51 +88,40 @@ def native(texts):
     ]
 
 
+def gpui(texts):
+    """GPUI, which draws Plays' windows: the crate Cargo.lock has, as Zed
+    Industries publishes it."""
+    metadata = json.loads(
+        subprocess.run(
+            ["cargo", "metadata", "--format-version", "1", "--locked"],
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+    )
+    package = next(package for package in metadata["packages"] if package["name"] == "gpui")
+    paths = license_files(os.path.dirname(package["manifest_path"]), package.get("license_file"))
+    if not paths:
+        sys.exit(f"gpui {package['version']} comes with no license text")
+    return {
+        "name": "GPUI",
+        "version": package["version"],
+        "license": package["license"],
+        "url": package.get("homepage") or package["repository"],
+        "source": package["repository"],
+        "texts": [texts.add(path) for path in paths],
+    }
+
+
 def main():
     texts = Texts()
-    libraries = native(texts)
-    crates = {}
-    for platform, targets in TARGETS.items():
-        for target in targets:
-            for package in linked_packages(target).values():
-                key = (package["name"], package["version"])
-                crate = crates.setdefault(key, {"package": package, "platforms": set()})
-                crate["platforms"].add(platform)
-
-    entries, unlicensed = [], []
-    for (name, version), crate in sorted(crates.items()):
-        package = crate["package"]
-        directory = os.path.dirname(package["manifest_path"])
-        paths = license_files(directory, package.get("license_file"))
-        entry = {
-            "name": name,
-            "version": version,
-            "license": package.get("license") or "",
-            "url": package.get("repository")
-            or package.get("homepage")
-            or f"https://crates.io/crates/{name}",
-            "platforms": sorted(crate["platforms"]),
-        }
-        if not paths:
-            unlicensed.append(f"{name} {version}")
-            paths = [standard_license(entry["license"])]
-            # Who holds the copyright, which the standard text leaves out.
-            entry["authors"] = [re.sub(r"\s*<[^>]*>", "", author) for author in package["authors"]]
-        entry["texts"] = [texts.add(path) for path in paths]
-        entries.append(entry)
-
+    libraries = native(texts) + [gpui(texts)]
     with open(OUTPUT, "w", encoding="utf-8") as file:
-        json.dump(
-            {"libraries": libraries, "crates": entries, "texts": texts.texts},
-            file,
-            indent=1,
-            ensure_ascii=False,
-        )
+        json.dump({"libraries": libraries, "texts": texts.texts}, file, indent=1, ensure_ascii=False)
         file.write("\n")
-    size = os.path.getsize(OUTPUT) // 1024
-    print(f"Wrote {len(entries)} crates and {len(texts.texts)} license texts ({size} KB) to {OUTPUT}")
-    if unlicensed:
-        print("With their license's standard text, having none of their own:", ", ".join(unlicensed))
+    names = ", ".join(library["name"] for library in libraries)
+    print(f"Wrote {names} and {len(texts.texts)} license texts to {OUTPUT}")
 
 
 if __name__ == "__main__":

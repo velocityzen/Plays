@@ -127,13 +127,14 @@ Finder offers it under Open With.
 ### Licenses
 
 Plays is under the MIT license (`LICENSE`). It is built with FFmpeg (LGPL
-2.1 or later) and dav1d (BSD 2-Clause), from their unchanged source, and
-with the Rust crates in `Cargo.lock`. Settings → About lists them all with
-their licenses, from `resources/attributions.json`; `script/attributions`
-writes it again when the dependencies change (`script/bundle-macos` runs
-it). It lists the crates built into the app on macOS and on Linux (not
-those that only run while building it), and a crate that comes with no
-license text gets the standard text of its license, from SPDX's list.
+2.1 or later) and dav1d (BSD 2-Clause), from their unchanged source, with
+GPUI (Apache 2.0), Zed's UI framework, and with the Rust crates in
+`Cargo.lock`. Settings → About credits FFmpeg, dav1d and GPUI, crediting
+the Zed team, each with its license texts, from
+`resources/attributions.json`, but not every crate. `script/attributions`
+writes it again when one of the three changes (`script/bundle-macos` runs
+it): FFmpeg's and dav1d's as `script/build-ffmpeg` builds them, GPUI's
+from the crate `Cargo.lock` has.
 
 ## Tests
 
@@ -464,8 +465,12 @@ What the window tests check:
   with that look's backdrop, and none when plain.
 - Settings → Appearance turns the screensaver off and on, and picks how
   long it waits, which shows only while it's on.
-- Settings → About, scrolled hundreds of credits down, builds only the
-  few rows in view to draw, and a license there opens and closes.
+- Settings → About credits Plays, FFmpeg, dav1d and GPUI; a license opens
+  under its credit, one at a time, and closes, and leaving the pane
+  closes it. `settings::about::tests` checks what each says: no crate
+  besides, each with its license texts, website and source, FFmpeg's
+  version and license the ones it runs with, and GPUI's crediting the Zed
+  team.
 
 ### Commands
 
@@ -1123,8 +1128,8 @@ in real time; Vulkan can be software (lavapipe). It uses `Xvfb`,
   into Plays' tests on macOS, and the code under them is checked to build
   for Linux with `cargo check -p gpui --target aarch64-unknown-linux-gnu
   --tests`, given a C compiler for that target.
-- When the dependencies change, run `script/attributions` so Settings →
-  About lists them.
+- When FFmpeg, dav1d or gpui changes, run `script/attributions` so
+  Settings → About credits them as they are.
 - The test fixtures are committed; change them with
   `script/make-fixtures`.
 - Debug builds have a Developer menu, whose Component Gallery shows every

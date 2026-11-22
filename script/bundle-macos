@@ -16,7 +16,8 @@ script/build-ffmpeg
 # The app's own FFmpeg, the one .cargo/config.toml names, even where
 # FFMPEG_DIR names another.
 unset FFMPEG_DIR
-# The credits in Settings > About, for the crates the app is built with now.
+# The credits in Settings > About: FFmpeg, dav1d and GPUI as the app is
+# built with them now.
 script/attributions
 
 version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)

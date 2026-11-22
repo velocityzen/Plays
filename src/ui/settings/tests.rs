@@ -22,7 +22,7 @@ use crate::files::Folder;
 use crate::media::output::DeviceInfo;
 use crate::settings::{AudioDevice, PanelLook, Settings};
 use crate::ui::about::AboutView;
-use crate::ui::testing::{self, click, press, scroll, shows, wait_until};
+use crate::ui::testing::{self, click, press, shows, wait_until};
 use crate::ui::theme::layout::SETTINGS_WINDOW_SIZE;
 use crate::ui::workspace::forget_settings_place;
 
@@ -540,32 +540,45 @@ fn a_protocol_that_cant_look_says_why_and_tries_again_when_turned_on(cx: &mut Te
 }
 
 #[gpui::test]
-fn about_builds_only_the_credits_in_view(cx: &mut TestAppContext) {
+fn about_credits_what_plays_is_built_with_each_opening_to_its_license(cx: &mut TestAppContext) {
     let (_, mut cx) = testing::start(cx);
     let mut settings = open_settings(&mut cx);
     click(&mut settings, "pane-About");
-    let built = || super::about::BUILT.with(Cell::get);
-    let crates = super::about::crates_built_in();
-    assert!(crates > 100, "{crates} crates");
-
-    // Down past the first few, hundreds still below.
-    scroll(&mut settings, "settings-pane", point(px(0.), px(-3000.)));
-    let before = built();
-    let first = shows(&mut settings, "credit-plays");
-    let drawn = built() - before;
-    assert!(
-        drawn < 60,
-        "{drawn} of {crates} credits built to draw it once"
-    );
-    assert!(!first, "it scrolled past the first");
-
-    // Its own license opens and closes where it is.
-    scroll(&mut settings, "settings-pane", point(px(0.), px(3000.)));
+    let credits = [
+        "credit-plays",
+        "credit-library FFmpeg",
+        "credit-library dav1d",
+        "credit-library GPUI",
+    ];
+    for credit in credits {
+        assert!(shows(&mut settings, credit), "{credit}");
+    }
     assert!(!shows(&mut settings, "credit-texts"));
+    let top = |cx: &mut VisualTestContext, selector| testing::find(cx, selector).origin.y;
+
+    // GPUI's license opens under it.
+    click(&mut settings, "credit-library GPUI");
+    assert!(top(&mut settings, "credit-texts") > top(&mut settings, "credit-library GPUI"));
+    // Plays' own in its place, one at a time.
     click(&mut settings, "credit-plays");
-    assert!(shows(&mut settings, "credit-texts"), "the license shows");
+    let texts = top(&mut settings, "credit-texts");
+    assert!(texts > top(&mut settings, "credit-plays"));
+    assert!(texts < top(&mut settings, "credit-library FFmpeg"));
     click(&mut settings, "credit-plays");
-    assert!(!shows(&mut settings, "credit-texts"), "and closes");
+    assert!(
+        !shows(&mut settings, "credit-texts"),
+        "and closes, GPUI's too"
+    );
+
+    // Closed on leaving the pane.
+    click(&mut settings, "credit-library dav1d");
+    assert!(shows(&mut settings, "credit-texts"));
+    click(&mut settings, "pane-Playback");
+    click(&mut settings, "pane-About");
+    assert!(
+        !shows(&mut settings, "credit-texts"),
+        "closed on coming back"
+    );
 }
 
 #[gpui::test]

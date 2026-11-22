@@ -12,10 +12,10 @@ use serde_json::json;
 use super::SettingsView;
 use crate::api::{self, Invocation};
 use crate::settings::{Settings, fields};
-use crate::ui::components::{Card, ComponentSize, Slide, Slider};
+use crate::ui::components::{Card, Slide, Slider};
+use crate::ui::theme::Theme;
 use crate::ui::theme::settings::{SLIDER_VALUE_WIDTH, SLIDER_WIDTH};
 use crate::ui::theme::text::TextStyle;
-use crate::ui::theme::{Theme, radius};
 
 pub(super) fn update_settings(cx: &mut App, save: bool, change: impl FnOnce(&mut Settings)) {
     Settings::update(cx, save, change);
@@ -82,27 +82,8 @@ pub(super) fn group(
 }
 
 /// A group's title, above its card.
-pub(super) fn heading(title: &'static str) -> AnyElement {
+fn heading(title: &'static str) -> AnyElement {
     div().px_1().text_heading().child(title).into_any_element()
-}
-
-/// One row of a group's card, drawn on its own for a list that builds
-/// only the rows in view: the card's sides, its top over the first row
-/// and its bottom under the last, and a line between rows.
-pub(super) fn card_row(theme: &Theme, first: bool, last: bool, row: AnyElement) -> AnyElement {
-    let radius = ComponentSize::default().pick(radius::CARD);
-    div()
-        .bg(theme.surface)
-        .border_color(theme.border)
-        .border_l_1()
-        .border_r_1()
-        .border_t_1()
-        .when(last, |this| this.border_b_1())
-        .when(first || last, |this| this.superellipse(radius))
-        .when(first && !last, |this| this.rounded_b_none())
-        .when(last && !first, |this| this.rounded_t_none())
-        .child(row)
-        .into_any_element()
 }
 
 pub(super) fn row(

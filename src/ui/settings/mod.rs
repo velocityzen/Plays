@@ -65,17 +65,6 @@ trait Pane {
         cx: &mut Context<SettingsView>,
     ) -> Vec<AnyElement>;
 
-    /// Its rows in a list that scrolls itself and builds only the rows in
-    /// view, in place of `content`: for a pane with too many to build
-    /// every time the window draws.
-    fn list(
-        &self,
-        _view: &mut SettingsView,
-        _cx: &mut Context<SettingsView>,
-    ) -> Option<AnyElement> {
-        None
-    }
-
     /// What stays in view above the rows while they scroll.
     fn header(&self, _settings: &Settings, _theme: &Theme) -> Option<AnyElement> {
         None
@@ -124,8 +113,6 @@ pub struct SettingsView {
     scroll: ScrollHandle,
     /// The credit in About whose license shows.
     license: Option<SharedString>,
-    /// About's rows, made when it first shows.
-    credits: Option<about::Credits>,
     /// Shows the protocols and devices in Casting as they change.
     _casting: Subscription,
     /// Notes where the window is as it moves and is resized, and saves it
@@ -200,7 +187,6 @@ impl SettingsView {
             recording: hotkeys::Recording::default(),
             scroll: ScrollHandle::new(),
             license: None,
-            credits: None,
             _casting: cx.observe_global::<Casting>(|_, cx| cx.notify()),
             _place: [
                 cx.observe_window_bounds(window, |_, window, cx| note_settings_place(window, cx)),
@@ -311,29 +297,21 @@ impl Render for SettingsView {
         let index = self.pane;
         let pane = PANES[index];
         let pane_id = ("settings-pane", index);
-        let rows = match pane.list(self, cx) {
-            Some(list) => div()
-                .id(pane_id)
-                .debug_selector(|| "settings-pane".into())
-                .flex_1()
-                .min_h_0()
-                .child(list),
-            None => div()
-                // Each pane scrolls on its own and opens at the top.
-                .id(pane_id)
-                .debug_selector(|| "settings-pane".into())
-                .flex_1()
-                .min_h_0()
-                .overflow_y_scroll()
-                .track_scroll(&self.scroll)
-                .flex()
-                .flex_col()
-                .gap_5()
-                .px_5()
-                .pt_2()
-                .pb_5()
-                .children(pane.content(self, &settings, &theme, window, cx)),
-        };
+        let rows = div()
+            // Each pane scrolls on its own and opens at the top.
+            .id(pane_id)
+            .debug_selector(|| "settings-pane".into())
+            .flex_1()
+            .min_h_0()
+            .overflow_y_scroll()
+            .track_scroll(&self.scroll)
+            .flex()
+            .flex_col()
+            .gap_5()
+            .px_5()
+            .pt_2()
+            .pb_5()
+            .children(pane.content(self, &settings, &theme, window, cx));
 
         let body = div()
             .flex_1()

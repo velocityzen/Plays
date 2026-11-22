@@ -748,9 +748,10 @@ paired with, where screenshots go and what they are like, the keys for
 every shortcut, grid columns, controls visibility, how the panels over the
 video look, file names, the empty window's screensaver, and whether the
 command line may control Plays. Settings → About lists the version, the day it
-was built, and the credits, each of which opens to its license; on macOS,
-About Plays in the app menu shows the icon, version and build day in a
-small window of its own.
+was built, and what it is built with (FFmpeg, dav1d, and GPUI from the Zed
+team), each of which opens to its license; on macOS, About Plays in the
+app menu shows the icon, version and build day in a small window of its
+own.
 
 Settings are saved as JSON in the user config folder:
 `~/Library/Application Support/plays/settings.json` on macOS,

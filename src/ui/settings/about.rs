@@ -1,24 +1,21 @@
-//! About: the app's version and license, and what it is built with, each
-//! with its license, from `resources/attributions.json` (which
-//! `script/attributions` writes). There are hundreds, so they are in a
-//! list that builds only the rows in view.
+//! About: the app's version and license, and what it is built with: FFmpeg,
+//! dav1d and GPUI, from `resources/attributions.json` (which
+//! `script/attributions` writes), each opening to its license.
 
-#[cfg(test)]
-use std::cell::Cell;
 use std::ffi::CStr;
 use std::sync::LazyLock;
 
 use ffmpeg_next as ffmpeg;
 use gpui::prelude::*;
-use gpui::{AnyElement, Context, Div, ListAlignment, ListState, SharedString, Window, div, list};
+use gpui::{AnyElement, Context, Div, SharedString, Window, div};
 use serde::Deserialize;
 
-use super::form::{card_row, group, heading};
+use super::form::group;
 use super::{Pane, SettingsView};
 use crate::settings::Settings;
 use crate::ui::about;
 use crate::ui::components::{Button, ComponentSize, Icon, Sizable};
-use crate::ui::theme::settings::{ABOUT_COLOR, CREDIT_LICENSE_MAX_WIDTH, CREDITS_OVERDRAW};
+use crate::ui::theme::settings::{ABOUT_COLOR, CREDIT_LICENSE_MAX_WIDTH};
 use crate::ui::theme::text::TextStyle;
 use crate::ui::theme::{Theme, controls, radius};
 
@@ -27,9 +24,8 @@ const LICENSE: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/LICENSE
 /// What `script/attributions` writes.
 #[derive(Deserialize)]
 struct Attributions {
-    /// FFmpeg and dav1d.
+    /// FFmpeg, dav1d and GPUI.
     libraries: Vec<Credit>,
-    crates: Vec<Credit>,
     /// The license texts, which credits refer to by index.
     texts: Vec<String>,
 }
@@ -40,35 +36,9 @@ struct Credit {
     version: String,
     license: String,
     url: String,
-    /// Where its source code can be downloaded, for FFmpeg and dav1d.
-    #[serde(default)]
-    source: Option<String>,
-    /// Where a crate is built in: `macos`, `linux` or both.
-    #[serde(default)]
-    platforms: Vec<String>,
-    /// Who holds the copyright of a crate that comes with no license file,
-    /// whose texts are its license's standard ones.
-    #[serde(default)]
-    authors: Option<Vec<String>>,
+    /// Where its source code is.
+    source: String,
     texts: Vec<usize>,
-}
-
-impl Credit {
-    /// Whether it's in the app on this platform.
-    fn built_in(&self) -> bool {
-        let platform = if cfg!(target_os = "macos") {
-            "macos"
-        } else {
-            "linux"
-        };
-        self.platforms.is_empty() || self.platforms.iter().any(|p| p == platform)
-    }
-}
-
-#[cfg(test)]
-thread_local! {
-    /// How many credits' rows have been built, for the tests to see.
-    pub(super) static BUILT: Cell<usize> = const { Cell::new(0) };
 }
 
 /// Read when About first shows.
@@ -101,32 +71,17 @@ impl Entry {
         credit: &'static Credit,
         texts: &'static [String],
     ) -> Self {
-        let mut links = vec![("Website", credit.url.as_str().into())];
-        links.extend(
-            credit
-                .source
-                .as_deref()
-                .map(|source| ("Source code", source.into())),
-        );
         Self {
             key: key.into(),
             name: credit.name.as_str().into(),
             version: credit.version.as_str().into(),
             license: credit.license.as_str().into(),
             hint: None,
-            links,
-            note: credit.authors.as_ref().map(|authors| {
-                let holders = if authors.is_empty() {
-                    "its authors".to_owned()
-                } else {
-                    authors.join(", ")
-                };
-                format!(
-                    "It comes without a license file, so this is its license's \
-                     standard text. Copyright {holders}."
-                )
-                .into()
-            }),
+            links: vec![
+                ("Website", credit.url.as_str().into()),
+                ("Source code", credit.source.as_str().into()),
+            ],
+            note: None,
             texts: credit
                 .texts
                 .iter()
@@ -141,8 +96,6 @@ impl Entry {
     }
 
     fn render(&self, open: bool, theme: &Theme, cx: &mut Context<SettingsView>) -> AnyElement {
-        #[cfg(test)]
-        BUILT.with(|built| built.set(built.get() + 1));
         let heading = self.render_heading(open, theme, cx);
         let details = self.render_details(theme);
         div()
@@ -167,14 +120,6 @@ impl Entry {
             let shown = view.license.take();
             if shown.as_ref() != Some(&key) {
                 view.license = Some(key.clone());
-            }
-            // The rows it opens and closes in are measured again.
-            if let Some(credits) = &view.credits {
-                for key in shown.iter().chain(&view.license) {
-                    if let Some(item) = credits.item_of(key) {
-                        credits.list.splice(item..item + 1, 1);
-                    }
-                }
             }
             cx.notify();
         });
@@ -288,105 +233,50 @@ impl Entry {
     }
 }
 
-/// How many crates About credits on this platform.
-#[cfg(test)]
-pub(super) fn crates_built_in() -> usize {
-    ATTRIBUTIONS
-        .crates
-        .iter()
-        .filter(|credit| credit.built_in())
-        .count()
-}
-
-/// About's rows, made when it first shows and kept while the window is
-/// open.
-pub(super) struct Credits {
-    /// The app and its license, what it is built with, the crates' title,
-    /// then each crate.
-    list: ListState,
-    license: Entry,
-    built_with: Vec<Entry>,
-    crates: Vec<Entry>,
-}
-
-/// The list's items before the crates.
-const BEFORE_CRATES: usize = 3;
-
-impl Credits {
-    fn new() -> Self {
-        let attributions = &*ATTRIBUTIONS;
-        let texts = attributions.texts.as_slice();
-        let license = Entry {
-            key: "plays".into(),
-            name: "License".into(),
-            version: "".into(),
-            license: env!("CARGO_PKG_LICENSE").into(),
-            hint: None,
-            links: Vec::new(),
-            note: None,
-            texts: vec![LICENSE.into()],
-        };
-
-        let mut built_with = Vec::new();
-        for library in &attributions.libraries {
-            let key = format!("library {}", library.name);
-            let mut entry = Entry::new(key, library, texts);
-            if library.name == "FFmpeg" {
-                // What the app runs with, in case it was built with another.
-                entry.version = ffmpeg_version();
-                entry.license = ffmpeg::util::license().into();
-                entry.note = Some(
-                    "Plays is built with FFmpeg's source code, unchanged, by \
-                     script/build-ffmpeg in Plays' own; build Plays again to use \
-                     another FFmpeg."
-                        .into(),
-                );
-                entry = entry.hint("Opens and decodes files and streams.");
-            } else {
-                entry = entry.hint("Decodes AV1 video, in FFmpeg.");
-            }
-            built_with.push(entry);
-        }
-        if let Some(gpui) = attributions.crates.iter().find(|c| c.name == "gpui") {
-            built_with.push(
-                Entry::new("library gpui", gpui, texts)
-                    .hint("Draws the windows, from Zed Industries."),
-            );
-        }
-
-        let crates: Vec<Entry> = attributions
-            .crates
-            .iter()
-            .filter(|credit| credit.built_in())
-            .map(|credit| {
-                let key = format!("crate {} {}", credit.name, credit.version);
-                let mut entry = Entry::new(key, credit, texts);
-                entry.links[0].0 = "Repository";
-                entry
-            })
-            .collect();
-        Self {
-            list: ListState::new(
-                BEFORE_CRATES + crates.len(),
-                ListAlignment::Top,
-                CREDITS_OVERDRAW,
-            ),
-            license,
-            built_with,
-            crates,
-        }
+/// The app's own license.
+fn license() -> Entry {
+    Entry {
+        key: "plays".into(),
+        name: "License".into(),
+        version: "".into(),
+        license: env!("CARGO_PKG_LICENSE").into(),
+        hint: None,
+        links: Vec::new(),
+        note: None,
+        texts: vec![LICENSE.into()],
     }
+}
 
-    /// The list item the credit `key` is in.
-    fn item_of(&self, key: &SharedString) -> Option<usize> {
-        if self.license.key == *key {
-            Some(0)
-        } else if self.built_with.iter().any(|entry| entry.key == *key) {
-            Some(1)
-        } else {
-            let index = self.crates.iter().position(|entry| entry.key == *key)?;
-            Some(BEFORE_CRATES + index)
-        }
+/// What the app is built with, each said what it's for.
+fn built_with() -> Vec<Entry> {
+    let attributions = &*ATTRIBUTIONS;
+    let texts = attributions.texts.as_slice();
+    attributions
+        .libraries
+        .iter()
+        .map(|library| credit(library, texts))
+        .collect()
+}
+
+/// `library`'s credit, said what it's for.
+fn credit(library: &'static Credit, texts: &'static [String]) -> Entry {
+    let entry = Entry::new(format!("library {}", library.name), library, texts);
+    match library.name.as_str() {
+        "FFmpeg" => Entry {
+            // What the app runs with, in case it was built with another.
+            version: ffmpeg_version(),
+            license: ffmpeg::util::license().into(),
+            note: Some(
+                "Plays is built with FFmpeg's source code, unchanged, by \
+                 script/build-ffmpeg in Plays' own; build Plays again to use \
+                 another FFmpeg."
+                    .into(),
+            ),
+            ..entry.hint("Opens and decodes files and streams.")
+        },
+        "dav1d" => entry.hint("Decodes AV1 video, in FFmpeg."),
+        "GPUI" => entry.hint("Draws the windows. Made by the Zed team at Zed Industries."),
+        _ => entry,
     }
 }
 
@@ -405,59 +295,6 @@ fn app(theme: &Theme) -> AnyElement {
             about::release_date()
         )))
         .child(div().pt_1().text_sm().child(env!("CARGO_PKG_DESCRIPTION")))
-        .into_any_element()
-}
-
-/// About's list item `ix`, spaced as other panes' groups are.
-fn item(
-    view: &mut SettingsView,
-    ix: usize,
-    window: &mut Window,
-    cx: &mut Context<SettingsView>,
-) -> AnyElement {
-    let Some(credits) = view.credits.as_ref() else {
-        return div().into_any_element();
-    };
-    let theme = Theme::get(window, cx);
-    let open = view.license.as_ref();
-    let row = |entry: &Entry, cx: &mut Context<SettingsView>| {
-        entry.render(open == Some(&entry.key), &theme, cx)
-    };
-    let (content, below) = match ix {
-        0 => (
-            group(None, &theme, vec![app(&theme), row(&credits.license, cx)]),
-            true,
-        ),
-        1 => (
-            group(
-                Some("Built with"),
-                &theme,
-                credits
-                    .built_with
-                    .iter()
-                    .map(|entry| row(entry, cx))
-                    .collect(),
-            ),
-            true,
-        ),
-        2 => (heading("Rust crates"), false),
-        _ => {
-            let index = ix - BEFORE_CRATES;
-            let Some(entry) = credits.crates.get(index) else {
-                return div().into_any_element();
-            };
-            let last = index + 1 == credits.crates.len();
-            (card_row(&theme, index == 0, last, row(entry, cx)), false)
-        }
-    };
-    div()
-        .px_5()
-        .map(|this| match (ix, below) {
-            (_, true) => this.pb_5(),
-            (2, _) => this.pb_2(),
-            _ => this,
-        })
-        .child(content)
         .into_any_element()
 }
 
@@ -483,34 +320,93 @@ impl Pane for AboutPane {
         ABOUT_COLOR
     }
 
-    /// Its rows are in its list instead.
     fn content(
         &self,
-        _: &mut SettingsView,
+        view: &mut SettingsView,
         _: &Settings,
-        _: &Theme,
+        theme: &Theme,
         _: &mut Window,
-        _: &mut Context<SettingsView>,
+        cx: &mut Context<SettingsView>,
     ) -> Vec<AnyElement> {
-        Vec::new()
-    }
-
-    fn list(&self, view: &mut SettingsView, cx: &mut Context<SettingsView>) -> Option<AnyElement> {
-        let credits = view.credits.get_or_insert_with(Credits::new);
-        Some(
-            list(credits.list.clone(), cx.processor(item))
-                .size_full()
-                .pt_2()
-                .pb_5()
-                .into_any_element(),
-        )
+        let open = view.license.clone();
+        let mut row = |entry: &Entry| entry.render(open.as_ref() == Some(&entry.key), theme, cx);
+        let license = row(&license());
+        let built_with = built_with().iter().map(&mut row).collect();
+        vec![
+            group(None, theme, vec![app(theme), license]),
+            group(Some("Built with"), theme, built_with),
+        ]
     }
 
     fn leave(&self, view: &mut SettingsView) {
         view.license = None;
-        // Measured again, and at the top, when it shows again.
-        if let Some(credits) = &view.credits {
-            credits.list.reset(credits.list.item_count());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn it_credits_ffmpeg_dav1d_and_gpui_by_the_zed_team_each_with_its_license() {
+        let credits = built_with();
+        let names: Vec<&str> = credits.iter().map(|entry| entry.name.as_ref()).collect();
+        assert_eq!(names, ["FFmpeg", "dav1d", "GPUI"], "and no crate besides");
+        for entry in &credits {
+            assert!(!entry.texts.is_empty(), "{}'s license", entry.name);
+            let links: Vec<&str> = entry.links.iter().map(|(label, _)| *label).collect();
+            assert_eq!(links, ["Website", "Source code"], "{}", entry.name);
         }
+
+        let [ffmpeg, dav1d, gpui] = credits.as_slice() else {
+            unreachable!()
+        };
+        assert_eq!(ffmpeg.version, ffmpeg_version(), "the one it runs with");
+        assert_eq!(ffmpeg.license.as_ref(), ffmpeg::util::license());
+        assert!(
+            ffmpeg
+                .note
+                .as_ref()
+                .is_some_and(|note| note.contains("unchanged"))
+        );
+        assert_eq!(
+            ffmpeg.hint,
+            Some("Opens and decodes files and streams.".into())
+        );
+        assert_eq!(dav1d.hint, Some("Decodes AV1 video, in FFmpeg.".into()));
+        assert!(dav1d.note.is_none() && gpui.note.is_none());
+        assert!(
+            gpui.hint
+                .as_ref()
+                .is_some_and(|hint| hint.contains("Zed team")),
+            "{:?}",
+            gpui.hint
+        );
+        assert!(
+            gpui.texts
+                .iter()
+                .any(|text| text.contains("Zed Industries"))
+        );
+        assert_eq!(gpui.license.as_ref(), "Apache-2.0");
+
+        let plays = license();
+        assert_eq!(plays.license.as_ref(), env!("CARGO_PKG_LICENSE"));
+        assert_eq!(plays.texts, [SharedString::from(LICENSE)]);
+    }
+
+    #[test]
+    fn ffmpeg_is_credited_as_it_runs_whatever_it_was_built_with() {
+        let another: &'static Credit = Box::leak(Box::new(Credit {
+            name: "FFmpeg".into(),
+            version: "1.0".into(),
+            license: "GPL-3.0-or-later".into(),
+            url: "https://ffmpeg.org".into(),
+            source: "https://ffmpeg.org/releases/ffmpeg-1.0.tar.xz".into(),
+            texts: Vec::new(),
+        }));
+        let entry = credit(another, &[]);
+        assert_eq!(entry.version, ffmpeg_version());
+        assert_ne!(entry.version.as_ref(), "1.0");
+        assert_eq!(entry.license.as_ref(), ffmpeg::util::license());
     }
 }

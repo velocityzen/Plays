@@ -9,8 +9,8 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use gpui::{
-    Bounds, Modifiers, MouseButton, MouseDownEvent, MouseUpEvent, Pixels, Point, ScrollDelta,
-    ScrollWheelEvent, TestAppContext, TouchPhase, VisualTestContext, WindowHandle, point,
+    Bounds, Modifiers, MouseButton, MouseDownEvent, MouseUpEvent, Pixels, Point, TestAppContext,
+    VisualTestContext, WindowHandle, point,
 };
 
 use crate::app;
@@ -92,20 +92,6 @@ pub fn click(cx: &mut VisualTestContext, selector: &'static str) {
     hover(cx, selector);
     let at = find(cx, selector).center();
     cx.simulate_click(at, Modifiers::none());
-}
-
-/// Turn the mouse wheel over the middle of the element tagged `selector`
-/// by `by`: a negative `y` scrolls down, the content moving up.
-pub fn scroll(cx: &mut VisualTestContext, selector: &'static str, by: Point<Pixels>) {
-    hover(cx, selector);
-    let at = find(cx, selector).center();
-    cx.simulate_event(ScrollWheelEvent {
-        position: at,
-        delta: ScrollDelta::Pixels(by),
-        modifiers: Modifiers::none(),
-        touch_phase: TouchPhase::Moved,
-    });
-    cx.run_until_parked();
 }
 
 /// Double-click the middle of the element tagged `selector`: a click, then

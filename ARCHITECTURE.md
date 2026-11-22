@@ -852,10 +852,10 @@ flowchart LR
   `record_shortcut` opens it on Hotkeys waiting for a command's keys, its
   row scrolled into view once drawn, as the palette's Change Shortcut…
   does.
-  About shows the version and the credits,
-  each of which opens to its license; there are hundreds, so they are in a
-  list that builds only the rows in view, each drawing its part of the
-  card.
+  About shows the version, Plays' license and what it is built with:
+  FFmpeg, dav1d and GPUI, crediting the Zed team, from
+  `resources/attributions.json`, each opening to its license, one at a
+  time; not every crate.
 - `src/ui/palette/`: the command palette, `window.command_palette` (⇧⌘P),
   a sheet over the window it opens in (`workspace/command_palette`), which
   it runs every command on, an App one on the app. It lists the commands

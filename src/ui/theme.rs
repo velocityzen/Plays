@@ -675,9 +675,6 @@ pub mod settings {
     /// The most a credit's license takes in About, such as "MIT OR
     /// Apache-2.0".
     pub const CREDIT_LICENSE_MAX_WIDTH: Pixels = px(220.);
-    /// How far above and below what shows About measures its credits, so
-    /// scrolling doesn't find them unmeasured.
-    pub const CREDITS_OVERDRAW: Pixels = px(240.);
     /// The subtitle preview's tile, 16:9.
     pub const PREVIEW_SIZE: Size<Pixels> = size(px(284.), px(160.));
     /// The shape of the picture in the subtitle preview: a wide film, so it
