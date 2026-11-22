@@ -517,7 +517,7 @@ impl PlayerView {
     ) -> Vec<MenuRow> {
         let own = self.window_sound.clone();
         let mut rows = vec![
-            MenuRow::new("sound-app", "Same as the App")
+            MenuRow::new("sound-app", output::SAME_AS_APP)
                 .checked(own.is_none())
                 .mx_1()
                 .on_click(pick_window_sound(None, cx)),

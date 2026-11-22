@@ -91,6 +91,12 @@ fn a_window_plays_through_an_output_of_its_own(cx: &mut TestAppContext) {
     });
     click(&mut cx, "cast");
     assert!(shows(&mut cx, "sound-app") && shows(&mut cx, "sound-1"));
+    assert!(
+        painted(&mut cx)
+            .iter()
+            .any(|(text, _)| *text == "Same as the App"),
+        "as the palette and Audio → Window Output Device say"
+    );
     assert!(!shows(&mut cx, "cast-here"), "nothing else to play on");
     assert!(!shows(&mut cx, "cast-selected"), "it plays as the app does");
 

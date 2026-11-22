@@ -13,6 +13,7 @@ use serde_json::{Map, Value, json};
 use super::aimed;
 use super::places::{self, text, window_name};
 use crate::api::args::{Arg, Kind};
+use crate::api::commands::output;
 use crate::api::commands::settings::protocols;
 use crate::api::{self, Invocation, Source, Spec, Target};
 use crate::files;
@@ -183,7 +184,7 @@ fn choices(
         ("tile.move_to_window", "window") => ("Window", other_windows(on)),
         ("cast.to" | "cast.pair", "device") => ("Device", devices(on)),
         ("output.set_device", "id") => ("Output", outputs(spec.id, "System Default", on)),
-        ("output.set_window_device", "id") => ("Output", outputs(spec.id, "Same as Plays", on)),
+        ("output.set_window_device", "id") => ("Output", outputs(spec.id, output::SAME_AS_APP, on)),
         ("settings.get" | "settings.reset", "key") => ("Setting", settings(true, on.cx)),
         ("settings.set", "key") => ("Setting", settings(false, on.cx)),
         ("settings.set", "value") => ("Value", setting_values(args, on)?),

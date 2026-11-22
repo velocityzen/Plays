@@ -565,6 +565,8 @@ other windows keep the app's output. Windows that pick the same device share
 it, and a tile moved to a new window takes the device along. While it isn't
 connected, its sound waits for it or goes through the system's default, as
 Settings → Audio says for the app's. It isn't remembered from run to run.
+The command palette lists Output Device and Window Output Device under
+Audio Output, and calls going back the same, "Same as the App".
 
 A window that the cast menu (or Video → Output Device) puts full screen on
 another display plays through that display's speakers, such as a TV's over

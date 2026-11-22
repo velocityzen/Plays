@@ -535,6 +535,38 @@ fn with_nothing_typed_each_group_is_under_its_heading(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn the_outputs_are_audio_and_a_window_goes_back_to_the_apps_as_the_menus_say(
+    cx: &mut TestAppContext,
+) {
+    let (window, mut cx) = testing::start(cx);
+    open(window, &mut cx, &["clip.mp4"]);
+    open_palette(&mut cx);
+    let headed = sections(window, &cx);
+    let under = |heading: &str| -> Vec<&String> {
+        let found = headed.iter().filter(|(found, _)| found == heading);
+        found.flat_map(|(_, ids)| ids).collect()
+    };
+    let outputs = under("Audio Output");
+    for id in ["output.set_device", "output.set_window_device"] {
+        assert!(outputs.contains(&&id.to_owned()), "{id}: {headed:?}");
+    }
+    assert!(under("Output").is_empty(), "not just Output: {headed:?}");
+
+    type_in(&mut cx, "window output device");
+    press_and_wait(&mut cx, "enter");
+    assert_eq!(
+        read(window, &cx, Palette::asking),
+        Some(("output.set_window_device", "id"))
+    );
+    assert_eq!(
+        listed(window, &cx).first().map(String::as_str),
+        Some("Same as the App"),
+        "as Audio → Window Output Device and a tile's menu say"
+    );
+    assert_eq!(read(window, &cx, Palette::current), ["Same as the App"]);
+}
+
+#[gpui::test]
 fn pointing_at_a_row_picks_it_and_the_arrows_go_on_from_there(cx: &mut TestAppContext) {
     let (window, mut cx) = testing::start(cx);
     open_palette(&mut cx);

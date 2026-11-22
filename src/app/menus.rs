@@ -750,7 +750,8 @@ fn output_menu(devices: &[DeviceInfo], picked: Option<&AudioDevice>, outputs: &M
 /// own is listed too while it isn't connected, as its sound waits for it.
 fn window_output_menu(devices: &[DeviceInfo], own: Option<&AudioDevice>) -> Menu {
     let mut items = vec![
-        MenuItem::action("Same as the App", output::set_window_device(None)).checked(own.is_none()),
+        MenuItem::action(output::SAME_AS_APP, output::set_window_device(None))
+            .checked(own.is_none()),
         MenuItem::separator(),
     ];
     let names: Vec<&str> = devices.iter().map(|device| device.name.as_str()).collect();

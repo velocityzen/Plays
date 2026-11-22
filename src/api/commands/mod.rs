@@ -51,7 +51,7 @@ pub const NAMESPACES: [(&str, &str); 12] = [
     ("window", "Windows"),
     ("tile", "Tiles in a window"),
     ("cast", "Casting"),
-    ("output", "Output"),
+    ("output", "Audio Output"),
     ("settings", "Settings"),
     ("app", "Plays"),
     ("cli", "Command line"),

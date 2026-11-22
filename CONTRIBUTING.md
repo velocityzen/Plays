@@ -782,6 +782,10 @@ check:
   - With nothing typed, each command under its namespace's heading, each
     heading once, and those run lately under Recent and not again; found
     or asked for, no headings, a row saying its namespace after its name.
+  - The output commands under Audio Output, not just Output, and Window
+    Output Device offering "Same as the App" first, as Audio → Window
+    Output Device and a tile's menu say (`output::SAME_AS_APP`; the
+    tile's menu says so in `ui::workspace::tests::sound`).
   - Pointing at a row picking it, and the arrows going on from there.
   - Where it's drawn: a row, the one picked too, as wide as the field
     and lined up with it, its keys at its end as far in as its name, and
