@@ -1,16 +1,15 @@
 # Plays
 
-A small video and audio player for macOS and Linux that plays many files at
-once, side by side. Every file gets a block of its own, with its own
-controls; a block can move to a window of its own, play full screen on
-another display, or cast to a TV or a speaker. All of the UI, including the
-settings window, is built with
+A video and audio player for macOS and Linux that plays many files at once,
+side by side, each in a block of its own. Built with
 [gpui](https://github.com/zed-industries/zed/tree/main/crates/gpui), Zed's
 GPU-accelerated UI framework.
 
 - [Features](#features)
 - [Getting Plays](#getting-plays)
-- [Using it](#using-it)
+- [Shortcuts](#shortcuts)
+- [Good to know](#good-to-know)
+- [Command line](#command-line)
 - [Limitations](#limitations)
 - [Working on Plays](#working-on-plays)
 
@@ -18,275 +17,114 @@ GPU-accelerated UI framework.
 
 ### Playback
 
-- Open any number of files, or whole folders: each gets a block in a grid
-  that sizes itself. Or, as Settings → Playback says, they play one after
-  another in one block, a playlist.
-- Open network streams with **Open URL…**: HTTP(S) files, HLS and DASH
-  playlists, RTMP and RTSP. Live streams show a LIVE badge; a stream that
-  stalls pauses and resumes instead of skipping ahead.
-- Every file has its own play/pause, seek bar, loop, mute and volume.
-- Scrub with the seek bar: the picture follows as you drag and lands on the
-  exact frame where you let go. Step a frame at a time, forward or back.
-- Hardware video decoding: VideoToolbox on macOS; VA-API, NVDEC or VDPAU on
-  Linux. Videos the GPU can't decode fall back to software by themselves.
-- Chapters: a notch on the bar where each starts, the time under the bar
-  says which one you're in, and keys and a menu go from one to the next.
-- The previous and next media file in the folder, or in its playlist,
-  open in the same block.
-- File → Open Recent opens the files played lately (the last 20).
-- A file opened again starts where it was left, for 30 days since it last
-  played, with the audio and subtitles picked in it; one barely begun, or
-  played nearly to its end, starts over, still with them. Settings →
-  Playback turns it off, which forgets every file's place.
-- Audio-only files show their cover art and a level meter. With none in
-  its tags, a file shows the `cover.jpg` beside it (or `.jpeg`, `.png`,
-  `.tif` or `.tiff`, named in any case), as music folders often have it;
-  with neither, a note.
-- While a video plays the screen doesn't sleep, and while only sound plays
-  the computer doesn't. Paused or ended, they sleep as they would.
+- Any number of files and folders, side by side in a grid, or one after
+  another in one block as a playlist
+- Streams: HTTP(S), HLS, DASH, RTMP, RTSP
+- Play/pause, seek, loop, volume and mute in each block
+- Frame-accurate scrubbing and frame stepping
+- Hardware decoding: VideoToolbox on macOS; VA-API, NVDEC or VDPAU on Linux
+- Chapters
+- Previous and next file in the folder or playlist
+- Open Recent
+- Files resume where they were left, with their tracks
+- Cover art and a level meter for audio files
+- The screen stays awake while video plays
+- Play, pause, seek, step, sync, volume and mute every block in every window
+  at once
 
 ### Picture
 
-- HDR video (HDR10/PQ and HLG, BT.2020), and Dolby Vision, including
-  profile 5, which has no HDR10 picture to fall back on. On macOS,
-  highlights go brighter than SDR white as far as the screen allows (EDR,
-  such as on XDR displays), and are tone mapped to fit on other screens.
-  Elsewhere, and for video decoded in software, HDR is tone mapped to SDR.
-- Turn the picture a quarter turn either way, flip it, show it at another
-  aspect ratio (1:1 to 2.35:1) or crop it to another shape (1:1 to 2.39:1),
-  each block on its own. Even a paused video changes at once.
-- Videos whose files say to turn them, as phones' do, show upright.
-- Gamma for SDR and for HDR video, applied to every open video as you
-  drag it.
+- HDR10, HLG and Dolby Vision (profile 5 too): brighter than SDR white on
+  macOS (EDR), tone mapped elsewhere
+- Rotate, flip, aspect ratio and crop
+- Gamma for SDR and for HDR
+- Fit or fill
 
 ### Tracks and subtitles
 
-- Files with several tracks get a track menu: pick the audio track, the
-  subtitles (or none) and, if there are several, the video track, while it
-  plays.
-- Text subtitles (SRT, ASS, WebVTT, MP4 timed text) sized to the picture
-  and styled as you like; bitmap ones (PGS, VobSub, DVB) as the disc has
-  them.
-- Subtitle files beside a video, or in a `Subs` or `Subtitles` folder, are
-  tracks too, with their language read from their names. Text in legacy encodings is
-  converted.
-- Audio and subtitles in the languages you prefer, in order, play from
-  the start (Settings → Audio and Subtitles → Languages); else a file's
-  default subtitles, or failing that its forced ones.
-- Move a file's sound (in 50 ms steps) or subtitles (in 100 ms steps)
-  earlier or later against the picture, for files that are out of step.
+- Switch audio, subtitle and video tracks
+- Text subtitles (SRT, ASS, WebVTT, MP4 timed text), styled in Settings;
+  bitmap subtitles (PGS, VobSub, DVB)
+- Subtitle files beside the video, in legacy encodings too
+- Preferred audio and subtitle languages
+- Audio and subtitle delay
 
 ### Windows and blocks
 
-- Any block can pop out into a new window, beside the one it left, where it
-  keeps playing. Every window works the same: drop more files on it and
-  they play side by side.
-- Drag a block by its picture onto another to put it in that one's place.
-  A window's only block, or a maximized one, drags the whole window, and
-  so does an empty window, anywhere but its buttons.
-- An empty window shows the app's logo, with Open and Open URL under it;
-  the logo lights up while files are dragged over the window.
-- Left alone in front for a while, an empty window fades its buttons out
-  and its logo bounces off the window's edges, taking a new color at each.
-  Move the mouse or press a key, and it flies back to its place, keeping
-  the color it had. Click the logo for the next of those colors.
-- Go from block to block with the keyboard, to the one beside, above or
-  below, or to each in turn, and move the block in front about the grid
-  the same way. A ring shows which block the keys went to.
-- Go back to the block you clicked before, name a block, and copy a file's
-  path or where it is.
-- Windows take the size of the video as files open, or of a grid with room
-  for each video at its own size, scaled down to fit the screen. After
-  that a window keeps the size you give it, till Video → Match Video Size
-  (⌥⌘0) sizes it for its videos again.
-- Windows open where you are working: where the last one closed, on the
-  same display, at the same size, and Settings where you left it.
-- Go from window to window from the keyboard: ⌘1 to ⌘9 by number,
-  Ctrl+Tab and Ctrl+Shift+Tab to the next or the one before, and ⌘' back
-  to the one in front before. Name a window, and number them as you like.
-- Player windows can float above other apps' windows, always or only while
-  something in them plays.
-- While a block plays, its header and controls fade when the mouse leaves
-  or rests, and the pointer hides.
-- The controls, notes and menus over a video show it through them:
-  frosted, glass, glow, tint, or plain see-through black.
-- Each panel over the video can be hidden for good: the controls, the top
-  bar, the track switcher, and notes on what a shortcut changed.
-- On macOS, windows show just the video, edge to edge, with the traffic
-  lights over it. Colors are macOS's own, in light and dark, with your
-  accent color.
-- Picture in Picture on macOS 12 and later: a block in macOS's own floating
-  window, over every app and Space, subtitles and all.
+- Pop a block out to a window of its own
+- Drag blocks to reorder them
+- Go between blocks and windows from the keyboard
+- Name blocks and windows
+- Windows sized to their videos, reopening where they closed
+- Float on top, always or while playing
+- Controls that fade while playing; each panel over the video can be hidden
+- Frosted, glass, glow, tint or plain overlays
+- Picture in Picture (macOS 12 and later)
+- A screensaver in an empty window
 
-### Displays and full screen
+### Displays and sound
 
-- With more than one display, put a window full screen on the one you
-  pick, picture, subtitles and all. Out of full screen, it goes back where
-  it was.
-- On macOS, full screen is macOS's own, in a Space of its own, or, if you
-  like, just over the window's display, going in and out at once.
-- Black out the other displays while a window is full screen, for
-  projectors, TVs and dark rooms.
-- An AirPlay TV or projector connected as a separate display is a display
-  like any other, with the sound going there too.
-
-### Sound
-
-- The sound of every file is mixed into one output: the system's default,
-  or a device you pick, remembered from run to run.
-- A window can play through an output of its own instead, such as a TV's
-  speakers while the desk keeps its own.
-- A window sent full screen to a TV plays through the TV's speakers until
-  it comes back.
-- While the device picked isn't connected, the sound waits for it, or goes
-  through the system's default, and goes back to it as soon as it's there.
-- AirPlay speakers, and Apple TVs for their sound, are outputs like the
-  rest, found on the network by Plays itself, on macOS and Linux. The
-  picture is held back as long as AirPlay delays the sound, so the two
-  stay in step. One that wants a PIN is paired with once.
-- Bluetooth headphones and speakers paired with the Mac are outputs even
-  while they aren't connected; picking one connects it.
+- Full screen on any display, the others blacked out if you like
+- macOS full screen in a Space of its own, or just over the display
+- An output device for the app, and for each window
+- A window sent to a TV plays through the TV's speakers
+- AirPlay speakers as outputs, on macOS and Linux
+- Bluetooth headphones connected when picked (macOS)
 
 ### Casting
 
-- Play a block on a TV or a speaker instead, from where it is, with its
-  tracks: Chromecasts, Google TVs and Nest speakers, DLNA TVs and
-  speakers, and Apple TVs and TVs with AirPlay, found on the network by
-  themselves.
-- An AirPlay TV is paired with once, with the PIN it shows.
-- A file goes as it is where the device plays it, else repackaged or
-  re-encoded for it.
-- A video's sound can go to a speaker while its picture plays on in the
-  block, in step with it.
-- The block's bar, buttons and shortcuts drive the device, and the
-  subtitles picked go along.
+- Chromecast, Google TV and Nest; DLNA; Apple TV and AirPlay TVs
+- Files go as they are, repackaged or re-encoded, as the device needs
+- Subtitles go along
+- A video's sound to a speaker while its picture plays here
 
-### Screenshots
+### And
 
-- Save the frame a block shows, at the video's full resolution, turned,
-  reshaped and cropped as it shows, with the subtitles showing drawn in.
-- PNG or JPEG. HDR video is saved as an SDR screen shows it, or kept as
-  HDR in a 16-bit PNG.
-- Files are named after the video and the time, go to Pictures or a
-  folder you pick, and never replace another.
-
-### Console
-
-- A console on the block in front: the file's format, each stream as the
-  file has it, the decoder, and, as it plays, frames shown and dropped, how
-  far the picture is from the clock, what is queued and how far ahead the
-  file or stream is read.
-
-### Keyboard shortcuts
-
-- Shortcuts go to the block the mouse is over, or the one the keys went
-  to. With Shift, the playback and volume ones go to every file in every
-  window, so one moved to a window of its own on another display keeps up
-  with the rest, and Shift-S syncs them all to that block.
-- Change any shortcut in Settings → Hotkeys, the app's own (⌘O, ⌘W and
-  so on) too.
-- The menu bar (a toolbar on Linux) has them too.
-
-### Command palette
-
-- ⇧⌘P lists every command that can run in the window, under a heading
-  for each menu, those run from it lately first under Recent: type a few
-  letters of its name, its menu or a word for it to find it, and Return
-  runs the one picked, in your accent color. Pointing at a row picks it,
-  and a click runs it. In a short window it lists fewer rows at once, and
-  scrolls, its footer still showing.
-- Each row says what its command is set to now (✓ when on) and, at its
-  end, its shortcut. What a command takes, it asks for next: a track, a
-  chapter, a display, a setting and its value from a list, the one now
-  picked first; a time, a volume or a path typed, and said why it won't
-  do.
-- The footer says what Return does and, for a command that takes keys,
-  Change Shortcut (⌘↩). Either can be clicked.
-- Change Shortcut lists the command's shortcuts in the palette itself,
-  those it starts out with marked Default. Press keys to add one (a key
-  another command had moves to it, and the palette says whose it was);
-  pick one with the arrows and press Return, or click it, to remove it.
-  Escape goes back to the commands. The arrows, Return and Escape aren't
-  recorded there; Settings → Hotkeys records those too.
-- ⌘P (Go to…) lists the windows, their blocks, the files in the folder of
-  the block in front and those played lately, under a heading for each,
-  found by name the same way.
-  Return brings a window or block to the front, plays a file from the
-  folder in that block, or opens one played lately.
-
-### Command line
-
-- `plays` in a terminal lists, opens, runs and watches what Plays is
-  doing: its windows and blocks, any command by its id, settings and
-  shortcuts, what changes as it does, and waiting for a file to end. It
-  prints tables or JSON. Off until Settings → Command Line turns it on.
-- Plays → Install Command Line Tool puts `plays` where a terminal finds
-  it, and `plays completions` has bash, zsh, fish or Nushell complete its
-  subcommands, command ids and setting keys.
-
-### Settings
-
-- A Settings window for playback, audio, video, subtitles (with a live
-  preview), casting, screenshots, hotkeys, appearance and the command
-  line.
-- Settings are saved in a file of their own, which you can export,
-  import, or reset to the defaults.
-- About Plays: the app's icon, version and the day it was built.
+- Screenshots at full resolution, PNG or JPEG, HDR as 16-bit PNG
+- A console: format, streams, decoder, dropped frames, A/V offset, buffers
+- Command palette (`⇧⌘P`) and Go to (`⌘P`)
+- Every shortcut can be changed
+- The `plays` command line
+- Settings in a JSON file you can export, import and reset
+- A menu bar on macOS, a toolbar on Linux
 
 ## Getting Plays
 
-Plays is built from source; [CONTRIBUTING.md](CONTRIBUTING.md#building)
-says how, on macOS and on Linux (Debian/Ubuntu).
+Plays is built from source: see [CONTRIBUTING.md](CONTRIBUTING.md#building).
 
 ### macOS
 
-`script/bundle-macos` makes `target/release/Plays.app`. FFmpeg is built
-into it, so it runs on any Mac with nothing else installed. Once it's in
-`/Applications` (or has been opened once), Finder offers Plays under
-**Open With** for video and audio files, without making it the default
-player, and files and folders dropped on its Dock icon open in it.
+`script/bundle-macos` makes `target/release/Plays.app`, with FFmpeg built
+in. Finder then offers it under **Open With**, and its Dock icon takes
+dropped files.
 
 ### Linux
 
-The `plays` binary has FFmpeg built in, but uses the system's OpenSSL for
-https, and libva and libvdpau for hardware decoding.
-
-- gpui renders with Vulkan on Linux, so a working Vulkan driver is
-  required.
-- For hardware decoding, install your GPU's VA-API driver
-  (`intel-media-va-driver` or `mesa-va-drivers`), or use NVIDIA's driver
-  for NVDEC. The block header shows the API in use, for example
-  `h264 (VA-API)`.
-- For your file manager's **Open With** menu, put the `plays` binary on
-  your `PATH` and copy `resources/linux/plays.desktop` to
-  `~/.local/share/applications/`.
-
-Files and stream URLs can be given on the command line:
+- A working Vulkan driver, OpenSSL, libva and libvdpau
+- For hardware decoding, your GPU's VA-API driver (`intel-media-va-driver`
+  or `mesa-va-drivers`), or NVIDIA's for NVDEC
+- Sound goes through ALSA (PipeWire and PulseAudio provide it)
+- For **Open With**, put `plays` on your `PATH` and copy
+  `resources/linux/plays.desktop` to `~/.local/share/applications/`
 
 ```bash
-plays path/to/video.mp4 path/to/song.mp3 https://example.com/live.m3u8
+plays video.mp4 song.mp3 https://example.com/live.m3u8
 ```
 
-One Plays runs at a time. With Plays already running, `plays` hands it
-what it was given, which opens in the window in front, and Plays comes to
-the front; given nothing, Plays just comes to the front. They talk over
-a socket that only you can use, kept with Plays' settings on macOS and in
-`$XDG_RUNTIME_DIR/plays` on Linux. Nothing goes over the network.
+One Plays runs at a time: `plays FILE…` hands files to the one running.
 
-## Using it
-
-### Shortcuts
+## Shortcuts
 
 | Action | Shortcut |
 | --- | --- |
-| Open files | `⌘O` / `Ctrl+O`, or drop files/folders on the window (or on the Dock icon of `Plays.app`) |
-| Open a stream URL | `⌘⇧O` / `Ctrl+Shift+O` (pre-filled from the clipboard) |
+| Open files | `⌘O` / `Ctrl+O`, or drop them on the window |
+| Open a stream URL | `⌘⇧O` / `Ctrl+Shift+O` |
 | Play/pause | `Space` or `P` |
-| Seek back/forward | `←` `→` (5 seconds at first; the step is in Settings) |
-| Previous/next frame | `⌥←` `⌥→` / `Alt+←` `Alt+→`, or `,` `.`, or `<` `>` |
+| Seek back/forward | `←` `→` |
+| Previous/next frame | `⌥←` `⌥→` / `Alt+←` `Alt+→`, or `,` `.` |
 | Restart | `Home` |
 | Previous/next chapter | `Page Up` `Page Down` |
-| Previous/next file in its playlist or folder | `⌘←` `⌘→` / `Ctrl+←` `Ctrl+→` |
+| Previous/next file | `⌘←` `⌘→` / `Ctrl+←` `Ctrl+→` |
 | Loop | `⌘⇧L` / `Ctrl+Shift+L` |
 | Volume down/up | `↓` `↑` |
 | Mute/unmute | `M`, or `⌘/` / `Ctrl+/` |
@@ -300,22 +138,22 @@ a socket that only you can use, kept with Plays' settings on macOS and in
 | Flip horizontally/vertically | `⌘⇧H` `⌘⇧V` / `Ctrl+Shift+H` `Ctrl+Shift+V` |
 | Next aspect ratio, next crop | `A`, `C` |
 | Picture as the file has it | `⌘0` / `Ctrl+0` |
-| Take a screenshot | `S` |
-| Full screen | `F`, or `⌃⌘F` / `F11`; `Esc` leaves it |
+| Screenshot | `S` |
+| Full screen | `F`, or `⌃⌘F` / `F11` |
 | Window to its videos' size | `⌥⌘0` / `Ctrl+Alt+0` |
 | Picture in Picture (macOS) | `⌃⌘P` |
 | Console | `~` or `` ` `` |
 | Play/pause, seek, restart, mute all | `⇧Space`, `⇧←` `⇧→`, `⇧Home`, `⇧M` |
 | Volume down/up on all | `⇧↓` `⇧↑` |
 | Previous/next frame on all | `⌥⇧←` `⌥⇧→` / `Alt+Shift+←` `Alt+Shift+→` |
-| Sync all to the active block | `⇧S` |
-| Focus the block left, right, above, below | `⌥⌘←` `⌥⌘→` `⌥⌘↑` `⌥⌘↓` / `Ctrl+Alt+` arrows |
+| Sync all to this block | `⇧S` |
+| Focus the block left, right, above, below | `⌥⌘` and an arrow / `Ctrl+Alt+` arrows |
 | Focus the previous/next block | `⌘[` `⌘]` / `Ctrl+[` `Ctrl+]` |
-| Move the block in front left, right, up, down | `⌥⇧⌘` and an arrow / `Ctrl+Alt+Shift+` arrows |
-| Maximize the block in front, or show them all | `⇧⌘↩` / `Ctrl+Shift+Enter` |
+| Move the block left, right, up, down | `⌥⇧⌘` and an arrow / `Ctrl+Alt+Shift+` arrows |
+| Maximize the block, or show them all | `⇧⌘↩` / `Ctrl+Shift+Enter` |
 | Copy the file's path | `⌥⌘C` / `Ctrl+Alt+C` |
-| Close the file in front | `⌘W` / `Ctrl+W` (in an empty window, it closes the window) |
-| Close all | `⌘⇧W` / `Ctrl+Shift+W` |
+| Close the file | `⌘W` / `Ctrl+W` |
+| Close all files | `⌘⇧W` / `Ctrl+Shift+W` |
 | Close the window | `⌥⌘W` / `Ctrl+Alt+W` |
 | New window | `⌘N` / `Ctrl+N` |
 | Player window 1 to 9 | `⌘1` … `⌘9` / `Ctrl+1` … `Ctrl+9` |
@@ -325,607 +163,56 @@ a socket that only you can use, kept with Plays' settings on macOS and in
 | Go to a window, block or file | `⌘P` / `Ctrl+P` |
 | Settings | `⌘,` / `Ctrl+,` |
 
-Shortcuts act on the active block: the one the mouse is over (or was last
-over, or clicked), the one the keys went to, or the maximized one, as its
-controls show. Those with
-`⇧` act on every block in the window: play/pause, seek, frame step, restart,
-volume (each block's from its own) and mute. Sync all puts every block where
-the active one is, playing or paused as it is, so files side by side go on
-together (the active one seeks there too); the frame keys with `⇧` then
-step them all, each by its own frame rate.
-
-Where keyframes are far apart, a skip lands on the nearest one its way, so
-it shows at once.
-
-A short note on the block says what a shortcut, or the mute or loop
-button, changed; switching tracks rolls a reel, like a slot machine's, to the track picked, with the ones
-before and after it faded above and below.
-
-Video → Show Controls, Show Top Bar, Show Track Switcher and Show Notes,
-or Settings → Appearance → Over the video, hide each panel over the video
-in every block, and show it again: the controls at the bottom, the file's
-name and buttons at the top, the reel tracks roll on, and the notes on
-what a shortcut changed. A shortcut still does what it does, without
-saying so; a note on what's wrong, such as No chapters or a screenshot
-that failed, still shows. Subtitles don't move up for controls that are
-hidden. The `view` commands do the same from the command line or the
-command palette.
-
-To change shortcuts, use Change Shortcut (⌘↩) in the command palette, or
-open Settings → Hotkeys, click + by a command and press the keys; a key another command had moves to it, and Restore brings
-the defaults back. Every command that needs nothing more is there, in a
-card for each part of the app, the app's own (⌘O, ⌘W and so on) too. A
-key moves only from a command that works where it does: given to a
-player window's command, ⌘W leaves the window's Close to the other
-windows. Some commands have no keys until given some there, such as
-Float on Top, Go Back One Block, Move Block to New Window and Go Back One
-Window. The menus show each command's first key, and are enabled
-only when their commands can run.
-
-### Blocks
-
-Click the picture to make it the block shortcuts go to; double-click it (or
-the corner button, or `⇧⌘↩`) to maximize it; opening more files puts the grid back,
-with them in it. For the only block in a window, both toggle full screen
-instead. Drag the picture onto another block to put the block there, the
-blocks between moving over; its title follows the pointer, and the block it
-would take the place of lights up. With no other block showing (the only
-one in its window, or maximized), dragging the picture moves the window,
-except in full screen. Drag the bar to scrub. In the middle under the bar,
-the previous and next buttons open the media file before or after this one
-in its playlist, or else in its folder, by name, in the same block; between
-them, skip back and forward go by the seek step, around play/pause.
-
-Several files opened at once, dropped together, or a folder's, each get a
-block, all playing. With Settings → Playback → Play several files set to One
-after another, they open in one block instead, a playlist in the order
-given (a folder's by name), which plays the next once one has played to its
-end, as it was playing, and stops after the last; a looping file plays on.
-Its header says which it plays: 2 of 5. Previous and next go through the
-playlist, stopping at its ends. A file played instead that is in it plays
-on from there; one that isn't ends the playlist, and previous and next go
-by the file's folder again.
-
-From the keyboard, `⌥⌘` and an arrow (`Ctrl+Alt` on Linux) go to the block
-beside, above or below the one in front, stopping at the grid's edges;
-down into a short last row, where there's no block right below, goes to
-that row's last block. `⌘[` and `⌘]` go to the previous and next block in
-turn, from the last back to the first. With `⇧` as well, the arrows move
-the block in front that way instead, swapping it with the one there. A
-ring round the block shows where the keys went, until the mouse moves or
-clicks: the block under it is in front then. While a block is maximized,
-the keys maximize the block they go to instead, and no block moves. On
-macOS the Window menu has them all; Settings → Hotkeys changes their
-keys, under Blocks in a window.
-
-Window → Go to Recent Block sends the keys to the block you clicked or went
-to before the one in front; again, back to this one. Go Back One Block
-goes further back each time, to a block it hasn't been to yet, until you
-do something else. Only clicks and the keys count: the mouse passing over
-a block on its way to another puts it in front, but it isn't gone back
-to. Window → Rename Block… names the block in front: its header shows the
-name in place of the file's, even with titles off, and the command line
-can name the block by it. No two blocks share a name, in whichever window;
-a blank one takes it away. Move Block To puts it at another place in the
-grid, and Move Block to Window in another window.
-
-File → Close Other Files closes every file in the window but the one in
-front. Copy File Path (`⌥⌘C` / `Ctrl+Alt+C`) copies its file's path, or
-its stream's URL as you opened it, and Copy Current Time where it is, as
-the bar shows it, such as 1:23:45.
-
-The track button (next to loop, on files that have subtitles or more than
-one audio or video track) opens the track menu: a column each for audio,
-subtitles and (when there are several) video. While there are devices to
-cast to, or more than one display or audio output, the cast button before
-it opens a menu of where to play: the block, under Play This Block On, and
-its window's sound, under Play This Window's Sound On. The button is lit
-while the block plays elsewhere: cast to a device, or with its window's
-sound through an output of its own. A name too long for the menu is cut
-short with "…".
-
-While a block plays, its header and controls fade when the mouse leaves it,
-or rests on it for a couple of seconds; the pointer hides then too, until
-the mouse moves. Resting on the header or controls keeps them.
-
-The console (`~` or Video → Show/Hide Console) shows the file's format, each stream
-playing as the file has it (codec and profile, size, pixel format, colors,
-sample rate, channels, bit rates), the decoder and what its frames become,
-and, as it plays, frames shown a second, frames dropped, how far the
-picture is from the clock, what is queued and how far ahead the file or
-stream is read.
-
-### Windows
-
-When a window has more than one block, the button next to maximize moves a
-block to a new window sized for it, beside the one it left, where it keeps
-playing. Every window takes drops and works the same way; menus and
-shortcuts act on the window in front, and files opened from Finder go to
-it too. Drag the top edge of a window to move it, or the picture of its
-only block; an empty window moves by anywhere but the buttons and the URL
-form under its logo. Closing the last window quits.
-
-As files open, their window takes the size of the video, or of a grid with
-room for each video at its own size, scaled down to fit the screen; a
-window you zoomed stays zoomed. After that the window keeps the size you
-give it, till Video → Match Video Size (`⌥⌘0` / `Ctrl+Alt+0`) sizes it for its
-videos again, zoomed or not. In full screen, it does nothing.
-
-Plays opens where its last window closed, on the same display, at the same
-size. Without a saved place, or when that display is gone, it opens on the
-display with the mouse (on macOS). Settings opens where you left it, at
-the size you gave it, this launch or the last; the first time, or when its
-display is gone, it opens in the middle of the display of the window in
-front. About always opens there. On Wayland, the compositor places
-windows.
-
-`⌘N` (`Ctrl+N` on Linux) opens an empty player window. `⌘1` to `⌘9`
-(`Ctrl+1` to `Ctrl+9`) bring player window 1 to 9 to the front, numbered
-in the order they opened, whatever one is labeled; when one closes,
-those after it move up a number. Window → Move Window Backward and
-Move Window Forward give the
-window in front the number before or after its own, and Move Window To
-any number. `Ctrl+Tab` and `Ctrl+Shift+Tab` bring the next player window
-or the one before to the front, from the last round to the first and
-back; from Settings or About, they go to the first or the last. `⌘'`
-(Go to Recent Window) brings back the player window that was in front
-before this one; again, it comes back to this one. Go Back One Window
-goes further back each time, to a window it hasn't been to yet, until
-you do something else. They work in every window, Settings and About too.
-
-Window → Rename Window… names the window in front: its title shows the
-name, the Window menu lists it so, and the command line can name the
-window by it. No two windows share a name; a blank one takes it away.
-Close Other Windows closes every player window but the one in front.
-
-Player windows float above other apps' windows with Video → Float on Top
-or Float on Top While Playing, or Settings → Appearance. Settings and
-About float with them, so they don't open underneath. On macOS a window
-comes down while it is full screen and floats again after, and floating,
-it still shows in Mission Control, and ⌘` still goes to it.
-
-On macOS, the traffic lights fade out with the controls while something
-plays, when the mouse leaves the window or rests in it.
-
-An empty window left alone in front for 5 minutes fades its buttons out
-(and, on macOS, its traffic lights), and its logo sets off across it,
-bouncing off its edges and taking a new color at each. Moving the mouse
-over the window, clicking or scrolling in it, pressing a key, or switching
-to another window brings the logo quickly back to its place, and the
-buttons with it; a click on where a hidden button was only does that.
-Settings → Appearance → Screensaver turns it off, and Start after sets how
-long the window rests first. It waits while a URL is being typed in the
-window. Clicking the logo in its place shows it at once in the next of
-the colors it bounces through, and after the last in its own again. It
-sets off in the color it has, and brought back, it keeps the one it had.
-
-Settings → Appearance sets how the controls, notes and menus over a video
-show it through them: frosted (blurred and dimmed), glass (clear, with a
-polished edge that bends the light and catches it), glow (glass whose edge
-glows with the colors around it, inside and out), tint (the colors around
-it, none of their shapes), or plain see-through black.
-
-### Picture
-
-On macOS, the Video menu lists every aspect ratio and crop to pick from,
-checking the active block's; `A` and `C` go through them in turn, then back
-to none. Rotating and flipping go by the picture as it shows, and cropping
-keeps its middle. Opening another file in the block starts it as its file
-has it.
-
-Settings → Video has the gamma for SDR and for HDR video, the decode
-resolution limit, hardware decoding, and fit or fill scaling.
-
-### Tracks, chapters and subtitles
-
-Subtitle files beside a video are tracks too, and show from the start:
-`Movie.srt`, `Movie.en.srt`, `Movie.English.forced.ass` and so on for
-`Movie.mkv` (SRT, ASS, WebVTT, PGS `.sup`, VobSub `.idx`, MicroDVD, SAMI),
-the same in a `Subs` or `Subtitles` folder, and everything in
-`Subs/Movie/`. Their names give their language and whether they are
-forced or for the hearing impaired. Text in legacy encodings
-(Windows-1252, Windows-1251, Shift JIS and the like) is detected and
-converted.
-
-Files with chapters (Matroska, MP4 and the like) go from one to the next
-with `Page Down` and back with `Page Up`, or straight to one from
-Playback → Chapters, which checks the one the block is in. Going back
-within the first couple of seconds of a chapter goes to the one before, as
-on a disc player; later, to its start. The bar has a notch where each
-starts (Settings → Playback turns them off), and the time under it says
-which one it's in.
-
-The sound and the subtitles can move earlier or later against the
-picture: the sound in 50 ms steps, up to 5 seconds either way; subtitles
-(embedded or in a file beside the video) in 100 ms steps, up to a minute.
-The sound plays on as it is and the picture moves against it. A note shows
-the delay as it changes ("Audio delay +200 ms"). Opening another file in
-the block starts it with none.
-
-Settings → Subtitles sets how text subtitles look: font, weight, size,
-color, outline or shadow and its color, a background box, on the picture
-or anywhere in the block, and height, with a live preview.
-
-Settings → Audio → Languages and Settings → Subtitles → Languages list the
-languages to play a file's audio and show its subtitles in, first first:
-Add Language puts one last, and each moves up or down or goes. A file
-opens with its audio in the first of them it has (its default track in
-that language, else its first), and its subtitles in the first of theirs
-(a file beside the video, else its default track, else its first, forced
-ones last). With none it has, or none listed, audio plays as the file
-says, and subtitles are a file beside the video, else the file's default
-or forced ones. `settings.set` takes them by name or code
-(`plays settings set languages.audio '["Japanese", "en"]'`), and the
-command palette as a list typed, such as `Japanese, en`.
-
-The audio and subtitles picked in a file, from the track menu, a
-shortcut or a command, are kept with where it was left, hidden subtitles
-too, and it opens with them again over the languages listed, while
-Settings → Playback resumes files where they were left.
-
-### Sound
-
-Audio from every file is mixed into one output. Settings → Audio picks it:
-the system's default (which the sound follows as it changes, on macOS) or
-one device, remembered from run to run. On macOS, Audio → Output Device
-picks it too; it lists outputs as they are plugged in and checks the one
-picked. While the device picked isn't connected, players keep playing,
-silently, until it is (or, with Wait for it off, through the system's
-default), and the sound goes back to it as soon as it's there.
-
-A window can play through an output of its own instead, such as a TV's
-speakers while the desk keeps its own: pick it under Play This Window's
-Sound On in a block's cast menu, which shows with more than one output, or on
-macOS from Audio → Window Output Device ("Same as the App" goes back). Its
-blocks, and files opened in it, play there, picking up where they are; the
-other windows keep the app's output. Windows that pick the same device share
-it, and a block moved to a new window takes the device along. While it isn't
-connected, its sound waits for it or goes through the system's default, as
-Settings → Audio says for the app's. It isn't remembered from run to run.
-The command palette lists Output Device and Window Output Device under
-Audio Output, and calls going back the same, "Same as the App".
-
-A window that the cast menu (or Video → Output Device) puts full screen on
-another display plays through that display's speakers, such as a TV's over
-HDMI, until it comes back, and then through what it played through before.
-The display's speakers are the output named after it, as macOS names an
-HDMI or DisplayPort output (`LG TV` for the display `LG TV`, or one output
-with the display's name in it, such as `Studio Display Speakers`). A
-display with none, and one the window is on already, leave the sound as
-it is. So does an output picked for the window; picking one, or "Same as
-the App", while it is there keeps that when it comes back. Settings →
-Audio → Play on the display's speakers turns this off.
-
-AirPlay speakers on the network, and Apple TVs and TVs with AirPlay for
-their sound, are outputs too, on macOS and Linux. Plays finds them and
-connects to them itself, without Control Center, and lists them with this
-computer's outputs as they come and go (but this computer itself, which
-macOS's AirPlay Receiver offers as one): in Settings → Audio, Audio →
-Output Device and a block's cast menu. The sound of everything playing
-through one goes straight to it, uncompressed, while the pictures stay
-here. AirPlay plays it a second and a half after it's sent, and later on
-a speaker that says it adds some; the picture is held back by as much, so
-the two stay in step. The speaker's own volume stays where it was, and
-Plays' volume sets the level. One that wants a PIN, as an Apple TV does,
-has a sheet over the window ask for the one it shows the first time, as
-casting to it does, and plays once paired; the sheet closed without
-pairing, or saying the speaker turned Plays away, it's picked no longer,
-and the sound comes back: the app's to the system's default, a window's
-to the app's. While one is away, its sound waits for it or goes through
-the system's default, as for any other device, and goes back to it once
-it's found again.
-
-On macOS, the Bluetooth headphones and speakers paired with the Mac are
-outputs too, even while they aren't connected: they're listed with the
-rest, in Settings → Audio, Audio → Output Device and a block's Window
-Sound, and picking one connects it, as Control Center would. The sound
-goes there once it's up, a few seconds later. Picking one picked already,
-but not connected, connects it too. Nothing else does: not starting Plays
-with one picked, nor one turned off or out of range, which is waited for,
-or played around, as any other device is. macOS asks once whether Plays
-may use Bluetooth; without it, only the ones connected are listed, as
-macOS lists them. Bluetooth devices that aren't for sound, such as
-keyboards, aren't listed.
-
-On Linux, audio goes through ALSA (PipeWire and PulseAudio provide an ALSA
-device), so Settings → Audio lists ALSA's outputs: `default` and
-`pipewire` or `pulse` go through the sound server, which picks the
-speakers. Bluetooth headphones are connected from the desktop's own
-Bluetooth settings there, and played through by the sound server.
-
-#### Auracast
-
-Auracast, Bluetooth LE Audio's broadcast, plays to any number of
-headphones, speakers and hearing aids nearby that join it. Plays doesn't
-broadcast it itself, and a Mac can't: macOS doesn't support it. To
-broadcast Plays' sound:
-
-- Plug in a USB Auracast transmitter. To the computer it's a USB sound
-  output, on macOS and Linux alike: pick it in Settings → Audio, or for
-  one window in a block's cast menu, and have the headphones join its
-  broadcast as the transmitter says.
-- On Linux, a Bluetooth adapter that supports LE Audio can broadcast
-  itself, with a recent BlueZ, PipeWire and WirePlumber set up for it
-  (the `bap_bcast_source` role among WirePlumber's `bluez5.roles`). The
-  broadcast is then a PipeWire output, which Plays plays through as
-  `default` or `pipewire` once it's the desktop's output. How to set it up
-  depends on their versions; their documentation says.
-
-### Displays, full screen and AirPlay
-
-With more than one display, the cast button on a block lists them by name
-under Play This Block On, as Video → Output Device does on macOS, and puts
-the player window full screen on the one picked, picture, subtitles and all.
-Video → Output Device checks the display the window is on; picking that one
-just puts it full screen. Out of full screen, the window goes back where it
-was. On X11 each monitor is a display, named for the model it says it is. On
-Wayland the compositor is asked for the display picked but may keep the
-window where it is, and places it itself once out of full screen.
-
-On macOS, full screen is macOS's own, in a Space of its own, unless
-Settings → Appearance → Full screen says Over the display. Then the window
-covers just its own display and goes in and out at once. The other
-displays stay as they are, and the menu bar and Dock keep out of the way
-while the window is in front.
-
-Settings → Appearance → Black out other displays covers every other
-display in black while a window is full screen. Moving the mouse onto a
-covered display, or clicking it, shows it again until the mouse rests
-there. Leaving full screen, or switching to another app, takes the black
-away. On X11 each monitor counts as a display; Wayland doesn't let Plays
-place the covers.
-
-To show exactly the picture Plays draws on an AirPlay TV or projector,
-connect it first from Control Center → Screen Mirroring and use it as a
-separate display: it then shows in Video → Output Device (by the name
-macOS gives it), and macOS sends the sound there with it. For sound alone,
-pick the speakers as an output ([Sound](#sound), above); speakers picked
-in Control Center → Sound instead become the system's default, which
-Plays follows. Either way, AirPlay sound comes out late, by up to a couple
-of seconds, and the picture waits for it. To have an Apple TV play the
-file itself, cast to it instead (Casting, below).
-
-### Picture in Picture
-
-On macOS 12 and later, a block can play in macOS's own Picture in Picture
-window, over every app and Space, with its play/pause and skip buttons:
-`⌃⌘P`, Video → Picture in Picture, or the button on the block. The sound
-keeps coming through Plays, and the subtitles showing are drawn into the
-picture. Closing the window, or its button to go back, brings the video
-back to the block.
-
-### Casting
-
-The cast button on a block lists the devices found, after This Computer,
-each with its kind and the one playing checked. On macOS, Video → Output
-Device also lists those that show video under the displays, and Audio →
-Output Device the speakers under this computer's outputs, checking the one
-the block in front casts to. Devices on the same network are found by
-themselves, in a second or two. Settings → Casting turns each protocol on
-or off and lists the devices found, with what each shows: video, or sound
-only. AirPlay speakers aren't cast to: they're outputs, which play the
-sound of everything ([Sound](#sound)); see [Displays, full screen and
-AirPlay](#displays-full-screen-and-airplay) for AirPlay displays.
-
-A device found by more than one protocol, such as a speaker with AirPlay
-and DLNA, shows under each. Settings → Casting lists it with each protocol
-(the AirPlay speakers while AirPlay looks), and the cast button's menu
-lists it to cast to with DLNA, and as an output for the window's sound,
-saying AirPlay. In the menu bar, where two items would have the same name,
-each device's protocol follows its name: Phantom (AirPlay), Phantom
-(DLNA).
-
-While a block casts, it says where it plays and how the file gets there (as
-it is, repackaged, or re-encoded), and its bar, buttons and shortcuts drive
-the device, whose position moves the bar. Speakers are offered for
-anything with sound; a video's sound goes to one while its picture plays
-on in the block, in step with what the speaker plays, and the block's
-buttons and shortcuts drive both.
-
-Video whose keyframes are more than half a minute apart, as in some screen
-recordings, is re-encoded to go as HLS, so the device can be given it a
-few seconds at a time.
-
-The subtitles picked go along and change there as they change on the
-block. Picture subtitles (PGS, DVD) in the file go drawn into the picture
-where it is re-encoded, and stay here where it isn't. Another audio or
-video track, or subtitles drawn in changing, loads the file there again
-from where it is.
-
-Playing it here again (This Computer, Play Here, or the display in the
-menu), closing the block, or the device going away ends the cast, and the
-block goes on from where the device was. Quitting stops the devices cast
-to.
-
-A Chromecast, Google TV or TV with Cast built in is offered for anything,
-and a Nest speaker or speaker group for anything with sound, a video's
-sound alone going to it as HLS while the picture plays on here, following
-it. A file goes to it as it is where its model plays that kind of file
-(MP4, WebM, MP3, AAC, FLAC, Ogg, WAV; just MP4 on a TV of another make),
-else as HLS, re-encoded where it needs to be: H.264 up to 1080p on the
-first Chromecasts and other makes' TVs, HEVC, VP9 and HDR up to 4K on an
-Ultra or a Google TV, AV1 too on a Google TV Streamer. Subtitles show
-there as Settings → Subtitles has them look (size, color, outline or
-shadow and its color, the box behind them); turning them off and on, or
-changing how they look, changes them there as it plays, and picking other
-subtitles gives it the file again from where it is. The block's volume is
-that of what plays there, so the device's own stays where it is.
-
-A DLNA TV or speaker is offered by what it lists: one that lists only
-sound, for anything with sound. A file goes to it as it is where it lists
-that kind of file, else as a stream of MPEG-TS, re-encoded where it needs
-to be; a video's sound goes to a speaker as a stream of AAC or FLAC, as
-internet radio does, while the picture plays on here, following it. A
-speaker can't seek in such a stream, so it's given the stream from where
-the block is, and again from elsewhere to seek. Picking other subtitles
-gives it the file again from where it is, as DLNA takes subtitles only
-with the file. The block's volume scales the TV's own: where it was when
-cast, the TV stays where it was.
-
-An Apple TV, or a TV with AirPlay built in, is offered for video. The
-first time, a sheet over the window asks for the PIN it shows: type it and
-press Return or Pair, and the block casts. A wrong PIN has the TV show
-another, to type instead; Escape or Cancel leaves the block playing here.
-What pairing leaves is kept in `airplay.json` beside the settings,
-readable only by you, so the TV doesn't ask again; Settings → Casting
-lists the TVs paired with, and Forget has one ask for its PIN the next
-time. A TV reset since, or that has forgotten this computer, asks again by
-itself. A receiver that lets only some devices play to it turns Plays
-away, and the sheet says what to change on it: another Mac lets only its
-own user's devices until its System Settings → General → AirDrop &
-Handoff → Allow AirPlay for is set to Anyone on the Same Network or
-Everyone, and an Apple TV or HomePod may let only its home's people, as
-the Home app's Speaker & TV access says. Everything goes to it as HLS:
-H.264 and HEVC up to 4K with HDR10, HLG and Dolby Vision on an Apple TV 4K, HEVC up to 1080p on an Apple TV
-HD, and H.264 up to 1080p on older Apple TVs and other makes' TVs. An
-Apple TV gets AAC, AC-3, E-AC-3 and ALAC up to 7.1, another TV stereo AAC.
-Subtitles go in the playlist, and the TV draws them in its own style, as
-its accessibility settings have them look; picking other subtitles gives
-it the media again from where it is. The block's volume sets the TV's own.
-
-### Screenshots
-
-`S` or Video → Take Screenshot saves the frame the block shows, at the
-video's full resolution (whatever the decode limit), turned, reshaped and
-cropped as it shows, with the subtitles showing drawn in. Files are named
-after the video and the time, `Movie 01-23-45.678.png`, and never replace
-another. A note says which folder it went to.
-
-Settings → Screenshots picks the folder (Pictures at first; Show opens
-it), PNG or JPEG and the JPEG's quality, whether subtitles go in, and how
-HDR video is saved: as an SDR screen shows it (tone mapped, with the HDR
-gamma), or as it is, in a 16-bit PNG tagged BT.2020 PQ or HLG (its cICP
-chunk), which only HDR-aware apps show right. Text subtitles are laid out
-as on a block showing just the picture, in the style Settings give them;
-bitmap ones go where the stream puts them.
-
-### Settings
-
-The Settings window has panes for Playback, Audio, Video, Subtitles,
-Casting, Screenshots, Hotkeys, Appearance, Command Line and About: the theme, master
-volume, the audio output, playing a window sent to a display through its
-speakers, the languages to play audio and show subtitles in, default
-volume, autoplay, playing several files together or one after another,
-loop, resuming files where they were left, seek step, chapter notches on the bar, fit/fill scaling, gamma for
-SDR and for HDR video (applied to every open video as you drag), decode
-resolution limit, hardware decoding, subtitle style, the protocols that
-look for devices to cast to, what they found and the AirPlay receivers
-paired with, where screenshots go and what they are like, the keys for
-every shortcut, grid columns, controls visibility, how the panels over the
-video look and which of them show, file names, the empty window's
-screensaver, and whether the
-command line may control Plays. Settings → About lists the version, the day it
-was built, and what it is built with (FFmpeg, dav1d, and GPUI from the Zed
-team), each of which opens to its license; on macOS, About Plays in the
-app menu shows the icon, version and build day in a small window of its
-own.
-
-Settings are saved as JSON in the user config folder:
-`~/Library/Application Support/plays/settings.json` on macOS,
-`~/.config/plays/settings.json` on Linux. A value in it Plays can't read
-leaves only that setting at its default, and the file as it was is kept
-beside it as `settings.json.bad`. Settings File, at the foot of the
-sidebar, opens its folder, exports a copy, imports settings from one, or
-resets every setting to its default (after asking).
-
-Each setting is also a command, by its key, the path to it in the
-settings file: `settings.set` with `subtitles.size` and `1.5` does what
-the Size slider does, taking only what Settings offers, and saves it;
-`settings.get`, `settings.reset` and `settings.ls` read one, put it back,
-and list them all with what each takes. Reload Settings reads the file
-again after it's been changed by hand, and Show Settings File shows it;
-Copy Version Info and Copy Debug Info copy the version, or what a bug
-report needs; Settings → Hotkeys can give those four keys.
-
-### Command line
-
-`plays` with a subcommand asks the Plays running and prints what it
-answers, starting Plays first if none is running (`--no-autostart` says
-so instead). Without one, `plays FILE…` opens files as before.
-
-Plays takes commands from a command line only once Settings → Command
-Line → Allow control from the command line is on. Until then it says so,
-and exits with 5; a command line can't turn it on, as it's refused.
-`plays FILE…`, `plays version`, `plays actions` and `plays completions`
-work either way, and turning it off cuts off every command line
-connected, `events` and `wait` too.
-
-On macOS, Plays → Install Command Line Tool (or Install in Settings →
-Command Line) links `/usr/local/bin/plays` to the app, and says so in an
-alert. Where Plays can't write there, the alert has the command that
-makes the link in a terminal, asking for your password, and Copy
-Command copies it.
+Shortcuts go to the block under the mouse, or the one the keys went to.
+With `⇧`, they go to every block in every window. Change them in Settings
+→ Hotkeys, or with Change Shortcut (`⌘↩`) in the command palette.
+
+## Good to know
+
+- **Subtitle files** beside `Movie.mkv` are its tracks: `Movie.srt`,
+  `Movie.en.srt`, `Movie.English.forced.ass` and so on, also in a `Subs`
+  or `Subtitles` folder, and everything in `Subs/Movie/`.
+- **Cover art**: a sound file's own, else `cover.jpg` (or `.jpeg`, `.png`,
+  `.tif`, `.tiff`) beside it.
+- **Settings** are in `~/Library/Application Support/plays/settings.json`
+  on macOS and `~/.config/plays/settings.json` on Linux.
+- **An AirPlay TV or projector**: connect it from Control Center → Screen
+  Mirroring as a separate display, then pick it in Video → Output Device.
+  To have an Apple TV play the file itself, cast to it.
+- **Auracast**: macOS can't broadcast it. Use a USB Auracast transmitter,
+  which is a sound output like any other. On Linux, an LE Audio adapter
+  can broadcast with a recent BlueZ, PipeWire and WirePlumber set up for it
+  (the `bap_bcast_source` role).
+
+## Command line
+
+Off until Settings → Command Line turns it on. On macOS, Plays → Install
+Command Line Tool puts `plays` in `/usr/local/bin`.
 
 ```bash
 plays ls                                  # windows, each with its blocks
 plays open ~/Movies/film.mkv              # in the window in front
-plays open --new-window a.mkv b.mkv
 plays -w Kitchen block ls                 # the window labeled Kitchen
 plays do playback.seek time=90            # any command, by its id
 plays -b 2 do audio.set_volume volume=40  # on the second block
-plays block rename 2 Commentary
-plays window move Kitchen --after 1
 plays wait ended -b 1 --timeout 600       # until the first block ends
 plays events --json                       # every change, a JSON line each
-plays -w Kitchen events                   # the Kitchen window's alone
 plays settings set autoplay false
-plays keymap                              # the shortcuts as they are now
-plays actions                             # every command, Plays or not
+plays actions                             # every command
 ```
 
-- `-w` names a window and `-b` a block: by id, label, number (from 1, as
-  ⌘1 to ⌘9 count windows and the grid counts blocks), or the end of an
-  id; `#2` names the second alone, as ⌘2 does. Without them, it's the
-  window in front and the block keys go to.
-- `--json` prints what comes back as JSON, one line an event for
-  `events` and `wait`.
-- `do` takes each argument as `KEY=VALUE`, read as the command takes it:
-  text stays text (`label=1984`), anything else is read as JSON, and a
-  key given again makes a list. `api call` takes them as a JSON object.
-- `events` prints every change as it comes: the app's, and each window's
-  and block's, or with `-w` only that window's and its blocks'. As Plays
-  quits, it prints each window closing, then `quit`, and ends.
-- `wait` prints the event once it comes (one that has ended already has),
-  and fails if the block or window closes first, Plays quits, or
-  `--timeout` runs out. `wait quit` waits for Plays to quit.
-- The events of how a file plays (`playing`, `paused`, `seeked`, `ended`,
-  and `position` with `--positions`) say where it is three ways:
-  `position`, how far through it is from 0 to 1 (none for a live
-  stream); `time`, in seconds; and `frame`, the number of the frame
-  showing then, from 0 (none for sound alone).
-- An event about a window or a block names it by id and title:
-  `window_id` and `window_title`, as its title bar shows it (its label,
-  or else Plays), and `block_id` and `block_title`, as its header shows it
-  (its label, or else the title of what it plays).
-- [docs/commands.md](docs/commands.md) describes every command, with
-  the events it tells, and every event: who hears it, its payload, and
-  the commands and whatever else it follows. `plays actions --markdown`
-  writes it.
-- It exits with 0 when it's done, 1 when Plays couldn't do it, 2 for a
-  bad command line, 3 for nothing by the name given, 4 when there's no
-  Plays to ask, or it closed the connection before answering, and 5
-  while control from the command line is off.
-- A word that is neither a subcommand nor a file or folder there is taken
-  for a mistyped subcommand, not handed to Plays.
-- `PLAYS_SOCKET` names another socket to ask at.
+- `-w` names a window and `-b` a block, by id, label or number. Without
+  them, it's the window in front and the block keys go to.
+- `--json` prints JSON.
+- [docs/commands.md](docs/commands.md) has every command and event.
+- Exit codes: 0 done, 1 failed, 2 bad command line, 3 nothing by that
+  name, 4 no Plays to ask, 5 command line control off.
 
-`plays completions SHELL` prints the script that has bash, zsh, fish or
-Nushell (`nushell`, or `nu`) complete the subcommands and options, each
-command's id after `do`, `api describe` and `api call` (with its title,
-in zsh, fish and Nushell), and the setting keys after `settings get` and
-`set`. It needs no Plays running, and works with control from the command
-line off. Nushell finds a subcommand's words only with `-w` and `-b` after
-it (`plays do -w 2 …`), not before. Keep it where the shell finds it:
+Completions for bash, zsh, fish and Nushell:
 
 ```bash
-plays completions bash > ~/.local/share/bash-completion/completions/plays  # or source it in ~/.bashrc
-```
-
-```bash
+plays completions bash > ~/.local/share/bash-completion/completions/plays
 plays completions zsh > ~/.zfunc/_plays  # with fpath=(~/.zfunc $fpath) before compinit
-```
-
-```bash
 plays completions fish > ~/.config/fish/completions/plays.fish
 ```
 
@@ -933,128 +220,36 @@ plays completions fish > ~/.config/fish/completions/plays.fish
 mkdir ($nu.user-autoload-dirs | first); plays completions nushell | save -f ($nu.user-autoload-dirs | first | path join plays.nu)
 ```
 
-Run it again after updating Plays, for the commands it has then.
-
 ## Limitations
 
-- On Linux, frames decoded on the GPU are copied back to memory and
-  uploaded again to be drawn, though converting them to RGB happens on the
-  GPU. Dolby Vision, and formats other than 8- and 10-bit 4:2:0, are
-  converted on the CPU. Lower the decode resolution limit in Settings when
-  playing many high-resolution files. On macOS, videos VideoToolbox can't
-  decode, such as VP9, are converted on the CPU too.
-- HDR goes brighter than SDR white only on macOS, and only for video
-  decoded by VideoToolbox; software-decoded HDR is tone mapped to SDR. HDR
-  metadata (mastering display, content light level, HDR10+ and Dolby
-  Vision's per-scene brightness and trims) isn't used. Dolby Vision
-  profiles with an HDR10 or HLG picture (7, 8) show that picture; profile
-  7's enhancement layer is ignored.
-- Resuming a paused live stream continues from where it paused rather than
-  jumping to the live edge, and after a long pause the server may have
-  closed the connection.
-- Subtitles: ASS styling (fonts, colors, sizes, positions, effects) isn't
-  used, only italics, bold and top/middle/bottom placement. A cue in the
-  file that started before the keyframe a seek lands on is missed (one in
-  a subtitle file beside it isn't, unless it started over 30 seconds
-  before). Subtitle files can't be dropped on a block. Subtitles in the
-  video file itself are read about a second ahead with it, so moved
-  earlier than that they show late. In a live stream, a new track starts
-  with its next packets rather than at the playhead.
-- Picture in Picture is macOS only, from macOS 12. Its window shows the
-  video turned (from macOS 13; before, as decoded) but not reshaped,
-  cropped or with the gamma from Settings, and can't show Dolby Vision
-  profile 5. AVKit doesn't fit the video to its window by itself, so Plays
-  lays out AVKit's own layers there, which a later macOS may change.
-- Screenshots of live streams can't be taken (the frame can't be found
-  again). Text subtitles in a screenshot are laid out for the picture
-  rather than the block, so in a small block, whose text is held to a least
-  size, they come out relatively smaller. HDR JPEGs (with a gain map)
-  aren't made, and HDR PNGs carry no mastering display or light level
-  metadata.
-- Picture adjustments and delays aren't kept: a file opens as its file
-  has it. A display matrix that isn't a quarter turn goes to the nearest
-  one, and text subtitles stay upright when the picture turns.
-- No playback speed. A playlist is the files opened together, kept only
-  while its block is open: none is saved, and a playlist file (`.m3u`,
-  `.pls`) isn't read as files to play in turn.
-- On Linux, outputs aren't watched for coming and going while the one
-  wanted is playing: the device list in Settings → Audio is read again
-  when its menu opens. ALSA's own error messages about plugins with
-  nothing behind them show in the terminal when it does.
-- On Linux, ALSA names a TV's HDMI output after the sound card (`HDMI 0`),
-  not the TV, so a window sent to a TV keeps its sound unless an output is
-  named after the display, as one defined in `~/.asoundrc` can be. Whether
-  macOS names them right has been checked with displays named as their
-  outputs, not on a TV yet.
-- On GNOME Wayland (client-side decorations) the window can be moved from
-  the toolbar but has no resize handles.
-- Windows can't float on top under Wayland, which has no way for an app to
-  ask for it; on X11 it takes a window manager that keeps windows above
-  (`_NET_WM_STATE_ABOVE`), as most do.
-- Casting re-encodes video only on a hardware encoder, so a computer
-  without one (Linux without NVENC or VA-API) can't cast video a device
-  doesn't play as it is. Video decodes in software for it. HDR re-encoded
-  for a device without HDR isn't tone mapped, and re-encoded HDR keeps no
-  mastering or light level metadata. Picture subtitles (PGS, DVD) go only
-  drawn into video re-encoded: where the video goes as it is they stay
-  out, as do those in a file of their own, and one already showing where
-  a seek starts the stream again shows only from the next. Text subtitles
-  lose their placement, and a track in the media is read through the whole
-  file first.
-- While a block casts, delays don't apply, as the device plays the picture
-  and the sound; gamma, crop, rotation, flips, aspect ratio, and picture
-  subtitles where the video isn't re-encoded, stay on this computer (the
-  block says so), and frames can't be stepped.
-- AirPlay speakers aren't cast to: they're outputs, playing the sound of
-  everything, or a window's. Mirrored, an AirPlay display shows the whole
-  screen; as a separate display, just the window. The Output Device menus
-  are macOS only.
-- Listing and connecting Bluetooth headphones hasn't been checked with
-  real ones yet, only pretend ones in tests: that a device's output takes
-  the id Plays lists it under (`coreaudio:`, its address, `:output`) is
-  what macOS showed for one pair of headphones. Linux lists and connects
-  none itself.
-- Playing through AirPlay speakers hasn't been checked with real ones
-  yet, only pretend ones: none was on hand, so how well the sound keeps
-  in step with the picture on a real speaker is unknown. The sound goes
-  uncompressed, which a busy Wi-Fi network may not keep up with. One
-  output plays through one speaker; several aren't played through in
-  step as a group. A speaker with a password set, an AirPlay 1 speaker
-  that takes sound only in FairPlay or MFi encryption, and a HomePod that
-  lets only people in the same home play to it can't be played through.
-- Casting to AirPlay hasn't been checked with a real Apple TV yet, only a
-  pretend one: none was on hand. AirPlay is Apple's own and unpublished,
-  and Plays speaks it as others have worked it out, so a tvOS update can
-  break it. A TV with a password set, rather than a PIN, can't be cast to.
-  What one plays goes by the model it says it is; a TV of another make
-  gets H.264 and stereo AAC, which it may play more than. Subtitles take
-  the TV's own style, not Settings', and picking others starts the media
-  again from where it is, after a moment's wait.
-- Casting to a Chromecast hasn't been checked with a real one yet, only
-  a pretend one: none was on hand. What one plays goes by the model it
-  says it is, and a Google TV that calls itself just "Chromecast" is
-  taken for one of the first, getting H.264 up to 1080p; a TV of another
-  make gets H.264 and AAC in MP4 or HLS, which it may play more than.
-  Surround sound goes as stereo AAC, and Dolby Vision is re-encoded. A
-  receiver that applies the stream's volume to the device's own turns
-  that instead. Subtitles take Settings' font, size, colors, edge and box,
-  the weight only as bold or not, and not their placement or the area they
-  go in. An HLS stream from the internet is handed over as it is, and one
-  whose server doesn't let other sites have it (CORS) won't play.
-- Plays takes whatever certificate a Chromecast offers, not checking it
-  against Google's device certificates, so it can't tell a genuine device
-  from something on the network pretending to be one.
-- DLNA renderers are found over IPv4 only. Subtitles on a DLNA TV depend
-  on the TV, as DLNA has none of its own: most take SRT one way or the
-  other, some neither, and changing them loads the file again. A DLNA TV
-  has only its own volume, which the block's scales. One that doesn't say
-  what it plays gets H.264 and AAC in MPEG-TS, which it may still not
-  play, and one that won't seek while stopped starts from the beginning a
-  moment first. A renderer that neither sends events nor answers when
-  asked where it is can't be followed.
-- The stream server listens on every interface, so the firewall may ask to
-  let Plays take incoming connections, and on macOS 15 and later looking
-  for devices asks to use the local network.
+- On Linux, frames decoded on the GPU are copied back to memory to be
+  drawn. Lower the decode limit in Settings for many large videos.
+- HDR goes brighter than SDR white only on macOS, decoded by
+  VideoToolbox. HDR metadata isn't used, and Dolby Vision profile 7's
+  enhancement layer is ignored.
+- No playback speed. Playlist files (`.m3u`, `.pls`) aren't read.
+- ASS styling is used only for italics, bold and placement.
+- Picture adjustments and delays aren't kept when a file opens again.
+- A paused live stream goes on from where it paused, not the live edge,
+  and can't be screenshotted.
+- Picture in Picture ignores crop, aspect ratio and gamma.
+- On Wayland, windows can't float on top or be placed, and on GNOME they
+  have no resize handles.
+- On Linux, ALSA names a TV's HDMI output after the sound card, so a window
+  sent to a TV keeps its sound.
+- Casting re-encodes video only with a hardware encoder. While a block
+  casts, delays, picture adjustments and frame steps don't apply.
+- AirPlay speakers with a password, AirPlay 1 speakers with FairPlay or
+  MFi, and HomePods that let only their home play to them can't be played
+  through. Several speakers aren't played through as a group.
+- AirPlay, Chromecast and Bluetooth headphones have been tested with
+  pretend devices only, not real ones.
+- A Chromecast's certificate isn't checked against Google's.
+- DLNA devices are found over IPv4 only, and their subtitles depend on the
+  TV.
+- The cast stream server listens on every interface, so the firewall may
+  ask about it, and on macOS 15 and later looking for devices asks to use
+  the local network.
 
 ## Working on Plays
 
