@@ -207,30 +207,6 @@ impl SettingsView {
         self.scroll.set_offset(Point::default());
     }
 
-    /// Open Settings at Hotkeys, waiting for keys to add to `command`'s
-    /// shortcuts, its row scrolled into view: Change Shortcut… in the
-    /// command palette.
-    pub fn record_shortcut(command: &'static str, cx: &mut App) {
-        Self::open_window(cx);
-        let Some(handle) = cx.try_global::<SettingsWindow>().map(|open| open.0) else {
-            return;
-        };
-        let opened = handle.update(cx, |view, window, cx| {
-            if let Some(index) = PANES
-                .iter()
-                .position(|pane| pane.name() == hotkeys::HotkeysPane.name())
-            {
-                view.show(index);
-            }
-            view.recording.start(command, &view.scroll);
-            window.focus(&view.focus_handle);
-            cx.notify();
-        });
-        if let Err(err) = opened {
-            log::warn!("can't reach Settings: {err}");
-        }
-    }
-
     /// Whether the slider `id` is being dragged, which it keeps between
     /// frames.
     fn drag(&mut self, id: &'static str) -> Rc<Cell<bool>> {

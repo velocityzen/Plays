@@ -6,25 +6,24 @@
 
 use std::collections::BTreeMap;
 
-use gpui::{DummyKeyboardMapper, KeyBinding, KeyBindingContextPredicate, Keystroke};
+use gpui::{App, DummyKeyboardMapper, KeyBinding, KeyBindingContextPredicate, Keystroke};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 
-use crate::api::{self, Reach, Run, Spec};
+use crate::api::{self, Invocation, Reach, Run, Spec};
+use crate::settings::Settings;
 
-/// The key context a player window's keys work in: a window with files
-/// open, but not while typing in a text field there (the stream URL), so
-/// Space and letters type.
-pub const CONTEXT: &str = "Workspace && !TextInput";
-
-/// Where `key` works, given to a command whose keys reach `reach`. A key
-/// that types (one without ⌘ or Ctrl) doesn't work while typing, and one
-/// that works anywhere doesn't while Settings waits for keys to record
-/// (its key context then has `Recording`), so it can take them.
+/// Where `key` works, given to a command whose keys reach `reach`: a
+/// player window's in one with files open. A key that types (one without
+/// ⌘ or Ctrl) doesn't work while typing, in a text field there (the
+/// stream URL), so Space and letters type; and none works while Settings
+/// or the palette waits for keys to record (the key context then has
+/// `Recording`), so it can take them.
 fn context(reach: Reach, key: &Keystroke) -> &'static str {
     let types = !(key.modifiers.platform || key.modifiers.control);
     match (reach, types) {
-        (Reach::NotTyping, _) | (Reach::Files, true) => CONTEXT,
-        (Reach::Files, false) => "Workspace",
+        (Reach::NotTyping, _) | (Reach::Files, true) => "Workspace && !TextInput && !Recording",
+        (Reach::Files, false) => "Workspace && !Recording",
         (Reach::Anywhere, true) => "!TextInput && !Recording",
         (Reach::Anywhere, false) => "!Recording",
     }
@@ -194,6 +193,45 @@ fn is_earlier_default(command: &str, keys: &[String]) -> bool {
                     .zip(keys)
                     .all(|(default, key)| normalize(default).as_ref() == Some(key))
         })
+}
+
+/// Whether `key` is one `command` starts out with.
+pub fn is_default(command: &str, key: &str) -> bool {
+    api::find(command).is_some_and(|spec| default_keys(spec).iter().any(|k| k == key))
+}
+
+/// Give `command` the keys `pressed`, saved as Settings → Hotkeys and the
+/// palette record them, through the API (`settings.set`): its keys now,
+/// and, where they were another command's, a note saying whose.
+pub fn record(command: &str, pressed: &Keystroke, cx: &mut App) -> (Vec<String>, Option<String>) {
+    let key = Keystroke {
+        modifiers: pressed.modifiers,
+        key: pressed.key.clone(),
+        key_char: None,
+    }
+    .unparse();
+    let mut hotkeys = cx.global::<Settings>().hotkeys.clone();
+    let taken = hotkeys.add(command, &key);
+    save(&hotkeys, cx);
+    let note = taken.map(|from| {
+        let title = api::find(from).map_or(from, |spec| spec.title);
+        format!("{} was for “{}”", display(&key), title)
+    });
+    (hotkeys.keys(command).to_vec(), note)
+}
+
+/// Take `key` from `command`'s keys, saved as `record` saves them: its
+/// keys now.
+pub fn unrecord(command: &str, key: &str, cx: &mut App) -> Vec<String> {
+    let mut hotkeys = cx.global::<Settings>().hotkeys.clone();
+    hotkeys.remove(command, key);
+    save(&hotkeys, cx);
+    hotkeys.keys(command).to_vec()
+}
+
+fn save(hotkeys: &Hotkeys, cx: &mut App) {
+    let args = json!({"key": "hotkeys", "value": hotkeys});
+    api::dispatch(Invocation::new("settings.set").with_args(args), cx);
 }
 
 /// How a keystroke is shown: `⌃⌘F` on macOS, `Ctrl+Alt+F` elsewhere.

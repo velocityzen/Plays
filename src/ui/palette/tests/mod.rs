@@ -10,7 +10,6 @@ use crate::api::{self, Invocation, Source, Target};
 use crate::app::player_windows;
 use crate::files::Folder;
 use crate::settings::Settings;
-use crate::ui::settings::SettingsView;
 use crate::ui::testing::{self, OPEN_WAIT, fixture, press, shows, wait_until};
 use crate::ui::theme::layout::WINDOW_SIZE;
 use crate::ui::workspace::Workspace;
@@ -59,7 +58,7 @@ pub(super) fn painted(cx: &mut VisualTestContext, text: &str) -> bool {
 }
 
 /// How many times `text` is drawn.
-fn times_painted(cx: &mut VisualTestContext, text: &str) -> usize {
+pub(super) fn times_painted(cx: &mut VisualTestContext, text: &str) -> usize {
     testing::painted(cx)
         .iter()
         .filter(|(drawn, _)| drawn == text)
@@ -233,7 +232,7 @@ fn a_click_runs_a_row(cx: &mut TestAppContext) {
     cx.update(|_, cx| api::record(cx));
     open_palette(&mut cx);
     type_in(&mut cx, "new window");
-    // Its title, not the Change Shortcut… button the row picked has.
+    // On its title, where someone would click it.
     let row = testing::find(&mut cx, "palette-row-window.new");
     let title = point(row.origin.x + px(40.), row.center().y);
     cx.simulate_mouse_move(title, None, Modifiers::none());
@@ -592,12 +591,10 @@ fn the_footer_says_what_return_and_command_return_do_and_each_can_be_clicked(
     type_in(&mut cx, "new window");
     testing::click(&mut cx, "palette-change-shortcut");
     cx.run_until_parked();
-    assert!(palette(window, &cx).is_none());
-    assert!(
-        cx.windows()
-            .into_iter()
-            .any(|window| window.downcast::<SettingsView>().is_some()),
-        "Settings opens"
+    assert_eq!(
+        read(window, &cx, Palette::changing),
+        Some("window.new"),
+        "its keys listed, in the palette"
     );
 }
 
@@ -642,36 +639,6 @@ fn listed_first_of(
 }
 
 #[gpui::test]
-fn change_shortcut_records_one_in_settings(cx: &mut TestAppContext) {
-    let (window, mut cx) = testing::start(cx);
-    open_palette(&mut cx);
-    type_in(&mut cx, "new window");
-    assert!(
-        shows(&mut cx, "palette-change-shortcut"),
-        "in the footer, for the row picked"
-    );
-    press_and_wait(&mut cx, "secondary-enter");
-    assert!(palette(window, &cx).is_none());
-    let handle = cx
-        .windows()
-        .into_iter()
-        .find_map(|window| window.downcast::<SettingsView>())
-        .expect("Settings opens");
-    let mut settings = VisualTestContext::from_window(handle.into(), &cx);
-    settings.update(|window, _| window.activate_window());
-    settings.run_until_parked();
-    assert!(
-        shows(&mut settings, "hotkey-recording-window.new"),
-        "waiting for keys"
-    );
-    press(&mut settings, "secondary-shift-y");
-    settings.run_until_parked();
-    let keys = settings.update(|_, cx| cx.global::<Settings>().hotkeys.keys("window.new").to_vec());
-    let key = crate::hotkeys::normalize("secondary-shift-y").unwrap();
-    assert!(keys.contains(&key), "{keys:?}");
-}
-
-#[gpui::test]
 fn a_command_that_takes_no_keys_has_no_shortcut_to_change(cx: &mut TestAppContext) {
     let (window, mut cx) = testing::start(cx);
     open_palette(&mut cx);
@@ -683,6 +650,7 @@ fn a_command_that_takes_no_keys_has_no_shortcut_to_change(cx: &mut TestAppContex
     assert!(!shows(&mut cx, "palette-change-shortcut"));
     press_and_wait(&mut cx, "secondary-enter");
     assert!(palette(window, &cx).is_some(), "it stays up");
+    assert_eq!(read(window, &cx, Palette::changing), None);
 }
 
 /// How the palette first asks for each command's arguments, from the

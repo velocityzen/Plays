@@ -693,8 +693,11 @@ flowchart LR
   Each key runs its command's `Run` in the key context its `Reach` gives:
   a player window's keys in `Workspace && !TextInput`, so space and
   letters type in a text field; ⌘W and ⌘⇧W, for the file in front, in
-  `Workspace`; and those that work anywhere in `!Recording` (and not
-  `TextInput` for one without ⌘ or Ctrl), so Settings can record them. A
+  `Workspace`; and those that work anywhere (and not in `TextInput`, for
+  one without ⌘ or Ctrl) everywhere else. None works in `Recording`, so
+  Settings and the palette can record them. `record` and `unrecord` add
+  and take away a command's key and save the keys with `settings.set`,
+  for both. A
   key goes to one command of those that work in player windows and one of
   those that work anywhere; the player window's is bound last, and wins
   there. The settings file keeps only the keys changed, each under the
@@ -875,10 +878,7 @@ flowchart LR
   resetting every setting replace them whole. Hotkeys lists every command
   that takes keys, a card for each namespace; while it waits for keys to
   record, its key
-  context has `Recording`, which the keys that work anywhere stay out of.
-  `record_shortcut` opens it on Hotkeys waiting for a command's keys, its
-  row scrolled into view once drawn, as the palette's Change Shortcut
-  does.
+  context has `Recording`, which every command's keys stay out of.
   About shows the version, Plays' license and what it is built with:
   FFmpeg, dav1d and GPUI, crediting the Zed team, from
   `resources/attributions.json`, each opening to its license, one at a
@@ -899,8 +899,14 @@ flowchart LR
   the queries (`tile.inspect`, `display.ls` and so on) once the window
   is free; or typed, a time, a number in range, a path or a URL, read as
   the argument takes it and said why not until it will do. Change
-  Shortcut hands the command to Settings. With nothing typed, the rows
-  are under a heading for each namespace, Recent first (`Line`); found,
+  Shortcut (`shortcut`) lists the command's keys in place of the rows,
+  under their heading, Default by those it starts out with: the palette
+  takes the focus from its field and its key context has `Recording`, so
+  a key pressed, but for the arrows, Return and Escape, reaches its
+  `on_key_down` and is added (`hotkeys::record`), a note saying whose it
+  was; Return or a click removes the key picked, and Escape goes back to
+  the commands, their keys as they are now. With nothing typed, the
+  rows are under a heading for each namespace, Recent first (`Line`); found,
   they're ranked with none, each saying its namespace after its name.
   The row picked is filled with the accent color, and pointing at one
   picks it, so the mouse and the arrows move the same row. A footer says

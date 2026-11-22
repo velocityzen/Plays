@@ -193,8 +193,13 @@ GPU-accelerated UI framework.
   a display, a setting and its value from a list, the one now picked
   first; a time, a volume or a path typed, and said why it won't do.
 - The footer says what Return does and, for a command that takes keys,
-  Change Shortcut (⌘↩), which records a new shortcut for it in
-  Settings → Hotkeys. Either can be clicked.
+  Change Shortcut (⌘↩). Either can be clicked.
+- Change Shortcut lists the command's shortcuts in the palette itself,
+  those it starts out with marked Default. Press keys to add one (a key
+  another command had moves to it, and the palette says whose it was);
+  pick one with the arrows and press Return, or click it, to remove it.
+  Escape goes back to the commands. The arrows, Return and Escape aren't
+  recorded there; Settings → Hotkeys records those too.
 - ⌘P (Go to…) lists the windows, their tiles, the files in the folder of
   the tile in front and those played lately, under a heading for each,
   found by name the same way.
@@ -338,8 +343,8 @@ that failed, still shows. Subtitles don't move up for controls that are
 hidden. The `view` commands do the same from the command line or the
 command palette.
 
-To change shortcuts, open Settings → Hotkeys, click + by a command and
-press the keys; a key another command had moves to it, and Restore brings
+To change shortcuts, use Change Shortcut (⌘↩) in the command palette, or
+open Settings → Hotkeys, click + by a command and press the keys; a key another command had moves to it, and Restore brings
 the defaults back. Every command that needs nothing more is there, in a
 card for each part of the app, the app's own (⌘O, ⌘W and so on) too. A
 key moves only from a command that works where it does: given to a

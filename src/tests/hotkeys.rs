@@ -80,7 +80,13 @@ fn binds_each_key_where_its_command_works() {
     let player = [root.clone(), context("Workspace")];
     let typing = [root.clone(), context("Workspace"), context("TextInput")];
     let elsewhere = [root.clone(), context("Settings")];
-    let recording = [root, context("Settings Recording")];
+    let recording = [root.clone(), context("Settings Recording")];
+    // The palette over a player window, waiting for keys.
+    let palette_recording = [
+        root,
+        context("Workspace"),
+        context("CommandPalette Recording"),
+    ];
     // An empty player window sets no context.
     let empty: [KeyContext; 0] = [];
     let run = |key: &str, contexts: &[KeyContext]| bound(&keymap, key, contexts);
@@ -121,6 +127,10 @@ fn binds_each_key_where_its_command_works() {
         assert_eq!(run("ctrl-tab", contexts).as_deref(), Some("window.next"));
     }
     assert_eq!(run("secondary-o", &recording), None);
+    // None of them while the palette records a key over a player window.
+    for key in ["space", "secondary-shift-l", "secondary-w", "secondary-o"] {
+        assert_eq!(run(key, &palette_recording), None, "{key}");
+    }
 
     // With the window's Close given other keys, ⌘W closes the file in
     // front while typing too.

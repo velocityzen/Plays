@@ -6,7 +6,6 @@ use gpui::{AppContext as _, Context, Window};
 use super::Workspace;
 use crate::api::{self, Target};
 use crate::ui::palette::{Listing, Palette, PaletteEvent};
-use crate::ui::settings::SettingsView;
 
 impl Workspace {
     /// Show the palette listing `listing`, what it runs aimed at this
@@ -31,9 +30,6 @@ impl Workspace {
             cx.notify();
             match event {
                 PaletteEvent::Run(invocation) => api::dispatch(invocation.clone(), cx),
-                &PaletteEvent::ChangeShortcut(command) => {
-                    cx.defer(move |cx| SettingsView::record_shortcut(command, cx));
-                }
                 PaletteEvent::Dismiss => {}
             }
         });

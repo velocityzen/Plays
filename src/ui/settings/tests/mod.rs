@@ -311,20 +311,17 @@ fn languages_are_added_moved_and_taken_off_in_audio_and_subtitles(cx: &mut TestA
         click(&mut settings, remove);
         assert_eq!(chosen(&mut settings), ["ara"], "{pane}: taken off");
 
-        // Left open, the menu is shut as another pane shows, as Change
-        // Shortcut… shows Hotkeys.
+        // Left open, the menu is shut by a click on another pane, which
+        // the next shows, and stays shut there and back.
         click(&mut settings, add);
         assert!(shows(&mut settings, afrikaans), "{pane}: open");
-        // Outside the window's update, which it updates.
-        TestAppContext::update(&settings, |cx| {
-            SettingsView::record_shortcut("playback.play_pause", cx);
-        });
-        settings.run_until_parked();
+        click(&mut settings, "pane-Hotkeys");
+        assert!(!shows(&mut settings, afrikaans), "{pane}: shut");
+        click(&mut settings, "pane-Hotkeys");
         assert!(
-            shows(&mut settings, "hotkey-recording-playback.play_pause"),
+            shows(&mut settings, "restore-hotkeys"),
             "{pane}: Hotkeys shows"
         );
-        press(&mut settings, "escape");
         click(&mut settings, pane);
         assert!(!shows(&mut settings, afrikaans), "{pane}: shut since");
     }
@@ -723,4 +720,16 @@ fn hotkeys_lists_every_command_that_takes_keys_and_records_any_key(cx: &mut Test
     press(&mut settings, "secondary-o");
     assert!(keys("app.settings", &mut settings).contains(&cmd_o));
     assert!(!keys("window.open_files", &mut settings).contains(&cmd_o));
+    let note = format!("{} was for “Open…”", crate::hotkeys::display(&cmd_o));
+    assert!(
+        testing::painted(&mut settings)
+            .iter()
+            .any(|(text, _)| *text == note),
+        "{note}"
+    );
+
+    let remove: &'static str =
+        Box::leak(format!("hotkey-remove-window.open_files-{cmd_shift_k}").into_boxed_str());
+    click(&mut settings, remove);
+    assert!(!keys("window.open_files", &mut settings).contains(&cmd_shift_k));
 }

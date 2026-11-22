@@ -8,8 +8,9 @@
 //! accent color, and pointing at a row picks it. Return runs the one
 //! picked, through the API as from the palette, asking first for the
 //! arguments it takes (`asking`), picked from a list or typed. ⌘Return
-//! changes its keys in Settings → Hotkeys. The footer says what both do,
-//! and either can be clicked. Escape, or a click outside, closes it.
+//! changes its keys, there in the palette (`shortcut`). The footer says
+//! what both do, and either can be clicked. Escape, or a click outside,
+//! closes it.
 //!
 //! Go to… (⌘P, `window.go_to`) is the same sheet listing places instead
 //! (`places`): the windows, their tiles, the files in the front tile's
@@ -19,6 +20,7 @@
 mod asking;
 mod places;
 mod search;
+mod shortcut;
 #[cfg(test)]
 #[path = "tests/mod.rs"]
 mod tests;
@@ -28,9 +30,10 @@ use std::ops::Range;
 
 use gpui::prelude::*;
 use gpui::{
-    AnyElement, App, Context, Div, Entity, EventEmitter, Focusable, FontWeight, HighlightStyle,
-    Hsla, KeyBinding, MouseButton, ScrollStrategy, SharedString, Stateful, StyledText,
-    Subscription, UniformListScrollHandle, Window, actions, black, div, uniform_list, white,
+    AnyElement, App, Context, Div, Entity, EventEmitter, FocusHandle, Focusable, FontWeight,
+    HighlightStyle, Hsla, KeyBinding, MouseButton, ScrollStrategy, SharedString, Stateful,
+    StyledText, Subscription, UniformListScrollHandle, Window, actions, black, div, uniform_list,
+    white,
 };
 use serde_json::{Map, Value};
 
@@ -49,6 +52,7 @@ use crate::settings::Settings;
 use asking::{Ask, Choice, Question};
 use places::Place;
 use search::{Found, Haystack};
+use shortcut::Changing;
 
 pub use places::places;
 
@@ -58,6 +62,10 @@ actions!(
 );
 
 const CONTEXT: &str = "CommandPalette";
+
+/// Its key context while it waits for keys to add to a command's: keys
+/// that work anywhere or in a player then stay out of the way.
+const RECORDING: &str = "CommandPalette Recording";
 
 /// The command that opens it, which it doesn't list.
 pub const COMMAND: &str = "window.command_palette";
@@ -157,6 +165,13 @@ fn listed(spec: &Spec) -> bool {
     !spec.query && !spec.needs_target && spec.id != COMMAND
 }
 
+/// Keys as the menus show them.
+fn shown_keys(keys: &[String]) -> Vec<SharedString> {
+    keys.iter()
+        .map(|key| hotkeys::display(key).into())
+        .collect()
+}
+
 /// Every command that can run on `window` (a target naming one), as it is
 /// now, with its keys.
 pub fn entries(window: &Target, cx: &mut App) -> Vec<Entry> {
@@ -168,11 +183,7 @@ pub fn entries(window: &Target, cx: &mut App) -> Vec<Entry> {
             continue;
         }
         let state = api::state(spec.id, &target, cx).map_or(State::Nothing, |now| State::of(&now));
-        let keys = hotkeys
-            .keys(spec.id)
-            .iter()
-            .map(|key| hotkeys::display(key).into())
-            .collect();
+        let keys = shown_keys(hotkeys.keys(spec.id));
         entries.push(Entry {
             spec,
             group: group(spec),
@@ -310,8 +321,6 @@ pub fn order_choices(query: &str, choices: &[Choice]) -> Vec<Row> {
 pub enum PaletteEvent {
     /// Run this, from the palette.
     Run(Invocation),
-    /// Change the keys of this command, in Settings.
-    ChangeShortcut(&'static str),
     Dismiss,
 }
 
@@ -347,6 +356,11 @@ pub struct Palette {
     /// The row Return picks.
     selected: usize,
     asking: Option<Asking>,
+    /// The command whose keys are changing, in place of the list.
+    changing: Option<Changing>,
+    /// Its own, which has the focus while keys are changing, so they
+    /// aren't typed.
+    focus_handle: FocusHandle,
     /// Waiting to know what to ask next, which is read once the event
     /// that picked a command is handled.
     waiting: bool,
@@ -382,6 +396,8 @@ impl Palette {
             lines: Vec::new(),
             selected: 0,
             asking: None,
+            changing: None,
+            focus_handle: cx.focus_handle(),
             waiting: false,
             error: None,
             scroll: UniformListScrollHandle::new(),
@@ -430,7 +446,11 @@ impl Palette {
     }
 
     pub fn focus(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        window.focus(&self.input.focus_handle(cx));
+        if self.changing.is_some() {
+            window.focus(&self.focus_handle);
+        } else {
+            window.focus(&self.input.focus_handle(cx));
+        }
     }
 
     /// List what's typed finds, the best picked.
@@ -491,7 +511,7 @@ impl Palette {
         let Listing::Commands { entries, .. } = &self.listing else {
             return None;
         };
-        if self.asking.is_some() {
+        if self.asking.is_some() || self.changing.is_some() {
             return None;
         }
         let row = self.rows.get(self.selected)?;
@@ -508,9 +528,13 @@ impl Palette {
     }
 
     /// Take the row picked, or what's typed: run the command, or ask for
-    /// what it takes next.
+    /// what it takes next; remove the key, while keys are changing.
     fn pick(&mut self, cx: &mut Context<Self>) {
         if self.waiting {
+            return;
+        }
+        if self.changing.is_some() {
+            self.remove_picked(cx);
             return;
         }
         let Some(asking) = &self.asking else {
@@ -628,13 +652,22 @@ impl Palette {
         cx.emit(PaletteEvent::Run(invocation));
     }
 
-    fn cancel(&mut self, _: &Cancel, _: &mut Window, cx: &mut Context<Self>) {
-        cx.emit(PaletteEvent::Dismiss);
+    /// Back to the commands, while keys are changing; else close.
+    fn cancel(&mut self, _: &Cancel, window: &mut Window, cx: &mut Context<Self>) {
+        if self.changing.is_some() {
+            self.stop_changing(window, cx);
+        } else {
+            cx.emit(PaletteEvent::Dismiss);
+        }
     }
 
-    fn change_shortcut(&mut self, _: &ChangeShortcut, _: &mut Window, cx: &mut Context<Self>) {
-        if let Some(spec) = self.selected_spec().filter(|spec| spec.takes_keys()) {
-            cx.emit(PaletteEvent::ChangeShortcut(spec.id));
+    /// Change the keys of the command picked; while they are changing,
+    /// ⌘Return is a key like any other, to add.
+    fn change_shortcut(&mut self, _: &ChangeShortcut, window: &mut Window, cx: &mut Context<Self>) {
+        if self.changing.is_some() {
+            cx.propagate();
+        } else if let Some(spec) = self.selected_spec().filter(|spec| spec.takes_keys()) {
+            self.start_changing(spec, window, cx);
         }
     }
 
@@ -678,8 +711,14 @@ impl Palette {
     }
 
     /// The field, filled, with the magnifier and, while a command asks
-    /// for what it takes, the command, before what's typed.
+    /// for what it takes or its keys change, the command, before what's
+    /// typed, or what to press.
     fn header(&self, theme: &Theme) -> Div {
+        let command = match (&self.asking, &self.changing) {
+            (Some(asking), _) => Some(asking.spec.title),
+            (None, Some(changing)) => Some(changing.spec.title),
+            (None, None) => None,
+        };
         let field = div()
             .flex()
             .items_center()
@@ -699,7 +738,7 @@ impl Palette {
                             .color(theme.text_muted),
                     ),
             )
-            .when_some(self.asking.as_ref(), |this, asking| {
+            .when_some(command, |this, command| {
                 this.child(
                     div()
                         .debug_selector(|| "palette-asking".into())
@@ -710,10 +749,21 @@ impl Palette {
                         .bg(theme.surface_active)
                         .text_sm()
                         .font_weight(FontWeight::MEDIUM)
-                        .child(asking.spec.title),
+                        .child(command),
                 )
             })
-            .child(div().flex_1().min_w_0().h_full().child(self.input.clone()));
+            .map(|this| match &self.changing {
+                Some(changing) => this.child(
+                    div()
+                        .debug_selector(|| "palette-press".into())
+                        .flex_1()
+                        .min_w_0()
+                        .truncate()
+                        .text_color(theme.text_muted)
+                        .child(format!("Press a shortcut for {}", changing.spec.title)),
+                ),
+                None => this.child(div().flex_1().min_w_0().h_full().child(self.input.clone())),
+            });
         div()
             .p_2()
             .border_b_1()
@@ -721,10 +771,13 @@ impl Palette {
             .child(field)
     }
 
-    /// What Return does and, for a command that takes keys, ⌘Return, each
-    /// with its keys in a keycap, and each to be clicked as well.
+    /// What Return does and, for a command that takes keys, ⌘Return, or
+    /// while its keys change, Escape; each with its keys in a keycap, and
+    /// each to be clicked as well.
     fn footer(&self, theme: &Theme, typing: bool, cx: &mut Context<Self>) -> Div {
+        let changing = self.changing.is_some();
         let returns = match (&self.asking, &self.listing) {
+            _ if changing => "Remove",
             (Some(asking), _) => match asking.question.ask {
                 Ask::Choose(_) => "Pick",
                 Ask::Type(_) => "OK",
@@ -755,6 +808,13 @@ impl Palette {
                     .on_click(cx.listener(|this, _, window, cx| {
                         this.change_shortcut(&ChangeShortcut, window, cx);
                     })),
+                )
+            })
+            .when(changing, |this| {
+                this.child(
+                    hint("palette-back", "Back", hotkeys::display("escape"), theme).on_click(
+                        cx.listener(|this, _, window, cx| this.stop_changing(window, cx)),
+                    ),
                 )
             })
             .when(typing || !self.rows.is_empty(), |this| {
@@ -856,6 +916,7 @@ impl Palette {
             group,
             details,
         } = match (&self.asking, &self.listing) {
+            _ if let Some(changing) = &self.changing => Self::key_row(changing, row.index, muted),
             (None, Listing::Commands { entries, .. }) => {
                 Self::command_row(&entries[row.index], muted)
             }
@@ -945,7 +1006,15 @@ fn hint(id: &'static str, does: &'static str, keys: String, theme: &Theme) -> St
 impl Palette {
     /// What it lists, in order: the commands' ids, or the places' or
     /// choices' names.
+    /// While keys are changing, the keys, as saved.
     pub fn listed(&self) -> Vec<String> {
+        if let Some(changing) = &self.changing {
+            return self
+                .rows
+                .iter()
+                .map(|row| changing.keys[row.index].clone())
+                .collect();
+        }
         self.rows
             .iter()
             .map(|row| match (&self.asking, &self.listing) {
@@ -1076,7 +1145,12 @@ impl Render for Palette {
         let theme = Theme::get(window, cx);
         let asking = self.asking.as_ref();
         let typing = asking.is_some_and(|asking| matches!(asking.question.ask, Ask::Type(_)));
+        let taken = self
+            .changing
+            .as_ref()
+            .and_then(|changing| changing.note.clone());
         let note = match (&self.error, asking) {
+            _ if let Some(taken) = taken => Some((taken, theme.text_muted, "palette-taken")),
             (Some(error), _) => Some((error.clone(), theme.danger, "palette-error")),
             (None, Some(asking)) if typing => Some((
                 asking.question.prompt.clone(),
@@ -1086,6 +1160,7 @@ impl Render for Palette {
             _ => None,
         };
         let empty = match (asking, &self.listing) {
+            _ if self.changing.is_some() => "It has no shortcut",
             (None, Listing::Commands { .. }) => "No commands found",
             (None, Listing::Places(_)) => "Nowhere found",
             (Some(_), _) => "Nothing to pick",
@@ -1120,7 +1195,13 @@ impl Render for Palette {
         div()
             .id("palette")
             .debug_selector(|| "palette".into())
-            .key_context(CONTEXT)
+            .key_context(if self.changing.is_some() {
+                RECORDING
+            } else {
+                CONTEXT
+            })
+            .track_focus(&self.focus_handle)
+            .on_key_down(cx.listener(Self::record))
             .on_action(cx.listener(Self::select_previous))
             .on_action(cx.listener(Self::select_next))
             .on_action(cx.listener(Self::confirm))

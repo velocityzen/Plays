@@ -237,8 +237,8 @@ shortcuts: every command that takes keys has them and no other does, no
 default key used twice where it works, each key bound where its command
 works (a player window's not while typing nor elsewhere, ⌘W to the file
 in front there and to the window in front elsewhere, those that work
-anywhere in a window with no context too, but not while Settings records
-keys), a key moving to the command it is given only from one that works
+anywhere in a window with no context too, but none while Settings or the
+palette over a player window records keys), a key moving to the command it is given only from one that works
 where it does, reading and writing them in the settings file under the
 names files saved before commands had ids use (every one of which still
 names a command), and how they are shown. The text field's
@@ -442,7 +442,8 @@ What the window tests check:
   and picking an output in the Audio menu sets it.
 - Settings → Hotkeys lists every command that takes keys, and none that
   takes none; a key recorded for Open Files is its, and ⌘O, recorded for
-  Settings, is recorded rather than run and leaves Open Files.
+  Settings, is recorded rather than run and leaves Open Files, saying it
+  was Open…'s; a key's remove button takes it off.
 - Settings opens in the middle of the display the first time, then where
   it was left and at its size, the next launch too (from a folder of the
   test's own), saved as it closes and as the app quits; left on a display
@@ -508,7 +509,7 @@ What the window tests check:
   the video off and on, each on its own.
 - Settings → Audio and Subtitles each add a language from their menu,
   which leaves out those listed and shuts once one is picked or another
-  pane shows, put it last, move it up or down and take it off.
+  pane is clicked, put it last, move it up or down and take it off.
 - A file opens with its audio and subtitles in the first languages
   preferred that it has, else as the file says (`languages`, on
   `clip-languages.mkv`); with the tracks picked in it before, over the
@@ -775,8 +776,18 @@ check:
     there is, what's picked now first and checked.
   - Commands run from it lately first, each once, the latest few kept in
     the app's folder (`Folder::for_test`).
-  - Change Shortcut opening Settings on Hotkeys recording keys for the
-    command, and missing for a command that takes none.
+  - Change Shortcut, missing for a command that takes none
+    (`ui::palette::shortcut::tests`): ⌘Return, or a click in the footer,
+    listing the command's keys under their heading in the palette, its
+    default marked, with Remove and Back; a key pressed added and picked,
+    ⌘Return and Space (with a file open, not playing it) too; ⌘, taken
+    from Settings… and not opening it, the palette saying whose it was,
+    held down no less, and removed no longer; Return removing the key
+    picked, the one after it picked next, and a click one; It has no
+    shortcut, with none left; Escape or Back going back to the command,
+    its row showing its keys now and typing going into the field, though
+    it wasn't first; the palette asked for again still taking keys; and a
+    click in the palette leaving typing in the field.
   - Unit tests in `search` check where letters are found and how they
     score: in order, ignoring case, starting words and side by side
     counting for more, early more than late, and a title more than a

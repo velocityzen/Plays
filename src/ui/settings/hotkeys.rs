@@ -2,14 +2,11 @@
 //! Click + and press keys to add one.
 
 use gpui::prelude::*;
-use gpui::{
-    AnyElement, Context, KeyDownEvent, Keystroke, ScrollAnchor, ScrollHandle, SharedString, Window,
-    div,
-};
+use gpui::{AnyElement, Context, KeyDownEvent, SharedString, Window, div};
 
-use super::form::{group, reset, row, set};
+use super::form::{group, reset, row};
 use super::{Pane, SettingsView};
-use crate::api::{self, commands::NAMESPACES};
+use crate::api::commands::NAMESPACES;
 use crate::hotkeys;
 use crate::settings::Settings;
 use crate::ui::components::{Button, ComponentSize, ControlFrame, Icon, Sizable};
@@ -25,8 +22,6 @@ pub(super) struct Recording {
     command: Option<&'static str>,
     /// What the last shortcut recorded did to another command.
     note: Option<(&'static str, SharedString)>,
-    /// Its row is to be scrolled into view, once drawn.
-    reveal: Option<ScrollAnchor>,
 }
 
 impl Recording {
@@ -34,14 +29,6 @@ impl Recording {
     /// to it.
     pub(super) fn is_on(&self) -> bool {
         self.command.is_some()
-    }
-
-    /// Wait for keys for `command`, its row scrolled into the view `scroll`
-    /// tracks once drawn.
-    pub(super) fn start(&mut self, command: &'static str, scroll: &ScrollHandle) {
-        self.command = Some(command);
-        self.note = None;
-        self.reveal = Some(ScrollAnchor::for_handle(scroll.clone()));
     }
 }
 
@@ -63,10 +50,9 @@ impl Pane for HotkeysPane {
         view: &mut SettingsView,
         s: &Settings,
         theme: &Theme,
-        window: &mut Window,
+        _: &mut Window,
         cx: &mut Context<SettingsView>,
     ) -> Vec<AnyElement> {
-        let reveal = view.recording.reveal.take();
         let intro = group(
             None,
             theme,
@@ -91,23 +77,12 @@ impl Pane for HotkeysPane {
                         .as_ref()
                         .filter(|(noted, _)| *noted == spec.id)
                         .map(|(_, note)| note.clone());
-                    let row = row(
+                    row(
                         spec.title,
                         note,
                         theme,
                         key_chips(view, spec.id, s.hotkeys.keys(spec.id), theme, cx),
-                    );
-                    match &reveal {
-                        Some(anchor) if view.recording.command == Some(spec.id) => {
-                            anchor.scroll_to(window, cx);
-                            div()
-                                .id(spec.id)
-                                .anchor_scroll(Some(anchor.clone()))
-                                .child(row)
-                                .into_any_element()
-                        }
-                        _ => row,
-                    }
+                    )
                 })
                 .collect();
             if !rows.is_empty() {
@@ -139,20 +114,8 @@ impl Pane for HotkeysPane {
             cx.notify();
             return;
         }
-        let key = Keystroke {
-            modifiers: pressed.modifiers,
-            key: pressed.key.clone(),
-            key_char: None,
-        }
-        .unparse();
-        let mut hotkeys = cx.global::<Settings>().hotkeys.clone();
-        let taken = hotkeys.add(command, &key);
-        set("hotkeys", &hotkeys, cx);
-        view.recording.note = taken.map(|from| {
-            let title = api::find(from).map_or(from, |spec| spec.title);
-            let note = format!("{} was for “{}”", hotkeys::display(&key), title);
-            (command, SharedString::from(note))
-        });
+        let (_, note) = hotkeys::record(command, pressed, cx);
+        view.recording.note = note.map(|note| (command, SharedString::from(note)));
         view.recording.command = None;
         cx.notify();
     }
@@ -196,14 +159,15 @@ fn key_chips(
                 .pr_0p5()
                 .child(hotkeys::display(key))
                 .child(
-                    Button::icon("remove", "close")
-                        .small()
-                        .icon_color(theme.text_muted)
-                        .on_click(move |_, _, cx| {
-                            let mut hotkeys = cx.global::<Settings>().hotkeys.clone();
-                            hotkeys.remove(command, &removed);
-                            set("hotkeys", &hotkeys, cx);
-                        }),
+                    Button::icon(
+                        SharedString::from(format!("hotkey-remove-{command}-{key}")),
+                        "close",
+                    )
+                    .small()
+                    .icon_color(theme.text_muted)
+                    .on_click(move |_, _, cx| {
+                        hotkeys::unrecord(command, &removed, cx);
+                    }),
                 )
         }))
         .child(if recording {
