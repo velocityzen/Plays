@@ -399,6 +399,72 @@ fn how_a_file_plays_is_told_once_it_has_opened() {
 }
 
 #[test]
+fn files_dropped_together_are_each_told_opening_and_playing_however_looks_fall() {
+    let w = Id::next();
+    let ids = [Id::next(), Id::next(), Id::next()];
+    let playing = |id| {
+        opened(TileSeen {
+            playing: true,
+            ..tile(id)
+        })
+    };
+    let each: Vec<(&str, Value)> = ids
+        .iter()
+        .flat_map(|id| {
+            [
+                ("opened", json!(id.to_string())),
+                ("playing", json!(id.to_string())),
+            ]
+        })
+        .collect();
+    let opening = |events: &[Event]| -> Vec<(&str, Value)> {
+        events
+            .iter()
+            .filter(|event| matches!(event.kind, "opened" | "playing"))
+            .map(|event| (event.kind, event.payload["tile_id"].clone()))
+            .collect()
+    };
+    let empty = app(vec![window(w, Vec::new())]);
+    let all = app(vec![window(w, ids.map(playing).to_vec())]);
+
+    // All three open and play before the next look.
+    let events = changes(&empty, &all);
+    assert_eq!(
+        kinds(&events),
+        [
+            "tile_created",
+            "tile_created",
+            "tile_created",
+            "window_layout_changed",
+            "active_tile_changed",
+            "opened",
+            "playing",
+            "opened",
+            "playing",
+            "opened",
+            "playing",
+        ]
+    );
+    assert_eq!(opening(&events), each);
+
+    // Looks between: each told as it opens, none twice, though each says
+    // it plays before it has opened, as a file played on dropping does.
+    let starting = |id| TileSeen {
+        playing: true,
+        ..tile(id)
+    };
+    let made = app(vec![window(w, ids.map(starting).to_vec())]);
+    let first = app(vec![window(
+        w,
+        vec![playing(ids[0]), starting(ids[1]), starting(ids[2])],
+    )]);
+    let mut told = opening(&changes(&empty, &made));
+    told.extend(opening(&changes(&made, &first)));
+    told.extend(opening(&changes(&first, &all)));
+    assert_eq!(told, each);
+}
+
+#[test]
 fn where_a_file_plays_is_told_from_0_to_1_in_seconds_and_by_its_frame() {
     assert_eq!(
         playhead(2.5, Some(10.0), Some(25.0)),

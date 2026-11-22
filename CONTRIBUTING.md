@@ -667,7 +667,9 @@ check:
   (`play_until`). Unit tests check what each change of what was seen
   tells, and who hears it, a tile moved out of a window closing as it goes
   told moved, not closed, each window and tile named by its id and title,
-  one closed as it was, and where a file plays told from 0 to 1, in
+  one closed as it was, files dropped together each told opened, then
+  playing, however the looks fall, though each says it plays before it
+  has opened, and where a file plays told from 0 to 1, in
   seconds and by frame, a frame's own time its own frame at 25 and NTSC
   rates (`api::events::seen`); settings told by key and
   shortcuts by command, a command before what it changes and a query not
