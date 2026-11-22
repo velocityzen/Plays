@@ -6,6 +6,7 @@ use gpui::{
     AppContext, Entity, ExternalPaths, FileDropEvent, TestAppContext, TextRun, VisualTestContext,
     WindowHandle, point, px, size,
 };
+use unicode_segmentation::UnicodeSegmentation;
 
 use super::open;
 use crate::files::test_folder;
@@ -39,17 +40,21 @@ fn drawn_in(cx: &mut VisualTestContext, selector: &'static str) -> Vec<String> {
 /// Dropped on a window, a sound file named `name` shows its name in its
 /// header and over its cover, which its file has none of, whole where it
 /// fits and cut short with "…" where it doesn't, as its time is, at each
-/// width from narrow to wide. Laid out by the system's own text system,
-/// which panicked on a Cyrillic name cut short for one width and laid out
-/// for another.
-fn shows_its_name_cut_short_only_where_it_does_not_fit(folder: &str, name: &str) {
-    let mut cx = TestAppContext::with_native_text();
+/// width from narrow to wide: where a cluster of characters starts, as
+/// long as fits as drawn, and less than a pixel past its box, which is
+/// whole pixels wide. The system's own text system panicked on a Cyrillic
+/// name cut short for one width and laid out for another.
+fn shows_its_name_cut_short_only_where_it_does_not_fit(
+    cx: &mut TestAppContext,
+    folder: &str,
+    name: &str,
+) {
     let folder = test_folder(folder);
     std::fs::create_dir_all(&folder).unwrap();
     let path = folder.join(name);
     std::fs::copy(fixture("tone.m4a"), &path).unwrap();
     keep_errors();
-    let (window, mut cx) = testing::start(&mut cx);
+    let (window, mut cx) = testing::start(cx);
     let position = point(WINDOW_SIZE.width / 2., WINDOW_SIZE.height / 2.);
     let paths = ExternalPaths::for_test([path]);
     cx.simulate_event(FileDropEvent::Entered { position, paths });
@@ -88,7 +93,8 @@ fn shows_its_name_cut_short_only_where_it_does_not_fit(folder: &str, name: &str)
     );
 
     let mut shown_before = 0;
-    for width in (200..900).step_by(4) {
+    let mut seen = Vec::new();
+    for width in 200..900 {
         cx.simulate_resize(size(px(width as f32), px(400.)));
         let bounds = find(&mut cx, "block-title");
         let lines = painted(&mut cx);
@@ -113,13 +119,36 @@ fn shows_its_name_cut_short_only_where_it_does_not_fit(folder: &str, name: &str)
             }
         };
         assert!(
-            at.right() <= bounds.right() + px(0.5),
+            at.right() < bounds.right() + px(1.),
             "{title} drawn past its end at {width}: {at:?} in {bounds:?}"
+        );
+        assert!(
+            name.grapheme_indices(true)
+                .any(|(start, _)| start == shown.len())
+                || shown == name,
+            "{title} cut inside a cluster at {width}"
         );
         assert!(shown.len() >= shown_before, "{title} shorter at {width}");
         shown_before = shown.len();
+        seen.push((
+            width,
+            title.clone(),
+            shown.len(),
+            at.size.width,
+            bounds.size.width,
+        ));
     }
     assert_eq!(shown_before, name.len(), "whole where there's room");
+    // Cut short in its room, the longest that fits there: no longer one,
+    // nor the whole name, seen at another width is as narrow as that room.
+    for (width, title, shown, _, room) in &seen {
+        for (_, longer, _, drawn, _) in seen.iter().filter(|seen| seen.2 > *shown) {
+            assert!(
+                *drawn > *room - px(0.5),
+                "{title} at {width}, though {longer}, {drawn:?} wide, fits its {room:?}"
+            );
+        }
+    }
 
     assert_eq!(
         errors_logged(),
@@ -131,6 +160,7 @@ fn shows_its_name_cut_short_only_where_it_does_not_fit(folder: &str, name: &str)
 #[test]
 fn a_sound_file_named_in_cyrillic_shows_its_name_cut_short_only_where_it_does_not_fit() {
     shows_its_name_cut_short_only_where_it_does_not_fit(
+        &mut TestAppContext::with_native_text(),
         "cyrillic-name",
         "01 Рэп больше не кал.m4a",
     );
@@ -139,6 +169,7 @@ fn a_sound_file_named_in_cyrillic_shows_its_name_cut_short_only_where_it_does_no
 #[test]
 fn a_sound_file_named_in_chinese_shows_its_name_cut_short_only_where_it_does_not_fit() {
     shows_its_name_cut_short_only_where_it_does_not_fit(
+        &mut TestAppContext::with_native_text(),
         "chinese-name",
         "01 月亮代表我的心 邓丽君 1977.m4a",
     );
@@ -146,12 +177,40 @@ fn a_sound_file_named_in_chinese_shows_its_name_cut_short_only_where_it_does_not
 
 #[test]
 fn a_sound_file_named_in_arabic_shows_its_name_cut_short_only_where_it_does_not_fit() {
-    shows_its_name_cut_short_only_where_it_does_not_fit("arabic-name", "01 الأطلال أم كلثوم.m4a");
+    shows_its_name_cut_short_only_where_it_does_not_fit(
+        &mut TestAppContext::with_native_text(),
+        "arabic-name",
+        "01 الأطلال أم كلثوم.m4a",
+    );
+}
+
+#[test]
+fn a_sound_file_named_with_letters_and_their_marks_apart_shows_its_name_cut_short_only_where_it_does_not_fit()
+ {
+    shows_its_name_cut_short_only_where_it_does_not_fit(
+        &mut TestAppContext::with_native_text(),
+        "decomposed-name",
+        "01 Мои\u{306} е\u{308}жик в тумане.m4a",
+    );
+}
+
+/// Each mark a glyph of its own, as the no-op text system has them, and as
+/// Linux's may.
+#[gpui::test]
+fn a_sound_file_named_with_letters_and_their_marks_apart_shows_its_name_cut_short_only_where_it_does_not_fit_a_glyph_each(
+    cx: &mut TestAppContext,
+) {
+    shows_its_name_cut_short_only_where_it_does_not_fit(
+        cx,
+        "marks-apart-name",
+        "01 Мои\u{306} е\u{308}жик в тумане.m4a",
+    );
 }
 
 #[test]
 fn a_sound_file_named_with_emoji_shows_its_name_cut_short_only_where_it_does_not_fit() {
     shows_its_name_cut_short_only_where_it_does_not_fit(
+        &mut TestAppContext::with_native_text(),
         "emoji-name",
         "01 🎵 Night Drive 🌙🚗 👨‍👩‍👧.m4a",
     );

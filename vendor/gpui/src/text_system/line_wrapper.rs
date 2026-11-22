@@ -1,6 +1,9 @@
-use crate::{FontId, FontRun, Pixels, PlatformTextSystem, SharedString, TextRun, px};
+use crate::{
+    FontId, FontRun, LineLayout, Pixels, PlatformTextSystem, SharedString, TextRun, px,
+};
 use collections::HashMap;
 use std::{iter, sync::Arc};
+use unicode_segmentation::UnicodeSegmentation;
 
 /// The GPUI line wrapper, used to wrap lines of text to a given width.
 pub struct LineWrapper {
@@ -9,6 +12,105 @@ pub struct LineWrapper {
     pub(crate) font_size: Pixels,
     cached_ascii_char_widths: [Option<Pixels>; 128],
     cached_other_char_widths: HashMap<char, Pixels>,
+    /// Plays: the lines cut short, each with how wide it is where it can
+    /// be cut, so it's laid out once rather than for each width.
+    cuts: HashMap<SharedString, Cuts>,
+}
+
+/// Plays: how many lines cut short are kept before all are let go.
+const MAX_CUT_LINES: usize = 1024;
+
+/// Plays: a line's widths, as drawn, where it can be cut short.
+struct Cuts {
+    /// What the line ends with, cut short.
+    suffix: String,
+    /// How wide the whole line is.
+    whole: Pixels,
+    /// Where each cluster of characters starts, and how wide the line is
+    /// cut there with its suffix, its clusters as wide as in the whole line.
+    ends: Vec<(usize, Pixels)>,
+    /// How wide the line is cut at each start tried, laid out with its
+    /// suffix as it's drawn, in which its last letters may take another
+    /// shape than in the whole line.
+    drawn: HashMap<usize, Pixels>,
+}
+
+impl Cuts {
+    fn new(line: &str, suffix: &str, layout: &impl Fn(&str) -> LineLayout) -> Self {
+        let whole = layout(line);
+        let suffix_width = if suffix.is_empty() {
+            px(0.)
+        } else {
+            layout(suffix).width
+        };
+        let ends = cluster_starts(line, &whole)
+            .map(|(start, width)| (start, width + suffix_width))
+            .collect();
+        Self {
+            suffix: suffix.into(),
+            whole: whole.width,
+            ends,
+            drawn: HashMap::default(),
+        }
+    }
+
+    /// Where to cut the line for it to fit `width`: the longest cut that
+    /// fits as wide as its clusters are in the whole line, then shorter
+    /// while it doesn't fit as drawn, or longer while the next one does.
+    fn longest_fitting(
+        &mut self,
+        line: &str,
+        width: Pixels,
+        layout: &impl Fn(&str) -> LineLayout,
+    ) -> usize {
+        let mut cut = self
+            .ends
+            .iter()
+            .rposition(|(_, end)| *end <= width)
+            .unwrap_or(0);
+        while cut > 0 && self.drawn(cut, line, layout) > width {
+            cut -= 1;
+        }
+        while cut + 1 < self.ends.len() && self.drawn(cut + 1, line, layout) <= width {
+            cut += 1;
+        }
+        self.ends.get(cut).map_or(0, |(start, _)| *start)
+    }
+
+    fn drawn(&mut self, cut: usize, line: &str, layout: &impl Fn(&str) -> LineLayout) -> Pixels {
+        let start = self.ends[cut].0;
+        let suffix = &self.suffix;
+        *self
+            .drawn
+            .entry(start)
+            .or_insert_with(|| layout(&format!("{}{suffix}", &line[..start])).width)
+    }
+}
+
+/// Plays: where each cluster of characters in `line` starts, with how wide
+/// the line is up to there as `layout` has it whole: each glyph as wide as
+/// up to the next one along the line, whichever way the line reads.
+fn cluster_starts(line: &str, layout: &LineLayout) -> impl Iterator<Item = (usize, Pixels)> {
+    let mut glyphs: Vec<(Pixels, usize)> = layout
+        .runs
+        .iter()
+        .flat_map(|run| run.glyphs.iter().map(|glyph| (glyph.position.x, glyph.index)))
+        .collect();
+    glyphs.sort_by(|a, b| a.0.0.total_cmp(&b.0.0));
+    let mut widths = vec![px(0.); line.len() + 1];
+    for (ix, (x, index)) in glyphs.iter().enumerate() {
+        let next = glyphs.get(ix + 1).map_or(layout.width, |(x, _)| *x);
+        widths[(*index).min(line.len())] += next - *x;
+    }
+    let mut width = px(0.);
+    let mut counted = 0;
+    line.grapheme_indices(true).map(move |(start, _)| {
+        for glyph_width in &widths[counted..start] {
+            width += *glyph_width;
+        }
+        counted = start;
+        (start, width)
+    })
 }
 
 impl LineWrapper {
@@ -26,6 +128,7 @@ impl LineWrapper {
             font_size,
             cached_ascii_char_widths: [None; 128],
             cached_other_char_widths: HashMap::default(),
+            cuts: HashMap::default(),
         }
     }
 
@@ -129,6 +232,12 @@ impl LineWrapper {
     }
 
     /// Truncate a line of text to the given width with this wrapper's font and font size.
+    ///
+    /// Plays: it's cut where a cluster of characters starts, as long as
+    /// fits with the suffix as it's drawn. Before, each character's width
+    /// alone was added up, which cut joined letters (as Arabic's) and
+    /// emoji made of several too early, and could cut a cluster apart: a
+    /// letter from its mark, or a family emoji to one person.
     pub fn truncate_line(
         &mut self,
         line: SharedString,
@@ -136,31 +245,36 @@ impl LineWrapper {
         truncation_suffix: &str,
         runs: &mut Vec<TextRun>,
     ) -> SharedString {
-        let mut width = px(0.);
-        let mut suffix_width = truncation_suffix
-            .chars()
-            .map(|c| self.width_for_char(c))
-            .fold(px(0.0), |a, x| a + x);
-        let mut char_indices = line.char_indices();
-        let mut truncate_ix = 0;
-        for (ix, c) in char_indices {
-            if width + suffix_width < truncate_width {
-                truncate_ix = ix;
-            }
-
-            let char_width = self.width_for_char(c);
-            width += char_width;
-
-            if width.floor() > truncate_width {
-                let result =
-                    SharedString::from(format!("{}{}", &line[..truncate_ix], truncation_suffix));
-                update_runs_after_truncation(&result, truncation_suffix, runs);
-
-                return result;
-            }
+        if line.is_empty() {
+            return line;
         }
-
-        line
+        let layout = |text: &str| {
+            self.platform_text_system.layout_line(
+                text,
+                self.font_size,
+                &[FontRun {
+                    len: text.len(),
+                    font_id: self.font_id,
+                }],
+            )
+        };
+        if self.cuts.len() >= MAX_CUT_LINES && !self.cuts.contains_key(&line) {
+            self.cuts.clear();
+        }
+        let cuts = self
+            .cuts
+            .entry(line.clone())
+            .or_insert_with(|| Cuts::new(&line, truncation_suffix, &layout));
+        if cuts.suffix != truncation_suffix {
+            *cuts = Cuts::new(&line, truncation_suffix, &layout);
+        }
+        if cuts.whole.floor() <= truncate_width {
+            return line;
+        }
+        let truncate_ix = cuts.longest_fitting(&line, truncate_width, &layout);
+        let result = SharedString::from(format!("{}{}", &line[..truncate_ix], truncation_suffix));
+        update_runs_after_truncation(&result, truncation_suffix, runs);
+        result
     }
 
     /// Any character in this list should be treated as a word character,

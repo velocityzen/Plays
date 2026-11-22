@@ -140,6 +140,17 @@ runs cut for one width don't fit the text cut for another.
 or end inside a character, are fitted to it, with an error logged, before
 the platform's text system lays it out (`fit_runs`): it slices the text by
 them, and panicked.
+
+`src/text_system/line_wrapper.rs`: `truncate_line` cuts a line only where
+a cluster of characters starts (`unicode-segmentation`, a dependency now,
+not a dev-dependency), as long as fits with its suffix as drawn. It added
+up each character's width alone, which cut joined letters (Arabic) and
+emoji made of several too early, and could cut a letter from its mark or
+a family emoji to one person. The line is laid out whole once, each
+cluster as wide as its glyphs; the cut so found is laid out with its suffix
+and moved back while it doesn't fit, or on while the next does. A wrapper
+keeps these widths for up to 1024 lines (`Cuts`), so a line is laid out
+again only for a cut not yet tried.
 `Window::painted_text` (test builds only, `src/window.rs`) lists each line
 of text the window drew last, as it reads once truncated, and where, so
 a test can tell.
