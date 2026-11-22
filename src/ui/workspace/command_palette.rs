@@ -1,25 +1,22 @@
-//! The command palette over the window: opening it, and doing what it
-//! asks once it closes.
+//! The command palette, or Go to…, over the window: opening it, and doing
+//! what it asks once it closes.
 
 use gpui::{AppContext as _, Context, Window};
 
 use super::Workspace;
 use crate::api::{self, Target};
-use crate::ui::palette::{Entry, Palette, PaletteEvent};
+use crate::ui::palette::{Listing, Palette, PaletteEvent};
 use crate::ui::settings::SettingsView;
 
 impl Workspace {
-    /// Show the palette listing `entries`, those run lately (`recents`)
-    /// first, what it runs aimed at this window. Focuses the one up
-    /// already, if one is.
-    pub fn show_palette(
-        &mut self,
-        entries: Vec<Entry>,
-        recents: Vec<String>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if let Some((palette, _)) = &self.palette {
+    /// Show the palette listing `listing`, what it runs aimed at this
+    /// window. Focuses the one up already, if it lists the same, or puts
+    /// this one in its place.
+    pub fn show_palette(&mut self, listing: Listing, window: &mut Window, cx: &mut Context<Self>) {
+        let commands = matches!(listing, Listing::Commands { .. });
+        if let Some((palette, _)) = &self.palette
+            && palette.read(cx).lists_commands() == commands
+        {
             palette.update(cx, |palette, cx| palette.focus(window, cx));
             return;
         }
@@ -27,7 +24,7 @@ impl Workspace {
             window: Some(self.id().to_string()),
             tile: None,
         };
-        let palette = cx.new(|cx| Palette::new(here, entries, recents, window, cx));
+        let palette = cx.new(|cx| Palette::new(here, listing, window, cx));
         let subscription = cx.subscribe_in(&palette, window, |this, _, event, window, cx| {
             this.palette = None;
             window.focus(&this.focus_handle);

@@ -1,6 +1,8 @@
 //! `playback`: playing a tile, its chapters and the files beside it in its
 //! folder, and every tile in a window at once.
 
+use std::path::PathBuf;
+
 use gpui::App;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -155,6 +157,23 @@ pub const COMMANDS: &[Spec] = &[
     .keywords(&["folder", "episode", "skip"])
     .setting("next_file")
     .keys(&["secondary-right"]),
+    Spec::tile_with(
+        "playback.play_file",
+        "Play File Instead",
+        "Play another file in the tile instead, one in its folder say, at the same volume, \
+         muted and looping as this one is, and playing if it is.",
+        &[Arg::required("path", Kind::Text, "The file's full path.")],
+        |args, player, _, cx| {
+            let PlayFile { path } = args.read()?;
+            if !path.is_absolute() {
+                let why = format!("{}: give a file's full path", path.display());
+                return Err(Error::bad_args(args.command, why));
+            }
+            player.play_instead(path, cx);
+            done()
+        },
+    )
+    .keywords(&["open", "folder", "episode", "switch", "replace"]),
     Spec::tile(
         "playback.toggle_loop",
         "Loop",
@@ -255,6 +274,11 @@ struct Chapter {
 #[derive(Deserialize)]
 struct Seek {
     time: f64,
+}
+
+#[derive(Deserialize)]
+struct PlayFile {
+    path: PathBuf,
 }
 
 /// How far the seek commands skip.

@@ -10,6 +10,7 @@ use serde_json::json;
 use super::Workspace;
 use crate::media::Source;
 use crate::media::source::media_in;
+use crate::recents;
 use crate::settings::Settings;
 use crate::ui::open_url::{OpenUrlDialog, OpenUrlEvent};
 use crate::ui::player::PlayerView;
@@ -42,6 +43,9 @@ impl Workspace {
         let mut opened = Vec::new();
         for source in sources {
             log::info!("opening {source}");
+            if let Source::File(path) = &source {
+                recents::note_file(path, cx);
+            }
             let graveyard = self.graveyard.clone();
             let mixer = mixer.clone();
             let view = cx.new(|cx| {

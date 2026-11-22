@@ -481,7 +481,10 @@ check:
   with) is a command given arguments it takes, aimed as it may be. Every menu item
   runs a command, titled as it is, each once but those given arguments;
   items are checked as their commands' state says, at once after one
-  runs, and enabled only when their commands can run (`menus`).
+  runs, and enabled only when their commands can run (`menus`). File →
+  Open Recent opens the files played lately by name, with their folder
+  where two share one, none without any, and follows them as they
+  change; Clear Recent Files forgets them.
 - A command aimed at a tile acts on it, not on the one in front: a tile
   named by its id, its position or the end of its id, in a window named by
   its position or in any; positions count in the window in front, and
@@ -517,9 +520,11 @@ check:
   subtitles by none too; Maximize Tile, and full screen for a window's
   only tile; Move Tile To a place from 1, none past the last; Move Tile
   to Window, last there with keys going to it, playing on, and staying
-  put in its own; Move Tile to New Window, which says the window; and
-  Open Paths or URLs in the window named, in a new one with none open,
-  or why a path or URL won't open.
+  put in its own; Move Tile to New Window, which says the window; Play
+  File Instead, in the same tile at the volume, mute and loop it had,
+  noted as played lately, and refusing a path that isn't full; and Open
+  Paths or URLs in the window named, in a new one with none open, or why
+  a path or URL won't open.
 - The window commands (`windows`): New Window, empty, in front and
   numbered last, and ⌘N; Close Other Windows, Settings left open; Rename
   Window, trimmed, the title showing it, named by it, none shared and
@@ -691,6 +696,22 @@ check:
     score: in order, ignoring case, starting words and side by side
     counting for more, early more than late, and a title more than a
     group or keyword.
+- Go to… (`ui::palette::go_to_tests`), opened with ⌘P over a window with
+  two files and a second window, labeled, with one:
+  - Listing the windows, the tiles in each, the media files in the front
+    tile's folder by name, and the files played lately, the latest first,
+    in that order; this window, its tile in front and the file it plays
+    checked, but not another window's tile in front; a window's files, a
+    tile's window (there being two, not one) and a recent file's folder.
+  - Finding places by name, kind and where they are, best first.
+  - Return going to a tile (`tile.focus`) or window (`window.focus`),
+    playing a file from the folder in the front tile
+    (`playback.play_file`), or opening one played lately (`app.open`).
+  - It and the command palette, which lists it, taking each other's
+    place, and ⌘P again keeping what's typed.
+  - Files opened or played in place noted once each, the latest first;
+    and, in `recents`, each list kept in its own file, cleared alone, a
+    file noted by its full path, and the latest few kept once each.
 
 Unit tests check finding a name among ids, labels, positions and the ends
 of ids (an id first, positions only among those given, several matching

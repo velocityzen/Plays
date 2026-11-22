@@ -7,9 +7,16 @@
 //! the arguments it takes (`asking`), picked from a list or typed. ⌘Return,
 //! or Change Shortcut… on the row, changes its keys in Settings → Hotkeys.
 //! Escape, or a click outside, closes it.
+//!
+//! Go to… (⌘P, `window.go_to`) is the same sheet listing places instead
+//! (`places`): the windows, their tiles, the files in the front tile's
+//! folder and those played lately, found as commands are; Return goes
+//! there, running the command each has.
 
 mod asking;
-mod recents;
+#[cfg(test)]
+mod go_to_tests;
+mod places;
 mod search;
 #[cfg(test)]
 mod tests;
@@ -34,11 +41,13 @@ use super::theme::{Theme, dialog, radius};
 use crate::api::commands::NAMESPACES;
 use crate::api::{self, Invocation, Scope, Source, Spec, Target};
 use crate::hotkeys;
+use crate::recents;
 use crate::settings::Settings;
 use asking::{Ask, Choice, Question};
+use places::Place;
 use search::{Found, Haystack};
 
-pub use recents::list as recent_commands;
+pub use places::places;
 
 actions!(
     palette,
@@ -49,6 +58,9 @@ const CONTEXT: &str = "CommandPalette";
 
 /// The command that opens it, which it doesn't list.
 pub const COMMAND: &str = "window.command_palette";
+
+/// The command that opens Go to….
+pub const GO_TO: &str = "window.go_to";
 
 /// What a command run lately counts for more, the latest most, as it
 /// goes before others found as well.
@@ -165,8 +177,29 @@ pub fn entries(window: &Target, cx: &mut App) -> Vec<Entry> {
     entries
 }
 
-/// A row: an entry or a choice, by its place among them, and where the
-/// letters typed are in its name.
+/// What a palette lists.
+pub enum Listing {
+    /// Commands (⇧⌘P), those run from it lately first.
+    Commands {
+        entries: Vec<Entry>,
+        recents: Vec<String>,
+    },
+    /// Places to go to (Go to…, ⌘P): windows, tiles and files.
+    Places(Vec<Place>),
+}
+
+impl Listing {
+    /// What it lists that `query` finds, best first.
+    fn order(&self, query: &str) -> Vec<Row> {
+        match self {
+            Self::Commands { entries, recents } => order(query, entries, recents),
+            Self::Places(places) => places::order(query, places),
+        }
+    }
+}
+
+/// A row: an entry, a place or a choice, by its place among them, and
+/// where the letters typed are in its name.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Row {
     pub index: usize,
@@ -273,8 +306,7 @@ struct RowParts {
 pub struct Palette {
     /// The window it's over, which what it runs is aimed at.
     window: Target,
-    entries: Vec<Entry>,
-    recents: Vec<String>,
+    listing: Listing,
     input: Entity<TextInput>,
     /// What it lists now, best first.
     rows: Vec<Row>,
@@ -293,23 +325,24 @@ pub struct Palette {
 impl EventEmitter<PaletteEvent> for Palette {}
 
 impl Palette {
-    /// A palette listing `entries`, those run lately (`recents`) first,
-    /// whose commands act on `window`.
+    /// A palette listing `listing`, whose commands act on `window`.
     pub fn new(
         window_target: Target,
-        entries: Vec<Entry>,
-        recents: Vec<String>,
+        listing: Listing,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        let input = cx.new(|cx| TextInput::new("Search commands", cx).large());
+        let placeholder = match listing {
+            Listing::Commands { .. } => "Search commands",
+            Listing::Places(_) => "Go to a window, tile or file",
+        };
+        let input = cx.new(|cx| TextInput::new(placeholder, cx).large());
         window.focus(&input.focus_handle(cx));
         let input_changed = cx.observe(&input, |this, _, cx| this.filter(cx));
-        let rows = order("", &entries, &recents);
+        let rows = listing.order("");
         Self {
             window: window_target,
-            entries,
-            recents,
+            listing,
             input,
             rows,
             selected: 0,
@@ -330,7 +363,7 @@ impl Palette {
         let query = self.input.read(cx).text().to_owned();
         self.error = None;
         self.rows = match &self.asking {
-            None => order(&query, &self.entries, &self.recents),
+            None => self.listing.order(&query),
             Some(asking) => match &asking.question.ask {
                 Ask::Choose(choices) => order_choices(&query, choices),
                 Ask::Type(_) => Vec::new(),
@@ -377,11 +410,19 @@ impl Palette {
 
     /// The command of the row picked, while commands are listed.
     fn selected_spec(&self) -> Option<&'static Spec> {
+        let Listing::Commands { entries, .. } = &self.listing else {
+            return None;
+        };
         if self.asking.is_some() {
             return None;
         }
         let row = self.rows.get(self.selected)?;
-        Some(self.entries[row.index].spec)
+        Some(entries[row.index].spec)
+    }
+
+    /// Whether it lists commands, not places.
+    pub fn lists_commands(&self) -> bool {
+        matches!(self.listing, Listing::Commands { .. })
     }
 
     fn confirm(&mut self, _: &Confirm, _: &mut Window, cx: &mut Context<Self>) {
@@ -395,8 +436,17 @@ impl Palette {
             return;
         }
         let Some(asking) = &self.asking else {
-            if let Some(spec) = self.selected_spec() {
-                self.go_on(spec, Map::new(), Vec::new(), cx);
+            match &self.listing {
+                Listing::Commands { .. } => {
+                    if let Some(spec) = self.selected_spec() {
+                        self.go_on(spec, Map::new(), Vec::new(), cx);
+                    }
+                }
+                Listing::Places(places) => {
+                    if let Some(row) = self.rows.get(self.selected) {
+                        cx.emit(PaletteEvent::Run(places[row.index].run.clone()));
+                    }
+                }
             }
             return;
         };
@@ -487,7 +537,7 @@ impl Palette {
     /// Run `spec` with `args` on the palette's window, noting it among
     /// those run lately.
     fn run(&mut self, spec: &'static Spec, args: Map<String, Value>, cx: &mut Context<Self>) {
-        recents::note(spec.id, cx);
+        recents::COMMANDS.note(spec.id, cx);
         let args = if args.is_empty() {
             Value::Null
         } else {
@@ -634,6 +684,33 @@ impl Palette {
         }
     }
 
+    /// What a place's row shows: where it is, and what it is.
+    fn place_row(place: &Place, muted: Hsla) -> RowParts {
+        RowParts {
+            id: format!("palette-place-{}", place.label).into(),
+            check: place.current,
+            label: place.label.clone(),
+            details: div()
+                .flex_none()
+                .flex()
+                .items_center()
+                .gap_3()
+                .text_color(muted)
+                .when_some(place.detail.clone(), |this, detail| {
+                    this.child(div().max_w(PALETTE_WIDTH / 3.).truncate().child(detail))
+                })
+                .child(
+                    div()
+                        .w(GROUP_WIDTH)
+                        .flex_none()
+                        .truncate()
+                        .text_right()
+                        .child(place.kind.name()),
+                ),
+            shortcut: None,
+        }
+    }
+
     fn render_row(&self, ix: usize, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
         let row = &self.rows[ix];
         let selected = ix == self.selected;
@@ -648,9 +725,12 @@ impl Palette {
             label,
             details,
             shortcut,
-        } = match &self.asking {
-            None => self.command_row(&self.entries[row.index], selected, muted, cx),
-            Some(asking) => {
+        } = match (&self.asking, &self.listing) {
+            (None, Listing::Commands { entries, .. }) => {
+                self.command_row(&entries[row.index], selected, muted, cx)
+            }
+            (None, Listing::Places(places)) => Self::place_row(&places[row.index], muted),
+            (Some(asking), _) => {
                 let Ask::Choose(choices) = &asking.question.ask else {
                     return div().into_any_element();
                 };
@@ -700,13 +780,15 @@ impl Palette {
 
 #[cfg(test)]
 impl Palette {
-    /// What it lists, in order: the commands' ids, or the choices' names.
+    /// What it lists, in order: the commands' ids, or the places' or
+    /// choices' names.
     pub fn listed(&self) -> Vec<String> {
         self.rows
             .iter()
-            .map(|row| match &self.asking {
-                None => self.entries[row.index].spec.id.to_owned(),
-                Some(asking) => match &asking.question.ask {
+            .map(|row| match (&self.asking, &self.listing) {
+                (None, Listing::Commands { entries, .. }) => entries[row.index].spec.id.to_owned(),
+                (None, Listing::Places(places)) => places[row.index].label.to_string(),
+                (Some(asking), _) => match &asking.question.ask {
                     Ask::Choose(choices) => choices[row.index].label.to_string(),
                     Ask::Type(_) => String::new(),
                 },
@@ -728,22 +810,58 @@ impl Palette {
 
     /// What `command` changes, as it was when the palette opened.
     pub fn state(&self, command: &str) -> Option<State> {
-        self.entries
+        let Listing::Commands { entries, .. } = &self.listing else {
+            return None;
+        };
+        entries
             .iter()
             .find(|entry| entry.spec.id == command)
             .map(|entry| entry.state.clone())
     }
 
-    /// The choices that are what's picked now, while asking.
+    /// The choices, or places, that are what's picked now, or where it
+    /// is.
     pub fn current(&self) -> Vec<String> {
-        match self.asking.as_ref().map(|asking| &asking.question.ask) {
-            Some(Ask::Choose(choices)) => choices
+        match (
+            self.asking.as_ref().map(|asking| &asking.question.ask),
+            &self.listing,
+        ) {
+            (Some(Ask::Choose(choices)), _) => choices
                 .iter()
                 .filter(|choice| choice.current)
                 .map(|choice| choice.label.to_string())
                 .collect(),
+            (None, Listing::Places(places)) => places
+                .iter()
+                .filter(|place| place.current)
+                .map(|place| place.label.to_string())
+                .collect(),
             _ => Vec::new(),
         }
+    }
+
+    /// What it lists, while places are: each one's kind and name.
+    pub fn places_listed(&self) -> Vec<(places::Kind, String)> {
+        let Listing::Places(places) = &self.listing else {
+            return Vec::new();
+        };
+        self.rows
+            .iter()
+            .map(|row| {
+                let place = &places[row.index];
+                (place.kind, place.label.to_string())
+            })
+            .collect()
+    }
+
+    /// The place picked, as `places_listed` names it, and where it is.
+    pub fn picked_place(&self) -> Option<(places::Kind, String, Option<String>)> {
+        let Listing::Places(places) = &self.listing else {
+            return None;
+        };
+        let place = &places[self.rows.get(self.selected)?.index];
+        let detail = place.detail.as_ref().map(ToString::to_string);
+        Some((place.kind, place.label.to_string(), detail))
     }
 }
 
@@ -787,9 +905,10 @@ impl Render for Palette {
             )),
             _ => None,
         };
-        let empty = match asking {
-            None => "No commands found",
-            Some(_) => "Nothing to pick",
+        let empty = match (asking, &self.listing) {
+            (None, Listing::Commands { .. }) => "No commands found",
+            (None, Listing::Places(_)) => "Nowhere found",
+            (Some(_), _) => "Nothing to pick",
         };
 
         let header = self.header(&theme);

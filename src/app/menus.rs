@@ -5,10 +5,12 @@
 //! whenever it changes; so does each command run, the audio engine as
 //! outputs come and go, Settings as they change, the displays as they come
 //! and go or the window in front moves to another, the devices to cast to
-//! as they come and go or the tile in front casts to one, and the tile in
-//! front's chapters as another is in front.
+//! as they come and go or the tile in front casts to one, the tile in
+//! front's chapters as another is in front, and the files played lately
+//! as they change.
 
 use std::collections::BTreeMap;
+use std::path::Path;
 
 use gpui::{App, Global, Menu, MenuItem, SystemMenuType};
 use serde_json::{Value, json};
@@ -18,7 +20,9 @@ use super::{AudioEngine, player_windows};
 use crate::api::commands::{cast, output, playback, tile, video, window};
 use crate::api::{self, Run, Target, front_window};
 use crate::cast::{Casting, Device, Shows};
+use crate::files;
 use crate::media::output::DeviceInfo;
+use crate::recents;
 use crate::settings::{AudioDevice, Settings};
 use crate::ui::displays::{self, DisplayInfo};
 use crate::ui::framing::{ASPECT_RATIOS, CROPS, Ratio};
@@ -106,26 +110,65 @@ fn developer_menu(state: &MenuState) -> Menu {
     }
 }
 
-/// Opening and closing files and windows.
+/// Opening and closing files and windows, and the files played lately.
 fn file_menu(state: &MenuState) -> Menu {
+    let mut items = items(&["window.open_files", "window.open_url"], state);
+    items.extend(recent_menu(state).map(MenuItem::submenu));
+    items.extend(self::items(
+        &[
+            "",
+            "tile.close",
+            "tile.close_others",
+            "tile.close_all",
+            "window.close",
+            "",
+            "tile.copy_path",
+            "tile.copy_time",
+        ],
+        state,
+    ));
     Menu {
         name: "File".into(),
-        items: items(
-            &[
-                "window.open_files",
-                "window.open_url",
-                "",
-                "tile.close",
-                "tile.close_others",
-                "tile.close_all",
-                "window.close",
-                "",
-                "tile.copy_path",
-                "tile.copy_time",
-            ],
-            state,
-        ),
+        items,
     }
+}
+
+/// The files played lately, the latest first, to open in the window in
+/// front, each by its name, with its folder where two share one; and
+/// Clear Recent Files. None without any.
+fn recent_menu(state: &MenuState) -> Option<Menu> {
+    let files = &state.recent_files;
+    let named: Vec<(String, String)> = files
+        .iter()
+        .map(|file| {
+            let path = Path::new(file);
+            (
+                files::name(path),
+                path.parent().map(files::shown).unwrap_or_default(),
+            )
+        })
+        .collect();
+    let shared = |name: &str| named.iter().filter(|(other, _)| other == name).count() > 1;
+    let mut items: Vec<MenuItem> = files
+        .iter()
+        .zip(&named)
+        .map(|(file, (name, folder))| {
+            let title = if shared(name) {
+                format!("{name} — {folder}")
+            } else {
+                name.clone()
+            };
+            MenuItem::action(title, Run::with("app.open", json!({"urls": [file]})))
+        })
+        .collect();
+    if items.is_empty() {
+        return None;
+    }
+    items.extend([MenuItem::separator(), item("app.clear_recent_files", state)]);
+    Some(Menu {
+        name: "Open Recent".into(),
+        items,
+    })
 }
 
 /// Playing the tile in front, its chapters, and every tile.
@@ -280,6 +323,7 @@ fn window_menu(state: &MenuState) -> Menu {
     let mut items = items(
         &[
             "window.command_palette",
+            "window.go_to",
             "",
             "window.new",
             "window.rename",
@@ -372,10 +416,11 @@ fn other_window_menu(state: &MenuState) -> Option<Menu> {
     })
 }
 
-/// Check the menus again when Settings change: floating on top, and the
-/// output picked.
+/// Check the menus again when Settings change (floating on top, and the
+/// output picked), and the files played lately.
 pub(super) fn watch_settings(cx: &mut App) {
     cx.observe_global::<Settings>(refresh).detach();
+    recents::observe(cx, refresh);
 }
 
 /// What the menus show that changes without them hearing of it: besides
@@ -404,6 +449,8 @@ struct MenuState {
     /// The state of each command that has one, as it is for the window
     /// and tile in front.
     states: BTreeMap<&'static str, Value>,
+    /// The full paths of the files played lately, the latest first.
+    recent_files: Vec<String>,
 }
 
 impl Global for MenuState {}
@@ -461,6 +508,7 @@ impl MenuState {
             tiles,
             others,
             states,
+            recent_files: recents::FILES.list(cx),
         }
     }
 
@@ -876,6 +924,78 @@ mod tests {
     }
 
     #[test]
+    fn open_recent_opens_the_files_played_lately_by_name_and_folder_where_shared() {
+        let none = file_menu(&MenuState::default());
+        fn recent(menu: &Menu) -> Option<&Menu> {
+            menu.items.iter().find_map(|item| match item {
+                MenuItem::Submenu(menu) if menu.name == "Open Recent" => Some(menu),
+                _ => None,
+            })
+        }
+        assert!(recent(&none).is_none(), "none without any");
+
+        let state = MenuState {
+            recent_files: ["/media/a/x.mkv", "/media/b/x.mkv", "/media/b/y.mp4"]
+                .map(str::to_owned)
+                .into(),
+            ..MenuState::default()
+        };
+        let file = file_menu(&state);
+        let at = file
+            .items
+            .iter()
+            .position(|item| matches!(item, MenuItem::Submenu(_)));
+        assert_eq!(at, Some(2), "after Open URL…");
+        let menu = recent(&file).expect("Open Recent");
+        let items: Vec<(String, Option<Run>)> = menu
+            .items
+            .iter()
+            .map(|item| match item {
+                MenuItem::Action { name, action, .. } => (
+                    name.to_string(),
+                    action.as_any().downcast_ref::<Run>().cloned(),
+                ),
+                _ => (String::new(), None),
+            })
+            .collect();
+        let open = |file: &str| Some(Run::with("app.open", json!({"urls": [file]})));
+        assert_eq!(
+            items,
+            [
+                ("x.mkv — /media/a".to_owned(), open("/media/a/x.mkv")),
+                ("x.mkv — /media/b".to_owned(), open("/media/b/x.mkv")),
+                ("y.mp4".to_owned(), open("/media/b/y.mp4")),
+                (String::new(), None),
+                (
+                    "Clear Recent Files".to_owned(),
+                    Some(Run::command("app.clear_recent_files"))
+                ),
+            ]
+        );
+    }
+
+    #[gpui::test]
+    fn the_menus_follow_the_files_played_lately(cx: &mut TestAppContext) {
+        let (_, mut cx) = testing::start(cx);
+        cx.update(|_, cx| crate::recents::FILES.note("/media/a.mkv", cx));
+        cx.run_until_parked();
+        let shown = cx.update(|_, cx| cx.global::<MenuState>().recent_files.clone());
+        assert_eq!(shown, ["/media/a.mkv"]);
+    }
+
+    #[gpui::test]
+    fn clear_recent_files_forgets_them_and_the_menu_follows(cx: &mut TestAppContext) {
+        let (_, cx) = testing::start(cx);
+        TestAppContext::update(&cx, |cx| {
+            crate::recents::FILES.note("/media/a.mkv", cx);
+            assert_eq!(MenuState::now(cx).recent_files, ["/media/a.mkv"]);
+            api::run(api::Invocation::new("app.clear_recent_files"), cx).unwrap();
+            assert!(crate::recents::FILES.list(cx).is_empty());
+            assert!(MenuState::now(cx).recent_files.is_empty());
+        });
+    }
+
+    #[test]
     fn the_window_menu_opens_names_closes_goes_back_to_and_moves_windows() {
         let state = MenuState {
             windows: 3,
@@ -898,6 +1018,7 @@ mod tests {
             "the palette first"
         );
         for (title, command) in [
+            ("Go to…", "window.go_to"),
             ("New Window", "window.new"),
             ("Rename Window…", "window.rename"),
             ("Close Other Windows", "window.close_others"),

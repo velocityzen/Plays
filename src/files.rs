@@ -105,11 +105,47 @@ pub fn with_suffix(path: &Path, suffix: &str) -> PathBuf {
     PathBuf::from(name)
 }
 
+/// A file's name, or its whole path without one.
+pub fn name(path: &Path) -> String {
+    path.file_name().map_or_else(
+        || path.display().to_string(),
+        |name| name.to_string_lossy().into_owned(),
+    )
+}
+
+/// `path` as it's shown, the home folder shortened to `~`.
+pub fn shown(path: &Path) -> String {
+    shown_from(path, dirs::home_dir().as_deref())
+}
+
+fn shown_from(path: &Path, home: Option<&Path>) -> String {
+    match home.and_then(|home| path.strip_prefix(home).ok()) {
+        Some(rest) if rest == Path::new("") => "~".to_owned(),
+        Some(rest) => Path::new("~").join(rest).display().to_string(),
+        None => path.display().to_string(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::io::Read;
 
     use super::*;
+
+    #[test]
+    fn a_path_shows_the_home_folder_as_a_tilde() {
+        let home = Some(Path::new("/home/me"));
+        assert_eq!(
+            shown_from(Path::new("/home/me/Movies/a.mkv"), home),
+            "~/Movies/a.mkv"
+        );
+        assert_eq!(shown_from(Path::new("/home/me"), home), "~");
+        assert_eq!(
+            shown_from(Path::new("/home/meg/a.mkv"), home),
+            "/home/meg/a.mkv"
+        );
+        assert_eq!(shown_from(Path::new("/media/a.mkv"), None), "/media/a.mkv");
+    }
 
     #[test]
     fn a_file_is_replaced_whole_and_never_written_over() {

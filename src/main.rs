@@ -9,6 +9,7 @@ mod files;
 mod hotkeys;
 mod media;
 mod progress;
+mod recents;
 mod settings;
 mod ui;
 

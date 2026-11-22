@@ -12,8 +12,9 @@ use crate::api::registry::{Args, Outcome, Reach, Scope, Spec, on_mac};
 use crate::api::target::{self, Target};
 use crate::api::{Error, Invocation, Run, Source};
 use crate::app::{back_window, move_window, player_windows, recent_window, step_window};
+use crate::recents;
 use crate::settings::{FloatOnTop, Settings};
-use crate::ui::palette;
+use crate::ui::palette::{self, Listing};
 use crate::ui::theme::layout::WINDOW_SIZE;
 use crate::ui::workspace::Workspace;
 
@@ -86,6 +87,27 @@ pub const COMMANDS: &[Spec] = &[
     .keywords(&["commands", "actions", "run", "search", "find"])
     .keys(&["secondary-shift-p"])
     // An empty window has commands to run too.
+    .reach(Reach::Anywhere),
+    Spec::custom(
+        palette::GO_TO,
+        "Go to…",
+        "List the windows, their tiles, the files in the front tile's folder and those \
+         played lately, to find one by name and go there: bring it to the front, play \
+         the file in the tile, or open it.",
+        Scope::Window,
+        show_go_to,
+    )
+    .keywords(&[
+        "switch",
+        "find",
+        "files",
+        "recent",
+        "windows",
+        "tiles",
+        "quick open",
+    ])
+    .keys(&["secondary-p"])
+    // An empty window has places to go to too.
     .reach(Reach::Anywhere),
     Spec::custom(
         "window.close",
@@ -277,16 +299,37 @@ pub const COMMANDS: &[Spec] = &[
 /// Show the command palette over the window, listing the commands that
 /// can run there as they are now, and run lately.
 fn show_palette(_: Args, target: &Target, cx: &mut App) -> Outcome {
+    let here = here(target, cx)?;
+    let listing = Listing::Commands {
+        entries: palette::entries(&here, cx),
+        recents: recents::COMMANDS.list(cx),
+    };
+    show(listing, &here, cx)
+}
+
+/// Show Go to… over the window, listing the windows, the tiles, the files
+/// in the front tile's folder and those played lately.
+fn show_go_to(_: Args, target: &Target, cx: &mut App) -> Outcome {
+    let here = here(target, cx)?;
+    let listing = Listing::Places(palette::places(&here, cx));
+    show(listing, &here, cx)
+}
+
+/// The target naming the window `target` names, or the one in front.
+fn here(target: &Target, cx: &App) -> Result<Target, Error> {
     let window = target::window(target, cx)?;
-    let here = Target {
+    Ok(Target {
         window: Some(target::read(window, cx)?.id().to_string()),
         tile: None,
-    };
-    let entries = palette::entries(&here, cx);
-    let recents = palette::recent_commands(cx);
-    target::in_window(&here, cx, |workspace, window, cx| {
+    })
+}
+
+/// Show the palette listing `listing` over the window `here` names, and
+/// bring it to the front.
+fn show(listing: Listing, here: &Target, cx: &mut App) -> Outcome {
+    target::in_window(here, cx, |workspace, window, cx| {
         window.activate_window();
-        workspace.show_palette(entries, recents, window, cx);
+        workspace.show_palette(listing, window, cx);
         done()
     })
 }

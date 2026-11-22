@@ -20,6 +20,7 @@ mod sync;
 mod tracks;
 
 use std::cell::Cell;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Instant;
@@ -45,6 +46,7 @@ use crate::media::picture::PictureId;
 use crate::media::subtitles::CueContent;
 use crate::media::{Mixer, Neighbors, Picture, PlayerOptions, Source};
 use crate::progress::{self, Note};
+use crate::recents;
 use crate::settings::{AudioDevice, ControlsVisibility, Settings, SubtitleStyle, VideoFit};
 use osd::Osd;
 use playback::Playback;
@@ -261,9 +263,8 @@ impl PlayerView {
     }
 
     /// Play the media file before (`-1`) or after (`1`) this one in its
-    /// folder instead, at the same volume, muted and looping as this one is,
-    /// and playing if this one is (or files start playing). Without one,
-    /// say so, as only a shortcut gets here then.
+    /// folder instead (`play_instead`). Without one, say so, as only a
+    /// shortcut gets here then.
     pub fn open_neighbor(&mut self, direction: i32, cx: &mut Context<Self>) {
         let Some(neighbors) = &self.neighbors else {
             self.note("Still looking through its folder", cx);
@@ -279,6 +280,29 @@ impl PlayerView {
             self.note(format!("No {side} file in its folder"), cx);
             return;
         };
+        self.play_instead(path, cx);
+    }
+
+    /// The media files in its file's folder, by name, once it has been
+    /// looked through; none for a stream.
+    pub fn folder_files(&self) -> Option<&[PathBuf]> {
+        self.neighbors
+            .as_ref()
+            .map(|neighbors| neighbors.all.as_slice())
+    }
+
+    /// Its file's path; none for a stream.
+    pub fn file(&self) -> Option<&Path> {
+        match self.playback.local().source() {
+            Source::File(path) => Some(path),
+            Source::Url(_) => None,
+        }
+    }
+
+    /// Play `path` instead, at the same volume, muted and looping as this
+    /// file is, and playing if it is (or files start playing).
+    pub fn play_instead(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+        recents::note_file(&path, cx);
         let source = Source::File(path);
         log::info!("opening {source}");
         // The file it played is left where it was, to resume.

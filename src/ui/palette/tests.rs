@@ -16,19 +16,22 @@ use crate::ui::theme::layout::WINDOW_SIZE;
 use crate::ui::workspace::Workspace;
 
 /// Open the palette over the window in front with its keys.
-fn open_palette(cx: &mut VisualTestContext) {
+pub(super) fn open_palette(cx: &mut VisualTestContext) {
     press(cx, "secondary-shift-p");
     cx.run_until_parked();
 }
 
-fn palette(window: WindowHandle<Workspace>, cx: &VisualTestContext) -> Option<Entity<Palette>> {
+pub(super) fn palette(
+    window: WindowHandle<Workspace>,
+    cx: &VisualTestContext,
+) -> Option<Entity<Palette>> {
     window
         .read_with(cx, |workspace, _| workspace.palette())
         .unwrap()
 }
 
 /// What `f` reads of the palette over `window`, which is up.
-fn read<R>(
+pub(super) fn read<R>(
     window: WindowHandle<Workspace>,
     cx: &VisualTestContext,
     f: impl FnOnce(&Palette) -> R,
@@ -37,31 +40,31 @@ fn read<R>(
     palette.read_with(cx, |palette, _| f(palette))
 }
 
-fn listed(window: WindowHandle<Workspace>, cx: &VisualTestContext) -> Vec<String> {
+pub(super) fn listed(window: WindowHandle<Workspace>, cx: &VisualTestContext) -> Vec<String> {
     read(window, cx, Palette::listed)
 }
 
 /// Type `text` into the palette's field, after what's there.
-fn type_in(cx: &mut VisualTestContext, text: &str) {
+pub(super) fn type_in(cx: &mut VisualTestContext, text: &str) {
     cx.simulate_input(text);
     cx.run_until_parked();
 }
 
 /// Take away what's typed in the palette's field.
-fn clear(cx: &mut VisualTestContext) {
+pub(super) fn clear(cx: &mut VisualTestContext) {
     press(cx, "secondary-a backspace");
     cx.run_until_parked();
 }
 
 /// Press `keys` and let what they start finish.
-fn press_and_wait(cx: &mut VisualTestContext, keys: &str) {
+pub(super) fn press_and_wait(cx: &mut VisualTestContext, keys: &str) {
     press(cx, keys);
     cx.run_until_parked();
 }
 
 /// The commands the palette ran since asked last: not the one that opened
 /// it, or the queries it read to ask with.
-fn ran(cx: &mut VisualTestContext) -> Vec<Invocation> {
+pub(super) fn ran(cx: &mut VisualTestContext) -> Vec<Invocation> {
     cx.update(|_, cx| api::recorded(cx))
         .into_iter()
         .filter(|invocation| invocation.source == Source::Palette)
@@ -70,7 +73,7 @@ fn ran(cx: &mut VisualTestContext) -> Vec<Invocation> {
 }
 
 /// The API's name for `window`, as a target.
-fn aimed_at(window: WindowHandle<Workspace>, cx: &VisualTestContext) -> Target {
+pub(super) fn aimed_at(window: WindowHandle<Workspace>, cx: &VisualTestContext) -> Target {
     Target {
         window: Some(
             window
@@ -82,7 +85,7 @@ fn aimed_at(window: WindowHandle<Workspace>, cx: &VisualTestContext) -> Target {
 }
 
 /// Open the fixtures `files` into `window`, and wait until they have.
-fn open(window: WindowHandle<Workspace>, cx: &mut VisualTestContext, files: &[&str]) {
+pub(super) fn open(window: WindowHandle<Workspace>, cx: &mut VisualTestContext, files: &[&str]) {
     let paths = files.iter().map(|file| fixture(file)).collect();
     window
         .update(cx, |workspace, _, cx| workspace.open_paths(paths, cx))
@@ -540,6 +543,28 @@ fn lists_offer_what_there_is_with_what_is_picked_now(cx: &mut TestAppContext) {
     assert_eq!(audio.len(), 1);
     assert!(audio[0].current, "the track playing");
 
+    let looked = wait_until(&mut cx, |cx| {
+        window
+            .read_with(cx, |workspace, cx| {
+                workspace.players()[0].read(cx).knows_neighbors()
+            })
+            .unwrap()
+    });
+    assert!(looked, "its folder is looked through");
+    let files = choices("playback.play_file", &mut cx);
+    let opus = files
+        .iter()
+        .find(|choice| choice.label.as_ref() == "clip-opus.mkv")
+        .expect("the files in its folder");
+    assert_eq!(opus.args["path"], json!(fixture("clip-opus.mkv")));
+    let playing: Vec<String> = labels(&files)
+        .into_iter()
+        .zip(&files)
+        .filter(|(_, choice)| choice.current)
+        .map(|(label, _)| label)
+        .collect();
+    assert_eq!(playing, ["clip-subs.mkv"], "the one it plays");
+
     let ratios = choices("video.set_aspect_ratio", &mut cx);
     assert_eq!(ratios[0].label.as_ref(), "Original");
     assert!(ratios[0].current, "none set");
@@ -598,25 +623,4 @@ fn choices_are_found_by_name_or_detail_best_first() {
         super::order_choices("1:30", &choices)[0].at.is_empty(),
         "none in its name"
     );
-}
-
-#[gpui::test]
-fn it_keeps_the_latest_few_once_each(cx: &mut TestAppContext) {
-    cx.update(|cx| {
-        for n in 0..10 {
-            recents::note(&format!("test.c{n}"), cx);
-        }
-        let kept: Vec<String> = (2..10).rev().map(|n| format!("test.c{n}")).collect();
-        assert_eq!(recents::list(cx), kept);
-        assert_eq!(kept.len(), recents::KEPT);
-        recents::note("test.c5", cx);
-        let listed = recents::list(cx);
-        assert_eq!(listed[0], "test.c5");
-        assert_eq!(
-            listed.iter().filter(|id| *id == "test.c5").count(),
-            1,
-            "once"
-        );
-        assert_eq!(listed.len(), recents::KEPT);
-    });
 }

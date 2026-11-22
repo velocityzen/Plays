@@ -13,6 +13,7 @@ use crate::api::registry::{Args, Outcome, Scope, Spec};
 use crate::api::target::{self, Target};
 use crate::app::AudioEngine;
 use crate::media::Source;
+use crate::recents;
 use crate::ui::about::{self, AboutView};
 use crate::ui::settings::{SettingsView, ffmpeg_version};
 use crate::ui::theme::layout::WINDOW_SIZE;
@@ -49,6 +50,13 @@ pub const COMMANDS: &[Spec] = &[
     )
     .keywords(&["file", "folder", "stream", "url", "play", "add"])
     .returns("{window}: the id of the window they open in."),
+    Spec::app(
+        "app.clear_recent_files",
+        "Clear Recent Files",
+        "Forget the files played lately, which File → Open Recent and Go to… offer.",
+        |cx| recents::FILES.clear(cx),
+    )
+    .keywords(&["recent", "history", "forget", "open recent"]),
     Spec::app(
         "app.about",
         "About Plays",

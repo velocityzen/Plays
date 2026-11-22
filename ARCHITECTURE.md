@@ -445,8 +445,9 @@ flowchart LR
 
 - `src/media/source.rs`: files and stream URLs. URLs are logged without
   credentials or query strings. Folders are listed (for the media files in
-  one dropped, and a file's previous and next) in the background, as they
-  may be on a network drive, and by name without looking at each file.
+  one dropped, and a file's previous and next and all of them, which Go
+  to… offers) in the background, as they may be on a network drive, and
+  by name without looking at each file.
 - `src/media/details.rs`: what the console shows of the file's format and
   the streams playing, read from their decoders before they decode.
 - `src/media/colors.rs`: a video's range, matrix, primaries and transfer,
@@ -648,7 +649,9 @@ flowchart LR
   goes from tile to tile and window to window, and back, and numbers
   windows; Move Tile To has a place for each tile in the window in front,
   Move Tile to Window each other window, by label or number, and Move
-  Window To a number for each window). `windows`
+  Window To a number for each window; File → Open Recent the files played
+  lately, each by its name, with its folder where two share one, sending
+  `app.open`, and set again as they change). `windows`
   numbers the player windows in the order they open, as each `Workspace`
   is made, for ⌘1 to ⌘9, unless `window.move` puts one at another number;
   steps from the window in front to the next or the one before for
@@ -703,7 +706,14 @@ flowchart LR
   crash or losing power midway leaves the old one as it was. A private
   file, as the AirPlay pairings are, is made readable by its owner alone
   (on unix) before anything is written to it, and one left beside by a
-  crash is removed first, as it could be anyone's.
+  crash is removed first, as it could be anyone's. Paths are shown with
+  the home folder as `~` (`shown`).
+- `src/recents.rs`: what was used lately, the latest first, each once, a
+  list in a file of its own beside the settings: the last 8 commands run
+  from the palette (`recent-commands.json`) and the last 20 files played
+  (`recent-files.json`), by full path, noted as a tile opens one or plays
+  another in its place. File → Open Recent and Go to… offer them, and
+  `app.clear_recent_files` forgets them.
 - `src/progress.rs`: where each file was when it last played, by its
   whole path, kept for 30 days in `progress.json` beside the settings.
   Tiles note it as they close or open another file, every 10 seconds
@@ -847,17 +857,25 @@ flowchart LR
   target named, each with its state (`api::state`: ✓, or a value) and its
   keys. `search` finds what's typed: each word, its letters in order,
   in a title, a namespace's name or a keyword, letters starting a word or
-  side by side counting for more, the title most. `recents` keeps the
-  last few commands run from it in `recent-commands.json` beside the
-  settings, first when nothing is typed and counting for more when
-  something is. A command's arguments are asked for one by one
+  side by side counting for more, the title most. Those run from it
+  lately (`recents`) come first when nothing is typed and count for more
+  when something is. A command's arguments are asked for one by one
   (`asking`): from a list where there is one (tracks, chapters, windows,
   displays, devices, outputs, settings and their values, an argument's
   own choices), what's picked now first and checked, asked by running
   the queries (`tile.inspect`, `display.ls` and so on) once the window
   is free; or typed, a time, a number in range, a path or a URL, read as
   the argument takes it and said why not until it will do. Change
-  Shortcut… hands the command to Settings.
+  Shortcut… hands the command to Settings. Go to… (`window.go_to`, ⌘P) is
+  the same sheet listing places (`places`): the windows (`window.ls`),
+  the tiles in each (`tile.ls`, with their window where there are two or
+  more), the media files in the front tile's folder, as it last looked
+  through it, and the files played lately (with their folder), each
+  found as commands are, by its name, its kind or where it is. Each runs
+  its command from the palette: `window.focus`, `tile.focus`,
+  `playback.play_file` in the front tile, or `app.open` in the window.
+  ⌘P over the command palette, or ⇧⌘P over Go to…, puts one in the
+  other's place.
 - `src/ui/components/`: the reusable components, one `RenderOnce`
   component per file, each in three sizes (small, medium, large) with its
   numbers for each in `theme`. An icon; a button in seven variants

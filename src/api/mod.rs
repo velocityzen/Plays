@@ -31,7 +31,7 @@ use serde_json::Value;
 
 pub use error::Error;
 pub use registry::{Reach, Scope, Spec, all, find};
-pub use target::{Id, Target, front_window};
+pub use target::{Id, Target, front_window, read_tile};
 
 use crate::ui::workspace::Workspace;
 

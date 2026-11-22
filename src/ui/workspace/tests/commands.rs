@@ -11,6 +11,7 @@ use serde_json::{Value, json};
 use super::open;
 use crate::api::{self, Error, Invocation};
 use crate::media::tracks::TrackKind;
+use crate::recents;
 use crate::ui::player::PlayerView;
 use crate::ui::testing::{self, find, fixture, hover, wait_until};
 use crate::ui::theme::layout::WINDOW_SIZE;
@@ -149,6 +150,53 @@ fn set_volume_sets_it_in_percent_and_unmutes_unless_none(cx: &mut TestAppContext
     assert_eq!(
         loud,
         Err(Error::bad_args("audio.set_volume", "volume is at most 100"))
+    );
+}
+
+#[gpui::test]
+fn play_file_instead_plays_another_in_the_tile_as_this_one_was(cx: &mut TestAppContext) {
+    let (window, mut cx) = testing::start(cx);
+    open(window, &mut cx, &["clip.mp4"], false);
+    let tile = tiles(window, &cx)[0].clone();
+    tile.update(&mut cx, |view, cx| {
+        view.set_muted(true);
+        view.toggle_loop(cx);
+    });
+    run_on(&mut cx, &tile, "audio.set_volume", json!({"volume": 0})).unwrap();
+    let opus = fixture("clip-opus.mkv");
+
+    run_on(&mut cx, &tile, "playback.play_file", json!({"path": opus})).unwrap();
+    assert_eq!(
+        tiles(window, &cx),
+        slice::from_ref(&tile),
+        "in the same tile"
+    );
+    let playing = wait_until(&mut cx, |cx| {
+        tile.read_with(cx, |view, _| {
+            view.file() == Some(opus.as_path()) && view.player().is_known()
+        })
+    });
+    assert!(playing, "it plays the file given");
+    tile.read_with(&cx, |view, _| {
+        let player = view.player();
+        assert_eq!(player.volume(), 0.0);
+        assert!(player.is_muted() && player.is_looping(), "as the other was");
+    });
+    let noted = cx.update(|_, cx| recents::FILES.list(cx));
+    assert_eq!(noted[0], opus.to_string_lossy(), "played lately, first");
+
+    let relative = run_on(
+        &mut cx,
+        &tile,
+        "playback.play_file",
+        json!({"path": "clip.mp4"}),
+    );
+    assert_eq!(
+        relative,
+        Err(Error::bad_args(
+            "playback.play_file",
+            "clip.mp4: give a file's full path"
+        ))
     );
 }
 

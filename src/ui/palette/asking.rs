@@ -11,9 +11,11 @@ use gpui::{App, SharedString};
 use serde_json::{Map, Value, json};
 
 use super::aimed;
+use super::places::{self, text, window_name};
 use crate::api::args::{Arg, Kind};
 use crate::api::commands::settings::protocols;
 use crate::api::{self, Invocation, Source, Spec, Target};
+use crate::files;
 use crate::settings::Settings;
 use crate::settings::fields::{self, Field};
 use crate::ui::player::format_time;
@@ -173,6 +175,7 @@ fn choices(
         ("video.select_track", "number") => ("Video track", tracks("video", None, on)),
         ("subtitles.select_track", "number") => ("Subtitles", tracks("subtitles", Some("Off"), on)),
         ("playback.go_to_chapter", "number") => ("Chapter", chapters(on)),
+        ("playback.play_file", "path") => ("File", folder_files(on)),
         ("window.move", "position") => ("Where", window_places(on)),
         ("window.show_on_display", "display") => ("Display", displays(on)),
         ("tile.move", "position") => ("Where", tile_places(on)),
@@ -198,10 +201,6 @@ fn choices(
     Some(listed)
 }
 
-fn text(value: &Value) -> Option<&str> {
-    value.as_str().filter(|text| !text.is_empty())
-}
-
 /// The front tile's tracks of `kind` (`audio`, `video`, `subtitles`),
 /// after `none` for none, if they can be turned off.
 fn tracks(kind: &str, none: Option<&'static str>, on: &mut On) -> Vec<Choice> {
@@ -219,6 +218,18 @@ fn tracks(kind: &str, none: Option<&'static str>, on: &mut On) -> Vec<Choice> {
             Some(Choice::new(label, json!({ "number": number })).current(picked == Some(number)))
         });
     off.into_iter().chain(listed).collect()
+}
+
+/// The media files in the front tile's folder, the one it plays picked.
+fn folder_files(on: &mut On) -> Vec<Choice> {
+    let (files, playing) = places::folder_files(on.window, on.cx);
+    files
+        .into_iter()
+        .map(|file| {
+            let current = playing.as_ref() == Some(&file);
+            Choice::new(files::name(&file), json!({ "path": file })).current(current)
+        })
+        .collect()
 }
 
 /// The front tile's chapters, each with where it starts.
@@ -241,14 +252,6 @@ fn chapters(on: &mut On) -> Vec<Choice> {
             )
         })
         .collect()
-}
-
-/// What a window is called: its label, or its number.
-fn window_name(window: &Value) -> String {
-    text(&window["label"]).map_or_else(
-        || format!("Window {}", window["number"].as_u64().unwrap_or_default()),
-        str::to_owned,
-    )
 }
 
 /// Each player window's place, ⌘1 and on, by the window there now.

@@ -1,12 +1,11 @@
 //! Screenshots: where they go, in what format, and what goes in them.
 
-use std::path::Path;
-
 use gpui::prelude::*;
 use gpui::{AnyElement, App, Context, PathPromptOptions, SharedString, Window, div};
 
 use super::form::{group, labeled_slider, row, set, slide};
 use super::{Pane, SettingsView};
+use crate::files;
 use crate::settings::{
     JPEG_QUALITY_RANGE, ScreenshotFormat, ScreenshotHdr, ScreenshotSettings, Settings, fields,
 };
@@ -108,16 +107,7 @@ fn folder_text(shots: &ScreenshotSettings) -> SharedString {
     let Some(folder) = shots.folder() else {
         return "This system has no folder for them".into();
     };
-    let home = dirs::home_dir();
-    let shown = match home
-        .as_deref()
-        .and_then(|home| folder.strip_prefix(home).ok())
-    {
-        Some(rest) if rest == Path::new("") => "~".to_owned(),
-        Some(rest) => Path::new("~").join(rest).display().to_string(),
-        None => folder.display().to_string(),
-    };
-    shown.into()
+    files::shown(&folder).into()
 }
 
 fn folder_buttons(shots: &ScreenshotSettings) -> impl IntoElement {

@@ -31,6 +31,7 @@ GPU-accelerated UI framework.
 - Chapters: a notch on the bar where each starts, the time under the bar
   says which one you're in, and keys and a menu go from one to the next.
 - The previous and next media file in the folder open in the same tile.
+- File → Open Recent opens the files played lately (the last 20).
 - A file opened again starts where it was left, for 30 days since it last
   played; one barely begun, or played nearly to its end, starts over.
   Settings → Playback turns it off, which forgets every file's place.
@@ -187,6 +188,10 @@ GPU-accelerated UI framework.
   first; a time, a volume or a path typed, and said why it won't do.
 - Change Shortcut… (⌘↩ on a row) records a new shortcut for it in
   Settings → Hotkeys.
+- ⌘P (Go to…) lists the windows, their tiles, the files in the folder of
+  the tile in front and those played lately, found by name the same way.
+  Return brings a window or tile to the front, plays a file from the
+  folder in that tile, or opens one played lately.
 
 ### Command line
 
@@ -295,6 +300,7 @@ a socket that only you can use, kept with Plays' settings on macOS and in
 | Next/previous window | `⌃⇥` `⌃⇧⇥` / `Ctrl+Tab` `Ctrl+Shift+Tab` |
 | The window in front before | `⌘'` / `Ctrl+'` |
 | Command palette | `⇧⌘P` / `Ctrl+Shift+P` |
+| Go to a window, tile or file | `⌘P` / `Ctrl+P` |
 | Settings | `⌘,` / `Ctrl+,` |
 
 Shortcuts act on the active tile: the one the mouse is over (or was last

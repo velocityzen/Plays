@@ -20,6 +20,12 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
   - `urls` (a list of text): Each a file's or folder's full path, a file:// URL, or a stream's URL.
 - Hands back: {window}: the id of the window they open in.
 
+### Clear Recent Files
+
+`app.clear_recent_files`: Forget the files played lately, which File → Open Recent and Go to… offer.
+
+- Acts on the app.
+
 ### About Plays
 
 `app.about`: Show Plays' version, and what it's made with.
@@ -98,6 +104,13 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 - Acts on a player window.
 - Keys: ⇧⌘P
+
+### Go to…
+
+`window.go_to`: List the windows, their tiles, the files in the front tile's folder and those played lately, to find one by name and go there: bring it to the front, play the file in the tile, or open it.
+
+- Acts on a player window.
+- Keys: ⌘P
 
 ### Close Window
 
@@ -492,6 +505,14 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 - Acts on a tile.
 - Keys: ⌘→
+
+### Play File Instead
+
+`playback.play_file`: Play another file in the tile instead, one in its folder say, at the same volume, muted and looping as this one is, and playing if it is.
+
+- Acts on a tile.
+- Arguments:
+  - `path` (text): The file's full path.
 
 ### Loop
 

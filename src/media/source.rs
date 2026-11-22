@@ -56,11 +56,14 @@ fn is_media(path: &Path) -> bool {
     known && !hidden
 }
 
-/// The media files before and after a file in its folder, by name.
+/// The media files before and after a file in its folder, by name, and
+/// all of them.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Neighbors {
     pub previous: Option<PathBuf>,
     pub next: Option<PathBuf>,
+    /// Every media file in the folder, by name.
+    pub all: Vec<PathBuf>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -124,8 +127,9 @@ impl Source {
         matches!(self, Self::Url(_))
     }
 
-    /// The media files before and after this file in its folder, by name;
-    /// none for a stream. It needn't be a media file itself.
+    /// The media files before and after this file in its folder, by name,
+    /// and all of them; none for a stream. It needn't be a media file
+    /// itself.
     ///
     /// Lists the folder (`media_in`), so not for the UI thread.
     pub fn neighbors(&self) -> Neighbors {
@@ -150,6 +154,7 @@ impl Source {
         Neighbors {
             previous: before.checked_sub(1).map(|i| folder.join(&names[i])),
             next: names.get(after).map(|other| folder.join(other)),
+            all: names.iter().map(|other| folder.join(other)).collect(),
         }
     }
 
@@ -251,7 +256,7 @@ mod tests {
     }
 
     #[test]
-    fn finds_the_media_files_before_and_after_a_file() {
+    fn finds_the_media_files_before_and_after_a_file_and_all_of_them() {
         let folder = std::env::temp_dir().join(format!("plays-neighbors-{}", std::process::id()));
         std::fs::create_dir_all(&folder).unwrap();
         for name in ["a.mkv", "b.txt", "c.mp3", ".d.mp4", "e.MP4"] {
@@ -263,6 +268,9 @@ mod tests {
             Neighbors {
                 previous: Some(folder.join("a.mkv")),
                 next: Some(folder.join("e.MP4")),
+                all: ["a.mkv", "c.mp3", "e.MP4"]
+                    .map(|name| folder.join(name))
+                    .into(),
             }
         );
         assert_eq!(neighbors("a.mkv").previous, None);
