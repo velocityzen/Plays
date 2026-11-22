@@ -41,7 +41,7 @@ use super::components::{Icon, Panel};
 use super::text_input::TextInput;
 use super::theme::palette::{
     CHECK_WIDTH, DETAIL_SELECTED, FIELD_HEIGHT, FIELD_RADIUS, INSET, KEYCAP_RADIUS, LIST_PADDING,
-    RADIUS, ROW_HEIGHT, ROW_RADIUS, ROWS, SEARCH_ICON, WIDTH as PALETTE_WIDTH,
+    MARGIN, RADIUS, ROW_HEIGHT, ROW_RADIUS, ROWS, SEARCH_ICON, WIDTH as PALETTE_WIDTH,
 };
 use super::theme::text::TextStyle;
 use super::theme::{Theme, dialog};
@@ -788,6 +788,7 @@ impl Palette {
         };
         let changes = self.selected_spec().is_some_and(Spec::takes_keys);
         div()
+            .debug_selector(|| "palette-footer".into())
             .flex()
             .items_center()
             .justify_end()
@@ -1183,6 +1184,9 @@ impl Render for Palette {
             .superellipse(RADIUS)
             .w(PALETTE_WIDTH)
             .max_w_full()
+            // No taller than the window has room for: the list gives
+            // way, and scrolls.
+            .max_h_full()
             .flex()
             .flex_col()
             .child(header)
@@ -1224,7 +1228,8 @@ impl Render for Palette {
             // Otherwise the card stretches to the bottom of the window.
             .items_start()
             .pt(dialog::TOP)
-            .px_4()
+            .px(MARGIN)
+            .pb(MARGIN)
             .bg(black().opacity(dialog::BACKDROP))
             .occlude()
             .on_mouse_down(

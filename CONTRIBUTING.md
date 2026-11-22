@@ -798,7 +798,10 @@ check:
     and lined up with it, its keys at its end as far in as its name, and
     a heading starting where its rows' names do; its text as tall as a
     menu row's, or a hint's for headings, the footer and the command's
-    chip in the field.
+    chip in the field. In a window as short as a player window gets, it
+    ending a margin above the bottom, its field whole and its footer in
+    it, and the last row, picked, scrolled into view between them; in a
+    tall one, only as tall as its rows.
   - The footer saying what Return and ⌘Return do, only for a command that
     takes keys, and a click on either doing it.
   - A command's arguments asked for in turn: a chapter from a list, a

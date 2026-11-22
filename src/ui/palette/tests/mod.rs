@@ -14,8 +14,8 @@ use crate::app::player_windows;
 use crate::files::Folder;
 use crate::settings::Settings;
 use crate::ui::testing::{self, OPEN_WAIT, fixture, press, shows, wait_until};
-use crate::ui::theme::layout::WINDOW_SIZE;
-use crate::ui::theme::palette::CHECK_WIDTH;
+use crate::ui::theme::layout::{WINDOW_MIN_SIZE, WINDOW_SIZE};
+use crate::ui::theme::palette::{CHECK_WIDTH, FIELD_HEIGHT, MARGIN, ROW_HEIGHT};
 use crate::ui::workspace::Workspace;
 
 /// Open the palette over the window in front with its keys.
@@ -659,6 +659,39 @@ fn the_row_picked_and_the_heading_over_it_stay_in_view(cx: &mut TestAppContext) 
     assert!(
         shows_made(&mut cx, format!("palette-heading-{}", headed[0].0)),
         "back at the first, its heading too"
+    );
+}
+
+#[gpui::test]
+fn in_a_short_window_it_ends_short_of_the_bottom_and_its_list_scrolls(cx: &mut TestAppContext) {
+    let (window, mut cx) = testing::start(cx);
+    cx.simulate_resize(WINDOW_MIN_SIZE);
+    open_palette(&mut cx);
+    // The footer is the card's last, inside its hairline border.
+    let footer = testing::find(&mut cx, "palette-footer");
+    let bottom = WINDOW_MIN_SIZE.height - MARGIN;
+    assert!(
+        footer.bottom() <= bottom && footer.bottom() > bottom - px(2.),
+        "as tall as fits, a margin above the window's bottom: {footer:?}"
+    );
+    let field = testing::find(&mut cx, "palette-field");
+    assert_near(field.size.height, FIELD_HEIGHT, "the field whole");
+
+    // Up from the first, the last is picked, in view above the footer.
+    press_and_wait(&mut cx, "up");
+    let last = listed(window, &cx).last().unwrap().clone();
+    assert_eq!(read(window, &cx, Palette::picked), Some(last.clone()));
+    let row = testing::find(&mut cx, Box::leak(format!("palette-row-{last}").into()));
+    assert!(
+        row.top() >= field.bottom() && row.bottom() <= footer.top(),
+        "{row:?} between {field:?} and {footer:?}"
+    );
+
+    cx.simulate_resize(WINDOW_SIZE);
+    let footer = testing::find(&mut cx, "palette-footer");
+    assert!(
+        footer.bottom() < WINDOW_SIZE.height - MARGIN - ROW_HEIGHT,
+        "in a tall window, only as tall as its rows: {footer:?}"
     );
 }
 

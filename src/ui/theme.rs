@@ -721,6 +721,9 @@ pub mod palette {
     pub const ROWS: usize = 12;
     /// Above the first row and below the last.
     pub const LIST_PADDING: Pixels = px(6.);
+    /// How far it keeps from the window's sides and bottom: in a window too
+    /// short for all its rows, it ends there, and the list scrolls.
+    pub const MARGIN: Pixels = px(16.);
     /// Where a check goes, before the name.
     pub const CHECK_WIDTH: Pixels = px(14.);
     /// A detail's opacity, white on the row picked.

@@ -187,7 +187,8 @@ GPU-accelerated UI framework.
   for each menu, those run from it lately first under Recent: type a few
   letters of its name, its menu or a word for it to find it, and Return
   runs the one picked, in your accent color. Pointing at a row picks it,
-  and a click runs it.
+  and a click runs it. In a short window it lists fewer rows at once, and
+  scrolls, its footer still showing.
 - Each row says what its command is set to now (✓ when on) and, at its
   end, its shortcut. What a command takes, it asks for next: a track, a
   chapter, a display, a setting and its value from a list, the one now

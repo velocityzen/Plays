@@ -935,7 +935,10 @@ flowchart LR
   accent color, and pointing at one
   picks it, so the mouse and the arrows move the same row. A footer says
   what Return does and Change Shortcut's ⌘↩, each in a keycap and each
-  clickable. Go to… (`window.go_to`, ⌘P) is
+  clickable. It shows up to `ROWS` rows; in a window too short for them it
+  ends `theme::palette::MARGIN` above the bottom, the card no taller than
+  its room (`max_h_full`) and the list, the one part that can give way,
+  shrinking, so the field and the footer stay whole and the list scrolls. Go to… (`window.go_to`, ⌘P) is
   the same sheet listing places (`places`): the windows (`window.ls`),
   the tiles in each (`tile.ls`, with their window where there are two or
   more), the media files in the front tile's folder, as it last looked
