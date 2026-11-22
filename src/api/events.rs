@@ -229,6 +229,16 @@ fn listened(cx: &mut App) -> bool {
     !events.listening.is_empty()
 }
 
+/// How many listen, forgetting those who stopped: a test goes on once
+/// what it runs on another thread does.
+#[cfg(test)]
+pub fn listeners(cx: &mut App) -> usize {
+    if !listened(cx) {
+        return 0;
+    }
+    cx.global::<Events>().listening.len()
+}
+
 /// Look every `LOOK_EVERY`, until no one listens.
 fn keep_looking(cx: &mut App) {
     cx.spawn(async move |cx| {

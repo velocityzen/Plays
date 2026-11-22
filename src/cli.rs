@@ -194,11 +194,7 @@ impl Session<'_> {
             Command::Window(window) => windows::window(self, window),
             Command::Tile(tile) => windows::tile(self, tile),
             Command::Open { paths, new_window } => self.open(&paths, new_window),
-            Command::Events {
-                all,
-                positions,
-                count,
-            } => events::events(self, all, positions, count),
+            Command::Events { positions, count } => events::events(self, positions, count),
             Command::Wait { event, timeout } => events::wait(self, &event, timeout),
             Command::Settings(settings) => self.settings(settings),
             Command::Keymap => self.keymap(),

@@ -845,7 +845,8 @@ plays -t 2 do audio.set_volume volume=40  # on the second tile
 plays tile rename 2 Commentary
 plays window move Kitchen --after 1
 plays wait ended -t 1 --timeout 600       # until the first tile ends
-plays events --all --json                 # every change, a JSON line each
+plays events --json                       # every change, a JSON line each
+plays -w Kitchen events                   # the Kitchen window's alone
 plays settings set autoplay false
 plays keymap                              # the shortcuts as they are now
 plays actions                             # every command, Plays or not
@@ -859,6 +860,8 @@ plays actions                             # every command, Plays or not
 - `do` takes each argument as `KEY=VALUE`, read as the command takes it:
   text stays text (`label=1984`), anything else is read as JSON, and a
   key given again makes a list. `api call` takes them as a JSON object.
+- `events` prints every change as it comes: the app's, and each window's
+  and tile's, or with `-w` only that window's and its tiles'.
 - `wait` prints the event once it comes (one that has ended already has),
   and fails if the tile or window closes first or `--timeout` runs out.
 - The events of how a file plays (`playing`, `paused`, `seeked`, `ended`,

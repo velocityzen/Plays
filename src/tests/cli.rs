@@ -154,10 +154,7 @@ fn help_and_the_version_print_and_a_bad_command_line_says_why() {
             &["window", "move", "2"],
             "--before <NAME>|--after <NAME>|--index <N>",
         ),
-        (
-            &["events", "--all", "-w", "1"],
-            "hear everything, or -w's window",
-        ),
+        (&["events", "--all"], "unexpected argument '--all'"),
         (
             &["open", "--new-window", "-w", "1", "a.mkv"],
             "open in a new window, or in -w's",
@@ -671,6 +668,109 @@ fn events_print_as_they_happen(cx: &mut TestAppContext) {
     let event: Value = serde_json::from_str(ran.out.trim_end()).unwrap();
     assert_eq!(event["type"], "window_label_changed", "{ran:?}");
     assert!(event["payload"]["window_id"].is_string());
+}
+
+/// Plain `plays events` hears everything, each window's tiles too: a file
+/// opened that starts playing, where it is said, its volume however it's
+/// changed, and its pausing, each after its command.
+#[gpui::test]
+fn events_hear_every_window_and_tile_unless_one_is_named(cx: &mut TestAppContext) {
+    let (path, window, mut cx) = serving("cli-events-all", cx);
+    let playing = move |cx: &mut TestAppContext, playing: bool| {
+        let now = wait_until(cx, |cx| {
+            window
+                .read_with(cx, |workspace, cx| {
+                    workspace.players().first().is_some_and(|view| {
+                        let view = view.read(cx);
+                        view.player().is_known() && view.is_playing() == playing
+                    })
+                })
+                .unwrap()
+        });
+        assert!(now, "playing: {playing}");
+        // What changed is told now, as the app does every `LOOK_EVERY`.
+        cx.update(api::events::look);
+    };
+    let ran = plays_while(
+        &mut cx,
+        &path,
+        &["--json", "events", "--count", "60"],
+        |cx, time| {
+            if time > 0 {
+                // Clients come and go till it has heard enough.
+                plays(cx, &path, &["version"]);
+                return;
+            }
+            let listens = wait_until(cx, |cx| cx.update(api::events::listeners) == 1);
+            assert!(listens, "it listens");
+            plays(cx, &path, &["open", "tests/fixtures/clip.mp4"]);
+            playing(cx, true);
+            for command in [
+                &["do", "audio.volume_down"][..],
+                &["do", "audio.volume_up"],
+                &["do", "audio.set_volume", "volume=30"],
+            ] {
+                assert_eq!(plays(cx, &path, command).status, 0, "{command:?}");
+                cx.update(api::events::look);
+            }
+            plays(cx, &path, &["do", "playback.play_pause"]);
+            playing(cx, false);
+        },
+    );
+    assert_eq!(ran.status, 0, "{ran:?}");
+    let heard: Vec<Value> = ran
+        .out
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    let said: Vec<&str> = heard
+        .iter()
+        .filter_map(|event| match event["type"].as_str()? {
+            "command_run" => event["payload"]["command"]
+                .as_str()
+                .filter(|command| !command.starts_with("app.")),
+            kind @ ("opened" | "playing" | "volume_changed" | "paused") => Some(kind),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        said,
+        [
+            "opened",
+            "playing",
+            "audio.volume_down",
+            "volume_changed",
+            "audio.volume_up",
+            "volume_changed",
+            "audio.set_volume",
+            "volume_changed",
+            "playback.play_pause",
+            "paused",
+        ],
+        "{heard:#?}"
+    );
+    let told = |kind: &'static str| {
+        heard
+            .iter()
+            .filter(move |event| event["type"] == kind)
+            .map(|event| &event["payload"])
+    };
+    let opened = told("opened").next().unwrap();
+    assert_eq!(opened["tile_title"], "clip.mp4", "{opened}");
+    assert_eq!(opened["window_title"], "Plays", "{opened}");
+    for payload in told("playing").chain(told("paused")) {
+        assert!(payload["position"].is_number(), "{payload}");
+        assert!(payload["time"].is_number(), "{payload}");
+        assert!(payload["frame"].is_u64(), "{payload}");
+    }
+    let volumes: Vec<&Value> = told("volume_changed")
+        .map(|payload| &payload["volume"])
+        .collect();
+    assert!(
+        volumes[0].as_f64() < volumes[1].as_f64(),
+        "down, then up: {volumes:?}"
+    );
+    assert_eq!(volumes[2], &json!(30.0));
 }
 
 /// Wait until `plays wait`, on another thread, has looked at the tile it

@@ -10,15 +10,14 @@ use crate::api::events::playhead;
 use crate::api::socket::Heard;
 use crate::api::{Error, Target};
 
-/// Print the events heard, the app's, a window's or all, until `count`
-/// have been, if given, or Plays goes.
-pub fn events(session: &mut Session, all: bool, positions: bool, count: Option<usize>) -> Done {
-    let heard = match (all, session.options.window.clone()) {
-        (true, Some(_)) => return Err(Stop::Usage("hear everything, or -w's window".into())),
-        (true, None) => Heard::All,
-        (false, Some(window)) => Heard::Window(window),
-        (false, None) => Heard::App,
-    };
+/// Print the events heard, everything's or the window's `-w` names, until
+/// `count` have been, if given, or Plays goes.
+pub fn events(session: &mut Session, positions: bool, count: Option<usize>) -> Done {
+    let heard = session
+        .options
+        .window
+        .clone()
+        .map_or(Heard::All, Heard::Window);
     let json = session.options.json;
     session.client()?.subscribe(heard, positions)?;
     for _ in 0..count.unwrap_or(usize::MAX) {

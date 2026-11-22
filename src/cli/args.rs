@@ -83,12 +83,9 @@ pub enum Command {
         #[arg(long)]
         new_window: bool,
     },
-    /// Print what changes, as it does: the app's, the window's named (-w), or
-    /// everything's (--all).
+    /// Print what changes, as it does: everything, the app's, its windows'
+    /// and their tiles', or the window's named (-w).
     Events {
-        /// Everything's: every window's and tile's too.
-        #[arg(long)]
-        all: bool,
         /// Each tile's position too, once a second.
         #[arg(long)]
         positions: bool,

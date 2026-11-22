@@ -639,7 +639,8 @@ flowchart LR
   tile subcommands: those named are found by id first, so closing or
   moving one doesn't change which window the next number names, and a
   place beside another counts from where the others are once the one
-  moving has left its own. `events` subscribes and prints each event, a
+  moving has left its own. `events` subscribes to everything
+  (`Heard::All`), or to the window `-w` names, and prints each event, a
   line of `type key=value…` or of JSON; `wait` subscribes before it looks
   at the tile, so nothing happens unheard in between: a tile that has
   ended already prints its `ended` at once, as the event says it, from
