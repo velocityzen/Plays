@@ -14,6 +14,7 @@ mod playback;
 mod screenshots;
 mod subtitles;
 #[cfg(test)]
+#[path = "tests/mod.rs"]
 mod tests;
 mod video;
 

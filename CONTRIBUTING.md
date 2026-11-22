@@ -11,6 +11,7 @@ works.
   - [Licenses](#licenses)
 - [Tests](#tests)
   - [Running them](#running-them)
+  - [Where they live](#where-they-live)
   - [The media engine](#the-media-engine)
   - [Screenshots and drawing](#screenshots-and-drawing)
   - [Windows](#windows)
@@ -163,6 +164,32 @@ One ignored test plays through the machine's own outputs, each by its id:
 ```bash
 cargo test plays_through_the_devices_here -- --ignored --nocapture
 ```
+
+### Where they live
+
+Tests are kept apart from the code they test, in a `tests` folder beside
+it, each file named after the code file it tests: `src/media/tracks.rs`'s
+are in `src/media/tests/tracks.rs`. The code file declares them at its
+end, so they reach its private items through `super`:
+
+```rust
+#[cfg(test)]
+#[path = "tests/tracks.rs"]
+mod tests;
+```
+
+A folder module's own tests (its `mod.rs`) are in `tests/mod.rs`. A crate
+root's are named after the crate (`crates/dlna/src/tests/dlna.rs`), as
+proptest takes a folder holding a `lib.rs` or `main.rs` for the crate's
+own. Property tests are kept apart from the unit tests, in
+`tests/<file>_properties.rs`, declared as `mod properties`; a helper both
+use is `pub(super)` in the unit tests, and proptest saves a failure in the
+crate's `proptest-regressions/` at the property file's path
+(`proptest-regressions/tests/http_properties.txt`). The window tests
+drive a whole window, so they are `ui::workspace`'s own
+(`src/ui/workspace/tests/mod.rs`), a file for each feature; a feature
+named for one of the workspace's code files, such as `screensaver`, is
+that file's tests (`ui::workspace::screensaver::tests`).
 
 ### The media engine
 
@@ -748,7 +775,7 @@ check:
     score: in order, ignoring case, starting words and side by side
     counting for more, early more than late, and a title more than a
     group or keyword.
-- Go to… (`ui::palette::go_to_tests`), opened with ⌘P over a window with
+- Go to… (`ui::palette::places::tests`), opened with ⌘P over a window with
   two files and a second window, labeled, with one:
   - Listing the windows, the tiles in each, the media files in the front
     tile's folder by name, and the files played lately, the latest first,

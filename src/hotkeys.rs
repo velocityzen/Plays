@@ -270,4 +270,5 @@ fn key_name(key: &str) -> String {
 }
 
 #[cfg(test)]
+#[path = "tests/hotkeys.rs"]
 mod tests;

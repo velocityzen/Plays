@@ -18,6 +18,7 @@ mod place;
 mod screensaver;
 mod sound;
 #[cfg(test)]
+#[path = "tests/mod.rs"]
 mod tests;
 mod tiles;
 mod toolbar;

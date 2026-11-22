@@ -31,6 +31,7 @@ mod server;
 mod subtitles;
 
 #[cfg(test)]
+#[path = "tests/stream_server.rs"]
 mod tests;
 
 use std::fmt;

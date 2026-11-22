@@ -9,12 +9,13 @@ use gpui::{
     VisualTestContext, WindowHandle, point, px,
 };
 
-use super::open;
+use super::*;
 use crate::settings::Settings;
 use crate::ui::settings::SettingsView;
 use crate::ui::testing::{self, click, find, hover, press, shows};
 use crate::ui::theme::screensaver::{RETURN, SPEED};
 use crate::ui::workspace::Workspace;
+use crate::ui::workspace::tests::open;
 
 const SECOND: Duration = Duration::from_secs(1);
 const MINUTE: Duration = Duration::from_secs(60);
@@ -283,4 +284,203 @@ fn settings_in_front(cx: &mut VisualTestContext) {
         .update(cx, |_, window, _| window.activate_window())
         .unwrap();
     cx.run_until_parked();
+}
+
+// The screensaver's own workings, without a window: how the logo goes
+// back and forth, when it sets off, and where it flies back to.
+
+#[test]
+fn a_line_is_gone_back_and_forth() {
+    // Within it, from where it started.
+    assert_eq!(fold(2., 3., 10.), (5., 0));
+    // To its far end, and back from it.
+    assert_eq!(fold(2., 8., 10.), (10., 1));
+    assert_eq!(fold(2., 12., 10.), (6., 1));
+    // To its near end, and on again.
+    assert_eq!(fold(2., 18., 10.), (0., 2));
+    assert_eq!(fold(2., 21., 10.), (3., 2));
+    assert_eq!(fold(0., 35., 10.), (5., 3));
+    // Started past an end, it starts there.
+    assert_eq!(fold(15., 1., 10.), (9., 1));
+    // No room: it stays put.
+    assert_eq!(fold(3., 7., 0.), (0., 0));
+    assert_eq!(fold(3., 7., -4.), (0., 0));
+}
+
+/// A saver over a room 400 × 300 at (100, 50), the logo's place at
+/// (150, 100) in it.
+fn saver(now: Instant) -> Screensaver {
+    let mut saver = Screensaver::new(now);
+    saver.room = Bounds::new(point(px(100.), px(50.)), size(px(400.), px(300.)));
+    saver.home = point(px(250.), px(150.));
+    saver
+}
+
+const LOGO: Pixels = px(100.);
+
+fn seconds(s: f64) -> Duration {
+    Duration::from_secs_f64(s)
+}
+
+#[test]
+fn the_logo_sets_off_once_rested_and_bounces_taking_colors() {
+    let start = Instant::now();
+    let mut saver = saver(start);
+    let after = seconds(60.);
+    assert_eq!(saver.rest(after, start + seconds(20.)), Some(seconds(40.)));
+    assert_eq!(saver.frame(LOGO, start + seconds(20.)).logo_at, None);
+    assert_eq!(saver.rest(after, start + seconds(60.)), None);
+    assert!(saver.bouncing());
+
+    let set_off = start + seconds(60.);
+    let at = |saver: &mut Screensaver, s: f64| saver.frame(LOGO, set_off + seconds(s));
+    let first = at(&mut saver, 0.);
+    assert_eq!(first.logo_at, Some(point(px(150.), px(100.))));
+    assert_eq!((first.color, first.buttons), (None, 1.), "as it was");
+
+    let fading = at(&mut saver, FADE.as_secs_f64() / 2.);
+    assert!((fading.buttons - 0.5).abs() < 1e-3, "{}", fading.buttons);
+    let faded = at(&mut saver, FADE.as_secs_f64() * 2.);
+    assert!(faded.buttons.abs() < f32::EPSILON);
+
+    // 150 across and 100 down to go: the bottom first, then the right.
+    let to_bottom = 100. / SPEED;
+    let before = at(&mut saver, to_bottom - 0.1);
+    assert_eq!(before.color, None);
+    let bottom = at(&mut saver, to_bottom + 0.1);
+    assert_eq!(bottom.color, Some(color(0)));
+    let right = at(&mut saver, 150. / SPEED + 0.1);
+    assert_eq!(right.color, Some(color(1)));
+    assert_ne!(color(0), color(1));
+    let right_at = right.logo_at.unwrap();
+    assert!(
+        (f64::from(right_at.x) - (300. - 0.1 * SPEED)).abs() < 0.01,
+        "{right_at:?}"
+    );
+    assert!(
+        (f64::from(right_at.y) - (200. - 50. - 0.1 * SPEED)).abs() < 0.01,
+        "{right_at:?}"
+    );
+
+    // As long as it goes, it stays in the room, and takes each color
+    // in turn (two at once in a corner), round again after the last.
+    let mut colors = Vec::new();
+    for tenth in 0..10_000 {
+        let at = at(&mut saver, f64::from(tenth) / 10.).logo_at.unwrap();
+        assert!(at.x >= px(0.) && at.x <= px(300.), "{at:?}");
+        assert!(at.y >= px(0.) && at.y <= px(200.), "{at:?}");
+        if colors.last() != Some(&saver.shown_color) {
+            colors.push(saver.shown_color);
+        }
+    }
+    let colors: Vec<usize> = colors.into_iter().flatten().collect();
+    assert_eq!(colors[0], 0, "{colors:?}");
+    for two in colors.windows(2) {
+        let next = (two[0] + 1) % COLORS.len();
+        assert!(
+            two[1] == next || two[1] == (next + 1) % COLORS.len(),
+            "{colors:?}"
+        );
+    }
+    assert!(colors.windows(2).any(|two| two[1] < two[0]), "{colors:?}");
+}
+
+#[test]
+fn used_the_logo_flies_back_quickly_and_the_buttons_fade_in() {
+    let start = Instant::now();
+    let mut saver = saver(start);
+    assert_eq!(saver.rest(seconds(0.), start), None);
+    let out = saver.frame(LOGO, start + seconds(1.)).logo_at.unwrap();
+    assert_ne!(out, point(px(150.), px(100.)));
+
+    let woke = start + seconds(2.);
+    saver.used(woke);
+    assert!(!saver.bouncing());
+    // Used again on its way, it goes on.
+    saver.used(woke);
+    let back = |saver: &mut Screensaver, s: f64| saver.frame(LOGO, woke + seconds(s));
+    // From where it was last drawn, in the color it was drawn in: its
+    // own, before the first edge, though it would be past it by now.
+    let first = back(&mut saver, 0.);
+    assert_eq!((first.logo_at, first.buttons), (Some(out), 0.));
+    assert_eq!(first.color, None);
+    let half = back(&mut saver, RETURN.as_secs_f64() / 2.);
+    assert!((half.buttons - 0.5).abs() < 1e-3);
+    // Most of the way there in half the time.
+    let home = point(px(150.), px(100.));
+    let gone = |at: Point<Pixels>| f32::from((at - out).x).hypot(f32::from((at - out).y));
+    let whole = gone(home);
+    assert!(gone(half.logo_at.unwrap()) > whole * 0.8);
+    let there = back(&mut saver, RETURN.as_secs_f64());
+    assert_eq!((there.logo_at, there.buttons), (Some(home), 1.));
+
+    saver.settle(woke + RETURN);
+    assert_eq!(saver.frame(LOGO, woke + RETURN).logo_at, None);
+    assert_eq!(
+        saver.rest(seconds(60.), woke + RETURN),
+        Some(seconds(60.) - RETURN),
+        "resting from when it was used"
+    );
+}
+
+#[test]
+fn a_click_picks_the_next_color_and_it_bounces_on_from_it() {
+    let start = Instant::now();
+    let mut saver = saver(start);
+    assert_eq!(saver.frame(LOGO, start).color, None, "its own");
+    let mut picked = Vec::new();
+    for _ in 0..=COLORS.len() {
+        saver.next_color();
+        picked.push(saver.frame(LOGO, start).color);
+    }
+    let each: Vec<_> = (0..COLORS.len())
+        .map(|nth| Some(color(nth)))
+        .chain([None])
+        .collect();
+    assert_eq!(picked, each, "each in turn, then its own again");
+
+    // With the third picked, it sets off in it, and takes the fourth at
+    // the bottom edge and the fifth at the right.
+    for _ in 0..3 {
+        saver.next_color();
+    }
+    assert_eq!(saver.rest(seconds(0.), start), None);
+    let at = |saver: &mut Screensaver, s: f64| saver.frame(LOGO, start + seconds(s)).color;
+    assert_eq!(at(&mut saver, 0.), Some(color(2)));
+    assert_eq!(at(&mut saver, 100. / SPEED + 0.1), Some(color(3)));
+    assert_eq!(at(&mut saver, 150. / SPEED + 0.1), Some(color(4)));
+    // Brought back, it keeps the one it was last drawn in, the fifth,
+    // and sets off again in it, taking the sixth, then the first.
+    saver.used(start + seconds(10.));
+    assert_eq!(at(&mut saver, 10.), Some(color(4)));
+    saver.settle(start + seconds(10.) + RETURN);
+    assert_eq!(at(&mut saver, 11.), Some(color(4)));
+    assert_eq!(saver.rest(seconds(0.), start + seconds(11.)), None);
+    let again = |saver: &mut Screensaver, s: f64| at(saver, 11. + s);
+    assert_eq!(again(&mut saver, 0.), Some(color(4)));
+    assert_eq!(again(&mut saver, 100. / SPEED + 0.1), Some(color(5)));
+    assert_eq!(again(&mut saver, 150. / SPEED + 0.1), Some(color(0)));
+}
+
+#[test]
+fn it_rests_only_from_when_it_may() {
+    let start = Instant::now();
+    let mut saver = saver(start);
+    saver.allow(true, start);
+    saver.allow(false, start + seconds(10.));
+    // Long after, still not allowed: then allowed.
+    saver.allow(false, start + seconds(100.));
+    saver.allow(true, start + seconds(200.));
+    assert_eq!(
+        saver.rest(seconds(60.), start + seconds(230.)),
+        Some(seconds(30.))
+    );
+
+    // Not allowed while out, before it was drawn out: it comes back
+    // from its place.
+    assert_eq!(saver.rest(seconds(60.), start + seconds(260.)), None);
+    saver.allow(false, start + seconds(261.));
+    assert!(!saver.bouncing());
+    let back = saver.frame(LOGO, start + seconds(261.));
+    assert_eq!(back.logo_at, Some(point(px(150.), px(100.))));
 }

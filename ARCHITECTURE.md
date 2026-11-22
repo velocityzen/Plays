@@ -1428,9 +1428,12 @@ control over displays and full screen, and test support. Everything Plays change
 - The app can say which menu items are enabled, as every Plays item sends
   the same action, and a binding's context such as `!Recording` holds in
   a window that sets none.
+- Text that doesn't wrap is measured again for the width it's cut short
+  to, so a truncated label ends in "…" rather than being clipped.
 - Its test platform takes the system's own text system, extra displays,
-  and counts activations, and `gpui::render_offscreen` (macOS) draws with
-  the real renderer off screen and reads the pixels back, for Plays' tests.
+  and counts activations, a window lists the text it drew, and
+  `gpui::render_offscreen` (macOS) draws with the real renderer off screen
+  and reads the pixels back, for Plays' tests.
 
 `vendor/xattr` is xattr 0.2.3, which gpui reaches, building on Linux with
 today's libc; its `PLAYS.md` says what changed and when to drop it.

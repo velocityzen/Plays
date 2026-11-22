@@ -12,8 +12,6 @@ mod events;
 mod inspect;
 mod languages;
 mod over_video;
-mod screensaver;
-mod sound;
 mod sound_to_airplay;
 mod sound_to_bluetooth;
 mod tiles;
@@ -50,7 +48,7 @@ use crate::ui::{blackout, displays};
 
 /// Open `files` into `window`, and wait until every one of them has
 /// opened, and, with `playing`, is playing.
-fn open(
+pub(super) fn open(
     window: WindowHandle<Workspace>,
     cx: &mut VisualTestContext,
     files: &[&str],

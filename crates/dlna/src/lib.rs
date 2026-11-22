@@ -14,6 +14,7 @@ mod session;
 mod soap;
 mod ssdp;
 #[cfg(test)]
+#[path = "tests/dlna.rs"]
 mod tests;
 mod xml;
 

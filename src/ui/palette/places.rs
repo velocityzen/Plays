@@ -243,3 +243,7 @@ pub fn window_name(window: &Value) -> String {
 pub fn text(value: &Value) -> Option<&str> {
     value.as_str().filter(|text| !text.is_empty())
 }
+
+#[cfg(test)]
+#[path = "tests/places.rs"]
+mod tests;

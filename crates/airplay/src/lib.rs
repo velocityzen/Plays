@@ -19,6 +19,7 @@ mod rtp;
 mod session;
 mod srp;
 #[cfg(test)]
+#[path = "tests/airplay.rs"]
 mod tests;
 mod tlv8;
 mod video;

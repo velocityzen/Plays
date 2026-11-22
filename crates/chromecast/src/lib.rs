@@ -13,6 +13,7 @@ mod media;
 mod proto;
 mod session;
 #[cfg(test)]
+#[path = "tests/chromecast.rs"]
 mod tests;
 
 pub use browser::{Browser, Found};

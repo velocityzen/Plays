@@ -391,4 +391,5 @@ fn settings_changed(cx: &mut App) {
 }
 
 #[cfg(test)]
+#[path = "tests/events.rs"]
 mod tests;

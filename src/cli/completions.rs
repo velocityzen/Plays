@@ -158,4 +158,5 @@ fn protocols() -> Vec<&'static str> {
 }
 
 #[cfg(test)]
+#[path = "tests/completions.rs"]
 mod tests;

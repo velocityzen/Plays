@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use gpui::{TestAppContext, VisualTestContext, WindowHandle, px, size};
 
-use super::open;
+use super::*;
 use crate::api::commands::output;
 use crate::api::commands::window::show_on_display;
 use crate::app::AudioEngine;
@@ -18,6 +18,7 @@ use crate::settings::{AudioDevice, Settings};
 use crate::ui::displays;
 use crate::ui::testing::{self, click, fixture, hover, painted, shows, wait_until};
 use crate::ui::workspace::Workspace;
+use crate::ui::workspace::tests::open;
 
 /// Every tile's mixer in `window`, and the device it plays through.
 fn sound(
@@ -259,4 +260,61 @@ fn a_window_sent_to_a_display_plays_through_its_speakers_until_it_comes_back(
     assert_eq!(playing_through(&mut cx), None);
     come_back(window, &mut cx);
     assert_eq!(playing_through(&mut cx), None);
+}
+
+// Which output is a display's speakers, without a window.
+
+fn outputs(names: &[&str]) -> Vec<DeviceInfo> {
+    names
+        .iter()
+        .enumerate()
+        .map(|(index, name)| DeviceInfo {
+            id: format!("output-{index}"),
+            name: (*name).to_owned(),
+        })
+        .collect()
+}
+
+fn speakers(display: &str, names: &[&str]) -> Option<String> {
+    speakers_of(display, &outputs(names)).map(|device| device.name.clone())
+}
+
+#[test]
+fn a_displays_speakers_are_the_output_named_after_it() {
+    let mac = ["MacBook Pro Speakers", "AirPods Pro", "LG TV SSCR2"];
+    assert_eq!(
+        speakers("LG TV SSCR2", &mac).as_deref(),
+        Some("LG TV SSCR2")
+    );
+    assert_eq!(
+        speakers("lg tv  sscr2", &mac).as_deref(),
+        Some("LG TV SSCR2")
+    );
+    assert_eq!(
+        speakers("Built-in Retina Display", &mac),
+        None,
+        "none of its own"
+    );
+
+    assert_eq!(
+        speakers("Studio Display", &["Studio Display Speakers", "AirPods"]).as_deref(),
+        Some("Studio Display Speakers"),
+    );
+    assert_eq!(
+        speakers("DELL U2720Q (DP-1)", &["DELL U2720Q", "Headphones"]).as_deref(),
+        Some("DELL U2720Q"),
+        "a display named with its connector too",
+    );
+    assert_eq!(
+        speakers("LG TV", &["LG TV SSCR2", "LG TV Soundbar"]),
+        None,
+        "not one of two",
+    );
+    assert_eq!(
+        speakers("LG TV", &["LG TV", "LG TV Soundbar"]).as_deref(),
+        Some("LG TV"),
+        "the one named as it is, first",
+    );
+    assert_eq!(speakers("TV", &["TVS Speakers"]), None, "word for word");
+    assert_eq!(speakers("", &["Speakers"]), None);
 }

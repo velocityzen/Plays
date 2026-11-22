@@ -14,11 +14,10 @@
 //! there, running the command each has.
 
 mod asking;
-#[cfg(test)]
-mod go_to_tests;
 mod places;
 mod search;
 #[cfg(test)]
+#[path = "tests/mod.rs"]
 mod tests;
 
 use std::cmp::Reverse;

@@ -166,4 +166,5 @@ fn start_at(path: Option<PathBuf>, args: &[OsString]) -> Start {
 }
 
 #[cfg(test)]
+#[path = "tests/socket.rs"]
 pub(crate) mod tests;

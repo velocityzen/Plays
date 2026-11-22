@@ -19,6 +19,7 @@ pub mod source;
 pub mod still;
 pub mod subtitles;
 #[cfg(test)]
+#[path = "tests/mod.rs"]
 mod tests;
 pub mod tracks;
 #[cfg(target_os = "macos")]

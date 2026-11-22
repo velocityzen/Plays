@@ -321,4 +321,5 @@ fn playing_changes(
 }
 
 #[cfg(test)]
+#[path = "tests/seen.rs"]
 mod tests;

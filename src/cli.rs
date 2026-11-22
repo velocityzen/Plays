@@ -18,6 +18,7 @@ mod show;
 mod windows;
 
 #[cfg(test)]
+#[path = "tests/cli.rs"]
 mod tests;
 
 use std::ffi::OsString;

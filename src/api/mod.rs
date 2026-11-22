@@ -330,4 +330,5 @@ pub fn can_run(command: &str, target: &Target, cx: &mut App) -> bool {
 }
 
 #[cfg(test)]
+#[path = "tests/mod.rs"]
 mod tests;

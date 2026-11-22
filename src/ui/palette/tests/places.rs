@@ -3,14 +3,14 @@
 use gpui::{TestAppContext, VisualTestContext, WindowHandle};
 use serde_json::json;
 
-use super::places::Kind;
-use super::tests::{
-    aimed_at, clear, open, open_palette, palette, press_and_wait, ran, read, type_in,
-};
-use super::{GO_TO, Palette};
+use super::Kind;
 use crate::api::{self, Invocation, Source, Target};
 use crate::files;
 use crate::recents;
+use crate::ui::palette::tests::{
+    aimed_at, clear, open, open_palette, palette, press_and_wait, ran, read, type_in,
+};
+use crate::ui::palette::{GO_TO, Palette};
 use crate::ui::testing::{self, fixture, press, shows, wait_until};
 use crate::ui::theme::layout::WINDOW_SIZE;
 use crate::ui::workspace::Workspace;

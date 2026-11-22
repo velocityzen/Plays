@@ -131,7 +131,7 @@ fn what_it_plays_comes_from_its_protocol_info() {
     let capabilities = fake.device().capabilities().unwrap();
     assert_eq!(
         capabilities,
-        Capability::parse_list(include_str!("../fixtures/samsung-protocol-info.txt"))
+        Capability::parse_list(include_str!("../../fixtures/samsung-protocol-info.txt"))
     );
     assert!(
         capabilities
