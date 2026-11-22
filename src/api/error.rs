@@ -23,6 +23,9 @@ pub enum Error {
     },
     /// It ran, and couldn't do it.
     Failed { message: String },
+    /// Plays doesn't take it from where it came: from a command line, while
+    /// Settings has control from there off.
+    NotAllowed { message: String },
 }
 
 impl Error {
@@ -46,14 +49,25 @@ impl Error {
         }
     }
 
+    /// A command line asked, and Settings has control from there off.
+    pub fn command_line_off() -> Self {
+        Self::NotAllowed {
+            message: "control from the command line is off: turn it on in Settings → \
+                      Command Line"
+                .to_owned(),
+        }
+    }
+
     /// The exit status the command line gives it, as Rex's does: 1 for
     /// no such command or failed, 2 for bad arguments, 3 for a target
-    /// not found or ambiguous.
+    /// not found or ambiguous; and 5 for control from the command line
+    /// turned off.
     pub fn exit_status(&self) -> u8 {
         match self {
             Self::NoSuchCommand { .. } | Self::Failed { .. } => 1,
             Self::BadArgs { .. } => 2,
             Self::NotFound { .. } | Self::Ambiguous { .. } => 3,
+            Self::NotAllowed { .. } => 5,
         }
     }
 
@@ -75,7 +89,7 @@ impl fmt::Display for Error {
                 name,
                 matches,
             } => write!(f, "{name} could be the {what} {}", matches.join(" or ")),
-            Self::Failed { message } => f.write_str(message),
+            Self::Failed { message } | Self::NotAllowed { message } => f.write_str(message),
         }
     }
 }
@@ -112,6 +126,11 @@ mod tests {
                 "a1 could be the tile 0000ffa1 or 1234aaa1",
             ),
             (Error::failed("the window closed"), 1, "the window closed"),
+            (
+                Error::command_line_off(),
+                5,
+                "control from the command line is off: turn it on in Settings → Command Line",
+            ),
         ];
         for (error, status, message) in cases {
             assert_eq!(error.exit_status(), status, "{error:?}");
@@ -131,6 +150,12 @@ mod tests {
         assert_eq!(
             serde_json::from_value::<Error>(json).unwrap(),
             Error::not_found("window", "9")
+        );
+        let off = serde_json::to_value(Error::command_line_off()).unwrap();
+        assert_eq!(off["error"], "not_allowed");
+        assert_eq!(
+            serde_json::from_value::<Error>(off).unwrap(),
+            Error::command_line_off()
         );
     }
 }

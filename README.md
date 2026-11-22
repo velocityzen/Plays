@@ -181,12 +181,15 @@ GPU-accelerated UI framework.
 - `plays` in a terminal lists, opens, runs and watches what Plays is
   doing: its windows and tiles, any command by its id, settings and
   shortcuts, what changes as it does, and waiting for a file to end. It
-  prints tables or JSON.
+  prints tables or JSON. Off until Settings → Command Line turns it on.
+- Plays → Install Command Line Tool puts `plays` where a terminal finds
+  it.
 
 ### Settings
 
 - A Settings window for playback, audio, video, subtitles (with a live
-  preview), casting, screenshots, hotkeys and appearance.
+  preview), casting, screenshots, hotkeys, appearance and the command
+  line.
 - Settings are saved in a file of their own, which you can export,
   import, or reset to the defaults.
 - About Plays: the app's icon, version and the day it was built.
@@ -714,7 +717,7 @@ bitmap ones go where the stream puts them.
 ### Settings
 
 The Settings window has panes for Playback, Audio, Video, Subtitles,
-Casting, Screenshots, Hotkeys, Appearance and About: the theme, master
+Casting, Screenshots, Hotkeys, Appearance, Command Line and About: the theme, master
 volume, the audio output, playing a window sent to a display through its
 speakers, default volume, autoplay, loop, resuming files where they were
 left, seek step, chapter notches on the bar, fit/fill scaling, gamma for
@@ -723,7 +726,8 @@ resolution limit, hardware decoding, subtitle style, the protocols that
 look for devices to cast to, what they found and the AirPlay receivers
 paired with, where screenshots go and what they are like, the keys for
 every shortcut, grid columns, controls visibility, how the panels over the
-video look, file names, and the empty window's screensaver. Settings → About lists the version, the day it
+video look, file names, the empty window's screensaver, and whether the
+command line may control Plays. Settings → About lists the version, the day it
 was built, and the credits, each of which opens to its license; on macOS,
 About Plays in the app menu shows the icon, version and build day in a
 small window of its own.
@@ -749,14 +753,19 @@ report needs; Settings → Hotkeys can give those four keys.
 
 `plays` with a subcommand asks the Plays running and prints what it
 answers, starting Plays first if none is running (`--no-autostart` says
-so instead). Without one, `plays FILE…` opens files as before. On macOS,
-the Install Command Line Tool command links `/usr/local/bin/plays` to the
-app; if it can't write there, it says what to type in a terminal
-instead. To run it before then:
+so instead). Without one, `plays FILE…` opens files as before.
 
-```bash
-/Applications/Plays.app/Contents/MacOS/plays do cli.install
-```
+Plays takes commands from a command line only once Settings → Command
+Line → Allow control from the command line is on. Until then it says so,
+and exits with 5; a command line can't turn it on, as it's refused.
+`plays FILE…` and `plays version` work either way, and turning it off
+cuts off every command line connected, `events` and `wait` too.
+
+On macOS, Plays → Install Command Line Tool (or Install in Settings →
+Command Line) links `/usr/local/bin/plays` to the app, and says so in an
+alert. Where Plays can't write there, the alert has the command that
+makes the link in a terminal, asking for your password, and Copy
+Command copies it.
 
 ```bash
 plays ls                                  # windows, each with its tiles
@@ -787,8 +796,8 @@ plays actions                             # every command, Plays or not
 - [docs/commands.md](docs/commands.md) describes every command, as
   `plays actions --markdown` writes it.
 - It exits with 0 when it's done, 1 when Plays couldn't do it, 2 for a
-  bad command line, 3 for nothing by the name given, and 4 when there's
-  no Plays to ask.
+  bad command line, 3 for nothing by the name given, 4 when there's no
+  Plays to ask, and 5 while control from the command line is off.
 - A word that is neither a subcommand nor a file or folder there is taken
   for a mistyped subcommand, not handed to Plays.
 - `PLAYS_SOCKET` names another socket to ask at.

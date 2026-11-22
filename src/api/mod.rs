@@ -184,10 +184,16 @@ pub fn run(invocation: Invocation, cx: &mut App) -> Result<Value, Error> {
 
 /// Run `spec`, checked, as `invocation` asks.
 fn run_spec(spec: &Spec, invocation: Invocation, cx: &mut App) -> Result<Value, Error> {
-    let Invocation { args, target, .. } = invocation;
+    let Invocation {
+        args,
+        target,
+        source,
+        ..
+    } = invocation;
     let args = registry::Args {
         command: spec.id,
         value: &args,
+        source,
     };
     match spec.run {
         registry::Run::App(run) => {

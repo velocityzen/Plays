@@ -419,6 +419,10 @@ pub struct Settings {
     pub subtitles: SubtitleStyle,
     pub screenshots: ScreenshotSettings,
     pub hotkeys: Hotkeys,
+    /// Let a command line, `plays` and scripts, run commands and hear what
+    /// changes, over the socket. Off until turned on in Settings: a command
+    /// line can't turn it on, as it's refused.
+    pub command_line_control: bool,
 }
 
 /// The gamma the settings offer.
@@ -456,6 +460,7 @@ impl Default for Settings {
             subtitles: SubtitleStyle::default(),
             screenshots: ScreenshotSettings::default(),
             hotkeys: Hotkeys::default(),
+            command_line_control: false,
         }
     }
 }

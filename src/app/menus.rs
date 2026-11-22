@@ -79,10 +79,14 @@ fn items(commands: &[&'static str], state: &MenuState) -> Vec<MenuItem> {
         .collect()
 }
 
-/// The app's own menu.
+/// The app's own menu: Install Command Line Tool where Plays can, on
+/// macOS.
 fn plays_menu(state: &MenuState) -> Menu {
-    let mut items = items(&["app.about", "", "app.settings", ""], state);
+    let mut items = items(&["app.about", "", "app.settings"], state);
+    let install = api::find("cli.install").filter(|spec| (spec.available)());
+    items.extend(install.map(|spec| item(spec.id, state)));
     items.extend([
+        MenuItem::separator(),
         MenuItem::os_submenu("Services", SystemMenuType::Services),
         MenuItem::separator(),
         item("app.quit", state),
@@ -774,6 +778,23 @@ mod tests {
             listed(&menu),
             [("Opening".into(), false), ("Middle".into(), true)]
         );
+    }
+
+    #[gpui::test]
+    fn the_plays_menu_installs_the_command_line_tool_after_settings(cx: &mut TestAppContext) {
+        let (_, cx) = testing::start(cx);
+        let state = TestAppContext::update(&cx, MenuState::now);
+        let names: Vec<String> = listed(&plays_menu(&state))
+            .into_iter()
+            .map(|(name, _)| name)
+            .collect();
+        let mut expected = vec!["About Plays", "Settings…"];
+        // Elsewhere Plays is installed where the system keeps programs.
+        if cfg!(target_os = "macos") {
+            expected.push("Install Command Line Tool");
+        }
+        expected.push("Quit Plays");
+        assert_eq!(names, expected);
     }
 
     #[gpui::test]

@@ -119,6 +119,29 @@ fn each_kind_of_control_sets_its_setting_by_command(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn the_command_line_pane_turns_control_on_and_installs_the_tool(cx: &mut TestAppContext) {
+    let (_, mut cx) = testing::start(cx);
+    keep_in(&mut cx, "commands-command-line");
+    cx.update(|_, cx| api::record(cx));
+    let mut window = open_settings(&mut cx);
+    click(&mut window, "pane-Command Line");
+    assert!(!settings(&mut window, |s| s.command_line_control), "off");
+    click(&mut window, "command-line-control");
+    assert_eq!(
+        recorded(&mut window),
+        [set("command_line_control", json!(true))]
+    );
+    assert!(settings(&mut window, |s| s.command_line_control));
+
+    if cfg!(target_os = "macos") {
+        // Noted, not run: nothing is linked into /usr/local/bin.
+        cx.update(|_, cx| api::intercept(cx));
+        click(&mut window, "install-cli");
+        assert_eq!(recorded(&mut window), [Invocation::new("cli.install")]);
+    }
+}
+
+#[gpui::test]
 fn a_slider_shows_its_setting_as_dragged_and_sets_it_once_let_go(cx: &mut TestAppContext) {
     let (_, mut cx) = testing::start(cx);
     let folder = keep_in(&mut cx, "commands-slider");
@@ -247,6 +270,17 @@ fn lists_every_setting_with_what_it_takes(cx: &mut TestAppContext) {
             "kind": "toggle",
             "value": true,
             "default": true,
+        })
+    );
+    assert_eq!(
+        entry(&listed, "command_line_control"),
+        json!({
+            "key": "command_line_control",
+            "title": "Allow control from the command line",
+            "pane": "Command Line",
+            "kind": "toggle",
+            "value": false,
+            "default": false,
         })
     );
     for (key, kind) in [

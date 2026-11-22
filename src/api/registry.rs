@@ -5,10 +5,10 @@
 use gpui::{App, Context, Window};
 use serde_json::{Value, json};
 
-use super::Error;
 use super::args::{self, Arg};
 use super::commands;
 use super::target::Target;
+use super::{Error, Source};
 use crate::ui::player::PlayerView;
 use crate::ui::workspace::Workspace;
 
@@ -54,11 +54,13 @@ pub enum Reach {
     NotTyping,
 }
 
-/// A command's arguments, as given, and the command they were given to.
+/// A command's arguments, as given, the command they were given to, and
+/// where it was run from.
 #[derive(Clone, Copy)]
 pub struct Args<'a> {
     pub command: &'static str,
     pub value: &'a Value,
+    pub source: Source,
 }
 
 impl Args<'_> {

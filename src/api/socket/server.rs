@@ -4,6 +4,11 @@
 //! Events a client hears go out as they're told, those told as a request
 //! runs before its answer. A client that stops reading, with `OUTBOX`
 //! lines waiting for it, is cut off rather than kept in memory.
+//!
+//! Commands run, and events are heard, only while Settings has control
+//! from the command line on (`allowed`); turning it off cuts off every
+//! client. Who answers, the commands there are, and files handed over by
+//! a Plays started with them are answered either way.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -26,6 +31,7 @@ use super::Listener;
 use super::protocol::{self, Ask, Heard, Request};
 use crate::api::events::{self, Event, Scope};
 use crate::api::{self, Error, Invocation, Source, Spec, Target, target};
+use crate::settings::Settings;
 
 /// How many lines may wait for a client before it's cut off.
 const OUTBOX: usize = 1024;
@@ -39,6 +45,9 @@ const ACCEPT_PAUSE: Duration = Duration::from_millis(100);
 
 /// A client's number, told with `client_connected` and `client_left`.
 type ClientId = u64;
+
+/// The clients connected, by number.
+type Clients = Rc<RefCell<HashMap<ClientId, Client>>>;
 
 /// What the threads tell the app.
 enum Message {
@@ -111,10 +120,12 @@ pub fn serve(listener: Listener, cx: &mut App) {
         log::warn!("can't answer on the socket: {err}");
         return;
     }
+    let clients = Clients::default();
+    cut_off_when_turned_off(&clients, cx);
     cx.spawn(async move |cx| {
-        let mut clients = HashMap::new();
         while let Some(message) = received.next().await {
-            if cx.update(|cx| handle(message, &mut clients, cx)).is_err() {
+            let handled = cx.update(|cx| handle(message, &mut clients.borrow_mut(), cx));
+            if handled.is_err() {
                 break;
             }
         }
@@ -123,6 +134,35 @@ pub fn serve(listener: Listener, cx: &mut App) {
     cx.on_app_quit(move |_| {
         super::remove(&path).ok();
         async {}
+    })
+    .detach();
+}
+
+/// Whether Settings has control from the command line on.
+fn allowed(cx: &App) -> bool {
+    cx.try_global::<Settings>()
+        .is_some_and(|settings| settings.command_line_control)
+}
+
+/// Once Settings turns control from the command line off, let go of every
+/// client: each hears no more and is told nothing more, its connection
+/// closing once what it was sent is written.
+fn cut_off_when_turned_off(clients: &Clients, cx: &mut App) {
+    let clients = Rc::clone(clients);
+    let mut was = allowed(cx);
+    cx.observe_global::<Settings>(move |cx| {
+        let now = allowed(cx);
+        if was && !now {
+            // Once what it's answering, if anything, is answered.
+            let clients = Rc::clone(&clients);
+            cx.defer(move |cx| {
+                let gone: Vec<ClientId> = clients.borrow_mut().drain().map(|(id, _)| id).collect();
+                for client in gone {
+                    events::client_left(client, cx);
+                }
+            });
+        }
+        was = now;
     })
     .detach();
 }
@@ -258,6 +298,9 @@ fn handle(message: Message, clients: &mut HashMap<ClientId, Client>, cx: &mut Ap
 
 /// What `ask` comes back with, for `client`, numbered `id`.
 fn answer(id: ClientId, ask: Ask, client: &mut Client, cx: &mut App) -> Result<Value, Error> {
+    if matches!(ask, Ask::Call { .. } | Ask::Subscribe { .. }) && !allowed(cx) {
+        return Err(Error::command_line_off());
+    }
     match ask {
         Ask::Hello => Ok(json!({
             "version": env!("CARGO_PKG_VERSION"),

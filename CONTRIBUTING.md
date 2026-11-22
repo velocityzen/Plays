@@ -615,6 +615,11 @@ check:
     `command_run` before the answer. Positions go only to those who ask,
     and nothing is heard after unsubscribing.
   - The socket removed as the app quits.
+  - Control from the command line, which tests turn on as Settings does
+    (`allow_control`): with it off, who answers, the commands there are
+    and files handed over are answered, but calls and subscriptions are
+    refused with status 5, turning it on among them, until Settings turns
+    it on. Turning it off cuts off a subscriber, as if Plays went.
   - The client, against a Plays of the test's own: answers to other
     requests passed over, events that come first kept, a Plays gone
     unreachable. Autostart: a Plays answering isn't started again; with
@@ -644,6 +649,8 @@ check:
     ended has nothing to wait for is a unit test: the test platform's
     timers don't play a file to its end, so the `cli` smoke run does.
   - Output closed quietly ending it with 0.
+  - With control from the command line off, saying where to turn it on
+    and exiting with 5, but `version` still answering.
   - As a process of its own, the test binary again running only
     `command_line_as_another_process`, otherwise ignored: printing to
     its own standard output and exiting with the status it says.
@@ -653,8 +660,14 @@ check:
     working on Plays (`developer`), which debug builds alone have, aren't
     in it.
   - `cli.install` linking where a terminal finds it, replacing a link
-    but nothing else, and saying what to type where it can't write, each
-    in a folder of its own removed as the test ends.
+    but nothing else, and saying what to type where it can't write, its
+    folder made too if it isn't there, each in a folder of its own
+    removed as the test ends. Its alert: none when a command line ran it,
+    where the link is, turning control on if it's off, and Copy Command
+    copying what to type where Plays can't write; the menu has it after
+    Settings… on macOS, and Settings → Command Line's switch and Install
+    button send `settings.set` and `cli.install` (noted, not run, so
+    nothing is linked).
 
 Unit tests check finding a name among ids, labels, positions and the ends
 of ids (an id first, positions only among those given, several matching
@@ -1016,8 +1029,10 @@ names), and the script exits non-zero if any failed:
   to the front, as the system has it;
 - `cli` runs `plays`, a process of its own, against the app, over a socket
   in the temporary folder that `PLAYS_SOCKET` names and the run removes
-  as it finishes: opening a clip, listing it, turning its looping off and
-  waiting for it to end, then waiting again to find it ended already.
+  as it finishes: refused with 5 until control from the command line is
+  turned on as Settings does, then opening a clip, listing it, turning
+  its looping off and waiting for it to end, then waiting again to find
+  it ended already.
 
 Throughout, a window that has fitted its files must be laid out at the
 size it really is, every playing video must show at least 15 of its 25

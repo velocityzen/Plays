@@ -463,10 +463,22 @@ async fn windows(cx: &mut AsyncApp) -> Result<(), String> {
     check_route(cx)
 }
 
-/// `plays` in a terminal, a process of its own: opening a file in this
+/// `plays` in a terminal, a process of its own: refused until Settings
+/// turns control from the command line on, then opening a file in this
 /// Plays' window, listing it, turning its looping off and waiting for it
 /// to end, which takes playing for real.
 async fn cli(cx: &mut AsyncApp) -> Result<(), String> {
+    match command_line(cx, &["ls"]).await? {
+        (Some(5), _, said) if said.contains("Settings → Command Line") => {}
+        ran => return Err(format!("plays ls with control off came to {ran:?}")),
+    }
+    // As the switch in Settings sets it.
+    let on = api::Invocation::new("settings.set")
+        .with_args(serde_json::json!({"key": "command_line_control", "value": true}));
+    cx.update(|cx| api::run(on, cx))
+        .map_err(|_| "the app went away".to_owned())?
+        .map_err(|err| format!("turning control on: {err}"))?;
+
     let clip = fixture("clip.mp4");
     let clip = clip.to_str().ok_or("the fixture's path isn't UTF-8")?;
     succeeds(cx, &["open", clip]).await?;

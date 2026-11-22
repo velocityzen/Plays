@@ -261,6 +261,26 @@ fn the_command_reference_is_current() {
 }
 
 #[gpui::test]
+fn with_control_off_it_says_where_to_turn_it_on(cx: &mut TestAppContext) {
+    let (path, _, mut cx) = serving("cli-off", cx);
+    crate::api::socket::tests::allow_control(&mut cx, false);
+    for args in [&["ls"][..], &["do", "playback.toggle_loop"], &["events"]] {
+        let ran = plays(&mut cx, &path, args);
+        assert_eq!(
+            ran.failed(),
+            (
+                5,
+                "plays: control from the command line is off: turn it on in Settings → \
+                 Command Line"
+            ),
+            "{args:?}"
+        );
+    }
+    let ran = plays(&mut cx, &path, &["version"]);
+    assert_eq!(ran.status, 0, "who runs is no control: {ran:?}");
+}
+
+#[gpui::test]
 fn a_command_runs_with_its_arguments_and_says_what_it_handed_back(cx: &mut TestAppContext) {
     let (path, window, mut cx) = serving("cli-do", cx);
     let ran = plays(&mut cx, &path, &["do", "window.rename", "label=1984"]);

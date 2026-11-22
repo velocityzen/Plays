@@ -378,6 +378,12 @@ const FIELDS: &[Field] = &[
         "Appearance",
         Kind::Choice(|| choices(&SCREENSAVER_MINUTES)),
     ),
+    Field::new(
+        "command_line_control",
+        "Allow control from the command line",
+        "Command Line",
+        Kind::Toggle,
+    ),
 ];
 
 /// Where the settings of which protocols look for devices are.

@@ -17,7 +17,9 @@ use clap::{Args, Parser, Subcommand};
                   plays FILE… opens files, folders and streams in Plays, as opening \
                   them from the Finder does.",
     after_help = "Exit statuses: 0 done, 1 failed, 2 a bad command line, 3 nothing by \
-                  the name given, 4 no Plays to ask, 130 stopped with Ctrl-C."
+                  the name given, 4 no Plays to ask, 5 control from the command line \
+                  turned off (Settings → Command Line turns it on), 130 stopped with \
+                  Ctrl-C."
 )]
 pub struct Cli {
     #[command(flatten)]

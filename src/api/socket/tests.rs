@@ -25,6 +25,7 @@ use super::protocol::{Ask, Heard};
 use super::server::LONGEST;
 use super::*;
 use crate::api::{self, Error, Invocation, Target};
+use crate::settings::Settings;
 use crate::ui::testing::{self, fixture, wait_until};
 use crate::ui::theme::layout::WINDOW_SIZE;
 use crate::ui::workspace::Workspace;
@@ -80,18 +81,25 @@ fn a_tests_folders_are_removed_as_it_ends() {
 }
 
 /// The app, with its first window in front, answering on a socket of its
-/// own.
+/// own, control from the command line turned on in Settings.
 pub(crate) fn serving(
     name: &str,
     cx: &mut TestAppContext,
 ) -> (PathBuf, WindowHandle<Workspace>, VisualTestContext) {
-    let (window, cx) = testing::start(cx);
+    let (window, mut cx) = testing::start(cx);
     let path = socket(name);
     let Ok(Claimed::Ours(listener)) = claim(&path) else {
         panic!("taking the socket")
     };
     TestAppContext::update(&cx, |cx| serve(listener, cx));
+    allow_control(&mut cx, true);
     (path, window, cx)
+}
+
+/// Turn control from the command line on or off, as Settings does.
+pub(crate) fn allow_control(cx: &mut TestAppContext, on: bool) {
+    cx.update(|cx| Settings::update(cx, false, |s| s.command_line_control = on));
+    cx.run_until_parked();
 }
 
 /// Run `talk` on a thread of its own, as another process would, while
@@ -395,6 +403,97 @@ fn a_call_comes_back_with_its_result_or_why_not(cx: &mut TestAppContext) {
         cx.app_activations(),
         activations,
         "Plays stays behind the terminal"
+    );
+}
+
+#[gpui::test]
+fn with_control_off_it_says_who_it_is_and_takes_files_but_runs_and_tells_nothing(
+    cx: &mut TestAppContext,
+) {
+    let (path, window, mut cx) = serving("control-off", cx);
+    allow_control(&mut cx, false);
+    assert!(
+        !Settings::default().command_line_control,
+        "off until Settings turns it on"
+    );
+
+    let asking = path.clone();
+    let (hello, listed, refused) = talk(&mut cx, move || {
+        let mut client = Client::connect(&asking).unwrap();
+        let hello = client.request(Ask::Hello).is_ok();
+        let listed = client.commands().unwrap().as_array().map_or(0, Vec::len);
+        let refused = [
+            client
+                .call("window.ls", Value::Null, Target::default())
+                .unwrap_err(),
+            client.subscribe(Heard::All, false).unwrap_err(),
+            client
+                .call(
+                    "settings.set",
+                    json!({"key": "command_line_control", "value": true}),
+                    Target::default(),
+                )
+                .unwrap_err(),
+        ]
+        .map(said);
+        (hello, listed, refused)
+    });
+    assert!(hello, "who it is");
+    assert!(listed > 100, "what commands there are: {listed}");
+    let off = (5, Error::command_line_off().to_string());
+    assert_eq!(refused, [off.clone(), off.clone(), off], "nor turned on");
+    let turned_on = TestAppContext::update(&cx, |cx| cx.global::<Settings>().command_line_control);
+    assert!(!turned_on);
+
+    let handing = path.clone();
+    let handed = talk(&mut cx, move || {
+        client::hand_over(&handing, &[fixture("clip.mp4").into()]).map_err(said)
+    });
+    assert_eq!(handed, Ok(()), "files, as plays FILE hands them over");
+    let open = wait_until(&mut cx, |cx| {
+        window
+            .read_with(cx, |workspace, _| workspace.players().len() == 1)
+            .unwrap()
+    });
+    assert!(open, "opened");
+
+    allow_control(&mut cx, true);
+    let listed = talk(&mut cx, move || {
+        let mut client = Client::connect(&path).unwrap();
+        client.call("tile.ls", Value::Null, Target::default())
+    });
+    assert_eq!(
+        listed
+            .map(|tiles| tiles.as_array().map_or(0, Vec::len))
+            .ok(),
+        Some(1),
+        "once turned on"
+    );
+}
+
+#[gpui::test]
+fn turning_control_off_cuts_off_whoever_is_connected(cx: &mut TestAppContext) {
+    let (path, _, mut cx) = serving("control-cut", cx);
+    let (_, hearing) = listening(
+        &mut cx,
+        &path,
+        |client| client.subscribe(Heard::All, false).unwrap(),
+        |client| loop {
+            if let Err(failure) = client.next_event() {
+                let (status, _) = said(failure);
+                return vec![("cut off".to_owned(), json!(status))];
+            }
+        },
+    );
+    allow_control(&mut cx, false);
+    assert!(
+        wait_until(&mut cx, |_| hearing.is_finished()),
+        "its connection ends"
+    );
+    assert_eq!(
+        hearing.join().unwrap(),
+        [("cut off".to_owned(), json!(4))],
+        "as if Plays went"
     );
 }
 

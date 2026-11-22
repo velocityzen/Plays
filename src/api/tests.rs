@@ -315,6 +315,30 @@ fn run_now(invocation: Invocation, cx: &mut VisualTestContext) -> Result<Value, 
     done
 }
 
+/// Hands back where it was run from.
+const SOURCE: Spec = Spec::app_with(
+    "test.source",
+    "Where From",
+    "Say where it was run from.",
+    &[],
+    |args, _| Ok(json!(args.source)),
+);
+
+#[gpui::test]
+fn a_command_knows_where_it_was_run_from(cx: &mut TestAppContext) {
+    let (_, cx) = testing::start(cx);
+    for (source, said) in [
+        (Source::Action, "action"),
+        (Source::Ui, "ui"),
+        (Source::Palette, "palette"),
+        (Source::Cli, "cli"),
+    ] {
+        let invocation = Invocation::new("test.source").from(source);
+        let ran = TestAppContext::update(&cx, |cx| run_spec(&SOURCE, invocation, cx));
+        assert_eq!(ran, Ok(json!(said)));
+    }
+}
+
 #[gpui::test]
 fn a_command_aimed_at_a_tile_acts_on_it_not_on_the_one_in_front(cx: &mut TestAppContext) {
     let (front, mut cx) = testing::start(cx);

@@ -46,6 +46,7 @@ icons!(
     "skip-forward",
     "stop",
     "subtitles",
+    "terminal",
     "volume",
     "window-max",
     "window-min",

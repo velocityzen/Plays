@@ -492,7 +492,7 @@ flowchart LR
   as the tile shows it, without its user, password or query.
   `registry` finds them; `args` checks the arguments given against what
   the command takes before it runs, then reads them into a type of the
-  command's own; `target` finds the window and tile named: by id, then by
+  command's own, which also has where it was run from (`Source`); `target` finds the window and tile named: by id, then by
   label, then by position from 1 (windows in the order they opened, tiles
   in the window named or in front), then by the end of an id, with an
   error if none is or several are; named by nothing, the window in front
@@ -587,7 +587,14 @@ flowchart LR
   waiting are sent first, so a subscriber's own command's `command_run`
   comes before the answer; what the command changes comes after, once it
   has settled. A client is cut off if it stops reading with `OUTBOX`
-  lines waiting for it, or sends a line over a mebibyte.
+  lines waiting for it, or sends a line over a mebibyte. Calls and
+  subscriptions are answered only while Settings has control from the
+  command line on (`command_line_control`, off until it's turned on
+  there), and refused otherwise with `not_allowed`; `hello`, `commands`,
+  `describe` and `hand_over` are answered either way, so `plays FILE…`
+  and `plays version` work. Turning control off lets go of every client:
+  each is taken off the list, so it hears nothing more, and told
+  `client_left`, its connection closing once what it was sent is written.
   `client_connected` and `client_left` are told to the app's listeners.
   The socket is removed as Plays quits. `client` is the other end: one
   request at a time, keeping the events that come meanwhile for
@@ -617,12 +624,17 @@ flowchart LR
   commands from the registry compiled in, Plays running or not, and
   writes `docs/commands.md` (`plays actions --markdown`). `show` prints
   tables, events and results. The exit status is the error's (1 failed,
-  3 not found, 4 unreachable), 2 for a bad command line, clap's or one
-  of its own checks; output closed (`| head`) ends it quietly with 0.
+  3 not found, 4 unreachable, 5 control from the command line off), 2 for
+  a bad command line, clap's or one of its own checks; output closed
+  (`| head`) ends it quietly with 0.
   Commands it relies on: `tile.focus` puts a tile in front and its window
   too; `cli.install` links `/usr/local/bin/plays` to the program running,
   through a link made beside it and renamed over, replacing a link but
-  nothing else, and says what to type with `sudo` where it can't write.
+  nothing else, and says what to type with `sudo` where it can't write
+  (making `/usr/local/bin` too, if it isn't there). Run from anywhere but
+  a command line (the menu, Settings, the palette), it says so in an
+  alert over the window in front, opened once that window is free, whose
+  Copy Command copies what to type.
 - `src/app/`: starting the app (`mod.rs`; files and links the system
   opens it with run `app.open`), the shared audio outputs (`audio`,
   above), the keymap (`keymap`: every command's
@@ -809,7 +821,8 @@ flowchart LR
   showing are drawn into those frames (`burn_in`), in the frame's own
   signal and samples.
 - `src/ui/settings/`: the Settings window. Each pane (Playback, Audio,
-  Video, Subtitles, Casting, Screenshots, Hotkeys, Appearance, About) is a
+  Video, Subtitles, Casting, Screenshots, Hotkeys, Appearance, Command
+  Line, About) is a
   file of its own with its name and icon for the sidebar; `form` has the
   cards, rows and sliders they are made of, and `file` the settings file's
   menu at the sidebar's foot. Each control sets its setting with
