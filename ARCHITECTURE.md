@@ -306,6 +306,7 @@ flowchart LR
 - `src/ui/player/`: a block, a file per part; `playback.rs` holds its
   `Player` and the device it casts to, and every command goes through it
 - `src/ui/player/mod.rs`: `BlockLayout`, where the window says each block is
+- `src/ui/player/failed.rs`: a block whose drawing panics says why and stops
 - `src/ui/pip/` (macOS): frames to an `AVSampleBufferDisplayLayer` that
   `AVPictureInPictureController` shows, pumped on a timer of its own
 - `src/ui/settings/`: a file per pane; controls set through `settings.set`

@@ -184,7 +184,7 @@ impl Shared {
     }
 
     /// Say why it can't play, unless a thread that failed first has.
-    pub(super) fn fail(&self, why: String) {
+    pub(in crate::media) fn fail(&self, why: String) {
         self.error.lock().get_or_insert(why);
     }
 

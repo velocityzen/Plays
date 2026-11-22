@@ -336,7 +336,7 @@ impl TextLayout {
             .line_height
             .to_pixels(font_size.into(), window.rem_size());
 
-        let mut runs = if let Some(runs) = runs {
+        let runs = if let Some(runs) = runs {
             runs
         } else {
             vec![text_style.to_run(text.len())]
@@ -373,18 +373,26 @@ impl TextLayout {
                     };
 
                 // Plays: measured again for another width to truncate to, as
-                // for another to wrap to. Text that doesn't wrap was first
-                // measured whole, with no width known, and kept that size
-                // (and its untruncated line) once its width was known.
+                // for another to wrap to, and again whole once no width is
+                // known. Text that doesn't wrap was first measured whole and
+                // kept that size (and its whole line) once its width was
+                // known; and once cut short, kept that size when asked how
+                // wide it is whole, so a label that may grow, as a block's
+                // title does, stayed "…".
                 if let Some(text_layout) = element_state.0.borrow().as_ref()
                     && text_layout.size.is_some()
                     && (wrap_width.is_none() || wrap_width == text_layout.wrap_width)
-                    && (truncate_width.is_none() || truncate_width == text_layout.truncate_width)
+                    && truncate_width == text_layout.truncate_width
                 {
                     return text_layout.size.unwrap();
                 }
 
                 let mut line_wrapper = cx.text_system().line_wrapper(text_style.font(), font_size);
+                // Plays: the runs are cut short with the text on a copy, as
+                // the text may be measured again for another width (above):
+                // runs cut for one width don't fit the text cut for another,
+                // or not cut at all, and can end inside a character.
+                let mut runs = runs.clone();
                 let text = if let Some(truncate_width) = truncate_width {
                     line_wrapper.truncate_line(
                         text.clone(),

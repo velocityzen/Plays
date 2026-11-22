@@ -5,7 +5,9 @@
 //! Files decode on threads of their own, outside gpui's test executor, so
 //! waiting for them takes real time.
 
+use std::cell::RefCell;
 use std::path::PathBuf;
+use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 use gpui::{
@@ -157,4 +159,47 @@ pub fn drag(cx: &mut VisualTestContext, from: &'static str, to: &'static str) {
 /// Ctrl+W elsewhere; "m", then "space", is "m space".
 pub fn press(cx: &mut VisualTestContext, keys: &str) {
     cx.simulate_keystrokes(keys);
+}
+
+/// Keep the errors logged on this thread from now on, for `errors_logged`
+/// to return: a test's own, each test running on a thread of its own.
+pub fn keep_errors() {
+    static KEEPS: OnceLock<bool> = OnceLock::new();
+    let keeps = KEEPS.get_or_init(|| {
+        let set = log::set_logger(&ErrorKeeper).is_ok();
+        log::set_max_level(log::LevelFilter::Error);
+        set
+    });
+    assert!(keeps, "another logger was set");
+    KEPT.with_borrow_mut(|kept| *kept = Some(Vec::new()));
+}
+
+/// The errors logged on this thread since `keep_errors`.
+pub fn errors_logged() -> Vec<String> {
+    KEPT.with_borrow(|kept| kept.clone().unwrap_or_default())
+}
+
+thread_local! {
+    /// The errors logged on this thread, while they're kept.
+    static KEPT: RefCell<Option<Vec<String>>> = const { RefCell::new(None) };
+}
+
+struct ErrorKeeper;
+
+impl log::Log for ErrorKeeper {
+    fn enabled(&self, metadata: &log::Metadata) -> bool {
+        metadata.level() <= log::Level::Error
+    }
+
+    fn log(&self, record: &log::Record) {
+        if self.enabled(record.metadata()) {
+            KEPT.with_borrow_mut(|kept| {
+                if let Some(kept) = kept {
+                    kept.push(record.args().to_string());
+                }
+            });
+        }
+    }
+
+    fn flush(&self) {}
 }

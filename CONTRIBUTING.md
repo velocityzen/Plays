@@ -197,7 +197,8 @@ mod tests;
 - `ui::testing` clicks and types, finding things by debug selector
   (`block-0`, a row's or button's id; a selected button also has
   `<id>-selected`); `testing::painted` lists the text a window drew, every
-  character the same width.
+  character the same width; `testing::errors_logged`, the errors logged
+  on the test's thread since `keep_errors`.
 - `api::intercept` notes what's sent without running it, `api::record` as
   it runs.
 - Run a command outside its window's update, with

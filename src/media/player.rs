@@ -253,6 +253,12 @@ impl Player {
         self.shared.error()
     }
 
+    /// Say why it can't play, as a decoder thread that fails does, unless
+    /// one has already: nothing more is shown.
+    pub fn fail(&mut self, why: String) {
+        self.shared.fail(why);
+    }
+
     pub fn frame(&self) -> Option<Picture> {
         self.current.as_ref().map(|f| f.picture.clone())
     }

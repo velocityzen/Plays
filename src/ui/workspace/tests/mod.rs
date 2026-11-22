@@ -10,6 +10,7 @@ mod casting_to_dlna;
 mod commands;
 mod controls;
 mod dragging;
+mod drawing;
 mod events;
 mod every_window;
 mod inspect;

@@ -170,6 +170,13 @@ impl Playback {
         }
     }
 
+    /// Stop, here and on the device it casts to, saying why it can't
+    /// play: the block failed to draw.
+    pub fn fail(&mut self, why: String) {
+        self.pause();
+        self.player.fail(why);
+    }
+
     /// Seek to exactly `time`, here or there: a picture following the
     /// sound goes there too, and waits for the device.
     pub fn seek(&mut self, time: f64) {

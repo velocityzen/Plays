@@ -128,11 +128,18 @@ the width it is aligned in, not just as wide as the text. Centered text
 it later could end up beneath it.
 
 `src/elements/text.rs`: text is measured again for another width to
-truncate to, as it is for another width to wrap to (`TextLayoutInner`
-keeps `truncate_width`). Text that doesn't wrap, such as a `truncate()`d
-label, was first measured whole with no width known, and kept that size
-and its whole line once its width was known, so a label in a row too
-narrow for it was clipped where the row ended, without its "…".
+truncate to, as it is for another width to wrap to, and again whole once
+no width is known (`TextLayoutInner` keeps `truncate_width`). Text that
+doesn't wrap, such as a `truncate()`d label, was first measured whole with
+no width known, and kept that size and its whole line once its width was
+known, so a label in a row too narrow for it was clipped where the row
+ended, without its "…". Its runs are cut short on a copy each time, as
+runs cut for one width don't fit the text cut for another.
+
+`src/text_system/line_layout.rs`: runs that don't cover a line exactly,
+or end inside a character, are fitted to it, with an error logged, before
+the platform's text system lays it out (`fit_runs`): it slices the text by
+them, and panicked.
 `Window::painted_text` (test builds only, `src/window.rs`) lists each line
 of text the window drew last, as it reads once truncated, and where, so
 a test can tell.

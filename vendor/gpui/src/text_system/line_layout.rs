@@ -3,7 +3,7 @@ use collections::FxHashMap;
 use parking_lot::{Mutex, RwLock, RwLockUpgradableReadGuard};
 use smallvec::SmallVec;
 use std::{
-    borrow::Borrow,
+    borrow::{Borrow, Cow},
     hash::{Hash, Hasher},
     ops::Range,
     sync::Arc,
@@ -561,9 +561,9 @@ impl LineLayoutCache {
             layout
         } else {
             let text = SharedString::from(text);
-            let mut layout = self
-                .platform_text_system
-                .layout_line(&text, font_size, runs);
+            let mut layout =
+                self.platform_text_system
+                    .layout_line(&text, font_size, &fit_runs(&text, runs));
 
             if let Some(force_width) = force_width {
                 let mut glyph_pos = 0;
@@ -590,6 +590,45 @@ impl LineLayoutCache {
             layout
         }
     }
+}
+
+/// Plays: `runs` as they are when they cover `text` exactly, each ending
+/// on a character's boundary. Else, as a caller got them wrong, an error
+/// is logged and they are fitted to it: each ends at the end of the
+/// character it ends in, and the last goes on to the end of the text. The
+/// platform's text system slices the text by its runs, and a run ending
+/// inside a character, or past the text, panicked. No runs at all lay out
+/// nothing, as before.
+fn fit_runs<'a>(text: &str, runs: &'a [FontRun]) -> Cow<'a, [FontRun]> {
+    let mut end = 0;
+    let fits = runs.iter().all(|run| {
+        end += run.len;
+        text.is_char_boundary(end)
+    }) && end == text.len();
+    if fits || runs.is_empty() {
+        return Cow::Borrowed(runs);
+    }
+    log::error!("text runs {runs:?} don't fit {text:?}: fitted to it");
+    let mut fitted: Vec<FontRun> = Vec::with_capacity(runs.len());
+    let mut start = 0;
+    for run in runs {
+        let end = text.ceil_char_boundary(start + run.len);
+        if end > start {
+            fitted.push(FontRun {
+                len: end - start,
+                font_id: run.font_id,
+            });
+            start = end;
+        }
+    }
+    match fitted.last_mut() {
+        Some(last) => last.len += text.len() - start,
+        None => fitted.extend(runs.first().map(|run| FontRun {
+            len: text.len(),
+            font_id: run.font_id,
+        })),
+    }
+    Cow::Owned(fitted)
 }
 
 /// A run of text with a single font.

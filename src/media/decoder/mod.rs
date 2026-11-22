@@ -27,6 +27,7 @@ mod demux;
 mod shared;
 mod video;
 
+use std::any::Any;
 use std::fmt::Display;
 use std::panic::{self, AssertUnwindSafe};
 use std::path::PathBuf;
@@ -188,14 +189,7 @@ fn guarded(shared: &Shared, source: &impl Display, body: impl FnOnce() -> Result
     let failed = match panic::catch_unwind(AssertUnwindSafe(body)) {
         Ok(Ok(())) => return,
         Ok(Err(err)) => format!("{err:#}"),
-        Err(panic) => {
-            let what = panic
-                .downcast_ref::<&str>()
-                .copied()
-                .or_else(|| panic.downcast_ref::<String>().map(String::as_str))
-                .unwrap_or("for no reason it gave");
-            format!("the decoder stopped: {what}")
-        }
+        Err(panic) => format!("the decoder stopped: {}", panic_message(&*panic)),
     };
     if shared.stopped() {
         // Closed meanwhile; nobody is looking.
@@ -203,6 +197,15 @@ fn guarded(shared: &Shared, source: &impl Display, body: impl FnOnce() -> Result
     }
     log::error!("{source}: {failed}");
     shared.fail(failed);
+}
+
+/// What a caught `panic` said.
+pub fn panic_message(panic: &(dyn Any + Send)) -> &str {
+    panic
+        .downcast_ref::<&str>()
+        .copied()
+        .or_else(|| panic.downcast_ref::<String>().map(String::as_str))
+        .unwrap_or("for no reason it gave")
 }
 
 /// How a seek lands.

@@ -9,6 +9,7 @@ mod console;
 mod content;
 mod controls;
 mod drag;
+mod failed;
 mod graveyard;
 mod header;
 mod inspect;
@@ -144,9 +145,15 @@ pub struct PlayerView {
     window_sound: Option<AudioDevice>,
     /// Where the picture was pressed, while that may yet move the window.
     window_press: Option<Point<Pixels>>,
+    /// Drawing it panicked, while the file it had opened then (counted by
+    /// `Playback::openings`) is open: it shows why, and only that.
+    drawing_failed: Option<u64>,
     /// How many times the picture has moved the window.
     #[cfg(test)]
     pub window_moves: usize,
+    /// What drawing it next panics with, for tests.
+    #[cfg(test)]
+    pub panic_while_drawing: Option<&'static str>,
 }
 
 impl EventEmitter<PlayerEvent> for PlayerView {}
@@ -261,8 +268,11 @@ impl PlayerView {
             cast_open: false,
             window_sound: None,
             window_press: None,
+            drawing_failed: None,
             #[cfg(test)]
             window_moves: 0,
+            #[cfg(test)]
+            panic_while_drawing: None,
         }
     }
 
@@ -617,6 +627,18 @@ impl Reveal {
 
 impl Render for PlayerView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.render_unless_failing(window, cx)
+    }
+}
+
+impl PlayerView {
+    /// The block as it's drawn: what it plays, and the bars and panels
+    /// over it.
+    fn render_block(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Stateful<Div> {
+        #[cfg(test)]
+        if let Some(why) = self.panic_while_drawing {
+            panic!("{why}");
+        }
         self.take_tick(window);
 
         let theme = Theme::get(window, cx);
