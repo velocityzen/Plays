@@ -7,10 +7,9 @@
 //! app quits, each client is sent what it was told, the windows closing
 //! and `app.quit` among it, before its connection closes (`end_on_quit`).
 //!
-//! The socket is there only while Settings has control from the command
-//! line on: taken as it's turned on; removed as it's turned off, every
-//! client cut off, and commands and events asked for meanwhile refused
-//! (`allowed`).
+//! With control from the command line off in Settings, only files handed
+//! over are taken: all else is refused (`allowed`), and turning it off
+//! cuts every client off.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -62,8 +61,7 @@ struct Socket {
     path: PathBuf,
     /// What the threads tell the app.
     messages: UnboundedSender<Message>,
-    /// The last client's number: those connecting once it's taken again
-    /// are numbered on.
+    /// The last client's number.
     last: Arc<AtomicU64>,
     /// While it's taken: the thread taking clients.
     taken: Option<Taking>,
@@ -209,24 +207,24 @@ fn tell(out: &Out, event: &Event) {
     }
 }
 
-/// Answer what clients ask on the socket at `path` while Settings has
-/// control from the command line on: on `listener`, taken as Plays started
-/// with it on, else as it's turned on. Removed as it's turned off, and as
-/// the app quits.
+/// Answer what clients ask on the socket at `path`, taken as Plays
+/// started (`listener`), else now: with control from the command line off,
+/// only files handed over. Removed as the app quits.
 pub fn serve(path: PathBuf, listener: Option<Listener>, cx: &mut App) {
     let (messages, mut received) = unbounded();
-    let socket = Rc::new(RefCell::new(Socket {
+    let mut socket = Socket {
         path,
         messages,
         last: Arc::default(),
         taken: None,
-    }));
-    if let Some(listener) = listener {
-        socket.borrow_mut().take(listener);
+    };
+    match listener {
+        Some(listener) => socket.take(listener),
+        None => socket.claim(),
     }
     let clients = Clients::default();
-    follow_control(&socket, &clients, cx);
-    end_on_quit(&socket, &clients, cx);
+    follow_control(&clients, cx);
+    end_on_quit(socket, &clients, cx);
     cx.spawn(async move |cx| {
         while let Some(message) = received.next().await {
             let handled = cx.update(|cx| handle(message, &mut clients.borrow_mut(), cx));
@@ -242,8 +240,8 @@ pub fn serve(path: PathBuf, listener: Option<Listener>, cx: &mut App) {
 /// send each client what it was told, as nothing else runs then, and
 /// close its connection; remove the socket, and wait, as long as quitting
 /// does, for what was sent to be written.
-fn end_on_quit(socket: &Rc<RefCell<Socket>>, clients: &Clients, cx: &mut App) {
-    let (socket, clients) = (Rc::clone(socket), Rc::clone(clients));
+fn end_on_quit(mut socket: Socket, clients: &Clients, cx: &mut App) {
+    let clients = Rc::clone(clients);
     cx.on_app_quit(move |cx| {
         events::quit(cx);
         let writing: Vec<JoinHandle<()>> = clients
@@ -251,7 +249,7 @@ fn end_on_quit(socket: &Rc<RefCell<Socket>>, clients: &Clients, cx: &mut App) {
             .drain()
             .map(|(_, client)| client.end())
             .collect();
-        socket.borrow_mut().close();
+        socket.close();
         let executor = cx.background_executor().clone();
         async move {
             while !writing.iter().all(JoinHandle::is_finished) {
@@ -268,20 +266,16 @@ fn allowed(cx: &App) -> bool {
         .is_some_and(|settings| settings.command_line_control)
 }
 
-/// Take the socket as Settings turns control from the command line on. As
-/// it turns it off, remove it, and let go of every client: each hears no
-/// more and is told nothing more, its connection closing once what it was
-/// sent is written.
-fn follow_control(socket: &Rc<RefCell<Socket>>, clients: &Clients, cx: &mut App) {
-    let (socket, clients) = (Rc::clone(socket), Rc::clone(clients));
+/// As Settings turns control from the command line off, let go of every
+/// client: each hears no more and is told nothing more, its connection
+/// closing once what it was sent is written. The socket stays, for files
+/// handed over.
+fn follow_control(clients: &Clients, cx: &mut App) {
+    let clients = Rc::clone(clients);
     let mut was = allowed(cx);
     cx.observe_global::<Settings>(move |cx| {
         let now = allowed(cx);
-        if !was && now {
-            socket.borrow_mut().claim();
-        }
         if was && !now {
-            socket.borrow_mut().close();
             // Once what it's answering, if anything, is answered.
             let clients = Rc::clone(&clients);
             cx.defer(move |cx| {
@@ -445,7 +439,7 @@ fn handle(message: Message, clients: &mut HashMap<ClientId, Client>, cx: &mut Ap
 
 /// What `ask` comes back with, for `client`, numbered `id`.
 fn answer(id: ClientId, ask: Ask, client: &mut Client, cx: &mut App) -> Result<Value, Error> {
-    if matches!(ask, Ask::Call { .. } | Ask::Subscribe { .. }) && !allowed(cx) {
+    if !matches!(ask, Ask::HandOver { .. }) && !allowed(cx) {
         return Err(Error::command_line_off());
     }
     match ask {

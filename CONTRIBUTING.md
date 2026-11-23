@@ -73,9 +73,8 @@ cargo run --release -- path/to/video.mp4 path/to/song.mp3 https://example.com/li
 
 ### One Plays at a time
 
-- With a Plays running, installed or another build, and the command
-  line on, `cargo run -- FILE` hands `FILE` to it and exits: quit it
-  first to run your build.
+- With a Plays running, installed or another build, `cargo run -- FILE`
+  hands `FILE` to it and exits: quit it first to run your build.
 - Tests and `smoke` builds take no socket and run beside it, unless
   `PLAYS_SOCKET` names one.
 - The command line (`cargo run -- ls`) asks whichever Plays runs, and

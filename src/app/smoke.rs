@@ -468,12 +468,13 @@ async fn windows(cx: &mut AsyncApp) -> Result<(), String> {
 }
 
 /// `plays` in a terminal, a process of its own: refused until Settings
-/// turns control from the command line on, with no socket till then; then
-/// opening a file in this Plays' window, listing it, turning its looping
-/// off and waiting for it to end, which takes playing for real.
+/// turns control from the command line on, the socket taken from the start
+/// for files handed over; then opening a file in this Plays' window,
+/// listing it, turning its looping off and waiting for it to end, which
+/// takes playing for real.
 async fn cli(cx: &mut AsyncApp) -> Result<(), String> {
-    if cli_folder().exists() {
-        return Err("a socket's folder made with control off".into());
+    if !cli_folder().join("plays.sock").exists() {
+        return Err("no socket with control off, for another Plays to hand files to".into());
     }
     match command_line(cx, &["ls"]).await? {
         (Some(5), _, said) if said.contains("Settings → Command Line") => {}

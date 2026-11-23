@@ -5,13 +5,11 @@
 //! Nothing goes on the network: it's a Unix socket, in a folder only this
 //! user can open, that only they can connect to.
 //!
-//! There's one only while Settings has control from the command line on.
-//! Plays takes it as it starts (`start`): one already running, another
-//! hands it the files it was given and exits; a socket left by one that
-//! crashed is taken over. With control off, there's none, and none is
-//! asked: each Plays runs apart. The app answers what comes over it,
-//! taking the socket as control is turned on and removing it as it's
-//! turned off (`server`); `client` is the other end.
+//! Plays takes it as it starts (`start`), so one runs: one already
+//! running, another hands it the files it was given and exits; a socket
+//! left by one that crashed is taken over. The app answers what comes over
+//! it (`server`), with control from the command line off in Settings only
+//! files handed over; `client` is the other end.
 
 pub mod client;
 mod protocol;
@@ -128,26 +126,24 @@ fn remove(path: &Path) -> io::Result<()> {
 
 /// How Plays starts.
 pub enum Start {
-    /// This one runs: listening on the socket, or without one if control
-    /// from the command line is off, it has none (tests, smoke runs) or it
-    /// can't take it.
+    /// This one runs: listening on the socket, or without one if it has
+    /// none (tests, smoke runs) or can't take it.
     Runs(Option<Listener>),
     /// Another runs, and was handed what this one was given: this one exits
     /// with the status.
     HandedOver(u8),
 }
 
-/// With `control` from the command line on, take the socket, or, if
-/// another Plays runs, hand it `args` (files, folders and URLs, as given
-/// on the command line): it opens them, or with none comes to the front.
-/// With it off, neither.
-pub fn start(args: &[OsString], control: bool) -> Start {
-    start_at(path(), control, args)
+/// Take the socket, or, if another Plays runs, hand it `args` (files,
+/// folders and URLs, as given on the command line): it opens them, or with
+/// none comes to the front.
+pub fn start(args: &[OsString]) -> Start {
+    start_at(path(), args)
 }
 
 /// `start`, with the socket at `path`, if there's one.
-fn start_at(path: Option<PathBuf>, control: bool, args: &[OsString]) -> Start {
-    let Some(path) = path.filter(|_| control) else {
+fn start_at(path: Option<PathBuf>, args: &[OsString]) -> Start {
+    let Some(path) = path else {
         return Start::Runs(None);
     };
     match claim(&path) {

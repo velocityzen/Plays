@@ -36,11 +36,9 @@ fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("plays=info"))
         .init();
 
-    // With control from the command line on, one Plays runs: another,
-    // started with files, hands them to it and goes, before setting
-    // anything up.
-    let settings = settings::Settings::load(&files::Folder::app());
-    let listener = match api::socket::start(&args, settings.command_line_control) {
+    // One Plays runs: another, started with files, hands them to it and
+    // goes, before setting anything up.
+    let listener = match api::socket::start(&args) {
         api::socket::Start::Runs(listener) => listener,
         api::socket::Start::HandedOver(status) => std::process::exit(status.into()),
     };
@@ -59,6 +57,7 @@ fn main() {
         .map(|arg| Source::from_arg(PathBuf::from(arg)))
         .collect();
 
+    let settings = settings::Settings::load(&files::Folder::app());
     let app = Application::new().with_assets(assets::Assets);
     // Files opened from Finder or dropped on the Dock icon. The first ones
     // arrive before the app has finished launching, so they wait here.

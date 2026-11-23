@@ -2,8 +2,8 @@
 //! events`. It runs apart from the app, without its UI, so it answers at
 //! once: it asks the Plays running over the socket (`api::socket`), and
 //! starts one if none is, unless told not to (`--no-autostart`) or
-//! Settings has control from the command line off, as Plays then takes no
-//! socket. What comes back goes to stdout, as text or, with `--json`, as
+//! Settings has control from the command line off, as Plays then answers
+//! none of it. What comes back goes to stdout, as text or, with `--json`, as
 //! JSON, and why not to stderr. The exit status says which, as Rex's do:
 //! 0 done, 1 failed, 2 a bad command line, 3 nothing by the name given, 4
 //! no Plays to ask, 5 control from the command line off, and 130 stopped
@@ -98,8 +98,8 @@ pub enum Unanswered<'a> {
     Fails,
     /// Starts Plays with this, unless `--no-autostart`, and asks it.
     Starts(&'a dyn Fn() -> io::Result<()>),
-    /// Says control from the command line is off, as Settings has it:
-    /// Plays takes no socket then, so none started would answer.
+    /// Says control from the command line is off, as Settings has it: a
+    /// Plays started would refuse it too.
     Off,
 }
 

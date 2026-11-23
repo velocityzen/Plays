@@ -1,5 +1,6 @@
-//! The socket: taking it, or finding a Plays there, or one gone; none
-//! while control from the command line is off; what a client asks and
+//! The socket: taking it, or finding a Plays there, or one gone; only
+//! files handed over while control from the command line is off; what a
+//! client asks and
 //! what comes back; files handed over by a Plays started with them; events
 //! heard; and starting Plays when none answers. Each
 //! client runs on a thread of its own, as another process would, while
@@ -61,7 +62,7 @@ fn a_tests_folders_are_removed_as_it_ends() {
 }
 
 /// The app, with its first window in front, answering on a socket of its
-/// own: taken as Settings turns control from the command line on.
+/// own, with control from the command line on.
 pub(crate) fn serving(
     name: &str,
     cx: &mut TestAppContext,
@@ -224,7 +225,7 @@ fn only_a_socket_is_removed() {
 fn tests_run_alone_without_a_socket() {
     assert_eq!(path(), None);
     assert!(matches!(
-        start(&[OsString::from("/media/film.mkv")], true),
+        start(&[OsString::from("/media/film.mkv")]),
         Start::Runs(None)
     ));
 }
@@ -391,17 +392,67 @@ fn a_call_comes_back_with_its_result_or_why_not(cx: &mut TestAppContext) {
 }
 
 /// The number of the client connecting at `path`, or why none could.
-fn numbered(cx: &mut TestAppContext, path: &Path) -> Result<Value, io::ErrorKind> {
+fn numbered(cx: &mut TestAppContext, path: &Path) -> Result<Value, (u8, String)> {
     let path = path.to_owned();
     talk(cx, move || {
-        let mut client = Client::connect(&path).map_err(|err| err.kind())?;
-        Ok(client.hello().expect("who it is")["client_id"].clone())
+        let mut client = Client::connect(&path).map_err(|err| said(err.into()))?;
+        let hello = client.hello().map_err(said)?;
+        Ok(hello["client_id"].clone())
+    })
+}
+
+/// What asking each thing but to open files comes to: those refused.
+fn refusals(cx: &mut TestAppContext, path: &Path) -> Vec<(u8, String)> {
+    let path = path.to_owned();
+    talk(cx, move || {
+        let mut client = Client::connect(&path).expect("connecting");
+        let call = Ask::Call {
+            command: "window.new".into(),
+            args: Value::Null,
+            target: Target::default(),
+        };
+        let subscribe = Ask::Subscribe {
+            scope: Heard::All,
+            positions: false,
+        };
+        let describe = Ask::Describe {
+            command: "window.ls".into(),
+        };
+        [
+            Ask::Hello,
+            call,
+            Ask::Commands,
+            describe,
+            subscribe,
+            Ask::Unsubscribe,
+        ]
+        .into_iter()
+        .filter_map(|ask| client.request(ask).err().map(said))
+        .collect()
+    })
+}
+
+/// What a command line hears with control from it off.
+fn off() -> (u8, String) {
+    said(Failure::Command(Error::command_line_off()))
+}
+
+/// Whether `window` comes to play the clip, and it alone.
+fn plays_the_clip(cx: &mut VisualTestContext, window: WindowHandle<Workspace>) -> bool {
+    let clip = fixture("clip.mp4").display().to_string();
+    wait_until(cx, |cx| {
+        window
+            .read_with(cx, |workspace, cx| {
+                let files = workspace.players();
+                files.len() == 1 && files[0].read(cx).summary()["file"] == clip
+            })
+            .unwrap()
     })
 }
 
 #[gpui::test]
-fn the_socket_is_there_only_while_control_is_on(cx: &mut TestAppContext) {
-    let (_, mut cx) = testing::start(cx);
+fn with_control_off_the_socket_takes_only_files_handed_over(cx: &mut TestAppContext) {
+    let (window, mut cx) = testing::start(cx);
     let path = socket("control-off");
     TestAppContext::update(&cx, |cx| serve(path.clone(), None, cx));
     cx.run_until_parked();
@@ -409,22 +460,24 @@ fn the_socket_is_there_only_while_control_is_on(cx: &mut TestAppContext) {
         !Settings::default().command_line_control,
         "off until Settings turns it on"
     );
-    assert!(
-        !path.parent().unwrap().exists(),
-        "no socket, nor its folder"
-    );
+    assert_eq!(refusals(&mut cx, &path), vec![off(); 6], "all but files");
+    let handing = path.clone();
+    let handed = talk(&mut cx, move || {
+        let clip = OsString::from("tests/fixtures/clip.mp4");
+        client::hand_over(&handing, &[clip]).map_err(said)
+    });
+    assert_eq!(handed, Ok(()));
+    assert!(plays_the_clip(&mut cx, window), "handed over, it opens");
 
-    allow_control(&mut cx, true);
-    assert_eq!(numbered(&mut cx, &path), Ok(json!(1)), "taken as it's on");
-    allow_control(&mut cx, false);
-    assert!(!path.exists(), "removed as it's off");
-    assert_eq!(numbered(&mut cx, &path), Err(io::ErrorKind::NotFound));
     allow_control(&mut cx, true);
     assert_eq!(
         numbered(&mut cx, &path),
-        Ok(json!(2)),
-        "taken again, its clients numbered on"
+        Ok(json!(3)),
+        "answered as it's on"
     );
+    allow_control(&mut cx, false);
+    assert!(path.exists(), "kept as it's off, for files");
+    assert_eq!(numbered(&mut cx, &path), Err(off()));
 }
 
 #[gpui::test]
@@ -432,13 +485,13 @@ fn a_socket_taken_as_plays_starts_is_answered_on(cx: &mut TestAppContext) {
     let (_, mut cx) = testing::start(cx);
     allow_control(&mut cx, true);
     let path = socket("started-on");
-    let Start::Runs(listener @ Some(_)) = start_at(Some(path.clone()), true, &[]) else {
+    let Start::Runs(listener @ Some(_)) = start_at(Some(path.clone()), &[]) else {
         panic!("taking the socket")
     };
     TestAppContext::update(&cx, |cx| serve(path.clone(), listener, cx));
     assert_eq!(numbered(&mut cx, &path), Ok(json!(1)));
     allow_control(&mut cx, false);
-    assert!(!path.exists(), "removed as control is turned off");
+    assert_eq!(numbered(&mut cx, &path), Err(off()), "refused as it's off");
 }
 
 #[gpui::test]
@@ -482,7 +535,7 @@ fn turning_control_off_cuts_off_whoever_is_connected(cx: &mut TestAppContext) {
         [("cut off".to_owned(), json!(4))],
         "as if Plays went"
     );
-    assert!(!path.exists(), "nor is there a socket to connect to");
+    assert_eq!(numbered(&mut cx, &path), Err(off()), "nor taken on again");
 }
 
 #[gpui::test]
@@ -600,7 +653,7 @@ fn hand_over_as_another_process() {
         return;
     };
     let args: Vec<OsString> = args.lines().map(OsString::from).collect();
-    match start_at(Some(path.into()), true, &args) {
+    match start_at(Some(path.into()), &args) {
         Start::HandedOver(status) => std::process::exit(status.into()),
         Start::Runs(_) => std::process::exit(99),
     }
@@ -656,48 +709,34 @@ fn another_plays_started_with_files_hands_them_over_and_exits(cx: &mut TestAppCo
 #[test]
 fn a_plays_starting_with_none_running_takes_the_socket() {
     let path = socket("first");
-    let Start::Runs(Some(_listener)) = start_at(Some(path.clone()), true, &[]) else {
+    let Start::Runs(Some(_listener)) = start_at(Some(path.clone()), &[]) else {
         panic!("taking the socket")
     };
     assert!(UnixStream::connect(&path).is_ok());
     let in_the_way = socket("in-the-way");
     fs::create_dir_all(&in_the_way).unwrap();
     assert!(
-        matches!(start_at(Some(in_the_way), true, &[]), Start::Runs(None)),
+        matches!(start_at(Some(in_the_way), &[]), Start::Runs(None)),
         "with something else there, it runs without one"
     );
 }
 
-#[test]
-fn a_plays_starting_with_control_off_takes_no_socket_and_hands_nothing_over() {
-    let path = socket("start-off");
-    let args = [OsString::from("/media/film.mkv")];
-    assert!(matches!(
-        start_at(Some(path.clone()), false, &args),
-        Start::Runs(None)
-    ));
-    assert!(
-        !path.parent().unwrap().exists(),
-        "no socket, nor its folder"
-    );
-
-    let Ok(Claimed::Ours(running)) = claim(&path) else {
+#[gpui::test]
+fn with_control_off_another_plays_started_with_files_hands_them_over_too(cx: &mut TestAppContext) {
+    let (window, mut cx) = testing::start(cx);
+    let path = socket("process-off");
+    let Start::Runs(listener @ Some(_)) = start_at(Some(path.clone()), &[]) else {
         panic!("taking the socket")
     };
-    running.listener.set_nonblocking(true).unwrap();
-    assert!(
-        matches!(start_at(Some(path), false, &args), Start::Runs(None)),
-        "it runs apart"
-    );
-    let asked = running
-        .listener
-        .accept()
-        .map(drop)
-        .map_err(|err| err.kind());
+    TestAppContext::update(&cx, |cx| serve(path.clone(), listener, cx));
     assert_eq!(
-        asked,
-        Err(io::ErrorKind::WouldBlock),
-        "without asking the one running"
+        another_plays(&mut cx, &path, &["tests/fixtures/clip.mp4"]),
+        Some(0),
+        "and exits: one Plays runs"
+    );
+    assert!(
+        plays_the_clip(&mut cx, window),
+        "the file opens in this one"
     );
 }
 

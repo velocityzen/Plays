@@ -113,8 +113,7 @@ dropped files.
 plays video.mp4 song.mp3 https://example.com/live.m3u8
 ```
 
-With the command line on, one Plays runs at a time: `plays FILE…` hands
-files to the one running.
+One Plays runs at a time: `plays FILE…` hands files to the one running.
 
 ## Shortcuts
 
@@ -189,8 +188,8 @@ With `⇧`, they go to every block in every window. Change them in Settings
 
 ## Command line
 
-Off until Settings → Command Line turns it on; off, Plays listens on no
-socket. On macOS, Plays → Install Command Line Tool puts `plays` in
+Off until Settings → Command Line turns it on; off, Plays' socket takes
+only files another Plays hands over. On macOS, Plays → Install Command Line Tool puts `plays` in
 `/usr/local/bin`.
 
 ```bash
