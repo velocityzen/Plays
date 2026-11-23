@@ -85,3 +85,7 @@ impl fmt::Debug for Layout {
         f.write_str(&name.to_string_lossy())
     }
 }
+
+#[cfg(test)]
+#[path = "tests/layout.rs"]
+mod tests;

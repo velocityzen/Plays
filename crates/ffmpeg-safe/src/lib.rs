@@ -2,9 +2,7 @@
 //! bans the ffmpeg-next calls these stand in for.
 
 mod layout;
+mod tag;
 
 pub use layout::Layout;
-
-#[cfg(test)]
-#[path = "tests/layout.rs"]
-mod tests;
+pub use tag::tag;

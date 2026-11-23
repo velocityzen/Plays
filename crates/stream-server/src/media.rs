@@ -10,6 +10,7 @@ use ffmpeg::ffi;
 use ffmpeg::format::context::Input;
 use ffmpeg::media::Type;
 use ffmpeg_next as ffmpeg;
+use ffmpeg_safe::tag;
 
 use crate::Error;
 use crate::profile::{AudioCodec, Container, Hdr, VideoCodec};
@@ -136,11 +137,8 @@ impl MediaInfo {
                 StreamInfo {
                     index: stream.index(),
                     kind,
-                    language: metadata
-                        .get("language")
-                        .filter(|language| *language != "und")
-                        .map(str::to_owned),
-                    title: metadata.get("title").map(str::to_owned),
+                    language: tag(&metadata, c"language").filter(|language| language != "und"),
+                    title: tag(&metadata, c"title"),
                     default: disposition.contains(ffmpeg::format::stream::Disposition::DEFAULT),
                 }
             })
@@ -339,3 +337,7 @@ fn is_text(id: Id) -> bool {
         Id::SUBRIP | Id::SRT | Id::ASS | Id::SSA | Id::MOV_TEXT | Id::WEBVTT | Id::TEXT
     )
 }
+
+#[cfg(test)]
+#[path = "tests/media.rs"]
+mod tests;

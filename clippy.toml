@@ -15,4 +15,10 @@ disallowed-methods = [
     { path = "ffmpeg_next::util::frame::audio::Audio::channel_layout", reason = "it points into the frame, which frees it: use ffmpeg_safe::Layout" },
     { path = "ffmpeg_next::util::frame::audio::Audio::set_channel_layout", reason = "the frame frees what it points to, a second time: use ffmpeg_safe::Layout::of" },
     { path = "ffmpeg_next::software::resampling::Context::input", reason = "its layout points into the frame it was made for: keep an ffmpeg_safe::Layout beside it" },
+    # A tag's value is what the file holds, in whatever encoding, which these
+    # take for UTF-8 without looking (as does a `for` over a dictionary, or its
+    # Debug, which no lint catches).
+    { path = "ffmpeg_next::util::dictionary::immutable::Ref::get", reason = "it takes a value for UTF-8 without looking: use ffmpeg_safe::tag" },
+    { path = "ffmpeg_next::util::dictionary::immutable::Ref::iter", reason = "it takes values for UTF-8 without looking: use ffmpeg_safe::tag" },
+    { path = "ffmpeg_next::util::dictionary::iter::Iter::new", reason = "it takes values for UTF-8 without looking: use ffmpeg_safe::tag" },
 ]

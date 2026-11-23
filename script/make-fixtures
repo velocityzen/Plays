@@ -34,6 +34,10 @@
 # uncommon-order.mov  0.5 s of 440 Hz on the right only, 8 kHz PCM, its
 #                channels in an order of their own: the right, then the
 #                left; last by name, so the files beside the others stay
+# western-tags.mkv  0.6 s of 440 Hz, 8 kHz PCM, its names written in
+#                Windows-1252, not UTF-8: titled Résumé, its sound Français,
+#                in two chapters, Début and Fin de l'été (from 0.3 s)
+# western-tags.wav  0.2 s of the same, its INFO title Café in Windows-1252
 set -euo pipefail
 
 cd "$(dirname "$0")/../tests/fixtures"
@@ -219,5 +223,45 @@ PY
     -f lavfi -i "anullsrc=channel_layout=mono:sample_rate=8000" \
     -filter_complex "[0][1]join=inputs=2:channel_layout=FR+FL,atrim=duration=0.5" \
     -c:a pcm_s16le -map_metadata -1 uncommon-order.mov
+
+cat > chapters.txt <<'META'
+;FFMETADATA1
+[CHAPTER]
+TIMEBASE=1/1000
+START=0
+END=300
+title=Debut
+[CHAPTER]
+TIMEBASE=1/1000
+START=300
+END=600
+title=Fin de l'ete
+META
+tone=(-f lavfi -i "sine=frequency=440:sample_rate=8000")
+"${ffmpeg[@]}" "${tone[@]}" -i chapters.txt -map 0 -t 0.6 -c:a pcm_s16le \
+    -map_metadata 1 -map_chapters 1 -metadata title=Resume \
+    -metadata:s:a:0 title=Francais -write_crc32 0 western-tags.mkv
+rm chapters.txt
+"${ffmpeg[@]}" "${tone[@]}" -t 0.2 -c:a pcm_s16le -map_metadata -1 \
+    -metadata title=Cafe western-tags.wav
+# Each name in ASCII, then in Windows-1252 as long, as Matroska and RIFF
+# keep the length before it (and Matroska's checksums are left out).
+python3 - <<'PY'
+names = {
+    "western-tags.mkv": [
+        (b"Resume", b"R\xe9sum\xe9"),
+        (b"Francais", b"Fran\xe7ais"),
+        (b"Debut", b"D\xe9but"),
+        (b"Fin de l'ete", b"Fin de l'\xe9t\xe9"),
+    ],
+    "western-tags.wav": [(b"Cafe", b"Caf\xe9")],
+}
+for name, swaps in names.items():
+    data = open(name, "rb").read()
+    for ascii, western in swaps:
+        assert data.count(ascii) == 1, (name, ascii)
+        data = data.replace(ascii, western)
+    open(name, "wb").write(data)
+PY
 
 ls -l

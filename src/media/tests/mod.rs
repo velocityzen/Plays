@@ -399,6 +399,29 @@ fn reads_the_tags_a_file_with_only_sound_keeps_on_it() {
     assert_eq!(info.album_artist.as_deref(), Some("Various Artists"));
 }
 
+/// Names written in Windows-1252, not UTF-8, as a WAV's INFO and a
+/// Matroska file's often are, read as what they say.
+#[test]
+fn reads_names_written_in_another_encoding() {
+    let fixtures = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    let song = info_of(fixtures.join("western-tags.wav"));
+    assert_eq!(song.title.as_deref(), Some("Café"));
+
+    let info = info_of(fixtures.join("western-tags.mkv"));
+    assert_eq!(info.title.as_deref(), Some("Résumé"));
+    let sound: Vec<_> = info
+        .tracks(TrackKind::Audio)
+        .map(|track| track.title.as_deref())
+        .collect();
+    assert_eq!(sound, [Some("Français")]);
+    let chapters: Vec<_> = info
+        .chapters
+        .iter()
+        .map(|chapter| chapter.title.as_deref())
+        .collect();
+    assert_eq!(chapters, [Some("Début"), Some("Fin de l'été")]);
+}
+
 /// A film's sound may be titled for what it is, such as "Stereo", which
 /// isn't the film's title.
 #[test]

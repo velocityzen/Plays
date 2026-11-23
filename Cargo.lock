@@ -2179,6 +2179,8 @@ dependencies = [
 name = "ffmpeg-safe"
 version = "0.1.0"
 dependencies = [
+ "chardetng",
+ "encoding_rs",
  "ffmpeg-link",
  "ffmpeg-next",
 ]

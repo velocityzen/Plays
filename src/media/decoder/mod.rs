@@ -28,6 +28,7 @@ mod shared;
 mod video;
 
 use std::any::Any;
+use std::ffi::CStr;
 use std::fmt::Display;
 use std::panic::{self, AssertUnwindSafe};
 use std::path::PathBuf;
@@ -789,10 +790,10 @@ fn media_info(
         video_codec: video.map(|v| v.codec_name()),
         audio_codec: audio.map(|a| a.codec_name()),
         hardware: None,
-        title: tag("title"),
-        artist: tag("artist"),
-        album: tag("album"),
-        album_artist: tag("album_artist"),
+        title: tag(c"title"),
+        artist: tag(c"artist"),
+        album: tag(c"album"),
+        album_artist: tag(c"album_artist"),
         video_track: decoders.selected(TrackKind::Video),
         audio_track: decoders.selected(TrackKind::Audio),
         subtitle_track: decoders.selected(TrackKind::Subtitle),
@@ -805,18 +806,11 @@ fn media_info(
 }
 
 /// The file's tag `key`, or the stream `sound`'s if the file has none.
-fn tag(input: &ffmpeg::format::context::Input, sound: Option<usize>, key: &str) -> Option<String> {
-    let value = |metadata: ffmpeg::DictionaryRef| {
-        metadata
-            .get(key)
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_owned)
-    };
-    value(input.metadata()).or_else(|| {
+fn tag(input: &ffmpeg::format::context::Input, sound: Option<usize>, key: &CStr) -> Option<String> {
+    ffmpeg_safe::tag(&input.metadata(), key).or_else(|| {
         sound
             .and_then(|index| input.stream(index))
-            .and_then(|stream| value(stream.metadata()))
+            .and_then(|stream| ffmpeg_safe::tag(&stream.metadata(), key))
     })
 }
 
@@ -832,12 +826,7 @@ fn chapters(input: &ffmpeg::format::context::Input, offset: f64) -> Vec<Chapter>
             Chapter {
                 start: (seconds(chapter.start()) - offset).max(0.0),
                 end: seconds(chapter.end()) - offset,
-                title: chapter
-                    .metadata()
-                    .get("title")
-                    .map(str::trim)
-                    .filter(|title| !title.is_empty())
-                    .map(str::to_owned),
+                title: ffmpeg_safe::tag(&chapter.metadata(), c"title"),
             }
         })
         .collect();

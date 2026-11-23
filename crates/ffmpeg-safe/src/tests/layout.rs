@@ -4,7 +4,7 @@ use ffmpeg_next::format::Sample;
 use ffmpeg_next::format::sample::Type;
 use ffmpeg_next::{ChannelLayout, ffi, frame};
 
-use crate::Layout;
+use super::Layout;
 
 /// A frame of two channels whose layout FFmpeg reads from `name`.
 fn frame_of(name: &str) -> frame::Audio {

@@ -2,7 +2,7 @@
 //! subtitle streams and the subtitle files beside it, and how to name them
 //! in a menu.
 
-use std::ffi::CString;
+use std::ffi::{CStr, CString};
 use std::path::PathBuf;
 
 use ffmpeg::format::stream::{Disposition, Stream};
@@ -53,13 +53,7 @@ impl Track {
         };
         ffmpeg::decoder::find(parameters.id())?;
         let metadata = stream.metadata();
-        let tag = |key: &str| {
-            metadata
-                .get(key)
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .map(str::to_owned)
-        };
+        let tag = |key: &CStr| ffmpeg_safe::tag(&metadata, key);
         // SAFETY: the parameters belong to the stream, which outlives this call.
         let raw = unsafe { &*parameters.as_ptr() };
         let format = match kind {
@@ -72,8 +66,8 @@ impl Track {
         Some(Self {
             index: stream.index(),
             kind,
-            language: tag("language").filter(|code| !matches!(code.as_str(), "und" | "zxx")),
-            title: tag("title"),
+            language: tag(c"language").filter(|code| !matches!(code.as_str(), "und" | "zxx")),
+            title: tag(c"title"),
             codec: parameters.id().name().to_owned(),
             format,
             default: disposition.contains(Disposition::DEFAULT),
