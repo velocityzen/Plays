@@ -307,8 +307,11 @@ flowchart LR
   `Reach` gives; none in `Recording`
 - `src/settings.rs`, `src/settings/fields.rs`: settings as JSON, each value
   read on its own; `settings::fields` lists every setting by key
-- `src/files.rs`: the config folder; files written beside, then renamed over
-- `src/recents.rs`, `src/progress.rs`: recent files; each file's place, tracks
+- `src/files.rs`: the config folder; files written beside, then renamed over;
+  `write_soon` writes each file's latest off the UI thread, and what's
+  still waiting as the app quits
+- `src/recents.rs`, `src/progress.rs`: recent files; each file's place,
+  tracks; both saved with `write_soon`
 - `src/ui/workspace/`: a window, a file per part: opening, blocks, grid,
   focus, fitting, placing, full screen, sound, the empty window
 - `src/ui/player/`: a block, a file per part; `playback.rs` holds its

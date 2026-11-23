@@ -87,15 +87,14 @@ impl Recents {
             .unwrap_or_default()
     }
 
-    fn save(&self, list: &[String], cx: &App) {
+    /// Save `list` in its file, soon, off the UI thread.
+    fn save(&self, list: &[String], cx: &mut App) {
         let Some(path) = Folder::of(cx).file(self.file) else {
             return;
         };
-        let result = serde_json::to_vec_pretty(list)
-            .map_err(std::io::Error::other)
-            .and_then(|text| files::write_whole(&path, &text));
-        if let Err(err) = result {
-            log::warn!("could not save {}: {err}", path.display());
+        match serde_json::to_vec_pretty(list) {
+            Ok(text) => files::write_soon(path, text, cx),
+            Err(err) => log::warn!("could not save {}: {err}", path.display()),
         }
     }
 }

@@ -34,9 +34,10 @@ fn start(cx: &mut TestAppContext, folder: &Folder) {
     });
 }
 
-/// Save the places, noting none.
-fn save_now(cx: &mut App) {
-    note(std::iter::empty(), true, cx);
+/// Save the places, noting none, and let them be written.
+fn save(cx: &mut TestAppContext) {
+    cx.update(|cx| note(std::iter::empty(), true, cx));
+    cx.run_until_parked();
 }
 
 #[test]
@@ -147,14 +148,30 @@ fn places_are_saved_in_the_apps_folder_and_read_back(cx: &mut TestAppContext) {
     let path = folder.file(FILE).unwrap();
     start(cx, &folder);
     let movie = Path::new("/videos/movie.mkv");
-    cx.update(|cx| {
-        note([at(movie, 600.0, 7200.0)], false, cx);
-        assert!(!path.exists(), "not saved unless asked");
-        save_now(cx);
-    });
+    cx.update(|cx| note([at(movie, 600.0, 7200.0)], false, cx));
+    cx.run_until_parked();
+    assert!(!path.exists(), "not saved unless asked");
+    save(cx);
     let loaded = Progress::load(&folder);
     assert_eq!(loaded.recall(movie, now()), Some(600.0));
     assert!(!loaded.changed);
+}
+
+/// A save is written off the UI thread, as a full flush takes a while:
+/// the latest places, those noted before them never written after them.
+#[gpui::test]
+fn places_are_written_off_the_ui_thread_the_latest_last(cx: &mut TestAppContext) {
+    let folder = Folder::for_test("progress-soon");
+    let path = folder.file(FILE).unwrap();
+    start(cx, &folder);
+    let movie = Path::new("/videos/movie.mkv");
+    cx.update(|cx| {
+        note([at(movie, 600.0, 7200.0)], true, cx);
+        note([at(movie, 900.0, 7200.0)], true, cx);
+        assert!(!path.exists(), "not on this thread");
+    });
+    cx.run_until_parked();
+    assert_eq!(Progress::load(&folder).recall(movie, now()), Some(900.0));
 }
 
 #[gpui::test]
@@ -172,8 +189,8 @@ fn places_too_old_are_left_out_of_the_file(cx: &mut TestAppContext) {
     cx.update(|cx| {
         assert_eq!(recall(Path::new("/videos/old.mkv"), cx), None);
         assert_eq!(recall(Path::new("/videos/new.mkv"), cx), Some(90.0));
-        save_now(cx);
     });
+    save(cx);
     let saved = fs::read_to_string(&path).unwrap();
     assert!(
         !saved.contains("old.mkv") && saved.contains("new.mkv"),
@@ -196,6 +213,7 @@ fn a_broken_file_is_no_places_and_is_saved_over(cx: &mut TestAppContext) {
     start(cx, &folder);
     let movie = Path::new("/videos/movie.mkv");
     cx.update(|cx| note([at(movie, 600.0, 7200.0)], true, cx));
+    cx.run_until_parked();
     assert_eq!(Progress::load(&folder).recall(movie, now()), Some(600.0));
 }
 
@@ -205,12 +223,16 @@ fn forgetting_every_place_removes_the_file(cx: &mut TestAppContext) {
     let path = folder.file(FILE).unwrap();
     start(cx, &folder);
     let movie = Path::new("/videos/movie.mkv");
+    cx.update(|cx| note([at(movie, 600.0, 7200.0)], true, cx));
+    cx.run_until_parked();
+    assert!(path.exists());
     cx.update(|cx| {
-        note([at(movie, 600.0, 7200.0)], true, cx);
-        assert!(path.exists());
+        // One waiting to be written, too.
+        note([at(movie, 900.0, 7200.0)], true, cx);
         forget_all(cx);
         assert_eq!(recall(movie, cx), None);
     });
+    cx.run_until_parked();
     assert!(!path.exists());
     assert!(Progress::load(&folder).files.is_empty());
 }
@@ -229,6 +251,7 @@ fn the_tracks_picked_are_saved_and_read_back(cx: &mut TestAppContext) {
         assert_eq!(super::picked(movie, cx), picked);
         assert_eq!(recall(movie, cx), None);
     });
+    cx.run_until_parked();
     let loaded = Progress::load(&folder);
     assert_eq!(loaded.picked(movie, now()), picked);
 }
@@ -250,5 +273,6 @@ fn no_places_are_kept_when_settings_say_not_to(cx: &mut TestAppContext) {
         note([at(movie, 600.0, 7200.0)], true, cx);
         assert_eq!(recall(movie, cx), None);
     });
+    cx.run_until_parked();
     assert!(!folder.file(FILE).unwrap().exists());
 }

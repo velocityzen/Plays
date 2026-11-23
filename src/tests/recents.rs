@@ -42,7 +42,13 @@ fn each_list_is_kept_apart_in_its_own_file_and_cleared_alone(cx: &mut TestAppCon
         FILES.note("/media/b.mkv", cx);
         assert_eq!(COMMANDS.list(cx), ["app.about"]);
         assert_eq!(FILES.list(cx), ["/media/b.mkv", "/media/a.mkv"]);
-
+        assert!(
+            !folder.file(FILES.file).unwrap().exists(),
+            "written off the UI thread"
+        );
+    });
+    cx.run_until_parked();
+    cx.update(|cx| {
         forget(cx);
         assert_eq!(
             FILES.list(cx),
@@ -52,6 +58,9 @@ fn each_list_is_kept_apart_in_its_own_file_and_cleared_alone(cx: &mut TestAppCon
         FILES.clear(cx);
         assert!(FILES.list(cx).is_empty());
         assert_eq!(COMMANDS.list(cx), ["app.about"], "the other kept");
+    });
+    cx.run_until_parked();
+    cx.update(|cx| {
         forget(cx);
         assert!(FILES.list(cx).is_empty(), "cleared in its file too");
     });

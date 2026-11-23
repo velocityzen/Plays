@@ -1,6 +1,7 @@
 use std::io::Read;
 use std::sync::mpsc;
 use std::thread;
+use std::time::Duration;
 
 use super::*;
 
@@ -62,6 +63,46 @@ fn a_file_is_replaced_whole_and_never_written_over() {
         .map(|entry| entry.unwrap().file_name())
         .collect();
     assert_eq!(left, ["settings.json"], "nothing else left beside it");
+}
+
+/// Long enough for a thread that doesn't wait to have done what it does.
+const MOMENT: Duration = Duration::from_millis(50);
+
+/// The latest contents waiting are written after a write under way, of
+/// older ones, not before it, to be written over.
+#[test]
+fn a_file_is_written_after_a_write_under_way() {
+    let path = test_folder("files-after").join("progress.json");
+    let writer = Writer::default();
+    let under_way = writer.0.writing.lock();
+    writer.0.files.lock().insert(path.clone(), b"new".to_vec());
+    let writing = thread::spawn({
+        let writer = writer.clone();
+        move || writer.write()
+    });
+    thread::sleep(MOMENT);
+    write_whole(&path, b"old").unwrap();
+    drop(under_way);
+    writing.join().unwrap();
+    assert_eq!(fs::read_to_string(&path).unwrap(), "new");
+}
+
+/// A file removed while it's being written goes once it's written, not
+/// before, to be put back.
+#[test]
+fn a_file_is_removed_after_a_write_under_way() {
+    let path = test_folder("files-remove").join("progress.json");
+    let writer = Writer::default();
+    let under_way = writer.0.writing.lock();
+    let removing = thread::spawn({
+        let (writer, path) = (writer.clone(), path.clone());
+        move || writer.remove(&path)
+    });
+    thread::sleep(MOMENT);
+    write_whole(&path, b"old").unwrap();
+    drop(under_way);
+    removing.join().unwrap().unwrap();
+    assert!(!path.exists());
 }
 
 #[cfg(unix)]

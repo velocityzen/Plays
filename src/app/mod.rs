@@ -39,7 +39,7 @@ pub(crate) use windows::{
 
 use crate::api::{self, Invocation};
 use crate::cast::{self, AppPairings, Casting, Pairings, Protocol};
-use crate::files::Folder;
+use crate::files::{self, Folder};
 use crate::media::{Source, picture};
 use crate::progress::{self, Progress};
 use crate::settings::Settings;
@@ -160,8 +160,10 @@ fn keep_progress(cx: &mut App) {
         }
     })
     .detach();
+    // Files waiting to be written are written now: the app won't wait.
     cx.on_app_quit(|cx| {
         note_all(cx);
+        files::write_waiting(cx);
         async {}
     })
     .detach();
@@ -221,3 +223,7 @@ fn open_from_system(cx: &mut App, mut opened: UnboundedReceiver<Vec<String>>) {
     })
     .detach();
 }
+
+#[cfg(test)]
+#[path = "tests/quit.rs"]
+mod tests;

@@ -1,11 +1,14 @@
 //! The app's own files, settings and where files were left: the folder
 //! they are kept in, and writing them.
 
+use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use gpui::{App, Global};
+use parking_lot::Mutex;
 
 /// The folder the app keeps its files in: `plays` in the system's config
 /// folder. Tests and smoke runs have none, so they never read or write the
@@ -79,6 +82,69 @@ fn write(path: &Path, contents: &[u8], private: bool) -> io::Result<()> {
         let _ = File::open(folder).and_then(|folder| folder.sync_all());
     }
     Ok(())
+}
+
+/// The app's files saved as it runs, written off the UI thread, as a full
+/// flush can take tens of milliseconds: one at a time, and only each
+/// file's latest contents, so none is written over by older ones.
+#[derive(Clone, Default)]
+struct Writer(Arc<Waiting>);
+
+#[derive(Default)]
+struct Waiting {
+    /// What's to be written, by path.
+    files: Mutex<HashMap<PathBuf, Vec<u8>>>,
+    /// Held while writing.
+    writing: Mutex<()>,
+}
+
+impl Global for Writer {}
+
+impl Writer {
+    /// Write what's waiting, after any write under way.
+    fn write(&self) {
+        let _writing = self.0.writing.lock();
+        let files = std::mem::take(&mut *self.0.files.lock());
+        for (path, contents) in files {
+            if let Err(err) = write_whole(&path, &contents) {
+                log::warn!("could not save {}: {err}", path.display());
+            }
+        }
+    }
+
+    /// Remove the file at `path`, after any write under way, and what's
+    /// waiting to be written to it.
+    fn remove(&self, path: &Path) -> io::Result<()> {
+        let _writing = self.0.writing.lock();
+        self.0.files.lock().remove(path);
+        fs::remove_file(path)
+    }
+}
+
+/// Write `contents` to `path` as `write_whole` does, soon, off the UI
+/// thread: for the app's files saved as it runs, such as where files were
+/// left.
+pub fn write_soon(path: PathBuf, contents: Vec<u8>, cx: &mut App) {
+    let writer = cx.default_global::<Writer>().clone();
+    writer.0.files.lock().insert(path, contents);
+    cx.background_executor()
+        .spawn(async move { writer.write() })
+        .detach();
+}
+
+/// Write now what's waiting to be written, as the app quits.
+pub fn write_waiting(cx: &App) {
+    if let Some(writer) = cx.try_global::<Writer>() {
+        writer.write();
+    }
+}
+
+/// Remove the file at `path`, and what's waiting to be written to it.
+pub fn remove(path: &Path, cx: &App) -> io::Result<()> {
+    match cx.try_global::<Writer>() {
+        Some(writer) => writer.remove(path),
+        None => fs::remove_file(path),
+    }
 }
 
 /// A new file at `path`, for its owner alone if `private`.

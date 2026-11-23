@@ -4,7 +4,8 @@
 //! file barely begun, or played nearly to its end, starts over, with the
 //! tracks picked in it if any. Saved to `progress.json` beside the
 //! settings as blocks close or play another file, every `SAVE_EVERY` while
-//! files are open, and as the app quits.
+//! files are open, and as the app quits: off the UI thread, but as it
+//! quits.
 
 use std::collections::HashMap;
 use std::fs;
@@ -159,39 +160,35 @@ impl Progress {
         self.changed |= self.files.len() != before;
     }
 
-    /// Save the places in `folder`, if they changed.
-    fn save(&mut self, folder: &Folder) {
+    /// The places to save, if they changed since they were taken last.
+    fn take_unsaved(&mut self) -> Option<Vec<u8>> {
         if !self.changed {
-            return;
+            return None;
         }
         self.forget_old(now());
         self.changed = false;
-        let Some(path) = folder.file(FILE) else {
-            return;
-        };
-        let result = serde_json::to_string(&self.files)
-            .map_err(std::io::Error::from)
-            .and_then(|json| crate::files::write_whole(&path, json.as_bytes()));
-        if let Err(err) = result {
-            log::warn!("could not save {}: {err}", path.display());
-        }
+        serde_json::to_vec(&self.files)
+            .inspect_err(|err| log::warn!("could not save the places: {err}"))
+            .ok()
     }
 }
 
 /// Note where files are, as Settings say to, and save the places if
-/// `save`.
+/// `save`: soon, off the UI thread.
 pub fn note(notes: impl IntoIterator<Item = Note>, save: bool, cx: &mut App) {
     if !cx.global::<Settings>().resume_files {
         return;
     }
-    let folder = Folder::of(cx);
     let progress = cx.default_global::<Progress>();
     let now = now();
     for note in notes {
         progress.note(&note, now);
     }
-    if save {
-        progress.save(&folder);
+    if save
+        && let Some(contents) = progress.take_unsaved()
+        && let Some(path) = Folder::of(cx).file(FILE)
+    {
+        crate::files::write_soon(path, contents, cx);
     }
 }
 
@@ -220,7 +217,7 @@ pub fn picked(file: &Path, cx: &App) -> Picked {
 pub fn forget_all(cx: &mut App) {
     cx.set_global(Progress::default());
     if let Some(path) = Folder::of(cx).file(FILE) {
-        fs::remove_file(&path).ok();
+        crate::files::remove(&path, cx).ok();
     }
 }
 
