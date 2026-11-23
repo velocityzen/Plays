@@ -101,6 +101,9 @@ proptest = { version = "1", default-features = false, features = ["std"] }
 [profile.dev]
 # Video decoding and pixel conversion are painfully slow without optimizations.
 opt-level = 1
+# Debug info in a .dSYM on macOS, not left in object files, which pile up in
+# target/debug with each incremental build.
+split-debuginfo = "packed"
 
 [profile.dev.package."*"]
 opt-level = 3
