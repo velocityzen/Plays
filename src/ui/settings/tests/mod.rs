@@ -20,7 +20,7 @@ use crate::cast::target::{Device, Error, Session};
 use crate::cast::{AppPairings, Casting, Looking, Protocol, Shows, Target};
 use crate::files::Folder;
 use crate::media::output::DeviceInfo;
-use crate::settings::{AudioDevice, PanelLook, Settings};
+use crate::settings::{AudioDevice, AudioMode, PanelLook, Settings, Visualizer};
 use crate::ui::about::AboutView;
 use crate::ui::testing::{self, click, press, shows, wait_until};
 use crate::ui::theme::layout::SETTINGS_WINDOW_SIZE;
@@ -190,6 +190,31 @@ fn picking_how_panels_show_the_video_sets_it(cx: &mut TestAppContext) {
         click(&mut settings, choice);
         assert_eq!(panels(&mut settings), look, "{choice}");
     }
+}
+
+#[gpui::test]
+fn audio_mode_picks_the_visualizer_and_whether_the_quality_shows(cx: &mut TestAppContext) {
+    let (_, mut cx) = testing::start(cx);
+    let mut settings = open_settings(&mut cx);
+    let mode = |cx: &mut VisualTestContext| cx.update(|_, cx| cx.global::<Settings>().audio_mode);
+    click(&mut settings, "pane-Audio Mode");
+    assert_eq!(
+        mode(&mut settings),
+        AudioMode {
+            visualizer: Visualizer::Speaker,
+            show_quality: true,
+        },
+        "the default"
+    );
+
+    click(&mut settings, "visualizer-None");
+    assert_eq!(mode(&mut settings).visualizer, Visualizer::None);
+    click(&mut settings, "visualizer-Speaker");
+    assert_eq!(mode(&mut settings).visualizer, Visualizer::Speaker);
+    click(&mut settings, "show-quality");
+    assert!(!mode(&mut settings).show_quality);
+    click(&mut settings, "show-quality");
+    assert!(mode(&mut settings).show_quality);
 }
 
 #[gpui::test]

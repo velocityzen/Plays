@@ -1,14 +1,14 @@
 //! What fills a block: the video; for audio, cover art, the file's tags and
-//! quality, and a level meter, over a visualizer; or a line on what is
-//! happening (opening, an error).
+//! quality, and a level meter, over a visualizer, as Settings say; or a
+//! line on what is happening (opening, an error).
 
 use gpui::prelude::*;
 use std::cell::Cell;
 use std::rc::Rc;
 
 use gpui::{
-    AnyElement, Bounds, ContentTransform, Corners, ObjectFit, Pixels, SharedString, canvas, div,
-    img, relative,
+    AnyElement, App, Bounds, ContentTransform, Corners, ObjectFit, Pixels, SharedString, canvas,
+    div, img, relative,
 };
 
 use super::sound::SoundLines;
@@ -16,6 +16,7 @@ use super::visualizer::speaker;
 use super::{PlayerView, controls};
 use crate::media::Picture;
 use crate::media::decoder::MediaInfo;
+use crate::settings::{AudioMode, Settings, Visualizer};
 use crate::ui::components::{ComponentSize, Icon, Meter};
 use crate::ui::framing::Framing;
 use crate::ui::theme::player::{
@@ -31,6 +32,7 @@ impl PlayerView {
         theme: &Theme,
         framing: Option<Framing>,
         cover: bool,
+        cx: &App,
     ) -> AnyElement {
         if let Some(error) = self.playback.local().error() {
             return div()
@@ -64,7 +66,9 @@ impl PlayerView {
             return picture(frame, framing, cover, self.picture_bounds.clone());
         }
         match self.playback.local().info() {
-            Some(info) if !info.has_video => self.render_audio(theme, &info),
+            Some(info) if !info.has_video => {
+                self.render_audio(theme, &info, cx.global::<Settings>().audio_mode)
+            }
             _ => div()
                 .text_sm()
                 .text_color(theme.text_muted)
@@ -78,11 +82,82 @@ impl PlayerView {
     }
 
     /// Audio-only files get their cover art (or a circle standing in for
-    /// it), their tags and quality, and a level meter, over a speaker whose
-    /// cone moves with the level. The cover is square, and as large as fits
-    /// with the rest under it, between where the header and the controls
-    /// go.
-    fn render_audio(&self, theme: &Theme, info: &MediaInfo) -> AnyElement {
+    /// it), their tags, their quality if `mode` says, and a level meter,
+    /// over the visualizer it picks: a speaker whose cone moves with the
+    /// level, or none.
+    fn render_audio(&self, theme: &Theme, info: &MediaInfo, mode: AudioMode) -> AnyElement {
+        let SoundLines {
+            title,
+            artist,
+            album,
+            quality,
+        } = SoundLines::of(info, &self.title);
+        let line = |selector: &'static str, text: String| {
+            div()
+                .debug_selector(move || selector.into())
+                .max_w_full()
+                .truncate()
+                .text_xs()
+                .text_color(theme.text_muted)
+                .child(SharedString::from(text))
+        };
+        div()
+            .size_full()
+            .flex()
+            .flex_col()
+            .items_center()
+            .justify_center()
+            .gap_3()
+            .px_4()
+            .pt(NOTE_TOP)
+            .pb(controls::height(info.live))
+            .children(match mode.visualizer {
+                Visualizer::Speaker => {
+                    Some(speaker(self.level, theme.accent.opacity(SPEAKER_OPACITY)))
+                }
+                Visualizer::None => None,
+            })
+            .child(self.render_cover(theme))
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .items_center()
+                    .gap_0p5()
+                    .max_w_full()
+                    .child(
+                        div()
+                            .debug_selector(|| "sound-title".into())
+                            .max_w_full()
+                            .truncate()
+                            .text_sm()
+                            .text_color(theme.text)
+                            .child(title),
+                    )
+                    .children(
+                        artist.map(|artist| line("sound-artist", artist).text_color(theme.text)),
+                    )
+                    .children(album.map(|album| line("sound-album", album)))
+                    .children(
+                        quality
+                            .filter(|_| mode.show_quality)
+                            .map(|quality| line("sound-quality", quality)),
+                    ),
+            )
+            .child(
+                div()
+                    .debug_selector(|| "sound-meter".into())
+                    .w(METER_WIDTH)
+                    .max_w_full()
+                    .child(Meter::new(self.level)),
+            )
+            .into_any_element()
+    }
+
+    /// The cover art, or a circle standing in for it, square, and as large
+    /// as fits with the rest under it, between where the header and the
+    /// controls go.
+    fn render_cover(&self, theme: &Theme) -> impl IntoElement {
         let artwork = match self.playback.local().cover() {
             Some(cover) => img(cover)
                 .debug_selector(|| "sound-cover-art".into())
@@ -109,7 +184,7 @@ impl PlayerView {
         // It grows into the room the rest leaves, no wider than the block.
         // Square: its least and most widths make its least and most heights,
         // and something as wide as it is tall in it makes it as wide.
-        let room = div()
+        div()
             .debug_selector(|| "sound-cover".into())
             .relative()
             .flex()
@@ -126,64 +201,7 @@ impl PlayerView {
                     .items_center()
                     .justify_center()
                     .child(artwork),
-            );
-        let SoundLines {
-            title,
-            artist,
-            album,
-            quality,
-        } = SoundLines::of(info, &self.title);
-        let line = |selector: &'static str, text: String| {
-            div()
-                .debug_selector(move || selector.into())
-                .max_w_full()
-                .truncate()
-                .text_xs()
-                .text_color(theme.text_muted)
-                .child(SharedString::from(text))
-        };
-        div()
-            .size_full()
-            .flex()
-            .flex_col()
-            .items_center()
-            .justify_center()
-            .gap_3()
-            .px_4()
-            .pt(NOTE_TOP)
-            .pb(controls::height(info.live))
-            .child(speaker(self.level, theme.accent.opacity(SPEAKER_OPACITY)))
-            .child(room)
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .items_center()
-                    .gap_0p5()
-                    .max_w_full()
-                    .child(
-                        div()
-                            .debug_selector(|| "sound-title".into())
-                            .max_w_full()
-                            .truncate()
-                            .text_sm()
-                            .text_color(theme.text)
-                            .child(title),
-                    )
-                    .children(
-                        artist.map(|artist| line("sound-artist", artist).text_color(theme.text)),
-                    )
-                    .children(album.map(|album| line("sound-album", album)))
-                    .children(quality.map(|quality| line("sound-quality", quality))),
             )
-            .child(
-                div()
-                    .debug_selector(|| "sound-meter".into())
-                    .w(METER_WIDTH)
-                    .max_w_full()
-                    .child(Meter::new(self.level)),
-            )
-            .into_any_element()
     }
 }
 

@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use serde_json::json;
 
 use super::*;
-use crate::settings::{AudioDevice, Rgb, SeveralFiles};
+use crate::settings::{AudioDevice, Rgb, SeveralFiles, Visualizer};
 
 /// The keys of the values in `value` at `at`, going into each object
 /// that has something in it.
@@ -66,6 +66,17 @@ fn takes_what_the_window_offers() {
         SeveralFiles::Playlist
     );
     assert_eq!(set("master_volume", json!(0.25)).master_volume, 0.25);
+    assert_eq!(
+        set("audio_mode.visualizer", json!("none"))
+            .audio_mode
+            .visualizer,
+        Visualizer::None
+    );
+    assert!(
+        !set("audio_mode.show_quality", json!(false))
+            .audio_mode
+            .show_quality
+    );
     assert_eq!(set("subtitles.size", json!(1.5)).subtitles.size, 1.5);
     assert_eq!(
         set("screenshots.jpeg_quality", json!(70))

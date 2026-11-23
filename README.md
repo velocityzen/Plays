@@ -28,7 +28,7 @@ GPU-accelerated UI framework.
 - Open Recent
 - Files resume where they were left, with their tracks
 - Cover art, title, artist, album, quality and a level meter for audio files,
-  over a speaker moving with the sound
+  over a speaker moving with the sound; the speaker and quality can be off
 - The screen stays awake while video plays
 - Play, pause, seek, step, sync, volume and mute every block in every window
   at once

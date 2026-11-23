@@ -40,7 +40,7 @@ impl PlayerView {
             .items_center()
             .justify_center()
             .bg(theme.block)
-            .child(self.render_content(&theme, None, false))
+            .child(self.render_content(&theme, None, false, cx))
             .into_any_element()
     }
 }

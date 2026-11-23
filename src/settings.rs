@@ -111,6 +111,33 @@ impl Default for OverVideo {
     }
 }
 
+/// How an audio file's block looks.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AudioMode {
+    /// What plays behind its cover.
+    pub visualizer: Visualizer,
+    /// Its codec, bits, sample rate, channels and bit rate, under its tags.
+    pub show_quality: bool,
+}
+
+impl Default for AudioMode {
+    fn default() -> Self {
+        Self {
+            visualizer: Visualizer::Speaker,
+            show_quality: true,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Visualizer {
+    None,
+    /// A speaker whose cone moves with the level.
+    Speaker,
+}
+
 /// The languages to play a file's audio and show its subtitles in, first
 /// first, each by its code (`tracks::language`): a file opens with the
 /// first it has. None leaves it to the file.
@@ -432,6 +459,7 @@ pub struct Settings {
     /// through that display's speakers while it is there, unless it plays
     /// through an output picked for it.
     pub sound_follows_display: bool,
+    pub audio_mode: AudioMode,
     pub casting: CastingSettings,
     /// Volume new players start at.
     pub default_volume: f32,
@@ -487,6 +515,7 @@ impl Default for Settings {
             master_volume: 1.0,
             audio_output: AudioOutputSettings::default(),
             sound_follows_display: true,
+            audio_mode: AudioMode::default(),
             casting: CastingSettings::default(),
             default_volume: 0.8,
             autoplay: true,

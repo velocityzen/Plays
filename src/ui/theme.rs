@@ -636,6 +636,7 @@ pub mod settings {
     /// them.
     pub const PLAYBACK_COLOR: u32 = 0x34c759;
     pub const AUDIO_COLOR: u32 = 0xff375f;
+    pub const AUDIO_MODE_COLOR: u32 = 0xac8e68;
     pub const VIDEO_COLOR: u32 = 0x0a84ff;
     pub const SUBTITLES_COLOR: u32 = 0xff9f0a;
     pub const CASTING_COLOR: u32 = 0x00c7be;

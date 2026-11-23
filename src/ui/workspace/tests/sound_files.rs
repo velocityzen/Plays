@@ -7,6 +7,7 @@ use gpui::{Bounds, Pixels, TestAppContext, VisualTestContext, VisualizerShader, 
 
 use super::{drawn_in, open};
 use crate::files::test_folder;
+use crate::settings::{Settings, Visualizer};
 use crate::ui::testing::{self, find, fixture, shows, wait_until};
 use crate::ui::theme::Theme;
 use crate::ui::theme::player::{
@@ -224,4 +225,42 @@ fn a_sound_plays_over_a_speaker_moving_with_its_level(cx: &mut TestAppContext) {
     find(&mut cx, "block-1");
     let painted = cx.update(|window, _| window.painted_visualizers());
     assert_eq!(painted.len(), 1, "for the sound alone: {painted:?}");
+}
+
+/// How many visualizers the window draws now.
+fn visualizers(cx: &mut VisualTestContext) -> usize {
+    find(cx, "block-0");
+    cx.update(|window, _| window.painted_visualizers().len())
+}
+
+/// As Settings say, a sound plays over no visualizer, and its quality
+/// doesn't show, while the rest does.
+#[gpui::test]
+fn settings_take_a_sounds_speaker_and_quality_away(cx: &mut TestAppContext) {
+    let (window, mut cx) = testing::start(cx);
+    open(window, &mut cx, &["tune.flac"], false);
+    assert_eq!(visualizers(&mut cx), 1, "the speaker");
+    assert!(shows(&mut cx, "sound-quality"));
+
+    cx.update(|_, cx| {
+        Settings::update(cx, false, |s| {
+            s.audio_mode.visualizer = Visualizer::None;
+        });
+    });
+    assert_eq!(visualizers(&mut cx), 0);
+    assert!(shows(&mut cx, "sound-quality"));
+
+    cx.update(|_, cx| Settings::update(cx, false, |s| s.audio_mode.show_quality = false));
+    assert!(!shows(&mut cx, "sound-quality"));
+    for selector in ["sound-title", "sound-artist", "sound-album", "sound-meter"] {
+        assert!(shows(&mut cx, selector), "{selector}");
+    }
+    assert_eq!(visualizers(&mut cx), 0);
+
+    cx.update(|_, cx| {
+        Settings::update(cx, false, |s| {
+            s.audio_mode.visualizer = Visualizer::Speaker;
+        });
+    });
+    assert_eq!(visualizers(&mut cx), 1);
 }

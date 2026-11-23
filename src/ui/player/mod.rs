@@ -718,7 +718,7 @@ impl PlayerView {
             )
             .child(surface.child(match self.render_cast(&theme, cx) {
                 Some(cast) => cast,
-                None => self.render_content(&theme, framing, cover),
+                None => self.render_content(&theme, framing, cover, cx),
             }))
             // In Picture in Picture, the subtitles are in its window.
             .when(

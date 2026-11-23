@@ -16,7 +16,7 @@ use super::{
     ControlsVisibility, FloatOnTop, FullScreen, GAMMA_RANGE, JPEG_QUALITY_RANGE, MaxResolution,
     PanelLook, SUBTITLE_COLORS, SUBTITLE_POSITION_RANGE, SUBTITLE_SIZE_RANGE, ScreenshotFormat,
     ScreenshotHdr, Settings, SeveralFiles, SubtitleArea, SubtitleEdge, SubtitleWeight, ThemeMode,
-    VideoFit,
+    VideoFit, Visualizer,
 };
 
 pub const THEMES: [(ThemeMode, &str); 3] = [
@@ -69,6 +69,9 @@ pub const SCREENSAVER_MINUTES: [(u32, &str); 6] = [
 pub const SEEK_STEPS: [(u32, &str); 4] = [(5, "5 s"), (10, "10 s"), (30, "30 s"), (60, "60 s")];
 
 pub const FITS: [(VideoFit, &str); 2] = [(VideoFit::Contain, "Fit"), (VideoFit::Cover, "Fill")];
+
+pub const VISUALIZERS: [(Visualizer, &str); 2] =
+    [(Visualizer::None, "None"), (Visualizer::Speaker, "Speaker")];
 
 pub const RESOLUTIONS: [(MaxResolution, &str); 5] = [
     (MaxResolution::Original, "Full"),
@@ -246,6 +249,18 @@ const FIELDS: &[Field] = &[
         "Audio languages",
         "Audio",
         Kind::Languages,
+    ),
+    Field::new(
+        "audio_mode.visualizer",
+        "Visualizer",
+        "Audio Mode",
+        Kind::Choice(|| choices(&VISUALIZERS)),
+    ),
+    Field::new(
+        "audio_mode.show_quality",
+        "Show quality",
+        "Audio Mode",
+        Kind::Toggle,
     ),
     Field::new(
         "video_fit",
