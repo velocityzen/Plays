@@ -98,6 +98,29 @@ fn imports_take_the_defaults_for_what_they_leave_out() {
 }
 
 #[test]
+fn volumes_in_the_file_are_read_as_full_at_most() {
+    let imported = Settings::import(r#"{ "default_volume": 3.0, "master_volume": 5.0 }"#).unwrap();
+    assert_eq!(
+        (imported.default_volume(), imported.master_volume()),
+        (1.0, 1.0)
+    );
+    let path = file(
+        "volumes",
+        r#"{ "default_volume": -0.5, "master_volume": -2.0 }"#,
+    );
+    let loaded = Settings::load_from(&path);
+    assert_eq!(
+        (loaded.default_volume(), loaded.master_volume()),
+        (0.0, 0.0)
+    );
+    let within = Settings::import(r#"{ "default_volume": 0.3, "master_volume": 0.6 }"#).unwrap();
+    assert_eq!(
+        (within.default_volume(), within.master_volume()),
+        (0.3, 0.6)
+    );
+}
+
+#[test]
 fn other_files_dont_import() {
     assert!(Settings::import("not json").is_err());
     assert!(Settings::import("[1, 2]").is_err());

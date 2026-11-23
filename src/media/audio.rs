@@ -298,7 +298,7 @@ impl Mixer {
         Arc::new(Self {
             sample_rate: AtomicU32::new(sample_rate),
             sources: Mutex::new(Vec::with_capacity(SOURCES)),
-            master_volume: AtomicF32::new(master_volume),
+            master_volume: AtomicF32::new(master_volume.clamp(0.0, 1.0)),
         })
     }
 

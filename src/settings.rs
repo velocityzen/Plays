@@ -718,6 +718,17 @@ impl Settings {
         Ok(serde_json::from_value(value)?)
     }
 
+    /// Volume on top of every player's own, full at most whatever the file
+    /// says.
+    pub fn master_volume(&self) -> f32 {
+        self.master_volume.clamp(0.0, 1.0)
+    }
+
+    /// Volume new players start at, full at most whatever the file says.
+    pub fn default_volume(&self) -> f32 {
+        self.default_volume.clamp(0.0, 1.0)
+    }
+
     /// Gamma for SDR and HDR video, within `GAMMA_RANGE` whatever the file
     /// says.
     pub fn gamma(&self) -> [f32; 2] {

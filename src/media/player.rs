@@ -179,9 +179,10 @@ impl Stats {
 
 impl Player {
     pub fn open(source: Source, mixer: Option<Arc<Mixer>>, options: PlayerOptions) -> Self {
+        let volume = options.volume.clamp(0.0, 1.0);
         let shared = Arc::new(Shared::new(
             mixer.as_ref().map(|mixer| mixer.sample_rate()),
-            options.volume,
+            volume,
         ));
         if let (Some(mixer), Some(audio)) = (&mixer, shared.audio()) {
             mixer.add_source(audio.clone());
@@ -215,7 +216,7 @@ impl Player {
             ended: false,
             looping: options.looping,
             muted: false,
-            volume: options.volume,
+            volume,
         }
     }
 

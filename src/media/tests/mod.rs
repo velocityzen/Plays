@@ -622,6 +622,62 @@ fn drain_each_side(
 }
 
 #[test]
+fn a_player_opened_louder_than_full_plays_at_full() {
+    // An eighth of full scale, spread over two channels: 0.088 at its
+    // loudest.
+    let path = media(
+        "volume-tone.wav",
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:sample_rate=48000:duration=1",
+            "-ac",
+            "2",
+        ],
+    );
+    let silent = Player::open(
+        Source::File(path.clone()),
+        None,
+        PlayerOptions {
+            volume: -1.0,
+            ..options(false, false)
+        },
+    );
+    assert_eq!(silent.volume(), 0.0);
+    drop(silent);
+
+    let mixer = Mixer::detached(48_000);
+    let mut player = Player::open(
+        Source::File(path),
+        Some(mixer.clone()),
+        PlayerOptions {
+            volume: 3.0,
+            ..options(true, false)
+        },
+    );
+    assert_eq!(player.volume(), 1.0);
+
+    // A tenth of a second of it, heard.
+    let (mut loudest, mut heard) = (0.0f32, 0);
+    let mut buffer = vec![0.0f32; 512 * 2];
+    let start = Instant::now();
+    while start.elapsed() < Duration::from_secs(5) && heard < 4800 * 2 {
+        player.tick();
+        mixer.mix(&mut buffer, 0.0, Instant::now());
+        for sample in &buffer {
+            loudest = loudest.max(sample.abs());
+            heard += usize::from(*sample != 0.0);
+        }
+        std::thread::sleep(Duration::from_micros(300));
+    }
+    assert!(
+        (0.08..0.1).contains(&loudest),
+        "heard as it is, at {loudest}"
+    );
+}
+
+#[test]
 fn resamples_audio_and_stops_at_the_end() {
     let path = media(
         "tone.wav",

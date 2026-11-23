@@ -83,6 +83,21 @@ fn a_speaker_plays_the_mix_and_what_it_says_it_adds_holds_the_clock_back() {
 }
 
 #[test]
+fn a_mixer_made_louder_than_full_plays_at_full() {
+    for (volume, heard) in [(5.0, 0.25), (-1.0, 0.0)] {
+        let mixer = Mixer::new(48_000, volume);
+        playing_in(&mixer, 0.25, 10.0);
+        let mut mix = vec![1.0; 512 * SOURCE_CHANNELS];
+        mixer.mix(&mut mix, 0.0, Instant::now());
+        assert!(
+            mix.iter().all(|&sample| sample == heard),
+            "made at {volume}, heard at {}, not {heard}",
+            mix[0]
+        );
+    }
+}
+
+#[test]
 fn a_speaker_going_away_is_heard_and_one_let_go_is_not() {
     let speaker = FakeReceiver::start(Kind::Speaker);
     let (stream, events) = connect(&speaker);

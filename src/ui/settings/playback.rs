@@ -95,7 +95,7 @@ impl Pane for PlaybackPane {
                         view,
                         "default-volume",
                         "default_volume",
-                        s.default_volume,
+                        s.default_volume(),
                         theme,
                     ),
                 ),

@@ -172,6 +172,34 @@ fn reset_to_defaults_asks_first(cx: &mut TestAppContext) {
     assert!(autoplay(&mut settings), "Reset puts the default back");
 }
 
+/// The value shown next to the slider tagged `slider`.
+fn shown_by(cx: &mut VisualTestContext, slider: &'static str) -> String {
+    let at = testing::find(cx, slider);
+    testing::painted(cx)
+        .into_iter()
+        .find(|(_, bounds)| {
+            bounds.left() >= at.right() && at.contains(&point(at.center().x, bounds.center().y))
+        })
+        .map(|(text, _)| text.to_string())
+        .unwrap_or_else(|| panic!("no value shown by {slider}"))
+}
+
+#[gpui::test]
+fn volumes_past_full_in_the_file_show_at_full(cx: &mut TestAppContext) {
+    let (_, mut cx) = testing::start(cx);
+    cx.update(|_, cx| {
+        Settings::update(cx, false, |settings| {
+            settings.master_volume = 5.0;
+            settings.default_volume = 3.0;
+        });
+    });
+    let mut settings = open_settings(&mut cx);
+    click(&mut settings, "pane-Audio");
+    assert_eq!(shown_by(&mut settings, "master-volume"), "100%");
+    click(&mut settings, "pane-Playback");
+    assert_eq!(shown_by(&mut settings, "default-volume"), "100%");
+}
+
 #[gpui::test]
 fn picking_how_panels_show_the_video_sets_it(cx: &mut TestAppContext) {
     let (_, mut cx) = testing::start(cx);

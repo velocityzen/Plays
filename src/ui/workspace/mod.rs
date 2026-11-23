@@ -206,7 +206,7 @@ impl Workspace {
             let settings = cx.global::<Settings>();
             window.set_fullscreen_style(settings.full_screen.style());
             this.screensaver_settings_changed();
-            let (volume, gamma) = (settings.master_volume, settings.gamma());
+            let (volume, gamma) = (settings.master_volume(), settings.gamma());
             AudioEngine::set_master_volume(volume, cx);
             if gamma != this.gamma {
                 this.gamma = gamma;

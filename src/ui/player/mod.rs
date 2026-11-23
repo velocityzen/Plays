@@ -231,7 +231,7 @@ impl PlayerView {
             PlayerOptions {
                 autoplay: settings.autoplay,
                 looping: settings.loop_by_default,
-                volume: settings.default_volume,
+                volume: settings.default_volume(),
                 max_short_side: settings.max_resolution.short_side(),
                 hardware_decoding: settings.hardware_decoding,
                 wanted,

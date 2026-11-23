@@ -829,7 +829,7 @@ impl Output {
         why: &str,
         events: &UnboundedSender<Event>,
     ) -> Self {
-        let mixer = output::mixer(settings.master_volume);
+        let mixer = output::mixer(settings.master_volume());
         let (device, requests) = mpsc::channel();
         // Without it, routing it says so.
         std::thread::Builder::new()

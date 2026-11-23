@@ -51,7 +51,7 @@ impl Pane for AudioPane {
                     view,
                     "master-volume",
                     "master_volume",
-                    s.master_volume,
+                    s.master_volume(),
                     theme,
                 ),
             ),
