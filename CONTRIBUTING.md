@@ -306,7 +306,8 @@ time); Vulkan can be software (lavapipe). It uses `Xvfb`, `openbox`,
 - A test that needs a folder takes its own: `Folder::for_test` for the
   app's, `files::test_folder` for any other. It's in `plays-tests` in the
   temporary folder and goes as the test's thread ends, pass or fail
-  (`files::gone_as_test_ends`). Only media made for the tests stays there,
-  made once.
+  (`files::gone_as_test_ends`). Only media made for the tests stays there
+  (`src/media/tests/made.rs`): made whole, once, and again when made
+  another way.
 - Each test is checked to fail when what it covers breaks. Expected values
   for color math are worked out apart from Plays' code.

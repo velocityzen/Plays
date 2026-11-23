@@ -19,6 +19,9 @@ use super::player::{Player, PlayerOptions};
 use super::source::Source;
 use super::tracks::TrackKind;
 
+mod made;
+use made::{in_own_folder, kept, made_from, made_in, media};
+
 fn options(autoplay: bool, looping: bool) -> PlayerOptions {
     PlayerOptions {
         autoplay,
@@ -30,63 +33,11 @@ fn options(autoplay: bool, looping: bool) -> PlayerOptions {
     }
 }
 
-/// Generate a test file with the `ffmpeg` tool, once per test run.
-fn media(name: &str, args: &[&str]) -> PathBuf {
-    made_by("ffmpeg", name, args)
-}
-
-/// A test file `program` makes, as `ffmpeg` does, once per test run. The
-/// test fails if it can't.
-fn made_by(program: &str, name: &str, args: &[&str]) -> PathBuf {
-    ffmpeg_next::init().unwrap();
-    let path = std::env::temp_dir().join("plays-tests").join(name);
-    // In a folder of its own, if `name` says.
-    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    if path.exists() {
-        return path;
-    }
-    let output = Command::new(program)
-        .args(["-hide_banner", "-loglevel", "error", "-y"])
-        .args(args)
-        .arg(&path)
-        .output()
-        .unwrap_or_else(|err| {
-            panic!(
-                "`{program}` isn't installed ({err}), and the media tests make their files \
-                 with it: install it, or leave them out with `cargo test -- --skip media::tests`"
-            )
-        });
-    if !output.status.success() {
-        // What it left isn't the file.
-        let _ = std::fs::remove_file(&path);
-        panic!(
-            "`{program}` couldn't make {name}: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        );
-    }
-    path
-}
-
-/// Without the tool that makes their media, the tests fail rather than
-/// pass having checked nothing.
-#[test]
-#[should_panic(expected = "isn't installed")]
-fn media_that_cant_be_made_fails_the_test() {
-    made_by("plays-no-such-tool", "never-made.mp4", &[]);
-}
-
-/// So do media the tool fails to make, as one without an encoder would.
-#[test]
-#[should_panic(expected = "couldn't make never-made.mkv")]
-fn media_the_tool_fails_to_make_fails_the_test() {
-    made_by("false", "never-made.mkv", &[]);
-}
-
 /// A decoder thread failing as a bug would, once the file is open: the block
 /// says it can't play it, and stops waiting for more.
 #[test]
 fn a_decoder_thread_failing_says_so_and_stops_waiting() {
-    let dir = std::env::temp_dir().join("plays-tests");
+    let dir = crate::files::test_folder("decoder-panics");
     std::fs::create_dir_all(&dir).unwrap();
     let fixtures = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
     let path = dir.join(format!("{}.mp4", super::decoder::PANICS_IN_DEMUX));
@@ -838,23 +789,19 @@ fn resamples_audio_and_stops_at_the_end() {
 /// programme and what comes between, plays on through the change.
 #[test]
 fn plays_on_when_the_sound_changes_its_channels() {
-    let tone = |channels: &str| {
-        let half = "sine=frequency=440:sample_rate=48000:duration=0.5";
-        let name = format!("channels/{channels}.aac");
-        std::fs::read(media(
-            &name,
-            &["-f", "lavfi", "-i", half, "-ac", channels, "-c:a", "aac"],
-        ))
-        .unwrap()
+    let half = "sine=frequency=440:sample_rate=48000:duration=0.5";
+    let args = |channels| ["-f", "lavfi", "-i", half, "-ac", channels, "-c:a", "aac"];
+    let tone = |channels| {
+        std::fs::read(media(&format!("channels/{channels}.aac"), &args(channels))).unwrap()
     };
     // ADTS gives the channels in each frame, so the two join as one: mono,
-    // then stereo. Written whole, as other test runs may read it.
-    let path = std::env::temp_dir().join("plays-tests/channels/mono-then-stereo.aac");
-    if !path.exists() {
-        let part = path.with_extension(format!("{}.part", std::process::id()));
-        std::fs::write(&part, [tone("1"), tone("2")].concat()).unwrap();
-        std::fs::rename(&part, &path).unwrap();
-    }
+    // then stereo.
+    let path = made_in(
+        &kept(),
+        "channels/mono-then-stereo.aac",
+        &format!("{:?} then {:?}", args("1"), args("2")),
+        |out| std::fs::write(out, [tone("1"), tone("2")].concat()).map_err(|err| err.to_string()),
+    );
     let mixer = Mixer::detached(48_000);
     let mut player = Player::open(
         Source::File(path),
@@ -979,19 +926,13 @@ fn subtitles_at(player: &mut Player, time: f64, expected: &[&str]) -> Vec<String
 /// A 4-second video with two audio tracks, English silence and a German
 /// tone, and two subtitle tracks, English and French, neither a default.
 fn tracks_media() -> PathBuf {
-    let dir = std::env::temp_dir().join("plays-tests");
-    std::fs::create_dir_all(&dir).unwrap();
-    let first = dir.join("first.srt");
-    let second = dir.join("second.srt");
-    std::fs::write(
-        &first,
-        "1\n00:00:01,000 --> 00:00:02,500\n<i>Hello</i> there\n\n\
-         2\n00:00:03,000 --> 00:00:03,800\nSecond line\n",
-    )
-    .unwrap();
-    std::fs::write(&second, "1\n00:00:01,000 --> 00:00:02,500\nBonjour\n").unwrap();
-    media(
+    let first = "1\n00:00:01,000 --> 00:00:02,500\n<i>Hello</i> there\n\n\
+                 2\n00:00:03,000 --> 00:00:03,800\nSecond line\n";
+    let second = "1\n00:00:01,000 --> 00:00:02,500\nBonjour\n";
+    made_from(
+        "ffmpeg",
         "tracks.mkv",
+        &[("first.srt", first), ("second.srt", second)],
         &[
             "-f",
             "lavfi",
@@ -1008,9 +949,9 @@ fn tracks_media() -> PathBuf {
             "-i",
             "sine=frequency=440:sample_rate=48000:duration=4",
             "-i",
-            first.to_str().unwrap(),
+            "first.srt",
             "-i",
-            second.to_str().unwrap(),
+            "second.srt",
             "-map",
             "0",
             "-map",
@@ -1424,24 +1365,19 @@ fn a_slow_scrub_forward_follows_the_slider_all_the_way() {
 /// the keyframe the seek reads from, and one read again shows once.
 #[test]
 fn going_back_keeps_the_subtitles() {
-    let dir = std::env::temp_dir().join("plays-tests");
-    std::fs::create_dir_all(&dir).unwrap();
-    let srt = dir.join("across.srt");
-    std::fs::write(
-        &srt,
-        "1\n00:00:01,000 --> 00:00:02,000\nBefore\n\n\
-         2\n00:00:03,500 --> 00:00:05,000\nAcross\n",
-    )
-    .unwrap();
-    let path = media(
+    let srt = "1\n00:00:01,000 --> 00:00:02,000\nBefore\n\n\
+               2\n00:00:03,500 --> 00:00:05,000\nAcross\n";
+    let path = made_from(
+        "ffmpeg",
         "across.mkv",
+        &[("across.srt", srt)],
         &[
             "-f",
             "lavfi",
             "-i",
             "testsrc=size=160x120:rate=25:duration=8",
             "-i",
-            srt.to_str().unwrap(),
+            "across.srt",
             "-map",
             "0",
             "-map",
@@ -1486,19 +1422,12 @@ fn going_back_keeps_the_subtitles() {
 
 #[test]
 fn plays_subtitle_files_beside_the_video() {
-    let dir = std::env::temp_dir().join("plays-tests").join("beside");
-    std::fs::create_dir_all(&dir).unwrap();
-    std::fs::write(
-        dir.join("clip.en.srt"),
-        "1\n00:00:01,000 --> 00:00:02,500\nHello from a file\n\n\
-         2\n00:00:03,000 --> 00:00:03,800\nSecond line\n",
-    )
-    .unwrap();
+    let english = "1\n00:00:01,000 --> 00:00:02,500\nHello from a file\n\n\
+                   2\n00:00:03,000 --> 00:00:03,800\nSecond line\n";
     // Legacy encodings are common in subtitle files.
     let (russian, _, _) = encoding_rs::WINDOWS_1251
         .encode("1\n00:00:01,000 --> 00:00:02,500\nПривет из файла, как дела?\n");
-    std::fs::write(dir.join("clip.ru.srt"), &russian).unwrap();
-    let path = media(
+    let clip = media(
         "beside/clip.mkv",
         &[
             "-f",
@@ -1513,6 +1442,11 @@ fn plays_subtitle_files_beside_the_video() {
             "yuv420p",
         ],
     );
+    let files = [
+        ("clip.en.srt", english.as_bytes()),
+        ("clip.ru.srt", &russian),
+    ];
+    let path = in_own_folder(&clip, "beside", &files);
     let mut player = Player::open(Source::File(path), None, options(false, false));
     assert!(wait_until(Duration::from_secs(5), || {
         player.tick();
@@ -1559,22 +1493,10 @@ fn plays_subtitle_files_beside_the_video() {
     assert_eq!(player.info().unwrap().subtitle_track, Some(subtitles[1]));
 }
 
-/// A 10-second video, `dir/clip.mkv`, with `files` beside it (name and
-/// what it says), in `plays-tests/dir`.
+/// A 10-second video, `clip.mkv`, with `files` beside it (name and what it
+/// says), in a folder of the test's own, `dir`.
 fn video_with_subtitle_files(dir: &str, files: &[(&str, &str)]) -> PathBuf {
-    let folder = std::env::temp_dir().join("plays-tests").join(dir);
-    std::fs::create_dir_all(&folder).unwrap();
-    // Only these, not those of an earlier run.
-    for entry in std::fs::read_dir(&folder).unwrap().flatten() {
-        if entry.path().extension().is_some_and(|ext| ext == "srt") {
-            std::fs::remove_file(entry.path()).unwrap();
-        }
-    }
-    for (name, text) in files {
-        let srt = format!("1\n00:00:00,500 --> 00:00:09,500\n{text}\n");
-        std::fs::write(folder.join(name), srt).unwrap();
-    }
-    media(
+    let clip = media(
         &format!("{dir}/clip.mkv"),
         &[
             "-f",
@@ -1588,7 +1510,12 @@ fn video_with_subtitle_files(dir: &str, files: &[(&str, &str)]) -> PathBuf {
             "-pix_fmt",
             "yuv420p",
         ],
-    )
+    );
+    let files: Vec<_> = files
+        .iter()
+        .map(|(name, text)| (*name, format!("1\n00:00:00,500 --> 00:00:09,500\n{text}\n")))
+        .collect();
+    in_own_folder(&clip, dir, &files)
 }
 
 #[test]
@@ -2006,14 +1933,7 @@ fn delays_the_sound_against_the_picture() {
 /// lands on a cue that is over by its own time but not as delayed.
 #[test]
 fn delays_subtitles_against_the_picture() {
-    let dir = std::env::temp_dir().join("plays-tests").join("delay");
-    std::fs::create_dir_all(&dir).unwrap();
-    std::fs::write(
-        dir.join("clip.srt"),
-        "1\n00:00:01,000 --> 00:00:02,000\nRight on time\n",
-    )
-    .unwrap();
-    let path = media(
+    let clip = media(
         "delay/clip.mkv",
         &[
             "-f",
@@ -2028,6 +1948,8 @@ fn delays_subtitles_against_the_picture() {
             "yuv420p",
         ],
     );
+    let srt = "1\n00:00:01,000 --> 00:00:02,000\nRight on time\n";
+    let path = in_own_folder(&clip, "delay", &[("clip.srt", srt)]);
     let mut player = Player::open(Source::File(path), None, options(false, false));
     assert!(wait_until(Duration::from_secs(5), || {
         player.tick();
@@ -2471,7 +2393,7 @@ fn dolby_vision_surfaces_match_software() {
         .map(PathBuf::from)
         .expect("PLAYS_DOLBY_VISION_SAMPLE names a Dolby Vision profile 5 file");
     ffmpeg_next::init().unwrap();
-    let out_dir = std::env::temp_dir().join("plays-tests");
+    let out_dir = kept();
     std::fs::create_dir_all(&out_dir).unwrap();
     for share in [0.2, 0.5] {
         let frame_at = |hardware| {
@@ -2679,65 +2601,71 @@ mod http {
     }
 }
 
+/// How `stream_media` makes its video.
+const STREAM: &[&str] = &[
+    "-f",
+    "lavfi",
+    "-i",
+    "testsrc=size=320x240:rate=25:duration=4",
+    "-f",
+    "lavfi",
+    "-i",
+    "sine=frequency=440:sample_rate=48000:duration=4",
+    "-c:v",
+    "libx264",
+    "-preset",
+    "ultrafast",
+    "-g",
+    "25",
+    "-pix_fmt",
+    "yuv420p",
+    "-c:a",
+    "aac",
+    "-ac",
+    "2",
+];
+
+/// How `stream_media` makes the HLS version of its video.
+const HLS: &[&str] = &[
+    "-c",
+    "copy",
+    "-f",
+    "hls",
+    "-hls_time",
+    "1",
+    "-hls_list_size",
+    "0",
+    "-hls_playlist_type",
+    "vod",
+];
+
 /// A short video with sound, as MPEG-TS, plus an HLS version of it in `hls/`.
 fn stream_media() -> PathBuf {
-    let ts = media(
-        "stream.ts",
-        &[
-            "-f",
-            "lavfi",
-            "-i",
-            "testsrc=size=320x240:rate=25:duration=4",
-            "-f",
-            "lavfi",
-            "-i",
-            "sine=frequency=440:sample_rate=48000:duration=4",
-            "-c:v",
-            "libx264",
-            "-preset",
-            "ultrafast",
-            "-g",
-            "25",
-            "-pix_fmt",
-            "yuv420p",
-            "-c:a",
-            "aac",
-            "-ac",
-            "2",
-        ],
-    );
+    let ts = media("stream.ts", STREAM);
     let dir = ts.parent().unwrap().to_path_buf();
-    let hls = dir.join("hls");
-    if !hls.join("vod.m3u8").exists() {
-        std::fs::create_dir_all(&hls).unwrap();
+    made_in(&dir, "hls", &format!("{STREAM:?} {HLS:?}"), |hls| {
+        std::fs::create_dir(hls).map_err(|err| err.to_string())?;
         let status = Command::new("ffmpeg")
             .args(["-hide_banner", "-loglevel", "error", "-y", "-i"])
             .arg(&ts)
-            .args([
-                "-c",
-                "copy",
-                "-f",
-                "hls",
-                "-hls_time",
-                "1",
-                "-hls_list_size",
-                "0",
-            ])
-            .args(["-hls_playlist_type", "vod", "-hls_segment_filename"])
+            .args(HLS)
+            .arg("-hls_segment_filename")
             .arg(hls.join("segment%d.ts"))
             .arg(hls.join("vod.m3u8"))
             .status()
-            .expect("ffmpeg made stream.ts");
-        assert!(status.success(), "ffmpeg couldn't make the HLS version");
+            .map_err(|err| err.to_string())?;
+        if !status.success() {
+            return Err("ffmpeg couldn't make the HLS version".into());
+        }
         // The same segments without an end: what a live stream looks like.
-        let vod = std::fs::read_to_string(hls.join("vod.m3u8")).unwrap();
+        let vod = std::fs::read_to_string(hls.join("vod.m3u8")).map_err(|err| err.to_string())?;
         let live: String = vod
             .lines()
             .filter(|l| !l.starts_with("#EXT-X-ENDLIST") && !l.starts_with("#EXT-X-PLAYLIST-TYPE"))
             .map(|l| format!("{l}\n"))
             .collect();
-        std::fs::write(hls.join("live.m3u8"), live).unwrap();
-    }
+        std::fs::write(hls.join("live.m3u8"), live).map_err(|err| err.to_string())
+    });
     dir
 }
 
