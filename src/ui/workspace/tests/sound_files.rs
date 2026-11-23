@@ -3,12 +3,15 @@
 
 use std::path::PathBuf;
 
-use gpui::{Bounds, Pixels, TestAppContext, VisualTestContext, VisualizerShader, px, size, white};
+use gpui::{
+    Bounds, Pixels, TestAppContext, VisualTestContext, VisualizerShader, black, px, size, white,
+};
 
 use super::{drawn_in, open};
 use crate::files::test_folder;
-use crate::settings::{Settings, Visualizer};
+use crate::settings::{Settings, ThemeMode, Visualizer};
 use crate::ui::testing::{self, find, fixture, shows, wait_until};
+use crate::ui::theme::Theme;
 use crate::ui::theme::player::{
     COVER_MIN_SIZE, NO_COVER_ICON_SCALE, NO_COVER_SCALE, NOTE_TOP, SPEAKER_OPACITY,
 };
@@ -181,8 +184,8 @@ fn a_sound_with_no_cover_has_a_circle_as_large_as_fits_its_block(cx: &mut TestAp
     assert!(!shows(&mut cx, "sound-cover-art"));
 }
 
-/// A sound plays over a speaker filling its block, in white, whose cone
-/// moves with its level; a video over none.
+/// A sound plays over a speaker filling its block, in the theme's color for
+/// it, whose cone moves with its level; a video over none.
 #[gpui::test]
 fn a_sound_plays_over_a_speaker_moving_with_its_level(cx: &mut TestAppContext) {
     let (window, mut cx) = testing::start(cx);
@@ -195,16 +198,13 @@ fn a_sound_plays_over_a_speaker_moving_with_its_level(cx: &mut TestAppContext) {
         cx.notify();
     });
     let bounds = find(&mut cx, "block-0");
-    let level = cx.update(|_, cx| block.read(cx).level());
+    let (level, color) =
+        cx.update(|window, cx| (block.read(cx).level(), Theme::get(window, cx).speaker));
     assert!(level > 0.1, "{level}");
     let painted = cx.update(|window, _| window.painted_visualizers());
     assert_eq!(
         painted,
-        [(
-            bounds,
-            VisualizerShader::Speaker { level },
-            white().opacity(SPEAKER_OPACITY)
-        )]
+        [(bounds, VisualizerShader::Speaker { level }, color)]
     );
 
     window
@@ -223,6 +223,20 @@ fn a_sound_plays_over_a_speaker_moving_with_its_level(cx: &mut TestAppContext) {
     find(&mut cx, "block-1");
     let painted = cx.update(|window, _| window.painted_visualizers());
     assert_eq!(painted.len(), 1, "for the sound alone: {painted:?}");
+}
+
+/// The speaker is white, and black in the light theme.
+#[gpui::test]
+fn a_sounds_speaker_is_white_and_black_in_the_light_theme(cx: &mut TestAppContext) {
+    let (window, mut cx) = testing::start(cx);
+    open(window, &mut cx, &["tone.m4a"], false);
+    for (mode, color) in [(ThemeMode::Dark, white()), (ThemeMode::Light, black())] {
+        cx.update(|_, cx| Settings::update(cx, false, |s| s.theme = mode));
+        find(&mut cx, "block-0");
+        let painted = cx.update(|window, _| window.painted_visualizers());
+        let colors: Vec<_> = painted.iter().map(|&(_, _, color)| color).collect();
+        assert_eq!(colors, [color.opacity(SPEAKER_OPACITY)], "{mode:?}");
+    }
 }
 
 /// How many visualizers the window draws now.

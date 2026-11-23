@@ -1090,24 +1090,26 @@ fn vs_visualizer(@builtin(vertex_index) vertex_id: u32, @builtin(instance_index)
     return out;
 }
 
-// How much of the pixel `distance` from the middle a ring of `radius`,
-// `width` wide (a device pixel at least), covers.
-fn ring(distance: f32, radius: f32, width: f32) -> f32 {
-    let half_width = max(width, 1.0) / 2.0;
-    return saturate(half_width + 0.5 - abs(distance - radius));
+// How much of the pixel `distance` from the middle a ring of `radius`
+// covers: `width` wide, its edges blurred over `blur` either side.
+fn ring(distance: f32, radius: f32, width: f32, blur: f32) -> f32 {
+    let x = distance - radius;
+    return smoothstep(-blur, blur, x + width / 2.0) - smoothstep(-blur, blur, x - width / 2.0);
 }
 
 // A speaker seen from the front, in the middle of `bounds`, as wide as
-// fits: two thin rings, its basket's rim, a point wide (`scale` device
-// pixels), and inside it its cone's edge, two points wide, which moves out
-// with `level`, from 0 to 1 (as `VisualizerShader::encode` clamps it). How
-// much of the pixel at `position` it covers.
+// fits: two thin rings, blurred over a point (`scale` device pixels),
+// which move out with `level`, from 0 to 1 (as `VisualizerShader::encode`
+// clamps it): its basket's rim, a point wide, and inside it its cone's
+// edge, two points wide, which moves twice as far. How much of the pixel
+// at `position` it covers.
 fn speaker(position: vec2<f32>, bounds: Bounds, level: f32, scale: f32) -> f32 {
     let center = bounds.origin + bounds.size / 2.0;
     let radius = max(0.46 * min(bounds.size.x, bounds.size.y), 1.0);
     let distance = length(position - center);
-    let rim = ring(distance, radius, scale);
-    let cone = ring(distance, (0.84 + 0.08 * level) * radius, 2.0 * scale);
+    let blur = max(scale, 0.5);
+    let rim = ring(distance, (0.96 + 0.04 * level) * radius, scale, blur);
+    let cone = ring(distance, (0.84 + 0.08 * level) * radius, 2.0 * scale, blur);
     return max(rim, cone);
 }
 

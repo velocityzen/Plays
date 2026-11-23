@@ -4,8 +4,9 @@
 use gpui::prelude::*;
 use gpui::{Hsla, VisualizerShader, canvas};
 
-/// A speaker filling what it's in, in `color`: two thin rings, its rim
-/// and its cone's edge, which moves out with `level`, from 0 to 1.
+/// A speaker filling what it's in, in `color`: two thin rings, blurred a
+/// little, its rim and its cone's edge, which move out with `level`, from
+/// 0 to 1.
 pub(super) fn speaker(level: f32, color: Hsla) -> impl IntoElement {
     canvas(
         |_, _, _| {},

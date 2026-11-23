@@ -116,6 +116,8 @@ pub struct Theme {
     pub track: Hsla,
     pub block: Hsla,
     pub drop_highlight: Hsla,
+    /// The speaker behind a sound file's cover: white, black in light mode.
+    pub speaker: Hsla,
 }
 
 impl Theme {
@@ -171,6 +173,7 @@ impl Theme {
             track: text.opacity(0.2),
             block: background.blend(text.opacity(0.04)),
             drop_highlight: accent.opacity(0.15),
+            speaker: if dark { white() } else { black() }.opacity(player::SPEAKER_OPACITY),
         }
     }
 }
@@ -555,7 +558,7 @@ pub mod player {
     /// the cover would have, and its icon, as a part of the circle.
     pub const NO_COVER_SCALE: f32 = 0.6;
     pub const NO_COVER_ICON_SCALE: f32 = 0.42;
-    /// The speaker behind a sound file's cover, as an opacity of white.
+    /// The speaker behind a sound file's cover, as an opacity of its color.
     pub const SPEAKER_OPACITY: f32 = 0.5;
     /// The icon in a block whose video is in Picture in Picture, or that
     /// plays on another device.

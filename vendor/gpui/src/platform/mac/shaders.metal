@@ -591,26 +591,30 @@ vertex VisualizerVertexOutput visualizer_vertex(
       {clip_distance.x, clip_distance.y, clip_distance.z, clip_distance.w}};
 }
 
-// How much of the pixel `distance` from the middle a ring of `radius`,
-// `width` wide (a device pixel at least), covers.
-float ring(float distance, float radius, float width) {
-  float half_width = max(width, 1.) / 2.;
-  return saturate(half_width + 0.5 - abs(distance - radius));
+// How much of the pixel `distance` from the middle a ring of `radius`
+// covers: `width` wide, its edges blurred over `blur` either side.
+float ring(float distance, float radius, float width, float blur) {
+  float x = distance - radius;
+  return smoothstep(-blur, blur, x + width / 2.) -
+         smoothstep(-blur, blur, x - width / 2.);
 }
 
 // A speaker seen from the front, in the middle of `bounds`, as wide as
-// fits: two thin rings, its basket's rim, a point wide (`scale` device
-// pixels), and inside it its cone's edge, two points wide, which moves out
-// with `level`, from 0 to 1 (as `VisualizerShader::encode` clamps it). How
-// much of the pixel at `position` it covers.
+// fits: two thin rings, blurred over a point (`scale` device pixels),
+// which move out with `level`, from 0 to 1 (as `VisualizerShader::encode`
+// clamps it): its basket's rim, a point wide, and inside it its cone's
+// edge, two points wide, which moves twice as far. How much of the pixel
+// at `position` it covers.
 float speaker(float2 position, Bounds_ScaledPixels bounds, float level,
               float scale) {
   float2 size = float2(bounds.size.width, bounds.size.height);
   float2 center = float2(bounds.origin.x, bounds.origin.y) + size / 2.;
   float radius = max(0.46 * min(size.x, size.y), 1.);
   float distance = length(position - center);
-  float rim = ring(distance, radius, scale);
-  float cone = ring(distance, (0.84 + 0.08 * level) * radius, 2. * scale);
+  float blur = max(scale, 0.5);
+  float rim = ring(distance, (0.96 + 0.04 * level) * radius, scale, blur);
+  float cone =
+      ring(distance, (0.84 + 0.08 * level) * radius, 2. * scale, blur);
   return max(rim, cone);
 }
 

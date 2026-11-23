@@ -823,8 +823,9 @@ impl From<Shadow> for Primitive {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum VisualizerShader {
     /// A speaker seen from the front, in the middle, as wide as fits: two
-    /// thin rings, its basket's rim, a point wide, and inside it its cone's
-    /// edge, two points wide, which moves out with `level`, from 0 to 1.
+    /// thin rings, blurred a little, which move out with `level`, from 0 to
+    /// 1: its basket's rim, a point wide, and inside it its cone's edge,
+    /// two points wide, which moves twice as far.
     Speaker {
         /// How loud it plays, from 0 to 1.
         level: f32,

@@ -128,8 +128,9 @@ and their shaders; Windows draws none):
   size 72 bytes, as WGSL lays it out.
 - `VisualizerShader::Speaker { level }`: a loudspeaker seen from the
   front, as large as fits in the middle of its bounds: two thin rings in
-  the color, the basket's rim, a point wide, and inside it the cone's
-  edge, two points wide, which moves out with `level` (0 to 1).
+  the color, blurred over a point, which move out with `level` (0 to 1):
+  the basket's rim, a point wide, and inside it the cone's edge, two
+  points wide, which moves twice as far.
 - `fs_visualizer` (WGSL) and `visualizer_fragment` (Metal) pick the shader
   by kind; the color's alpha is the rings' coverage times its own.
 - Test support: `Window::painted_visualizers` lists the visualizers the

@@ -40,8 +40,8 @@ fn a_speaker_is_as_see_through_as_what_its_in(cx: &mut TestAppContext) {
 mod drawn {
     use gpui::{Bounds, DevicePixels, Hsla, VisualizerShader, black, point, px, size, white};
 
-    /// The speaker's radius, its rim's, in a block whose shorter side is
-    /// 200 px.
+    /// The most the speaker's rim's radius is, in a block whose shorter
+    /// side is 200 px.
     const RADIUS: f32 = 0.46 * 200.;
 
     /// A speaker in `color` at `level`, over black, in a block `width` by 200
@@ -85,31 +85,39 @@ mod drawn {
             (from * RADIUS) as usize..=(to * RADIUS) as usize
         }
 
-        /// How far right of its middle, in radii, the light between `from`
-        /// and `to` radii is, on the whole.
-        fn middle_of(&self, from: f32, to: f32) -> f32 {
+        /// How far right of its middle the light between `from` and `to`
+        /// radii is, on the whole, in radii, and how far it spreads from
+        /// there, in pixels (its standard deviation).
+        fn middle_of(&self, from: f32, to: f32) -> (f32, f32) {
             let middle = self.width as usize / 2;
-            let (moment, light) = Self::out(from, to).fold((0., 0.), |(moment, light), x| {
-                let shade = self.at(middle + x, 100);
-                (moment + shade * (x as f32 + 0.5), light + shade)
-            });
-            moment / light / RADIUS
+            let light: Vec<(f32, f32)> = Self::out(from, to)
+                .map(|x| (x as f32 + 0.5, self.at(middle + x, 100)))
+                .collect();
+            let total: f32 = light.iter().map(|(_, shade)| shade).sum();
+            let mean = light.iter().map(|(x, shade)| x * shade).sum::<f32>() / total;
+            let spread = light
+                .iter()
+                .map(|(x, shade)| (x - mean).powi(2) * shade)
+                .sum::<f32>()
+                / total;
+            (mean / RADIUS, spread.sqrt())
         }
     }
 
     /// Two rings in the middle of its block, as wide as its shorter side
-    /// lets them be, as wide across as up: its rim, a pixel wide, and in it
-    /// its cone's edge, two pixels wide; and nothing else.
+    /// lets them be, as wide across as up: its rim, a pixel's worth of
+    /// light, and in it its cone's edge, two pixels' worth; and nothing
+    /// else.
     #[test]
     fn a_speaker_is_two_thin_rings_in_the_middle_of_its_block() {
         for width in [200, 320] {
             let speaker = Speaker::draw(width, 0., white());
             for (from, to, light, what) in [
-                (0.97, 1.03, 1., "the rim"),
+                (0.95, 1.0, 1., "the rim"),
                 (0.8, 0.88, 2., "the cone's edge"),
                 (0., 0.8, 0., "inside"),
-                (0.88, 0.97, 0., "between them"),
-                (1.03, 1.08, 0., "outside"),
+                (0.88, 0.94, 0., "between them"),
+                (1.0, 1.08, 0., "outside"),
             ] {
                 let (across, up) = (speaker.right(from, to), speaker.up(from, to));
                 assert!(
@@ -122,31 +130,71 @@ mod drawn {
         }
     }
 
-    /// With the level, its cone's edge moves out, and its rim stays.
+    /// Its rings are blurred a little: their light spreads further than
+    /// a sharp line's would, half a pixel either side of a pixel wide one.
     #[test]
-    fn a_speakers_cone_moves_out_with_the_level() {
-        let (still, half, loud) = (
-            Speaker::draw(200, 0., white()),
-            Speaker::draw(200, 0.5, white()),
-            Speaker::draw(200, 1., white()),
+    fn a_speakers_rings_are_soft() {
+        let speaker = Speaker::draw(200, 0., white());
+        let (_, rim) = speaker.middle_of(0.95, 1.06);
+        let (_, cone) = speaker.middle_of(0.78, 0.94);
+        assert!(rim > 0.45, "the rim spreads {rim} px");
+        assert!(cone > 0.68, "the cone's edge spreads {cone} px");
+    }
+
+    /// With the level, both rings move out, the cone's edge twice as far as
+    /// the rim, each as wide as it was.
+    #[test]
+    fn a_speakers_rings_move_out_with_the_level() {
+        for (level, rim, cone) in [(0., 0.96, 0.84), (0.5, 0.98, 0.88), (1., 1., 0.92)] {
+            let speaker = Speaker::draw(200, level, white());
+            let (at, _) = speaker.middle_of(0.95, 1.06);
+            assert!((at - rim).abs() < 0.01, "the rim at {level}: {at}");
+            let (at, _) = speaker.middle_of(0.78, 0.94);
+            assert!((at - cone).abs() < 0.01, "the cone's edge at {level}: {at}");
+            let light = speaker.right(0.95, 1.06);
+            assert!(
+                (light - 1.).abs() < 0.05,
+                "the rim's light at {level}: {light}"
+            );
+            let light = speaker.right(0.78, 0.94);
+            assert!(
+                (light - 2.).abs() < 0.05,
+                "the cone's light at {level}: {light}"
+            );
+        }
+        assert_eq!(
+            Speaker::draw(200, 2., white()).pixels,
+            Speaker::draw(200, 1., white()).pixels
         );
-        let cone = |speaker: &Speaker| speaker.middle_of(0.78, 0.95);
-        assert!((cone(&still) - 0.84).abs() < 0.01, "{}", cone(&still));
-        assert!((cone(&half) - 0.88).abs() < 0.01, "{}", cone(&half));
-        assert!((cone(&loud) - 0.92).abs() < 0.01, "{}", cone(&loud));
-        assert!((loud.right(0.89, 0.96) - 2.).abs() < 0.05, "as wide");
-        assert!((loud.right(0.97, 1.03) - 1.).abs() < 0.05, "the rim");
-        assert_eq!(Speaker::draw(200, 2., white()).pixels, loud.pixels);
+    }
+
+    /// A few pixels across, where its rings meet, no brighter than its
+    /// color: their light doesn't add up.
+    #[test]
+    fn a_small_speakers_rings_dont_add_up_where_they_meet() {
+        let block = Bounds::new(point(px(0.), px(0.)), size(px(20.), px(20.)));
+        let pixels = gpui::render_offscreen(
+            size(DevicePixels(20), DevicePixels(20)),
+            &[(block, black().into())],
+            &[(
+                block,
+                VisualizerShader::Speaker { level: 0. },
+                white().opacity(0.5),
+            )],
+            &[],
+        );
+        let brightest = pixels.iter().map(|[r, ..]| *r).fold(0., f32::max);
+        assert!(brightest > 0.4 && brightest < 0.51, "{brightest}");
     }
 
     /// Drawn in its color, as see-through as it is.
     #[test]
     fn a_speaker_is_drawn_in_its_color() {
         let speaker = Speaker::draw(200, 0., white().opacity(0.5));
-        let rim = speaker.right(0.97, 1.03);
+        let rim = speaker.right(0.95, 1.0);
         assert!((rim - 0.5).abs() < 0.03, "{rim}");
         let red = Speaker::draw(200, 0., gpui::red());
-        let [r, g, b, _] = red.pixels[100 * 200 + 100 + RADIUS as usize];
+        let [r, g, b, _] = red.pixels[100 * 200 + 100 + (0.96 * RADIUS) as usize];
         assert!(r > 0.4 && g < 0.05 && b < 0.05, "{r} {g} {b}");
     }
 }

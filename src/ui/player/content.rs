@@ -8,7 +8,7 @@ use std::rc::Rc;
 
 use gpui::{
     AnyElement, App, Bounds, ContentTransform, Corners, ObjectFit, Pixels, SharedString, canvas,
-    div, img, relative, white,
+    div, img, relative,
 };
 
 use super::sound::SoundLines;
@@ -21,7 +21,6 @@ use crate::ui::components::{ComponentSize, Icon};
 use crate::ui::framing::Framing;
 use crate::ui::theme::player::{
     COVER_MIN_SIZE, ERROR_MAX_WIDTH, NO_COVER_ICON_SCALE, NO_COVER_SCALE, NOTE_TOP, PIP_ICON,
-    SPEAKER_OPACITY,
 };
 use crate::ui::theme::{Theme, radius};
 
@@ -112,7 +111,7 @@ impl PlayerView {
             .pt(NOTE_TOP)
             .pb(controls::height(info.live))
             .children(match mode.visualizer {
-                Visualizer::Speaker => Some(speaker(self.level, white().opacity(SPEAKER_OPACITY))),
+                Visualizer::Speaker => Some(speaker(self.level, theme.speaker)),
                 Visualizer::None => None,
             })
             .child(self.render_cover(theme))
