@@ -16,6 +16,7 @@ use gpui::RenderImage;
 
 use super::video::VideoDecoder;
 use super::{Shared, Source, StreamInfo, open_input};
+use crate::media::source::is_file;
 
 /// What a cover file is called, before its extension.
 const NAME: &str = "cover";
@@ -51,15 +52,16 @@ pub(super) fn find(file: &Path) -> Option<PathBuf> {
     let entries = fs::read_dir(file.parent()?).ok()?;
     entries
         .flatten()
-        .map(|entry| entry.path())
-        .filter(|path| path.is_file())
-        .filter_map(|path| {
-            let (stem, extension) = path.file_name()?.to_str()?.rsplit_once('.')?;
+        .filter_map(|entry| {
+            let name = entry.file_name();
+            let (stem, extension) = name.to_str()?.rsplit_once('.')?;
             let rank = EXTENSIONS
                 .iter()
                 .position(|known| extension.eq_ignore_ascii_case(known))?;
-            stem.eq_ignore_ascii_case(NAME).then_some((rank, path))
+            stem.eq_ignore_ascii_case(NAME).then_some((rank, entry))
         })
+        .filter(|(_, entry)| is_file(entry))
+        .map(|(rank, entry)| (rank, entry.path()))
         .min()
         .map(|(_, path)| path)
 }

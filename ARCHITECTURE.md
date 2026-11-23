@@ -267,6 +267,8 @@ flowchart LR
 ## The rest of the media engine
 
 - `src/media/source.rs`: files, URLs, and folders listed in the background
+  (`media_in`); entries picked by name, then told apart by the listing,
+  only links looked at again (`is_file`, `is_folder`)
 - `src/media/details.rs`: the console's format and stream details
 - `src/media/colors.rs`: colors read as numbers, as ffmpeg-next's enums
   have gaps a file can hit; `clippy.toml` bans its getters

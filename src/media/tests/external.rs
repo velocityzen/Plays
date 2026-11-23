@@ -93,6 +93,59 @@ fn finds_files_for_a_video() {
     assert_eq!(found[5].1.language.as_deref(), Some("eng"));
 }
 
+/// On a share far away each look at a file is a trip: only those named
+/// for the video, or its folders, are looked at, and the folder's listing
+/// says what each is. Only a link is looked at again, to follow it.
+#[cfg(unix)]
+#[test]
+fn only_entries_named_for_it_are_looked_at_and_only_links_again() {
+    use std::os::unix::fs::symlink;
+    let dir = crate::files::test_folder("find-looked-at");
+    let elsewhere = dir.join("elsewhere");
+    fs::create_dir_all(elsewhere.join("Subtitles")).unwrap();
+    // A folder named as a file is, not one.
+    fs::create_dir_all(dir.join("Movie.it.srt")).unwrap();
+    for name in [
+        "Movie.mkv",
+        "Movie.en.srt",
+        "elsewhere/French.srt",
+        "elsewhere/Notes.txt",
+        "elsewhere/Subtitles/Movie.de.srt",
+    ] {
+        fs::write(dir.join(name), "").unwrap();
+    }
+    for (to, name) in [
+        ("French.srt", "Movie.fr.srt"),
+        ("Subtitles", "Subs"),
+        // Not a subtitle file's name, another video's, and another folder.
+        ("Notes.txt", "Notes.txt"),
+        ("French.srt", "Movie 2.srt"),
+        ("Subtitles", "Extras"),
+    ] {
+        symlink(elsewhere.join(to), dir.join(name)).unwrap();
+    }
+    let found: Vec<PathBuf> = find(&dir.join("Movie.mkv"))
+        .into_iter()
+        .map(|found| found.path.strip_prefix(&dir).unwrap().to_owned())
+        .collect();
+    assert_eq!(
+        found,
+        [
+            Path::new("Movie.en.srt"),
+            Path::new("Movie.fr.srt"),
+            Path::new("Subs/Movie.de.srt"),
+        ]
+    );
+    let mut followed: Vec<PathBuf> = crate::media::source::FOLLOWED
+        .lock()
+        .unwrap()
+        .iter()
+        .filter_map(|path| path.strip_prefix(&dir).ok().map(Path::to_owned))
+        .collect();
+    followed.sort();
+    assert_eq!(followed, [Path::new("Movie.fr.srt"), Path::new("Subs")]);
+}
+
 #[test]
 fn tells_text_encodings() {
     let dir = crate::files::test_folder("encodings");

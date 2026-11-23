@@ -10,7 +10,7 @@
 //! and on a share far away, and fed to its decoder a little ahead of the
 //! playhead.
 
-use std::fs::{self, File};
+use std::fs::{self, DirEntry, File};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -21,6 +21,7 @@ use anyhow::{Context as _, Result, anyhow, bail};
 use ffmpeg::{Packet, media};
 use ffmpeg_next as ffmpeg;
 
+use super::source::{is_file, is_folder};
 use super::subtitles::SubtitleDecoder;
 use super::tracks::{Track, language_code};
 
@@ -93,48 +94,50 @@ pub fn find(video: &Path) -> Vec<Found> {
         return Vec::new();
     };
     let mut found = Vec::new();
-    collect(dir, Some(stem), &mut found);
-    for folder in folders(dir, |name| {
+    let beside = listing(dir);
+    collect(&beside, Some(stem), &mut found);
+    for folder in folders(&beside, |name| {
         name.eq_ignore_ascii_case("subs") || name.eq_ignore_ascii_case("subtitles")
     }) {
-        collect(&folder, Some(stem), &mut found);
-        for inner in folders(&folder, |name| name.eq_ignore_ascii_case(stem)) {
-            collect(&inner, None, &mut found);
+        let in_folder = listing(&folder);
+        collect(&in_folder, Some(stem), &mut found);
+        for inner in folders(&in_folder, |name| name.eq_ignore_ascii_case(stem)) {
+            collect(&listing(&inner), None, &mut found);
         }
     }
     found
 }
 
-/// The folders in `dir` whose names pass `matches`.
-fn folders(dir: &Path, matches: impl Fn(&str) -> bool) -> Vec<PathBuf> {
-    let Ok(entries) = fs::read_dir(dir) else {
-        return Vec::new();
-    };
+/// What's in `dir`, read once; nothing if it can't be.
+fn listing(dir: &Path) -> Vec<DirEntry> {
+    fs::read_dir(dir)
+        .map(|entries| entries.flatten().collect())
+        .unwrap_or_default()
+}
+
+/// The folders among `entries` whose names pass `matches`.
+fn folders(entries: &[DirEntry], matches: impl Fn(&str) -> bool) -> Vec<PathBuf> {
     let mut folders: Vec<PathBuf> = entries
-        .flatten()
-        .map(|entry| entry.path())
-        .filter(|path| path.is_dir())
-        .filter(|path| {
-            path.file_name()
-                .and_then(|n| n.to_str())
-                .is_some_and(&matches)
-        })
+        .iter()
+        .filter(|entry| entry.file_name().to_str().is_some_and(&matches))
+        .filter(|entry| is_folder(entry))
+        .map(DirEntry::path)
         .collect();
     folders.sort();
     folders
 }
 
-/// Add the subtitle files in `dir` named after `stem`, or all of them.
-fn collect(dir: &Path, stem: Option<&str>, found: &mut Vec<Found>) {
-    let Ok(entries) = fs::read_dir(dir) else {
-        return;
-    };
+/// Add the subtitle files among `entries` named after `stem`, or all of
+/// them.
+fn collect(entries: &[DirEntry], stem: Option<&str>, found: &mut Vec<Found>) {
     let mut files: Vec<(String, PathBuf)> = entries
-        .flatten()
-        .map(|entry| entry.path())
-        .filter(|path| path.is_file())
-        .filter_map(|path| Some((path.file_name()?.to_str()?.to_owned(), path)))
-        .filter(|(name, _)| split_extension(name).is_some())
+        .iter()
+        .filter_map(|entry| Some((entry.file_name().to_str()?.to_owned(), entry)))
+        .filter(|(name, _)| {
+            split_extension(name).is_some_and(|(base, _)| middle(base, stem).is_some())
+        })
+        .filter(|(_, entry)| is_file(entry))
+        .map(|(name, entry)| (name, entry.path()))
         .collect();
     files.sort_by_cached_key(|(name, _)| name.to_lowercase());
     // VobSub is an `.idx` file and a `.sub` file; FFmpeg opens the `.idx`.
@@ -151,22 +154,27 @@ fn collect(dir: &Path, stem: Option<&str>, found: &mut Vec<Found>) {
         if extension == "sub" && vobsubs.contains(&base.to_lowercase()) {
             continue;
         }
-        let middle = match stem {
-            None => base,
-            Some(stem) => match strip_prefix_ignore_case(base, stem) {
-                Some("") => "",
-                Some(rest) => match rest.strip_prefix('.') {
-                    Some(middle) => middle,
-                    // Another video's, such as `Movie 2.srt` for `Movie.mkv`.
-                    None => continue,
-                },
-                None => continue,
-            },
+        let Some(middle) = middle(base, stem) else {
+            continue;
         };
         found.push(Found {
             path: path.clone(),
             naming: Naming::parse(middle),
         });
+    }
+}
+
+/// What a subtitle file's name, `base` without its extension, says between
+/// the video's name, `stem`, and the extension: `en.forced` of
+/// `Movie.en.forced` for `Movie`. All of it if there's no video's name, and
+/// `None` for another video's, such as `Movie 2` for `Movie`.
+fn middle<'a>(base: &'a str, stem: Option<&str>) -> Option<&'a str> {
+    let Some(stem) = stem else {
+        return Some(base);
+    };
+    match strip_prefix_ignore_case(base, stem)? {
+        "" => Some(""),
+        rest => rest.strip_prefix('.'),
     }
 }
 

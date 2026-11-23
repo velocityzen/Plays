@@ -1,7 +1,7 @@
 //! What a player plays: a local file or a network stream.
 
 use std::fmt;
-use std::fs;
+use std::fs::{self, DirEntry, FileType};
 use std::path::{Path, PathBuf};
 
 /// URL schemes FFmpeg can stream from.
@@ -31,17 +31,41 @@ pub fn media_in(folder: &Path) -> Vec<PathBuf> {
     let mut files: Vec<PathBuf> = entries
         .flatten()
         .filter(|entry| is_media(Path::new(&entry.file_name())))
-        .filter(|entry| match entry.file_type() {
-            // Links are followed to see what they point at.
-            Ok(kind) if kind.is_symlink() => entry.path().is_file(),
-            Ok(kind) => kind.is_file(),
-            Err(_) => false,
-        })
+        .filter(is_file)
         .map(|entry| entry.path())
         .collect();
     files.sort();
     files
 }
+
+/// Whether a folder's `entry` is a file, as its listing says: only a link
+/// is looked at again, to see what it points at. Each look is a trip to a
+/// share far away, so entries are picked by name first.
+pub(crate) fn is_file(entry: &DirEntry) -> bool {
+    is(entry, FileType::is_file, Path::is_file)
+}
+
+/// Whether a folder's `entry` is a folder, as `is_file` tells a file.
+pub(crate) fn is_folder(entry: &DirEntry) -> bool {
+    is(entry, FileType::is_dir, Path::is_dir)
+}
+
+fn is(entry: &DirEntry, listed: fn(&FileType) -> bool, followed: fn(&Path) -> bool) -> bool {
+    match entry.file_type() {
+        Ok(kind) if kind.is_symlink() => {
+            let path = entry.path();
+            #[cfg(test)]
+            FOLLOWED.lock().unwrap().push(path.clone());
+            followed(&path)
+        }
+        Ok(kind) => listed(&kind),
+        Err(_) => false,
+    }
+}
+
+/// For tests: the links `is_file` and `is_folder` followed.
+#[cfg(test)]
+pub(crate) static FOLLOWED: std::sync::Mutex<Vec<PathBuf>> = std::sync::Mutex::new(Vec::new());
 
 /// A file with a media file's extension, and not hidden.
 fn is_media(path: &Path) -> bool {
