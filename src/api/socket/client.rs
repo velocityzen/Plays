@@ -165,6 +165,14 @@ impl Client {
         })
     }
 
+    /// Forget the events heard so far: every one Plays has told by now, as
+    /// it sends those before what it answers.
+    pub fn forget_events(&mut self) -> Result<(), Failure> {
+        self.request(Ask::Hello)?;
+        self.events.clear();
+        Ok(())
+    }
+
     /// The next event heard, by type, with its payload, waiting for it as
     /// long as it takes.
     pub fn next_event(&mut self) -> Result<(String, Value), Failure> {

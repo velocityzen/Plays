@@ -1,11 +1,14 @@
 //! The Lua scripts `plays do` runs: a file, `-e` code or stdin, run here,
-//! a client of the Plays running as the command line is. `plays` holds what a script is given and calls Plays'
-//! commands; what the script returns is printed as JSON.
+//! a client of the Plays running as the command line is. `plays` holds
+//! what a script is given, calls Plays' commands and waits (`waiting`);
+//! what the script returns is printed as JSON.
 //!
 //! JSON and Lua: null is nil, and `plays.null` sends one; an object or a
 //! list is a table, a list from Plays staying one, so a table is a list if
 //! it came as one or has items from 1, else an object; integers stay
 //! integers and other numbers floats, both ways.
+
+mod waiting;
 
 use std::cell::{Cell, RefCell};
 use std::io::{self, Read};
@@ -15,6 +18,7 @@ use mlua::serde::SerializeOptions;
 use mlua::{Function, HookTriggers, Lua, LuaSerdeExt, MultiValue, Table, Value as LuaValue};
 use serde_json::Value;
 
+use self::waiting::Events;
 use super::{Done, Session, Stop, show};
 use crate::api::socket::client::Failure;
 use crate::api::{self, Error, Scope, Target};
@@ -82,6 +86,7 @@ pub fn run(session: &mut Session, script: Script, args: Value) -> Done {
     set_up(&lua, script.folder.as_deref()).map_err(failed)?;
     let tostring: Function = lua.globals().get("tostring").map_err(failed)?;
     let stopped = Cell::new(None);
+    let events = RefCell::new(Events::new(session.socket.clone()));
     let session = RefCell::new(session);
     let ran = lua.scope(|scope| {
         let plays = lua.create_table()?;
@@ -90,7 +95,7 @@ pub fn run(session: &mut Session, script: Script, args: Value) -> Done {
         plays.set("block_id", here.block.clone())?;
         plays.set("null", lua.null())?;
         let by_id = scope.create_function(|lua, (id, args): (String, LuaValue)| {
-            call(lua, &session, &id, args, &here)
+            call(lua, &session, &events, &id, args, &here)
         })?;
         plays.set("call", by_id)?;
         let command = scope.create_function(|lua, (node, args): (Table, LuaValue)| {
@@ -98,12 +103,18 @@ pub fn run(session: &mut Session, script: Script, args: Value) -> Done {
                 .metatable()
                 .ok_or_else(|| mlua::Error::runtime("not a command"))?
                 .raw_get("id")?;
-            call(lua, &session, &id, args, &here)
+            call(lua, &session, &events, &id, args, &here)
         })?;
         add_commands(&lua, &plays, &command)?;
         let stops =
             scope.create_function(|lua, status: Option<i64>| stop(lua, status, &stopped))?;
         plays.set("stop", stops)?;
+        plays.set(
+            "sleep",
+            lua.create_function(|_, seconds: f64| waiting::sleep(seconds))?,
+        )?;
+        let wait = scope.create_function(|lua, args| waiting::wait(lua, &events, args))?;
+        plays.set("wait", wait)?;
         let log = scope.create_function(|_, values: MultiValue| {
             let line = line(&tostring, values)?;
             write_all(&mut *session.borrow_mut().err, &line)
@@ -195,16 +206,19 @@ fn add_commands(lua: &Lua, plays: &Table, command: &Function) -> mlua::Result<()
 }
 
 /// Run the command `id` with `args`, a table or nil: what it hands back,
-/// else nil and why not.
+/// else nil and why not. A wait after it hears what it does, and nothing
+/// from before.
 fn call(
     lua: &Lua,
     session: &RefCell<&mut Session>,
+    events: &RefCell<Events>,
     id: &str,
     args: LuaValue,
     here: &Target,
 ) -> mlua::Result<(LuaValue, Option<String>)> {
     let mut args: Value = lua.from_value(args)?;
     let target = target(id, &mut args, here);
+    events.borrow_mut().hear_from_now();
     let called = session.borrow_mut().call_on(id, args, target);
     match called {
         Ok(value) => Ok((to_lua(lua, &value)?, None)),

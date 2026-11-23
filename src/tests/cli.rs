@@ -92,7 +92,7 @@ pub(super) fn plays_reading(
 /// Run `plays ARGS` on a thread of its own, while `meanwhile` runs
 /// command lines of its own until it's done, at most a hundred times: as
 /// `events` and `wait` hear what those do.
-fn plays_while(
+pub(super) fn plays_while(
     cx: &mut TestAppContext,
     path: &Path,
     args: &[&'static str],

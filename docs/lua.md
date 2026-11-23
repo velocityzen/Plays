@@ -23,6 +23,9 @@ plays do seek.lua --args @args.json
 - `plays.null`: null, to send one.
 - `print(...)`: a line on stdout. `plays.log(...)`: a line on stderr.
 - `plays.stop(status)`: ends it now, with that exit status, 0 if none.
+- `plays.sleep(seconds)`: waits that long.
+- `plays.wait(event, filter, timeout)`: waits for an event, as in
+  [commands.md](commands.md#events); see [Waiting](#waiting).
 - `require`: modules beside the script first.
 - Lua's standard library, without `debug`, `io.popen`, `os.execute` and C
   modules.
@@ -32,6 +35,17 @@ plays do seek.lua --args @args.json
 - On the script's window, or its block, as the command acts on one.
   `window_id` and `block_id` among its arguments name another.
 - What the command hands back; a failed one gives nil and why.
+
+## Waiting
+
+- `plays.wait("playback.ended", {block_id = id}, 600)`: the next event of
+  that type whose fields equal the filter's, numbers by their values. A
+  function filter matches when it returns true.
+- What it returns: the event's payload; nil and "timeout" once `timeout`
+  seconds are up; nil and why if Plays goes. No timeout waits on.
+- What it hears: what happens from the start of the last call before it,
+  or from the wait itself if there's none; each event once, in order,
+  those it passes over gone.
 
 ## What it prints
 
