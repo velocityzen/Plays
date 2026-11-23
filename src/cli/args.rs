@@ -68,11 +68,11 @@ pub enum Command {
         /// The arguments as JSON, or @FILE for the file's.
         #[arg(long = "args", value_name = "JSON|@FILE")]
         json_args: Option<String>,
-        /// A script with handlers listens at most this long: 90 or 90s, 10m,
-        /// 1.5h.
+        /// A script with handlers or timers runs on at most this long: 90 or
+        /// 90s, 10m, 1.5h.
         #[arg(long = "for", value_name = "DURATION", value_parser = lasting)]
         listen_for: Option<Duration>,
-        /// A script with handlers ends as one fails, exit status 1.
+        /// A script with handlers or timers ends as one fails, exit status 1.
         #[arg(long)]
         fail_fast: bool,
     },

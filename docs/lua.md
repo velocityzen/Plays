@@ -9,7 +9,7 @@ plays do -e 'return plays.window.ls()'     # code
 echo 'print(plays.window_id)' | plays do - # stdin
 plays do seek.lua --args '{"times": [10, 20]}'
 plays do seek.lua --args @args.json
-plays do loop.lua --for 10m --fail-fast    # listen 10m, end at a failure
+plays do loop.lua --for 10m --fail-fast    # run on 10m, end at a failure
 ```
 
 ## What a script has
@@ -29,6 +29,8 @@ plays do loop.lua --for 10m --fail-fast    # listen 10m, end at a failure
   [commands.md](commands.md#events); see [Waiting](#waiting).
 - `plays.on(event, function(ctx, event))`: a handler; see
   [Handlers](#handlers).
+- `plays.after(seconds, fn)`, `plays.every(seconds, fn)`: timers; see
+  [Timers](#timers).
 - `require`: modules beside the script first.
 - Lua's standard library, without `debug`, `io.popen`, `os.execute` and C
   modules.
@@ -67,11 +69,33 @@ end)
 - `ctx.window_id`, `ctx.block_id`: the event's; calls in a handler act on
   them.
 - A wait or a sleep in a handler holds the others.
-- Listens until `plays.stop`, `--for` is up (`90`, `90s`, `10m`, `1.5h`),
-  Plays quits, the window `-w` names closes, or Ctrl-C (exit status 130).
-  Says `listening: N handlers; Ctrl-C to stop` on stderr.
-- A handler failing is said on stderr, and the script goes on; with
-  `--fail-fast` it ends, exit status 1.
+
+## Timers
+
+```lua
+local ticking = plays.every(5, function()
+  plays.log(plays.block.inspect().position) -- where it is, every 5 seconds
+end)
+plays.after(60, function() ticking:cancel() end)
+```
+
+- Each returns a timer, stopped by `:cancel()`; dropped, it runs on.
+- Run once the first run is over, never at once with other Lua: one due
+  as a handler runs waits for it, and a tick missed meanwhile runs once.
+- Calls in one act on the script's window and block, though a handler
+  started it.
+- At most 1,024 going; more stops the script, exit status 1.
+
+## Running on
+
+- A script with handlers or timers runs on once its first run is over,
+  until `plays.stop`, `--for` is up (`90`, `90s`, `10m`, `1.5h`), Ctrl-C
+  (exit status 130), or, with no handlers, no timer is left. With
+  handlers, until Plays quits or the window `-w` names closes too.
+- Says what it runs on stderr: `listening: 2 handlers, running: 1 timer;
+  Ctrl-C to stop`.
+- A handler or a timer failing is said on stderr, and the script goes on;
+  with `--fail-fast` it ends, exit status 1.
 
 ## What it prints
 

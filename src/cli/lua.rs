@@ -1,8 +1,9 @@
 //! The Lua scripts `plays do` runs: a file, `-e` code or stdin, run here,
 //! a client of the Plays running as the command line is. `plays` holds
-//! what a script is given, calls Plays' commands, waits (`waiting`) and
-//! registers handlers (`handlers`); what the script returns is printed as
-//! JSON, and then, if it has handlers, it listens.
+//! what a script is given, calls Plays' commands, waits (`waiting`),
+//! registers handlers (`handlers`) and starts timers (`timers`); what the
+//! script returns is printed as JSON, and then, if it has handlers or
+//! timers, it runs on (`listening`).
 //!
 //! JSON and Lua: null is nil, and `plays.null` sends one; an object or a
 //! list is a table, a list from Plays staying one, so a table is a list if
@@ -10,6 +11,8 @@
 //! integers and other numbers floats, both ways.
 
 mod handlers;
+mod listening;
+mod timers;
 mod waiting;
 
 use std::cell::{Cell, RefCell};
@@ -17,11 +20,15 @@ use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 
 use mlua::serde::SerializeOptions;
-use mlua::{Function, HookTriggers, Lua, LuaSerdeExt, MultiValue, Table, Value as LuaValue};
+use mlua::{
+    AnyUserData, Function, HookTriggers, Lua, LuaSerdeExt, MultiValue, Table, Value as LuaValue,
+};
 use serde_json::Value;
 
-pub use self::handlers::Listening;
-use self::handlers::{Handlers, Listener};
+use self::handlers::Handlers;
+use self::listening::Listener;
+pub use self::listening::Listening;
+use self::timers::Timers;
 use self::waiting::Events;
 use super::{Done, Session, Stop, show};
 use crate::api::socket::Heard;
@@ -83,7 +90,7 @@ impl Script {
 
 /// Run `script` with `args`, on the window and block `-w` and `-b` name,
 /// else the window in front and the block keys go to in it: print what it
-/// returns, then listen as `listening` says, if it has handlers.
+/// returns, then run on as `listening` says, if it has handlers or timers.
 pub fn run(session: &mut Session, script: Script, args: Value, listening: Listening) -> Done {
     let here = whereabouts(session)?;
     let lua = Lua::new();
@@ -98,6 +105,7 @@ pub fn run(session: &mut Session, script: Script, args: Value, listening: Listen
     let heard = window.clone().map_or(Heard::All, Heard::Window);
     let events = RefCell::new(Events::new(session.socket.clone(), heard));
     let handlers = Handlers::default();
+    let timers = Timers::default();
     let session = RefCell::new(session);
     let here = RefCell::new(here);
     let ran = lua.scope(|scope| {
@@ -128,6 +136,13 @@ pub fn run(session: &mut Session, script: Script, args: Value, listening: Listen
         let wait = scope.create_function(|lua, args| waiting::wait(lua, &events, args))?;
         plays.set("wait", wait)?;
         plays.set("on", scope.create_function(|_, args| handlers.on(args))?)?;
+        let (timers, stopped, session) = (&timers, &stopped, &session);
+        let timer = |every| {
+            scope
+                .create_function(move |lua, args| timer(lua, timers, args, every, stopped, session))
+        };
+        plays.set("after", timer(false)?)?;
+        plays.set("every", timer(true)?)?;
         let log = scope.create_function(|_, values: MultiValue| {
             let line = line(&tostring, values)?;
             write_all(&mut *session.borrow_mut().err, &line)
@@ -147,14 +162,16 @@ pub fn run(session: &mut Session, script: Script, args: Value, listening: Listen
         let listener = Listener {
             lua: &lua,
             handlers: &handlers,
+            timers,
             events: &events,
             here: &here,
             window: window.as_deref(),
-            stopped: &stopped,
+            stopped,
             say: &say,
+            listening,
         };
         let printed = print_returned(&mut session.borrow_mut(), &lua, returned);
-        Ok(printed.and_then(|()| handlers::listen(&listener, listening)))
+        Ok(printed.and_then(|()| listening::listen(&listener)))
     });
     if let Some(status) = stopped.get() {
         return Err(Stop::Exit(status));
@@ -272,6 +289,24 @@ fn target(id: &str, args: &mut Value, here: &Target) -> Target {
         },
         _ => Target::default(),
     }
+}
+
+/// `plays.after` or, with `every`, `plays.every`: a timer, unless the
+/// script has as many as it may, which stops it, exit status 1.
+fn timer(
+    lua: &Lua,
+    timers: &Timers,
+    args: (f64, Function),
+    every: bool,
+    stopped: &Cell<Option<u8>>,
+    session: &RefCell<&mut Session>,
+) -> mlua::Result<AnyUserData> {
+    if timers.count() >= timers::MOST {
+        let line = format!("plays: a script has at most {} timers\n", timers::MOST);
+        write_all(&mut *session.borrow_mut().err, line.as_bytes())?;
+        stop(lua, Some(1), stopped)?;
+    }
+    timers.add(lua, args, every)
 }
 
 /// End the script now with exit status `status`, 0 if none: an error raised
