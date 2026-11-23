@@ -497,7 +497,15 @@ impl Worker {
             Command::Play if self.state == State::Ended => self.restart(),
             Command::Play => self.session.play(),
             Command::Pause => self.session.pause(),
-            Command::Seek(time) => self.session.seek(time),
+            Command::Seek(time) => {
+                self.session.seek(time)?;
+                // Sent back from the end, it plays from there, even before
+                // the device next says where it is.
+                if self.state == State::Ended {
+                    self.state = State::Paused;
+                }
+                Ok(())
+            }
             Command::Volume { volume, muted } => {
                 self.load.volume = volume;
                 self.load.muted = muted;
