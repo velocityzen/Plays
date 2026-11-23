@@ -1372,6 +1372,54 @@ fn scrubbing_shows_frames_on_the_way_and_nothing_past_them() {
     }));
 }
 
+/// A slow drag forward: scrubs a little ahead of the last, over and over,
+/// through a clip whose sound comes in many small packets, 750 a second.
+/// The sound isn't played while scrubbing, and what's queued of it, kept,
+/// would fill what can be queued in 11 s and stop the picture being read:
+/// it follows the slider all the way.
+#[test]
+fn a_slow_scrub_forward_follows_the_slider_all_the_way() {
+    let path = media(
+        "with-small-sound-packets.mkv",
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc=size=160x120:rate=25:duration=20",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:sample_rate=48000:samples_per_frame=64:duration=20",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "pcm_s16le",
+        ],
+    );
+    let mixer = Mixer::detached(48_000);
+    let mut player = Player::open(Source::File(path), Some(mixer), options(false, false));
+    assert!(wait_until(Duration::from_secs(5), || {
+        player.tick();
+        player.frame_pts().is_some() && !player.is_buffering()
+    }));
+    for step in 1..=36 {
+        let time = f64::from(step) * 0.5;
+        player.scrub(time);
+        assert!(
+            wait_until(Duration::from_secs(5), || {
+                player.tick();
+                player
+                    .frame_pts()
+                    .is_some_and(|pts| (pts - time).abs() < 0.045)
+            }),
+            "a scrub to {time} shows {:?}",
+            player.frame_pts()
+        );
+    }
+}
+
 /// Going back keeps the subtitles on screen, even one that started before
 /// the keyframe the seek reads from, and one read again shows once.
 #[test]

@@ -1046,9 +1046,11 @@ fn decode_video(session: &mut Session, decoders: &mut Decoders, demuxer: &Demuxe
 /// Decode an audio packet if the sound queued has room; a scrub is silent.
 /// Says whether it got anywhere.
 fn decode_audio(session: &mut Session, decoders: &mut Decoders, demuxer: &Demuxer) -> bool {
+    if session.scrub {
+        return drop_audio(session, demuxer);
+    }
     let mut progressed = false;
     let audio_room = session.settled
-        && !session.scrub
         && decoders
             .audio
             .as_ref()
@@ -1071,6 +1073,16 @@ fn decode_audio(session: &mut Session, decoders: &mut Decoders, demuxer: &Demuxe
         }
     }
     progressed
+}
+
+/// Drop an audio packet read while scrubbing: a scrub is silent, and ends
+/// in a seek that reads it again. Kept, the sound would fill what can be
+/// queued, and the picture would be read no further. Says whether it did.
+fn drop_audio(session: &Session, demuxer: &Demuxer) -> bool {
+    matches!(
+        demuxer.pop(TrackKind::Audio, session.serial),
+        Next::Packet(_)
+    )
 }
 
 /// Subtitles are few and small, and each has to be ready before its
