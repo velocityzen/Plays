@@ -426,10 +426,10 @@ impl Player {
     pub fn select_track(&mut self, kind: TrackKind, index: Option<usize>) {
         // Shown in menus right away; the decoder puts it back if the
         // track can't be played.
-        if !self.shared.select_track(kind, index) {
+        let Some(pick) = self.shared.select_track(kind, index) else {
             return;
-        }
-        self.send(Command::Select { kind, index });
+        };
+        self.send(Command::Select { kind, index, pick });
         if index.is_none() {
             self.shared.subtitles().clear();
         } else if kind != TrackKind::Subtitle && !self.is_live() {

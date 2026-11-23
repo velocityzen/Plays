@@ -105,3 +105,47 @@ fn the_first_failure_is_the_one_kept() {
     shared.fail("the decoder failed after it".into());
     assert_eq!(shared.error().as_deref(), Some("the demuxer failed"));
 }
+
+/// Subtitles picked and then none, quickly, twice: the decode thread,
+/// behind, says what played for each of the first picks only after the
+/// last were made. What it says of an earlier pick doesn't hide a later
+/// one, so the last, no subtitles, which it said played a moment before,
+/// is still sent, and shows.
+#[test]
+fn what_the_decode_thread_says_of_an_earlier_pick_doesnt_hide_a_later_one() {
+    let shared = Shared::new(None, 1.0);
+    shared.set_info(MediaInfo::default());
+    let kind = TrackKind::Subtitle;
+    let shown = || shared.info().unwrap().selected(kind);
+    let picked = shared.select_track(kind, Some(2)).expect("a change");
+    let none = shared.select_track(kind, None).expect("a change");
+    let again = shared.select_track(kind, Some(2)).expect("a change");
+
+    shared.played(kind, Some(2), picked);
+    assert_eq!(shown(), Some(2));
+    shared.played(kind, None, none);
+    assert_eq!(shown(), Some(2), "as last picked");
+    let last = shared
+        .select_track(kind, None)
+        .expect("sent, though none played a moment before");
+    shared.played(kind, Some(2), again);
+    assert_eq!(shown(), None, "as last picked");
+    shared.played(kind, None, last);
+    assert_eq!(shown(), None);
+    assert_eq!(shared.select_track(kind, None), None, "no change");
+}
+
+/// Once it has done the last pick of a kind, it says what plays, a track
+/// that couldn't be played put back; the picks of other kinds don't wait
+/// on it, nor it on them.
+#[test]
+fn the_decode_thread_says_what_plays_once_it_has_done_the_last_pick() {
+    let shared = Shared::new(None, 1.0);
+    shared.set_info(MediaInfo::default());
+    let audio = shared.select_track(TrackKind::Audio, Some(3)).unwrap();
+    shared.select_track(TrackKind::Subtitle, Some(4)).unwrap();
+    shared.played(TrackKind::Audio, Some(1), audio);
+    let info = shared.info().unwrap();
+    assert_eq!(info.selected(TrackKind::Audio), Some(1), "3 can't play");
+    assert_eq!(info.selected(TrackKind::Subtitle), Some(4));
+}

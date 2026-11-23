@@ -98,6 +98,9 @@ pub struct Shared {
     /// Rung for the decode thread: by the player when it sends a command
     /// or takes a frame, and by the demux thread when it reads.
     wake: Doorbell,
+    /// How many tracks of each kind (`pick_slot`) have been picked, the
+    /// last pick's number: changed and read with `info` locked.
+    picks: [AtomicU64; 3],
 }
 
 impl Shared {
@@ -131,6 +134,7 @@ impl Shared {
             stop: AtomicBool::new(false),
             landed: Mutex::new(None),
             wake: Doorbell::default(),
+            picks: Default::default(),
         }
     }
 
@@ -168,14 +172,27 @@ impl Shared {
     }
 
     /// Say track `index` plays for `kind`, unless it does already or what
-    /// the file holds isn't known yet. Whether it changed.
-    pub fn select_track(&self, kind: TrackKind, index: Option<usize>) -> bool {
+    /// the file holds isn't known yet. The pick's number if it changed, to
+    /// send the decode thread with (see `played`).
+    pub fn select_track(&self, kind: TrackKind, index: Option<usize>) -> Option<u64> {
         let mut info = self.info.lock();
-        let Some(info) = info.as_mut().filter(|info| info.selected(kind) != index) else {
-            return false;
-        };
+        let info = info.as_mut().filter(|info| info.selected(kind) != index)?;
         Arc::make_mut(info).select(kind, index);
-        true
+        Some(self.picks[pick_slot(kind)].fetch_add(1, Ordering::Relaxed) + 1)
+    }
+
+    /// Say track `index` plays for `kind`, as the decode thread finds once
+    /// it has done pick number `pick`, unless a later one is to come: that
+    /// shows till then. Said of an earlier pick, it would hide the later,
+    /// and a pick of what it said would then go unsent.
+    pub(super) fn played(&self, kind: TrackKind, index: Option<usize>, pick: u64) {
+        let mut info = self.info.lock();
+        if self.picks[pick_slot(kind)].load(Ordering::Relaxed) != pick {
+            return;
+        }
+        if let Some(info) = info.as_mut() {
+            Arc::make_mut(info).select(kind, index);
+        }
     }
 
     /// Why it can't play, once a decoder thread has failed.
@@ -330,6 +347,15 @@ impl Shared {
     #[cfg(test)]
     pub fn waits(&self) -> u64 {
         self.wake.waits()
+    }
+}
+
+/// Where picks of `kind` are counted in `Shared::picks`.
+fn pick_slot(kind: TrackKind) -> usize {
+    match kind {
+        TrackKind::Video => 0,
+        TrackKind::Audio => 1,
+        TrackKind::Subtitle => 2,
     }
 }
 

@@ -88,6 +88,8 @@ pub enum Command {
     Select {
         kind: TrackKind,
         index: Option<usize>,
+        /// Its number, as `Shared::select_track` gave it.
+        pick: u64,
     },
     Stop,
 }
@@ -333,6 +335,8 @@ struct Decoders {
     /// The subtitle file to play next, being read; what plays plays on
     /// until it is.
     reading: Option<Reading>,
+    /// The number of the last pick of subtitles done.
+    subtitle_pick: u64,
 }
 
 impl Decoders {
@@ -406,18 +410,22 @@ impl Decoders {
             }
             Err(err) => log::warn!("{name}: can't play that track: {err:#}"),
         }
-        shared.update_info(|info| {
-            info.select(TrackKind::Subtitle, self.selected(TrackKind::Subtitle));
-        });
+        shared.played(
+            TrackKind::Subtitle,
+            self.selected(TrackKind::Subtitle),
+            self.subtitle_pick,
+        );
         true
     }
 
     /// Play another track, or no subtitles (video and audio can't be turned
-    /// off). A track that can't be decoded leaves the one playing as it is.
+    /// off), as pick number `pick` asks. A track that can't be decoded
+    /// leaves the one playing as it is.
     fn switch(
         &mut self,
         kind: TrackKind,
         index: Option<usize>,
+        pick: u64,
         demuxer: &Demuxer,
         shared: &Arc<Shared>,
         name: &str,
@@ -427,8 +435,11 @@ impl Decoders {
         {
             log::warn!("{name}: can't play that track: {err:#}");
         }
+        if kind == TrackKind::Subtitle {
+            self.subtitle_pick = pick;
+        }
         // Whatever happened, say what plays.
-        shared.update_info(|info| info.select(kind, self.selected(kind)));
+        shared.played(kind, self.selected(kind), pick);
     }
 
     fn try_switch(
@@ -544,6 +555,7 @@ fn run(
         subtitle: None,
         subtitle_file: None,
         reading: None,
+        subtitle_pick: 0,
     };
     let found = looking.map(|looking| looking.join().unwrap_or_default());
     for mut track in found.into_iter().flatten() {
@@ -606,8 +618,8 @@ fn run(
         let Some(Received { seek, selects }) = receive(commands) else {
             return Ok(());
         };
-        for (kind, index) in selects {
-            decoders.switch(kind, index, &demuxer, shared, &name);
+        for (kind, index, pick) in selects {
+            decoders.switch(kind, index, pick, &demuxer, shared, &name);
         }
         if let Some((time, serial, mode)) = seek {
             seek_to(&mut session, &mut decoders, &demuxer, time, serial, mode);
@@ -903,7 +915,8 @@ fn start_demuxer(
 struct Received {
     /// The latest seek, as `(time, serial, mode)`.
     seek: Option<(f64, u64, SeekMode)>,
-    selects: Vec<(TrackKind, Option<usize>)>,
+    /// Each pick of a track, with its number.
+    selects: Vec<(TrackKind, Option<usize>, u64)>,
 }
 
 /// Take the commands waiting, or `None` once the decode thread should stop.
@@ -921,7 +934,7 @@ fn receive(commands: &Receiver<Command>) -> Option<Received> {
             match command {
                 Command::Stop => return None,
                 Command::Seek { time, serial, mode } => seek = Some((time, serial, mode)),
-                Command::Select { kind, index } => selects.push((kind, index)),
+                Command::Select { kind, index, pick } => selects.push((kind, index, pick)),
             }
             command = match commands.try_recv() {
                 Ok(next) => next,

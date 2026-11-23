@@ -1213,6 +1213,50 @@ fn keeps_playing_while_a_subtitle_file_is_read() {
     );
 }
 
+/// Subtitles picked that can't play, a file gone since it was found or
+/// a stream the file doesn't have, leave those that played, and the
+/// tracks say so once they've been tried.
+#[test]
+fn subtitles_that_cant_play_leave_those_that_played() {
+    let path = video_with_subtitle_files(
+        "gone-before-read",
+        &[("clip.en.srt", "Hello"), ("clip.fr.srt", "Bonjour")],
+    );
+    let mut player = Player::open(Source::File(path.clone()), None, options(true, false));
+    assert!(wait_until(Duration::from_secs(5), || {
+        player.tick();
+        subtitle_text(&player) == ["Hello"]
+    }));
+    let subtitles: Vec<_> = player
+        .info()
+        .unwrap()
+        .tracks(TrackKind::Subtitle)
+        .map(|track| track.index)
+        .collect();
+    let shown = |player: &Player| player.info().unwrap().subtitle_track;
+
+    std::fs::remove_file(path.with_file_name("clip.fr.srt")).unwrap();
+    player.select_track(TrackKind::Subtitle, Some(subtitles[1]));
+    assert_eq!(shown(&player), Some(subtitles[1]), "at once");
+    assert!(
+        wait_until(Duration::from_secs(5), || {
+            player.tick();
+            shown(&player) == Some(subtitles[0])
+        }),
+        "put back once it couldn't be read"
+    );
+
+    player.select_track(TrackKind::Subtitle, Some(99));
+    assert!(
+        wait_until(Duration::from_secs(5), || {
+            player.tick();
+            shown(&player) == Some(subtitles[0])
+        }),
+        "put back"
+    );
+    assert_eq!(subtitle_text(&player), ["Hello"]);
+}
+
 #[test]
 fn opens_before_its_subtitle_files_are_read() {
     let files = [
