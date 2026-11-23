@@ -25,7 +25,8 @@ use std::path::{Path, PathBuf};
 
 use mlua::serde::SerializeOptions;
 use mlua::{
-    AnyUserData, Function, HookTriggers, Lua, LuaSerdeExt, MultiValue, Table, Value as LuaValue,
+    AnyUserData, Function, HookTriggers, IntoLuaMulti, Lua, LuaSerdeExt, MultiValue, Table,
+    Value as LuaValue,
 };
 use serde_json::Value;
 
@@ -257,6 +258,19 @@ fn add_commands(lua: &Lua, plays: &Table, command: &Function) -> mlua::Result<()
     Ok(())
 }
 
+/// What a call, a wait, a program or JSON hands a script: the value alone,
+/// or nil and why not, as Lua's own functions do.
+pub struct Answer(pub Result<LuaValue, String>);
+
+impl IntoLuaMulti for Answer {
+    fn into_lua_multi(self, lua: &Lua) -> mlua::Result<MultiValue> {
+        match self.0 {
+            Ok(value) => value.into_lua_multi(lua),
+            Err(why) => (LuaValue::Nil, why).into_lua_multi(lua),
+        }
+    }
+}
+
 /// Run the command `id` with `args`, a table or nil: what it hands back,
 /// else nil and why not. A wait after it hears what it does, and nothing
 /// from before.
@@ -267,14 +281,14 @@ fn call(
     id: &str,
     args: LuaValue,
     here: &Target,
-) -> mlua::Result<(LuaValue, Option<String>)> {
+) -> mlua::Result<Answer> {
     let mut args: Value = lua.from_value(args)?;
     let target = target(id, &mut args, here);
     inbox.borrow_mut().hear_from_now();
     let called = session.borrow_mut().call_on(id, args, target);
     match called {
-        Ok(value) => Ok((to_lua(lua, &value)?, None)),
-        Err(failure) => Ok((LuaValue::Nil, Some(failure.to_string()))),
+        Ok(value) => Ok(Answer(Ok(to_lua(lua, &value)?))),
+        Err(failure) => Ok(Answer(Err(failure.to_string()))),
     }
 }
 
@@ -392,3 +406,7 @@ fn message(err: &mlua::Error) -> String {
 #[cfg(test)]
 #[path = "tests/lua.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "lua/tests/guides.rs"]
+mod guides;

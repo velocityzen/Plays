@@ -177,6 +177,11 @@ fn a_script_calls_commands_on_its_window_and_block(cx: &mut TestAppContext) {
     let code = "local found, why = plays.call('playback.nope'); return {found == nil, why}";
     let ran = plays(&mut cx, &path, &["do", "-e", code]);
     assert_eq!(ran.json(), json!([true, "no command playback.nope"]));
+    // The value alone, as Lua's own functions hand it back; nil and why
+    // only as it fails.
+    let code = "return {select('#', plays.window.ls()), select('#', plays.call('playback.nope'))}";
+    let ran = plays(&mut cx, &path, &["do", "-e", code]);
+    assert_eq!(ran.json(), json!([1, 2]), "{ran:?}");
     let code = "local _, why = plays.playback.play_pause(); return why";
     let ran = plays(&mut cx, &path, &["do", "-e", code]);
     assert_eq!(

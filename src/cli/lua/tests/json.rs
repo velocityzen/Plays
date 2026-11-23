@@ -68,3 +68,18 @@ fn json_text_is_a_value_numbers_lists_and_objects_as_they_were() {
     assert_eq!(none, None);
     assert!(why.contains("EOF"), "{why}");
 }
+
+#[test]
+fn json_text_or_a_value_is_handed_back_alone_nil_and_why_as_it_fails() {
+    let lua = lua();
+    let handed: Vec<i64> = lua
+        .load(
+            r#"
+            return {select('#', plays.json.encode({1})), select('#', plays.json.decode("[1]")),
+              select('#', plays.json.encode({print})), select('#', plays.json.decode("{"))}
+            "#,
+        )
+        .eval()
+        .unwrap();
+    assert_eq!(handed, [1, 1, 2, 2]);
+}

@@ -7,6 +7,7 @@ use std::time::{Duration, Instant};
 use mlua::{Function, Lua, LuaSerdeExt, Value as LuaValue};
 use serde_json::{Map, Value};
 
+use super::Answer;
 use super::inbox::Inbox;
 
 /// What a wait comes back with once its time is up.
@@ -28,7 +29,7 @@ pub fn wait(
     lua: &Lua,
     inbox: &RefCell<Inbox>,
     (kind, filter, timeout): (String, LuaValue, Option<f64>),
-) -> mlua::Result<(LuaValue, Option<String>)> {
+) -> mlua::Result<Answer> {
     let by = match timeout {
         Some(seconds) => Some(Instant::now() + duration("plays.wait can't wait", seconds)?),
         None => None,
@@ -37,7 +38,7 @@ pub fn wait(
     if kind == POSITION
         && let Err(failure) = inbox.borrow_mut().hear_positions()
     {
-        return Ok((LuaValue::Nil, Some(failure.to_string())));
+        return Ok(Answer(Err(failure.to_string())));
     }
     inbox.borrow_mut().pass_over_told();
     heard(lua, inbox, &kind, &filter, by)
@@ -50,19 +51,19 @@ fn heard(
     kind: &str,
     filter: &Filter,
     by: Option<Instant>,
-) -> mlua::Result<(LuaValue, Option<String>)> {
+) -> mlua::Result<Answer> {
     loop {
         // Not borrowed as the filter runs, which may call Plays.
         let next = inbox.borrow_mut().next(by);
         let payload = match next {
             Ok(Some((heard, payload))) if heard == kind => payload,
             Ok(Some(_)) => continue,
-            Ok(None) => return Ok((LuaValue::Nil, Some(TIMEOUT.into()))),
-            Err(failure) => return Ok((LuaValue::Nil, Some(failure.to_string()))),
+            Ok(None) => return Ok(Answer(Err(TIMEOUT.into()))),
+            Err(failure) => return Ok(Answer(Err(failure.to_string()))),
         };
         let event = super::to_lua(lua, &payload)?;
         if filter.matches(&payload, &event)? {
-            return Ok((event, None));
+            return Ok(Answer(Ok(event)));
         }
     }
 }

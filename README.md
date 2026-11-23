@@ -211,7 +211,8 @@ plays actions flip                        # those with flip in id or title
   them, it's the window in front and the block keys go to.
 - `--json` prints JSON.
 - [docs/commands.md](docs/commands.md) has every command and event;
-  [docs/lua.md](docs/lua.md), what a script has.
+  [docs/lua.md](docs/lua.md) and [docs/lua-events.md](docs/lua-events.md),
+  Lua scripts and their handlers.
 - Exit codes: 0 done, 1 failed, 2 bad command line, 3 nothing by that
   name, 4 no Plays to ask, 5 command line control off.
 

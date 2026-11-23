@@ -1,78 +1,118 @@
 # Lua scripts
 
 `plays do` runs a Lua 5.4 script, a client of the Plays running, as the
-rest of the command line is.
-
-```bash
-plays do seek.lua time=90                  # a file: ends in .lua, or has a slash
-plays do -e 'return plays.window.ls()'     # code
-echo 'print(plays.window_id)' | plays do - # stdin
-plays do seek.lua --args '{"times": [10, 20]}'
-plays do seek.lua --args @args.json
-plays do loop.lua --for 10m --fail-fast    # run on 10m, end at a failure
-```
-
-## What a script has
-
-- `plays.args`: its arguments. `KEY=VALUE` typed as written: `n=2` a
-  number, `on=true` true, `name=x` text. `--args` for JSON.
-- `plays.window_id`, `plays.block_id`: those `-w` and `-b` name, else the
-  window in front and the block keys go to; nil where there's none.
-- `plays.playback.seek{time = 90}`: a command, by its id, as in
-  [commands.md](commands.md).
-- `plays.call("playback.seek", {time = 90})`: the same.
-- `plays.null`: null, to send one.
-- `print(...)`: a line on stdout. `plays.log(...)`: a line on stderr.
-- `plays.stop(status)`: ends it now, with that exit status, 0 if none.
-- `plays.sleep(seconds)`: waits that long.
-- `plays.wait(event, filter, timeout)`: waits for an event, as in
-  [commands.md](commands.md#events); see [Waiting](#waiting).
-- `plays.on(event, function(ctx, event))`: a handler; see
-  [Handlers](#handlers).
-- `plays.after(seconds, fn)`, `plays.every(seconds, fn)`: timers; see
-  [Timers](#timers).
-- `plays.exec{program, arg...}`, `plays.exec.start(...)`: programs; see
-  [Programs](#programs).
-- `plays.json.encode(value)`, `plays.json.decode(text)`: see
-  [JSON and Lua](#json-and-lua).
-- `require`: modules beside the script first.
-- Lua's standard library, without `debug`, `io.popen`, `os.execute` and C
-  modules.
-
-## Calls
-
-- On the script's window, or its block, as the command acts on one.
-  `window_id` and `block_id` among its arguments name another.
-- What the command hands back; a failed one gives nil and why.
-
-## Waiting
-
-- `plays.wait("playback.ended", {block_id = id}, 600)`: the next event of
-  that type whose fields equal the filter's, numbers by their values. A
-  function filter matches when it returns true.
-- What it returns: the event's payload; nil and "timeout" once `timeout`
-  seconds are up; nil and why if Plays goes. No timeout waits on.
-- What it hears: what happens from the start of the last call before it,
-  in a handler the last in it; with none, from the wait's start, or in a
-  handler from its event. Each event once, in order, those it passes over
-  gone, for handlers too.
-- Everything's events; with `-w`, that window's.
-
-## Handlers
+rest of the command line is: once, top to bottom, and it ends, unless it
+has handlers, `plays.on`, or timers to run on with
+([lua-events.md](lua-events.md)).
 
 ```lua
-plays.on("playback.ended", function(ctx, event)
-  plays.playback.seek{time = 0} -- on the block that ended
-end)
+-- louder.lua: every block in the window louder by 10
+for _, block in ipairs(plays.block.ls()) do
+  local volume = plays.block.inspect{block_id = block.id}.volume
+  plays.audio.set_volume{block_id = block.id, volume = math.min(volume + 10, 100)}
+end
 ```
 
-- Registered as the script first runs; `plays.on` in a handler is an
-  error. Event names aren't checked.
-- Run once the first run is over, one at a time, for each event heard
-  from the script's first call or wait on, or else from then, in order.
-- `ctx.window_id`, `ctx.block_id`: the event's; calls in a handler act on
-  them.
-- A wait or a sleep in a handler holds the others.
+```bash
+plays do louder.lua
+plays -w Kitchen do louder.lua   # the window labeled Kitchen
+```
+
+## Running a script
+
+```bash
+plays do louder.lua                         # a file: ends in .lua, or has a slash
+plays do -e 'return plays.window.ls()'      # code
+echo 'print(plays.window_id)' | plays do -  # stdin
+plays do solo.lua --for 10m --fail-fast     # run on 10m, end at a failure
+```
+
+- `plays.window_id`, `plays.block_id`: those `-w` and `-b` name, else the
+  window in front and the block keys go to; nil where there's none.
+- `require`: modules beside the script first.
+- Lua's standard library, without `debug`, `io.popen`, `os.execute` and C
+  modules; [Programs](#programs) run programs.
+- `--for` and `--fail-fast`: see [lua-events.md](lua-events.md#running-on).
+
+## Arguments
+
+```lua
+-- seek.lua: every block in the window to a time
+for _, block in ipairs(plays.block.ls()) do
+  plays.playback.seek{block_id = block.id, time = plays.args.time or 0}
+end
+```
+
+```bash
+plays do seek.lua time=90
+plays do seek.lua --args '{"time": 90}'
+plays do seek.lua --args @args.json
+```
+
+- `plays.args`: `KEY=VALUE` typed as written: `n=2` a number, `on=true`
+  true, `name=x` text.
+- `--args`: JSON, or a file of it after `@`; for text that looks like a
+  number, as `{"name": "2"}`, and for lists and objects.
+
+## What it prints
+
+```bash
+plays do -e 'return plays.block.inspect().volume'  # 100.0
+plays do -e 'return plays.block.inspect().title'   # "talk.mkv", JSON
+plays do -e 'print(plays.block.inspect().title)'   # talk.mkv
+```
+
+- What it returns, as JSON (`--json` indented); nothing for nil.
+- `print(...)`: a line on stdout. `plays.log(...)`: a line on stderr.
+- An error: its message, exit status 1. `plays.stop(status)`: ends it at
+  once, with that exit status, 0 if none.
+- Exit statuses as for other commands: 3 no such script, 4 no Plays to
+  ask, 5 control from the command line off.
+
+## Calling Plays
+
+```lua
+plays.playback.seek{time = 90}            -- a command, by its id
+plays.call("playback.seek", {time = 90})  -- the same
+local block = plays.block.inspect()
+print(block.title, block.position, block.duration)
+```
+
+- Every command in [commands.md](commands.md), its arguments a table.
+- On the script's window, or its block, as the command acts on one.
+  `window_id` and `block_id` among its arguments name another, by id,
+  label or number.
+- What the command hands back, alone. `plays.null`: null, to send one.
+- One that fails hands back nil and why, and the script goes on, or
+  `assert` ends it there. `plays.wait`, `plays.exec` and `plays.json`
+  hand back the same way.
+
+```lua
+local window, why = plays.window.inspect{window_id = "Kitchen"}
+if not window then plays.log(why) end  -- no window Kitchen
+window = assert(plays.window.inspect{window_id = "Kitchen"})
+```
+
+## Sleeping and waiting
+
+```lua
+-- next.lua: once the block ends, the next file in its folder
+plays.wait("playback.ended", {block_id = plays.block_id})
+plays.playback.next_file()
+```
+
+- `plays.sleep(seconds)`: waits that long.
+- `plays.wait(event, filter, timeout)`: the payload of the next event of
+  that type whose fields equal the filter's, numbers by their values. A
+  function filter matches when it returns true. Events and their fields
+  are in [commands.md](commands.md#events).
+- nil and "timeout" once `timeout` seconds are up; nil and why if Plays
+  goes. No timeout waits on.
+- What it hears: what happens from the start of the last call before it,
+  what that call does too; in a handler, the last in it. With none, from
+  the wait's start, or in a handler from its event. Each event once, in
+  order, those it passes over gone, for handlers too.
+- Everything's events; with `-w`, that window's.
 
 ## Timers
 
@@ -83,6 +123,8 @@ end)
 plays.after(60, function() ticking:cancel() end)
 ```
 
+- `plays.after(seconds, fn)`: runs it once the seconds are up.
+  `plays.every(seconds, fn)`: every so many.
 - Each returns a timer, stopped by `:cancel()`; dropped, it runs on.
 - Run once the first run is over, never at once with other Lua: one due
   as a handler runs waits for it, and a tick missed meanwhile runs once.
@@ -93,14 +135,20 @@ plays.after(60, function() ticking:cancel() end)
 ## Programs
 
 ```lua
-local head = plays.exec{"git", "rev-parse", "HEAD"}
-local make = plays.exec.start({"make"}, {stdout = io.write})
-local made = make:wait()
+-- newest.lua: the newest file in the folder `folder` names, opened
+local listed = plays.exec({"ls", "-t"}, {cwd = plays.args.folder})
+local newest = listed and listed.ok and listed.stdout:match("[^\n]+")
+if newest then plays.app.open{urls = {plays.args.folder .. "/" .. newest}} end
+```
+
+```lua
+local counted = plays.exec{"sh", "-c", "ls *.mkv | wc -l"} -- a shell, to have one
+plays.exec.start({"make"}, {stdout = io.write}):wait()     -- its output as it comes
 ```
 
 - `plays.exec{program, arg...}`: runs it, with no shell, and waits: `ok`,
   `code` (nil if a signal ended it), `stdout`, `stderr`. nil and why only
-  if it can't run.
+  if it can't run; one that fails is `ok = false`.
 - Options, a second table: `cwd`; `env`, as `{CI = "1"}`, `false`
   removing one; `timeout`, in seconds, then it's killed.
 - `plays.exec.start`: starts it; `:wait()` waits as `plays.exec` does.
@@ -110,24 +158,6 @@ local made = make:wait()
   never at once with other Lua.
 - Stopped as the part of the script that started it ends: its top level,
   a handler or a timer. Detached, as the script ends.
-
-## Running on
-
-- A script with handlers or timers runs on once its first run is over,
-  until `plays.stop`, `--for` is up (`90`, `90s`, `10m`, `1.5h`), Ctrl-C
-  (exit status 130), or, with no handlers, no timer is left. With
-  handlers, until Plays quits or the window `-w` names closes too.
-- Says what it runs on stderr: `listening: 2 handlers, running: 1 timer;
-  Ctrl-C to stop`.
-- A handler, a timer or a program's function failing is said on stderr,
-  and the script goes on; with `--fail-fast` it ends, exit status 1.
-
-## What it prints
-
-- What it returns, as JSON (`--json` indented); nothing for nil.
-- An error: its message, exit status 1.
-- Exit statuses as for other commands: 3 no such script, 4 no Plays to
-  ask, 5 control from the command line off.
 
 ## JSON and Lua
 
@@ -140,12 +170,40 @@ local made = make:wait()
   `{}`.
 - Integers stay integers; other numbers are floats.
 
-## Example
+## Examples
 
 ```lua
--- Every block to the same time, then where each is.
+-- same-time.lua: every block in the window to the same time, then where
+-- each is
 for _, block in ipairs(plays.block.ls()) do
   plays.playback.seek{block_id = block.id, time = plays.args.time}
 end
-return plays.block.ls()
+local where = {}
+for _, block in ipairs(plays.block.ls()) do
+  where[#where + 1] = plays.block.inspect{block_id = block.id}.position
+end
+return where
+```
+
+```lua
+-- where.lua: where each block is, as JSON in the file `to` names, now
+-- and every 5 seconds
+local function save()
+  local where = {}
+  for _, block in ipairs(plays.block.ls()) do
+    local position = plays.block.inspect{block_id = block.id}.position
+    where[#where + 1] = {title = block.title, position = position}
+  end
+  local file = assert(io.open(plays.args.to, "w"))
+  file:write(plays.json.encode(where, {indent = true}))
+  file:close()
+end
+save()
+plays.every(5, save)
+```
+
+```bash
+plays do same-time.lua time=90   # [90.0, 90.0], to the frame
+plays do where.lua to=where.json
+plays do newest.lua folder=$HOME/Downloads
 ```

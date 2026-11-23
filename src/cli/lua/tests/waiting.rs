@@ -50,10 +50,18 @@ fn a_wait_hears_what_the_call_before_it_did(cx: &mut TestAppContext) {
         r#"
         plays.window.rename{label = "Attic"}
         local heard = plays.wait("window.label_changed", nil, 5)
-        return {label = heard.label, window = heard.window_id == plays.window_id}
+        plays.window.rename{label = "Den"}
+        local handed = select('#', plays.wait("window.label_changed", nil, 5))
+        local missed = select('#', plays.wait("window.label_changed", nil, 0))
+        return {label = heard.label, window = heard.window_id == plays.window_id,
+          handed = {handed, missed}}
         "#,
     );
-    assert_eq!(heard, json!({"label": "Attic", "window": true}));
+    let handed = json!([1, 2]);
+    assert_eq!(
+        heard,
+        json!({"label": "Attic", "window": true, "handed": handed})
+    );
 }
 
 #[gpui::test]

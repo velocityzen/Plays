@@ -291,7 +291,8 @@ flowchart LR
   on the UI thread; a second Plays hands files over
 - `src/cli.rs`, `src/cli/`: the command line, a client of that socket;
   `reference.rs` writes `docs/commands.md`; `lua.rs` runs `plays do`'s
-  Lua scripts ([docs/lua.md](docs/lua.md))
+  Lua scripts ([docs/lua.md](docs/lua.md),
+  [docs/lua-events.md](docs/lua-events.md))
 - `src/app/mod.rs`, `keymap.rs`, `menus.rs`: startup, keys and menu bar
 - `src/app/windows.rs`, `history.rs`: window numbers and `FocusHistory`
 - `src/app/awake.rs`: keeps the screen awake while video plays

@@ -4,7 +4,7 @@
 use mlua::{Lua, LuaSerdeExt, LuaString, Table, Value as LuaValue};
 use serde_json::Value;
 
-use super::{message, to_lua};
+use super::{Answer, message, to_lua};
 
 /// `plays.json`, under `plays`.
 pub fn add(lua: &Lua, plays: &Table) -> mlua::Result<()> {
@@ -16,35 +16,32 @@ pub fn add(lua: &Lua, plays: &Table) -> mlua::Result<()> {
 
 /// `plays.json.encode(value, options)`: `value` as JSON text, indented by
 /// two spaces with `{indent = true}`; or nil and why it can't be.
-fn encode(
-    lua: &Lua,
-    (value, options): (LuaValue, Option<Table>),
-) -> mlua::Result<(Option<String>, Option<String>)> {
+fn encode(lua: &Lua, (value, options): (LuaValue, Option<Table>)) -> mlua::Result<Answer> {
     let indent = match options {
         Some(options) => options.get::<Option<bool>>("indent")?.unwrap_or(false),
         None => false,
     };
     let value: Value = match lua.from_value(value) {
         Ok(value) => value,
-        Err(err) => return Ok((None, Some(message(&err)))),
+        Err(err) => return Ok(Answer(Err(message(&err)))),
     };
     let text = if indent {
         serde_json::to_string_pretty(&value)
     } else {
         serde_json::to_string(&value)
     };
-    Ok(match text {
-        Ok(text) => (Some(text), None),
-        Err(err) => (None, Some(err.to_string())),
-    })
+    Ok(Answer(match text {
+        Ok(text) => Ok(LuaValue::String(lua.create_string(text)?)),
+        Err(err) => Err(err.to_string()),
+    }))
 }
 
 /// `plays.json.decode(text)`: the value JSON `text` holds, or nil and why
 /// not.
-fn decode(lua: &Lua, text: LuaString) -> mlua::Result<(LuaValue, Option<String>)> {
+fn decode(lua: &Lua, text: LuaString) -> mlua::Result<Answer> {
     match serde_json::from_slice::<Value>(&text.as_bytes()) {
-        Ok(value) => Ok((to_lua(lua, &value)?, None)),
-        Err(err) => Ok((LuaValue::Nil, Some(err.to_string()))),
+        Ok(value) => Ok(Answer(Ok(to_lua(lua, &value)?))),
+        Err(err) => Ok(Answer(Err(err.to_string()))),
     }
 }
 

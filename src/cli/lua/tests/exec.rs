@@ -19,6 +19,8 @@ fn a_program_runs_with_no_shell_and_says_what_it_wrote_and_how_it_ended(cx: &mut
         local fine = plays.exec{"true"}
         print(fine.ok, fine.code, fine.stdout == "", fine.stderr == "")
         print(plays.exec{"no-such-program-for-plays"})
+        print(select('#', plays.exec{"true"}), select('#', plays.exec.start{"true"}),
+          select('#', plays.exec{"no-such-program-for-plays"}))
     "#;
     let ran = plays(&mut cx, &path, &["do", "-e", code]);
     assert_eq!(
@@ -26,7 +28,8 @@ fn a_program_runs_with_no_shell_and_says_what_it_wrote_and_how_it_ended(cx: &mut
         (
             0,
             "false\t3\ta b\toops\ntrue\t0\ttrue\ttrue\n\
-             nil\tcan't run no-such-program-for-plays: No such file or directory (os error 2)\n",
+             nil\tcan't run no-such-program-for-plays: No such file or directory (os error 2)\n\
+             1\t1\t2\n",
             ""
         ),
         "{ran:?}"

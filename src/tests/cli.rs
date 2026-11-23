@@ -95,11 +95,15 @@ pub(super) fn plays_reading(
 pub(super) fn plays_while(
     cx: &mut TestAppContext,
     path: &Path,
-    args: &[&'static str],
+    args: &[&str],
     mut meanwhile: impl FnMut(&mut TestAppContext, usize),
 ) -> Ran {
-    let (path_now, args) = (path.to_owned(), args.to_vec());
-    let running = thread::spawn(move || command_line(Some(path_now), Unanswered::Fails, &args));
+    let path_now = path.to_owned();
+    let args: Vec<String> = args.iter().map(|&arg| arg.to_owned()).collect();
+    let running = thread::spawn(move || {
+        let args: Vec<&str> = args.iter().map(String::as_str).collect();
+        command_line(Some(path_now), Unanswered::Fails, &args)
+    });
     for time in 0..100 {
         if running.is_finished() {
             break;

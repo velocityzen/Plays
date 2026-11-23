@@ -22,6 +22,7 @@ use std::time::{Duration, Instant};
 
 use mlua::{Function, Lua, Scope, Table, UserData, UserDataMethods, Value as LuaValue};
 
+use super::Answer;
 use super::inbox::{Came, Inbox};
 
 /// How often a program's watcher looks whether it's ended.
@@ -225,13 +226,13 @@ fn run(
     programs: &Programs,
     inbox: &RefCell<Inbox>,
     (_, argv, options): (LuaValue, Vec<String>, Option<Table>),
-) -> mlua::Result<(LuaValue, Option<String>)> {
+) -> mlua::Result<Answer> {
     match programs.start("plays.exec", &argv, options, inbox)? {
         Ok(program) => {
             let ended = programs.wait(lua, inbox, &program)?;
-            Ok((LuaValue::Table(ended), None))
+            Ok(Answer(Ok(LuaValue::Table(ended))))
         }
-        Err(why) => Ok((LuaValue::Nil, Some(why))),
+        Err(why) => Ok(Answer(Err(why))),
     }
 }
 
@@ -243,7 +244,7 @@ fn start<'s, 'env>(
     programs: &'env Programs,
     inbox: &'env RefCell<Inbox>,
     (argv, options): (Vec<String>, Option<Table>),
-) -> mlua::Result<(LuaValue, Option<String>)> {
+) -> mlua::Result<Answer> {
     match programs.start("plays.exec.start", &argv, options, inbox)? {
         Ok(program) => {
             let handle = Handle {
@@ -251,9 +252,11 @@ fn start<'s, 'env>(
                 programs,
                 inbox,
             };
-            Ok((LuaValue::UserData(scope.create_userdata(handle)?), None))
+            Ok(Answer(Ok(LuaValue::UserData(
+                scope.create_userdata(handle)?,
+            ))))
         }
-        Err(why) => Ok((LuaValue::Nil, Some(why))),
+        Err(why) => Ok(Answer(Err(why))),
     }
 }
 
