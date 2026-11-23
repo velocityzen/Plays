@@ -49,20 +49,25 @@ fn tries_an_encoder_again_after_it_fails_to_open() {
     );
 }
 
-/// Sound whose channels are in an uncommon order, the right before the
-/// left, goes through one resampler from first to last, all of it, each
-/// frame's layout freed with it as a decoder's is.
-#[test]
-fn keeps_one_resampler_for_channels_in_an_uncommon_order() {
+/// A stereo AAC encoder at 48 kHz.
+fn aac() -> AudioEncoder {
     crate::init();
-    let mut encoder = AudioEncoder::open(&AudioSettings {
+    AudioEncoder::open(&AudioSettings {
         codec: AudioCodec::Aac,
         channels: 2,
         sample_rate: 48_000,
         bit_rate: 128_000,
         global_header: false,
     })
-    .unwrap();
+    .unwrap()
+}
+
+/// Sound whose channels are in an uncommon order, the right before the
+/// left, goes through one resampler from first to last, all of it, each
+/// frame's layout freed with it as a decoder's is.
+#[test]
+fn keeps_one_resampler_for_channels_in_an_uncommon_order() {
+    let mut encoder = aac();
     let mut encoded = Packet::empty();
     let mut made = None;
     for at in 0..10 {
@@ -93,4 +98,47 @@ fn keeps_one_resampler_for_channels_in_an_uncommon_order() {
     }
     let reached = encoder.reached();
     assert!((reached - 0.1).abs() < 0.005, "reached {reached} s");
+}
+
+/// A decoded frame holding many of the encoder's, as a FLAC block or PCM
+/// does, is encoded whole, in order: the fixture's 1024 samples at 8 kHz
+/// are six frames of AAC at 48 kHz.
+#[test]
+fn encodes_frames_holding_many_of_its_own() {
+    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../tests/fixtures/uncommon-order.mov");
+    let mut input = ffmpeg::format::input(&path).unwrap();
+    let stream = input
+        .streams()
+        .best(ffmpeg::media::Type::Audio)
+        .expect("sound");
+    let (index, time_base) = (stream.index(), f64::from(stream.time_base()));
+    let mut decoder = codec::context::Context::from_parameters(stream.parameters())
+        .unwrap()
+        .decoder()
+        .audio()
+        .unwrap();
+    let mut encoder = aac();
+    let (mut decoded, mut encoded) = (frame::Audio::empty(), Packet::empty());
+    let mut times = Vec::new();
+    for (stream, packet) in input.packets() {
+        if stream.index() != index {
+            continue;
+        }
+        decoder.send_packet(&packet).unwrap();
+        while decoder.receive_frame(&mut decoded).is_ok() {
+            let time = decoded.timestamp().unwrap() as f64 * time_base;
+            encoder.send(&mut decoded, time, 0.0).unwrap();
+            while encoder.receive(&mut encoded) {
+                times.push(encoded.pts().unwrap());
+            }
+        }
+    }
+    encoder.send_eof().unwrap();
+    while encoder.receive(&mut encoded) {
+        times.push(encoded.pts().unwrap());
+    }
+    assert!(times.is_sorted(), "{times:?}");
+    let seconds = times.len() as f64 * 1024.0 / 48_000.0;
+    assert!((seconds - 0.5).abs() < 0.05, "{seconds} s encoded");
 }

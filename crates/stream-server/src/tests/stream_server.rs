@@ -619,19 +619,24 @@ fn re_encodes_sound_the_device_lacks() {
 }
 
 /// A gap in the source's sound stays a gap when the sound is re-encoded:
-/// the sound after it plays with the picture it went with, not early, and
-/// its segment comes out the same whichever job makes it.
+/// the sound after it plays with the picture it went with, not early, the
+/// same whichever job makes its segment. A job from the start puts in that
+/// segment, too, what it made after cutting the one before: the sound's
+/// last frames, which the encoder held, and the silence over the gap, from
+/// where that segment's sound stops.
 #[test]
 fn re_encoded_sound_keeps_to_the_picture_over_a_gap_in_it() {
-    // When a segment's sound starts and ends; AAC frames are 1024 samples.
-    let span = |audio: Option<Probed>| {
-        let audio = audio.expect("sound in the segment");
-        let last = audio
+    // AAC frames are 1024 samples.
+    let frame = 1024.0 / 48_000.0;
+    // When a segment's sound from `start` on starts and ends.
+    let span = |audio: &Probed, start: f64| {
+        let times = audio
             .times
             .iter()
             .copied()
-            .fold(f64::NEG_INFINITY, f64::max);
-        (audio.first(), last + 1024.0 / 48_000.0)
+            .filter(|&time| time > start - frame);
+        let first = times.clone().fold(f64::INFINITY, f64::min);
+        (first, times.fold(f64::NEG_INFINITY, f64::max) + frame)
     };
     let gap = |server: &Server| cast(server, "clip-sound-gap.mkv", hls(Segments::Ts));
 
@@ -648,17 +653,27 @@ fn re_encoded_sound_keeps_to_the_picture_over_a_gap_in_it() {
         "{:?}",
         cast.plan()
     );
-    let (from, _) = span(fetch(&cast.url(), Segments::Ts, 0).1);
+    let first = fetch(&cast.url(), Segments::Ts, 0).1.expect("sound");
+    let (from, stops) = span(&first, 10.0);
     assert!(close(from, 10.0), "the sound starts at {from}");
     // The sound goes on at 1 s, with the second segment, to its end.
-    let (from, to) = span(fetch(&cast.url(), Segments::Ts, 1).1);
+    let second = fetch(&cast.url(), Segments::Ts, 1).1.expect("sound");
+    let (from, to) = span(&second, 11.0);
     assert!(
         close(from, 11.0) && close(to, 12.0),
         "sound from {from} to {to}"
     );
+    let late = second.first();
+    assert!(
+        close(late, stops),
+        "from {late}, where the first stops: {stops}"
+    );
 
     let middle = server();
-    let (again, until) = span(fetch(&gap(&middle).url(), Segments::Ts, 1).1);
+    let again = fetch(&gap(&middle).url(), Segments::Ts, 1)
+        .1
+        .expect("sound");
+    let (again, until) = span(&again, 11.0);
     assert!(
         close(again, from) && close(until, to),
         "sound from {again} to {until}"

@@ -3,7 +3,7 @@
 //! NVENC or VA-API on Linux. Sound goes through FFmpeg's own AAC, AC-3 and
 //! E-AC-3 encoders.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
@@ -431,6 +431,9 @@ pub(crate) struct AudioEncoder {
     next_pts: Option<i64>,
     /// Samples still to drop before encoding, to start where asked.
     skip: usize,
+    /// Packets taken from the encoder to make room for the next frame of
+    /// those sent at once, handed out first.
+    made: VecDeque<Packet>,
 }
 
 // SAFETY: the encoder, resampler and FIFO are used by one thread at a time.
@@ -497,6 +500,7 @@ impl AudioEncoder {
             fifo,
             next_pts: None,
             skip: 0,
+            made: VecDeque::new(),
         })
     }
 
@@ -640,7 +644,14 @@ impl AudioEncoder {
         self.next_pts = Some(pts + self.frame_size as i64);
         self.encoder
             .send_frame(&frame)
-            .map_err(|err| Error::Encode(format!("encoding sound: {err}")))
+            .map_err(|err| Error::Encode(format!("encoding sound: {err}")))?;
+        // It takes no more until what it made is taken.
+        let mut packet = Packet::empty();
+        while self.encoder.receive_packet(&mut packet).is_ok() {
+            self.made
+                .push_back(std::mem::replace(&mut packet, Packet::empty()));
+        }
+        Ok(())
     }
 
     /// Encode what is left, then end the stream.
@@ -657,7 +668,13 @@ impl AudioEncoder {
     }
 
     pub fn receive(&mut self, packet: &mut Packet) -> bool {
-        self.encoder.receive_packet(packet).is_ok()
+        match self.made.pop_front() {
+            Some(made) => {
+                *packet = made;
+                true
+            }
+            None => self.encoder.receive_packet(packet).is_ok(),
+        }
     }
 }
 
