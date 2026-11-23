@@ -14,6 +14,7 @@ mod mouse;
 mod naming;
 mod on_top;
 mod opening;
+mod over_video;
 mod pairing;
 mod place;
 mod screensaver;
@@ -47,11 +48,12 @@ use crate::app::{AudioEngine, FocusHistory, note_front, refresh_menus};
 use crate::cast::{self, Casting};
 use crate::media::{Mixer, picture};
 use crate::progress;
-use crate::settings::{AudioDevice, Settings};
+use crate::settings::{AudioDevice, OverVideo, Settings};
 
 pub use focus::Toward;
 pub use naming::block_label_taken;
 pub use on_top::float_with_players;
+pub use over_video::follow_settings as follow_over_video_settings;
 #[cfg(test)]
 pub use place::forget_settings_place;
 pub use place::{note_settings_place, save_place_on_quit, save_settings_place, settings_place};
@@ -130,6 +132,9 @@ pub struct Workspace {
     traffic_lights_shown: bool,
     /// Floating above other apps' windows, as last set.
     on_top: bool,
+    /// The panels its blocks show over their videos, as those opened in it
+    /// start out.
+    over_video: OverVideo,
     /// The display it is moving to, full screen, once out of full screen
     /// where it is.
     moving_to: Option<u32>,
@@ -279,6 +284,7 @@ impl Workspace {
             mouse_moved_at: Instant::now(),
             watching_idle: false,
             traffic_lights_shown: true,
+            over_video: cx.global::<Settings>().over_video,
             on_top: false,
             moving_to: None,
             place: place::Place::of(window, cx),

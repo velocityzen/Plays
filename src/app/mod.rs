@@ -44,7 +44,7 @@ use crate::media::{Source, picture};
 use crate::progress::{self, Progress};
 use crate::settings::Settings;
 use crate::ui::theme::{UiFont, pick_ui_font, refresh_system_colors};
-use crate::ui::workspace::{Workspace, save_place_on_quit};
+use crate::ui::workspace::{Workspace, follow_over_video_settings, save_place_on_quit};
 use crate::ui::{blackout, displays};
 
 /// How often quitting looks whether the devices cast to have stopped.
@@ -129,6 +129,7 @@ fn set_up(
     keymap::watch_hotkeys(cx);
     menus::watch_settings(cx);
     menus::watch_outputs(cx);
+    follow_over_video_settings(cx);
 }
 
 /// For `#[gpui::test]`s: the app as it starts, with default settings

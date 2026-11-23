@@ -111,6 +111,64 @@ impl Default for OverVideo {
     }
 }
 
+/// One of the panels over the video, picked from those `OverVideo` has.
+pub type Panel = fn(&mut OverVideo) -> &mut bool;
+
+impl OverVideo {
+    /// None shown.
+    pub const NONE: Self = Self {
+        controls: false,
+        top_bar: false,
+        track_switcher: false,
+        notes: false,
+    };
+
+    /// The panels shown, by their keys here.
+    pub fn visible(self) -> Vec<&'static str> {
+        [
+            ("controls", self.controls),
+            ("top_bar", self.top_bar),
+            ("track_switcher", self.track_switcher),
+            ("notes", self.notes),
+        ]
+        .into_iter()
+        .filter_map(|(panel, shown)| shown.then_some(panel))
+        .collect()
+    }
+
+    /// With `panel` turned on, or off.
+    #[must_use]
+    pub fn toggled(mut self, panel: Panel) -> Self {
+        let shown = panel(&mut self);
+        *shown = !*shown;
+        self
+    }
+
+    /// Each panel hidden while any shows, else each shown.
+    #[must_use]
+    pub fn all_toggled(self) -> Self {
+        if self == Self::NONE {
+            Self::default()
+        } else {
+            Self::NONE
+        }
+    }
+
+    /// As it is, but for the panels `old` and `new` tell apart, which are
+    /// as `new` has them: what a window or block shows as those it's in
+    /// change.
+    #[must_use]
+    pub fn follow(self, old: Self, new: Self) -> Self {
+        let pick = |own, old, new| if old == new { own } else { new };
+        Self {
+            controls: pick(self.controls, old.controls, new.controls),
+            top_bar: pick(self.top_bar, old.top_bar, new.top_bar),
+            track_switcher: pick(self.track_switcher, old.track_switcher, new.track_switcher),
+            notes: pick(self.notes, old.notes, new.notes),
+        }
+    }
+}
+
 /// How an audio file's block looks.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]

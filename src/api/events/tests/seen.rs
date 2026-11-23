@@ -25,6 +25,7 @@ fn block(id: Id) -> BlockSeen {
         chapter: None,
         casting: None,
         picture_in_picture: false,
+        over_video: OverVideo::default(),
     }
 }
 
@@ -45,6 +46,7 @@ fn window(id: Id, blocks: Vec<BlockSeen>) -> WindowSeen {
         label: None,
         title: "Plays".into(),
         full_screen: false,
+        over_video: OverVideo::default(),
         active: blocks.first().map(|block| block.id),
         maximized: None,
         blocks,
@@ -206,6 +208,46 @@ fn labels_full_screen_the_layout_and_the_block_keys_go_to_are_told_as_they_chang
     );
     assert_eq!(events[4].payload["block_title"], "left");
     assert!(changes(&after, &after).is_empty());
+}
+
+#[test]
+fn the_panels_a_window_and_its_blocks_show_are_told_as_they_change() {
+    let (w, t, u) = (Id::next(), Id::next(), Id::next());
+    let before = app(vec![window(w, vec![block(t), block(u)])]);
+    let mut after = before.clone();
+    let changed = &mut after.windows[0];
+    changed.over_video.notes = false;
+    changed.blocks[1].over_video = OverVideo {
+        top_bar: true,
+        ..OverVideo::NONE
+    };
+
+    let events = changes(&before, &after);
+    assert_eq!(
+        said(&events),
+        [
+            (
+                "window_ui_changed",
+                json!({"visible": ["controls", "top_bar", "track_switcher"]})
+            ),
+            ("block_ui_changed", json!({"visible": ["top_bar"]})),
+        ]
+    );
+    assert_eq!(events[1].payload["block_id"], u.to_string(), "its own");
+    assert!(changes(&after, &after).is_empty());
+
+    // One opened in it starts out as it is: its `block_created` says so.
+    let mut more = after.clone();
+    more.windows[0].blocks.push(BlockSeen {
+        over_video: OverVideo::NONE,
+        ..block(Id::next())
+    });
+    let told = changes(&after, &more);
+    assert!(
+        !kinds(&told).contains(&"block_ui_changed"),
+        "{:?}",
+        kinds(&told)
+    );
 }
 
 #[test]

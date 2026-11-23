@@ -88,6 +88,7 @@ impl Workspace {
             label: self.label.clone(),
             title: self.title().to_owned(),
             full_screen: window.is_fullscreen(),
+            over_video: self.over_video,
             blocks: self
                 .blocks
                 .iter()

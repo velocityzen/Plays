@@ -54,6 +54,41 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 - Acts on the app.
 - Hands back: What it copied, a line for each thing.
 
+### Show/Hide All in Every Window
+
+`app.toggle_ui`: Hide every panel over the video in every window while Settings show any, else show them all.
+
+- Acts on the app.
+- Tells: `settings_changed`, `app_ui_changed`, `window_ui_changed`, `block_ui_changed`.
+
+### Show Controls in Every Window
+
+`app.toggle_controls`: Show the seek bar and buttons at the bottom of every block in every window, and those opened later, or hide them, as Settings → Appearance does.
+
+- Acts on the app.
+- Tells: `settings_changed`, `app_ui_changed`, `window_ui_changed`, `block_ui_changed`.
+
+### Show Top Bar in Every Window
+
+`app.toggle_top_bar`: Show the file's name and buttons at the top of every block in every window, and those opened later, or hide them, as Settings → Appearance does.
+
+- Acts on the app.
+- Tells: `settings_changed`, `app_ui_changed`, `window_ui_changed`, `block_ui_changed`.
+
+### Show Track Switcher in Every Window
+
+`app.toggle_track_switcher`: Show the reel of tracks a shortcut rolls to the audio, video or subtitles picked, over every block in every window, and those opened later, or switch without it, as Settings → Appearance does.
+
+- Acts on the app.
+- Tells: `settings_changed`, `app_ui_changed`, `window_ui_changed`, `block_ui_changed`.
+
+### Show Notes in Every Window
+
+`app.toggle_notes`: Show notes on what a shortcut changed, like the volume, over every block in every window, and those opened later, or not, as Settings → Appearance does. Notes on what's wrong still show.
+
+- Acts on the app.
+- Tells: `settings_changed`, `app_ui_changed`, `window_ui_changed`, `block_ui_changed`.
+
 ### Quit Plays
 
 `app.quit`: Quit, keeping where each file got to and stopping the devices cast to.
@@ -243,35 +278,40 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
   - `display` (a whole number, at least 0): The display's id.
 - Tells: `full_screen_changed`.
 
-## view
+### Show/Hide All in Window
 
-### Show Controls
+`window.toggle_ui`: Hide every panel over the video in each block in the window while the window shows any, else show them all.
 
-`view.toggle_controls`: Show the seek bar and buttons at the bottom of each block, or never show them.
+- Acts on a player window.
+- Tells: `window_ui_changed`, `block_ui_changed`.
 
-- Acts on the app.
-- Tells: `settings_changed`.
+### Show Controls in Window
 
-### Show Top Bar
+`window.toggle_controls`: Show the seek bar and buttons at the bottom of each block in the window, and those opened in it, or hide them.
 
-`view.toggle_top_bar`: Show the file's name and buttons at the top of each block, or never show them.
+- Acts on a player window.
+- Tells: `window_ui_changed`, `block_ui_changed`.
 
-- Acts on the app.
-- Tells: `settings_changed`.
+### Show Top Bar in Window
 
-### Show Track Switcher
+`window.toggle_top_bar`: Show the file's name and buttons at the top of each block in the window, and those opened in it, or hide them.
 
-`view.toggle_track_switcher`: Show the reel of tracks a shortcut rolls to the audio, video or subtitles picked, or switch without it.
+- Acts on a player window.
+- Tells: `window_ui_changed`, `block_ui_changed`.
 
-- Acts on the app.
-- Tells: `settings_changed`.
+### Show Track Switcher in Window
 
-### Show Notes
+`window.toggle_track_switcher`: Show the reel of tracks a shortcut rolls to the audio, video or subtitles picked, over each block in the window, and those opened in it, or switch without it.
 
-`view.toggle_notes`: Show notes on what a shortcut changed, like the volume, or not. Notes on what's wrong still show.
+- Acts on a player window.
+- Tells: `window_ui_changed`, `block_ui_changed`.
 
-- Acts on the app.
-- Tells: `settings_changed`.
+### Show Notes in Window
+
+`window.toggle_notes`: Show notes on what a shortcut changed, like the volume, over each block in the window, and those opened in it, or not. Notes on what's wrong still show.
+
+- Acts on a player window.
+- Tells: `window_ui_changed`, `block_ui_changed`.
 
 ## block
 
@@ -478,6 +518,41 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 - Acts on a block.
 - Keys: ⌃⌘P
 - Tells: `picture_in_picture_changed`.
+
+### Show/Hide All
+
+`block.toggle_ui`: Hide every panel over the block's video while any shows, else show them all.
+
+- Acts on a block.
+- Tells: `block_ui_changed`.
+
+### Show Controls
+
+`block.toggle_controls`: Show the seek bar and buttons at the bottom of the block, or hide them.
+
+- Acts on a block.
+- Tells: `block_ui_changed`.
+
+### Show Top Bar
+
+`block.toggle_top_bar`: Show the file's name and buttons at the top of the block, or hide them.
+
+- Acts on a block.
+- Tells: `block_ui_changed`.
+
+### Show Track Switcher
+
+`block.toggle_track_switcher`: Show the reel of tracks a shortcut rolls to the audio, video or subtitles picked, over the block, or switch without it.
+
+- Acts on a block.
+- Tells: `block_ui_changed`.
+
+### Show Notes
+
+`block.toggle_notes`: Show notes on what a shortcut changed, like the volume, over the block, or not. Notes on what's wrong still show.
+
+- Acts on a block.
+- Tells: `block_ui_changed`.
 
 ### Show/Hide Console
 
@@ -1046,7 +1121,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
   - `key` (text): The setting's key, its path in the settings file: autoplay, subtitles.size.
   - `value` (any value): What to set it to, as the settings file keeps it: true, 0.5, "dark".
 - Hands back: Its value now.
-- Tells: `settings_changed`, `keymap_changed`.
+- Tells: `settings_changed`, `keymap_changed`, `app_ui_changed`, `window_ui_changed`, `block_ui_changed`.
 
 ### Reset Setting
 
@@ -1056,7 +1131,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 - Arguments:
   - `key` (text): The setting's key, its path in the settings file: autoplay, subtitles.size.
 - Hands back: Its value now.
-- Tells: `settings_changed`, `keymap_changed`.
+- Tells: `settings_changed`, `keymap_changed`, `app_ui_changed`, `window_ui_changed`, `block_ui_changed`.
 
 ### Show Settings File
 
@@ -1071,7 +1146,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 - Acts on the app.
 - Hands back: [key]: the settings the file changed.
-- Tells: `settings_changed`, `keymap_changed`.
+- Tells: `settings_changed`, `keymap_changed`, `app_ui_changed`, `window_ui_changed`, `block_ui_changed`.
 
 ## cli
 
@@ -1117,6 +1192,15 @@ A client went from the socket.
 - Payload:
   - `client_id`: The number its `client_connected` had.
 - Follows: a client going or being cut off, as when control from the command line is turned off.
+
+### app_ui_changed
+
+The panels shown over the video in every window, as Settings have them, changed.
+
+- Heard by those listening to the app's events.
+- Payload:
+  - `visible`: Those shown, of `controls`, `top_bar`, `track_switcher` and `notes`.
+- Follows: `app.toggle_ui`, `app.toggle_controls`, `app.toggle_top_bar`, `app.toggle_track_switcher`, `app.toggle_notes`, `settings.set`, `settings.reset`, `settings.reload`, or Settings turning a panel over the video on or off, importing a settings file or resetting every setting.
 
 ### quit
 
@@ -1175,6 +1259,16 @@ A window went full screen, or came back from it.
   - `window_id`, `window_title`: its window's.
   - `full_screen`: Whether it's full screen now.
 - Follows: `window.toggle_full_screen`, `window.exit_full_screen`, `window.show_on_display`, `block.zoom`, or the window's own full screen button.
+
+### window_ui_changed
+
+The panels shown over the video in a window's blocks, and those opened in it, changed.
+
+- Heard by those listening to its window's events.
+- Payload:
+  - `window_id`, `window_title`: its window's.
+  - `visible`: Those shown, of `controls`, `top_bar`, `track_switcher` and `notes`.
+- Follows: `app.toggle_ui`, `app.toggle_controls`, `app.toggle_top_bar`, `app.toggle_track_switcher`, `app.toggle_notes`, `window.toggle_ui`, `window.toggle_controls`, `window.toggle_top_bar`, `window.toggle_track_switcher`, `window.toggle_notes`, `settings.set`, `settings.reset`, `settings.reload`, or Settings turning a panel over the video on or off, importing a settings file or resetting every setting.
 
 ### window_layout_changed
 
@@ -1249,6 +1343,16 @@ A block began playing in a small window floating above every app's, or in its bl
   - `window_id`, `window_title`, `block_id`, `block_title`: its window's and its block's.
   - `picture_in_picture`: Whether it plays in the small window now.
 - Follows: `block.toggle_picture_in_picture`, or the small window's own buttons.
+
+### block_ui_changed
+
+The panels shown over a block's video changed.
+
+- Heard by those listening to its window's events.
+- Payload:
+  - `window_id`, `window_title`, `block_id`, `block_title`: its window's and its block's.
+  - `visible`: Those shown, of `controls`, `top_bar`, `track_switcher` and `notes`.
+- Follows: `app.toggle_ui`, `app.toggle_controls`, `app.toggle_top_bar`, `app.toggle_track_switcher`, `app.toggle_notes`, `window.toggle_ui`, `window.toggle_controls`, `window.toggle_top_bar`, `window.toggle_track_switcher`, `window.toggle_notes`, `block.toggle_ui`, `block.toggle_controls`, `block.toggle_top_bar`, `block.toggle_track_switcher`, `block.toggle_notes`, `settings.set`, `settings.reset`, `settings.reload`, or Settings turning a panel over the video on or off, importing a settings file or resetting every setting.
 
 ## playback
 
@@ -1440,7 +1544,7 @@ Settings changed.
 - Heard by those listening to the app's events.
 - Payload:
   - `keys`: The keys of those that changed, as `settings.get` takes them.
-- Follows: `window.toggle_float_on_top`, `window.toggle_float_on_top_while_playing`, `view.toggle_controls`, `view.toggle_top_bar`, `view.toggle_track_switcher`, `view.toggle_notes`, `subtitles.bigger`, `subtitles.smaller`, `subtitles.up`, `subtitles.down`, `output.set_device`, `settings.set`, `settings.reset`, `settings.reload`, or Settings moving a slider, importing a settings file or resetting every setting.
+- Follows: `app.toggle_ui`, `app.toggle_controls`, `app.toggle_top_bar`, `app.toggle_track_switcher`, `app.toggle_notes`, `window.toggle_float_on_top`, `window.toggle_float_on_top_while_playing`, `subtitles.bigger`, `subtitles.smaller`, `subtitles.up`, `subtitles.down`, `output.set_device`, `settings.set`, `settings.reset`, `settings.reload`, or Settings moving a slider, importing a settings file or resetting every setting.
 
 ### keymap_changed
 

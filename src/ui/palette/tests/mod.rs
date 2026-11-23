@@ -536,6 +536,11 @@ fn with_nothing_typed_each_group_is_under_its_heading(cx: &mut TestAppContext) {
     headings.sort();
     headings.dedup();
     assert_eq!(headings.len(), shown, "each group once: {headed:?}");
+    // Down past the app's, to the windows'.
+    assert_eq!(headed[1].0, "Windows");
+    for _ in 0..headed[0].1.len() {
+        press_and_wait(&mut cx, "down");
+    }
     assert!(shows(&mut cx, "palette-heading-Windows"));
     assert_eq!(
         times_painted(&mut cx, "Windows"),

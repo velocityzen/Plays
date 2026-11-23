@@ -1,7 +1,7 @@
 //! `block`: the blocks in a window: closing them, going from one to another,
 //! moving them about the grid, and what shows over or apart from one.
 
-use gpui::{App, Entity};
+use gpui::{App, Context, Entity};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -11,6 +11,8 @@ use crate::api::events::{EventField, EventKind};
 use crate::api::registry::{Args, Outcome, Reach, Scope, Spec, on_mac};
 use crate::api::target::{self, Target};
 use crate::api::{Error, Run};
+use crate::settings::{OverVideo, Panel};
+use crate::ui::player::PlayerView;
 use crate::ui::workspace::{Toward, block_label_taken};
 
 pub const COMMANDS: &[Spec] = &[
@@ -320,6 +322,52 @@ pub const COMMANDS: &[Spec] = &[
     // macOS's.
     .only_if(|| cfg!(target_os = "macos")),
     Spec::block(
+        "block.toggle_ui",
+        "Show/Hide All",
+        "Hide every panel over the block's video while any shows, else show them all.",
+        |player, _, cx| change_over_video(player, OverVideo::all_toggled, cx),
+    )
+    .tells(&["block_ui_changed"])
+    .keywords(&["hide", "interface", "ui", "panels", "clean"]),
+    Spec::block(
+        "block.toggle_controls",
+        "Show Controls",
+        "Show the seek bar and buttons at the bottom of the block, or hide them.",
+        |player, _, cx| toggle_panel(player, |panel| &mut panel.controls, cx),
+    )
+    .tells(&["block_ui_changed"])
+    .keywords(&["hide", "player controls", "seek bar", "bottom bar"])
+    .state(|target, cx| shown_in_block(target, cx, |shown| shown.controls)),
+    Spec::block(
+        "block.toggle_top_bar",
+        "Show Top Bar",
+        "Show the file's name and buttons at the top of the block, or hide them.",
+        |player, _, cx| toggle_panel(player, |panel| &mut panel.top_bar, cx),
+    )
+    .tells(&["block_ui_changed"])
+    .keywords(&["hide", "header", "title", "buttons"])
+    .state(|target, cx| shown_in_block(target, cx, |shown| shown.top_bar)),
+    Spec::block(
+        "block.toggle_track_switcher",
+        "Show Track Switcher",
+        "Show the reel of tracks a shortcut rolls to the audio, video or subtitles \
+         picked, over the block, or switch without it.",
+        |player, _, cx| toggle_panel(player, |panel| &mut panel.track_switcher, cx),
+    )
+    .tells(&["block_ui_changed"])
+    .keywords(&["hide", "reel", "streams", "audio track", "subtitle track"])
+    .state(|target, cx| shown_in_block(target, cx, |shown| shown.track_switcher)),
+    Spec::block(
+        "block.toggle_notes",
+        "Show Notes",
+        "Show notes on what a shortcut changed, like the volume, over the block, or \
+         not. Notes on what's wrong still show.",
+        |player, _, cx| toggle_panel(player, |panel| &mut panel.notes, cx),
+    )
+    .tells(&["block_ui_changed"])
+    .keywords(&["hide", "osd", "on-screen display", "volume", "messages"])
+    .state(|target, cx| shown_in_block(target, cx, |shown| shown.notes)),
+    Spec::block(
         "block.toggle_console",
         "Show/Hide Console",
         "Show what the block's file is and how it plays, over its picture, or hide it.",
@@ -378,6 +426,12 @@ pub const EVENTS: &[EventKind] = &[
         )],
     )
     .causes(&["the small window's own buttons"]),
+    EventKind::block(
+        "block_ui_changed",
+        "The panels shown over a block's video changed.",
+        &[EventField::new("visible", super::VISIBLE)],
+    )
+    .causes(&[super::PANELS_SET]),
 ];
 
 /// Close the block named, or the one keys go to.
@@ -549,4 +603,25 @@ pub fn move_to_window(name: &str) -> Run {
 /// Why a window couldn't be updated.
 fn closed() -> Error {
     Error::failed("the window has closed")
+}
+
+/// Turn the panel `panel` picks on, or off, in `player`.
+fn toggle_panel(player: &mut PlayerView, panel: Panel, cx: &mut Context<PlayerView>) {
+    change_over_video(player, |shown| shown.toggled(panel), cx);
+}
+
+/// Change the panels over the video `player` shows with `change`.
+fn change_over_video(
+    player: &mut PlayerView,
+    change: impl FnOnce(OverVideo) -> OverVideo,
+    cx: &mut Context<PlayerView>,
+) {
+    let shown = change(player.over_video());
+    player.set_over_video(shown, cx);
+}
+
+/// Whether the block `target` names, or the one keys go to, shows the panel
+/// `panel` reads.
+fn shown_in_block(target: &Target, cx: &mut App, panel: fn(OverVideo) -> bool) -> Outcome {
+    target::read_block(target, cx, |player, _| json!(panel(player.over_video())))
 }

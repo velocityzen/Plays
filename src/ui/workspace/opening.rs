@@ -47,6 +47,7 @@ impl Workspace {
             (sources, Vec::new())
         };
         let mixer = self.mixer(cx);
+        let shown = self.over_video;
         let mut opened = Vec::new();
         for source in blocks {
             log::info!("opening {source}");
@@ -58,6 +59,7 @@ impl Workspace {
             let playlist = playlist.clone();
             let view = cx.new(|cx| {
                 let mut view = PlayerView::new(source, mixer, graveyard, cx);
+                view.set_over_video(shown, cx);
                 view.set_playlist(playlist, cx);
                 view.resume(cx);
                 view.find_neighbors(cx);

@@ -126,31 +126,64 @@ fn the_video_menu_sizes_the_window_for_its_videos() {
 }
 
 #[test]
-fn the_video_menu_checks_each_panel_shown_over_the_video() {
+fn the_interface_menu_shows_or_hides_the_panels_in_the_block_its_window_and_every_window() {
     let mut state = MenuState::default();
     for (command, on) in [
-        ("view.toggle_controls", true),
-        ("view.toggle_top_bar", false),
-        ("view.toggle_track_switcher", true),
-        ("view.toggle_notes", false),
+        ("block.toggle_controls", true),
+        ("block.toggle_top_bar", false),
+        ("block.toggle_track_switcher", true),
+        ("block.toggle_notes", false),
+        ("window.toggle_notes", true),
+        ("app.toggle_top_bar", true),
     ] {
         state.states.insert(command, json!(on));
     }
-    let menu = video_menu(&state);
-    let panels: Vec<(String, bool)> = listed(&menu)
-        .into_iter()
-        .filter(|(name, _)| name.starts_with("Show "))
+    let menu = interface_menu(&state);
+    assert_eq!(menu.name, "Interface");
+    let separators: Vec<usize> = menu
+        .items
+        .iter()
+        .enumerate()
+        .filter(|(_, item)| matches!(item, MenuItem::Separator))
+        .map(|(at, _)| at)
         .collect();
+    assert_eq!(separators, [5, 11], "one group each");
     let panel = |name: &str, on| (name.to_owned(), on);
     assert_eq!(
-        panels,
+        listed(&menu),
         [
+            panel("Show/Hide All", false),
             panel("Show Controls", true),
             panel("Show Top Bar", false),
             panel("Show Track Switcher", true),
             panel("Show Notes", false),
+            panel("Show/Hide All in Window", false),
+            panel("Show Controls in Window", false),
+            panel("Show Top Bar in Window", false),
+            panel("Show Track Switcher in Window", false),
+            panel("Show Notes in Window", true),
+            panel("Show/Hide All in Every Window", false),
+            panel("Show Controls in Every Window", false),
+            panel("Show Top Bar in Every Window", true),
+            panel("Show Track Switcher in Every Window", false),
+            panel("Show Notes in Every Window", false),
         ]
     );
+    let video = listed(&video_menu(&state));
+    assert!(
+        video.iter().all(|(name, _)| !name.starts_with("Show ")),
+        "not in the Video menu too: {video:?}"
+    );
+}
+
+#[gpui::test]
+fn the_interface_menu_comes_before_the_window_menu(cx: &mut TestAppContext) {
+    let (_, cx) = testing::start(cx);
+    let names: Vec<String> = TestAppContext::update(&cx, |cx| {
+        menus(cx).into_iter().map(|menu| menu.name.into()).collect()
+    });
+    let at = |name: &str| names.iter().position(|menu| menu == name);
+    assert_eq!(at("Interface").map(|at| at + 1), at("Window"), "{names:?}");
 }
 
 #[test]
@@ -1036,7 +1069,15 @@ fn checks_what_is_on_and_enables_what_can_run(cx: &mut TestAppContext) {
     assert!(checked("Float on Top", &mut cx));
     assert!(!checked("Float on Top While Playing", &mut cx));
     assert!(checked("Show Notes", &mut cx), "notes show at first");
-    cx.dispatch_action(Run::command("view.toggle_notes"));
+    cx.dispatch_action(Run::command("block.toggle_notes"));
     cx.run_until_parked();
-    assert!(!checked("Show Notes", &mut cx));
+    assert!(!checked("Show Notes", &mut cx), "in the block in front");
+    assert!(
+        checked("Show Notes in Window", &mut cx),
+        "but not its window"
+    );
+    cx.dispatch_action(Run::command("app.toggle_notes"));
+    cx.run_until_parked();
+    assert!(!checked("Show Notes in Every Window", &mut cx));
+    assert!(!checked("Show Notes in Window", &mut cx), "nor the window");
 }

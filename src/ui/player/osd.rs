@@ -8,7 +8,6 @@ use gpui::{AnyElement, Context, Div, SharedString, Window, div};
 
 use super::PlayerView;
 use super::tracks::{TrackChoice, track_row};
-use crate::settings::Settings;
 use crate::ui::components::{ComponentSize, Panel};
 use crate::ui::theme::motion::{OSD_DURATION, OSD_FADE, REEL_ROLL};
 use crate::ui::theme::player::{NOTE_TOP, REEL_FADED, TRACK_MENU_WIDTH};
@@ -32,26 +31,26 @@ pub(super) struct TrackReel {
 
 impl PlayerView {
     /// Show a note on what's wrong, or why a shortcut did nothing: these
-    /// show whatever Settings says of notes.
+    /// show with notes hidden too.
     pub fn note(&mut self, text: impl Into<SharedString>, cx: &mut Context<Self>) {
         self.osd = Some((Osd::Text(text.into()), Instant::now()));
         cx.notify();
     }
 
-    /// Show a note on what a shortcut changed, like the volume, unless
-    /// Settings has notes over the video hidden.
+    /// Show a note on what a shortcut changed, like the volume, unless the
+    /// block has notes hidden.
     pub fn note_change(&mut self, text: impl Into<SharedString>, cx: &mut Context<Self>) {
-        if cx.global::<Settings>().over_video.notes {
+        if self.over_video().notes {
             self.note(text, cx);
         } else {
             cx.notify();
         }
     }
 
-    /// Roll the reel to the track a shortcut picked, unless Settings has
+    /// Roll the reel to the track a shortcut picked, unless the block has
     /// the track switcher hidden.
     pub(super) fn roll_reel(&mut self, reel: TrackReel, cx: &mut Context<Self>) {
-        if cx.global::<Settings>().over_video.track_switcher {
+        if self.over_video().track_switcher {
             self.osd = Some((Osd::Reel(reel), Instant::now()));
         }
         cx.notify();

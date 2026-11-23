@@ -6,13 +6,13 @@
 //!
 //! A listener hears the app's events (`Scope::App`: windows opening,
 //! closing, renamed and coming to the front, outputs, devices, settings,
-//! keys, commands run, and the socket's clients connecting and leaving),
-//! one window's (`Scope::Window`: its own, its blocks' and how they play),
-//! or all of them. Where a file plays is told as how far through it is,
-//! from 0 to 1, in seconds and by frame (`playhead`). A block's position
-//! is told only to those who ask for it, at most once a second. Readers
-//! ignore events and fields they don't know, so later versions can add
-//! them.
+//! the panels shown over the video, keys, commands run, and the socket's
+//! clients connecting and leaving), one window's (`Scope::Window`: its own,
+//! its blocks' and how they play), or all of them. Where a file plays is
+//! told as how far through it is, from 0 to 1, in seconds and by frame
+//! (`playhead`). A block's position is told only to those who ask for it,
+//! at most once a second. Readers ignore events and fields they don't
+//! know, so later versions can add them.
 //!
 //! What changed is found by looking (`look`): at what the app, its windows
 //! and blocks are like, against what the last look saw (`seen`), once each
@@ -419,7 +419,8 @@ pub fn command_done(cx: &mut App) {
     }
 }
 
-/// Tell which settings changed, by key, and which commands' keys.
+/// Tell which settings changed, by key, which panels show over the video
+/// if those changed, and which commands' keys.
 fn settings_changed(cx: &mut App) {
     if !listened(cx) {
         return;
@@ -431,6 +432,13 @@ fn settings_changed(cx: &mut App) {
     let keys = fields::changed(&old, &settings, &commands::settings::protocols(cx));
     if !keys.is_empty() {
         tell(&Event::app("settings_changed", json!({"keys": keys})), cx);
+    }
+    if old.over_video != settings.over_video {
+        let visible = settings.over_video.visible();
+        tell(
+            &Event::app("app_ui_changed", json!({"visible": visible})),
+            cx,
+        );
     }
     let commands: Vec<&str> = hotkeys::commands()
         .map(|spec| spec.id)

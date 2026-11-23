@@ -52,7 +52,9 @@ use crate::media::subtitles::CueContent;
 use crate::media::{Mixer, Neighbors, Picture, PlayerOptions, Source};
 use crate::progress::{self, Note};
 use crate::recents;
-use crate::settings::{AudioDevice, ControlsVisibility, Settings, SubtitleStyle, VideoFit};
+use crate::settings::{
+    AudioDevice, ControlsVisibility, OverVideo, Settings, SubtitleStyle, VideoFit,
+};
 use osd::Osd;
 use playback::Playback;
 use playlist::Playlist;
@@ -120,6 +122,8 @@ pub struct PlayerView {
     cues: Vec<Arc<CueContent>>,
     /// The audio and subtitle track menu is open.
     tracks_open: bool,
+    /// The panels it shows over its video.
+    over_video: OverVideo,
     /// A note on what a shortcut did, and when it was shown.
     osd: Option<(Osd, Instant)>,
     /// The subtitles hidden with a shortcut, to show again.
@@ -249,6 +253,7 @@ impl PlayerView {
             drawn: None,
             cues: Vec::new(),
             tracks_open: false,
+            over_video: settings.over_video,
             osd: None,
             hidden_subtitles: None,
             picked,
@@ -728,7 +733,7 @@ impl PlayerView {
                         &reveal,
                         framing,
                         cover,
-                        self.subtitle_clearance(cx),
+                        self.subtitle_clearance(),
                         &theme,
                         subtitle_style,
                     ))
@@ -756,8 +761,7 @@ impl PlayerView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Vec<Stateful<Div>> {
-        let settings = cx.global::<Settings>();
-        let (shown, show_titles) = (settings.over_video, settings.show_titles);
+        let (shown, show_titles) = (self.over_video, cx.global::<Settings>().show_titles);
         if !shown.top_bar {
             self.over_header = false;
         }
@@ -849,10 +853,21 @@ impl PlayerView {
     }
 
     /// How far up the block its subtitles keep clear of, for the controls
-    /// while they show: none when Settings has them hidden.
-    pub fn subtitle_clearance(&self, cx: &App) -> Pixels {
+    /// while they show: none while it has them hidden.
+    pub fn subtitle_clearance(&self) -> Pixels {
         let live = self.playback.local().info().is_some_and(|info| info.live);
-        controls::clearance(cx.global::<Settings>().over_video.controls, live)
+        controls::clearance(self.over_video.controls, live)
+    }
+
+    /// The panels it shows over its video.
+    pub fn over_video(&self) -> OverVideo {
+        self.over_video
+    }
+
+    /// Show the panels `shown` has over its video, and hide the others.
+    pub fn set_over_video(&mut self, shown: OverVideo, cx: &mut Context<Self>) {
+        self.over_video = shown;
+        cx.notify();
     }
 
     /// The cues showing, placed on the picture and kept above the controls

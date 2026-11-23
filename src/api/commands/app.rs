@@ -15,6 +15,7 @@ use crate::api::target::{self, Target};
 use crate::app::AudioEngine;
 use crate::media::Source;
 use crate::recents;
+use crate::settings::{OverVideo, Panel, Settings};
 use crate::ui::about::{self, AboutView};
 use crate::ui::settings::{SettingsView, ffmpeg_version};
 use crate::ui::theme::layout::WINDOW_SIZE;
@@ -115,6 +116,57 @@ pub const COMMANDS: &[Spec] = &[
     .keywords(&["developer", "debug", "components", "gallery", "sizes"])
     .developer(),
     Spec::app(
+        "app.toggle_ui",
+        "Show/Hide All in Every Window",
+        "Hide every panel over the video in every window while Settings show any, else \
+         show them all.",
+        |cx| set_over_video(cx, OverVideo::all_toggled),
+    )
+    .tells(TELLS_UI)
+    .keywords(&["hide", "interface", "ui", "panels", "clean"]),
+    Spec::app(
+        "app.toggle_controls",
+        "Show Controls in Every Window",
+        "Show the seek bar and buttons at the bottom of every block in every window, \
+         and those opened later, or hide them, as Settings → Appearance does.",
+        |cx| toggle_panel(cx, |panel| &mut panel.controls),
+    )
+    .tells(TELLS_UI)
+    .keywords(&["hide", "player controls", "seek bar", "bottom bar"])
+    .state(|_, cx| Ok(json!(cx.global::<Settings>().over_video.controls))),
+    Spec::app(
+        "app.toggle_top_bar",
+        "Show Top Bar in Every Window",
+        "Show the file's name and buttons at the top of every block in every window, \
+         and those opened later, or hide them, as Settings → Appearance does.",
+        |cx| toggle_panel(cx, |panel| &mut panel.top_bar),
+    )
+    .tells(TELLS_UI)
+    .keywords(&["hide", "header", "title", "buttons"])
+    .state(|_, cx| Ok(json!(cx.global::<Settings>().over_video.top_bar))),
+    Spec::app(
+        "app.toggle_track_switcher",
+        "Show Track Switcher in Every Window",
+        "Show the reel of tracks a shortcut rolls to the audio, video or subtitles \
+         picked, over every block in every window, and those opened later, or switch \
+         without it, as Settings → Appearance does.",
+        |cx| toggle_panel(cx, |panel| &mut panel.track_switcher),
+    )
+    .tells(TELLS_UI)
+    .keywords(&["hide", "reel", "streams", "audio track", "subtitle track"])
+    .state(|_, cx| Ok(json!(cx.global::<Settings>().over_video.track_switcher))),
+    Spec::app(
+        "app.toggle_notes",
+        "Show Notes in Every Window",
+        "Show notes on what a shortcut changed, like the volume, over every block in \
+         every window, and those opened later, or not, as Settings → Appearance does. \
+         Notes on what's wrong still show.",
+        |cx| toggle_panel(cx, |panel| &mut panel.notes),
+    )
+    .tells(TELLS_UI)
+    .keywords(&["hide", "osd", "on-screen display", "volume", "messages"])
+    .state(|_, cx| Ok(json!(cx.global::<Settings>().over_video.notes))),
+    Spec::app(
         "app.quit",
         "Quit Plays",
         "Quit, keeping where each file got to and stopping the devices cast to.",
@@ -128,6 +180,14 @@ pub const COMMANDS: &[Spec] = &[
     ])
     .keywords(&["exit"])
     .keys(&["secondary-q"]),
+];
+
+/// What a change to the panels over the video in every window tells.
+const TELLS_UI: &[&str] = &[
+    "settings_changed",
+    "app_ui_changed",
+    "window_ui_changed",
+    "block_ui_changed",
 ];
 
 /// The app's events.
@@ -170,6 +230,12 @@ pub const EVENTS: &[EventKind] = &[
     .causes(&[
         "a client going or being cut off, as when control from the command line is turned off",
     ]),
+    EventKind::app(
+        "app_ui_changed",
+        "The panels shown over the video in every window, as Settings have them, changed.",
+        &[EventField::new("visible", super::VISIBLE)],
+    )
+    .causes(&[super::PANELS_SET]),
     EventKind::to_everyone(
         "quit",
         "Plays is quitting: told last, after each window still open is told closing.",
@@ -269,4 +335,20 @@ fn source(url: &str) -> Result<Source, String> {
         _ => "give a file's full path, or a URL".to_owned(),
     };
     Err(format!("{url}: {why}"))
+}
+
+/// Turn the panel `panel` picks on, or off, in Settings, and so in every
+/// window and block, and keep it so.
+fn toggle_panel(cx: &mut App, panel: Panel) {
+    Settings::update(cx, true, |settings| {
+        settings.over_video = settings.over_video.toggled(panel);
+    });
+}
+
+/// Change the panels over the video Settings show with `change`, and so
+/// every window's and block's, and keep them so.
+fn set_over_video(cx: &mut App, change: fn(OverVideo) -> OverVideo) {
+    Settings::update(cx, true, |settings| {
+        settings.over_video = change(settings.over_video);
+    });
 }

@@ -11,7 +11,6 @@ pub mod playback;
 pub mod settings;
 mod subtitles;
 pub mod video;
-mod view;
 pub mod window;
 
 use gpui::Context;
@@ -25,10 +24,9 @@ use crate::media::tracks::TrackKind;
 use crate::ui::player::PlayerView;
 
 /// Every namespace's commands.
-pub const ALL: [&[Spec]; 13] = [
+pub const ALL: [&[Spec]; 12] = [
     app::COMMANDS,
     window::COMMANDS,
-    view::COMMANDS,
     block::COMMANDS,
     playback::COMMANDS,
     audio::COMMANDS,
@@ -59,12 +57,11 @@ const DROPPED: &str =
 
 /// The namespaces, in the order Settings → Hotkeys lists their commands,
 /// each with its title there.
-pub const NAMESPACES: [(&str, &str); 12] = [
+pub const NAMESPACES: [(&str, &str); 11] = [
     ("playback", "Playback"),
     ("audio", "Audio"),
     ("subtitles", "Subtitles"),
     ("video", "Video"),
-    ("view", "Over the video"),
     ("window", "Windows"),
     ("block", "Blocks in a window"),
     ("cast", "Casting"),
@@ -73,6 +70,14 @@ pub const NAMESPACES: [(&str, &str); 12] = [
     ("app", "Plays"),
     ("cli", "Command line"),
 ];
+
+/// What shows or hides a panel over the video, other than a command:
+/// events' cause.
+const PANELS_SET: &str = "Settings turning a panel over the video on or off, importing a \
+     settings file or resetting every setting";
+
+/// The panels over the video an event says are shown.
+const VISIBLE: &str = "Those shown, of `controls`, `top_bar`, `track_switcher` and `notes`.";
 
 /// Done, with nothing to hand back.
 fn done() -> Outcome {

@@ -60,6 +60,7 @@ fn menus(cx: &mut App) -> Vec<Menu> {
         video_menu(&state),
         audio_menu(outputs, window_outputs, &state),
         subtitles_menu(&state),
+        interface_menu(&state),
         window_menu(&state),
         #[cfg(debug_assertions)]
         developer_menu(&state),
@@ -251,10 +252,6 @@ fn video_menu(state: &MenuState) -> Menu {
             "",
             "video.take_screenshot",
             "",
-            "view.toggle_controls",
-            "view.toggle_top_bar",
-            "view.toggle_track_switcher",
-            "view.toggle_notes",
             "block.toggle_console",
         ],
         state,
@@ -262,6 +259,37 @@ fn video_menu(state: &MenuState) -> Menu {
     Menu {
         name: "Video".into(),
         items: menu,
+    }
+}
+
+/// The panels over the video, all at once or each: over the block in
+/// front, each block in the window in front, and every block in every
+/// window.
+fn interface_menu(state: &MenuState) -> Menu {
+    Menu {
+        name: "Interface".into(),
+        items: items(
+            &[
+                "block.toggle_ui",
+                "block.toggle_controls",
+                "block.toggle_top_bar",
+                "block.toggle_track_switcher",
+                "block.toggle_notes",
+                "",
+                "window.toggle_ui",
+                "window.toggle_controls",
+                "window.toggle_top_bar",
+                "window.toggle_track_switcher",
+                "window.toggle_notes",
+                "",
+                "app.toggle_ui",
+                "app.toggle_controls",
+                "app.toggle_top_bar",
+                "app.toggle_track_switcher",
+                "app.toggle_notes",
+            ],
+            state,
+        ),
     }
 }
 

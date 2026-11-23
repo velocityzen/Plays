@@ -281,6 +281,11 @@ fn hotkeys() -> serde_json::Value {
     json!({"key": "hotkeys", "value": {"playback.play_pause": ["ctrl-p"]}})
 }
 
+/// Notes over the video hidden, in every window and block.
+fn hide_notes() -> serde_json::Value {
+    json!({"key": "over_video.notes", "value": false})
+}
+
 fn other_ways(plan: &Plan) -> Option<Vec<Way>> {
     let device = || json!({"device": plan.world.device});
     Some(match plan.id {
@@ -308,12 +313,17 @@ fn other_ways(plan: &Plan) -> Option<Vec<Way>> {
                 vec![plan.with(json!({"key": "autoplay", "value": true}))],
             ),
             way(Vec::new(), vec![plan.with(hotkeys())]),
+            way(Vec::new(), vec![plan.with(hide_notes())]),
         ],
         "settings.reset" => vec![
             way(Vec::new(), vec![plan.with(json!({"key": "autoplay"}))]),
             way(
                 vec![command("settings.set").with_args(hotkeys())],
                 vec![plan.with(json!({"key": "hotkeys"}))],
+            ),
+            way(
+                vec![command("settings.set").with_args(hide_notes())],
+                vec![plan.with(json!({"key": "over_video.notes"}))],
             ),
         ],
         // The file says otherwise than the settings Plays has.
@@ -323,6 +333,7 @@ fn other_ways(plan: &Plan) -> Option<Vec<Way>> {
                 Settings::update(cx, true, |settings| {
                     settings.autoplay = !settings.autoplay;
                     settings.hotkeys.add("playback.play_pause", "ctrl-p");
+                    settings.over_video.notes = !settings.over_video.notes;
                 });
                 Settings::update(cx, false, |settings| *settings = kept);
             })],
@@ -536,7 +547,6 @@ macro_rules! namespaces {
 namespaces! {
     app_commands_tell_what_they_say: "app",
     window_commands_tell_what_they_say: "window",
-    view_commands_tell_what_they_say: "view",
     block_commands_tell_what_they_say: "block",
     playback_commands_tell_what_they_say: "playback",
     audio_commands_tell_what_they_say: "audio",

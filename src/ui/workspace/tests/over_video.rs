@@ -1,7 +1,7 @@
-//! The panels over the video, each shown or hidden in every block with a
-//! `view` command, as Settings → Appearance has them: hidden bars aren't
-//! drawn, and hidden notes and the track switcher leave unsaid what a
-//! shortcut changed, but not what's wrong.
+//! The panels over the video, each shown or hidden in a block, in each
+//! block in a window, or in every window as Settings → Appearance has them:
+//! hidden bars aren't drawn, and hidden notes and the track switcher leave
+//! unsaid what a shortcut changed, but not what's wrong.
 
 use std::fs;
 use std::time::{Duration, Instant};
@@ -16,6 +16,7 @@ use crate::media::tracks::TrackKind;
 use crate::settings::{OverVideo, Settings};
 use crate::ui::player::PlayerView;
 use crate::ui::testing::{self, OPEN_WAIT, click, hover, shows};
+use crate::ui::theme::layout::WINDOW_SIZE;
 use crate::ui::workspace::Workspace;
 
 /// Run `command` as a deferred command does, outside any window's update.
@@ -40,17 +41,68 @@ fn block(window: WindowHandle<Workspace>, cx: &VisualTestContext) -> Entity<Play
         .unwrap()
 }
 
+/// What `block` shows over its video.
+fn in_block(block: &Entity<PlayerView>, cx: &VisualTestContext) -> OverVideo {
+    block.read_with(cx, |view, _| view.over_video())
+}
+
+/// What `window` shows over its blocks' videos, as those opened in it start
+/// out.
+fn in_window(window: WindowHandle<Workspace>, cx: &VisualTestContext) -> OverVideo {
+    window
+        .read_with(cx, |workspace, _| workspace.over_video())
+        .unwrap()
+}
+
+/// Run `command` on `block`, by its name.
+fn on_block(block: &Entity<PlayerView>, command: &str, cx: &mut VisualTestContext) {
+    let name = block.read_with(cx, |view, _| view.id().to_string());
+    let done = TestAppContext::update(cx, |cx| {
+        api::run(Invocation::new(command).on_block(name), cx)
+    });
+    done.unwrap();
+    cx.run_until_parked();
+}
+
+/// Run `command` on `window`, by its name.
+fn on_window(window: WindowHandle<Workspace>, command: &str, cx: &mut VisualTestContext) {
+    let name = window
+        .read_with(cx, |workspace, _| workspace.id().to_string())
+        .unwrap();
+    let done = TestAppContext::update(cx, |cx| {
+        api::run(Invocation::new(command).in_window(name), cx)
+    });
+    done.unwrap();
+    cx.run_until_parked();
+}
+
+/// Open another player window, with `files` in it.
+fn open_player(cx: &mut VisualTestContext, files: &[&str]) -> WindowHandle<Workspace> {
+    let window = TestAppContext::update(cx, |cx| Workspace::open_window(WINDOW_SIZE, cx))
+        .expect("opening a window");
+    cx.run_until_parked();
+    let mut other = VisualTestContext::from_window(window.into(), cx);
+    open(window, &mut other, files, false);
+    window
+}
+
 #[gpui::test]
-fn each_panel_over_the_video_is_shown_or_hidden_on_its_own(cx: &mut TestAppContext) {
-    let (_, mut cx) = testing::start(cx);
+fn settings_show_or_hide_each_panel_in_every_window_and_block(cx: &mut TestAppContext) {
+    let (window, mut cx) = testing::start(cx);
+    open(window, &mut cx, &["clip.mp4"], false);
+    let block = block(window, &cx);
+    let other = open_player(&mut cx, &["clip.mp4"]);
+    let elsewhere = other
+        .read_with(&cx, |workspace, _| workspace.players()[0].clone())
+        .unwrap();
     let all = OverVideo::default();
     assert!(all.controls && all.top_bar && all.track_switcher && all.notes);
     assert_eq!(shown(&mut cx), all, "each shows at first");
     let panels: [(&str, Panel); 4] = [
-        ("view.toggle_controls", |s| &mut s.controls),
-        ("view.toggle_top_bar", |s| &mut s.top_bar),
-        ("view.toggle_track_switcher", |s| &mut s.track_switcher),
-        ("view.toggle_notes", |s| &mut s.notes),
+        ("app.toggle_controls", |s| &mut s.controls),
+        ("app.toggle_top_bar", |s| &mut s.top_bar),
+        ("app.toggle_track_switcher", |s| &mut s.track_switcher),
+        ("app.toggle_notes", |s| &mut s.notes),
     ];
     let state = |command: &str, cx: &mut VisualTestContext| {
         TestAppContext::update(cx, |cx| api::state(command, &Target::default(), cx))
@@ -70,9 +122,223 @@ fn each_panel_over_the_video_is_shown_or_hidden_on_its_own(cx: &mut TestAppConte
         assert_eq!(shown(&mut cx), hidden, "{command} hides its own");
         assert_eq!(saved(), json!(hidden), "{command}: kept so");
         assert_eq!(state(command, &mut cx), Ok(json!(false)), "{command}");
+        for (seen, what) in [
+            (in_window(window, &cx), "this window"),
+            (in_window(other, &cx), "the other"),
+            (in_block(&block, &cx), "this block"),
+            (in_block(&elsewhere, &cx), "the other's"),
+        ] {
+            assert_eq!(seen, hidden, "{command}: {what} too");
+        }
         run(&mut cx, command).unwrap();
         assert_eq!(shown(&mut cx), all, "{command} shows it again");
+        assert_eq!(in_block(&elsewhere, &cx), all, "{command}: everywhere");
     }
+}
+
+#[gpui::test]
+fn a_block_shows_or_hides_its_own_panels(cx: &mut TestAppContext) {
+    let (window, mut cx) = testing::start(cx);
+    open(window, &mut cx, &["clip.mp4", "clip-subs.mkv"], false);
+    let blocks = window
+        .read_with(&cx, |workspace, _| workspace.players())
+        .unwrap();
+    let (block, beside) = (&blocks[0], &blocks[1]);
+    let all = OverVideo::default();
+
+    on_block(block, "block.toggle_controls", &mut cx);
+    on_block(block, "block.toggle_notes", &mut cx);
+    let own = OverVideo {
+        controls: false,
+        notes: false,
+        ..all
+    };
+    assert_eq!(in_block(block, &cx), own);
+    assert_eq!(in_block(beside, &cx), all, "the one beside keeps its own");
+    assert_eq!(in_window(window, &cx), all, "and its window");
+    assert_eq!(shown(&mut cx), all, "and Settings");
+    let state = |block: &Entity<PlayerView>, cx: &mut VisualTestContext| {
+        let name = block.read_with(cx, |view, _| view.id().to_string());
+        TestAppContext::update(cx, |cx| {
+            let target = Target {
+                block: Some(name),
+                ..Target::default()
+            };
+            api::state("block.toggle_controls", &target, cx)
+        })
+    };
+    assert_eq!(state(block, &mut cx), Ok(json!(false)));
+    assert_eq!(state(beside, &mut cx), Ok(json!(true)));
+
+    on_block(block, "block.toggle_ui", &mut cx);
+    assert_eq!(
+        in_block(block, &cx),
+        OverVideo::NONE,
+        "any shown: all hidden"
+    );
+    on_block(block, "block.toggle_ui", &mut cx);
+    assert_eq!(in_block(block, &cx), all, "none shown: all shown");
+    assert_eq!(in_block(beside, &cx), all);
+}
+
+#[gpui::test]
+fn each_command_shows_or_hides_its_own_panel_in_a_block_and_a_window(cx: &mut TestAppContext) {
+    let (window, mut cx) = testing::start(cx);
+    open(window, &mut cx, &["clip.mp4"], false);
+    let block = block(window, &cx);
+    let all = OverVideo::default();
+    let panels: [(&str, Panel); 4] = [
+        ("controls", |s| &mut s.controls),
+        ("top_bar", |s| &mut s.top_bar),
+        ("track_switcher", |s| &mut s.track_switcher),
+        ("notes", |s| &mut s.notes),
+    ];
+    for (name, panel) in panels {
+        let mut hidden = all;
+        *panel(&mut hidden) = false;
+        let command = format!("block.toggle_{name}");
+        on_block(&block, &command, &mut cx);
+        assert_eq!(in_block(&block, &cx), hidden, "{command}");
+        assert_eq!(in_window(window, &cx), all, "{command}");
+        on_block(&block, &command, &mut cx);
+        assert_eq!(in_block(&block, &cx), all, "{command} again");
+
+        let command = format!("window.toggle_{name}");
+        on_window(window, &command, &mut cx);
+        assert_eq!(in_window(window, &cx), hidden, "{command}");
+        assert_eq!(in_block(&block, &cx), hidden, "{command}");
+        on_window(window, &command, &mut cx);
+        assert_eq!(in_block(&block, &cx), all, "{command} again");
+    }
+}
+
+#[gpui::test]
+fn a_window_shows_or_hides_its_blocks_panels_and_those_opened_in_it(cx: &mut TestAppContext) {
+    let (window, mut cx) = testing::start(cx);
+    open(window, &mut cx, &["clip.mp4", "clip-subs.mkv"], false);
+    let blocks = window
+        .read_with(&cx, |workspace, _| workspace.players())
+        .unwrap();
+    let other = open_player(&mut cx, &["clip.mp4"]);
+    let elsewhere = other
+        .read_with(&cx, |workspace, _| workspace.players()[0].clone())
+        .unwrap();
+    let all = OverVideo::default();
+    // One block shows the top bar but not the notes, on its own.
+    on_block(&blocks[1], "block.toggle_top_bar", &mut cx);
+    on_block(&blocks[1], "block.toggle_notes", &mut cx);
+
+    on_window(window, "window.toggle_top_bar", &mut cx);
+    let hidden = OverVideo {
+        top_bar: false,
+        ..all
+    };
+    assert_eq!(in_window(window, &cx), hidden);
+    assert_eq!(in_block(&blocks[0], &cx), hidden, "each block in it");
+    assert_eq!(
+        in_block(&blocks[1], &cx),
+        OverVideo {
+            notes: false,
+            ..hidden
+        },
+        "keeping what else it has its own"
+    );
+    assert_eq!(in_window(other, &cx), all, "not the other window");
+    assert_eq!(in_block(&elsewhere, &cx), all, "nor its blocks");
+    assert_eq!(shown(&mut cx), all, "nor Settings");
+
+    // One opened in it starts out as it is.
+    window
+        .update(&mut cx, |workspace, _, cx| {
+            workspace.open_paths(vec![testing::fixture("clip-chapters.mkv")], cx);
+        })
+        .unwrap();
+    let three = testing::wait_until(&mut cx, |cx| {
+        window
+            .read_with(cx, |workspace, _| workspace.players().len() == 3)
+            .unwrap()
+    });
+    assert!(three, "it opens");
+    let opened = window
+        .read_with(&cx, |workspace, _| workspace.players()[2].clone())
+        .unwrap();
+    assert_eq!(in_block(&opened, &cx), hidden);
+
+    on_window(window, "window.toggle_ui", &mut cx);
+    assert_eq!(
+        in_window(window, &cx),
+        OverVideo::NONE,
+        "any shown: all hidden"
+    );
+    for block in [&blocks[0], &blocks[1], &opened] {
+        assert_eq!(in_block(block, &cx), OverVideo::NONE);
+    }
+    on_window(window, "window.toggle_ui", &mut cx);
+    assert_eq!(in_block(&blocks[1], &cx), all, "none shown: all shown");
+    assert_eq!(in_window(other, &cx), all);
+}
+
+#[gpui::test]
+fn every_window_and_block_follows_what_settings_change_and_keeps_the_rest(cx: &mut TestAppContext) {
+    let (window, mut cx) = testing::start(cx);
+    open(window, &mut cx, &["clip.mp4", "clip-subs.mkv"], false);
+    let blocks = window
+        .read_with(&cx, |workspace, _| workspace.players())
+        .unwrap();
+    let all = OverVideo::default();
+    // The window hides the controls, but one block shows them again; the
+    // other hides its notes.
+    on_window(window, "window.toggle_controls", &mut cx);
+    on_block(&blocks[0], "block.toggle_controls", &mut cx);
+    on_block(&blocks[1], "block.toggle_notes", &mut cx);
+
+    run(&mut cx, "app.toggle_controls").unwrap();
+    let no_controls = OverVideo {
+        controls: false,
+        ..all
+    };
+    assert_eq!(in_window(window, &cx), no_controls);
+    assert_eq!(in_block(&blocks[0], &cx), no_controls, "hidden everywhere");
+    assert_eq!(
+        in_block(&blocks[1], &cx),
+        OverVideo {
+            notes: false,
+            ..no_controls
+        },
+        "the notes as they were"
+    );
+
+    run(&mut cx, "app.toggle_ui").unwrap();
+    assert_eq!(shown(&mut cx), OverVideo::NONE, "any shown: all hidden");
+    assert_eq!(in_window(window, &cx), OverVideo::NONE);
+    assert_eq!(in_block(&blocks[1], &cx), OverVideo::NONE);
+    run(&mut cx, "app.toggle_ui").unwrap();
+    assert_eq!(shown(&mut cx), all, "none shown: all shown");
+    assert_eq!(in_block(&blocks[1], &cx), all);
+
+    // A window opened later starts out as Settings have it.
+    run(&mut cx, "app.toggle_track_switcher").unwrap();
+    let other = open_player(&mut cx, &["clip.mp4"]);
+    let switcher_hidden = OverVideo {
+        track_switcher: false,
+        ..all
+    };
+    assert_eq!(in_window(other, &cx), switcher_hidden);
+    let opened = other
+        .read_with(&cx, |workspace, _| workspace.players()[0].clone())
+        .unwrap();
+    assert_eq!(in_block(&opened, &cx), switcher_hidden);
+
+    // What a window has of its own stays as Settings change another.
+    on_window(other, "window.toggle_notes", &mut cx);
+    run(&mut cx, "app.toggle_top_bar").unwrap();
+    let kept = OverVideo {
+        top_bar: false,
+        notes: false,
+        ..switcher_hidden
+    };
+    assert_eq!(in_window(other, &cx), kept);
+    assert_eq!(in_block(&opened, &cx), kept);
 }
 
 #[gpui::test]
@@ -82,7 +348,7 @@ fn hidden_bars_are_not_drawn_and_the_mouse_is_not_over_them(cx: &mut TestAppCont
     let block = block(window, &cx);
     let over_bars = |cx: &mut VisualTestContext| block.read_with(cx, |view, _| view.over_bars());
     let clearance =
-        |cx: &mut VisualTestContext| block.read_with(cx, |view, cx| view.subtitle_clearance(cx));
+        |cx: &mut VisualTestContext| block.read_with(cx, |view, _| view.subtitle_clearance());
     assert!(
         clearance(&mut cx) > px(0.),
         "subtitles keep clear of the controls"
@@ -94,7 +360,7 @@ fn hidden_bars_are_not_drawn_and_the_mouse_is_not_over_them(cx: &mut TestAppCont
 
     hover(&mut cx, "seek");
     assert!(over_bars(&mut cx));
-    run(&mut cx, "view.toggle_controls").unwrap();
+    run(&mut cx, "block.toggle_controls").unwrap();
     assert!(!shows(&mut cx, "seek") && !shows(&mut cx, "volume"));
     assert!(!over_bars(&mut cx), "nor over what isn't there");
     assert_eq!(clearance(&mut cx), px(0.), "nor of what isn't there");
@@ -102,23 +368,23 @@ fn hidden_bars_are_not_drawn_and_the_mouse_is_not_over_them(cx: &mut TestAppCont
 
     hover(&mut cx, "maximize");
     assert!(over_bars(&mut cx));
-    run(&mut cx, "view.toggle_top_bar").unwrap();
+    run(&mut cx, "block.toggle_top_bar").unwrap();
     assert!(!shows(&mut cx, "block-title") && !shows(&mut cx, "maximize"));
     assert!(!over_bars(&mut cx));
 
-    run(&mut cx, "view.toggle_controls").unwrap();
+    run(&mut cx, "block.toggle_controls").unwrap();
     hover(&mut cx, "block-0");
     assert!(shows(&mut cx, "seek") && !shows(&mut cx, "maximize"));
     // The tracks menu goes with the controls, and is closed when they're
     // back.
     click(&mut cx, "tracks");
     assert!(shows(&mut cx, "track-0"), "the menu opens");
-    run(&mut cx, "view.toggle_controls").unwrap();
+    run(&mut cx, "block.toggle_controls").unwrap();
     assert!(!shows(&mut cx, "track-0"));
-    run(&mut cx, "view.toggle_controls").unwrap();
+    run(&mut cx, "block.toggle_controls").unwrap();
     hover(&mut cx, "block-0");
     assert!(shows(&mut cx, "tracks") && !shows(&mut cx, "track-0"));
-    run(&mut cx, "view.toggle_top_bar").unwrap();
+    run(&mut cx, "block.toggle_top_bar").unwrap();
     assert!(shows(&mut cx, "maximize"), "both again");
 }
 
@@ -169,8 +435,8 @@ fn hidden_notes_and_switcher_leave_changes_unsaid_but_not_whats_wrong(cx: &mut T
         cx.run_until_parked();
     };
     let (block, chapters) = (&blocks[0], &blocks[1]);
-    run(&mut cx, "view.toggle_notes").unwrap();
-    run(&mut cx, "view.toggle_track_switcher").unwrap();
+    run(&mut cx, "app.toggle_notes").unwrap();
+    run(&mut cx, "app.toggle_track_switcher").unwrap();
 
     on(block, "audio.toggle_mute", &mut cx);
     assert!(
@@ -201,7 +467,7 @@ fn hidden_notes_and_switcher_leave_changes_unsaid_but_not_whats_wrong(cx: &mut T
         "why nothing happened"
     );
 
-    run(&mut cx, "view.toggle_notes").unwrap();
+    run(&mut cx, "app.toggle_notes").unwrap();
     for command in CHANGES {
         let before = noted(block, &mut cx);
         on(block, command, &mut cx);
@@ -210,7 +476,7 @@ fn hidden_notes_and_switcher_leave_changes_unsaid_but_not_whats_wrong(cx: &mut T
     }
     on(chapters, "playback.next_chapter", &mut cx);
     assert!(noted(chapters, &mut cx).is_some(), "the chapter");
-    run(&mut cx, "view.toggle_track_switcher").unwrap();
+    run(&mut cx, "app.toggle_track_switcher").unwrap();
     on(block, "subtitles.next_track", &mut cx);
     assert!(reels(block, &mut cx));
 }

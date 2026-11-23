@@ -77,7 +77,13 @@ pub const COMMANDS: &[Spec] = &[
         SET,
         set,
     )
-    .tells(&["settings_changed", "keymap_changed"])
+    .tells(&[
+        "settings_changed",
+        "keymap_changed",
+        "app_ui_changed",
+        "window_ui_changed",
+        "block_ui_changed",
+    ])
     .keywords(&["preferences", "options"])
     .returns("Its value now."),
     Spec::app_with(
@@ -87,7 +93,13 @@ pub const COMMANDS: &[Spec] = &[
         &[KEY],
         reset,
     )
-    .tells(&["settings_changed", "keymap_changed"])
+    .tells(&[
+        "settings_changed",
+        "keymap_changed",
+        "app_ui_changed",
+        "window_ui_changed",
+        "block_ui_changed",
+    ])
     .keywords(&["preferences", "options", "default", "restore"])
     .returns("Its value now."),
     Spec::app_with(
@@ -107,7 +119,13 @@ pub const COMMANDS: &[Spec] = &[
         &[],
         reload,
     )
-    .tells(&["settings_changed", "keymap_changed"])
+    .tells(&[
+        "settings_changed",
+        "keymap_changed",
+        "app_ui_changed",
+        "window_ui_changed",
+        "block_ui_changed",
+    ])
     .keywords(&["preferences", "json", "refresh"])
     .returns("[key]: the settings the file changed."),
 ];

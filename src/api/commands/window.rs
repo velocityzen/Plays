@@ -2,7 +2,7 @@
 //! going from one to another and back, numbering them, closing one or the
 //! others, full screen and the display it's on, and floating them on top.
 
-use gpui::{AnyWindowHandle, App};
+use gpui::{AnyWindowHandle, App, Context};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -14,7 +14,7 @@ use crate::api::target::{self, Target};
 use crate::api::{Error, Invocation, Run, Source};
 use crate::app::{back_window, move_window, player_windows, recent_window, step_window};
 use crate::recents;
-use crate::settings::{FloatOnTop, Settings};
+use crate::settings::{FloatOnTop, OverVideo, Panel, Settings};
 use crate::ui::palette::{self, Listing};
 use crate::ui::theme::layout::WINDOW_SIZE;
 use crate::ui::workspace::Workspace;
@@ -310,7 +310,60 @@ pub const COMMANDS: &[Spec] = &[
     )
     .tells(&["full_screen_changed"])
     .keywords(&["screen", "monitor", "projector", "move"]),
+    Spec::window(
+        "window.toggle_ui",
+        "Show/Hide All in Window",
+        "Hide every panel over the video in each block in the window while the window \
+         shows any, else show them all.",
+        |workspace, _, cx| change_over_video(workspace, OverVideo::all_toggled, cx),
+    )
+    .tells(TELLS_UI)
+    .keywords(&["hide", "interface", "ui", "panels", "clean"]),
+    Spec::window(
+        "window.toggle_controls",
+        "Show Controls in Window",
+        "Show the seek bar and buttons at the bottom of each block in the window, and \
+         those opened in it, or hide them.",
+        |workspace, _, cx| toggle_panel(workspace, |panel| &mut panel.controls, cx),
+    )
+    .tells(TELLS_UI)
+    .keywords(&["hide", "player controls", "seek bar", "bottom bar"])
+    .state(|target, cx| shown_in_window(target, cx, |shown| shown.controls)),
+    Spec::window(
+        "window.toggle_top_bar",
+        "Show Top Bar in Window",
+        "Show the file's name and buttons at the top of each block in the window, and \
+         those opened in it, or hide them.",
+        |workspace, _, cx| toggle_panel(workspace, |panel| &mut panel.top_bar, cx),
+    )
+    .tells(TELLS_UI)
+    .keywords(&["hide", "header", "title", "buttons"])
+    .state(|target, cx| shown_in_window(target, cx, |shown| shown.top_bar)),
+    Spec::window(
+        "window.toggle_track_switcher",
+        "Show Track Switcher in Window",
+        "Show the reel of tracks a shortcut rolls to the audio, video or subtitles \
+         picked, over each block in the window, and those opened in it, or switch \
+         without it.",
+        |workspace, _, cx| toggle_panel(workspace, |panel| &mut panel.track_switcher, cx),
+    )
+    .tells(TELLS_UI)
+    .keywords(&["hide", "reel", "streams", "audio track", "subtitle track"])
+    .state(|target, cx| shown_in_window(target, cx, |shown| shown.track_switcher)),
+    Spec::window(
+        "window.toggle_notes",
+        "Show Notes in Window",
+        "Show notes on what a shortcut changed, like the volume, over each block in the \
+         window, and those opened in it, or not. Notes on what's wrong still show.",
+        |workspace, _, cx| toggle_panel(workspace, |panel| &mut panel.notes, cx),
+    )
+    .tells(TELLS_UI)
+    .keywords(&["hide", "osd", "on-screen display", "volume", "messages"])
+    .state(|target, cx| shown_in_window(target, cx, |shown| shown.notes)),
 ];
+
+/// What a change to the panels over the video in a window tells.
+const TELLS_UI: &[&str] = &["window_ui_changed", "block_ui_changed"];
 
 /// The windows' events.
 pub const EVENTS: &[EventKind] = &[
@@ -349,6 +402,12 @@ pub const EVENTS: &[EventKind] = &[
         )],
     )
     .causes(&["the window's own full screen button"]),
+    EventKind::window(
+        "window_ui_changed",
+        "The panels shown over the video in a window's blocks, and those opened in it, changed.",
+        &[EventField::new("visible", super::VISIBLE)],
+    )
+    .causes(&[super::PANELS_SET]),
     EventKind::window(
         "window_layout_changed",
         "Blocks came into a window, went, or changed places, or one filled it or stopped \
@@ -553,4 +612,28 @@ pub fn move_to(number: usize) -> Run {
 /// Show the window in front full screen on the display `id`.
 pub fn show_on_display(id: u32) -> Run {
     Run::with("window.show_on_display", json!({"display": id}))
+}
+
+/// Turn the panel `panel` picks on, or off, in `workspace`.
+fn toggle_panel(workspace: &mut Workspace, panel: Panel, cx: &mut Context<Workspace>) {
+    change_over_video(workspace, |shown| shown.toggled(panel), cx);
+}
+
+/// Change the panels over the video `workspace` shows with `change`, and so
+/// its blocks'.
+fn change_over_video(
+    workspace: &mut Workspace,
+    change: impl FnOnce(OverVideo) -> OverVideo,
+    cx: &mut Context<Workspace>,
+) {
+    let shown = change(workspace.over_video());
+    workspace.set_over_video(shown, cx);
+}
+
+/// Whether the window `target` names, or the one in front, shows the panel
+/// `panel` reads.
+fn shown_in_window(target: &Target, cx: &mut App, panel: fn(OverVideo) -> bool) -> Outcome {
+    target::in_window(target, cx, |workspace, _, _| {
+        Ok(json!(panel(workspace.over_video())))
+    })
 }

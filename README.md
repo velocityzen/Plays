@@ -58,7 +58,8 @@ GPU-accelerated UI framework.
 - Name blocks and windows
 - Windows sized to their videos, reopening where they closed
 - Float on top, always or while playing
-- Controls that fade while playing; each panel over the video can be hidden
+- Controls that fade while playing; each panel over the video can be hidden,
+  or all at once, in a block, a window or every window
 - Frosted, glass, glow, tint or plain overlays
 - Picture in Picture (macOS 12 and later)
 - A screensaver in an empty window

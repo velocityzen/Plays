@@ -58,6 +58,60 @@ fn settings_are_told_by_key_and_shortcuts_by_command(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn the_panels_settings_show_over_the_video_are_told_as_they_change(cx: &mut TestAppContext) {
+    cx.update(app::set_up_for_tests);
+    let mut app = cx.update(|cx| listen(Scope::App, false, cx));
+    let told = |app: &mut UnboundedReceiver<Event>| -> Vec<_> {
+        heard(app)
+            .into_iter()
+            .filter(|(kind, _)| *kind != "command_run")
+            .collect()
+    };
+
+    cx.update(|cx| Settings::update(cx, false, |settings| settings.over_video.notes = false));
+    cx.run_until_parked();
+    assert_eq!(
+        told(&mut app),
+        [
+            ("settings_changed", json!({"keys": ["over_video.notes"]})),
+            (
+                "app_ui_changed",
+                json!({"visible": ["controls", "top_bar", "track_switcher"]})
+            ),
+        ]
+    );
+
+    let run = |cx: &mut TestAppContext, command| {
+        cx.update(|cx| api::run(Invocation::new(command), cx))
+            .unwrap();
+        cx.run_until_parked();
+    };
+    run(cx, "app.toggle_ui");
+    assert_eq!(
+        told(&mut app),
+        [
+            (
+                "settings_changed",
+                json!({"keys": [
+                    "over_video.controls",
+                    "over_video.top_bar",
+                    "over_video.track_switcher",
+                ]})
+            ),
+            ("app_ui_changed", json!({"visible": []})),
+        ]
+    );
+    run(cx, "app.toggle_top_bar");
+    assert_eq!(
+        told(&mut app),
+        [
+            ("settings_changed", json!({"keys": ["over_video.top_bar"]})),
+            ("app_ui_changed", json!({"visible": ["top_bar"]})),
+        ]
+    );
+}
+
+#[gpui::test]
 fn a_command_is_told_before_what_it_changes_and_a_query_isnt(cx: &mut TestAppContext) {
     cx.update(app::set_up_for_tests);
     let mut app = cx.update(|cx| listen(Scope::App, false, cx));

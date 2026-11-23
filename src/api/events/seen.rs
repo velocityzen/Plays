@@ -7,6 +7,7 @@ use serde_json::{Value, json};
 
 use super::Event;
 use crate::api::Id;
+use crate::settings::OverVideo;
 
 /// The kinds of track, as a block's `tracks` has them and events name them.
 pub const TRACKS: [&str; 3] = ["video", "audio", "subtitles"];
@@ -38,6 +39,9 @@ pub struct WindowSeen {
     /// What its title bar shows: its label, or else the app's name.
     pub title: String,
     pub full_screen: bool,
+    /// The panels its blocks show over their videos, as those opened in it
+    /// start out.
+    pub over_video: OverVideo,
     /// Its blocks, in the order its grid shows them.
     pub blocks: Vec<BlockSeen>,
     /// The block filling the grid, if one does.
@@ -84,6 +88,8 @@ pub struct BlockSeen {
     /// The device it casts to.
     pub casting: Option<Value>,
     pub picture_in_picture: bool,
+    /// The panels it shows over its video.
+    pub over_video: OverVideo,
 }
 
 impl BlockSeen {
@@ -222,6 +228,13 @@ fn window_changes(
             json!({"full_screen": window.full_screen}),
         ));
     }
+    if before.over_video != window.over_video {
+        events.push(Event::window(
+            "window_ui_changed",
+            window,
+            json!({"visible": window.over_video.visible()}),
+        ));
+    }
     let mut olds = Vec::with_capacity(window.blocks.len());
     for block in &window.blocks {
         let old = match was.get(&block.id) {
@@ -308,6 +321,14 @@ fn block_changes(
         && old.label != block.label
     {
         tell("block_label_changed", json!({"label": block.label}));
+    }
+    if let Some(old) = old
+        && old.over_video != block.over_video
+    {
+        tell(
+            "block_ui_changed",
+            json!({"visible": block.over_video.visible()}),
+        );
     }
     // A cast goes on from one file to the next.
     let cast = old.and_then(|old| old.casting.as_ref());
