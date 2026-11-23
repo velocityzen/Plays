@@ -15,9 +15,10 @@ use crate::{
     SUBPIXEL_VARIANTS_X, SUBPIXEL_VARIANTS_Y, ScaledPixels, Scene, Shadow, SharedString, Size,
     StrikethroughStyle, Style, SubscriberSet, Subscription, SystemWindowTab,
     SystemWindowTabController, TabStopMap, TaffyLayoutEngine, Task, TextStyle, TextStyleRefinement,
-    TransformationMatrix, Underline, UnderlineStyle, WindowAppearance, WindowBackgroundAppearance,
-    WindowBounds, WindowControls, WindowDecorations, WindowOptions, WindowParams, WindowTextSystem,
-    point, prelude::*, px, rems, size, transparent_black,
+    TransformationMatrix, Underline, UnderlineStyle, Visualizer, VisualizerShader,
+    WindowAppearance, WindowBackgroundAppearance, WindowBounds, WindowControls, WindowDecorations,
+    WindowOptions, WindowParams, WindowTextSystem, point, prelude::*, px, rems, size,
+    transparent_black,
 };
 use anyhow::{Context as _, Result, anyhow};
 use collections::{FxHashMap, FxHashSet};
@@ -2895,6 +2896,61 @@ impl Window {
             self.scale_factor(),
         );
         self.next_frame.scene.insert_primitive(backdrop);
+    }
+
+    /// Plays: paint a visualizer over `bounds`, in `color`: a fragment
+    /// shader of its own, which `shader` names, fed what it says. See
+    /// `VisualizerShader`.
+    ///
+    /// This method should only be called as part of the paint phase of element drawing.
+    pub fn paint_visualizer(
+        &mut self,
+        bounds: Bounds<Pixels>,
+        shader: VisualizerShader,
+        color: Hsla,
+    ) {
+        self.invalidator.debug_assert_paint();
+
+        let scale_factor = self.scale_factor();
+        let content_mask = self.content_mask();
+        let opacity = self.element_opacity();
+        let (kind, params) = shader.encode();
+        self.next_frame.scene.insert_primitive(Visualizer {
+            order: 0,
+            kind,
+            bounds: bounds.scale(scale_factor),
+            content_mask: content_mask.scale(scale_factor),
+            color: color.opacity(opacity),
+            params,
+        });
+    }
+
+    /// Plays: the visualizers the window drew last, for tests: each one's
+    /// bounds, shader and color, its opacity the element's times the
+    /// color's.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn painted_visualizers(&self) -> Vec<(Bounds<Pixels>, VisualizerShader, Hsla)> {
+        let scale_factor = self.scale_factor();
+        self.rendered_frame
+            .scene
+            .visualizers
+            .iter()
+            .map(|visualizer| {
+                let bounds = visualizer.bounds;
+                let bounds = Bounds::new(
+                    point(
+                        px(bounds.origin.x.0 / scale_factor),
+                        px(bounds.origin.y.0 / scale_factor),
+                    ),
+                    size(
+                        px(bounds.size.width.0 / scale_factor),
+                        px(bounds.size.height.0 / scale_factor),
+                    ),
+                );
+                let shader = VisualizerShader::decode(visualizer.kind, visualizer.params);
+                (bounds, shader, visualizer.color)
+            })
+            .collect()
     }
 
     /// Plays: each line of text the window drew last, for tests, with the

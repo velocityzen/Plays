@@ -1055,6 +1055,90 @@ fn fs_shadow(input: ShadowVarying) -> @location(0) vec4<f32> {
     return blend_color(input.color, alpha);
 }
 
+// --- Plays: visualizers, each a quad drawn by a shader of its own, which its `kind` names (see `Visualizer`) --- //
+
+const VISUALIZER_SPEAKER: u32 = 0u;
+
+struct Visualizer {
+    order: u32,
+    kind: u32,
+    bounds: Bounds,
+    content_mask: Bounds,
+    color: Hsla,
+    params: array<f32, 4>,
+}
+var<storage, read> b_visualizers: array<Visualizer>;
+
+struct VisualizerVarying {
+    @builtin(position) position: vec4<f32>,
+    @location(0) @interpolate(flat) color: vec4<f32>,
+    @location(1) @interpolate(flat) visualizer_id: u32,
+    //TODO: use `clip_distance` once Naga supports it
+    @location(3) clip_distances: vec4<f32>,
+}
+
+@vertex
+fn vs_visualizer(@builtin(vertex_index) vertex_id: u32, @builtin(instance_index) instance_id: u32) -> VisualizerVarying {
+    let unit_vertex = vec2<f32>(f32(vertex_id & 1u), 0.5 * f32(vertex_id & 2u));
+    let visualizer = b_visualizers[instance_id];
+
+    var out = VisualizerVarying();
+    out.position = to_device_position(unit_vertex, visualizer.bounds);
+    out.color = hsla_to_rgba(visualizer.color);
+    out.visualizer_id = instance_id;
+    out.clip_distances = distance_from_clip_rect(unit_vertex, visualizer.bounds, visualizer.content_mask);
+    return out;
+}
+
+// A speaker seen from the front, in the middle of `bounds`, as wide as
+// fits: from the middle out, the dust cap, the cone with its ridges, the
+// surround, and the basket's rim. With `level`, from 0 to 1 (as
+// `VisualizerShader::encode` clamps it), the cone moves out: the cap grows
+// and brightens, and the surround narrows. How bright it is at `position`,
+// as a part of its color, and how much of the pixel it covers.
+fn speaker(position: vec2<f32>, bounds: Bounds, level: f32) -> vec2<f32> {
+    let center = bounds.origin + bounds.size / 2.0;
+    let radius = max(0.46 * min(bounds.size.x, bounds.size.y), 1.0);
+    // A pixel, and how far from the middle this one is, in radii.
+    let pixel = 1.0 / radius;
+    let r = length(position - center) / radius;
+
+    let cap = 0.28 * (1.0 + 0.3 * level);
+    let surround = 0.82 + 0.06 * level;
+    let basket = 0.95;
+
+    let cap_shade = 0.75 + 0.25 * level - 0.3 * (r / cap) * (r / cap);
+    let cone = saturate((r - cap) / (surround - cap));
+    let cone_shade = 0.3 + 0.25 * cone + 0.05 * cos(cone * 40.0);
+    let roll = saturate((r - surround) / (basket - surround));
+    let surround_shade = 0.35 + 0.4 * sin(roll * M_PI_F);
+    let basket_shade = 0.6;
+
+    var shade = cone_shade;
+    shade = mix(shade, surround_shade, smoothstep(surround - pixel, surround + pixel, r));
+    shade = mix(shade, basket_shade, smoothstep(basket - pixel, basket + pixel, r));
+    shade = mix(shade, cap_shade, 1.0 - smoothstep(cap - pixel, cap + pixel, r));
+    let coverage = 1.0 - smoothstep(1.0 - pixel, 1.0 + pixel, r);
+    return vec2<f32>(shade, coverage);
+}
+
+@fragment
+fn fs_visualizer(input: VisualizerVarying) -> @location(0) vec4<f32> {
+    // Alpha clip first, since we don't have `clip_distance`.
+    if (any(input.clip_distances < vec4<f32>(0.0))) {
+        return vec4<f32>(0.0);
+    }
+
+    let visualizer = b_visualizers[input.visualizer_id];
+    var drawn = vec2<f32>(0.0);
+    switch (visualizer.kind) {
+        case VISUALIZER_SPEAKER, default: {
+            drawn = speaker(input.position.xy, visualizer.bounds, visualizer.params[0]);
+        }
+    }
+    return blend_color(vec4<f32>(input.color.rgb * drawn.x, input.color.a), drawn.y);
+}
+
 // --- path rasterization --- //
 
 struct PathRasterizationVertex {

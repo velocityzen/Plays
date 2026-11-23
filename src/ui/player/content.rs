@@ -1,6 +1,6 @@
 //! What fills a block: the video; for audio, cover art, the file's tags and
-//! quality, and a level meter; or a line on what is happening (opening, an
-//! error).
+//! quality, and a level meter, over a visualizer; or a line on what is
+//! happening (opening, an error).
 
 use gpui::prelude::*;
 use std::cell::Cell;
@@ -12,6 +12,7 @@ use gpui::{
 };
 
 use super::sound::SoundLines;
+use super::visualizer::speaker;
 use super::{PlayerView, controls};
 use crate::media::Picture;
 use crate::media::decoder::MediaInfo;
@@ -19,7 +20,7 @@ use crate::ui::components::{ComponentSize, Icon, Meter};
 use crate::ui::framing::Framing;
 use crate::ui::theme::player::{
     COVER_MIN_SIZE, ERROR_MAX_WIDTH, METER_WIDTH, NO_COVER_ICON_SCALE, NO_COVER_SCALE, NOTE_TOP,
-    PIP_ICON,
+    PIP_ICON, SPEAKER_OPACITY,
 };
 use crate::ui::theme::{Theme, radius};
 
@@ -77,9 +78,10 @@ impl PlayerView {
     }
 
     /// Audio-only files get their cover art (or a circle standing in for
-    /// it), their tags and quality, and a level meter. The cover is square,
-    /// and as large as fits with the rest under it, between where the
-    /// header and the controls go.
+    /// it), their tags and quality, and a level meter, over a speaker whose
+    /// cone moves with the level. The cover is square, and as large as fits
+    /// with the rest under it, between where the header and the controls
+    /// go.
     fn render_audio(&self, theme: &Theme, info: &MediaInfo) -> AnyElement {
         let artwork = match self.playback.local().cover() {
             Some(cover) => img(cover)
@@ -150,6 +152,7 @@ impl PlayerView {
             .px_4()
             .pt(NOTE_TOP)
             .pb(controls::height(info.live))
+            .child(speaker(self.level, theme.accent.opacity(SPEAKER_OPACITY)))
             .child(room)
             .child(
                 div()

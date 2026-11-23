@@ -7,7 +7,7 @@ use super::{BladeAtlas, BladeContext};
 use crate::{
     BACKDROP_LEVELS, Backdrop, Background, Bounds, DevicePixels, GpuSpecs, MonochromeSprite, Path,
     Point, PolychromeSprite, PrimitiveBatch, Quad, ScaledPixels, Scene, Shadow, Size, Underline,
-    backdrop_level_region, backdrop_level_size,
+    Visualizer, backdrop_level_region, backdrop_level_size,
 };
 use blade_graphics as gpu;
 use blade_util::{BufferBelt, BufferBeltDescriptor};
@@ -63,6 +63,13 @@ struct ShaderQuadsData {
 struct ShaderShadowsData {
     globals: GlobalParams,
     b_shadows: gpu::BufferPiece,
+}
+
+/// Plays: see `Visualizer`.
+#[derive(blade_macros::ShaderData)]
+struct ShaderVisualizersData {
+    globals: GlobalParams,
+    b_visualizers: gpu::BufferPiece,
 }
 
 #[derive(blade_macros::ShaderData)]
@@ -261,6 +268,8 @@ struct BladePipelines {
     backdrop_pass: gpu::RenderPipeline,
     /// Plays: draws backdrops from those levels.
     backdrops: gpu::RenderPipeline,
+    /// Plays: draws visualizers, each by its own shader.
+    visualizers: gpu::RenderPipeline,
 }
 
 impl BladePipelines {
@@ -287,6 +296,7 @@ impl BladePipelines {
         shader.check_struct_size::<YuvParams>();
         shader.check_struct_size::<BackdropPassParams>();
         shader.check_struct_size::<Backdrop>();
+        shader.check_struct_size::<Visualizer>();
 
         // See https://apoorvaj.io/alpha-compositing-opengl-blending-and-premultiplied-alpha/
         let blend_mode = match surface_info.alpha {
@@ -312,6 +322,20 @@ impl BladePipelines {
                 },
                 depth_stencil: None,
                 fragment: Some(shader.at("fs_quad")),
+                color_targets,
+                multisample_state: gpu::MultisampleState::default(),
+            }),
+            visualizers: gpu.create_render_pipeline(gpu::RenderPipelineDesc {
+                name: "visualizers",
+                data_layouts: &[&ShaderVisualizersData::layout()],
+                vertex: shader.at("vs_visualizer"),
+                vertex_fetches: &[],
+                primitive: gpu::PrimitiveState {
+                    topology: gpu::PrimitiveTopology::TriangleStrip,
+                    ..Default::default()
+                },
+                depth_stencil: None,
+                fragment: Some(shader.at("fs_visualizer")),
                 color_targets,
                 multisample_state: gpu::MultisampleState::default(),
             }),
@@ -497,6 +521,7 @@ impl BladePipelines {
         gpu.destroy_render_pipeline(&mut self.yuv);
         gpu.destroy_render_pipeline(&mut self.backdrop_pass);
         gpu.destroy_render_pipeline(&mut self.backdrops);
+        gpu.destroy_render_pipeline(&mut self.visualizers);
     }
 }
 
@@ -1006,6 +1031,19 @@ impl BladeRenderer {
                         },
                     );
                     encoder.draw(0, 4, 0, quads.len() as u32);
+                }
+                PrimitiveBatch::Visualizers(visualizers) => {
+                    let instance_buf =
+                        unsafe { self.instance_belt.alloc_typed(visualizers, &self.gpu) };
+                    let mut encoder = pass.with(&self.pipelines.visualizers);
+                    encoder.bind(
+                        0,
+                        &ShaderVisualizersData {
+                            globals,
+                            b_visualizers: instance_buf,
+                        },
+                    );
+                    encoder.draw(0, 4, 0, visualizers.len() as u32);
                 }
                 PrimitiveBatch::Shadows(shadows) => {
                     let instance_buf =

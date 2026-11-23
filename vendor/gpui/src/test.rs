@@ -160,7 +160,8 @@ pub fn observe<T: 'static>(entity: &Entity<T>, cx: &mut TestAppContext) -> Obser
     Observation { rx, _subscription }
 }
 
-/// Plays: draws `quads` (each its bounds and background), then `backdrops`
+/// Plays: draws `quads` (each its bounds and background), then
+/// `visualizers` (each its bounds, shader and color), then `backdrops`
 /// (each its bounds, corners and style, its corners superellipses) over
 /// them, with the renderer windows use but off screen, at a scale of 1,
 /// and reads back the `size` pixels it made, row by row, as RGBA with the
@@ -169,11 +170,16 @@ pub fn observe<T: 'static>(entity: &Entity<T>, cx: &mut TestAppContext) -> Obser
 pub fn render_offscreen(
     size: crate::Size<crate::DevicePixels>,
     quads: &[(crate::Bounds<crate::Pixels>, crate::Background)],
+    visualizers: &[(
+        crate::Bounds<crate::Pixels>,
+        crate::VisualizerShader,
+        crate::Hsla,
+    )],
     backdrops: &[(
         crate::Bounds<crate::Pixels>,
         crate::Corners<crate::Pixels>,
         crate::BackdropStyle,
     )],
 ) -> Vec<[f32; 4]> {
-    crate::platform::metal_renderer::render_offscreen(size, quads, backdrops)
+    crate::platform::metal_renderer::render_offscreen(size, quads, visualizers, backdrops)
 }

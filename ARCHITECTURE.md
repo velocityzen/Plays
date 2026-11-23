@@ -308,6 +308,8 @@ flowchart LR
 - `src/ui/player/mod.rs`: `BlockLayout`, where the window says each block is
 - `src/ui/player/failed.rs`: a block whose drawing panics says why and stops
 - `src/ui/player/sound.rs`: a sound file's title, artist, album and quality
+- `src/ui/player/visualizer.rs`: what's drawn behind a sound file, a gpui
+  shader
 - `src/ui/pip/` (macOS): frames to an `AVSampleBufferDisplayLayer` that
   `AVPictureInPictureController` shows, pumped on a timer of its own
 - `src/ui/settings/`: a file per pane; controls set through `settings.set`
@@ -469,7 +471,8 @@ Apple's protocol is unpublished, so an update can break it.
 
 - `vendor/gpui`: gpui 0.2.2, through `[patch.crates-io]` in `Cargo.toml`,
   for HDR, GPU video conversion on Linux, pictures turned and cropped,
-  backdrops, floating windows, displays and full screen, and tests
+  backdrops, visualizers, floating windows, displays and full screen, and
+  tests
 - Every change is marked "Plays" and listed in `vendor/gpui/PLAYS.md`
 - `vendor/xattr`: xattr 0.2.3, building on Linux; `vendor/xattr/PLAYS.md`
   says when to drop it

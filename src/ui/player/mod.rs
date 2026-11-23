@@ -21,6 +21,7 @@ mod screenshot;
 mod sound;
 mod sync;
 mod tracks;
+mod visualizer;
 
 use std::cell::Cell;
 use std::path::{Path, PathBuf};
@@ -297,6 +298,19 @@ impl PlayerView {
     #[cfg(test)]
     pub fn knows_neighbors(&self) -> bool {
         self.neighbors.is_some()
+    }
+
+    /// The sound's level, from 0 to 1, as its meter shows it.
+    #[cfg(test)]
+    pub fn level(&self) -> f32 {
+        self.level
+    }
+
+    /// Its meter shows `level`, falling from there, as if it had just
+    /// played that loud: tests have no speaker to measure it at.
+    #[cfg(test)]
+    pub fn set_level(&mut self, level: f32) {
+        self.level = level;
     }
 
     /// Play `sources`, the first of which it plays, one after another;

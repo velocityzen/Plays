@@ -3,12 +3,15 @@
 
 use std::path::PathBuf;
 
-use gpui::{Bounds, Pixels, TestAppContext, VisualTestContext, px, size};
+use gpui::{Bounds, Pixels, TestAppContext, VisualTestContext, VisualizerShader, px, size};
 
 use super::{drawn_in, open};
 use crate::files::test_folder;
 use crate::ui::testing::{self, find, fixture, shows, wait_until};
-use crate::ui::theme::player::{COVER_MIN_SIZE, NO_COVER_ICON_SCALE, NO_COVER_SCALE, NOTE_TOP};
+use crate::ui::theme::Theme;
+use crate::ui::theme::player::{
+    COVER_MIN_SIZE, NO_COVER_ICON_SCALE, NO_COVER_SCALE, NOTE_TOP, SPEAKER_OPACITY,
+};
 
 #[gpui::test]
 fn a_tagged_song_shows_its_title_artist_album_and_quality(cx: &mut TestAppContext) {
@@ -176,4 +179,49 @@ fn a_sound_with_no_cover_has_a_circle_as_large_as_fits_its_block(cx: &mut TestAp
         assert!((icon.center() - circle.center()).y.abs() < px(1.));
     }
     assert!(!shows(&mut cx, "sound-cover-art"));
+}
+
+/// A sound plays over a speaker filling its block, in the accent, whose
+/// cone moves with its level, as its meter shows it; a video over none.
+#[gpui::test]
+fn a_sound_plays_over_a_speaker_moving_with_its_level(cx: &mut TestAppContext) {
+    let (window, mut cx) = testing::start(cx);
+    open(window, &mut cx, &["tone.m4a"], true);
+    let block = window
+        .read_with(&cx, |workspace, _| workspace.blocks[0].view.clone())
+        .unwrap();
+    block.update(&mut cx, |view, cx| {
+        view.set_level(0.8);
+        cx.notify();
+    });
+    let bounds = find(&mut cx, "block-0");
+    let (level, accent) =
+        cx.update(|window, cx| (block.read(cx).level(), Theme::get(window, cx).accent));
+    assert!(level > 0.1, "{level}");
+    let painted = cx.update(|window, _| window.painted_visualizers());
+    assert_eq!(
+        painted,
+        [(
+            bounds,
+            VisualizerShader::Speaker { level },
+            accent.opacity(SPEAKER_OPACITY)
+        )]
+    );
+
+    window
+        .update(&mut cx, |workspace, _, cx| {
+            workspace.open_paths(vec![fixture("clip.mp4")], cx)
+        })
+        .unwrap();
+    let opened = wait_until(&mut cx, |cx| {
+        window
+            .read_with(cx, |workspace, cx| {
+                workspace.blocks.len() == 2 && workspace.blocks[1].view.read(cx).player().is_known()
+            })
+            .unwrap()
+    });
+    assert!(opened, "the video opens");
+    find(&mut cx, "block-1");
+    let painted = cx.update(|window, _| window.painted_visualizers());
+    assert_eq!(painted.len(), 1, "for the sound alone: {painted:?}");
 }

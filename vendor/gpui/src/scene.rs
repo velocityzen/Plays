@@ -34,6 +34,8 @@ pub(crate) struct Scene {
     pub(crate) surfaces: Vec<PaintSurface>,
     /// Plays: see `Backdrop`.
     pub(crate) backdrops: Vec<Backdrop>,
+    /// Plays: see `Visualizer`.
+    pub(crate) visualizers: Vec<Visualizer>,
 }
 
 impl Scene {
@@ -49,6 +51,7 @@ impl Scene {
         self.polychrome_sprites.clear();
         self.surfaces.clear();
         self.backdrops.clear();
+        self.visualizers.clear();
     }
 
     pub fn len(&self) -> usize {
@@ -122,6 +125,10 @@ impl Scene {
                 backdrop.order = order;
                 self.backdrops.push(backdrop.clone());
             }
+            Primitive::Visualizer(visualizer) => {
+                visualizer.order = order;
+                self.visualizers.push(visualizer.clone());
+            }
         }
         self.paint_operations
             .push(PaintOperation::Primitive(primitive));
@@ -148,6 +155,7 @@ impl Scene {
             .sort_by_key(|sprite| (sprite.order, sprite.tile.tile_id));
         self.surfaces.sort_by_key(|surface| surface.order);
         self.backdrops.sort_by_key(|backdrop| backdrop.order);
+        self.visualizers.sort_by_key(|visualizer| visualizer.order);
     }
 
     #[cfg_attr(
@@ -183,6 +191,9 @@ impl Scene {
             backdrops: &self.backdrops,
             backdrops_start: 0,
             backdrops_iter: self.backdrops.iter().peekable(),
+            visualizers: &self.visualizers,
+            visualizers_start: 0,
+            visualizers_iter: self.visualizers.iter().peekable(),
         }
     }
 }
@@ -200,6 +211,8 @@ pub(crate) enum PrimitiveKind {
     /// drawn on it (in one layer) goes under it.
     Backdrop,
     Shadow,
+    /// Plays: under what's drawn on it in one layer.
+    Visualizer,
     #[default]
     Quad,
     Path,
@@ -225,6 +238,7 @@ pub(crate) enum Primitive {
     PolychromeSprite(PolychromeSprite),
     Surface(PaintSurface),
     Backdrop(Backdrop),
+    Visualizer(Visualizer),
 }
 
 impl Primitive {
@@ -238,6 +252,7 @@ impl Primitive {
             Primitive::PolychromeSprite(sprite) => &sprite.bounds,
             Primitive::Surface(surface) => &surface.bounds,
             Primitive::Backdrop(backdrop) => &backdrop.bounds,
+            Primitive::Visualizer(visualizer) => &visualizer.bounds,
         }
     }
 
@@ -251,6 +266,7 @@ impl Primitive {
             Primitive::PolychromeSprite(sprite) => &sprite.content_mask,
             Primitive::Surface(surface) => &surface.content_mask,
             Primitive::Backdrop(backdrop) => &backdrop.content_mask,
+            Primitive::Visualizer(visualizer) => &visualizer.content_mask,
         }
     }
 }
@@ -287,6 +303,9 @@ struct BatchIterator<'a> {
     backdrops: &'a [Backdrop],
     backdrops_start: usize,
     backdrops_iter: Peekable<slice::Iter<'a, Backdrop>>,
+    visualizers: &'a [Visualizer],
+    visualizers_start: usize,
+    visualizers_iter: Peekable<slice::Iter<'a, Visualizer>>,
 }
 
 impl<'a> Iterator for BatchIterator<'a> {
@@ -319,6 +338,10 @@ impl<'a> Iterator for BatchIterator<'a> {
             (
                 self.backdrops_iter.peek().map(|b| b.order),
                 PrimitiveKind::Backdrop,
+            ),
+            (
+                self.visualizers_iter.peek().map(|v| v.order),
+                PrimitiveKind::Visualizer,
             ),
         ];
         orders_and_kinds.sort_by_key(|(order, kind)| (order.unwrap_or(u32::MAX), *kind));
@@ -466,6 +489,22 @@ impl<'a> Iterator for BatchIterator<'a> {
                     &self.backdrops[backdrops_start..backdrops_end],
                 ))
             }
+            PrimitiveKind::Visualizer => {
+                let visualizers_start = self.visualizers_start;
+                let mut visualizers_end = visualizers_start + 1;
+                self.visualizers_iter.next();
+                while self
+                    .visualizers_iter
+                    .next_if(|visualizer| (visualizer.order, batch_kind) < max_order_and_kind)
+                    .is_some()
+                {
+                    visualizers_end += 1;
+                }
+                self.visualizers_start = visualizers_end;
+                Some(PrimitiveBatch::Visualizers(
+                    &self.visualizers[visualizers_start..visualizers_end],
+                ))
+            }
         }
     }
 }
@@ -494,6 +533,8 @@ pub(crate) enum PrimitiveBatch<'a> {
     Surfaces(&'a [PaintSurface]),
     /// Plays: see `Backdrop`.
     Backdrops(&'a [Backdrop]),
+    /// Plays: see `Visualizer`.
+    Visualizers(&'a [Visualizer]),
 }
 
 /// Plays: how an element's backdrop shows what is drawn under it, behind
@@ -774,6 +815,71 @@ pub(crate) struct Shadow {
 impl From<Shadow> for Primitive {
     fn from(shadow: Shadow) -> Self {
         Primitive::Shadow(shadow)
+    }
+}
+
+/// Plays: which fragment shader draws a visualizer, and what it's fed (see
+/// `Window::paint_visualizer`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum VisualizerShader {
+    /// A speaker seen from the front, in the middle, as wide as fits: its
+    /// basket's rim, the surround, the cone and the dust cap. With `level`,
+    /// from 0 to 1, the cone moves out: the surround narrows, and the cap
+    /// grows and brightens.
+    Speaker {
+        /// How loud it plays, from 0 to 1.
+        level: f32,
+    },
+}
+
+impl VisualizerShader {
+    /// Its number in the shaders, and the parameters they read.
+    pub(crate) fn encode(self) -> (VisualizerKind, [f32; 4]) {
+        match self {
+            Self::Speaker { level } => (VisualizerKind::Speaker, [level.clamp(0., 1.), 0., 0., 0.]),
+        }
+    }
+
+    /// The visualizer `kind` and `params` came from.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn decode(kind: VisualizerKind, params: [f32; 4]) -> Self {
+        match kind {
+            VisualizerKind::Speaker => Self::Speaker { level: params[0] },
+        }
+    }
+}
+
+/// Plays: which fragment shader draws a `Visualizer`, as the shaders number
+/// them.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[repr(C)]
+pub(crate) enum VisualizerKind {
+    #[default]
+    Speaker = 0,
+}
+
+/// Plays: a quad drawn by a fragment shader of its own, which `kind` names,
+/// in `color`, fed `params` (see `VisualizerShader`), such as a sound's
+/// level; drawn as is, under what's drawn on it.
+#[derive(Clone, Debug, Default)]
+#[repr(C)]
+pub(crate) struct Visualizer {
+    pub order: DrawOrder,
+    pub kind: VisualizerKind,
+    pub bounds: Bounds<ScaledPixels>,
+    pub content_mask: ContentMask<ScaledPixels>,
+    pub color: Hsla,
+    pub params: [f32; 4],
+}
+
+// WGSL puts `bounds` on an 8-byte boundary, and so its size on a multiple
+// of 8: 72 bytes, as blade checks on Linux.
+const _: () = assert!(std::mem::offset_of!(Visualizer, bounds) % 8 == 0);
+const _: () = assert!(std::mem::size_of::<Visualizer>() == 72);
+
+impl From<Visualizer> for Primitive {
+    fn from(visualizer: Visualizer) -> Self {
+        Primitive::Visualizer(visualizer)
     }
 }
 

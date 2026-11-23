@@ -2,7 +2,7 @@
 
 This is gpui 0.2.2 from crates.io, without its examples, with HDR video on
 macOS, video frames converted on the GPU on Linux, turned and cropped
-pictures, backdrops, and a few small fixes. Plays uses it through `[patch.crates-io]` in its
+pictures, backdrops, visualizers, and a few small fixes. Plays uses it through `[patch.crates-io]` in its
 Cargo.toml. Everything Plays changed is marked "Plays" in the code.
 
 ## What changed
@@ -115,6 +115,26 @@ draws none):
 - Test support: `Window::painted_backdrops` lists the backdrops the last
   frame drew, and `gpui::render_offscreen` (macOS) draws quads and
   backdrops off screen with the Metal renderer and reads the pixels back.
+
+Visualizers (`src/scene.rs`, `src/window.rs`, `build.rs`, both renderers
+and their shaders; Windows draws none):
+
+- `Window::paint_visualizer(bounds, VisualizerShader, color)` paints a
+  shader drawn whole on the GPU, as a `Visualizer` primitive: its kind,
+  bounds, content mask, color and four parameters (`params`), which
+  `VisualizerShader::encode` fills. cbindgen writes the Metal header's
+  copy; asserts in `scene.rs` keep `bounds` on an 8-byte boundary and its
+  size 72 bytes, as WGSL lays it out.
+- `VisualizerShader::Speaker { level }`: a loudspeaker seen from the
+  front, a circle as large as fits in the middle of its bounds: a dust
+  cap, a ribbed cone, a rolled surround and the basket's rim, shaded in
+  the color. With `level` (0 to 1) the cone moves out: the cap grows and
+  brightens, and the surround narrows.
+- `fs_visualizer` (WGSL) and `visualizer_fragment` (Metal) pick the shader
+  by kind; the color's alpha is the circle's coverage times its own.
+- Test support: `Window::painted_visualizers` lists the visualizers the
+  last frame drew, and `gpui::render_offscreen` draws them too, over its
+  quads.
 
 `over()` in the quad shaders (Metal, WGSL and HLSL) returns clear when both
 colors are clear. It divided by their combined alpha, so the corners of a

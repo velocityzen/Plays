@@ -33,6 +33,7 @@ fn draw(under: &[(Bounds<Pixels>, Background)], style: BackdropStyle) -> Picture
     Picture(gpui::render_offscreen(
         size(DevicePixels(WIDTH), DevicePixels(HEIGHT)),
         under,
+        &[],
         &[panel],
     ))
 }

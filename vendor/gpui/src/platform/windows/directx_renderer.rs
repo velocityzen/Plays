@@ -305,6 +305,8 @@ impl DirectXRenderer {
                 PrimitiveBatch::Surfaces(surfaces) => self.draw_surfaces(surfaces),
                 // Plays: backdrops aren't drawn on Windows.
                 PrimitiveBatch::Backdrops(_) => Ok(()),
+                // Plays: nor visualizers.
+                PrimitiveBatch::Visualizers(_) => Ok(()),
             }.context(format!("scene too large: {} paths, {} shadows, {} quads, {} underlines, {} mono, {} poly, {} surfaces",
                     scene.paths.len(),
                     scene.shadows.len(),

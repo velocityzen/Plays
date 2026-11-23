@@ -2,8 +2,8 @@ use super::metal_atlas::MetalAtlas;
 use crate::{
     AtlasTextureId, BACKDROP_LEVELS, Backdrop, Background, Bounds, ContentMask, ContentTransform,
     DevicePixels, MonochromeSprite, PaintSurface, Path, Point, PolychromeSprite, PrimitiveBatch,
-    Quad, ScaledPixels, Scene, Shadow, Size, Surface, Underline, backdrop_level_region,
-    backdrop_level_size, point, size,
+    Quad, ScaledPixels, Scene, Shadow, Size, Surface, Underline, Visualizer,
+    backdrop_level_region, backdrop_level_size, point, size,
 };
 use anyhow::Result;
 use block::ConcreteBlock;
@@ -146,6 +146,8 @@ pub(crate) struct MetalRenderer {
     backdrop_pass_pipeline_state: metal::RenderPipelineState,
     /// Plays: draws backdrops from those levels.
     backdrops_pipeline_state: metal::RenderPipelineState,
+    /// Plays: draws visualizers, each by its own shader.
+    visualizers_pipeline_state: metal::RenderPipelineState,
     /// Plays: what's under backdrops, from half the viewport down, then a
     /// copy of the frame they read sharp, made for the viewport size it
     /// holds when a frame first has backdrops.
@@ -270,6 +272,15 @@ impl MetalRenderer {
             "quad_fragment",
             DRAWABLE_FORMAT,
         );
+        // Plays: see `Visualizer`.
+        let visualizers_pipeline_state = build_pipeline_state(
+            &device,
+            &library,
+            "visualizers",
+            "visualizer_vertex",
+            "visualizer_fragment",
+            DRAWABLE_FORMAT,
+        );
         let underlines_pipeline_state = build_pipeline_state(
             &device,
             &library,
@@ -351,6 +362,7 @@ impl MetalRenderer {
             dovi_surfaces_pipeline_state,
             backdrop_pass_pipeline_state,
             backdrops_pipeline_state,
+            visualizers_pipeline_state,
             backdrop_levels: None,
             edr_headroom: 1.0,
             frames_without_hdr: None,
@@ -593,6 +605,13 @@ impl MetalRenderer {
                     viewport_size,
                     command_encoder,
                 ),
+                PrimitiveBatch::Visualizers(visualizers) => self.draw_visualizers(
+                    visualizers,
+                    instance_buffer,
+                    &mut instance_offset,
+                    viewport_size,
+                    command_encoder,
+                ),
                 PrimitiveBatch::Paths(paths) => {
                     command_encoder.end_encoding();
 
@@ -695,7 +714,7 @@ impl MetalRenderer {
             if !ok {
                 command_encoder.end_encoding();
                 anyhow::bail!(
-                    "scene too large: {} paths, {} shadows, {} quads, {} underlines, {} mono, {} poly, {} surfaces, {} backdrops",
+                    "scene too large: {} paths, {} shadows, {} quads, {} underlines, {} mono, {} poly, {} surfaces, {} backdrops, {} visualizers",
                     scene.paths.len(),
                     scene.shadows.len(),
                     scene.quads.len(),
@@ -704,6 +723,7 @@ impl MetalRenderer {
                     scene.polychrome_sprites.len(),
                     scene.surfaces.len(),
                     scene.backdrops.len(),
+                    scene.visualizers.len(),
                 );
             }
         }
@@ -861,6 +881,67 @@ impl MetalRenderer {
             0,
             6,
             shadows.len() as u64,
+        );
+        *instance_offset = next_offset;
+        true
+    }
+
+    /// Plays: see `Visualizer`.
+    fn draw_visualizers(
+        &self,
+        visualizers: &[Visualizer],
+        instance_buffer: &mut InstanceBuffer,
+        instance_offset: &mut usize,
+        viewport_size: Size<DevicePixels>,
+        command_encoder: &metal::RenderCommandEncoderRef,
+    ) -> bool {
+        if visualizers.is_empty() {
+            return true;
+        }
+        align_offset(instance_offset);
+
+        command_encoder.set_render_pipeline_state(&self.visualizers_pipeline_state);
+        command_encoder.set_vertex_buffer(
+            VisualizerInputIndex::Vertices as u64,
+            Some(&self.unit_vertices),
+            0,
+        );
+        command_encoder.set_vertex_buffer(
+            VisualizerInputIndex::Visualizers as u64,
+            Some(&instance_buffer.metal_buffer),
+            *instance_offset as u64,
+        );
+        command_encoder.set_fragment_buffer(
+            VisualizerInputIndex::Visualizers as u64,
+            Some(&instance_buffer.metal_buffer),
+            *instance_offset as u64,
+        );
+        command_encoder.set_vertex_bytes(
+            VisualizerInputIndex::ViewportSize as u64,
+            mem::size_of_val(&viewport_size) as u64,
+            &viewport_size as *const Size<DevicePixels> as *const _,
+        );
+
+        let visualizer_bytes_len = mem::size_of_val(visualizers);
+        let next_offset = *instance_offset + visualizer_bytes_len;
+        if next_offset > instance_buffer.size {
+            return false;
+        }
+        let buffer_contents =
+            unsafe { (instance_buffer.metal_buffer.contents() as *mut u8).add(*instance_offset) };
+        unsafe {
+            ptr::copy_nonoverlapping(
+                visualizers.as_ptr() as *const u8,
+                buffer_contents,
+                visualizer_bytes_len,
+            );
+        }
+
+        command_encoder.draw_primitives_instanced(
+            metal::MTLPrimitiveType::Triangle,
+            0,
+            6,
+            visualizers.len() as u64,
         );
         *instance_offset = next_offset;
         true
@@ -1755,6 +1836,14 @@ enum QuadInputIndex {
     ViewportSize = 2,
 }
 
+/// Plays: see `Visualizer`.
+#[repr(C)]
+enum VisualizerInputIndex {
+    Vertices = 0,
+    Visualizers = 1,
+    ViewportSize = 2,
+}
+
 #[repr(C)]
 enum UnderlineInputIndex {
     Vertices = 0,
@@ -1989,14 +2078,20 @@ pub struct SurfaceBounds {
     pub content: ContentTransform,
 }
 
-/// Plays: draws `quads` (each its bounds and color), then `backdrops` (each
-/// its bounds, corners and style) over them, with the renderer windows use
-/// but off screen, at a scale of 1, and reads back the `size` pixels it
-/// made, row by row, as the drawable has them: extended sRGB, unmultiplied.
+/// Plays: draws `quads` (each its bounds and color), then `visualizers`
+/// (each its bounds, shader and color), then `backdrops` (each its bounds,
+/// corners and style) over them, with the renderer windows use but off
+/// screen, at a scale of 1, and reads back the `size` pixels it made, row
+/// by row, as the drawable has them: extended sRGB, unmultiplied.
 #[cfg(any(test, feature = "test-support"))]
 pub fn render_offscreen(
     size: Size<DevicePixels>,
     quads: &[(Bounds<crate::Pixels>, crate::Background)],
+    visualizers: &[(
+        Bounds<crate::Pixels>,
+        crate::VisualizerShader,
+        crate::Hsla,
+    )],
     backdrops: &[(
         Bounds<crate::Pixels>,
         crate::Corners<crate::Pixels>,
@@ -2022,6 +2117,17 @@ pub fn render_offscreen(
             border_widths: Default::default(),
             corner_smoothing: 0.,
             pad: 0,
+        });
+    }
+    for (bounds, shader, color) in visualizers {
+        let (kind, params) = shader.encode();
+        scene.insert_primitive(Visualizer {
+            order: 0,
+            kind,
+            bounds: bounds.scale(1.),
+            content_mask: content_mask.scale(1.),
+            color: *color,
+            params,
         });
     }
     for (bounds, corners, style) in backdrops {

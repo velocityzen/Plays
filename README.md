@@ -27,7 +27,8 @@ GPU-accelerated UI framework.
 - Previous and next file in the folder or playlist
 - Open Recent
 - Files resume where they were left, with their tracks
-- Cover art, title, artist, album, quality and a level meter for audio files
+- Cover art, title, artist, album, quality and a level meter for audio files,
+  over a speaker moving with the sound
 - The screen stays awake while video plays
 - Play, pause, seek, step, sync, volume and mute every block in every window
   at once

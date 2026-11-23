@@ -557,6 +557,8 @@ pub mod player {
     pub const NO_COVER_ICON_SCALE: f32 = 0.42;
     /// The level meter under a sound file's lines.
     pub const METER_WIDTH: Pixels = px(160.);
+    /// The speaker behind a sound file's cover, as an opacity of the accent.
+    pub const SPEAKER_OPACITY: f32 = 0.35;
     /// The icon in a block whose video is in Picture in Picture, or that
     /// plays on another device.
     pub const PIP_ICON: Pixels = px(40.);

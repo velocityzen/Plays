@@ -144,6 +144,10 @@ mod macos {
             "SurfaceInputIndex".into(),
             "SurfaceBounds".into(),
             "Backdrop".into(),
+            // Plays: see `Visualizer`.
+            "Visualizer".into(),
+            "VisualizerKind".into(),
+            "VisualizerInputIndex".into(),
             "BackdropInputIndex".into(),
             "BackdropPassInputIndex".into(),
             "ContentTransform".into(),
