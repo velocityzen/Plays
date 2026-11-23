@@ -31,6 +31,9 @@
 # clip-odd-colors.mkv  2 s of a flat 10-bit FFV1 picture whose Matroska
 #                colors say primaries 15, transfer 40 and matrix 30,
 #                numbers FFmpeg has no names for
+# uncommon-order.mov  0.5 s of 440 Hz on the right only, 8 kHz PCM, its
+#                channels in an order of their own: the right, then the
+#                left; last by name, so the files beside the others stay
 set -euo pipefail
 
 cd "$(dirname "$0")/../tests/fixtures"
@@ -210,5 +213,11 @@ for tag, value in [(b"\x55\xbb", 15), (b"\x55\xba", 40), (b"\x55\xb1", 30)]:
     data[at + 3] = value
 open("clip-odd-colors.mkv", "wb").write(data)
 PY
+
+# MOV keeps PCM's channels in the order they're joined in.
+"${ffmpeg[@]}" -f lavfi -i "sine=frequency=440:sample_rate=8000:duration=0.5" \
+    -f lavfi -i "anullsrc=channel_layout=mono:sample_rate=8000" \
+    -filter_complex "[0][1]join=inputs=2:channel_layout=FR+FL,atrim=duration=0.5" \
+    -c:a pcm_s16le -map_metadata -1 uncommon-order.mov
 
 ls -l

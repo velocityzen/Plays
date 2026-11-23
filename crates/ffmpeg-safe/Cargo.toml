@@ -1,0 +1,22 @@
+[package]
+name = "ffmpeg-safe"
+version = "0.1.0"
+edition = "2024"
+description = "What ffmpeg-next reads unsoundly from FFmpeg, read soundly"
+license = "MIT"
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+# The same FFmpeg bindings Plays uses, linked to the same static FFmpeg.
+ffmpeg-next = { version = "9.1", default-features = false, features = [
+    "codec",
+    "format",
+    "software-resampling",
+    "software-scaling",
+] }
+
+[build-dependencies]
+ffmpeg-link = { path = "../ffmpeg-link" }

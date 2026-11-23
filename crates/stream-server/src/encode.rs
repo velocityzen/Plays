@@ -14,6 +14,7 @@ use ffmpeg::software::{resampling, scaling};
 use ffmpeg::util::channel_layout::ChannelLayout;
 use ffmpeg::{Dictionary, Packet, Rational, frame, picture};
 use ffmpeg_next as ffmpeg;
+use ffmpeg_safe::Layout;
 
 use crate::Error;
 use crate::profile::{AudioCodec, VideoCodec};
@@ -423,7 +424,8 @@ pub(crate) struct AudioEncoder {
     layout: ChannelLayout,
     rate: u32,
     frame_size: usize,
-    resampler: Option<(resampling::Context, (Sample, ChannelLayout, u32))>,
+    /// The resampler, and the format, layout and rate it takes.
+    resampler: Option<(resampling::Context, (Sample, Layout, u32))>,
     fifo: *mut ffi::AVAudioFifo,
     /// The next frame's timestamp, in samples.
     next_pts: Option<i64>,
@@ -517,12 +519,7 @@ impl AudioEncoder {
             self.next_pts = Some((begin * f64::from(self.rate)).round() as i64);
             self.skip = ((start - time).max(0.0) * f64::from(self.rate)).round() as usize;
         }
-        let mut layout = decoded.channel_layout();
-        if layout.is_empty() || layout.channels() != i32::from(decoded.channels()) {
-            layout = ChannelLayout::default(i32::from(decoded.channels()));
-            decoded.set_channel_layout(layout);
-        }
-        let input = (decoded.format(), layout, decoded.rate());
+        let input = (decoded.format(), Layout::of(decoded), decoded.rate());
         let in_rate = f64::from(input.2.max(1));
         if self
             .resampler
@@ -540,7 +537,7 @@ impl AudioEncoder {
             options.set("first_pts", &reached.to_string());
             let resampler = resampling::Context::get_with(
                 input.0,
-                input.1,
+                input.1.lent(),
                 input.2,
                 self.format,
                 self.layout,
@@ -566,7 +563,7 @@ impl AudioEncoder {
             .delay()
             .map_or(0, |delay| delay.output.max(0) as usize);
         let capacity =
-            decoded.samples() * self.rate as usize / input.2.max(1) as usize + pending + 64;
+            decoded.samples() * self.rate as usize / decoded.rate().max(1) as usize + pending + 64;
         let mut resampled = frame::Audio::new(self.format, capacity, self.layout);
         resampler
             .run(decoded, &mut resampled)

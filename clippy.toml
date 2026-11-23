@@ -10,4 +10,9 @@ disallowed-methods = [
     { path = "ffmpeg_next::codec::decoder::video::Video::color_space", reason = "a file can hold a number the enum has no variant for: use media::colors" },
     { path = "ffmpeg_next::codec::decoder::video::Video::color_primaries", reason = "a file can hold a number the enum has no variant for: use media::colors" },
     { path = "ffmpeg_next::codec::decoder::video::Video::color_transfer_characteristic", reason = "a file can hold a number the enum has no variant for: use media::colors" },
+    # A channel layout is a bare copy of FFmpeg's: one in an uncommon order
+    # points into the frame, which frees it. Copy it with ffmpeg_safe::Layout.
+    { path = "ffmpeg_next::util::frame::audio::Audio::channel_layout", reason = "it points into the frame, which frees it: use ffmpeg_safe::Layout" },
+    { path = "ffmpeg_next::util::frame::audio::Audio::set_channel_layout", reason = "the frame frees what it points to, a second time: use ffmpeg_safe::Layout::of" },
+    { path = "ffmpeg_next::software::resampling::Context::input", reason = "its layout points into the frame it was made for: keep an ffmpeg_safe::Layout beside it" },
 ]

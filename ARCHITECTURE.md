@@ -119,6 +119,7 @@ on its own. Clippy lints in the root `Cargo.toml` apply to all.
 | `crates/airplay` | Finds, pairs with and sends to AirPlay receivers |
 | `crates/network` | What the casting crates share: connecting, bounded HTTP and RTSP, mDNS |
 | `crates/ffmpeg-link` | Links the static FFmpeg into Plays and the stream server's tests |
+| `crates/ffmpeg-safe` | Sound reads of what ffmpeg-next reads unsoundly: channel layouts |
 | `crates/completions` | Shell completion scripts for a clap command line |
 | `vendor/gpui` | gpui 0.2.2, patched |
 | `vendor/xattr` | xattr 0.2.3, patched to build on Linux |
@@ -269,6 +270,9 @@ flowchart LR
 - `src/media/details.rs`: the console's format and stream details
 - `src/media/colors.rs`: colors read as numbers, as ffmpeg-next's enums
   have gaps a file can hit; `clippy.toml` bans its getters
+- `crates/ffmpeg-safe`: a frame's channel layout copied out of it, as one
+  in an uncommon order points into the frame; `clippy.toml` bans the
+  getters that don't
 - `src/media/tracks.rs`: tracks, their menu names, and languages
 - `src/media/picking.rs`: which tracks play (`Wanted`): those picked
   before (`Picked`), else preferred languages, else FFmpeg's best

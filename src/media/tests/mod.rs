@@ -467,7 +467,18 @@ fn drain_audio(
     timeout: Duration,
     stop: impl Fn(usize) -> bool,
 ) -> usize {
-    let mut heard = 0;
+    drain_each_side(player, mixer, timeout, |[left, _]| stop(left))[0]
+}
+
+/// Pull audio through a mixer until the player stops; returns the
+/// non-silent frames heard on the left and on the right.
+fn drain_each_side(
+    player: &mut Player,
+    mixer: &Mixer,
+    timeout: Duration,
+    stop: impl Fn([usize; 2]) -> bool,
+) -> [usize; 2] {
+    let mut heard = [0; 2];
     let mut buffer = vec![0.0f32; 512 * 2];
     let start = Instant::now();
     while start.elapsed() < timeout {
@@ -476,12 +487,11 @@ fn drain_audio(
             break;
         }
         mixer.mix(&mut buffer, 0.0, Instant::now());
-        heard += buffer
-            .as_chunks::<2>()
-            .0
-            .iter()
-            .filter(|f| f[0].abs() > 1e-6)
-            .count();
+        for frame in buffer.as_chunks::<2>().0 {
+            for (side, sample) in frame.iter().enumerate() {
+                heard[side] += usize::from(sample.abs() > 1e-6);
+            }
+        }
         std::thread::sleep(Duration::from_micros(300));
     }
     heard
@@ -512,6 +522,60 @@ fn resamples_audio_and_stops_at_the_end() {
     assert!((heard as i64 - 48_000).abs() < 480, "heard {heard} frames");
     drop(player);
     let _ = Arc::strong_count(&mixer);
+}
+
+/// Sound whose channels change partway, as a broadcast's may between a
+/// programme and what comes between, plays on through the change.
+#[test]
+fn plays_on_when_the_sound_changes_its_channels() {
+    let tone = |channels: &str| {
+        let half = "sine=frequency=440:sample_rate=48000:duration=0.5";
+        let name = format!("channels/{channels}.aac");
+        std::fs::read(media(
+            &name,
+            &["-f", "lavfi", "-i", half, "-ac", channels, "-c:a", "aac"],
+        ))
+        .unwrap()
+    };
+    // ADTS gives the channels in each frame, so the two join as one: mono,
+    // then stereo. Written whole, as other test runs may read it.
+    let path = std::env::temp_dir().join("plays-tests/channels/mono-then-stereo.aac");
+    if !path.exists() {
+        let part = path.with_extension(format!("{}.part", std::process::id()));
+        std::fs::write(&part, [tone("1"), tone("2")].concat()).unwrap();
+        std::fs::rename(&part, &path).unwrap();
+    }
+    let mixer = Mixer::detached(48_000);
+    let mut player = Player::open(
+        Source::File(path),
+        Some(mixer.clone()),
+        options(true, false),
+    );
+    let heard = drain_audio(&mut player, &mixer, Duration::from_secs(10), |_| false);
+    assert!(!player.is_playing(), "player should stop at the end");
+    // A second, and what the encoder adds before each half.
+    assert!(
+        (heard as i64 - 48_000).abs() < 4_800,
+        "heard {heard} frames"
+    );
+}
+
+/// Channels a file keeps in an uncommon order, the right before the
+/// left, play on their own sides, all of the sound.
+#[test]
+fn plays_channels_kept_in_an_uncommon_order_on_their_sides() {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/uncommon-order.mov");
+    let mixer = Mixer::detached(48_000);
+    let mut player = Player::open(
+        Source::File(path),
+        Some(mixer.clone()),
+        options(true, false),
+    );
+    let [left, right] = drain_each_side(&mut player, &mixer, Duration::from_secs(10), |_| false);
+    assert!(!player.is_playing(), "player should stop at the end");
+    assert_eq!(left, 0, "the tone is on the right");
+    // Half a second, resampled from 8 kHz to 48 kHz.
+    assert!((right as i64 - 24_000).abs() < 240, "heard {right} frames");
 }
 
 #[test]

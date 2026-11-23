@@ -2176,6 +2176,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "ffmpeg-safe"
+version = "0.1.0"
+dependencies = [
+ "ffmpeg-link",
+ "ffmpeg-next",
+]
+
+[[package]]
 name = "ffmpeg-sys-next"
 version = "9.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4785,6 +4793,7 @@ dependencies = [
  "env_logger",
  "ffmpeg-link",
  "ffmpeg-next",
+ "ffmpeg-safe",
  "futures",
  "gpui",
  "image",
@@ -6230,6 +6239,7 @@ version = "0.1.0"
 dependencies = [
  "ffmpeg-link",
  "ffmpeg-next",
+ "ffmpeg-safe",
  "log",
  "proptest",
 ]

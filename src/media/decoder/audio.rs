@@ -10,6 +10,7 @@ use ffmpeg::software::resampling;
 use ffmpeg::util::{channel_layout::ChannelLayout, format::Sample};
 use ffmpeg::{Packet, codec, frame};
 use ffmpeg_next as ffmpeg;
+use ffmpeg_safe::Layout;
 
 use super::{Session, StreamInfo, codec_name};
 use crate::media::audio::{AudioChunk, AudioSource, SOURCE_CHANNELS};
@@ -25,7 +26,8 @@ pub(super) struct AudioDecoder {
     pub(super) decoder: ffmpeg::decoder::Audio,
     source: Arc<AudioSource>,
     pub(super) time_base: f64,
-    resampler: Option<resampling::Context>,
+    /// The resampler, and the format, layout and rate it takes.
+    resampler: Option<(resampling::Context, (Sample, Layout, u32))>,
     decoded: frame::Audio,
     next_pts: Option<f64>,
     pub(super) finished: bool,
@@ -109,34 +111,29 @@ impl AudioDecoder {
             return Ok(());
         }
 
-        // Some decoders leave the layout unspecified; resampling needs a real one.
-        let mut layout = self.decoded.channel_layout();
-        if layout.is_empty() || layout.channels() != i32::from(self.decoded.channels()) {
-            layout = ChannelLayout::default(i32::from(self.decoded.channels()));
-            self.decoded.set_channel_layout(layout);
-        }
-        let input = resampling::context::Definition {
-            format: self.decoded.format(),
-            channel_layout: layout,
-            rate: in_rate,
-        };
+        let input = (
+            self.decoded.format(),
+            Layout::of(&mut self.decoded),
+            in_rate,
+        );
         // Rebuilt for a new input format, or a new output rate (the mixer's
         // for another device).
         if self
             .resampler
             .as_ref()
-            .is_none_or(|r| *r.input() != input || r.output().rate != out_rate)
+            .is_none_or(|(r, taken)| *taken != input || r.output().rate != out_rate)
         {
-            self.resampler = Some(resampling::Context::get(
-                input.format,
-                input.channel_layout,
-                input.rate,
+            let resampler = resampling::Context::get(
+                input.0,
+                input.1.lent(),
+                input.2,
                 OUTPUT_FORMAT,
                 ChannelLayout::STEREO,
                 out_rate,
-            )?);
+            )?;
+            self.resampler = Some((resampler, input));
         }
-        let resampler = self.resampler.as_mut().expect("resampler was just created");
+        let (resampler, _) = self.resampler.as_mut().expect("resampler was just created");
 
         let pts = self
             .decoded
