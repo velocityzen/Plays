@@ -7,6 +7,7 @@ use std::time::{Duration, Instant};
 use gpui::TestAppContext;
 
 use crate::api::socket::tests::serving;
+use crate::cli::show;
 use crate::cli::tests::plays;
 
 #[gpui::test]
@@ -137,4 +138,25 @@ fn a_timer_slower_than_its_period_keeps_no_handler_waiting(cx: &mut TestAppConte
     "#;
     let ran = plays(&mut cx, &path, &["do", "--for", "10", "-e", code]);
     assert_eq!((ran.status, ran.out.as_str()), (0, "Hall\n"), "{ran:?}");
+}
+
+#[gpui::test]
+fn a_script_with_no_handlers_runs_on_though_its_window_closes(cx: &mut TestAppContext) {
+    let (path, _, mut cx) = serving("lua-timers-closes", cx);
+    let other = plays(&mut cx, &path, &["--json", "do", "window.new"]).json()["window"].clone();
+    let other = show::text(&other);
+    let code = r#"
+        plays.after(0, function() plays.window.close() end)
+        plays.after(0.2, function() print("on") end)
+    "#;
+    let ran = plays(
+        &mut cx,
+        &path,
+        &["-w", &other, "do", "--for", "10", "-e", code],
+    );
+    assert_eq!(
+        (ran.status, ran.out.as_str(), ran.err.as_str()),
+        (0, "on\n", "running: 2 timers; Ctrl-C to stop\n"),
+        "{ran:?}"
+    );
 }

@@ -184,7 +184,8 @@ fn a_wait_says_so_when_plays_goes(cx: &mut TestAppContext) {
             r#"
             plays.window.ls()
             local heard, why = plays.wait("window.label_changed")
-            return {none = heard == nil, why = why}
+            local _, again = plays.wait("window.label_changed")
+            return {none = heard == nil, why = why, again = again}
             "#,
         ],
         |cx, time| {
@@ -202,7 +203,11 @@ fn a_wait_says_so_when_plays_goes(cx: &mut TestAppContext) {
     assert_eq!((ran.status, ran.err.as_str()), (0, ""), "{ran:?}");
     assert_eq!(
         ran.json(),
-        json!({"none": true, "why": "Plays closed the connection"})
+        json!({
+            "none": true,
+            "why": "Plays closed the connection",
+            "again": "Plays closed the connection"
+        })
     );
 }
 

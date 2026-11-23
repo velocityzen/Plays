@@ -1,16 +1,20 @@
 //! The Lua scripts `plays do` runs: a file, `-e` code or stdin, run here,
 //! a client of the Plays running as the command line is. `plays` holds
 //! what a script is given, calls Plays' commands, waits (`waiting`),
-//! registers handlers (`handlers`) and starts timers (`timers`); what the
-//! script returns is printed as JSON, and then, if it has handlers or
-//! timers, it runs on (`listening`).
+//! registers handlers (`handlers`), starts timers (`timers`), runs
+//! programs (`exec`) and reads and writes JSON (`json`); what the script
+//! returns is printed as JSON, and then, if it has handlers or timers, it
+//! runs on (`listening`). What it waits for comes to its inbox (`inbox`).
 //!
 //! JSON and Lua: null is nil, and `plays.null` sends one; an object or a
 //! list is a table, a list from Plays staying one, so a table is a list if
 //! it came as one or has items from 1, else an object; integers stay
 //! integers and other numbers floats, both ways.
 
+mod exec;
 mod handlers;
+mod inbox;
+mod json;
 mod listening;
 mod timers;
 mod waiting;
@@ -25,11 +29,12 @@ use mlua::{
 };
 use serde_json::Value;
 
+use self::exec::Programs;
 use self::handlers::Handlers;
+use self::inbox::Inbox;
 use self::listening::Listener;
 pub use self::listening::Listening;
 use self::timers::Timers;
-use self::waiting::Events;
 use super::{Done, Session, Stop, show};
 use crate::api::socket::Heard;
 use crate::api::socket::client::Failure;
@@ -103,9 +108,10 @@ pub fn run(session: &mut Session, script: Script, args: Value, listening: Listen
         .clone()
         .filter(|_| session.options.window.is_some());
     let heard = window.clone().map_or(Heard::All, Heard::Window);
-    let events = RefCell::new(Events::new(session.socket.clone(), heard));
+    let inbox = RefCell::new(Inbox::new(session.socket.clone(), heard));
     let handlers = Handlers::default();
     let timers = Timers::default();
+    let programs = Programs::default();
     let session = RefCell::new(session);
     let here = RefCell::new(here);
     let ran = lua.scope(|scope| {
@@ -115,7 +121,7 @@ pub fn run(session: &mut Session, script: Script, args: Value, listening: Listen
         plays.set("block_id", here.borrow().block.clone())?;
         plays.set("null", lua.null())?;
         let by_id = scope.create_function(|lua, (id, args): (String, LuaValue)| {
-            call(lua, &session, &events, &id, args, &here.borrow())
+            call(lua, &session, &inbox, &id, args, &here.borrow())
         })?;
         plays.set("call", by_id)?;
         let command = scope.create_function(|lua, (node, args): (Table, LuaValue)| {
@@ -123,7 +129,7 @@ pub fn run(session: &mut Session, script: Script, args: Value, listening: Listen
                 .metatable()
                 .ok_or_else(|| mlua::Error::runtime("not a command"))?
                 .raw_get("id")?;
-            call(lua, &session, &events, &id, args, &here.borrow())
+            call(lua, &session, &inbox, &id, args, &here.borrow())
         })?;
         add_commands(&lua, &plays, &command)?;
         let stops =
@@ -133,8 +139,10 @@ pub fn run(session: &mut Session, script: Script, args: Value, listening: Listen
             "sleep",
             lua.create_function(|_, seconds: f64| waiting::sleep(seconds))?,
         )?;
-        let wait = scope.create_function(|lua, args| waiting::wait(lua, &events, args))?;
+        let wait = scope.create_function(|lua, args| waiting::wait(lua, &inbox, args))?;
         plays.set("wait", wait)?;
+        exec::add(&lua, &plays, scope, &programs, &inbox)?;
+        json::add(&lua, &plays)?;
         plays.set("on", scope.create_function(|_, args| handlers.on(args))?)?;
         let (timers, stopped, session) = (&timers, &stopped, &session);
         let timer = |every| {
@@ -158,12 +166,14 @@ pub fn run(session: &mut Session, script: Script, args: Value, listening: Listen
             .load(&script.code[..])
             .set_name(&script.name)
             .call::<MultiValue>(())?;
+        programs.top_level_over();
         let say = |line: &str| writeln!(session.borrow_mut().err, "{line}");
         let listener = Listener {
             lua: &lua,
             handlers: &handlers,
             timers,
-            events: &events,
+            programs: &programs,
+            inbox: &inbox,
             here: &here,
             window: window.as_deref(),
             stopped,
@@ -253,14 +263,14 @@ fn add_commands(lua: &Lua, plays: &Table, command: &Function) -> mlua::Result<()
 fn call(
     lua: &Lua,
     session: &RefCell<&mut Session>,
-    events: &RefCell<Events>,
+    inbox: &RefCell<Inbox>,
     id: &str,
     args: LuaValue,
     here: &Target,
 ) -> mlua::Result<(LuaValue, Option<String>)> {
     let mut args: Value = lua.from_value(args)?;
     let target = target(id, &mut args, here);
-    events.borrow_mut().hear_from_now();
+    inbox.borrow_mut().hear_from_now();
     let called = session.borrow_mut().call_on(id, args, target);
     match called {
         Ok(value) => Ok((to_lua(lua, &value)?, None)),

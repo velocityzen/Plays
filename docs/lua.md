@@ -31,6 +31,10 @@ plays do loop.lua --for 10m --fail-fast    # run on 10m, end at a failure
   [Handlers](#handlers).
 - `plays.after(seconds, fn)`, `plays.every(seconds, fn)`: timers; see
   [Timers](#timers).
+- `plays.exec{program, arg...}`, `plays.exec.start(...)`: programs; see
+  [Programs](#programs).
+- `plays.json.encode(value)`, `plays.json.decode(text)`: see
+  [JSON and Lua](#json-and-lua).
 - `require`: modules beside the script first.
 - Lua's standard library, without `debug`, `io.popen`, `os.execute` and C
   modules.
@@ -86,6 +90,27 @@ plays.after(60, function() ticking:cancel() end)
   started it.
 - At most 1,024 going; more stops the script, exit status 1.
 
+## Programs
+
+```lua
+local head = plays.exec{"git", "rev-parse", "HEAD"}
+local make = plays.exec.start({"make"}, {stdout = io.write})
+local made = make:wait()
+```
+
+- `plays.exec{program, arg...}`: runs it, with no shell, and waits: `ok`,
+  `code` (nil if a signal ended it), `stdout`, `stderr`. nil and why only
+  if it can't run.
+- Options, a second table: `cwd`; `env`, as `{CI = "1"}`, `false`
+  removing one; `timeout`, in seconds, then it's killed.
+- `plays.exec.start`: starts it; `:wait()` waits as `plays.exec` does.
+  Options too: `stdout`, `stderr`, a function each piece of output goes
+  to as it comes, not kept; `detach`.
+- Those functions run as the script waits for a program, or runs on;
+  never at once with other Lua.
+- Stopped as the part of the script that started it ends: its top level,
+  a handler or a timer. Detached, as the script ends.
+
 ## Running on
 
 - A script with handlers or timers runs on once its first run is over,
@@ -94,8 +119,8 @@ plays.after(60, function() ticking:cancel() end)
   handlers, until Plays quits or the window `-w` names closes too.
 - Says what it runs on stderr: `listening: 2 handlers, running: 1 timer;
   Ctrl-C to stop`.
-- A handler or a timer failing is said on stderr, and the script goes on;
-  with `--fail-fast` it ends, exit status 1.
+- A handler, a timer or a program's function failing is said on stderr,
+  and the script goes on; with `--fail-fast` it ends, exit status 1.
 
 ## What it prints
 
@@ -106,6 +131,9 @@ plays.after(60, function() ticking:cancel() end)
 
 ## JSON and Lua
 
+- As calls and what they hand back convert them, so do
+  `plays.json.encode(value, {indent = true})`, indented by two spaces, and
+  `plays.json.decode(text)`; nil and why if they can't.
 - null is nil.
 - An object or a list is a table. A list from Plays stays one, empty too;
   another table is a list if it has items from 1, else an object: `{}` is
