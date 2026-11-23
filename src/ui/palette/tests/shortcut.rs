@@ -99,18 +99,18 @@ fn command_return_lists_the_keys_of_the_command_picked_and_a_key_pressed_is_adde
 fn a_key_another_command_has_moves_here_and_says_whose_it_was(cx: &mut TestAppContext) {
     let (window, mut cx) = testing::start(cx);
     let settings = key("secondary-,");
-    assert!(keys(&mut cx, "app.settings").contains(&settings));
+    assert!(keys(&mut cx, "app.settings.open").contains(&settings));
     change_new_window(window, &mut cx);
     press_and_wait(&mut cx, "secondary-,");
     assert!(keys(&mut cx, "window.new").contains(&settings));
-    assert!(!keys(&mut cx, "app.settings").contains(&settings));
+    assert!(!keys(&mut cx, "app.settings.open").contains(&settings));
     assert!(
         !cx.windows()
             .into_iter()
             .any(|window| window.downcast::<SettingsView>().is_some()),
         "recorded, not run"
     );
-    let title = api::find("app.settings").unwrap().title;
+    let title = api::find("app.settings.open").unwrap().title;
     let note = format!("{} was for “{title}”", hotkeys::display(&settings));
     assert!(
         shows(&mut cx, "palette-taken") && painted(&mut cx, &note),

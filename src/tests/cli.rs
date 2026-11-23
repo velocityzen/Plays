@@ -165,7 +165,7 @@ fn help_and_the_version_print_and_a_bad_command_line_says_why() {
             "the arguments aren't JSON",
         ),
         (
-            &["wait", "ended", "--timeout", "-1"],
+            &["wait", "playback.ended", "--timeout", "-1"],
             "can't wait -1 seconds",
         ),
     ] {
@@ -410,7 +410,7 @@ fn a_command_runs_with_its_arguments_and_says_what_it_handed_back(cx: &mut TestA
         "text, as the argument takes"
     );
 
-    let ran = plays(&mut cx, &path, &["do", "settings.get", "key=autoplay"]);
+    let ran = plays(&mut cx, &path, &["do", "app.settings.get", "key=autoplay"]);
     assert_eq!((ran.status, ran.out.as_str()), (0, "true\n"));
     let ran = plays(&mut cx, &path, &["--json", "do", "window.new"]);
     assert_eq!(
@@ -450,12 +450,12 @@ fn arguments_are_typed_as_their_commands_take_them() {
         json!({"urls": ["a.mkv", "b.mkv"]})
     );
     assert_eq!(
-        args("settings.set", &["key=subtitles.size", "value=30"]),
+        args("app.settings.set", &["key=subtitles.size", "value=30"]),
         json!({"key": "subtitles.size", "value": 30}),
         "any value read as JSON"
     );
     assert_eq!(
-        args("settings.set", &["key=theme", "value=dark"]),
+        args("app.settings.set", &["key=theme", "value=dark"]),
         json!({"key": "theme", "value": "dark"}),
         "as given, if it isn't"
     );
@@ -746,7 +746,7 @@ fn events_print_as_they_happen(cx: &mut TestAppContext) {
     let lines: Vec<&str> = ran.out.lines().collect();
     assert_eq!(lines.len(), 2, "{lines:?}");
     assert!(
-        lines.iter().all(|line| line.starts_with("client_")),
+        lines.iter().all(|line| line.starts_with("app.client_")),
         "{lines:?}"
     );
 
@@ -764,7 +764,7 @@ fn events_print_as_they_happen(cx: &mut TestAppContext) {
         },
     );
     let event: Value = serde_json::from_str(ran.out.trim_end()).unwrap();
-    assert_eq!(event["type"], "window_label_changed", "{ran:?}");
+    assert_eq!(event["type"], "window.label_changed", "{ran:?}");
     assert!(event["payload"]["window_id"].is_string());
 }
 
@@ -824,26 +824,29 @@ fn events_hear_every_window_and_block_unless_one_is_named(cx: &mut TestAppContex
     let said: Vec<&str> = heard
         .iter()
         .filter_map(|event| match event["type"].as_str()? {
-            "command_run" => event["payload"]["command"]
+            "app.command_run" => event["payload"]["command"]
                 .as_str()
                 .filter(|command| !command.starts_with("app.")),
-            kind @ ("opened" | "playing" | "volume_changed" | "paused") => Some(kind),
+            kind @ ("playback.opened"
+            | "playback.playing"
+            | "audio.volume_changed"
+            | "playback.paused") => Some(kind),
             _ => None,
         })
         .collect();
     assert_eq!(
         said,
         [
-            "opened",
-            "playing",
+            "playback.opened",
+            "playback.playing",
             "audio.volume_down",
-            "volume_changed",
+            "audio.volume_changed",
             "audio.volume_up",
-            "volume_changed",
+            "audio.volume_changed",
             "audio.set_volume",
-            "volume_changed",
+            "audio.volume_changed",
             "playback.play_pause",
-            "paused",
+            "playback.paused",
         ],
         "{heard:#?}"
     );
@@ -853,15 +856,15 @@ fn events_hear_every_window_and_block_unless_one_is_named(cx: &mut TestAppContex
             .filter(move |event| event["type"] == kind)
             .map(|event| &event["payload"])
     };
-    let opened = told("opened").next().unwrap();
+    let opened = told("playback.opened").next().unwrap();
     assert_eq!(opened["block_title"], "clip.mp4", "{opened}");
     assert_eq!(opened["window_title"], "Plays", "{opened}");
-    for payload in told("playing").chain(told("paused")) {
+    for payload in told("playback.playing").chain(told("playback.paused")) {
         assert!(payload["position"].is_number(), "{payload}");
         assert!(payload["time"].is_number(), "{payload}");
         assert!(payload["frame"].is_u64(), "{payload}");
     }
-    let volumes: Vec<&Value> = told("volume_changed")
+    let volumes: Vec<&Value> = told("audio.volume_changed")
         .map(|payload| &payload["volume"])
         .collect();
     assert!(
@@ -926,7 +929,7 @@ fn files_dropped_are_heard_each_opened_then_playing(cx: &mut TestAppContext) {
         .map(|line| serde_json::from_str(line).unwrap())
         .collect();
     assert!(
-        !heard.iter().any(|event| event["type"] == "command_run"
+        !heard.iter().any(|event| event["type"] == "app.command_run"
             && event["payload"]["command"]
                 .as_str()
                 .is_some_and(|command| command.contains("open"))),
@@ -952,8 +955,10 @@ fn files_dropped_are_heard_each_opened_then_playing(cx: &mut TestAppContext) {
                 event["type"] == kind && event["payload"]["block_id"] == block.as_str()
             })
         };
-        let opened = told("opened").unwrap_or_else(|| panic!("{title} opened: {heard:#?}"));
-        let playing = told("playing").unwrap_or_else(|| panic!("{title} playing: {heard:#?}"));
+        let opened =
+            told("playback.opened").unwrap_or_else(|| panic!("{title} opened: {heard:#?}"));
+        let playing =
+            told("playback.playing").unwrap_or_else(|| panic!("{title} playing: {heard:#?}"));
         assert!(opened < playing, "{title}: opened, then playing");
         for at in [opened, playing] {
             let payload = &heard[at]["payload"];
@@ -997,7 +1002,7 @@ fn waiting_for_a_block_ends_with_its_event_or_says_why_not(cx: &mut TestAppConte
     let ran = plays_while(
         &mut cx,
         &path,
-        &["wait", "block_label_changed", "-b", "2"],
+        &["wait", "block.label_changed", "-b", "2"],
         |cx, time| {
             if time == 0 {
                 looked(cx);
@@ -1007,7 +1012,7 @@ fn waiting_for_a_block_ends_with_its_event_or_says_why_not(cx: &mut TestAppConte
     );
     assert_eq!(ran.status, 0, "{ran:?}");
     assert!(
-        ran.out.starts_with("block_label_changed window_id="),
+        ran.out.starts_with("block.label_changed window_id="),
         "{ran:?}"
     );
     assert_eq!(ran.out.lines().count(), 1);
@@ -1015,29 +1020,60 @@ fn waiting_for_a_block_ends_with_its_event_or_says_why_not(cx: &mut TestAppConte
     let ran = plays(
         &mut cx,
         &path,
-        &["wait", "playing", "-b", "1", "--timeout", "0.2"],
+        &["wait", "playback.playing", "-b", "1", "--timeout", "0.2"],
     );
-    assert_eq!(ran.failed(), (1, "plays: no playing in 0.2 seconds"));
-    let ran = plays(&mut cx, &path, &["wait", "ended", "-b", "Attic"]);
-    assert_eq!(ran.status, 3, "{ran:?}");
-
-    TestAppContext::update(&cx, api::record);
-    let ran = plays_while(&mut cx, &path, &["wait", "ended", "-b", "1"], |cx, time| {
-        if time == 0 {
-            // Closed first, the other would be block 1.
-            looked(cx);
-            plays(cx, &path, &["block", "close", "1"]);
-        }
-    });
     assert_eq!(
         ran.failed(),
-        (1, "plays: the block closed before its ended")
+        (1, "plays: no playback.playing in 0.2 seconds")
+    );
+    let ran = plays(&mut cx, &path, &["wait", "playback.ended", "-b", "Attic"]);
+    assert_eq!(ran.status, 3, "{ran:?}");
+
+    // Where a block is, told only to those who ask, as waiting for it does.
+    TestAppContext::update(&cx, api::record);
+    let ran = plays_while(
+        &mut cx,
+        &path,
+        &["wait", "playback.position", "-b", "1", "--timeout", "5"],
+        |cx, time| {
+            if time == 0 {
+                looked(cx);
+                plays(cx, &path, &["-b", "1", "do", "playback.play_pause"]);
+            }
+            cx.executor()
+                .advance_clock(std::time::Duration::from_millis(100));
+            cx.run_until_parked();
+            thread::sleep(std::time::Duration::from_millis(20));
+        },
+    );
+    assert_eq!(ran.status, 0, "{ran:?}");
+    assert!(
+        ran.out.starts_with("playback.position window_id="),
+        "{ran:?}"
+    );
+
+    TestAppContext::update(&cx, api::record);
+    let ran = plays_while(
+        &mut cx,
+        &path,
+        &["wait", "playback.ended", "-b", "1"],
+        |cx, time| {
+            if time == 0 {
+                // Closed first, the other would be block 1.
+                looked(cx);
+                plays(cx, &path, &["block", "close", "1"]);
+            }
+        },
+    );
+    assert_eq!(
+        ran.failed(),
+        (1, "plays: the block closed before its playback.ended")
     );
 }
 
-/// As Plays quits, `events` prints each window closing, then `quit`, and
+/// As Plays quits, `events` prints each window closing, then `app.quit`, and
 /// ends; `wait` says Plays quit before what it waits for, or that what it
-/// watches closed first, unless it waits for `quit`.
+/// watches closed first, unless it waits for `app.quit`.
 #[gpui::test]
 fn events_end_and_waits_fail_as_plays_quits(cx: &mut TestAppContext) {
     let (path, window, mut cx) = serving("cli-quit", cx);
@@ -1046,9 +1082,9 @@ fn events_end_and_waits_fail_as_plays_quits(cx: &mut TestAppContext) {
     let lines: [&[&'static str]; 5] = [
         &["--json", "events"],
         &["-w", "1", "events"],
-        &["wait", "ended"],
-        &["wait", "quit"],
-        &["-w", "1", "wait", "ended"],
+        &["wait", "playback.ended"],
+        &["wait", "app.quit"],
+        &["-w", "1", "wait", "playback.ended"],
     ];
     let running: Vec<thread::JoinHandle<Ran>> = lines
         .iter()
@@ -1085,22 +1121,29 @@ fn events_end_and_waits_fail_as_plays_quits(cx: &mut TestAppContext) {
         .collect();
     assert_eq!(
         kinds[kinds.len() - 3..],
-        ["window_closed", "active_window_changed", "quit"],
+        ["window.closed", "window.active_changed", "app.quit"],
         "{all:?}"
     );
     assert_eq!(
         (first.status, first.out.as_str()),
         (
             0,
-            format!("window_closed window_id={w} window_title=Plays\nquit\n").as_str()
+            format!("window.closed window_id={w} window_title=Plays\napp.quit\n").as_str()
         ),
         "{first:?}"
     );
-    assert_eq!(ended.failed(), (1, "plays: Plays quit before its ended"));
-    assert_eq!((quit.status, quit.out.as_str()), (0, "quit\n"), "{quit:?}");
+    assert_eq!(
+        ended.failed(),
+        (1, "plays: Plays quit before its playback.ended")
+    );
+    assert_eq!(
+        (quit.status, quit.out.as_str()),
+        (0, "app.quit\n"),
+        "{quit:?}"
+    );
     assert_eq!(
         closed.failed(),
-        (1, "plays: the window closed before its ended")
+        (1, "plays: the window closed before its playback.ended")
     );
 }
 

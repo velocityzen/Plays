@@ -285,7 +285,8 @@ time); Vulkan can be software (lavapipe). It uses `Xvfb`, `openbox`,
 - Each command namespace is a file of its own in `src/api/commands/`.
 - Every command has its own lower-case id in a namespace, its own title, a
   description that is a sentence, and its arguments named once. Every
-  event is registered once, with a sentence for it and each field.
+  event is registered once, named in its namespace as commands are
+  (`playback.ended`), with a sentence for it and each field.
 - Commands, events, arguments, namespaces and help name only windows and
   blocks, a block being what shows a player.
 - Debug builds have a Developer menu: look over its Component Gallery

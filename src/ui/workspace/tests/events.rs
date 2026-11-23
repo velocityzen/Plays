@@ -94,11 +94,11 @@ fn a_block_opened_renamed_and_its_window_full_screen_are_told_once_in_order(
     assert_eq!(
         opened.iter().map(|event| event.kind).collect::<Vec<_>>(),
         [
-            "block_created",
-            "window_layout_changed",
-            "active_block_changed",
-            "opened",
-            "playing",
+            "block.created",
+            "window.layout_changed",
+            "block.active_changed",
+            "playback.opened",
+            "playback.playing",
         ]
     );
     assert_eq!(opened[3].payload["block_id"], json!(t.to_string()));
@@ -126,11 +126,11 @@ fn a_block_opened_renamed_and_its_window_full_screen_are_told_once_in_order(
         said,
         [
             (
-                "command_run",
+                "app.command_run",
                 json!({"command": "block.rename", "source": "ui", "args": {"label": "left"}})
             ),
             (
-                "block_label_changed",
+                "block.label_changed",
                 json!({
                     "window_id": w,
                     "window_title": "Plays",
@@ -140,19 +140,19 @@ fn a_block_opened_renamed_and_its_window_full_screen_are_told_once_in_order(
                 })
             ),
             (
-                "command_run",
+                "app.command_run",
                 json!({"command": "window.rename", "source": "ui", "args": {"label": "news"}})
             ),
             (
-                "window_label_changed",
+                "window.label_changed",
                 json!({"window_id": w, "window_title": "news", "label": "news"})
             ),
             (
-                "command_run",
+                "app.command_run",
                 json!({"command": "window.toggle_full_screen", "source": "ui"})
             ),
             (
-                "full_screen_changed",
+                "window.full_screen_changed",
                 json!({"window_id": w, "window_title": "news", "full_screen": true})
             ),
         ]
@@ -160,16 +160,19 @@ fn a_block_opened_renamed_and_its_window_full_screen_are_told_once_in_order(
     assert_eq!(
         kinds(&mut app),
         [
-            "command_run",
-            "command_run",
-            "window_label_changed",
-            "command_run"
+            "app.command_run",
+            "app.command_run",
+            "window.label_changed",
+            "app.command_run"
         ],
         "the app's: commands, and windows' names"
     );
     run(&mut cx, Invocation::new("window.toggle_full_screen"));
-    assert_eq!(kinds(&mut all), ["command_run", "full_screen_changed"]);
-    assert_eq!(kinds(&mut app), ["command_run"]);
+    assert_eq!(
+        kinds(&mut all),
+        ["app.command_run", "window.full_screen_changed"]
+    );
+    assert_eq!(kinds(&mut app), ["app.command_run"]);
 }
 
 #[gpui::test]
@@ -189,13 +192,13 @@ fn a_block_moved_to_a_window_of_its_own_and_the_window_closed_are_told_in_order(
     assert_eq!(
         moved.iter().map(|event| event.kind).collect::<Vec<_>>(),
         [
-            "command_run",
-            "window_created",
-            "window_layout_changed",
-            "active_block_changed",
-            "block_moved",
-            "window_layout_changed",
-            "active_block_changed",
+            "app.command_run",
+            "window.created",
+            "window.layout_changed",
+            "block.active_changed",
+            "block.moved",
+            "window.layout_changed",
+            "block.active_changed",
         ]
     );
     let x = moved[1].payload["window_id"].clone();
@@ -211,13 +214,13 @@ fn a_block_moved_to_a_window_of_its_own_and_the_window_closed_are_told_in_order(
             "from_window_title": "Plays",
         })
     );
-    assert_eq!(kinds(&mut app), ["command_run", "window_created"]);
+    assert_eq!(kinds(&mut app), ["app.command_run", "window.created"]);
     assert_eq!(
         kinds(&mut first),
         [
-            "window_layout_changed",
-            "active_block_changed",
-            "block_moved"
+            "window.layout_changed",
+            "block.active_changed",
+            "block.moved"
         ],
         "the window it left hears it go"
     );
@@ -226,12 +229,15 @@ fn a_block_moved_to_a_window_of_its_own_and_the_window_closed_are_told_in_order(
     run(&mut cx, Invocation::new("window.focus").in_window(x));
     let front = told(&mut app);
     assert_eq!(front.len(), 2, "{front:?}");
-    assert_eq!(front[1].kind, "active_window_changed");
+    assert_eq!(front[1].kind, "window.active_changed");
     assert_eq!(
         front[1].payload,
         json!({"window_id": x, "window_title": "Plays"})
     );
-    assert_eq!(kinds(&mut all), ["command_run", "active_window_changed"]);
+    assert_eq!(
+        kinds(&mut all),
+        ["app.command_run", "window.active_changed"]
+    );
     assert_eq!(
         kinds(&mut first),
         Vec::<&str>::new(),
@@ -244,22 +250,22 @@ fn a_block_moved_to_a_window_of_its_own_and_the_window_closed_are_told_in_order(
     assert_eq!(
         kinds(&mut all),
         [
-            "command_run",
-            "block_closed",
-            "window_closed",
-            "active_window_changed",
+            "app.command_run",
+            "block.closed",
+            "window.closed",
+            "window.active_changed",
         ]
     );
     let closed = told(&mut app);
     assert_eq!(
         closed.iter().map(|event| event.kind).collect::<Vec<_>>(),
-        ["command_run", "window_closed", "active_window_changed"]
+        ["app.command_run", "window.closed", "window.active_changed"]
     );
     assert_eq!(
         closed[2].payload,
         json!({"window_id": w.to_string(), "window_title": "Plays"})
     );
-    assert_eq!(kinds(&mut first), ["active_window_changed"]);
+    assert_eq!(kinds(&mut first), ["window.active_changed"]);
 }
 
 #[gpui::test]
@@ -274,7 +280,7 @@ fn a_block_maximized_is_told_as_the_layout_changes(cx: &mut TestAppContext) {
     let zoomed = told(&mut heard);
     let layout: Vec<&Event> = zoomed
         .iter()
-        .filter(|event| event.kind == "window_layout_changed")
+        .filter(|event| event.kind == "window.layout_changed")
         .collect();
     assert_eq!(layout.len(), 1, "{zoomed:?}");
     assert_eq!(layout[0].payload["maximized"], json!(t));
@@ -283,7 +289,7 @@ fn a_block_maximized_is_told_as_the_layout_changes(cx: &mut TestAppContext) {
     let back = told(&mut heard);
     assert_eq!(
         back.iter().map(|event| event.kind).collect::<Vec<_>>(),
-        ["window_layout_changed"]
+        ["window.layout_changed"]
     );
     assert_eq!(back[0].payload["maximized"], Value::Null);
 }
@@ -297,11 +303,15 @@ fn how_a_file_plays_is_told_for_its_controls_and_commands(cx: &mut TestAppContex
     let mut elsewhere = listen(&mut cx, Scope::Window(Id::next()), false);
 
     run(&mut cx, Invocation::new("playback.play_pause"));
-    assert_eq!(kinds(&mut heard), ["paused"], "not the command: the app's");
+    assert_eq!(
+        kinds(&mut heard),
+        ["playback.paused"],
+        "not the command: the app's"
+    );
     // Its play button sends the command once the click is handled.
     click(&mut cx, "play");
     look(&mut cx);
-    assert_eq!(kinds(&mut heard), ["playing"]);
+    assert_eq!(kinds(&mut heard), ["playback.playing"]);
     run(&mut cx, Invocation::new("playback.play_pause"));
     kinds(&mut heard);
 
@@ -311,7 +321,7 @@ fn how_a_file_plays_is_told_for_its_controls_and_commands(cx: &mut TestAppContex
     );
     let sought = told(&mut heard);
     assert_eq!(sought.len(), 1);
-    assert_eq!(sought[0].kind, "seeked");
+    assert_eq!(sought[0].kind, "playback.seeked");
     // Its time in seconds, how far through from 0 to 1, and the frame at
     // 25 a second.
     assert_eq!(sought[0].payload["time"], json!(0.5));
@@ -343,7 +353,7 @@ fn how_a_file_plays_is_told_for_its_controls_and_commands(cx: &mut TestAppContex
     let stepped = told(&mut heard);
     assert_eq!(
         stepped.iter().map(|event| event.kind).collect::<Vec<_>>(),
-        ["seeked"]
+        ["playback.seeked"]
     );
     assert_eq!(stepped[0].payload["frame"], json!(1), "{stepped:?}");
     assert!(stepped[0].payload["position"].as_f64().unwrap() > 0.0);
@@ -356,7 +366,7 @@ fn how_a_file_plays_is_told_for_its_controls_and_commands(cx: &mut TestAppContex
     let volumes: Vec<Value> = told(&mut heard)
         .into_iter()
         .map(|event| {
-            assert_eq!(event.kind, "volume_changed");
+            assert_eq!(event.kind, "audio.volume_changed");
             json!([event.payload["volume"], event.payload["muted"]])
         })
         .collect();
@@ -369,11 +379,25 @@ fn how_a_file_plays_is_told_for_its_controls_and_commands(cx: &mut TestAppContex
     let chapter = told(&mut heard);
     assert_eq!(
         chapter.iter().map(|event| event.kind).collect::<Vec<_>>(),
-        ["seeked", "chapter_changed"]
+        ["playback.seeked", "playback.chapter_changed"]
     );
     assert_eq!(chapter[1].payload["chapter"], json!(2));
+    assert!(
+        kinds(&mut elsewhere).is_empty(),
+        "another window's hear none"
+    );
+}
 
-    // Played to its end, it says so, not that it paused.
+/// Played to its end, a file says so, not that it paused.
+#[gpui::test]
+fn a_file_played_to_its_end_is_told_ended_not_paused(cx: &mut TestAppContext) {
+    let (window, mut cx) = testing::start(cx);
+    open(window, &mut cx, &["clip-chapters.mkv"], true);
+    let w = window_id(window, &cx);
+    let mut heard = listen(&mut cx, Scope::Window(w), false);
+    run(&mut cx, Invocation::new("playback.play_pause"));
+    assert_eq!(kinds(&mut heard), ["playback.paused"]);
+
     let duration = run(&mut cx, Invocation::new("block.inspect"))["duration"]
         .as_f64()
         .unwrap();
@@ -391,11 +415,12 @@ fn how_a_file_plays_is_told_for_its_controls_and_commands(cx: &mut TestAppContex
     look(&mut cx);
     assert_eq!(
         kinds(&mut heard),
-        ["seeked", "chapter_changed", "playing", "ended"]
-    );
-    assert!(
-        kinds(&mut elsewhere).is_empty(),
-        "another window's hear none"
+        [
+            "playback.seeked",
+            "playback.chapter_changed",
+            "playback.playing",
+            "playback.ended"
+        ]
     );
 }
 
@@ -409,7 +434,7 @@ fn positions_are_told_only_to_those_who_ask_once_a_second_at_most(cx: &mut TestA
     let positions = |listener: &mut UnboundedReceiver<Event>| -> Vec<f64> {
         told(listener)
             .into_iter()
-            .filter(|event| event.kind == "position")
+            .filter(|event| event.kind == "playback.position")
             .map(|event| {
                 let payload = &event.payload;
                 let time = payload["time"].as_f64().unwrap();
@@ -468,7 +493,10 @@ fn sound_alone_is_told_with_no_frame(cx: &mut TestAppContext) {
         Invocation::new("playback.seek").with_args(json!({"time": 0.5})),
     );
     let sought = told(&mut heard);
-    let sought = sought.iter().find(|event| event.kind == "seeked").unwrap();
+    let sought = sought
+        .iter()
+        .find(|event| event.kind == "playback.seeked")
+        .unwrap();
     assert_eq!(sought.payload["time"], json!(0.5));
     assert!(sought.payload["position"].as_f64().unwrap() > 0.0);
     assert_eq!(sought.payload["frame"], Value::Null, "{sought:?}");
@@ -498,7 +526,7 @@ fn outputs_devices_and_casts_are_told_as_found_and_started(cx: &mut TestAppConte
     let found = told(&mut all);
     assert_eq!(
         found.iter().map(|event| event.kind).collect::<Vec<_>>(),
-        ["outputs_changed", "cast_devices_changed"]
+        ["output.devices_changed", "cast.devices_changed"]
     );
     assert_eq!(
         found[0].payload["outputs"],
@@ -516,13 +544,13 @@ fn outputs_devices_and_casts_are_told_as_found_and_started(cx: &mut TestAppConte
     let started = told(&mut all);
     let kinds_of = |events: &[Event]| events.iter().map(|event| event.kind).collect::<Vec<_>>();
     assert!(
-        kinds_of(&started).contains(&"cast_started"),
+        kinds_of(&started).contains(&"cast.started"),
         "{:?}",
         kinds_of(&started)
     );
     let cast = started
         .iter()
-        .find(|event| event.kind == "cast_started")
+        .find(|event| event.kind == "cast.started")
         .unwrap();
     assert_eq!(cast.payload["device"]["name"], json!("Living Room"));
 
@@ -531,10 +559,10 @@ fn outputs_devices_and_casts_are_told_as_found_and_started(cx: &mut TestAppConte
     assert_eq!(
         ended
             .iter()
-            .filter(|event| event.kind.starts_with("cast_"))
+            .filter(|event| event.kind.starts_with("cast."))
             .map(|event| event.kind)
             .collect::<Vec<_>>(),
-        ["cast_ended"]
+        ["cast.ended"]
     );
 }
 
@@ -555,7 +583,7 @@ fn tracks_and_a_file_opened_in_place_of_another_are_told_as_they_change(cx: &mut
     run(&mut cx, subtitles(None));
     let tracks: Vec<Value> = told(&mut heard)
         .into_iter()
-        .filter(|event| event.kind == "track_changed")
+        .filter(|event| event.kind == "playback.track_changed")
         .map(|event| json!([event.payload["kind"], event.payload["track"]]))
         .collect();
     assert!(
@@ -578,14 +606,20 @@ fn tracks_and_a_file_opened_in_place_of_another_are_told_as_they_change(cx: &mut
     let opened = told(&mut heard);
     let kinds: Vec<&str> = opened.iter().map(|event| event.kind).collect();
     assert_eq!(
-        kinds.iter().filter(|&&kind| kind == "opened").count(),
+        kinds
+            .iter()
+            .filter(|&&kind| kind == "playback.opened")
+            .count(),
         1,
         "{kinds:?}"
     );
-    let at = kinds.iter().position(|&kind| kind == "opened").unwrap();
+    let at = kinds
+        .iter()
+        .position(|&kind| kind == "playback.opened")
+        .unwrap();
     assert_eq!(opened[at].payload["title"], json!("clip.mp4"));
     assert!(
-        !kinds.contains(&"track_changed") && !kinds.contains(&"block_created"),
+        !kinds.contains(&"playback.track_changed") && !kinds.contains(&"block.created"),
         "the same block, its tracks as the file has them: {kinds:?}"
     );
 
@@ -605,7 +639,7 @@ fn tracks_and_a_file_opened_in_place_of_another_are_told_as_they_change(cx: &mut
     look(&mut cx);
     let opened: Vec<Event> = told(&mut heard)
         .into_iter()
-        .filter(|event| event.kind == "opened")
+        .filter(|event| event.kind == "playback.opened")
         .collect();
     assert_eq!(opened.len(), 1, "{opened:?}");
     assert_eq!(opened[0].payload["title"], json!("clip-subs.mkv"));
@@ -640,10 +674,10 @@ fn a_file_that_cant_open_is_told_so_and_where_it_is_isnt(cx: &mut TestAppContext
     assert_eq!(
         events.iter().map(|event| event.kind).collect::<Vec<_>>(),
         [
-            "block_created",
-            "window_layout_changed",
-            "active_block_changed",
-            "open_failed",
+            "block.created",
+            "window.layout_changed",
+            "block.active_changed",
+            "playback.open_failed",
         ]
     );
     assert!(!events[3].payload["error"].as_str().unwrap().is_empty());
@@ -672,12 +706,12 @@ fn as_the_app_quits_each_window_is_told_closing_then_quit_to_everyone(cx: &mut T
     assert_eq!(
         quitting.iter().map(|event| event.kind).collect::<Vec<_>>(),
         [
-            "window_created",
-            "block_closed",
-            "window_closed",
-            "window_closed",
-            "active_window_changed",
-            "quit",
+            "window.created",
+            "block.closed",
+            "window.closed",
+            "window.closed",
+            "window.active_changed",
+            "app.quit",
         ]
     );
     let w = w.to_string();
@@ -703,20 +737,20 @@ fn as_the_app_quits_each_window_is_told_closing_then_quit_to_everyone(cx: &mut T
     assert_eq!(
         kinds(&mut app),
         [
-            "window_created",
-            "window_closed",
-            "window_closed",
-            "active_window_changed",
-            "quit",
+            "window.created",
+            "window.closed",
+            "window.closed",
+            "window.active_changed",
+            "app.quit",
         ]
     );
     assert_eq!(
         kinds(&mut first),
-        ["block_closed", "window_closed", "quit"],
+        ["block.closed", "window.closed", "app.quit"],
         "its own closing, and quit"
     );
     assert_eq!(
         kinds(&mut second),
-        ["window_created", "window_closed", "quit"]
+        ["window.created", "window.closed", "app.quit"]
     );
 }

@@ -20,7 +20,7 @@
 //! is told once, whatever made it: a command, a click, or the file itself,
 //! opening or ending. Settings, which change where they're kept, are told
 //! as they change. Nothing is looked at while no one listens. As the app
-//! quits (`quit`), each window still open is told closing, then `quit`,
+//! quits (`quit`), each window still open is told closing, then `app.quit`,
 //! which every listener hears, one window's too.
 
 pub mod kinds;
@@ -176,7 +176,7 @@ struct Listening {
 
 impl Listening {
     fn hears(&self, event: &Event) -> bool {
-        event.heard_in(self.scope) && (event.kind != "position" || self.positions)
+        event.heard_in(self.scope) && (event.kind != "playback.position" || self.positions)
     }
 }
 
@@ -331,7 +331,7 @@ fn see(cx: &mut App) -> Seen {
 
 /// The app quits: what changed since the last look is told, then each
 /// window still open closing, its blocks first, as closing it would, then
-/// `quit`, which every listener hears. The socket writes them out as it
+/// `app.quit`, which every listener hears. The socket writes them out as it
 /// quits (`socket::server`), as nothing else runs then.
 pub fn quit(cx: &mut App) {
     if !listened(cx) {
@@ -349,7 +349,7 @@ pub fn quit(cx: &mut App) {
     for event in seen::changes(&seen, &closed) {
         tell(&event, cx);
     }
-    tell(&Event::to_everyone("quit", json!({})), cx);
+    tell(&Event::to_everyone("app.quit", json!({})), cx);
 }
 
 /// Tell where each block that has opened is, to those who asked, at most
@@ -376,7 +376,10 @@ fn positions(seen: &Seen, cx: &mut App) {
                 told.insert(block.id, (now, block.position));
                 let mut payload = block.playhead(block.position);
                 payload["duration"] = json!(block.duration);
-                tell(&Event::block("position", window, block, payload), cx);
+                tell(
+                    &Event::block("playback.position", window, block, payload),
+                    cx,
+                );
             }
         }
     }
@@ -396,19 +399,22 @@ pub fn command_run(invocation: &Invocation, command: &'static str, cx: &App) {
     if !invocation.target.is_empty() {
         payload["target"] = json!(invocation.target);
     }
-    tell(&Event::app("command_run", payload), cx);
+    tell(&Event::app("app.command_run", payload), cx);
 }
 
 /// A client connected to the socket, numbered `client`: told to the
 /// app's listeners.
 pub fn client_connected(client: u64, cx: &App) {
     let payload = json!({"client_id": client});
-    tell(&Event::app("client_connected", payload), cx);
+    tell(&Event::app("app.client_connected", payload), cx);
 }
 
 /// The client numbered `client` went: told to the app's listeners.
 pub fn client_left(client: u64, cx: &App) {
-    tell(&Event::app("client_left", json!({"client_id": client})), cx);
+    tell(
+        &Event::app("app.client_left", json!({"client_id": client})),
+        cx,
+    );
 }
 
 /// A command has run: look for what it changed once what it set off has
@@ -431,12 +437,15 @@ fn settings_changed(cx: &mut App) {
     };
     let keys = fields::changed(&old, &settings, &commands::settings::protocols(cx));
     if !keys.is_empty() {
-        tell(&Event::app("settings_changed", json!({"keys": keys})), cx);
+        tell(
+            &Event::app("app.settings.changed", json!({"keys": keys})),
+            cx,
+        );
     }
     if old.over_video != settings.over_video {
         let visible = settings.over_video.visible();
         tell(
-            &Event::app("app_ui_changed", json!({"visible": visible})),
+            &Event::app("app.ui_changed", json!({"visible": visible})),
             cx,
         );
     }
@@ -446,7 +455,7 @@ fn settings_changed(cx: &mut App) {
         .collect();
     if !commands.is_empty() {
         tell(
-            &Event::app("keymap_changed", json!({"commands": commands})),
+            &Event::app("app.settings.keymap_changed", json!({"commands": commands})),
             cx,
         );
     }

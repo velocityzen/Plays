@@ -312,7 +312,7 @@ flowchart LR
   shader
 - `src/ui/pip/` (macOS): frames to an `AVSampleBufferDisplayLayer` that
   `AVPictureInPictureController` shows, pumped on a timer of its own
-- `src/ui/settings/`: a file per pane; controls set through `settings.set`
+- `src/ui/settings/`: a file per pane; controls set through `app.settings.set`
 - `src/ui/palette/`: command palette and Go to…, listing what can run there
 - `src/ui/displays.rs`, `blackout/`: displays, and blacking out the others
 - `src/ui/framing.rs`, `screenshot.rs`: a block's picture, and saving it

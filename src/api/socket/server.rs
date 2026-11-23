@@ -5,7 +5,7 @@
 //! runs before its answer. A client that stops reading, with `OUTBOX`
 //! lines waiting for it, is cut off rather than kept in memory. As the
 //! app quits, each client is sent what it was told, the windows closing
-//! and `quit` among it, before its connection closes (`end_on_quit`).
+//! and `app.quit` among it, before its connection closes (`end_on_quit`).
 //!
 //! Commands run, and events are heard, only while Settings has control
 //! from the command line on (`allowed`); turning it off cuts off every
@@ -50,7 +50,7 @@ const ACCEPT_PAUSE: Duration = Duration::from_millis(100);
 /// all it was told.
 const WRITTEN_POLL: Duration = Duration::from_millis(2);
 
-/// A client's number, told with `client_connected` and `client_left`.
+/// A client's number, told with `app.client_connected` and `app.client_left`.
 type ClientId = u64;
 
 /// The clients connected, by number.
@@ -130,7 +130,7 @@ struct Hearing {
 
 impl Hearing {
     /// Send those told and still waiting to be, as before an answer: the
-    /// events told as its request ran, such as its `command_run`, come
+    /// events told as its request ran, such as its `app.command_run`, come
     /// first.
     fn send_waiting(&self, out: &Out) {
         while let Ok(event) = self.told.borrow_mut().try_recv() {
@@ -173,7 +173,7 @@ pub fn serve(listener: Listener, cx: &mut App) {
     .detach();
 }
 
-/// As the app quits, tell those listening the windows closing and `quit`,
+/// As the app quits, tell those listening the windows closing and `app.quit`,
 /// send each client what it was told, as nothing else runs then, and
 /// close its connection; remove the socket, and wait, as long as quitting
 /// does, for what was sent to be written.

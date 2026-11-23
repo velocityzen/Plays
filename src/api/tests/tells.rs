@@ -35,22 +35,22 @@ const NOT_RUN: [(&str, &str); 2] = [
 const NOT_HEARD: [(&str, &str, &str); 4] = [
     (
         "block.toggle_picture_in_picture",
-        "picture_in_picture_changed",
+        "block.picture_in_picture_changed",
         "Picture in Picture is the system's",
     ),
     (
         "video.next_track",
-        "track_changed",
+        "playback.track_changed",
         "no file here has two video tracks",
     ),
     (
         "video.select_track",
-        "track_changed",
+        "playback.track_changed",
         "no file here has two video tracks",
     ),
     (
         "output.set_device",
-        "route_changed",
+        "output.route_changed",
         "tests play no sound, so it goes nowhere",
     ),
 ];
@@ -307,7 +307,7 @@ fn other_ways(plan: &Plan) -> Option<Vec<Way>> {
                 vec![plan.with(json!({"id": "headphones", "name": "Headphones"}))],
             ),
         ],
-        "settings.set" => vec![
+        "app.settings.set" => vec![
             way(
                 Vec::new(),
                 vec![plan.with(json!({"key": "autoplay", "value": true}))],
@@ -315,19 +315,19 @@ fn other_ways(plan: &Plan) -> Option<Vec<Way>> {
             way(Vec::new(), vec![plan.with(hotkeys())]),
             way(Vec::new(), vec![plan.with(hide_notes())]),
         ],
-        "settings.reset" => vec![
+        "app.settings.reset" => vec![
             way(Vec::new(), vec![plan.with(json!({"key": "autoplay"}))]),
             way(
-                vec![command("settings.set").with_args(hotkeys())],
+                vec![command("app.settings.set").with_args(hotkeys())],
                 vec![plan.with(json!({"key": "hotkeys"}))],
             ),
             way(
-                vec![command("settings.set").with_args(hide_notes())],
+                vec![command("app.settings.set").with_args(hide_notes())],
                 vec![plan.with(json!({"key": "over_video.notes"}))],
             ),
         ],
         // The file says otherwise than the settings Plays has.
-        "settings.reload" => vec![Way {
+        "app.settings.reload" => vec![Way {
             before: vec![Step::Do(|cx| {
                 let kept = cx.global::<Settings>().clone();
                 Settings::update(cx, true, |settings| {
@@ -413,7 +413,7 @@ fn settle(cx: &mut TestAppContext) {
 fn told(listener: &mut UnboundedReceiver<Event>) -> impl Iterator<Item = &'static str> {
     std::iter::from_fn(|| listener.try_recv().ok())
         .map(|event| event.kind)
-        .filter(|&kind| kind != "command_run")
+        .filter(|&kind| kind != "app.command_run")
 }
 
 /// The events `spec` tells, in each of its ways, each in a world of its
@@ -554,7 +554,7 @@ namespaces! {
     video_commands_tell_what_they_say: "video",
     cast_commands_tell_what_they_say: "cast",
     output_commands_tell_what_they_say: "output",
-    settings_commands_tell_what_they_say: "settings",
+    settings_commands_tell_what_they_say: "app.settings",
     cli_commands_tell_what_they_say: "cli",
 }
 

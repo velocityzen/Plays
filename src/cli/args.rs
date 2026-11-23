@@ -100,10 +100,10 @@ pub enum Command {
         count: Option<usize>,
     },
     /// Wait for an event from the block (-b) or window (-w) named, such as
-    /// ended, and print it.
+    /// playback.ended, and print it.
     Wait {
-        /// The event's type, as plays events prints it: ended, paused,
-        /// block_closed…
+        /// The event's type, as plays events prints it: playback.ended,
+        /// playback.paused, block.closed…
         event: String,
         /// Give up after this many seconds, with exit status 1.
         // So -1 is read as a time, and refused as one, not as an option.

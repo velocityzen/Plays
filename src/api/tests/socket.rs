@@ -280,9 +280,9 @@ fn a_client_passes_over_other_answers_and_keeps_the_events_that_come_first() {
         &path,
         &[
             r#"{"id": 99, "result": "stale"}"#,
-            r#"{"type": "playing", "payload": {"block_id": "1"}}"#,
+            r#"{"type": "playback.playing", "payload": {"block_id": "1"}}"#,
             r#"{"id": 1, "result": "hello"}"#,
-            r#"{"type": "paused", "payload": null}"#,
+            r#"{"type": "playback.paused", "payload": null}"#,
         ],
     );
     let mut client = Client::connect(&path).unwrap();
@@ -291,9 +291,12 @@ fn a_client_passes_over_other_answers_and_keeps_the_events_that_come_first() {
     plays.join().unwrap();
     assert_eq!(
         client.next_event().unwrap(),
-        ("playing".into(), json!({"block_id": "1"}))
+        ("playback.playing".into(), json!({"block_id": "1"}))
     );
-    assert_eq!(client.next_event().unwrap(), ("paused".into(), Value::Null));
+    assert_eq!(
+        client.next_event().unwrap(),
+        ("playback.paused".into(), Value::Null)
+    );
     assert_eq!(
         said(client.next_event().unwrap_err()),
         (4, "Plays closed the connection".into()),
@@ -313,7 +316,7 @@ fn an_event_half_read_by_the_time_given_is_read_whole_the_next_time() {
         let mut asked = String::new();
         BufReader::new(&stream).read_line(&mut asked).unwrap();
         writeln!(&stream, r#"{{"id": 1, "result": "hello"}}"#).unwrap();
-        write!(&stream, r#"{{"type": "ended", "pay"#).unwrap();
+        write!(&stream, r#"{{"type": "playback.ended", "pay"#).unwrap();
         told.recv().unwrap();
         writeln!(&stream, r#"load": {{"block_id": "1"}}}}"#).unwrap();
     });
@@ -328,7 +331,7 @@ fn an_event_half_read_by_the_time_given_is_read_whole_the_next_time() {
     go_on.send(()).unwrap();
     assert_eq!(
         client.next_event_by(None).unwrap(),
-        Some(("ended".into(), json!({"block_id": "1"})))
+        Some(("playback.ended".into(), json!({"block_id": "1"})))
     );
     plays.join().unwrap();
 }
@@ -412,7 +415,7 @@ fn with_control_off_it_says_who_it_is_and_takes_files_but_runs_and_tells_nothing
             client.subscribe(Heard::All, false).unwrap_err(),
             client
                 .call(
-                    "settings.set",
+                    "app.settings.set",
                     json!({"key": "command_line_control", "value": true}),
                     Target::default(),
                 )
@@ -743,13 +746,13 @@ fn events_reach_those_who_subscribe_as_they_happen(cx: &mut TestAppContext) {
         &mut cx,
         &path,
         |client| client.subscribe(Heard::All, false).unwrap(),
-        |client| until(client, "client_left"),
+        |client| until(client, "app.client_left"),
     );
     let (_, apps) = listening(
         &mut cx,
         &path,
         |client| client.subscribe(Heard::App, false).unwrap(),
-        |client| until(client, "client_left"),
+        |client| until(client, "app.client_left"),
     );
 
     let clip = fixture("clip.mp4").display().to_string();
@@ -777,17 +780,17 @@ fn events_reach_those_who_subscribe_as_they_happen(cx: &mut TestAppContext) {
     let apps = apps.join().unwrap();
     assert_eq!(
         everything[0],
-        ("client_connected".into(), json!({"client_id": 2}))
+        ("app.client_connected".into(), json!({"client_id": 2}))
     );
     let everything = &everything[1..];
     assert_eq!(
         kinds(&apps),
         [
-            "client_connected",
-            "command_run",
-            "command_run",
-            "window_label_changed",
-            "client_left",
+            "app.client_connected",
+            "app.command_run",
+            "app.command_run",
+            "window.label_changed",
+            "app.client_left",
         ]
     );
     assert_eq!(apps[0].1, json!({"client_id": 3}));
@@ -797,7 +800,7 @@ fn events_reach_those_who_subscribe_as_they_happen(cx: &mut TestAppContext) {
     assert_eq!(apps[3].1["label"], "Films");
     assert_eq!(apps[4].1, json!({"client_id": 3}));
     assert!(
-        kinds(everything).contains(&"block_created"),
+        kinds(everything).contains(&"block.created"),
         "what's in a window is heard by those listening to everything: {:?}",
         kinds(everything)
     );
@@ -835,7 +838,7 @@ fn a_subscriber_to_one_window_hears_only_its_events(cx: &mut TestAppContext) {
     assert_eq!(
         hearing.join().unwrap(),
         [(
-            "window_label_changed".into(),
+            "window.label_changed".into(),
             json!({"window_id": window_id(first, &cx), "window_title": "One", "label": "One"})
         )]
     );
@@ -859,13 +862,13 @@ fn positions_reach_only_those_who_ask_for_them(cx: &mut TestAppContext) {
         &mut cx,
         &path,
         |client| client.subscribe(Heard::All, true).unwrap(),
-        |client| until(client, "position"),
+        |client| until(client, "playback.position"),
     );
     let (_, without) = listening(
         &mut cx,
         &path,
         |client| client.subscribe(Heard::All, false).unwrap(),
-        |client| until(client, "window_label_changed"),
+        |client| until(client, "window.label_changed"),
     );
     let clip = fixture("clip.mp4").display().to_string();
     let opened = TestAppContext::update(&cx, |cx| {
@@ -900,7 +903,7 @@ fn positions_reach_only_those_who_ask_for_them(cx: &mut TestAppContext) {
     assert!(wait_until(&mut cx, |_| without.is_finished()));
     let without = without.join().unwrap();
     assert!(
-        !kinds(&without).contains(&"position"),
+        !kinds(&without).contains(&"playback.position"),
         "{:?}",
         kinds(&without)
     );
@@ -919,7 +922,7 @@ fn a_subscriber_running_a_command_hears_it_run_before_the_answer(cx: &mut TestAp
         (client.events_waiting(), client.next_event().unwrap())
     });
     assert_eq!(waiting, 1);
-    assert_eq!(first.0, "command_run");
+    assert_eq!(first.0, "app.command_run");
     assert_eq!(first.1["command"], "window.rename");
 }
 
@@ -948,9 +951,9 @@ fn the_socket_is_removed_as_the_app_quits(cx: &mut TestAppContext) {
     assert!(!path.exists());
 }
 
-/// What a client hears until `quit`, which its connection closes after.
+/// What a client hears until `app.quit`, which its connection closes after.
 fn to_the_end(client: &mut Client) -> Vec<(String, Value)> {
-    let heard = until(client, "quit");
+    let heard = until(client, "app.quit");
     assert_eq!(
         client.next_event().map_err(said),
         Err((4, "Plays closed the connection".into())),
@@ -993,17 +996,17 @@ fn as_the_app_quits_listeners_hear_the_windows_close_and_quit_then_the_end(
     assert_eq!(
         kinds(&all),
         [
-            "client_connected",
-            "client_connected",
-            "window_closed",
-            "active_window_changed",
-            "quit",
+            "app.client_connected",
+            "app.client_connected",
+            "window.closed",
+            "window.active_changed",
+            "app.quit",
         ]
     );
     assert_eq!(all[2].1, json!({"window_id": w, "window_title": "Plays"}));
     assert_eq!(all[4].1, json!({}));
     let first = first.join().expect("the window's heard to the end");
-    assert_eq!(kinds(&first), ["window_closed", "quit"]);
+    assert_eq!(kinds(&first), ["window.closed", "app.quit"]);
     assert_eq!(
         asked.join().unwrap(),
         [("end".into(), json!("Plays closed the connection"))]

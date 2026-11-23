@@ -741,9 +741,9 @@ fn hotkeys_lists_every_command_that_takes_keys_and_records_any_key(cx: &mut Test
     // rather than run (asking for files would fail here), and taken from
     // the command that had it.
     let cmd_o = crate::hotkeys::normalize("secondary-o").unwrap();
-    click(&mut settings, add("app.settings"));
+    click(&mut settings, add("app.settings.open"));
     press(&mut settings, "secondary-o");
-    assert!(keys("app.settings", &mut settings).contains(&cmd_o));
+    assert!(keys("app.settings.open", &mut settings).contains(&cmd_o));
     assert!(!keys("window.open_files", &mut settings).contains(&cmd_o));
     let note = format!("{} was for “Open…”", crate::hotkeys::display(&cmd_o));
     assert!(

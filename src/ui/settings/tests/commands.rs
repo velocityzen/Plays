@@ -42,9 +42,9 @@ fn settings<T>(cx: &mut VisualTestContext, read: impl FnOnce(&Settings) -> T) ->
     cx.update(|_, cx| read(cx.global::<Settings>()))
 }
 
-/// `settings.set` of `key` to `value`, as a control sends it.
+/// `app.settings.set` of `key` to `value`, as a control sends it.
 fn set(key: &str, value: Value) -> Invocation {
-    Invocation::new("settings.set").with_args(json!({"key": key, "value": value}))
+    Invocation::new("app.settings.set").with_args(json!({"key": key, "value": value}))
 }
 
 /// Cast with the fake protocol, whose setting is `casting.look_with.Fake`.
@@ -75,7 +75,7 @@ fn a_setting_set_in_the_window_and_by_command_is_saved_alike(cx: &mut TestAppCon
     assert_eq!(
         run(
             &mut cx,
-            "settings.set",
+            "app.settings.set",
             json!({"key": "autoplay", "value": false})
         ),
         Ok(json!(false))
@@ -114,7 +114,7 @@ fn each_kind_of_control_sets_its_setting_by_command(cx: &mut TestAppContext) {
     click(&mut window, "restore-hotkeys");
     assert_eq!(
         recorded(&mut window),
-        [Invocation::new("settings.reset").with_args(json!({"key": "hotkeys"}))]
+        [Invocation::new("app.settings.reset").with_args(json!({"key": "hotkeys"}))]
     );
 }
 
@@ -180,39 +180,39 @@ fn a_bad_value_is_turned_away(cx: &mut TestAppContext) {
     assert_eq!(
         run(
             &mut cx,
-            "settings.set",
+            "app.settings.set",
             json!({"key": "theme", "value": "purple"})
         ),
         Err(Error::bad_args(
-            "settings.set",
+            "app.settings.set",
             r#"theme is one of "system", "dark", "light""#
         ))
     );
     assert_eq!(settings(&mut cx, |s| s.theme), ThemeMode::System, "left be");
     assert_eq!(saved(&folder), None, "and not saved");
     assert_eq!(
-        run(&mut cx, "settings.set", json!({"key": "theme"})),
-        Err(Error::bad_args("settings.set", "needs value"))
+        run(&mut cx, "app.settings.set", json!({"key": "theme"})),
+        Err(Error::bad_args("app.settings.set", "needs value"))
     );
     assert_eq!(
         run(
             &mut cx,
-            "settings.set",
+            "app.settings.set",
             json!({"key": "colour", "value": 1})
         ),
         Err(Error::not_found("setting", "colour"))
     );
     assert_eq!(
-        run(&mut cx, "settings.get", json!({"key": "colour"})),
+        run(&mut cx, "app.settings.get", json!({"key": "colour"})),
         Err(Error::not_found("setting", "colour"))
     );
     assert_eq!(
-        run(&mut cx, "settings.reset", json!({"key": "colour"})),
+        run(&mut cx, "app.settings.reset", json!({"key": "colour"})),
         Err(Error::not_found("setting", "colour"))
     );
 }
 
-/// What `settings.ls`, `listed`, says of `key`.
+/// What `app.settings.ls`, `listed`, says of `key`.
 fn entry(listed: &Value, key: &str) -> Value {
     listed
         .as_array()
@@ -227,7 +227,7 @@ fn entry(listed: &Value, key: &str) -> Value {
 fn lists_every_setting_with_what_it_takes(cx: &mut TestAppContext) {
     let (_, mut cx) = testing::start(cx);
     with_fake_protocol(&mut cx);
-    let listed = run(&mut cx, "settings.ls", Value::Null).unwrap();
+    let listed = run(&mut cx, "app.settings.ls", Value::Null).unwrap();
     assert_eq!(
         listed[0]["key"], "autoplay",
         "in the order Settings has them"
@@ -299,26 +299,26 @@ fn reads_sets_and_resets_a_setting_by_its_key(cx: &mut TestAppContext) {
     with_fake_protocol(&mut cx);
     let key = |key: &str| json!({"key": key});
     assert_eq!(
-        run(&mut cx, "settings.get", key("theme")),
+        run(&mut cx, "app.settings.get", key("theme")),
         Ok(json!("system"))
     );
     assert_eq!(
         run(
             &mut cx,
-            "settings.set",
+            "app.settings.set",
             json!({"key": "theme", "value": "dark"})
         ),
         Ok(json!("dark"))
     );
     assert_eq!(
-        run(&mut cx, "settings.get", key("theme")),
+        run(&mut cx, "app.settings.get", key("theme")),
         Ok(json!("dark"))
     );
-    let listed = run(&mut cx, "settings.ls", Value::Null).unwrap();
+    let listed = run(&mut cx, "app.settings.ls", Value::Null).unwrap();
     assert_eq!(entry(&listed, "theme")["value"], "dark");
     assert_eq!(entry(&listed, "theme")["default"], "system");
     assert_eq!(
-        run(&mut cx, "settings.reset", key("theme")),
+        run(&mut cx, "app.settings.reset", key("theme")),
         Ok(json!("system"))
     );
     assert_eq!(settings(&mut cx, |s| s.theme), ThemeMode::System);
@@ -327,13 +327,19 @@ fn reads_sets_and_resets_a_setting_by_its_key(cx: &mut TestAppContext) {
     assert_eq!(
         run(
             &mut cx,
-            "settings.set",
+            "app.settings.set",
             json!({"key": fake, "value": false})
         ),
         Ok(json!(false))
     );
-    assert_eq!(run(&mut cx, "settings.get", key(fake)), Ok(json!(false)));
-    assert_eq!(run(&mut cx, "settings.reset", key(fake)), Ok(json!(true)));
+    assert_eq!(
+        run(&mut cx, "app.settings.get", key(fake)),
+        Ok(json!(false))
+    );
+    assert_eq!(
+        run(&mut cx, "app.settings.reset", key(fake)),
+        Ok(json!(true))
+    );
     assert!(settings(&mut cx, |s| s.casting.looks_with("Fake")));
 }
 
@@ -342,7 +348,7 @@ fn a_reload_picks_up_the_file(cx: &mut TestAppContext) {
     let (_, mut cx) = testing::start(cx);
     let folder = keep_in(&mut cx, "commands-reload");
     assert_eq!(
-        run(&mut cx, "settings.reload", Value::Null),
+        run(&mut cx, "app.settings.reload", Value::Null),
         Err(Error::failed(
             "there's no settings file yet: every setting is as Plays starts it out"
         ))
@@ -352,7 +358,7 @@ fn a_reload_picks_up_the_file(cx: &mut TestAppContext) {
     let text = r#"{"theme": "dark", "columns": 2, "subtitles": {"size": 1.5}}"#;
     crate::files::write_whole(&file, text.as_bytes()).unwrap();
     assert_eq!(
-        run(&mut cx, "settings.reload", Value::Null),
+        run(&mut cx, "app.settings.reload", Value::Null),
         Ok(json!(["subtitles.size", "theme", "columns"])),
         "the settings it changed"
     );
@@ -366,15 +372,18 @@ fn a_reload_picks_up_the_file(cx: &mut TestAppContext) {
         "read, not saved over"
     );
     assert_eq!(
-        run(&mut cx, "settings.reload", Value::Null),
+        run(&mut cx, "app.settings.reload", Value::Null),
         Ok(json!([])),
         "again, nothing changes"
     );
 
     cx.update(|_, cx| cx.set_global(Folder::app()));
     let nowhere = Err(Error::failed("the settings aren't kept in a file here"));
-    assert_eq!(run(&mut cx, "settings.reload", Value::Null), nowhere);
-    assert_eq!(run(&mut cx, "settings.reveal_file", Value::Null), nowhere);
+    assert_eq!(run(&mut cx, "app.settings.reload", Value::Null), nowhere);
+    assert_eq!(
+        run(&mut cx, "app.settings.reveal_file", Value::Null),
+        nowhere
+    );
 }
 
 #[gpui::test]
@@ -383,7 +392,7 @@ fn reveals_the_settings_file_saving_it_first(cx: &mut TestAppContext) {
     let folder = keep_in(&mut cx, "commands-reveal");
     let file = folder.file("settings.json").unwrap();
     assert_eq!(
-        run(&mut cx, "settings.reveal_file", Value::Null),
+        run(&mut cx, "app.settings.reveal_file", Value::Null),
         Ok(json!(file.display().to_string()))
     );
     let saved = saved(&folder).expect("saved first");
@@ -429,13 +438,13 @@ fn copies_the_version_and_what_a_bug_report_needs(cx: &mut TestAppContext) {
 
     run(
         &mut cx,
-        "settings.set",
+        "app.settings.set",
         json!({"key": "theme", "value": "dark"}),
     )
     .unwrap();
     run(
         &mut cx,
-        "settings.set",
+        "app.settings.set",
         json!({"key": "subtitles.size", "value": 1.5}),
     )
     .unwrap();

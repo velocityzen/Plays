@@ -18,10 +18,9 @@ use crate::ui::workspace::Workspace;
 mod tells;
 
 /// The namespaces command ids start with.
-const NAMESPACES: [&str; 13] = [
+const NAMESPACES: [&str; 12] = [
     "app",
     "window",
-    "view",
     "block",
     "playback",
     "audio",
@@ -30,7 +29,7 @@ const NAMESPACES: [&str; 13] = [
     "cast",
     "output",
     "display",
-    "settings",
+    "app.settings",
     "cli",
 ];
 
@@ -106,9 +105,9 @@ fn queries_say_what_they_hand_back_and_take_no_keys() {
             "cast.ls",
             "output.ls",
             "display.ls",
-            "settings.ls",
-            "settings.get",
-            "settings.keymap",
+            "app.settings.ls",
+            "app.settings.get",
+            "app.settings.keymap",
         ]
     );
     for spec in registry::all().filter(|spec| spec.query) {
@@ -153,7 +152,7 @@ fn describes_each_command() {
             }],
             "state": true,
             "returns": null,
-            "tells": ["seeked", "chapter_changed"],
+            "tells": ["playback.seeked", "playback.chapter_changed"],
             "query": false,
             "available": true,
         })
@@ -419,6 +418,14 @@ fn a_command_aimed_at_a_block_acts_on_it_not_on_the_one_in_front(cx: &mut TestAp
     // count in then.
     run_now(Invocation::new("window.focus").in_window("2"), &mut cx).unwrap();
     assert_eq!(in_front(&mut cx), Some(back));
+    // Settings in front, brought there again: the player window last in
+    // front still is, with no stack of windows from the system to tell.
+    for _ in 0..2 {
+        run_now(Invocation::new("app.settings.open"), &mut cx).unwrap();
+    }
+    let settings = TestAppContext::update(&cx, |cx| cx.active_window());
+    assert!(settings.is_some_and(|window| window.downcast::<Workspace>().is_none()));
+    assert_eq!(in_front(&mut cx), Some(back), "behind Settings");
     run_now(mute().on_block("1"), &mut cx).unwrap();
     assert!(!muted(&other, &mut cx));
     assert!(muted(&first, &mut cx), "not the first window's");

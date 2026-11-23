@@ -41,7 +41,7 @@ fn every_command_that_takes_keys_has_its_own_and_they_dont_clash() {
     }
     // The app's, a window's, and those keys never ran before.
     assert_eq!(
-        hotkeys.keys("app.settings"),
+        hotkeys.keys("app.settings.open"),
         [normalize("secondary-,").unwrap()]
     );
     assert_eq!(
@@ -145,16 +145,19 @@ fn binds_each_key_where_its_command_works() {
     // A key that types, given a command that works anywhere or on the
     // file in front, leaves typing alone.
     let mut hotkeys = Hotkeys::default();
-    hotkeys.add("app.settings", "k");
+    hotkeys.add("app.settings.open", "k");
     hotkeys.add("block.close", "x");
     let keymap = Keymap::new(hotkeys.bindings());
     assert_eq!(bound(&keymap, "x", &player).as_deref(), Some("block.close"));
     assert_eq!(bound(&keymap, "x", &typing), None);
     assert_eq!(
         bound(&keymap, "k", &elsewhere).as_deref(),
-        Some("app.settings")
+        Some("app.settings.open")
     );
-    assert_eq!(bound(&keymap, "k", &empty).as_deref(), Some("app.settings"));
+    assert_eq!(
+        bound(&keymap, "k", &empty).as_deref(),
+        Some("app.settings.open")
+    );
     assert_eq!(bound(&keymap, "k", &typing), None);
     assert_eq!(bound(&keymap, "k", &recording), None);
 }

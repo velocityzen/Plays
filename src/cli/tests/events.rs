@@ -20,7 +20,7 @@ fn a_block_that_has_ended_has_nothing_to_wait_for() {
         "frame_rate": 24.0,
     }));
     assert_eq!(
-        ended.already("ended"),
+        ended.already("playback.ended"),
         Some(json!({
             "window_id": "aaaa1111",
             "window_title": "Kitchen",
@@ -35,13 +35,13 @@ fn a_block_that_has_ended_has_nothing_to_wait_for() {
     let mut labeled = ended.state.clone();
     labeled["label"] = json!("left");
     assert_eq!(
-        block(labeled).already("ended").unwrap()["block_title"],
+        block(labeled).already("playback.ended").unwrap()["block_title"],
         "left",
         "its label, as its header shows"
     );
-    assert_eq!(ended.already("paused"), None, "only its ending");
+    assert_eq!(ended.already("playback.paused"), None, "only its ending");
     let playing = block(json!({"ended": false, "position": 3.0}));
-    assert_eq!(playing.already("ended"), None);
+    assert_eq!(playing.already("playback.ended"), None);
 }
 
 #[test]
@@ -72,11 +72,11 @@ fn closing_what_is_watched_ends_the_wait() {
     let watched = block(Value::Null);
     let closed = |id: &str| json!({"window_id": "aaaa1111", "block_id": id});
     assert_eq!(
-        watched.gone("block_closed", &closed("bbbb2222")),
+        watched.gone("block.closed", &closed("bbbb2222")),
         Some("block")
     );
     assert_eq!(
-        watched.gone("block_closed", &closed("dddd4444")),
+        watched.gone("block.closed", &closed("dddd4444")),
         None,
         "another"
     );
@@ -87,7 +87,7 @@ fn closing_what_is_watched_ends_the_wait() {
         ..block(Value::Null)
     };
     assert_eq!(
-        window.gone("window_closed", &json!({"window_id": "aaaa1111"})),
+        window.gone("window.closed", &json!({"window_id": "aaaa1111"})),
         Some("window")
     );
     let anything = Watched {
@@ -96,8 +96,8 @@ fn closing_what_is_watched_ends_the_wait() {
         state: Value::Null,
     };
     assert_eq!(
-        anything.gone("window_closed", &json!({"window_id": "aaaa1111"})),
+        anything.gone("window.closed", &json!({"window_id": "aaaa1111"})),
         None
     );
-    assert_eq!(anything.gone("block_closed", &closed("bbbb2222")), None);
+    assert_eq!(anything.gone("block.closed", &closed("bbbb2222")), None);
 }

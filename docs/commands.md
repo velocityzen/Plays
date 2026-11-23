@@ -19,7 +19,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 - Arguments:
   - `urls` (a list of text): Each a file's or folder's full path, a file:// URL, or a stream's URL.
 - Hands back: {window}: the id of the window they open in.
-- Tells: `window_created`, `active_window_changed`, `block_created`, `window_layout_changed`, `active_block_changed`, `opened`.
+- Tells: `window.created`, `window.active_changed`, `block.created`, `window.layout_changed`, `block.active_changed`, `playback.opened`.
 
 ### Clear Recent Files
 
@@ -32,13 +32,6 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 `app.about`: Show Plays' version, and what it's made with.
 
 - Acts on the app.
-
-### Settings…
-
-`app.settings`: Open the Settings window, or bring it to the front.
-
-- Acts on the app.
-- Keys: ⌘,
 
 ### Copy Version Info
 
@@ -59,35 +52,35 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 `app.toggle_ui`: Hide every panel over the video in every window while Settings show any, else show them all.
 
 - Acts on the app.
-- Tells: `settings_changed`, `app_ui_changed`, `window_ui_changed`, `block_ui_changed`.
+- Tells: `app.settings.changed`, `app.ui_changed`, `window.ui_changed`, `block.ui_changed`.
 
 ### Show Controls in Every Window
 
 `app.toggle_controls`: Show the seek bar and buttons at the bottom of every block in every window, and those opened later, or hide them, as Settings → Appearance does.
 
 - Acts on the app.
-- Tells: `settings_changed`, `app_ui_changed`, `window_ui_changed`, `block_ui_changed`.
+- Tells: `app.settings.changed`, `app.ui_changed`, `window.ui_changed`, `block.ui_changed`.
 
 ### Show Top Bar in Every Window
 
 `app.toggle_top_bar`: Show the file's name and buttons at the top of every block in every window, and those opened later, or hide them, as Settings → Appearance does.
 
 - Acts on the app.
-- Tells: `settings_changed`, `app_ui_changed`, `window_ui_changed`, `block_ui_changed`.
+- Tells: `app.settings.changed`, `app.ui_changed`, `window.ui_changed`, `block.ui_changed`.
 
 ### Show Track Switcher in Every Window
 
 `app.toggle_track_switcher`: Show the reel of tracks a shortcut rolls to the audio, video or subtitles picked, over every block in every window, and those opened later, or switch without it, as Settings → Appearance does.
 
 - Acts on the app.
-- Tells: `settings_changed`, `app_ui_changed`, `window_ui_changed`, `block_ui_changed`.
+- Tells: `app.settings.changed`, `app.ui_changed`, `window.ui_changed`, `block.ui_changed`.
 
 ### Show Notes in Every Window
 
 `app.toggle_notes`: Show notes on what a shortcut changed, like the volume, over every block in every window, and those opened later, or not, as Settings → Appearance does. Notes on what's wrong still show.
 
 - Acts on the app.
-- Tells: `settings_changed`, `app_ui_changed`, `window_ui_changed`, `block_ui_changed`.
+- Tells: `app.settings.changed`, `app.ui_changed`, `window.ui_changed`, `block.ui_changed`.
 
 ### Quit Plays
 
@@ -95,7 +88,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 - Acts on the app.
 - Keys: ⌘Q
-- Tells: `block_closed`, `window_closed`, `active_window_changed`, `quit`.
+- Tells: `block.closed`, `window.closed`, `window.active_changed`, `app.quit`.
 
 ## window
 
@@ -120,7 +113,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 - Acts on the app.
 - Keys: ⌘N
 - Hands back: {window}: the new window's id.
-- Tells: `window_created`, `active_window_changed`.
+- Tells: `window.created`, `window.active_changed`.
 
 ### Open…
 
@@ -156,14 +149,14 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 - Acts on a window, Settings and About too.
 - Keys: ⌥⌘W, ⌘W
-- Tells: `block_closed`, `window_closed`, `active_window_changed`.
+- Tells: `block.closed`, `window.closed`, `window.active_changed`.
 
 ### Close Other Windows
 
 `window.close_others`: Close every player window but this one, and the files in them.
 
 - Acts on a player window.
-- Tells: `block_closed`, `window_closed`.
+- Tells: `block.closed`, `window.closed`.
 
 ### Rename Window…
 
@@ -172,14 +165,14 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 - Acts on a player window.
 - Arguments:
   - `label` (text, optional): What to call it; no two windows are called the same.
-- Tells: `window_label_changed`.
+- Tells: `window.label_changed`.
 
 ### Go to Window
 
 `window.focus`: Bring the window to the front. ⌘1 to ⌘9 go to the first nine, by their numbers.
 
 - Acts on a player window.
-- Tells: `active_window_changed`.
+- Tells: `window.active_changed`.
 
 ### Next Window
 
@@ -187,7 +180,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 - Acts on the app.
 - Keys: ⌃⇥
-- Tells: `active_window_changed`.
+- Tells: `window.active_changed`.
 
 ### Previous Window
 
@@ -195,14 +188,14 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 - Acts on the app.
 - Keys: ⌃⇧⇥
-- Tells: `active_window_changed`.
+- Tells: `window.active_changed`.
 
 ### Go Back One Window
 
 `window.back`: Bring back the player window in front before this one; again, the one before that, and so on, until something else is done.
 
 - Acts on the app.
-- Tells: `active_window_changed`.
+- Tells: `window.active_changed`.
 
 ### Go to Recent Window
 
@@ -210,7 +203,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 - Acts on the app.
 - Keys: ⌘'
-- Tells: `active_window_changed`.
+- Tells: `window.active_changed`.
 
 ### Move Window To
 
@@ -238,7 +231,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 - Acts on a player window.
 - Keys: ⌃⌘F, F
-- Tells: `full_screen_changed`.
+- Tells: `window.full_screen_changed`.
 
 ### Exit Full Screen
 
@@ -246,7 +239,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 - Acts on a player window.
 - Keys: ⎋
-- Tells: `full_screen_changed`.
+- Tells: `window.full_screen_changed`.
 
 ### Match Video Size
 
@@ -260,14 +253,14 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 `window.toggle_float_on_top`: Keep player windows above other apps' windows, or stop.
 
 - Acts on the app.
-- Tells: `settings_changed`.
+- Tells: `app.settings.changed`.
 
 ### Float on Top While Playing
 
 `window.toggle_float_on_top_while_playing`: Keep player windows above other apps' windows while a file in them plays, or stop.
 
 - Acts on the app.
-- Tells: `settings_changed`.
+- Tells: `app.settings.changed`.
 
 ### Show on Display
 
@@ -276,42 +269,42 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 - Acts on a player window.
 - Arguments:
   - `display` (a whole number, at least 0): The display's id.
-- Tells: `full_screen_changed`.
+- Tells: `window.full_screen_changed`.
 
 ### Show/Hide All in Window
 
 `window.toggle_ui`: Hide every panel over the video in each block in the window while the window shows any, else show them all.
 
 - Acts on a player window.
-- Tells: `window_ui_changed`, `block_ui_changed`.
+- Tells: `window.ui_changed`, `block.ui_changed`.
 
 ### Show Controls in Window
 
 `window.toggle_controls`: Show the seek bar and buttons at the bottom of each block in the window, and those opened in it, or hide them.
 
 - Acts on a player window.
-- Tells: `window_ui_changed`, `block_ui_changed`.
+- Tells: `window.ui_changed`, `block.ui_changed`.
 
 ### Show Top Bar in Window
 
 `window.toggle_top_bar`: Show the file's name and buttons at the top of each block in the window, and those opened in it, or hide them.
 
 - Acts on a player window.
-- Tells: `window_ui_changed`, `block_ui_changed`.
+- Tells: `window.ui_changed`, `block.ui_changed`.
 
 ### Show Track Switcher in Window
 
 `window.toggle_track_switcher`: Show the reel of tracks a shortcut rolls to the audio, video or subtitles picked, over each block in the window, and those opened in it, or switch without it.
 
 - Acts on a player window.
-- Tells: `window_ui_changed`, `block_ui_changed`.
+- Tells: `window.ui_changed`, `block.ui_changed`.
 
 ### Show Notes in Window
 
 `window.toggle_notes`: Show notes on what a shortcut changed, like the volume, over each block in the window, and those opened in it, or not. Notes on what's wrong still show.
 
 - Acts on a player window.
-- Tells: `window_ui_changed`, `block_ui_changed`.
+- Tells: `window.ui_changed`, `block.ui_changed`.
 
 ## block
 
@@ -334,7 +327,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 `block.focus`: Put the block in front, keys going to it, and bring its window to the front.
 
 - Acts on a block.
-- Tells: `active_window_changed`, `active_block_changed`.
+- Tells: `window.active_changed`, `block.active_changed`.
 
 ### Close File
 
@@ -342,7 +335,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 - Acts on a block.
 - Keys: ⌘W
-- Tells: `block_closed`, `window_layout_changed`, `active_block_changed`.
+- Tells: `block.closed`, `window.layout_changed`, `block.active_changed`.
 
 ### Close All Files
 
@@ -350,14 +343,14 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 - Acts on every block in a window.
 - Keys: ⇧⌘W
-- Tells: `block_closed`, `window_layout_changed`, `active_block_changed`.
+- Tells: `block.closed`, `window.layout_changed`, `block.active_changed`.
 
 ### Close Other Files
 
 `block.close_others`: Close every file in the window but the block's.
 
 - Acts on a block.
-- Tells: `block_closed`, `window_layout_changed`.
+- Tells: `block.closed`, `window.layout_changed`.
 
 ### Focus Block to the Left
 
@@ -365,7 +358,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 - Acts on a player window.
 - Keys: ⌥⌘←
-- Tells: `active_block_changed`.
+- Tells: `block.active_changed`.
 
 ### Focus Block to the Right
 
@@ -373,7 +366,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 - Acts on a player window.
 - Keys: ⌥⌘→
-- Tells: `active_block_changed`.
+- Tells: `block.active_changed`.
 
 ### Focus Block Above
 
@@ -381,7 +374,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 - Acts on a player window.
 - Keys: ⌥⌘↑
-- Tells: `active_block_changed`.
+- Tells: `block.active_changed`.
 
 ### Focus Block Below
 
@@ -389,7 +382,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 - Acts on a player window.
 - Keys: ⌥⌘↓
-- Tells: `active_block_changed`.
+- Tells: `block.active_changed`.
 
 ### Focus Previous Block
 
@@ -397,7 +390,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 - Acts on a player window.
 - Keys: ⌘[
-- Tells: `active_block_changed`.
+- Tells: `block.active_changed`.
 
 ### Focus Next Block
 
@@ -405,21 +398,21 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 - Acts on a player window.
 - Keys: ⌘]
-- Tells: `active_block_changed`.
+- Tells: `block.active_changed`.
 
 ### Go Back One Block
 
 `block.back`: Send keys to the block clicked or gone to before the one they go to; again, the one before that, and so on, until something else is done.
 
 - Acts on a player window.
-- Tells: `active_block_changed`.
+- Tells: `block.active_changed`.
 
 ### Go to Recent Block
 
 `block.recent`: Send keys to the block clicked or gone to last but the one they go to; again, back to that one.
 
 - Acts on a player window.
-- Tells: `active_block_changed`.
+- Tells: `block.active_changed`.
 
 ### Move Block Left
 
@@ -427,7 +420,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 - Acts on a player window.
 - Keys: ⌥⇧⌘←
-- Tells: `window_layout_changed`.
+- Tells: `window.layout_changed`.
 
 ### Move Block Right
 
@@ -435,7 +428,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 - Acts on a player window.
 - Keys: ⌥⇧⌘→
-- Tells: `window_layout_changed`.
+- Tells: `window.layout_changed`.
 
 ### Move Block Up
 
@@ -443,7 +436,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 - Acts on a player window.
 - Keys: ⌥⇧⌘↑
-- Tells: `window_layout_changed`.
+- Tells: `window.layout_changed`.
 
 ### Move Block Down
 
@@ -451,7 +444,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 - Acts on a player window.
 - Keys: ⌥⇧⌘↓
-- Tells: `window_layout_changed`.
+- Tells: `window.layout_changed`.
 
 ### Maximize Block
 
@@ -459,7 +452,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 - Acts on a block.
 - Keys: ⇧⌘↩
-- Tells: `full_screen_changed`, `window_layout_changed`.
+- Tells: `window.full_screen_changed`, `window.layout_changed`.
 
 ### Rename Block…
 
@@ -468,7 +461,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 - Acts on a block.
 - Arguments:
   - `label` (text, optional): What to call it; no two blocks are called the same, in whichever windows.
-- Tells: `block_label_changed`.
+- Tells: `block.label_changed`.
 
 ### Move Block To
 
@@ -477,7 +470,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 - Acts on a block.
 - Arguments:
   - `position` (a whole number, at least 1): Where, from 1, the first block's place.
-- Tells: `window_layout_changed`.
+- Tells: `window.layout_changed`.
 
 ### Move Block to Window
 
@@ -486,7 +479,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 - Acts on a block.
 - Arguments:
   - `window` (text): The window's id, its label, or its number, from 1.
-- Tells: `block_moved`, `window_layout_changed`, `active_block_changed`.
+- Tells: `block.moved`, `window.layout_changed`, `block.active_changed`.
 
 ### Move Block to New Window
 
@@ -494,7 +487,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 - Acts on a block.
 - Hands back: {window}: the new window's id.
-- Tells: `window_created`, `block_moved`, `window_layout_changed`, `active_block_changed`.
+- Tells: `window.created`, `block.moved`, `window.layout_changed`, `block.active_changed`.
 
 ### Copy File Path
 
@@ -517,42 +510,42 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 - Acts on a block.
 - Keys: ⌃⌘P
-- Tells: `picture_in_picture_changed`.
+- Tells: `block.picture_in_picture_changed`.
 
 ### Show/Hide All
 
 `block.toggle_ui`: Hide every panel over the block's video while any shows, else show them all.
 
 - Acts on a block.
-- Tells: `block_ui_changed`.
+- Tells: `block.ui_changed`.
 
 ### Show Controls
 
 `block.toggle_controls`: Show the seek bar and buttons at the bottom of the block, or hide them.
 
 - Acts on a block.
-- Tells: `block_ui_changed`.
+- Tells: `block.ui_changed`.
 
 ### Show Top Bar
 
 `block.toggle_top_bar`: Show the file's name and buttons at the top of the block, or hide them.
 
 - Acts on a block.
-- Tells: `block_ui_changed`.
+- Tells: `block.ui_changed`.
 
 ### Show Track Switcher
 
 `block.toggle_track_switcher`: Show the reel of tracks a shortcut rolls to the audio, video or subtitles picked, over the block, or switch without it.
 
 - Acts on a block.
-- Tells: `block_ui_changed`.
+- Tells: `block.ui_changed`.
 
 ### Show Notes
 
 `block.toggle_notes`: Show notes on what a shortcut changed, like the volume, over the block, or not. Notes on what's wrong still show.
 
 - Acts on a block.
-- Tells: `block_ui_changed`.
+- Tells: `block.ui_changed`.
 
 ### Show/Hide Console
 
@@ -569,7 +562,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 - Acts on a block.
 - Keys: Space, P
-- Tells: `playing`, `paused`.
+- Tells: `playback.playing`, `playback.paused`.
 
 ### Seek To
 
@@ -578,7 +571,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 - Acts on a block.
 - Arguments:
   - `time` (a number, at least 0): Seconds from the start; past the end is the end.
-- Tells: `seeked`, `ended`, `chapter_changed`.
+- Tells: `playback.seeked`, `playback.ended`, `playback.chapter_changed`.
 
 ### Seek Forward
 
@@ -586,7 +579,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 - Acts on a block.
 - Keys: →
-- Tells: `seeked`, `ended`, `chapter_changed`.
+- Tells: `playback.seeked`, `playback.ended`, `playback.chapter_changed`.
 
 ### Seek Backward
 
@@ -594,7 +587,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 - Acts on a block.
 - Keys: ←
-- Tells: `seeked`, `chapter_changed`.
+- Tells: `playback.seeked`, `playback.chapter_changed`.
 
 ### Next Frame
 
@@ -602,7 +595,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 - Acts on a block.
 - Keys: ⌥→, ., >
-- Tells: `paused`, `seeked`.
+- Tells: `playback.paused`, `playback.seeked`.
 
 ### Previous Frame
 
@@ -610,7 +603,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 - Acts on a block.
 - Keys: ⌥←, ,, <
-- Tells: `paused`, `seeked`.
+- Tells: `playback.paused`, `playback.seeked`.
 
 ### Next Chapter
 
@@ -618,7 +611,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 - Acts on a block.
 - Keys: ⇟
-- Tells: `seeked`, `chapter_changed`.
+- Tells: `playback.seeked`, `playback.chapter_changed`.
 
 ### Previous Chapter
 
@@ -626,7 +619,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 - Acts on a block.
 - Keys: ⇞
-- Tells: `seeked`, `chapter_changed`.
+- Tells: `playback.seeked`, `playback.chapter_changed`.
 
 ### Go to Chapter
 
@@ -635,7 +628,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 - Acts on a block.
 - Arguments:
   - `number` (a whole number, at least 1): Which chapter, from 1.
-- Tells: `seeked`, `chapter_changed`.
+- Tells: `playback.seeked`, `playback.chapter_changed`.
 
 ### Restart
 
@@ -643,7 +636,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 - Acts on a block.
 - Keys: ↖
-- Tells: `seeked`, `chapter_changed`.
+- Tells: `playback.seeked`, `playback.chapter_changed`.
 
 ### Previous File
 
@@ -651,7 +644,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 - Acts on a block.
 - Keys: ⌘←
-- Tells: `opened`, `playing`.
+- Tells: `playback.opened`, `playback.playing`.
 
 ### Next File
 
@@ -659,7 +652,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 - Acts on a block.
 - Keys: ⌘→
-- Tells: `opened`, `playing`.
+- Tells: `playback.opened`, `playback.playing`.
 
 ### Play File Instead
 
@@ -668,7 +661,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 - Acts on a block.
 - Arguments:
   - `path` (text): The file's full path.
-- Tells: `opened`, `playing`.
+- Tells: `playback.opened`, `playback.playing`.
 
 ### Loop
 
@@ -683,21 +676,21 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 - Acts on every block in every window.
 - Keys: ⇧Space
-- Tells: `playing`, `paused`.
+- Tells: `playback.playing`, `playback.paused`.
 
 ### Play All
 
 `playback.play_all`: Play every file in every window.
 
 - Acts on every block in every window.
-- Tells: `playing`.
+- Tells: `playback.playing`.
 
 ### Pause All
 
 `playback.pause_all`: Pause every file in every window.
 
 - Acts on every block in every window.
-- Tells: `paused`.
+- Tells: `playback.paused`.
 
 ### Restart All
 
@@ -705,7 +698,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 - Acts on every block in every window.
 - Keys: ⇧↖
-- Tells: `seeked`, `chapter_changed`.
+- Tells: `playback.seeked`, `playback.chapter_changed`.
 
 ### Seek All Forward
 
@@ -713,7 +706,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 - Acts on every block in every window.
 - Keys: ⇧→
-- Tells: `seeked`, `ended`, `chapter_changed`.
+- Tells: `playback.seeked`, `playback.ended`, `playback.chapter_changed`.
 
 ### Seek All Backward
 
@@ -721,7 +714,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 - Acts on every block in every window.
 - Keys: ⇧←
-- Tells: `seeked`, `chapter_changed`.
+- Tells: `playback.seeked`, `playback.chapter_changed`.
 
 ### Next Frame on All
 
@@ -729,7 +722,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 - Acts on every block in every window.
 - Keys: ⌥⇧→
-- Tells: `paused`, `seeked`.
+- Tells: `playback.paused`, `playback.seeked`.
 
 ### Previous Frame on All
 
@@ -737,7 +730,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 - Acts on every block in every window.
 - Keys: ⌥⇧←
-- Tells: `paused`, `seeked`.
+- Tells: `playback.paused`, `playback.seeked`.
 
 ### Sync All to This Block
 
@@ -745,7 +738,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 - Acts on a block.
 - Keys: ⇧S
-- Tells: `seeked`, `playing`, `paused`.
+- Tells: `playback.seeked`, `playback.playing`, `playback.paused`.
 
 ## audio
 
@@ -755,7 +748,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 - Acts on a block.
 - Keys: ↑
-- Tells: `volume_changed`.
+- Tells: `audio.volume_changed`.
 
 ### Volume Down
 
@@ -763,7 +756,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 - Acts on a block.
 - Keys: ↓
-- Tells: `volume_changed`.
+- Tells: `audio.volume_changed`.
 
 ### Set Volume
 
@@ -772,7 +765,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 - Acts on a block.
 - Arguments:
   - `volume` (a number from 0 to 100): How loud, from 0 to 100.
-- Tells: `volume_changed`.
+- Tells: `audio.volume_changed`.
 
 ### Mute/Unmute
 
@@ -780,7 +773,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 - Acts on a block.
 - Keys: ⌘/, M
-- Tells: `volume_changed`.
+- Tells: `audio.volume_changed`.
 
 ### Next Audio Track
 
@@ -788,7 +781,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 - Acts on a block.
 - Keys: ⌃⌘A
-- Tells: `track_changed`.
+- Tells: `playback.track_changed`.
 
 ### Pick Audio Track
 
@@ -797,7 +790,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 - Acts on a block.
 - Arguments:
   - `number` (a whole number, at least 1): Which, from 1, as the tracks menu lists them.
-- Tells: `track_changed`.
+- Tells: `playback.track_changed`.
 
 ### Audio Earlier
 
@@ -826,7 +819,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 - Acts on every block in every window.
 - Keys: ⇧↑
-- Tells: `volume_changed`.
+- Tells: `audio.volume_changed`.
 
 ### Volume Down on All
 
@@ -834,7 +827,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 - Acts on every block in every window.
 - Keys: ⇧↓
-- Tells: `volume_changed`.
+- Tells: `audio.volume_changed`.
 
 ### Mute/Unmute All
 
@@ -842,7 +835,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 - Acts on every block in every window.
 - Keys: ⇧M
-- Tells: `volume_changed`.
+- Tells: `audio.volume_changed`.
 
 ## subtitles
 
@@ -852,7 +845,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 - Acts on a block.
 - Keys: ⌃⌘S
-- Tells: `track_changed`.
+- Tells: `playback.track_changed`.
 
 ### Pick Subtitles
 
@@ -861,7 +854,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 - Acts on a block.
 - Arguments:
   - `number` (a whole number, at least 1, optional): Which, from 1, as the tracks menu lists them; none for no subtitles.
-- Tells: `track_changed`.
+- Tells: `playback.track_changed`.
 
 ### Show/Hide Subtitles
 
@@ -869,7 +862,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 - Acts on a block.
 - Keys: V
-- Tells: `track_changed`.
+- Tells: `playback.track_changed`.
 
 ### Bigger Subtitles
 
@@ -877,7 +870,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 - Acts on a block.
 - Keys: ⇧G
-- Tells: `settings_changed`.
+- Tells: `app.settings.changed`.
 
 ### Smaller Subtitles
 
@@ -885,7 +878,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 - Acts on a block.
 - Keys: ⇧F
-- Tells: `settings_changed`.
+- Tells: `app.settings.changed`.
 
 ### Move Subtitles Up
 
@@ -893,7 +886,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 - Acts on a block.
 - Keys: R
-- Tells: `settings_changed`.
+- Tells: `app.settings.changed`.
 
 ### Move Subtitles Down
 
@@ -901,7 +894,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 - Acts on a block.
 - Keys: ⇧R, T
-- Tells: `settings_changed`.
+- Tells: `app.settings.changed`.
 
 ### Subtitles Earlier
 
@@ -932,7 +925,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 - Acts on a block.
 - Keys: ⌃⌘V
-- Tells: `track_changed`.
+- Tells: `playback.track_changed`.
 
 ### Pick Video Track
 
@@ -941,7 +934,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 - Acts on a block.
 - Arguments:
   - `number` (a whole number, at least 1): Which, from 1, as the tracks menu lists them.
-- Tells: `track_changed`.
+- Tells: `playback.track_changed`.
 
 ### Rotate Right
 
@@ -1032,14 +1025,14 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 - Arguments:
   - `device` (text): The device's id.
   - `kind` (text, optional): How it's reached, such as Chromecast, AirPlay or DLNA, for an id two share.
-- Tells: `cast_started`.
+- Tells: `cast.started`.
 
 ### Play Here
 
 `cast.stop`: Stop casting the block, and play it here from where the device got to.
 
 - Acts on a block.
-- Tells: `cast_ended`.
+- Tells: `cast.ended`.
 
 ### Pair and Play On
 
@@ -1067,7 +1060,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 - Arguments:
   - `id` (text, optional): The output's id; none for the system's default, or for a window, the app's output.
   - `name` (text, optional): What it's called, for an output not connected now, which is waited for.
-- Tells: `route_changed`, `settings_changed`.
+- Tells: `output.route_changed`, `app.settings.changed`.
 
 ### Window Output Device
 
@@ -1087,18 +1080,25 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 - Acts on the app.
 - Hands back: [{id, name, bounds: {x, y, width, height}}]: each display's id, as window.show_on_display and window.inspect have it, its name, and where it is, in points.
 
-## settings
+## app.settings
+
+### Settings…
+
+`app.settings.open`: Open the Settings window, or bring it to the front.
+
+- Acts on the app.
+- Keys: ⌘,
 
 ### List Settings
 
-`settings.ls`: List every setting: its key, what Settings calls it and the pane it's on, what it takes, and its value.
+`app.settings.ls`: List every setting: its key, what Settings calls it and the pane it's on, what it takes, and its value.
 
 - Acts on the app.
 - Hands back: [{key, title, pane, kind, value, default}], in the order Settings has them: kind is toggle, choice (with choices: [{value, label}]), number (with min and max), font, folder, output, keys or languages (a list, by name or code, kept by code).
 
 ### Get Setting
 
-`settings.get`: Read a setting by its key, such as subtitles.size.
+`app.settings.get`: Read a setting by its key, such as subtitles.size.
 
 - Acts on the app.
 - Arguments:
@@ -1107,46 +1107,46 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 ### List Shortcuts
 
-`settings.keymap`: List each command keys can run, with the keys that run it now, as Settings → Hotkeys has them.
+`app.settings.keymap`: List each command keys can run, with the keys that run it now, as Settings → Hotkeys has them.
 
 - Acts on the app.
 - Hands back: [{command, title, keys, shown}]: each command's id and title, its keys as the settings file keeps them, and as the menus show them; none for a command with no keys.
 
 ### Change Setting
 
-`settings.set`: Change a setting by its key, to a value Settings offers, and save it.
+`app.settings.set`: Change a setting by its key, to a value Settings offers, and save it.
 
 - Acts on the app.
 - Arguments:
   - `key` (text): The setting's key, its path in the settings file: autoplay, subtitles.size.
   - `value` (any value): What to set it to, as the settings file keeps it: true, 0.5, "dark".
 - Hands back: Its value now.
-- Tells: `settings_changed`, `keymap_changed`, `app_ui_changed`, `window_ui_changed`, `block_ui_changed`.
+- Tells: `app.settings.changed`, `app.settings.keymap_changed`, `app.ui_changed`, `window.ui_changed`, `block.ui_changed`.
 
 ### Reset Setting
 
-`settings.reset`: Put a setting back as Plays starts it out, and save it.
+`app.settings.reset`: Put a setting back as Plays starts it out, and save it.
 
 - Acts on the app.
 - Arguments:
   - `key` (text): The setting's key, its path in the settings file: autoplay, subtitles.size.
 - Hands back: Its value now.
-- Tells: `settings_changed`, `keymap_changed`, `app_ui_changed`, `window_ui_changed`, `block_ui_changed`.
+- Tells: `app.settings.changed`, `app.settings.keymap_changed`, `app.ui_changed`, `window.ui_changed`, `block.ui_changed`.
 
 ### Show Settings File
 
-`settings.reveal_file`: Show the settings file where the system shows files, saving it first if it isn't there yet.
+`app.settings.reveal_file`: Show the settings file where the system shows files, saving it first if it isn't there yet.
 
 - Acts on the app.
 - Hands back: The file's path.
 
 ### Reload Settings
 
-`settings.reload`: Read the settings file again, after it was changed by hand.
+`app.settings.reload`: Read the settings file again, after it was changed by hand.
 
 - Acts on the app.
 - Hands back: [key]: the settings the file changed.
-- Tells: `settings_changed`, `keymap_changed`, `app_ui_changed`, `window_ui_changed`, `block_ui_changed`.
+- Tells: `app.settings.changed`, `app.settings.keymap_changed`, `app.ui_changed`, `window.ui_changed`, `block.ui_changed`.
 
 ## cli
 
@@ -1163,7 +1163,7 @@ What changes in Plays, its windows and their blocks, by namespace: `plays events
 
 ## app
 
-### command_run
+### app.command_run
 
 A command is about to run: told before anything it changes.
 
@@ -1175,34 +1175,34 @@ A command is about to run: told before anything it changes.
   - `target`, only sometimes: The window and the block it was aimed at, by name, if either was.
 - Follows: every command, as it runs.
 
-### client_connected
+### app.client_connected
 
 A client connected to the socket, as the command line does.
 
 - Heard by those listening to the app's events.
 - Payload:
-  - `client_id`: A number for it, which its `client_left` has too.
+  - `client_id`: A number for it, which its `app.client_left` has too.
 - Follows: a client connecting.
 
-### client_left
+### app.client_left
 
 A client went from the socket.
 
 - Heard by those listening to the app's events.
 - Payload:
-  - `client_id`: The number its `client_connected` had.
+  - `client_id`: The number its `app.client_connected` had.
 - Follows: a client going or being cut off, as when control from the command line is turned off.
 
-### app_ui_changed
+### app.ui_changed
 
 The panels shown over the video in every window, as Settings have them, changed.
 
 - Heard by those listening to the app's events.
 - Payload:
   - `visible`: Those shown, of `controls`, `top_bar`, `track_switcher` and `notes`.
-- Follows: `app.toggle_ui`, `app.toggle_controls`, `app.toggle_top_bar`, `app.toggle_track_switcher`, `app.toggle_notes`, `settings.set`, `settings.reset`, `settings.reload`, or Settings turning a panel over the video on or off, importing a settings file or resetting every setting.
+- Follows: `app.toggle_ui`, `app.toggle_controls`, `app.toggle_top_bar`, `app.toggle_track_switcher`, `app.toggle_notes`, `app.settings.set`, `app.settings.reset`, `app.settings.reload`, or Settings turning a panel over the video on or off, importing a settings file or resetting every setting.
 
-### quit
+### app.quit
 
 Plays is quitting: told last, after each window still open is told closing.
 
@@ -1212,7 +1212,7 @@ Plays is quitting: told last, after each window still open is told closing.
 
 ## window
 
-### window_created
+### window.created
 
 A player window opened.
 
@@ -1222,7 +1222,7 @@ A player window opened.
   - `label`: Its label; none without one.
 - Follows: `app.open`, `window.new`, or `block.move_to_new_window`.
 
-### window_closed
+### window.closed
 
 A player window closed: told after each of its blocks is told closed.
 
@@ -1231,7 +1231,7 @@ A player window closed: told after each of its blocks is told closed.
   - `window_id`, `window_title`: its window's.
 - Follows: `app.quit`, `window.close`, `window.close_others`, or Plays quitting.
 
-### window_label_changed
+### window.label_changed
 
 A window was labeled, or its label taken away.
 
@@ -1241,7 +1241,7 @@ A window was labeled, or its label taken away.
   - `label`: Its label; none once it's taken away.
 - Follows: `window.rename`.
 
-### active_window_changed
+### window.active_changed
 
 Another player window came to the front, or none is in front: its `window_id` and `window_title` are none then.
 
@@ -1250,7 +1250,7 @@ Another player window came to the front, or none is in front: its `window_id` an
   - `window_id`, `window_title`: its window's.
 - Follows: `app.open`, `app.quit`, `window.new`, `window.close`, `window.focus`, `window.next`, `window.previous`, `window.back`, `window.recent`, `block.focus`, or a click on another window.
 
-### full_screen_changed
+### window.full_screen_changed
 
 A window went full screen, or came back from it.
 
@@ -1260,7 +1260,7 @@ A window went full screen, or came back from it.
   - `full_screen`: Whether it's full screen now.
 - Follows: `window.toggle_full_screen`, `window.exit_full_screen`, `window.show_on_display`, `block.zoom`, or the window's own full screen button.
 
-### window_ui_changed
+### window.ui_changed
 
 The panels shown over the video in a window's blocks, and those opened in it, changed.
 
@@ -1268,9 +1268,9 @@ The panels shown over the video in a window's blocks, and those opened in it, ch
 - Payload:
   - `window_id`, `window_title`: its window's.
   - `visible`: Those shown, of `controls`, `top_bar`, `track_switcher` and `notes`.
-- Follows: `app.toggle_ui`, `app.toggle_controls`, `app.toggle_top_bar`, `app.toggle_track_switcher`, `app.toggle_notes`, `window.toggle_ui`, `window.toggle_controls`, `window.toggle_top_bar`, `window.toggle_track_switcher`, `window.toggle_notes`, `settings.set`, `settings.reset`, `settings.reload`, or Settings turning a panel over the video on or off, importing a settings file or resetting every setting.
+- Follows: `app.toggle_ui`, `app.toggle_controls`, `app.toggle_top_bar`, `app.toggle_track_switcher`, `app.toggle_notes`, `window.toggle_ui`, `window.toggle_controls`, `window.toggle_top_bar`, `window.toggle_track_switcher`, `window.toggle_notes`, `app.settings.set`, `app.settings.reset`, `app.settings.reload`, or Settings turning a panel over the video on or off, importing a settings file or resetting every setting.
 
-### window_layout_changed
+### window.layout_changed
 
 Blocks came into a window, went, or changed places, or one filled it or stopped filling it.
 
@@ -1283,7 +1283,7 @@ Blocks came into a window, went, or changed places, or one filled it or stopped 
 
 ## block
 
-### block_created
+### block.created
 
 A block came into a window, for a file to play in.
 
@@ -1293,7 +1293,7 @@ A block came into a window, for a file to play in.
   - `label`: Its label; none without one.
 - Follows: `app.open`, or files dropped on a window or picked when `window.open_files` or `window.open_url` asks.
 
-### block_moved
+### block.moved
 
 A block moved to another window: those listening to the window it left hear it too.
 
@@ -1304,7 +1304,7 @@ A block moved to another window: those listening to the window it left hear it t
   - `from_window_title`: That window's title.
 - Follows: `block.move_to_window`, or `block.move_to_new_window`.
 
-### block_closed
+### block.closed
 
 A block closed, and the file in it.
 
@@ -1313,7 +1313,7 @@ A block closed, and the file in it.
   - `window_id`, `window_title`, `block_id`, `block_title`: its window's and its block's.
 - Follows: `app.quit`, `window.close`, `window.close_others`, `block.close`, `block.close_all`, `block.close_others`, or Plays quitting.
 
-### block_label_changed
+### block.label_changed
 
 A block was labeled, or its label taken away.
 
@@ -1323,7 +1323,7 @@ A block was labeled, or its label taken away.
   - `label`: Its label; none once it's taken away.
 - Follows: `block.rename`.
 
-### active_block_changed
+### block.active_changed
 
 Keys go to another block in a window, or to none.
 
@@ -1334,7 +1334,7 @@ Keys go to another block in a window, or to none.
   - `block_title`: Its title, as its header shows it; none without a block.
 - Follows: `app.open`, `block.focus`, `block.close`, `block.close_all`, `block.focus.left`, `block.focus.right`, `block.focus.up`, `block.focus.down`, `block.focus.previous`, `block.focus.next`, `block.back`, `block.recent`, `block.move_to_window`, `block.move_to_new_window`, or a click on a block or the mouse going to one.
 
-### picture_in_picture_changed
+### block.picture_in_picture_changed
 
 A block began playing in a small window floating above every app's, or in its block again.
 
@@ -1344,7 +1344,7 @@ A block began playing in a small window floating above every app's, or in its bl
   - `picture_in_picture`: Whether it plays in the small window now.
 - Follows: `block.toggle_picture_in_picture`, or the small window's own buttons.
 
-### block_ui_changed
+### block.ui_changed
 
 The panels shown over a block's video changed.
 
@@ -1352,11 +1352,11 @@ The panels shown over a block's video changed.
 - Payload:
   - `window_id`, `window_title`, `block_id`, `block_title`: its window's and its block's.
   - `visible`: Those shown, of `controls`, `top_bar`, `track_switcher` and `notes`.
-- Follows: `app.toggle_ui`, `app.toggle_controls`, `app.toggle_top_bar`, `app.toggle_track_switcher`, `app.toggle_notes`, `window.toggle_ui`, `window.toggle_controls`, `window.toggle_top_bar`, `window.toggle_track_switcher`, `window.toggle_notes`, `block.toggle_ui`, `block.toggle_controls`, `block.toggle_top_bar`, `block.toggle_track_switcher`, `block.toggle_notes`, `settings.set`, `settings.reset`, `settings.reload`, or Settings turning a panel over the video on or off, importing a settings file or resetting every setting.
+- Follows: `app.toggle_ui`, `app.toggle_controls`, `app.toggle_top_bar`, `app.toggle_track_switcher`, `app.toggle_notes`, `window.toggle_ui`, `window.toggle_controls`, `window.toggle_top_bar`, `window.toggle_track_switcher`, `window.toggle_notes`, `block.toggle_ui`, `block.toggle_controls`, `block.toggle_top_bar`, `block.toggle_track_switcher`, `block.toggle_notes`, `app.settings.set`, `app.settings.reset`, `app.settings.reload`, or Settings turning a panel over the video on or off, importing a settings file or resetting every setting.
 
 ## playback
 
-### opened
+### playback.opened
 
 A file opened in a block, paused at its start.
 
@@ -1369,7 +1369,7 @@ A file opened in a block, paused at its start.
   - `duration`: How long it plays, in seconds; none for a live stream.
 - Follows: `app.open`, `playback.previous_file`, `playback.next_file`, `playback.play_file`, files dropped on a window or picked when `window.open_files` or `window.open_url` asks, or a playlist going on to its next file, once one plays to its end.
 
-### open_failed
+### playback.open_failed
 
 A file couldn't be opened.
 
@@ -1379,7 +1379,7 @@ A file couldn't be opened.
   - `error`: Why.
 - Follows: a file Plays can't play or a stream it can't reach.
 
-### failed
+### playback.failed
 
 A file stopped playing on an error.
 
@@ -1389,7 +1389,7 @@ A file stopped playing on an error.
   - `error`: Why.
 - Follows: a file that's damaged or a stream that went.
 
-### playing
+### playback.playing
 
 A file began playing.
 
@@ -1401,7 +1401,7 @@ A file began playing.
   - `frame`: The number of the frame showing then, from 0; none for sound alone.
 - Follows: `playback.play_pause`, `playback.previous_file`, `playback.next_file`, `playback.play_file`, `playback.play_pause_all`, `playback.play_all`, `playback.sync_all`, a file opening while Autoplay is on, or a playlist going on to its next file, once one plays to its end.
 
-### paused
+### playback.paused
 
 A file paused.
 
@@ -1413,7 +1413,7 @@ A file paused.
   - `frame`: The number of the frame showing then, from 0; none for sound alone.
 - Follows: `playback.play_pause`, `playback.next_frame`, `playback.previous_frame`, `playback.play_pause_all`, `playback.pause_all`, `playback.next_frame_all`, `playback.previous_frame_all`, or `playback.sync_all`.
 
-### seeked
+### playback.seeked
 
 A file was sought to another time, here or on the device it's cast to: where it went.
 
@@ -1425,7 +1425,7 @@ A file was sought to another time, here or on the device it's cast to: where it 
   - `frame`: The number of the frame showing then, from 0; none for sound alone.
 - Follows: `playback.seek`, `playback.seek_forward`, `playback.seek_backward`, `playback.next_frame`, `playback.previous_frame`, `playback.next_chapter`, `playback.previous_chapter`, `playback.go_to_chapter`, `playback.restart`, `playback.restart_all`, `playback.seek_forward_all`, `playback.seek_backward_all`, `playback.next_frame_all`, `playback.previous_frame_all`, or `playback.sync_all`.
 
-### ended
+### playback.ended
 
 A file played to its end, and stopped there.
 
@@ -1437,7 +1437,7 @@ A file played to its end, and stopped there.
   - `frame`: The number of the frame showing then, from 0; none for sound alone.
 - Follows: `playback.seek`, `playback.seek_forward`, `playback.seek_forward_all`, or a file playing to its end.
 
-### position
+### playback.position
 
 Where a file is as it plays: told only to those who ask for positions, at most once a second, and only once it has moved.
 
@@ -1450,7 +1450,7 @@ Where a file is as it plays: told only to those who ask for positions, at most o
   - `duration`: How long it plays, in seconds; none for a live stream.
 - Follows: a file playing.
 
-### chapter_changed
+### playback.chapter_changed
 
 A file is in another chapter.
 
@@ -1460,7 +1460,7 @@ A file is in another chapter.
   - `chapter`: The chapter, from 1; none before the first.
 - Follows: `playback.seek`, `playback.seek_forward`, `playback.seek_backward`, `playback.next_chapter`, `playback.previous_chapter`, `playback.go_to_chapter`, `playback.restart`, `playback.restart_all`, `playback.seek_forward_all`, `playback.seek_backward_all`, or a file playing into its next chapter.
 
-### track_changed
+### playback.track_changed
 
 Another of a file's tracks plays, or none of its kind.
 
@@ -1473,7 +1473,7 @@ Another of a file's tracks plays, or none of its kind.
 
 ## audio
 
-### volume_changed
+### audio.volume_changed
 
 A block's volume changed, or it was muted or unmuted.
 
@@ -1486,7 +1486,7 @@ A block's volume changed, or it was muted or unmuted.
 
 ## cast
 
-### cast_devices_changed
+### cast.devices_changed
 
 TVs or speakers to cast to were found on the network, or went.
 
@@ -1495,7 +1495,7 @@ TVs or speakers to cast to were found on the network, or went.
   - `devices`: Those found now, as `cast.ls` lists them.
 - Follows: devices found on the network or gone from it.
 
-### cast_started
+### cast.started
 
 A block began playing on a TV or speaker.
 
@@ -1505,7 +1505,7 @@ A block began playing on a TV or speaker.
   - `device`: The device: its id, kind and name.
 - Follows: `cast.to`, or a TV paired with `cast.pair` once its PIN is typed.
 
-### cast_ended
+### cast.ended
 
 A block stopped playing on a TV or speaker.
 
@@ -1517,7 +1517,7 @@ A block stopped playing on a TV or speaker.
 
 ## output
 
-### outputs_changed
+### output.devices_changed
 
 Outputs were connected or disconnected.
 
@@ -1526,7 +1526,7 @@ Outputs were connected or disconnected.
   - `outputs`: Those connected now, as `output.ls` lists them.
 - Follows: an output connected or disconnected.
 
-### route_changed
+### output.route_changed
 
 The app's sound goes elsewhere.
 
@@ -1535,22 +1535,22 @@ The app's sound goes elsewhere.
   - `route`: Where it goes now, as `output.ls` says.
 - Follows: `output.set_device`, or the system's own output changing.
 
-## settings
+## app.settings
 
-### settings_changed
+### app.settings.changed
 
 Settings changed.
 
 - Heard by those listening to the app's events.
 - Payload:
-  - `keys`: The keys of those that changed, as `settings.get` takes them.
-- Follows: `app.toggle_ui`, `app.toggle_controls`, `app.toggle_top_bar`, `app.toggle_track_switcher`, `app.toggle_notes`, `window.toggle_float_on_top`, `window.toggle_float_on_top_while_playing`, `subtitles.bigger`, `subtitles.smaller`, `subtitles.up`, `subtitles.down`, `output.set_device`, `settings.set`, `settings.reset`, `settings.reload`, or Settings moving a slider, importing a settings file or resetting every setting.
+  - `keys`: The keys of those that changed, as `app.settings.get` takes them.
+- Follows: `app.toggle_ui`, `app.toggle_controls`, `app.toggle_top_bar`, `app.toggle_track_switcher`, `app.toggle_notes`, `window.toggle_float_on_top`, `window.toggle_float_on_top_while_playing`, `subtitles.bigger`, `subtitles.smaller`, `subtitles.up`, `subtitles.down`, `output.set_device`, `app.settings.set`, `app.settings.reset`, `app.settings.reload`, or Settings moving a slider, importing a settings file or resetting every setting.
 
-### keymap_changed
+### app.settings.keymap_changed
 
 The keys that run commands changed.
 
 - Heard by those listening to the app's events.
 - Payload:
   - `commands`: The ids of the commands whose keys changed.
-- Follows: `settings.set`, `settings.reset`, `settings.reload`, or Settings importing a settings file or resetting every setting.
+- Follows: `app.settings.set`, `app.settings.reset`, `app.settings.reload`, or Settings importing a settings file or resetting every setting.

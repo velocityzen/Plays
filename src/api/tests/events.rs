@@ -28,7 +28,7 @@ fn settings_are_told_by_key_and_shortcuts_by_command(cx: &mut TestAppContext) {
     });
     cx.run_until_parked();
     let changed = [(
-        "settings_changed",
+        "app.settings.changed",
         json!({"keys": ["autoplay", "subtitles.size"]}),
     )];
     assert_eq!(heard(&mut app), changed);
@@ -43,9 +43,9 @@ fn settings_are_told_by_key_and_shortcuts_by_command(cx: &mut TestAppContext) {
     assert_eq!(
         heard(&mut app),
         [
-            ("settings_changed", json!({"keys": ["hotkeys"]})),
+            ("app.settings.changed", json!({"keys": ["hotkeys"]})),
             (
-                "keymap_changed",
+                "app.settings.keymap_changed",
                 json!({"commands": ["playback.play_pause"]})
             ),
         ]
@@ -64,7 +64,7 @@ fn the_panels_settings_show_over_the_video_are_told_as_they_change(cx: &mut Test
     let told = |app: &mut UnboundedReceiver<Event>| -> Vec<_> {
         heard(app)
             .into_iter()
-            .filter(|(kind, _)| *kind != "command_run")
+            .filter(|(kind, _)| *kind != "app.command_run")
             .collect()
     };
 
@@ -73,9 +73,12 @@ fn the_panels_settings_show_over_the_video_are_told_as_they_change(cx: &mut Test
     assert_eq!(
         told(&mut app),
         [
-            ("settings_changed", json!({"keys": ["over_video.notes"]})),
             (
-                "app_ui_changed",
+                "app.settings.changed",
+                json!({"keys": ["over_video.notes"]})
+            ),
+            (
+                "app.ui_changed",
                 json!({"visible": ["controls", "top_bar", "track_switcher"]})
             ),
         ]
@@ -91,22 +94,25 @@ fn the_panels_settings_show_over_the_video_are_told_as_they_change(cx: &mut Test
         told(&mut app),
         [
             (
-                "settings_changed",
+                "app.settings.changed",
                 json!({"keys": [
                     "over_video.controls",
                     "over_video.top_bar",
                     "over_video.track_switcher",
                 ]})
             ),
-            ("app_ui_changed", json!({"visible": []})),
+            ("app.ui_changed", json!({"visible": []})),
         ]
     );
     run(cx, "app.toggle_top_bar");
     assert_eq!(
         told(&mut app),
         [
-            ("settings_changed", json!({"keys": ["over_video.top_bar"]})),
-            ("app_ui_changed", json!({"visible": ["top_bar"]})),
+            (
+                "app.settings.changed",
+                json!({"keys": ["over_video.top_bar"]})
+            ),
+            ("app.ui_changed", json!({"visible": ["top_bar"]})),
         ]
     );
 }
@@ -120,17 +126,17 @@ fn a_command_is_told_before_what_it_changes_and_a_query_isnt(cx: &mut TestAppCon
         cx.run_until_parked();
     };
 
-    run(cx, Invocation::new("settings.ls"));
+    run(cx, Invocation::new("app.settings.ls"));
     run(
         cx,
-        Invocation::new("settings.get").with_args(json!({"key": "autoplay"})),
+        Invocation::new("app.settings.get").with_args(json!({"key": "autoplay"})),
     );
     assert!(heard(&mut app).is_empty(), "queries only read");
 
     let set = json!({"key": "autoplay", "value": false});
     run(
         cx,
-        Invocation::new("settings.set")
+        Invocation::new("app.settings.set")
             .with_args(set.clone())
             .from(Source::Palette),
     );
@@ -138,10 +144,10 @@ fn a_command_is_told_before_what_it_changes_and_a_query_isnt(cx: &mut TestAppCon
         heard(&mut app),
         [
             (
-                "command_run",
-                json!({"command": "settings.set", "source": "palette", "args": set})
+                "app.command_run",
+                json!({"command": "app.settings.set", "source": "palette", "args": set})
             ),
-            ("settings_changed", json!({"keys": ["autoplay"]})),
+            ("app.settings.changed", json!({"keys": ["autoplay"]})),
         ]
     );
 
@@ -156,7 +162,7 @@ fn a_command_is_told_before_what_it_changes_and_a_query_isnt(cx: &mut TestAppCon
     assert_eq!(
         heard(&mut app),
         [(
-            "command_run",
+            "app.command_run",
             json!({
                 "command": "window.rename",
                 "source": "ui",

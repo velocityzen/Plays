@@ -15,7 +15,7 @@ use gpui::{AnyWindowHandle, App, Context, Entity, Window, WindowHandle};
 use serde::{Deserialize, Serialize};
 
 use super::Error;
-use crate::app::player_windows;
+use crate::app::{last_front, player_windows};
 use crate::ui::player::PlayerView;
 use crate::ui::workspace::Workspace;
 
@@ -134,8 +134,8 @@ pub fn windows(cx: &App) -> Vec<WindowHandle<Workspace>> {
 }
 
 /// The player window in front: the one active, else the frontmost of
-/// them, else any. One the system still says is in front once it has
-/// closed isn't.
+/// them, else the one in front last, else any. One the system still says
+/// is in front once it has closed isn't.
 pub fn front_window(cx: &App) -> Option<WindowHandle<Workspace>> {
     let open = cx.windows();
     let player = |window: AnyWindowHandle| {
@@ -151,6 +151,7 @@ pub fn front_window(cx: &App) -> Option<WindowHandle<Workspace>> {
                 .into_iter()
                 .find_map(player)
         })
+        .or_else(|| last_front(cx).and_then(player))
         .or_else(|| open.iter().copied().find_map(player))
 }
 

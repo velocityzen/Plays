@@ -57,7 +57,7 @@ pub const COMMANDS: &[Spec] = &[
             done()
         },
     )
-    .tells(&["cast_started"])
+    .tells(&["cast.started"])
     .keywords(&[
         "cast",
         "tv",
@@ -83,7 +83,7 @@ pub const COMMANDS: &[Spec] = &[
         "Stop casting the block, and play it here from where the device got to.",
         |player, _, cx| player.cast_to(None, cx),
     )
-    .tells(&["cast_ended"])
+    .tells(&["cast.ended"])
     .keywords(&["cast", "stop casting", "disconnect", "this computer"]),
     Spec::custom_with(
         "cast.pair",
@@ -100,7 +100,7 @@ pub const COMMANDS: &[Spec] = &[
 /// Casting's events.
 pub const EVENTS: &[EventKind] = &[
     EventKind::app(
-        "cast_devices_changed",
+        "cast.devices_changed",
         "TVs or speakers to cast to were found on the network, or went.",
         &[EventField::new(
             "devices",
@@ -109,7 +109,7 @@ pub const EVENTS: &[EventKind] = &[
     )
     .causes(&["devices found on the network or gone from it"]),
     EventKind::block(
-        "cast_started",
+        "cast.started",
         "A block began playing on a TV or speaker.",
         &[EventField::new(
             "device",
@@ -118,7 +118,7 @@ pub const EVENTS: &[EventKind] = &[
     )
     .causes(&["a TV paired with `cast.pair` once its PIN is typed"]),
     EventKind::block(
-        "cast_ended",
+        "cast.ended",
         "A block stopped playing on a TV or speaker.",
         &[EventField::new(
             "device",

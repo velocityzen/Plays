@@ -477,7 +477,7 @@ async fn cli(cx: &mut AsyncApp) -> Result<(), String> {
         ran => return Err(format!("plays ls with control off came to {ran:?}")),
     }
     // As the switch in Settings sets it.
-    let on = api::Invocation::new("settings.set")
+    let on = api::Invocation::new("app.settings.set")
         .with_args(serde_json::json!({"key": "command_line_control", "value": true}));
     cx.update(|cx| api::run(on, cx))
         .map_err(|_| "the app went away".to_owned())?
@@ -500,11 +500,17 @@ async fn cli(cx: &mut AsyncApp) -> Result<(), String> {
     if block["looping"] != false {
         return Err(format!("the block still loops: {block}"));
     }
-    let ended = succeeds(cx, &["wait", "ended", "-b", "1", "--timeout", "10"]).await?;
+    let ended = succeeds(
+        cx,
+        &["wait", "playback.ended", "-b", "1", "--timeout", "10"],
+    )
+    .await?;
     // Where it ended: how far through, in seconds and by frame.
     let said = |field| ended.contains(&format!(" {field}="));
-    if !ended.starts_with("ended window_id=") || !["position", "time", "frame"].iter().all(said) {
-        return Err(format!("plays wait ended printed {ended:?}"));
+    if !ended.starts_with("playback.ended window_id=")
+        || !["position", "time", "frame"].iter().all(said)
+    {
+        return Err(format!("plays wait playback.ended printed {ended:?}"));
     }
     let block = json(&succeeds(cx, &["--json", "block", "inspect"]).await?)?;
     if block["ended"] != true {
@@ -513,13 +519,21 @@ async fn cli(cx: &mut AsyncApp) -> Result<(), String> {
     // Over already: no waiting.
     let again = succeeds(
         cx,
-        &["--json", "wait", "ended", "--timeout", "0.5", "-b", "1"],
+        &[
+            "--json",
+            "wait",
+            "playback.ended",
+            "--timeout",
+            "0.5",
+            "-b",
+            "1",
+        ],
     )
     .await?;
     let again = json(&again)?;
     // As the event said it, from what the block says of itself.
     let through = again["payload"]["position"].as_f64().unwrap_or_default();
-    if again["type"] != "ended" || through < 0.9 || !again["payload"]["frame"].is_u64() {
+    if again["type"] != "playback.ended" || through < 0.9 || !again["payload"]["frame"].is_u64() {
         return Err(format!("waiting again printed {again}"));
     }
 

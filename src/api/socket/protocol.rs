@@ -22,7 +22,7 @@
 //! "not_found", "what": "window", "name": "9", "message": "no window 9"}`;
 //! a request it can't read is a `bad_request`. Events come between answers
 //! as they happen, each `{"type": ..., "payload": ...}`, with no id: those
-//! told as a request runs, such as its command's `command_run`, before its
+//! told as a request runs, such as its command's `app.command_run`, before its
 //! answer, and what the command changes after, once that has settled.
 //! Readers ignore fields they don't know, so later versions can add them.
 

@@ -17,7 +17,7 @@ use crate::media::Source;
 use crate::recents;
 use crate::settings::{OverVideo, Panel, Settings};
 use crate::ui::about::{self, AboutView};
-use crate::ui::settings::{SettingsView, ffmpeg_version};
+use crate::ui::settings::ffmpeg_version;
 use crate::ui::theme::layout::WINDOW_SIZE;
 use crate::ui::workspace::Workspace;
 
@@ -52,12 +52,12 @@ pub const COMMANDS: &[Spec] = &[
         open,
     )
     .tells(&[
-        "window_created",
-        "active_window_changed",
-        "block_created",
-        "window_layout_changed",
-        "active_block_changed",
-        "opened",
+        "window.created",
+        "window.active_changed",
+        "block.created",
+        "window.layout_changed",
+        "block.active_changed",
+        "playback.opened",
     ])
     .keywords(&["file", "folder", "stream", "url", "play", "add"])
     .returns("{window}: the id of the window they open in."),
@@ -75,14 +75,6 @@ pub const COMMANDS: &[Spec] = &[
         AboutView::open_window,
     )
     .keywords(&["version", "credits", "licenses"]),
-    Spec::app(
-        "app.settings",
-        "Settings…",
-        "Open the Settings window, or bring it to the front.",
-        SettingsView::open_window,
-    )
-    .keywords(&["preferences", "options", "shortcuts", "hotkeys"])
-    .keys(&["secondary-,"]),
     Spec::app_with(
         "app.copy_version_info",
         "Copy Version Info",
@@ -173,10 +165,10 @@ pub const COMMANDS: &[Spec] = &[
         |cx| cx.quit(),
     )
     .tells(&[
-        "block_closed",
-        "window_closed",
-        "active_window_changed",
-        "quit",
+        "block.closed",
+        "window.closed",
+        "window.active_changed",
+        "app.quit",
     ])
     .keywords(&["exit"])
     .keys(&["secondary-q"]),
@@ -184,16 +176,16 @@ pub const COMMANDS: &[Spec] = &[
 
 /// What a change to the panels over the video in every window tells.
 const TELLS_UI: &[&str] = &[
-    "settings_changed",
-    "app_ui_changed",
-    "window_ui_changed",
-    "block_ui_changed",
+    "app.settings.changed",
+    "app.ui_changed",
+    "window.ui_changed",
+    "block.ui_changed",
 ];
 
 /// The app's events.
 pub const EVENTS: &[EventKind] = &[
     EventKind::app(
-        "command_run",
+        "app.command_run",
         "A command is about to run: told before anything it changes.",
         &[
             EventField::new("command", "Its id."),
@@ -211,33 +203,33 @@ pub const EVENTS: &[EventKind] = &[
     )
     .causes(&["every command, as it runs"]),
     EventKind::app(
-        "client_connected",
+        "app.client_connected",
         "A client connected to the socket, as the command line does.",
         &[EventField::new(
             "client_id",
-            "A number for it, which its `client_left` has too.",
+            "A number for it, which its `app.client_left` has too.",
         )],
     )
     .causes(&["a client connecting"]),
     EventKind::app(
-        "client_left",
+        "app.client_left",
         "A client went from the socket.",
         &[EventField::new(
             "client_id",
-            "The number its `client_connected` had.",
+            "The number its `app.client_connected` had.",
         )],
     )
     .causes(&[
         "a client going or being cut off, as when control from the command line is turned off",
     ]),
     EventKind::app(
-        "app_ui_changed",
+        "app.ui_changed",
         "The panels shown over the video in every window, as Settings have them, changed.",
         &[EventField::new("visible", super::VISIBLE)],
     )
     .causes(&[super::PANELS_SET]),
     EventKind::to_everyone(
-        "quit",
+        "app.quit",
         "Plays is quitting: told last, after each window still open is told closing.",
         &[],
     )

@@ -96,7 +96,7 @@ impl Workspace {
                 Button::icon("settings", "settings")
                     .icon_color(theme.text_muted)
                     .on_click(|_, window, cx| {
-                        window.dispatch_action(Box::new(Run::command("app.settings")), cx)
+                        window.dispatch_action(Box::new(Run::command("app.settings.open")), cx)
                     }),
             )
             .when(client_decorated, |this| {

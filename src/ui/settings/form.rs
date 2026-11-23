@@ -21,17 +21,17 @@ pub(super) fn update_settings(cx: &mut App, save: bool, change: impl FnOnce(&mut
     Settings::update(cx, save, change);
 }
 
-/// Set the setting `key` to `value` with `settings.set`, once the event is
+/// Set the setting `key` to `value` with `app.settings.set`, once the event is
 /// handled, as every control does.
 pub(super) fn set(key: impl Into<String>, value: impl Serialize, cx: &mut App) {
     let args = json!({"key": key.into(), "value": value});
-    api::dispatch(Invocation::new("settings.set").with_args(args), cx);
+    api::dispatch(Invocation::new("app.settings.set").with_args(args), cx);
 }
 
-/// Put the setting `key` back as Plays starts it out, with `settings.reset`.
+/// Put the setting `key` back as Plays starts it out, with `app.settings.reset`.
 pub(super) fn reset(key: &str, cx: &mut App) {
     api::dispatch(
-        Invocation::new("settings.reset").with_args(json!({"key": key})),
+        Invocation::new("app.settings.reset").with_args(json!({"key": key})),
         cx,
     );
 }

@@ -23,7 +23,7 @@ pub const COMMANDS: &[Spec] = &[
         "Pause the block if it plays, else play it.",
         |player, _, cx| player.play_pause(cx),
     )
-    .tells(&["playing", "paused"])
+    .tells(&["playback.playing", "playback.paused"])
     .keywords(&["play", "pause", "resume", "stop"])
     .setting("play_pause")
     .keys(&["space", "p"]),
@@ -45,7 +45,11 @@ pub const COMMANDS: &[Spec] = &[
             done()
         },
     )
-    .tells(&["seeked", "ended", "chapter_changed"])
+    .tells(&[
+        "playback.seeked",
+        "playback.ended",
+        "playback.chapter_changed",
+    ])
     .keywords(&["jump", "position", "time", "go to", "scrub"]),
     Spec::block(
         "playback.seek_forward",
@@ -56,7 +60,11 @@ pub const COMMANDS: &[Spec] = &[
             player.seek_by(step, cx);
         },
     )
-    .tells(&["seeked", "ended", "chapter_changed"])
+    .tells(&[
+        "playback.seeked",
+        "playback.ended",
+        "playback.chapter_changed",
+    ])
     .keywords(&["skip", "forward", "jump"])
     .setting("seek_forward")
     .keys(&["right"]),
@@ -69,7 +77,7 @@ pub const COMMANDS: &[Spec] = &[
             player.seek_by(-step, cx);
         },
     )
-    .tells(&["seeked", "chapter_changed"])
+    .tells(&["playback.seeked", "playback.chapter_changed"])
     .keywords(&["skip", "back", "rewind", "jump"])
     .setting("seek_backward")
     .keys(&["left"]),
@@ -79,7 +87,7 @@ pub const COMMANDS: &[Spec] = &[
         "Pause and show the next frame.",
         |player, _, cx| player.step_frame(1.0, cx),
     )
-    .tells(&["paused", "seeked"])
+    .tells(&["playback.paused", "playback.seeked"])
     .keywords(&["step"])
     .setting("next_frame")
     .keys(&["alt-right", ".", ">"]),
@@ -89,7 +97,7 @@ pub const COMMANDS: &[Spec] = &[
         "Pause and show the frame before.",
         |player, _, cx| player.step_frame(-1.0, cx),
     )
-    .tells(&["paused", "seeked"])
+    .tells(&["playback.paused", "playback.seeked"])
     .keywords(&["step", "back"])
     .setting("previous_frame")
     .keys(&["alt-left", ",", "<"]),
@@ -99,7 +107,7 @@ pub const COMMANDS: &[Spec] = &[
         "Play from the start of the next chapter.",
         |player, _, cx| player.next_chapter(cx),
     )
-    .tells(&["seeked", "chapter_changed"])
+    .tells(&["playback.seeked", "playback.chapter_changed"])
     .keywords(&["skip"])
     .setting("next_chapter")
     .keys(&["pagedown"]),
@@ -109,7 +117,7 @@ pub const COMMANDS: &[Spec] = &[
         "Play from the start of this chapter, or of the one before near its start.",
         |player, _, cx| player.previous_chapter(cx),
     )
-    .tells(&["seeked", "chapter_changed"])
+    .tells(&["playback.seeked", "playback.chapter_changed"])
     .keywords(&["back"])
     .setting("previous_chapter")
     .keys(&["pageup"]),
@@ -131,7 +139,7 @@ pub const COMMANDS: &[Spec] = &[
             done()
         },
     )
-    .tells(&["seeked", "chapter_changed"])
+    .tells(&["playback.seeked", "playback.chapter_changed"])
     .keywords(&["chapters", "jump", "skip"])
     // The chapter it's in, from 1.
     .state(|target, cx| {
@@ -147,7 +155,7 @@ pub const COMMANDS: &[Spec] = &[
         "Play from the start.",
         |player, _, cx| player.restart(cx),
     )
-    .tells(&["seeked", "chapter_changed"])
+    .tells(&["playback.seeked", "playback.chapter_changed"])
     .keywords(&["beginning", "rewind"])
     .setting("restart")
     .keys(&["home"]),
@@ -157,7 +165,7 @@ pub const COMMANDS: &[Spec] = &[
         "Play the file before this one in its playlist, or else its folder, instead.",
         |player, _, cx| player.open_neighbor(-1, cx),
     )
-    .tells(&["opened", "playing"])
+    .tells(&["playback.opened", "playback.playing"])
     .keywords(&["folder", "episode", "back"])
     .setting("previous_file")
     .keys(&["secondary-left"]),
@@ -167,7 +175,7 @@ pub const COMMANDS: &[Spec] = &[
         "Play the file after this one in its playlist, or else its folder, instead.",
         |player, _, cx| player.open_neighbor(1, cx),
     )
-    .tells(&["opened", "playing"])
+    .tells(&["playback.opened", "playback.playing"])
     .keywords(&["folder", "episode", "skip"])
     .setting("next_file")
     .keys(&["secondary-right"]),
@@ -187,7 +195,7 @@ pub const COMMANDS: &[Spec] = &[
             done()
         },
     )
-    .tells(&["opened", "playing"])
+    .tells(&["playback.opened", "playback.playing"])
     .keywords(&["open", "folder", "episode", "switch", "replace"]),
     Spec::block(
         "playback.toggle_loop",
@@ -207,7 +215,7 @@ pub const COMMANDS: &[Spec] = &[
         "Pause every file in every window if any plays, else play them all.",
         all::toggle,
     )
-    .tells(&["playing", "paused"])
+    .tells(&["playback.playing", "playback.paused"])
     .keywords(&["every", "play", "pause"])
     .setting("play_pause_all")
     .keys(&["shift-space"]),
@@ -217,7 +225,7 @@ pub const COMMANDS: &[Spec] = &[
         "Play every file in every window.",
         all::play,
     )
-    .tells(&["playing"])
+    .tells(&["playback.playing"])
     .keywords(&["every", "resume"]),
     Spec::every_block(
         "playback.pause_all",
@@ -225,7 +233,7 @@ pub const COMMANDS: &[Spec] = &[
         "Pause every file in every window.",
         all::pause,
     )
-    .tells(&["paused"])
+    .tells(&["playback.paused"])
     .keywords(&["every", "stop"]),
     Spec::every_block(
         "playback.restart_all",
@@ -233,7 +241,7 @@ pub const COMMANDS: &[Spec] = &[
         "Play every file in every window from the start.",
         all::restart,
     )
-    .tells(&["seeked", "chapter_changed"])
+    .tells(&["playback.seeked", "playback.chapter_changed"])
     .keywords(&["every", "beginning", "rewind"])
     .setting("restart_all")
     .keys(&["shift-home"]),
@@ -243,7 +251,11 @@ pub const COMMANDS: &[Spec] = &[
         "Skip every file in every window ahead by the seek step.",
         |cx| all::seek(1.0, cx),
     )
-    .tells(&["seeked", "ended", "chapter_changed"])
+    .tells(&[
+        "playback.seeked",
+        "playback.ended",
+        "playback.chapter_changed",
+    ])
     .keywords(&["every", "skip", "jump"])
     .setting("seek_forward_all")
     .keys(&["shift-right"]),
@@ -253,7 +265,7 @@ pub const COMMANDS: &[Spec] = &[
         "Skip every file in every window back by the seek step.",
         |cx| all::seek(-1.0, cx),
     )
-    .tells(&["seeked", "chapter_changed"])
+    .tells(&["playback.seeked", "playback.chapter_changed"])
     .keywords(&["every", "rewind", "jump"])
     .setting("seek_backward_all")
     .keys(&["shift-left"]),
@@ -263,7 +275,7 @@ pub const COMMANDS: &[Spec] = &[
         "Pause every file in every window and show its next frame.",
         |cx| all::step_frame(1.0, cx),
     )
-    .tells(&["paused", "seeked"])
+    .tells(&["playback.paused", "playback.seeked"])
     .keywords(&["every", "step"])
     .setting("next_frame_all")
     .keys(&["alt-shift-right"]),
@@ -273,7 +285,7 @@ pub const COMMANDS: &[Spec] = &[
         "Pause every file in every window and show the frame before.",
         |cx| all::step_frame(-1.0, cx),
     )
-    .tells(&["paused", "seeked"])
+    .tells(&["playback.paused", "playback.seeked"])
     .keywords(&["every", "step", "back"])
     .setting("previous_frame_all")
     .keys(&["alt-shift-left"]),
@@ -289,7 +301,7 @@ pub const COMMANDS: &[Spec] = &[
             Ok(Value::Null)
         },
     )
-    .tells(&["seeked", "playing", "paused"])
+    .tells(&["playback.seeked", "playback.playing", "playback.paused"])
     .keywords(&["every", "align", "same time"])
     .setting("sync_all")
     .keys(&["shift-s"]),
@@ -316,7 +328,7 @@ const PLAYHEAD: &[EventField] = &[
 /// How files play: the blocks' events about them.
 pub const EVENTS: &[EventKind] = &[
     EventKind::block(
-        "opened",
+        "playback.opened",
         "A file opened in a block, paused at its start.",
         &[
             EventField::new(
@@ -333,33 +345,33 @@ pub const EVENTS: &[EventKind] = &[
     )
     .causes(&[super::DROPPED, NEXT]),
     EventKind::block(
-        "open_failed",
+        "playback.open_failed",
         "A file couldn't be opened.",
         &[EventField::new("error", "Why.")],
     )
     .causes(&["a file Plays can't play or a stream it can't reach"]),
     EventKind::block(
-        "failed",
+        "playback.failed",
         "A file stopped playing on an error.",
         &[EventField::new("error", "Why.")],
     )
     .causes(&["a file that's damaged or a stream that went"]),
-    EventKind::block("playing", "A file began playing.", PLAYHEAD)
+    EventKind::block("playback.playing", "A file began playing.", PLAYHEAD)
         .causes(&["a file opening while Autoplay is on", NEXT]),
-    EventKind::block("paused", "A file paused.", PLAYHEAD),
+    EventKind::block("playback.paused", "A file paused.", PLAYHEAD),
     EventKind::block(
-        "seeked",
+        "playback.seeked",
         "A file was sought to another time, here or on the device it's cast to: where it went.",
         PLAYHEAD,
     ),
     EventKind::block(
-        "ended",
+        "playback.ended",
         "A file played to its end, and stopped there.",
         PLAYHEAD,
     )
     .causes(&["a file playing to its end"]),
     EventKind::block(
-        "position",
+        "playback.position",
         "Where a file is as it plays: told only to those who ask for positions, at most once \
          a second, and only once it has moved.",
         &[
@@ -381,7 +393,7 @@ pub const EVENTS: &[EventKind] = &[
     )
     .causes(&["a file playing"]),
     EventKind::block(
-        "chapter_changed",
+        "playback.chapter_changed",
         "A file is in another chapter.",
         &[EventField::new(
             "chapter",
@@ -390,7 +402,7 @@ pub const EVENTS: &[EventKind] = &[
     )
     .causes(&["a file playing into its next chapter"]),
     EventKind::block(
-        "track_changed",
+        "playback.track_changed",
         "Another of a file's tracks plays, or none of its kind.",
         &[
             EventField::new("kind", "The track's: video, audio or subtitles."),

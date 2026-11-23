@@ -169,9 +169,9 @@ fn a_client_reads_answers_errors_and_events_back() {
             },
         ),
         (
-            json!({"type": "playing", "payload": {"block_id": "1"}}),
+            json!({"type": "playback.playing", "payload": {"block_id": "1"}}),
             Incoming::Event {
-                kind: "playing".into(),
+                kind: "playback.playing".into(),
                 payload: json!({"block_id": "1"}),
             },
         ),

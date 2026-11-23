@@ -201,7 +201,7 @@ pub fn is_default(command: &str, key: &str) -> bool {
 }
 
 /// Give `command` the keys `pressed`, saved as Settings → Hotkeys and the
-/// palette record them, through the API (`settings.set`): its keys now,
+/// palette record them, through the API (`app.settings.set`): its keys now,
 /// and, where they were another command's, a note saying whose.
 pub fn record(command: &str, pressed: &Keystroke, cx: &mut App) -> (Vec<String>, Option<String>) {
     let key = Keystroke {
@@ -231,7 +231,7 @@ pub fn unrecord(command: &str, key: &str, cx: &mut App) -> Vec<String> {
 
 fn save(hotkeys: &Hotkeys, cx: &mut App) {
     let args = json!({"key": "hotkeys", "value": hotkeys});
-    api::dispatch(Invocation::new("settings.set").with_args(args), cx);
+    api::dispatch(Invocation::new("app.settings.set").with_args(args), cx);
 }
 
 /// How a keystroke is shown: `⌃⌘F` on macOS, `Ctrl+Alt+F` elsewhere.

@@ -1,5 +1,5 @@
-//! `settings`: every setting, read, changed and put back by its key, as
-//! the Settings window changes it; and the settings file.
+//! `app.settings`: the Settings window; every setting, read, changed and
+//! put back by its key, as the window changes it; and the settings file.
 
 use gpui::App;
 use serde::Deserialize;
@@ -14,7 +14,7 @@ use crate::files::Folder;
 use crate::hotkeys;
 use crate::settings::Settings;
 use crate::settings::fields::{self, Field};
-use crate::ui::settings::installed_fonts;
+use crate::ui::settings::{SettingsView, installed_fonts};
 
 const KEY: Arg = Arg::required(
     "key",
@@ -32,8 +32,16 @@ const SET: &[Arg] = &[
 ];
 
 pub const COMMANDS: &[Spec] = &[
+    Spec::app(
+        "app.settings.open",
+        "Settings…",
+        "Open the Settings window, or bring it to the front.",
+        SettingsView::open_window,
+    )
+    .keywords(&["preferences", "options", "shortcuts", "hotkeys"])
+    .keys(&["secondary-,"]),
     Spec::query(
-        "settings.ls",
+        "app.settings.ls",
         "List Settings",
         "List every setting: its key, what Settings calls it and the pane it's on, what \
          it takes, and its value.",
@@ -46,7 +54,7 @@ pub const COMMANDS: &[Spec] = &[
     )
     .keywords(&["list", "ls", "preferences", "options"]),
     Spec::query_with(
-        "settings.get",
+        "app.settings.get",
         "Get Setting",
         "Read a setting by its key, such as subtitles.size.",
         Scope::App,
@@ -59,7 +67,7 @@ pub const COMMANDS: &[Spec] = &[
     )
     .keywords(&["preferences", "options", "read"]),
     Spec::query(
-        "settings.keymap",
+        "app.settings.keymap",
         "List Shortcuts",
         "List each command keys can run, with the keys that run it now, as Settings → \
          Hotkeys has them.",
@@ -71,39 +79,39 @@ pub const COMMANDS: &[Spec] = &[
     )
     .keywords(&["keys", "hotkeys", "shortcuts", "bindings", "keymap"]),
     Spec::app_with(
-        "settings.set",
+        "app.settings.set",
         "Change Setting",
         "Change a setting by its key, to a value Settings offers, and save it.",
         SET,
         set,
     )
     .tells(&[
-        "settings_changed",
-        "keymap_changed",
-        "app_ui_changed",
-        "window_ui_changed",
-        "block_ui_changed",
+        "app.settings.changed",
+        "app.settings.keymap_changed",
+        "app.ui_changed",
+        "window.ui_changed",
+        "block.ui_changed",
     ])
     .keywords(&["preferences", "options"])
     .returns("Its value now."),
     Spec::app_with(
-        "settings.reset",
+        "app.settings.reset",
         "Reset Setting",
         "Put a setting back as Plays starts it out, and save it.",
         &[KEY],
         reset,
     )
     .tells(&[
-        "settings_changed",
-        "keymap_changed",
-        "app_ui_changed",
-        "window_ui_changed",
-        "block_ui_changed",
+        "app.settings.changed",
+        "app.settings.keymap_changed",
+        "app.ui_changed",
+        "window.ui_changed",
+        "block.ui_changed",
     ])
     .keywords(&["preferences", "options", "default", "restore"])
     .returns("Its value now."),
     Spec::app_with(
-        "settings.reveal_file",
+        "app.settings.reveal_file",
         "Show Settings File",
         "Show the settings file where the system shows files, saving it first if it \
          isn't there yet.",
@@ -113,18 +121,18 @@ pub const COMMANDS: &[Spec] = &[
     .keywords(&["preferences", "json", "finder", "reveal"])
     .returns("The file's path."),
     Spec::app_with(
-        "settings.reload",
+        "app.settings.reload",
         "Reload Settings",
         "Read the settings file again, after it was changed by hand.",
         &[],
         reload,
     )
     .tells(&[
-        "settings_changed",
-        "keymap_changed",
-        "app_ui_changed",
-        "window_ui_changed",
-        "block_ui_changed",
+        "app.settings.changed",
+        "app.settings.keymap_changed",
+        "app.ui_changed",
+        "window.ui_changed",
+        "block.ui_changed",
     ])
     .keywords(&["preferences", "json", "refresh"])
     .returns("[key]: the settings the file changed."),
@@ -133,16 +141,16 @@ pub const COMMANDS: &[Spec] = &[
 /// The settings' events.
 pub const EVENTS: &[EventKind] = &[
     EventKind::app(
-        "settings_changed",
+        "app.settings.changed",
         "Settings changed.",
         &[EventField::new(
             "keys",
-            "The keys of those that changed, as `settings.get` takes them.",
+            "The keys of those that changed, as `app.settings.get` takes them.",
         )],
     )
     .causes(&["Settings moving a slider, importing a settings file or resetting every setting"]),
     EventKind::app(
-        "keymap_changed",
+        "app.settings.keymap_changed",
         "The keys that run commands changed.",
         &[EventField::new(
             "commands",
@@ -174,7 +182,6 @@ pub fn changed(cx: &App) -> Vec<(String, Value)> {
         .collect()
 }
 
-/// What `settings.ls` says.
 /// Each command keys can run, with its keys now.
 fn keymap(cx: &App) -> Value {
     let hotkeys = &cx.global::<Settings>().hotkeys;
@@ -191,6 +198,7 @@ fn keymap(cx: &App) -> Value {
         .collect()
 }
 
+/// What `app.settings.ls` says.
 fn listing(cx: &App) -> Value {
     let settings = cx.global::<Settings>();
     let defaults = Settings::default();

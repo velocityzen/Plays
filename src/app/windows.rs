@@ -45,6 +45,13 @@ pub(crate) fn note_front(window: AnyWindowHandle, cx: &mut App) {
     history.note(window, |other| !open.contains(&other));
 }
 
+/// The player window in front last, of those open.
+pub(crate) fn last_front(cx: &App) -> Option<AnyWindowHandle> {
+    let open = cx.windows();
+    let history = cx.try_global::<History>()?;
+    history.0.recent(None, |window| open.contains(&window))
+}
+
 /// Bring the player window that was in front last, before the window in
 /// front, to the front: twice over, the one in front first.
 pub(crate) fn recent(cx: &mut App) {

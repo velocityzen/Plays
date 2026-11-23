@@ -141,7 +141,7 @@ fn its_keys_list_every_command_that_can_run_in_the_window(cx: &mut TestAppContex
     assert!(shows(&mut cx, "palette"));
     let listed = listed(window, &cx);
     let has = |id: &str| listed.iter().any(|listed| listed == id);
-    assert!(has("window.new") && has("app.settings") && has("window.open_url"));
+    assert!(has("window.new") && has("app.settings.open") && has("window.open_url"));
     assert!(
         !has("playback.toggle_loop"),
         "an empty window has no file to loop"
@@ -156,7 +156,7 @@ fn its_keys_list_every_command_that_can_run_in_the_window(cx: &mut TestAppContex
         .collect();
     assert!(order.is_sorted(), "{listed:?}");
     assert_eq!(read(window, &cx, Palette::picked), listed.first().cloned());
-    assert!(shows(&mut cx, "palette-row-app.settings"));
+    assert!(shows(&mut cx, "palette-row-app.about"));
 
     press_and_wait(&mut cx, "escape");
     assert!(palette(window, &cx).is_none(), "Escape closes it");
@@ -182,7 +182,7 @@ fn typing_finds_commands_by_their_titles_groups_and_keywords(cx: &mut TestAppCon
     clear(&mut cx);
     type_in(&mut cx, "preferences");
     assert!(
-        listed(window, &cx).contains(&"app.settings".to_owned()),
+        listed(window, &cx).contains(&"app.settings.open".to_owned()),
         "a keyword: {:?}",
         listed(window, &cx)
     );
@@ -405,7 +405,7 @@ fn a_setting_is_picked_then_its_value_as_settings_offers_them(cx: &mut TestAppCo
     press_and_wait(&mut cx, "enter");
     assert_eq!(
         read(window, &cx, Palette::asking),
-        Some(("settings.set", "key"))
+        Some(("app.settings.set", "key"))
     );
     assert!(
         !listed(window, &cx).contains(&"Shortcuts".to_owned()),
@@ -419,7 +419,7 @@ fn a_setting_is_picked_then_its_value_as_settings_offers_them(cx: &mut TestAppCo
     press_and_wait(&mut cx, "enter");
     assert_eq!(
         read(window, &cx, Palette::asking),
-        Some(("settings.set", "value"))
+        Some(("app.settings.set", "value"))
     );
     assert_eq!(listed(window, &cx), ["On", "Off"]);
     assert_eq!(read(window, &cx, Palette::current), ["Off"]);
@@ -450,7 +450,7 @@ fn languages_are_typed_by_name_or_code_until_each_is_one(cx: &mut TestAppContext
     ask(&mut cx);
     assert_eq!(
         read(window, &cx, Palette::asking),
-        Some(("settings.set", "value"))
+        Some(("app.settings.set", "value"))
     );
     assert!(shows(&mut cx, "palette-prompt"), "it says what to type");
     type_in(&mut cx, "Japanese, Elvish");
@@ -851,7 +851,7 @@ fn a_command_that_takes_no_keys_has_no_shortcut_to_change(cx: &mut TestAppContex
     type_in(&mut cx, "change setting");
     assert_eq!(
         read(window, &cx, Palette::picked).as_deref(),
-        Some("settings.set")
+        Some("app.settings.set")
     );
     assert!(!shows(&mut cx, "palette-change-shortcut"));
     press_and_wait(&mut cx, "secondary-enter");
@@ -974,7 +974,7 @@ fn lists_offer_what_there_is_with_what_is_picked_now(cx: &mut TestAppContext) {
 
     let outputs = choices("output.set_device", &mut cx);
     assert_eq!(outputs[0].label.as_ref(), "System Default");
-    let keys = choices("settings.reset", &mut cx);
+    let keys = choices("app.settings.reset", &mut cx);
     assert!(
         labels(&keys).contains(&"Shortcuts".to_owned()),
         "they can be put back"

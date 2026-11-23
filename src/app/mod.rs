@@ -33,7 +33,7 @@ pub use menus::refresh as refresh_menus;
 pub(crate) use speakers::Speakers;
 pub use speakers::{airplay_id, output_kind};
 pub(crate) use windows::{
-    back as back_window, move_to as move_window, note_front, players as player_windows,
+    back as back_window, last_front, move_to as move_window, note_front, players as player_windows,
     recent as recent_window, step as step_window,
 };
 

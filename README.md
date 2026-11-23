@@ -197,7 +197,7 @@ plays open ~/Movies/film.mkv              # in the window in front
 plays -w Kitchen block ls                 # the window labeled Kitchen
 plays do playback.seek time=90            # any command, by its id
 plays -b 2 do audio.set_volume volume=40  # on the second block
-plays wait ended -b 1 --timeout 600       # until the first block ends
+plays wait playback.ended -b 1            # until the first block ends
 plays events --json                       # every change, a JSON line each
 plays settings set autoplay false
 plays actions                             # every command

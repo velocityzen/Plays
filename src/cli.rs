@@ -296,7 +296,7 @@ impl Session<'_> {
     fn settings(&mut self, settings: Settings) -> Done {
         match settings {
             Settings::Ls => {
-                let listing = self.call("settings.ls", Value::Null)?;
+                let listing = self.call("app.settings.ls", Value::Null)?;
                 if self.options.json {
                     return self.result(&listing);
                 }
@@ -306,19 +306,19 @@ impl Session<'_> {
                 Ok(show::table(self.out, &["KEY", "VALUE"], &rows)?)
             }
             Settings::Get { key } => {
-                let value = self.call("settings.get", json!({"key": key}))?;
+                let value = self.call("app.settings.get", json!({"key": key}))?;
                 self.result(&value)
             }
             Settings::Set { key, value } => {
                 let value = json!({"key": key, "value": typed(None, &value)});
-                let now = self.call("settings.set", value)?;
+                let now = self.call("app.settings.set", value)?;
                 self.result(&now)
             }
         }
     }
 
     fn keymap(&mut self) -> Done {
-        let keymap = self.call("settings.keymap", Value::Null)?;
+        let keymap = self.call("app.settings.keymap", Value::Null)?;
         if self.options.json {
             return self.result(&keymap);
         }

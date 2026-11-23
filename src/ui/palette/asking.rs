@@ -185,9 +185,9 @@ fn choices(
         ("cast.to" | "cast.pair", "device") => ("Device", devices(on)),
         ("output.set_device", "id") => ("Output", outputs(spec.id, "System Default", on)),
         ("output.set_window_device", "id") => ("Output", outputs(spec.id, output::SAME_AS_APP, on)),
-        ("settings.get" | "settings.reset", "key") => ("Setting", settings(true, on.cx)),
-        ("settings.set", "key") => ("Setting", settings(false, on.cx)),
-        ("settings.set", "value") => ("Value", setting_values(args, on)?),
+        ("app.settings.get" | "app.settings.reset", "key") => ("Setting", settings(true, on.cx)),
+        ("app.settings.set", "key") => ("Setting", settings(false, on.cx)),
+        ("app.settings.set", "value") => ("Value", setting_values(args, on)?),
         (_, name) => match arg.kind {
             Kind::Choice(words) => {
                 let none = (!arg.required).then_some(match spec.id {
@@ -502,7 +502,7 @@ fn typed(
                 Ok(json!([typed]))
             }),
         )),
-        ("settings.set", "value") => {
+        ("app.settings.set", "value") => {
             let field = field(args, cx)?;
             match field.kind {
                 fields::Kind::Number { min, max } => Some((

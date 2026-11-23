@@ -11,7 +11,7 @@ use crate::api::socket::Heard;
 use crate::api::{Error, Target};
 
 /// Print the events heard, everything's or the window's `-w` names, until
-/// `count` have been, if given, or Plays quits: `quit`, the last.
+/// `count` have been, if given, or Plays quits: `app.quit`, the last.
 pub fn events(session: &mut Session, positions: bool, count: Option<usize>) -> Done {
     let heard = session
         .options
@@ -23,7 +23,7 @@ pub fn events(session: &mut Session, positions: bool, count: Option<usize>) -> D
     for _ in 0..count.unwrap_or(usize::MAX) {
         let (kind, payload) = session.client()?.next_event()?;
         show::event(session.out, &kind, &payload, json)?;
-        if kind == "quit" {
+        if kind == "app.quit" {
             break;
         }
     }
@@ -45,7 +45,7 @@ pub fn wait(session: &mut Session, kind: &str, timeout: Option<f64>) -> Done {
     // Hearing first, so nothing happens unheard while the block is looked at.
     session
         .client()?
-        .subscribe(Heard::All, kind == "position")?;
+        .subscribe(Heard::All, kind == "playback.position")?;
     let watched = watched(session)?;
     if let Some(payload) = watched.already(kind) {
         return Ok(show::event(
@@ -72,7 +72,7 @@ pub fn wait(session: &mut Session, kind: &str, timeout: Option<f64>) -> Done {
             )?);
         }
         // What's watched, if anything, was told closing first.
-        if heard == "quit" {
+        if heard == "app.quit" {
             return Err(Error::failed(format!("Plays quit before its {kind}")).into());
         }
         if let Some(what) = watched.gone(&heard, &payload) {
@@ -128,7 +128,7 @@ impl Watched {
     /// the block titled by its label, or else what it plays.
     fn already(&self, kind: &str) -> Option<Value> {
         let state = &self.state;
-        (kind == "ended" && state["ended"] == true).then(|| {
+        (kind == "playback.ended" && state["ended"] == true).then(|| {
             let at = playhead(
                 state["position"].as_f64().unwrap_or_default(),
                 state["duration"].as_f64(),
@@ -163,10 +163,10 @@ impl Watched {
     /// watched has.
     fn gone(&self, kind: &str, payload: &Value) -> Option<&'static str> {
         match kind {
-            "block_closed" if !self.block.is_null() && payload["block_id"] == self.block => {
+            "block.closed" if !self.block.is_null() && payload["block_id"] == self.block => {
                 Some("block")
             }
-            "window_closed" if !self.window.is_null() => Some("window"),
+            "window.closed" if !self.window.is_null() => Some("window"),
             _ => None,
         }
     }

@@ -68,7 +68,7 @@ pub const COMMANDS: &[Spec] = &[
             done()
         },
     )
-    .tells(&["route_changed", "settings_changed"])
+    .tells(&["output.route_changed", "app.settings.changed"])
     .keywords(&[
         "sound",
         "speakers",
@@ -112,7 +112,7 @@ pub const COMMANDS: &[Spec] = &[
 /// The outputs' events.
 pub const EVENTS: &[EventKind] = &[
     EventKind::app(
-        "outputs_changed",
+        "output.devices_changed",
         "Outputs were connected or disconnected.",
         &[EventField::new(
             "outputs",
@@ -121,7 +121,7 @@ pub const EVENTS: &[EventKind] = &[
     )
     .causes(&["an output connected or disconnected"]),
     EventKind::app(
-        "route_changed",
+        "output.route_changed",
         "The app's sound goes elsewhere.",
         &[EventField::new(
             "route",

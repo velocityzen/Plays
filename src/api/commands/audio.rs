@@ -23,7 +23,7 @@ pub const COMMANDS: &[Spec] = &[
         "Turn the block's volume up, unmuting it.",
         |player, _, cx| player.change_volume(VOLUME_STEP, cx),
     )
-    .tells(&["volume_changed"])
+    .tells(&["audio.volume_changed"])
     .keywords(&["louder", "sound"])
     .setting("volume_up")
     .keys(&["up"]),
@@ -33,7 +33,7 @@ pub const COMMANDS: &[Spec] = &[
         "Turn the block's volume down.",
         |player, _, cx| player.change_volume(-VOLUME_STEP, cx),
     )
-    .tells(&["volume_changed"])
+    .tells(&["audio.volume_changed"])
     .keywords(&["quieter", "softer", "sound"])
     .setting("volume_down")
     .keys(&["down"]),
@@ -56,7 +56,7 @@ pub const COMMANDS: &[Spec] = &[
             done()
         },
     )
-    .tells(&["volume_changed"])
+    .tells(&["audio.volume_changed"])
     .keywords(&["loudness", "sound", "level"]),
     Spec::block(
         "audio.toggle_mute",
@@ -64,7 +64,7 @@ pub const COMMANDS: &[Spec] = &[
         "Mute the block, or play its sound again.",
         |player, _, cx| player.toggle_mute(cx),
     )
-    .tells(&["volume_changed"])
+    .tells(&["audio.volume_changed"])
     .keywords(&["silence", "sound"])
     .setting("mute")
     .keys(&["secondary-/", "m"])
@@ -77,7 +77,7 @@ pub const COMMANDS: &[Spec] = &[
         "Play the file's next audio track, the first after the last.",
         |player, _, cx| player.next_track(TrackKind::Audio, cx),
     )
-    .tells(&["track_changed"])
+    .tells(&["playback.track_changed"])
     .keywords(&["language", "dub", "commentary"])
     .setting("next_audio_track")
     .keys(on_mac(&["ctrl-cmd-a"], &["ctrl-alt-a"])),
@@ -92,7 +92,7 @@ pub const COMMANDS: &[Spec] = &[
         )],
         |args, player, _, cx| select_track(args, TrackKind::Audio, player, cx),
     )
-    .tells(&["track_changed"])
+    .tells(&["playback.track_changed"])
     .keywords(&["language", "dub", "commentary"]),
     Spec::block(
         "audio.earlier",
@@ -127,7 +127,7 @@ pub const COMMANDS: &[Spec] = &[
         "Turn every file's volume in every window up, each from its own.",
         |cx| all::change_volume(VOLUME_STEP, cx),
     )
-    .tells(&["volume_changed"])
+    .tells(&["audio.volume_changed"])
     .keywords(&["every", "louder"])
     .setting("volume_up_all")
     .keys(&["shift-up"]),
@@ -137,7 +137,7 @@ pub const COMMANDS: &[Spec] = &[
         "Turn every file's volume in every window down, each from its own.",
         |cx| all::change_volume(-VOLUME_STEP, cx),
     )
-    .tells(&["volume_changed"])
+    .tells(&["audio.volume_changed"])
     .keywords(&["every", "quieter"])
     .setting("volume_down_all")
     .keys(&["shift-down"]),
@@ -147,7 +147,7 @@ pub const COMMANDS: &[Spec] = &[
         "Mute every file in every window if any plays its sound, else unmute them all.",
         all::toggle_mute,
     )
-    .tells(&["volume_changed"])
+    .tells(&["audio.volume_changed"])
     .keywords(&["every", "silence"])
     .setting("mute_all")
     .keys(&["shift-m"]),
@@ -155,7 +155,7 @@ pub const COMMANDS: &[Spec] = &[
 
 /// The blocks' events about their sound.
 pub const EVENTS: &[EventKind] = &[EventKind::block(
-    "volume_changed",
+    "audio.volume_changed",
     "A block's volume changed, or it was muted or unmuted.",
     &[
         EventField::new(

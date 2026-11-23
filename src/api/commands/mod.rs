@@ -48,7 +48,7 @@ pub const EVENTS: [(&str, &[EventKind]); 8] = [
     ("audio", audio::EVENTS),
     ("cast", cast::EVENTS),
     ("output", output::EVENTS),
-    ("settings", settings::EVENTS),
+    ("app.settings", settings::EVENTS),
 ];
 
 /// What opens files in a window, other than a command: events' cause.
@@ -66,7 +66,7 @@ pub const NAMESPACES: [(&str, &str); 11] = [
     ("block", "Blocks in a window"),
     ("cast", "Casting"),
     ("output", "Audio Output"),
-    ("settings", "Settings"),
+    ("app.settings", "Settings"),
     ("app", "Plays"),
     ("cli", "Command line"),
 ];

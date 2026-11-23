@@ -50,11 +50,11 @@ fn results_print_as_text_or_json() {
 fn events_print_a_line_each() {
     let payload = json!({"window_id": "1a", "block_id": "2b", "position": 1.5});
     assert_eq!(
-        printed(|out| event(out, "paused", &payload, false)),
-        "paused window_id=1a block_id=2b position=1.5\n"
+        printed(|out| event(out, "playback.paused", &payload, false)),
+        "playback.paused window_id=1a block_id=2b position=1.5\n"
     );
     assert_eq!(
-        printed(|out| event(out, "paused", &payload, true)),
-        "{\"type\":\"paused\",\"payload\":{\"window_id\":\"1a\",\"block_id\":\"2b\",\"position\":1.5}}\n"
+        printed(|out| event(out, "playback.paused", &payload, true)),
+        "{\"type\":\"playback.paused\",\"payload\":{\"window_id\":\"1a\",\"block_id\":\"2b\",\"position\":1.5}}\n"
     );
 }

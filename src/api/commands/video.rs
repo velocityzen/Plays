@@ -19,7 +19,7 @@ pub const COMMANDS: &[Spec] = &[
         "Show the file's next video track, the first after the last.",
         |player, _, cx| player.next_track(TrackKind::Video, cx),
     )
-    .tells(&["track_changed"])
+    .tells(&["playback.track_changed"])
     .keywords(&["angle", "stream"])
     .setting("next_video_track")
     .keys(on_mac(&["ctrl-cmd-v"], &["ctrl-alt-v"])),
@@ -34,7 +34,7 @@ pub const COMMANDS: &[Spec] = &[
         )],
         |args, player, _, cx| select_track(args, TrackKind::Video, player, cx),
     )
-    .tells(&["track_changed"])
+    .tells(&["playback.track_changed"])
     .keywords(&["angle", "stream"]),
     Spec::block(
         "video.rotate_right",

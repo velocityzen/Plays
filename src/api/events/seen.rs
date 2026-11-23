@@ -124,16 +124,19 @@ pub fn changes(old: &Seen, new: &Seen) -> Vec<Event> {
     let mut events = Vec::new();
     if old.outputs != new.outputs {
         events.push(Event::app(
-            "outputs_changed",
+            "output.devices_changed",
             json!({"outputs": new.outputs}),
         ));
     }
     if old.route != new.route {
-        events.push(Event::app("route_changed", json!({"route": new.route})));
+        events.push(Event::app(
+            "output.route_changed",
+            json!({"route": new.route}),
+        ));
     }
     if old.devices != new.devices {
         events.push(Event::app(
-            "cast_devices_changed",
+            "cast.devices_changed",
             json!({"devices": new.devices}),
         ));
     }
@@ -157,7 +160,7 @@ pub fn changes(old: &Seen, new: &Seen) -> Vec<Event> {
     for window in &new.windows {
         if before(window.id).is_none() {
             events.push(Event::of_window(
-                "window_created",
+                "window.created",
                 window,
                 json!({"label": window.label}),
             ));
@@ -171,9 +174,9 @@ pub fn changes(old: &Seen, new: &Seen) -> Vec<Event> {
             continue;
         }
         for block in window.blocks.iter().filter(|block| !is.contains(&block.id)) {
-            events.push(Event::block("block_closed", window, block, json!({})));
+            events.push(Event::block("block.closed", window, block, json!({})));
         }
-        events.push(Event::of_window("window_closed", window, json!({})));
+        events.push(Event::of_window("window.closed", window, json!({})));
     }
     if old.front != new.front {
         let front = new
@@ -181,7 +184,7 @@ pub fn changes(old: &Seen, new: &Seen) -> Vec<Event> {
             .iter()
             .find(|window| Some(window.id) == new.front);
         let mut event = Event::app(
-            "active_window_changed",
+            "window.active_changed",
             json!({
                 "window_id": new.front.map(|id| id.to_string()),
                 "window_title": front.map(|window| &window.title),
@@ -204,7 +207,7 @@ fn window_changes(
     is: &HashSet<Id>,
     events: &mut Vec<Event>,
 ) {
-    // One just opened is as its `window_created` said.
+    // One just opened is as its `window.created` said.
     let opened = WindowSeen {
         full_screen: false,
         blocks: Vec::new(),
@@ -216,21 +219,21 @@ fn window_changes(
     let id = window.id;
     if before.label != window.label {
         events.push(Event::of_window(
-            "window_label_changed",
+            "window.label_changed",
             window,
             json!({"label": window.label}),
         ));
     }
     if before.full_screen != window.full_screen {
         events.push(Event::window(
-            "full_screen_changed",
+            "window.full_screen_changed",
             window,
             json!({"full_screen": window.full_screen}),
         ));
     }
     if before.over_video != window.over_video {
         events.push(Event::window(
-            "window_ui_changed",
+            "window.ui_changed",
             window,
             json!({"visible": window.over_video.visible()}),
         ));
@@ -240,7 +243,7 @@ fn window_changes(
         let old = match was.get(&block.id) {
             None => {
                 events.push(Event::block(
-                    "block_created",
+                    "block.created",
                     window,
                     block,
                     json!({"label": block.label}),
@@ -250,7 +253,7 @@ fn window_changes(
             Some(&(from, old)) => {
                 if from.id != id {
                     let mut moved = Event::block(
-                        "block_moved",
+                        "block.moved",
                         window,
                         block,
                         json!({
@@ -267,7 +270,7 @@ fn window_changes(
         olds.push(old);
     }
     for block in before.blocks.iter().filter(|block| !is.contains(&block.id)) {
-        events.push(Event::block("block_closed", window, block, json!({})));
+        events.push(Event::block("block.closed", window, block, json!({})));
     }
     let ids = |window: &WindowSeen| {
         window
@@ -280,7 +283,7 @@ fn window_changes(
     if ids(before) != blocks || before.maximized != window.maximized {
         let blocks: Vec<String> = blocks.iter().map(Id::to_string).collect();
         events.push(Event::window(
-            "window_layout_changed",
+            "window.layout_changed",
             window,
             json!({
                 "blocks": blocks,
@@ -294,7 +297,7 @@ fn window_changes(
             .iter()
             .find(|block| Some(block.id) == window.active);
         events.push(Event::window(
-            "active_block_changed",
+            "block.active_changed",
             window,
             json!({
                 "block_id": window.active.map(|id| id.to_string()),
@@ -320,13 +323,13 @@ fn block_changes(
     if let Some(old) = old
         && old.label != block.label
     {
-        tell("block_label_changed", json!({"label": block.label}));
+        tell("block.label_changed", json!({"label": block.label}));
     }
     if let Some(old) = old
         && old.over_video != block.over_video
     {
         tell(
-            "block_ui_changed",
+            "block.ui_changed",
             json!({"visible": block.over_video.visible()}),
         );
     }
@@ -334,10 +337,10 @@ fn block_changes(
     let cast = old.and_then(|old| old.casting.as_ref());
     if cast != block.casting.as_ref() {
         if let Some(device) = cast {
-            tell("cast_ended", json!({"device": device}));
+            tell("cast.ended", json!({"device": device}));
         }
         if let Some(device) = &block.casting {
-            tell("cast_started", json!({"device": device}));
+            tell("cast.started", json!({"device": device}));
         }
     }
     // As it was with this file, if it was this file.
@@ -345,16 +348,16 @@ fn block_changes(
     if let Some(opened) = &block.opened
         && file.is_none_or(|old| old.opened.is_none())
     {
-        tell("opened", opened.clone());
+        tell("playback.opened", opened.clone());
     }
     if let Some(error) = &block.failed
         && file.is_none_or(|old| old.failed.is_none())
     {
         // Once it has opened, it couldn't play on.
         let kind = if block.opened.is_some() {
-            "failed"
+            "playback.failed"
         } else {
-            "open_failed"
+            "playback.open_failed"
         };
         tell(kind, json!({"error": error}));
     }
@@ -363,14 +366,14 @@ fn block_changes(
     }
     if old.is_some_and(|old| old.picture_in_picture) != block.picture_in_picture {
         tell(
-            "picture_in_picture_changed",
+            "block.picture_in_picture_changed",
             json!({"picture_in_picture": block.picture_in_picture}),
         );
     }
 }
 
 /// How the file `block` has open plays now, against `old` (none if it just
-/// opened, which starts out paused, as its `opened` says the rest).
+/// opened, which starts out paused, as its `playback.opened` says the rest).
 fn playing_changes(
     old: Option<&BlockSeen>,
     block: &BlockSeen,
@@ -383,27 +386,37 @@ fn playing_changes(
     };
     let old = old.unwrap_or(&opened);
     if old.seeks != block.seeks {
-        tell("seeked", block.playhead(block.sought));
+        tell("playback.seeked", block.playhead(block.sought));
     }
     if block.ended && !old.ended {
-        tell("ended", block.playhead(block.position));
+        tell("playback.ended", block.playhead(block.position));
     } else if old.playing != block.playing {
-        let kind = if block.playing { "playing" } else { "paused" };
+        let kind = if block.playing {
+            "playback.playing"
+        } else {
+            "playback.paused"
+        };
         tell(kind, block.playhead(block.position));
     }
     if (old.volume, old.muted) != (block.volume, block.muted) {
         tell(
-            "volume_changed",
+            "audio.volume_changed",
             json!({"volume": block.volume, "muted": block.muted}),
         );
     }
     for ((kind, was), track) in TRACKS.iter().zip(old.tracks).zip(block.tracks) {
         if was != track {
-            tell("track_changed", json!({"kind": kind, "track": track}));
+            tell(
+                "playback.track_changed",
+                json!({"kind": kind, "track": track}),
+            );
         }
     }
     if old.chapter != block.chapter {
-        tell("chapter_changed", json!({"chapter": block.chapter}));
+        tell(
+            "playback.chapter_changed",
+            json!({"chapter": block.chapter}),
+        );
     }
 }
 

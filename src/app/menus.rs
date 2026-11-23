@@ -87,7 +87,7 @@ fn items(commands: &[&'static str], state: &MenuState) -> Vec<MenuItem> {
 /// The app's own menu: Install Command Line Tool where Plays can, on
 /// macOS.
 fn plays_menu(state: &MenuState) -> Menu {
-    let mut items = items(&["app.about", "", "app.settings"], state);
+    let mut items = items(&["app.about", "", "app.settings.open"], state);
     let install = api::find("cli.install").filter(|spec| (spec.available)());
     items.extend(install.map(|spec| item(spec.id, state)));
     items.extend([

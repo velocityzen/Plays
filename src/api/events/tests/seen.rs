@@ -29,6 +29,12 @@ fn block(id: Id) -> BlockSeen {
     }
 }
 
+/// Where a block is, as an event says: how far through, in seconds and by
+/// frame.
+fn at(position: f64, time: f64, frame: u64) -> Value {
+    json!({"position": position, "time": time, "frame": frame})
+}
+
 /// `block`, its file opened.
 fn opened(block: BlockSeen) -> BlockSeen {
     BlockSeen {
@@ -110,11 +116,11 @@ fn windows_and_blocks_are_told_as_they_open_and_close_once_each() {
     assert_eq!(
         kinds(&events),
         [
-            "window_created",
-            "block_created",
-            "window_layout_changed",
-            "active_block_changed",
-            "active_window_changed",
+            "window.created",
+            "block.created",
+            "window.layout_changed",
+            "block.active_changed",
+            "window.active_changed",
         ]
     );
     // Each named by its id and title.
@@ -149,7 +155,7 @@ fn windows_and_blocks_are_told_as_they_open_and_close_once_each() {
     let events = changes(&one, &none);
     assert_eq!(
         kinds(&events),
-        ["block_closed", "window_closed", "active_window_changed"]
+        ["block.closed", "window.closed", "window.active_changed"]
     );
     assert_eq!(events[0].payload, block_ids, "as they were");
     assert_eq!(
@@ -181,18 +187,18 @@ fn labels_full_screen_the_layout_and_the_block_keys_go_to_are_told_as_they_chang
     assert_eq!(
         said(&events),
         [
-            ("window_label_changed", json!({"label": "news"})),
-            ("full_screen_changed", json!({"full_screen": true})),
+            ("window.label_changed", json!({"label": "news"})),
+            ("window.full_screen_changed", json!({"full_screen": true})),
             (
-                "window_layout_changed",
+                "window.layout_changed",
                 json!({
                     "blocks": [u.to_string(), t.to_string()],
                     "maximized": u.to_string(),
                 })
             ),
-            ("active_block_changed", json!({})),
+            ("block.active_changed", json!({})),
             // Then the blocks, as they now are.
-            ("block_label_changed", json!({"label": "left"})),
+            ("block.label_changed", json!({"label": "left"})),
         ]
     );
     // Each by its title as it now is.
@@ -227,16 +233,16 @@ fn the_panels_a_window_and_its_blocks_show_are_told_as_they_change() {
         said(&events),
         [
             (
-                "window_ui_changed",
+                "window.ui_changed",
                 json!({"visible": ["controls", "top_bar", "track_switcher"]})
             ),
-            ("block_ui_changed", json!({"visible": ["top_bar"]})),
+            ("block.ui_changed", json!({"visible": ["top_bar"]})),
         ]
     );
     assert_eq!(events[1].payload["block_id"], u.to_string(), "its own");
     assert!(changes(&after, &after).is_empty());
 
-    // One opened in it starts out as it is: its `block_created` says so.
+    // One opened in it starts out as it is: its `block.created` says so.
     let mut more = after.clone();
     more.windows[0].blocks.push(BlockSeen {
         over_video: OverVideo::NONE,
@@ -244,7 +250,7 @@ fn the_panels_a_window_and_its_blocks_show_are_told_as_they_change() {
     });
     let told = changes(&after, &more);
     assert!(
-        !kinds(&told).contains(&"block_ui_changed"),
+        !kinds(&told).contains(&"block.ui_changed"),
         "{:?}",
         kinds(&told)
     );
@@ -271,7 +277,7 @@ fn the_window_in_front_and_the_block_keys_go_to_are_named_by_their_titles() {
         event.map(|event| event.payload.clone())
     };
     assert_eq!(
-        told("active_block_changed"),
+        told("block.active_changed"),
         Some(json!({
             "window_id": w.to_string(),
             "window_title": "Plays",
@@ -280,7 +286,7 @@ fn the_window_in_front_and_the_block_keys_go_to_are_named_by_their_titles() {
         }))
     );
     assert_eq!(
-        told("active_window_changed"),
+        told("window.active_changed"),
         Some(json!({"window_id": x.to_string(), "window_title": "Kitchen"}))
     );
 }
@@ -306,9 +312,9 @@ fn a_block_moved_to_another_window_is_told_to_both() {
     assert_eq!(
         kinds(&events),
         [
-            "window_layout_changed",
-            "block_moved",
-            "window_layout_changed"
+            "window.layout_changed",
+            "block.moved",
+            "window.layout_changed"
         ],
         "neither closed nor made, nor opened again"
     );
@@ -333,10 +339,10 @@ fn a_block_moved_to_another_window_is_told_to_both() {
     assert_eq!(
         kinds(&events),
         [
-            "block_moved",
-            "window_layout_changed",
-            "window_closed",
-            "active_window_changed"
+            "block.moved",
+            "window.layout_changed",
+            "window.closed",
+            "window.active_changed"
         ],
         "{:?}",
         said(&events)
@@ -344,7 +350,7 @@ fn a_block_moved_to_another_window_is_told_to_both() {
     let left = app(vec![kitchen(vec![block(v), opened(block(u))])]);
     assert_eq!(
         kinds(&changes(&after, &left)),
-        ["block_closed", "window_closed", "active_window_changed"],
+        ["block.closed", "window.closed", "window.active_changed"],
         "one not moved is closed"
     );
 }
@@ -366,8 +372,11 @@ fn how_a_file_plays_is_told_once_it_has_opened() {
     assert_eq!(
         said(&block_changes(&opening, &open)),
         [
-            ("opened", json!({"title": "clip.mp4", "duration": 10.0})),
-            ("playing", json!({"position": 0.0, "time": 0.0, "frame": 0})),
+            (
+                "playback.opened",
+                json!({"title": "clip.mp4", "duration": 10.0})
+            ),
+            ("playback.playing", at(0.0, 0.0, 0)),
         ]
     );
 
@@ -380,10 +389,7 @@ fn how_a_file_plays_is_told_once_it_has_opened() {
     };
     assert_eq!(
         said(&block_changes(&open, &sought)),
-        [(
-            "seeked",
-            json!({"position": 0.5, "time": 5.0, "frame": 125})
-        )]
+        [("playback.seeked", at(0.5, 5.0, 125))]
     );
 
     let ended = BlockSeen {
@@ -394,10 +400,7 @@ fn how_a_file_plays_is_told_once_it_has_opened() {
     };
     assert_eq!(
         said(&block_changes(&sought, &ended)),
-        [(
-            "ended",
-            json!({"position": 1.0, "time": 10.0, "frame": 250})
-        )],
+        [("playback.ended", at(1.0, 10.0, 250))],
         "not paused"
     );
     let again = BlockSeen {
@@ -408,7 +411,7 @@ fn how_a_file_plays_is_told_once_it_has_opened() {
     };
     assert_eq!(
         said(&block_changes(&ended, &again)),
-        [("playing", json!({"position": 0.0, "time": 0.0, "frame": 0}))]
+        [("playback.playing", at(0.0, 0.0, 0))]
     );
     let paused = BlockSeen {
         playing: false,
@@ -417,7 +420,7 @@ fn how_a_file_plays_is_told_once_it_has_opened() {
     };
     assert_eq!(
         said(&block_changes(&again, &paused)),
-        [("paused", json!({"position": 0.1, "time": 1.0, "frame": 25}))]
+        [("playback.paused", at(0.1, 1.0, 25))]
     );
 
     let mut changed = BlockSeen {
@@ -431,10 +434,19 @@ fn how_a_file_plays_is_told_once_it_has_opened() {
     assert_eq!(
         said(&block_changes(&paused, &changed)),
         [
-            ("volume_changed", json!({"volume": 50.0, "muted": true})),
-            ("track_changed", json!({"kind": "audio", "track": 2})),
-            ("track_changed", json!({"kind": "subtitles", "track": 1})),
-            ("chapter_changed", json!({"chapter": 2})),
+            (
+                "audio.volume_changed",
+                json!({"volume": 50.0, "muted": true})
+            ),
+            (
+                "playback.track_changed",
+                json!({"kind": "audio", "track": 2})
+            ),
+            (
+                "playback.track_changed",
+                json!({"kind": "subtitles", "track": 1})
+            ),
+            ("playback.chapter_changed", json!({"chapter": 2})),
         ]
     );
     assert!(block_changes(&changed, &changed).is_empty());
@@ -454,15 +466,15 @@ fn files_dropped_together_are_each_told_opening_and_playing_however_looks_fall()
         .iter()
         .flat_map(|id| {
             [
-                ("opened", json!(id.to_string())),
-                ("playing", json!(id.to_string())),
+                ("playback.opened", json!(id.to_string())),
+                ("playback.playing", json!(id.to_string())),
             ]
         })
         .collect();
     let opening = |events: &[Event]| -> Vec<(&str, Value)> {
         events
             .iter()
-            .filter(|event| matches!(event.kind, "opened" | "playing"))
+            .filter(|event| matches!(event.kind, "playback.opened" | "playback.playing"))
             .map(|event| (event.kind, event.payload["block_id"].clone()))
             .collect()
     };
@@ -474,17 +486,17 @@ fn files_dropped_together_are_each_told_opening_and_playing_however_looks_fall()
     assert_eq!(
         kinds(&events),
         [
-            "block_created",
-            "block_created",
-            "block_created",
-            "window_layout_changed",
-            "active_block_changed",
-            "opened",
-            "playing",
-            "opened",
-            "playing",
-            "opened",
-            "playing",
+            "block.created",
+            "block.created",
+            "block.created",
+            "window.layout_changed",
+            "block.active_changed",
+            "playback.opened",
+            "playback.playing",
+            "playback.opened",
+            "playback.playing",
+            "playback.opened",
+            "playback.playing",
         ]
     );
     assert_eq!(opening(&events), each);
@@ -510,7 +522,7 @@ fn files_dropped_together_are_each_told_opening_and_playing_however_looks_fall()
 fn where_a_file_plays_is_told_from_0_to_1_in_seconds_and_by_its_frame() {
     assert_eq!(
         playhead(2.5, Some(10.0), Some(25.0)),
-        json!({"position": 0.25, "time": 2.5, "frame": 62}),
+        at(0.25, 2.5, 62),
         "the frame showing, not the next"
     );
     // A frame's own time is that frame's, though multiplied back it can
@@ -574,15 +586,15 @@ fn a_file_opened_in_place_of_another_is_told_as_it_opens_or_fails() {
     assert_eq!(
         said(&block_changes(&next, &next_open)),
         [
-            ("opened", json!({"title": "next.mp4"})),
-            ("playing", json!({"position": 0.0, "time": 0.0, "frame": 0})),
+            ("playback.opened", json!({"title": "next.mp4"})),
+            ("playback.playing", at(0.0, 0.0, 0)),
         ],
         "its volume as it was, and no seek"
     );
     // Straight from one to the next.
     assert_eq!(
         kinds(&block_changes(&first, &next_open)),
-        ["opened", "playing"]
+        ["playback.opened", "playback.playing"]
     );
 
     let missing = BlockSeen {
@@ -594,7 +606,7 @@ fn a_file_opened_in_place_of_another_is_told_as_it_opens_or_fails() {
     };
     assert_eq!(
         said(&block_changes(&next_open, &missing)),
-        [("open_failed", json!({"error": "no such file"}))]
+        [("playback.open_failed", json!({"error": "no such file"}))]
     );
     assert!(block_changes(&missing, &missing).is_empty());
 
@@ -604,7 +616,10 @@ fn a_file_opened_in_place_of_another_is_told_as_it_opens_or_fails() {
     };
     assert_eq!(
         said(&block_changes(&next_open, &broken)),
-        [("failed", json!({"error": "the connection dropped"}))]
+        [(
+            "playback.failed",
+            json!({"error": "the connection dropped"})
+        )]
     );
 }
 
@@ -619,7 +634,7 @@ fn casts_and_picture_in_picture_are_told_as_they_start_and_end() {
     };
     assert_eq!(
         said(&block_changes(&here, &on_tv)),
-        [("cast_started", json!({"device": tv}))]
+        [("cast.started", json!({"device": tv}))]
     );
     let on_speaker = BlockSeen {
         casting: Some(speaker.clone()),
@@ -628,8 +643,8 @@ fn casts_and_picture_in_picture_are_told_as_they_start_and_end() {
     assert_eq!(
         said(&block_changes(&on_tv, &on_speaker)),
         [
-            ("cast_ended", json!({"device": tv})),
-            ("cast_started", json!({"device": speaker})),
+            ("cast.ended", json!({"device": tv})),
+            ("cast.started", json!({"device": speaker})),
         ]
     );
     // It goes on casting the next file.
@@ -637,14 +652,17 @@ fn casts_and_picture_in_picture_are_told_as_they_start_and_end() {
         opening: 1,
         ..on_speaker.clone()
     };
-    assert_eq!(kinds(&block_changes(&on_speaker, &next)), ["opened"]);
+    assert_eq!(
+        kinds(&block_changes(&on_speaker, &next)),
+        ["playback.opened"]
+    );
     let back = BlockSeen {
         casting: None,
         ..next.clone()
     };
     assert_eq!(
         said(&block_changes(&next, &back)),
-        [("cast_ended", json!({"device": speaker}))]
+        [("cast.ended", json!({"device": speaker}))]
     );
 
     let pip = BlockSeen {
@@ -654,14 +672,14 @@ fn casts_and_picture_in_picture_are_told_as_they_start_and_end() {
     assert_eq!(
         said(&block_changes(&here, &pip)),
         [(
-            "picture_in_picture_changed",
+            "block.picture_in_picture_changed",
             json!({"picture_in_picture": true})
         )]
     );
     assert_eq!(
         said(&block_changes(&pip, &here)),
         [(
-            "picture_in_picture_changed",
+            "block.picture_in_picture_changed",
             json!({"picture_in_picture": false})
         )]
     );
@@ -682,12 +700,15 @@ fn the_apps_outputs_sound_and_devices_are_its_own() {
         said(&events),
         [
             (
-                "outputs_changed",
+                "output.devices_changed",
                 json!({"outputs": [{"id": "1", "name": "Speakers", "kind": null}]})
             ),
-            ("route_changed", json!({"route": {"waiting": "Headphones"}})),
             (
-                "cast_devices_changed",
+                "output.route_changed",
+                json!({"route": {"waiting": "Headphones"}})
+            ),
+            (
+                "cast.devices_changed",
                 json!({"devices": {"Chromecast": [
                     {"id": "tv", "name": "Living Room", "shows": "video"}
                 ]}})
@@ -714,16 +735,16 @@ fn each_scope_hears_its_own() {
     };
     assert_eq!(
         heard(Scope::App),
-        ["window_created", "active_window_changed"]
+        ["window.created", "window.active_changed"]
     );
     assert_eq!(
         heard(Scope::Window(w)),
         [
-            "window_created",
-            "block_created",
-            "window_layout_changed",
-            "active_block_changed",
-            "active_window_changed",
+            "window.created",
+            "block.created",
+            "window.layout_changed",
+            "block.active_changed",
+            "window.active_changed",
         ]
     );
     assert!(heard(Scope::Window(x)).is_empty());

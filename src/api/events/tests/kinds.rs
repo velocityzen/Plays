@@ -50,10 +50,25 @@ fn each_event_is_registered_once_and_said_whole() {
         }
     }
     assert_eq!(
-        find("volume_changed").map(|kind| kind.heard),
+        find("audio.volume_changed").map(|kind| kind.heard),
         Some(Heard::Block)
     );
     assert!(find("volume").is_none());
+}
+
+#[test]
+fn each_event_is_named_in_its_namespace_as_commands_are() {
+    for (namespace, kind) in all() {
+        let name = kind.name.strip_prefix(namespace);
+        let name = name.and_then(|name| name.strip_prefix('.'));
+        assert!(
+            name.is_some_and(
+                |name| !name.is_empty() && name.chars().all(|c| c.is_ascii_lowercase() || c == '_')
+            ),
+            "{} is {namespace}. and lowercase words",
+            kind.name
+        );
+    }
 }
 
 #[test]
@@ -115,7 +130,7 @@ fn an_event_fits_only_as_registered() {
         payload.as_object_mut().expect("an object").extend(fields);
         payload
     };
-    let volume = |fields: Value| told("volume_changed", payload(fields), false, &[window]);
+    let volume = |fields: Value| told("audio.volume_changed", payload(fields), false, &[window]);
     let loud = json!({"volume": 40, "muted": false});
     assert_eq!(fits(&volume(loud.clone())), Ok(()));
     assert_eq!(
@@ -127,34 +142,55 @@ fn an_event_fits_only_as_registered() {
         Err("its payload has loud".into())
     );
     assert_eq!(
-        fits(&told("volume_changed", loud.clone(), false, &[window])),
+        fits(&told(
+            "audio.volume_changed",
+            loud.clone(),
+            false,
+            &[window]
+        )),
         Err("its payload has no window_id".into())
     );
-    let elsewhere = told("volume_changed", payload(loud.clone()), false, &[other]);
+    let elsewhere = told(
+        "audio.volume_changed",
+        payload(loud.clone()),
+        false,
+        &[other],
+    );
     assert!(fits(&elsewhere).is_err(), "heard by another window");
-    let app_too = told("volume_changed", payload(loud.clone()), true, &[window]);
+    let app_too = told(
+        "audio.volume_changed",
+        payload(loud.clone()),
+        true,
+        &[window],
+    );
     assert!(
         fits(&app_too).is_err(),
         "the app's listeners hear only theirs"
     );
-    let unheard = told("volume_changed", payload(loud), false, &[]);
+    let unheard = told("audio.volume_changed", payload(loud), false, &[]);
     assert!(fits(&unheard).is_err(), "heard by none");
     assert_eq!(
         fits(&told("loudness", json!({}), true, &[])),
         Err("it isn't in it".into())
     );
-    assert!(fits(&told("quit", json!([]), true, &[])).is_err(), "a list");
+    assert!(
+        fits(&told("app.quit", json!([]), true, &[])).is_err(),
+        "a list"
+    );
 
     // An optional field may be left out; the app's events name no window.
     let run = json!({"command": "app.about", "source": "cli"});
-    assert_eq!(fits(&told("command_run", run.clone(), true, &[])), Ok(()));
-    assert!(fits(&told("command_run", run.clone(), true, &[window])).is_err());
-    assert!(fits(&told("command_run", run, false, &[])).is_err());
+    assert_eq!(
+        fits(&told("app.command_run", run.clone(), true, &[])),
+        Ok(())
+    );
+    assert!(fits(&told("app.command_run", run.clone(), true, &[window])).is_err());
+    assert!(fits(&told("app.command_run", run, false, &[])).is_err());
 
     // The app's listeners and the window's, or none in front.
     let front = |id: Option<Id>, windows: &[Id], app: bool| {
         let payload = json!({"window_id": id.map(|id| id.to_string()), "window_title": null});
-        fits(&told("active_window_changed", payload, app, windows))
+        fits(&told("window.active_changed", payload, app, windows))
     };
     assert_eq!(front(Some(window), &[window], true), Ok(()));
     assert_eq!(front(None, &[], true), Ok(()));
@@ -164,15 +200,15 @@ fn an_event_fits_only_as_registered() {
     assert!(front(Some(window), &[window], false).is_err());
 
     // Every listener, or not.
-    assert_eq!(fits(&Event::to_everyone("quit", json!({}))), Ok(()));
-    assert!(fits(&told("quit", json!({}), true, &[])).is_err());
+    assert_eq!(fits(&Event::to_everyone("app.quit", json!({}))), Ok(()));
+    assert!(fits(&told("app.quit", json!({}), true, &[])).is_err());
     let run = json!({"command": "app.quit", "source": "ui"});
-    assert!(fits(&Event::to_everyone("command_run", run)).is_err());
+    assert!(fits(&Event::to_everyone("app.command_run", run)).is_err());
 }
 
 #[gpui::test]
-#[should_panic(expected = "volume_changed isn't told as the events reference says")]
+#[should_panic(expected = "audio.volume_changed isn't told as the events reference says")]
 fn an_event_told_otherwise_than_registered_fails_the_test(cx: &mut gpui::TestAppContext) {
-    let event = Event::app("volume_changed", json!({}));
+    let event = Event::app("audio.volume_changed", json!({}));
     cx.update(|cx| super::super::tell(&event, cx));
 }

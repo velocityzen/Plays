@@ -60,7 +60,7 @@ pub const COMMANDS: &[Spec] = &[
         Scope::Block,
         focus,
     )
-    .tells(&["active_window_changed", "active_block_changed"])
+    .tells(&["window.active_changed", "block.active_changed"])
     .keywords(&["switch", "select", "show", "activate"])
     // The block in front is in front already.
     .needs_target(),
@@ -72,9 +72,9 @@ pub const COMMANDS: &[Spec] = &[
         close,
     )
     .tells(&[
-        "block_closed",
-        "window_layout_changed",
-        "active_block_changed",
+        "block.closed",
+        "window.layout_changed",
+        "block.active_changed",
     ])
     .keywords(&["remove", "stop"])
     .keys(&["secondary-w"])
@@ -88,9 +88,9 @@ pub const COMMANDS: &[Spec] = &[
         |workspace, _, cx| workspace.close_all(cx),
     )
     .tells(&[
-        "block_closed",
-        "window_layout_changed",
-        "active_block_changed",
+        "block.closed",
+        "window.layout_changed",
+        "block.active_changed",
     ])
     .keywords(&["clear", "remove", "stop"])
     .keys(&["secondary-shift-w"])
@@ -102,7 +102,7 @@ pub const COMMANDS: &[Spec] = &[
         Scope::Block,
         close_others,
     )
-    .tells(&["block_closed", "window_layout_changed"])
+    .tells(&["block.closed", "window.layout_changed"])
     .keywords(&["close all", "others", "keep", "remove"]),
     Spec::window(
         "block.focus.left",
@@ -110,7 +110,7 @@ pub const COMMANDS: &[Spec] = &[
         "Send keys to the block left of the one they go to.",
         |workspace, _, cx| workspace.focus_block(Toward::Left, cx),
     )
-    .tells(&["active_block_changed"])
+    .tells(&["block.active_changed"])
     .setting("focus_left")
     .keys(&["secondary-alt-left"]),
     Spec::window(
@@ -119,7 +119,7 @@ pub const COMMANDS: &[Spec] = &[
         "Send keys to the block right of the one they go to.",
         |workspace, _, cx| workspace.focus_block(Toward::Right, cx),
     )
-    .tells(&["active_block_changed"])
+    .tells(&["block.active_changed"])
     .setting("focus_right")
     .keys(&["secondary-alt-right"]),
     Spec::window(
@@ -128,7 +128,7 @@ pub const COMMANDS: &[Spec] = &[
         "Send keys to the block above the one they go to.",
         |workspace, _, cx| workspace.focus_block(Toward::Up, cx),
     )
-    .tells(&["active_block_changed"])
+    .tells(&["block.active_changed"])
     .setting("focus_up")
     .keys(&["secondary-alt-up"]),
     Spec::window(
@@ -137,7 +137,7 @@ pub const COMMANDS: &[Spec] = &[
         "Send keys to the block below the one they go to.",
         |workspace, _, cx| workspace.focus_block(Toward::Down, cx),
     )
-    .tells(&["active_block_changed"])
+    .tells(&["block.active_changed"])
     .setting("focus_down")
     .keys(&["secondary-alt-down"]),
     Spec::window(
@@ -146,7 +146,7 @@ pub const COMMANDS: &[Spec] = &[
         "Send keys to the block before the one they go to, the last before the first.",
         |workspace, _, cx| workspace.focus_block(Toward::Previous, cx),
     )
-    .tells(&["active_block_changed"])
+    .tells(&["block.active_changed"])
     .setting("focus_previous_block")
     .keys(&["secondary-["]),
     Spec::window(
@@ -155,7 +155,7 @@ pub const COMMANDS: &[Spec] = &[
         "Send keys to the block after the one they go to, the first after the last.",
         |workspace, _, cx| workspace.focus_block(Toward::Next, cx),
     )
-    .tells(&["active_block_changed"])
+    .tells(&["block.active_changed"])
     .setting("focus_next_block")
     .keys(&["secondary-]"]),
     Spec::window(
@@ -165,7 +165,7 @@ pub const COMMANDS: &[Spec] = &[
          one before that, and so on, until something else is done.",
         |workspace, _, cx| workspace.back_block(cx),
     )
-    .tells(&["active_block_changed"])
+    .tells(&["block.active_changed"])
     .keywords(&["history", "previous", "last", "return", "focus"]),
     Spec::window(
         "block.recent",
@@ -174,7 +174,7 @@ pub const COMMANDS: &[Spec] = &[
          back to that one.",
         |workspace, _, cx| workspace.recent_block(cx),
     )
-    .tells(&["active_block_changed"])
+    .tells(&["block.active_changed"])
     .keywords(&["history", "last", "toggle", "alternate", "switch", "focus"]),
     Spec::window(
         "block.move.left",
@@ -182,7 +182,7 @@ pub const COMMANDS: &[Spec] = &[
         "Swap the block keys go to with the one to its left.",
         |workspace, _, cx| workspace.move_front_block(Toward::Left, cx),
     )
-    .tells(&["window_layout_changed"])
+    .tells(&["window.layout_changed"])
     .setting("move_block_left")
     .keys(&["secondary-alt-shift-left"]),
     Spec::window(
@@ -191,7 +191,7 @@ pub const COMMANDS: &[Spec] = &[
         "Swap the block keys go to with the one to its right.",
         |workspace, _, cx| workspace.move_front_block(Toward::Right, cx),
     )
-    .tells(&["window_layout_changed"])
+    .tells(&["window.layout_changed"])
     .setting("move_block_right")
     .keys(&["secondary-alt-shift-right"]),
     Spec::window(
@@ -200,7 +200,7 @@ pub const COMMANDS: &[Spec] = &[
         "Swap the block keys go to with the one above it.",
         |workspace, _, cx| workspace.move_front_block(Toward::Up, cx),
     )
-    .tells(&["window_layout_changed"])
+    .tells(&["window.layout_changed"])
     .setting("move_block_up")
     .keys(&["secondary-alt-shift-up"]),
     Spec::window(
@@ -209,7 +209,7 @@ pub const COMMANDS: &[Spec] = &[
         "Swap the block keys go to with the one below it.",
         |workspace, _, cx| workspace.move_front_block(Toward::Down, cx),
     )
-    .tells(&["window_layout_changed"])
+    .tells(&["window.layout_changed"])
     .setting("move_block_down")
     .keys(&["secondary-alt-shift-down"]),
     Spec::custom(
@@ -220,7 +220,7 @@ pub const COMMANDS: &[Spec] = &[
         Scope::Block,
         zoom,
     )
-    .tells(&["full_screen_changed", "window_layout_changed"])
+    .tells(&["window.full_screen_changed", "window.layout_changed"])
     .keywords(&["expand", "enlarge", "full", "restore"])
     .keys(&["secondary-shift-enter"]),
     Spec::custom_with(
@@ -237,7 +237,7 @@ pub const COMMANDS: &[Spec] = &[
         )],
         rename,
     )
-    .tells(&["block_label_changed"])
+    .tells(&["block.label_changed"])
     .keywords(&["name", "label", "title"]),
     Spec::custom_with(
         "block.move",
@@ -252,7 +252,7 @@ pub const COMMANDS: &[Spec] = &[
         )],
         put,
     )
-    .tells(&["window_layout_changed"])
+    .tells(&["window.layout_changed"])
     .keywords(&["reorder", "place", "drag", "swap"])
     .state(position),
     Spec::custom_with(
@@ -268,9 +268,9 @@ pub const COMMANDS: &[Spec] = &[
         send_to_window,
     )
     .tells(&[
-        "block_moved",
-        "window_layout_changed",
-        "active_block_changed",
+        "block.moved",
+        "window.layout_changed",
+        "block.active_changed",
     ])
     .keywords(&["send", "other window"]),
     Spec::custom(
@@ -281,10 +281,10 @@ pub const COMMANDS: &[Spec] = &[
         move_to_new_window,
     )
     .tells(&[
-        "window_created",
-        "block_moved",
-        "window_layout_changed",
-        "active_block_changed",
+        "window.created",
+        "block.moved",
+        "window.layout_changed",
+        "block.active_changed",
     ])
     .keywords(&["pop out", "detach", "separate", "own window"])
     .returns("{window}: the new window's id."),
@@ -315,7 +315,7 @@ pub const COMMANDS: &[Spec] = &[
         "Play the block in a small window floating above every app's, or in its block again.",
         |player, window, cx| player.toggle_picture_in_picture(window, cx),
     )
-    .tells(&["picture_in_picture_changed"])
+    .tells(&["block.picture_in_picture_changed"])
     .keywords(&["pip", "float", "mini player"])
     .setting("picture_in_picture")
     .keys(on_mac(&["ctrl-cmd-p"], &[]))
@@ -327,7 +327,7 @@ pub const COMMANDS: &[Spec] = &[
         "Hide every panel over the block's video while any shows, else show them all.",
         |player, _, cx| change_over_video(player, OverVideo::all_toggled, cx),
     )
-    .tells(&["block_ui_changed"])
+    .tells(&["block.ui_changed"])
     .keywords(&["hide", "interface", "ui", "panels", "clean"]),
     Spec::block(
         "block.toggle_controls",
@@ -335,7 +335,7 @@ pub const COMMANDS: &[Spec] = &[
         "Show the seek bar and buttons at the bottom of the block, or hide them.",
         |player, _, cx| toggle_panel(player, |panel| &mut panel.controls, cx),
     )
-    .tells(&["block_ui_changed"])
+    .tells(&["block.ui_changed"])
     .keywords(&["hide", "player controls", "seek bar", "bottom bar"])
     .state(|target, cx| shown_in_block(target, cx, |shown| shown.controls)),
     Spec::block(
@@ -344,7 +344,7 @@ pub const COMMANDS: &[Spec] = &[
         "Show the file's name and buttons at the top of the block, or hide them.",
         |player, _, cx| toggle_panel(player, |panel| &mut panel.top_bar, cx),
     )
-    .tells(&["block_ui_changed"])
+    .tells(&["block.ui_changed"])
     .keywords(&["hide", "header", "title", "buttons"])
     .state(|target, cx| shown_in_block(target, cx, |shown| shown.top_bar)),
     Spec::block(
@@ -354,7 +354,7 @@ pub const COMMANDS: &[Spec] = &[
          picked, over the block, or switch without it.",
         |player, _, cx| toggle_panel(player, |panel| &mut panel.track_switcher, cx),
     )
-    .tells(&["block_ui_changed"])
+    .tells(&["block.ui_changed"])
     .keywords(&["hide", "reel", "streams", "audio track", "subtitle track"])
     .state(|target, cx| shown_in_block(target, cx, |shown| shown.track_switcher)),
     Spec::block(
@@ -364,7 +364,7 @@ pub const COMMANDS: &[Spec] = &[
          not. Notes on what's wrong still show.",
         |player, _, cx| toggle_panel(player, |panel| &mut panel.notes, cx),
     )
-    .tells(&["block_ui_changed"])
+    .tells(&["block.ui_changed"])
     .keywords(&["hide", "osd", "on-screen display", "volume", "messages"])
     .state(|target, cx| shown_in_block(target, cx, |shown| shown.notes)),
     Spec::block(
@@ -381,23 +381,23 @@ pub const COMMANDS: &[Spec] = &[
 /// The blocks' events.
 pub const EVENTS: &[EventKind] = &[
     EventKind::block(
-        "block_created",
+        "block.created",
         "A block came into a window, for a file to play in.",
         &[EventField::new("label", "Its label; none without one.")],
     )
     .causes(&[super::DROPPED]),
     EventKind::block(
-        "block_moved",
+        "block.moved",
         "A block moved to another window: those listening to the window it left hear it too.",
         &[
             EventField::new("from_window_id", "The id of the window it left."),
             EventField::new("from_window_title", "That window's title."),
         ],
     ),
-    EventKind::block("block_closed", "A block closed, and the file in it.", &[])
+    EventKind::block("block.closed", "A block closed, and the file in it.", &[])
         .causes(&["Plays quitting"]),
     EventKind::block(
-        "block_label_changed",
+        "block.label_changed",
         "A block was labeled, or its label taken away.",
         &[EventField::new(
             "label",
@@ -405,7 +405,7 @@ pub const EVENTS: &[EventKind] = &[
         )],
     ),
     EventKind::window(
-        "active_block_changed",
+        "block.active_changed",
         "Keys go to another block in a window, or to none.",
         &[
             EventField::new("block_id", "The block's id; none if keys go to none."),
@@ -417,7 +417,7 @@ pub const EVENTS: &[EventKind] = &[
     )
     .causes(&["a click on a block or the mouse going to one"]),
     EventKind::block(
-        "picture_in_picture_changed",
+        "block.picture_in_picture_changed",
         "A block began playing in a small window floating above every app's, or in its block \
          again.",
         &[EventField::new(
@@ -427,7 +427,7 @@ pub const EVENTS: &[EventKind] = &[
     )
     .causes(&["the small window's own buttons"]),
     EventKind::block(
-        "block_ui_changed",
+        "block.ui_changed",
         "The panels shown over a block's video changed.",
         &[EventField::new("visible", super::VISIBLE)],
     )

@@ -365,11 +365,23 @@ impl Spec {
         self
     }
 
-    /// The first part of its id.
+    /// The namespace its id is in: the longest of `NAMESPACES` it starts
+    /// with, as `app.settings` for `app.settings.set`; else its first part.
     pub fn namespace(&self) -> &'static str {
-        self.id
-            .split_once('.')
-            .map_or(self.id, |(namespace, _)| namespace)
+        commands::NAMESPACES
+            .iter()
+            .map(|&(namespace, _)| namespace)
+            .filter(|namespace| {
+                self.id
+                    .strip_prefix(namespace)
+                    .is_some_and(|name| name.starts_with('.'))
+            })
+            .max_by_key(|namespace| namespace.len())
+            .unwrap_or_else(|| {
+                self.id
+                    .split_once('.')
+                    .map_or(self.id, |(namespace, _)| namespace)
+            })
     }
 
     /// Whether it can be given keys: it changes something, needs no
