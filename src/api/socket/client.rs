@@ -268,11 +268,7 @@ pub fn connect_or_start(
         Ok(client) => return Ok(client),
         Err(err) => err,
     };
-    let none_answers = matches!(
-        err.kind(),
-        io::ErrorKind::NotFound | io::ErrorKind::ConnectionRefused
-    );
-    let Some(start) = start.filter(|_| none_answers) else {
+    let Some(start) = start.filter(|_| none_answers(&err)) else {
         return Err(err.into());
     };
     start()?;
@@ -285,6 +281,15 @@ pub fn connect_or_start(
             Err(_) => {}
         }
     }
+}
+
+/// Whether `err`, connecting, says no Plays answers there: there's no
+/// socket, or one left by a Plays that's gone.
+pub fn none_answers(err: &io::Error) -> bool {
+    matches!(
+        err.kind(),
+        io::ErrorKind::NotFound | io::ErrorKind::ConnectionRefused
+    )
 }
 
 /// Start Plays, this program, apart from this process: it outlives it,

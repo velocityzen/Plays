@@ -49,3 +49,26 @@ fn a_client_sent_the_end_is_written_what_came_before_then_its_connection_closes(
         "no longer written"
     );
 }
+
+#[test]
+fn closing_the_socket_stops_the_thread_taking_clients() {
+    let path = crate::api::socket::tests::socket("close");
+    let (messages, _received) = unbounded();
+    let mut socket = Socket {
+        path: path.clone(),
+        messages,
+        last: Arc::default(),
+        taken: None,
+    };
+    socket.claim();
+    // Not connecting, which would wake the thread itself.
+    assert!(path.exists(), "taken");
+    let taking = socket.close().expect("it was taken");
+    let ended = (0..200).any(|_| {
+        thread::sleep(Duration::from_millis(10));
+        taking.is_finished()
+    });
+    assert!(ended, "the thread taking clients ends");
+    assert!(!path.exists(), "removed");
+    assert!(socket.close().is_none(), "nothing more to close");
+}

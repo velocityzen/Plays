@@ -36,9 +36,11 @@ fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("plays=info"))
         .init();
 
-    // One Plays runs: another, started with files, hands them to it and
-    // goes, before setting anything up.
-    let listener = match api::socket::start(&args) {
+    // With control from the command line on, one Plays runs: another,
+    // started with files, hands them to it and goes, before setting
+    // anything up.
+    let settings = settings::Settings::load(&files::Folder::app());
+    let listener = match api::socket::start(&args, settings.command_line_control) {
         api::socket::Start::Runs(listener) => listener,
         api::socket::Start::HandedOver(status) => std::process::exit(status.into()),
     };
@@ -65,7 +67,7 @@ fn main() {
         opened.unbounded_send(urls).ok();
     });
     app.run(move |cx| {
-        app::run(cx, sources, opened_rx, listener);
+        app::run(cx, settings, sources, opened_rx, listener);
         #[cfg(feature = "smoke")]
         if let Some(scenario) = smoke {
             app::smoke::start(scenario, cx);

@@ -4,7 +4,9 @@
 //! prints and exiting as it exits.
 
 use std::ffi::OsString;
+use std::fs;
 use std::io::{self, Write};
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::thread;
@@ -38,20 +40,16 @@ impl Ran {
     }
 }
 
-/// Run `plays ARGS` with Plays answering at `socket`, if anywhere, and
-/// `start` to start one.
-pub(super) fn command_line(
-    socket: Option<PathBuf>,
-    start: Option<&dyn Fn() -> io::Result<()>>,
-    args: &[&str],
-) -> Ran {
-    command_line_reading(socket, start, args, b"")
+/// Run `plays ARGS` with Plays answering at `socket`, if anywhere, doing
+/// as `unanswered` says if none does.
+pub(super) fn command_line(socket: Option<PathBuf>, unanswered: Unanswered, args: &[&str]) -> Ran {
+    command_line_reading(socket, unanswered, args, b"")
 }
 
 /// As `command_line`, with `input` on stdin.
 fn command_line_reading(
     socket: Option<PathBuf>,
-    start: Option<&dyn Fn() -> io::Result<()>>,
+    unanswered: Unanswered,
     args: &[&str],
     mut input: &[u8],
 ) -> Ran {
@@ -62,7 +60,7 @@ fn command_line_reading(
         out: &mut out,
         err: &mut err,
     };
-    let status = run(args, socket, start, streams);
+    let status = run(args, socket, unanswered, streams);
     Ran {
         status,
         out: String::from_utf8(out).unwrap(),
@@ -87,7 +85,7 @@ pub(super) fn plays_reading(
     let args: Vec<String> = args.iter().map(|&arg| arg.to_owned()).collect();
     talk(cx, move || {
         let args: Vec<&str> = args.iter().map(String::as_str).collect();
-        command_line_reading(Some(path), None, &args, &input)
+        command_line_reading(Some(path), Unanswered::Fails, &args, &input)
     })
 }
 
@@ -101,7 +99,7 @@ fn plays_while(
     mut meanwhile: impl FnMut(&mut TestAppContext, usize),
 ) -> Ran {
     let (path_now, args) = (path.to_owned(), args.to_vec());
-    let running = thread::spawn(move || command_line(Some(path_now), None, &args));
+    let running = thread::spawn(move || command_line(Some(path_now), Unanswered::Fails, &args));
     for time in 0..100 {
         if running.is_finished() {
             break;
@@ -158,14 +156,14 @@ fn subcommands_and_their_options_are_the_command_lines_and_files_plays() {
 
 #[test]
 fn help_and_the_version_print_and_a_bad_command_line_says_why() {
-    let help = command_line(None, None, &["--help"]);
+    let help = command_line(None, Unanswered::Fails, &["--help"]);
     assert_eq!(help.status, 0);
     assert!(
         help.out.contains("Usage: plays [OPTIONS] <COMMAND>"),
         "{help:?}"
     );
     assert!(help.out.contains("4 no Plays to ask"), "the exit statuses");
-    let version = command_line(None, None, &["--version"]);
+    let version = command_line(None, Unanswered::Fails, &["--version"]);
     assert_eq!((version.status, version.out.as_str()), (0, "plays 0.1.0\n"));
 
     for (args, why) in [
@@ -194,7 +192,7 @@ fn help_and_the_version_print_and_a_bad_command_line_says_why() {
             "can't wait -1 seconds",
         ),
     ] {
-        let ran = command_line(None, None, args);
+        let ran = command_line(None, Unanswered::Fails, args);
         assert_eq!(ran.status, 2, "{args:?}: {ran:?}");
         assert!(ran.err.contains(why), "{args:?}: {ran:?}");
         assert_eq!(ran.out, "", "{args:?}");
@@ -210,23 +208,31 @@ fn with_no_plays_to_ask_it_says_so_or_starts_one() {
         Err(io::ErrorKind::NotFound.into())
     };
 
-    let ran = command_line(Some(path.clone()), Some(start), &["--no-autostart", "ls"]);
+    let ran = command_line(
+        Some(path.clone()),
+        Unanswered::Starts(start),
+        &["--no-autostart", "ls"],
+    );
     assert_eq!(ran.status, 4, "{ran:?}");
     assert!(ran.err.starts_with("plays: can't reach Plays: "), "{ran:?}");
     assert_eq!(started.get(), 0, "not started, as asked");
 
-    let ran = command_line(Some(path.clone()), Some(start), &["window", "ls"]);
+    let ran = command_line(
+        Some(path.clone()),
+        Unanswered::Starts(start),
+        &["window", "ls"],
+    );
     assert_eq!(
         ran.failed(),
         (4, "plays: can't reach Plays: entity not found")
     );
     assert_eq!(started.get(), 1, "started");
 
-    let ran = command_line(None, Some(start), &["ls"]);
+    let ran = command_line(None, Unanswered::Starts(start), &["ls"]);
     assert_eq!(ran.status, 4);
     assert!(ran.err.contains("name one with PLAYS_SOCKET"), "{ran:?}");
 
-    let ran = command_line(Some(path), Some(start), &["version"]);
+    let ran = command_line(Some(path), Unanswered::Starts(start), &["version"]);
     assert_eq!(
         (ran.status, ran.out.as_str()),
         (0, "plays 0.1.0\nrunning: none\n")
@@ -235,8 +241,30 @@ fn with_no_plays_to_ask_it_says_so_or_starts_one() {
 }
 
 #[test]
+fn with_control_off_a_plays_that_cant_be_reached_for_another_reason_says_why() {
+    let path = socket("cli-off-denied");
+    let folder = path.parent().unwrap().to_owned();
+    fs::create_dir_all(&folder).unwrap();
+    fs::set_permissions(&folder, fs::Permissions::from_mode(0o000)).unwrap();
+    let ran = command_line(Some(path), Unanswered::Off, &["ls"]);
+    fs::set_permissions(&folder, fs::Permissions::from_mode(0o700)).unwrap();
+    assert_eq!(ran.status, 4, "{ran:?}");
+    assert!(ran.err.contains("ermission denied"), "{ran:?}");
+}
+
+#[gpui::test]
+fn with_control_off_here_a_plays_answering_is_asked_still(cx: &mut TestAppContext) {
+    let (path, _, mut cx) = serving("cli-off-answered", cx);
+    let ran = talk(&mut cx, move || {
+        command_line(Some(path), Unanswered::Off, &["--json", "window", "ls"])
+    });
+    assert_eq!(ran.status, 0, "{ran:?}");
+    assert_eq!(ran.json().as_array().map(Vec::len), Some(1));
+}
+
+#[test]
 fn actions_lists_every_command_without_plays() {
-    let ran = command_line(None, None, &["actions"]);
+    let ran = command_line(None, Unanswered::Fails, &["actions"]);
     assert_eq!(ran.status, 0);
     let lines: Vec<&str> = ran.out.lines().collect();
     assert!(
@@ -253,7 +281,7 @@ fn actions_lists_every_command_without_plays() {
         "{play}"
     );
 
-    let described = command_line(None, None, &["--json", "actions"]).json();
+    let described = command_line(None, Unanswered::Fails, &["--json", "actions"]).json();
     assert_eq!(described.as_array().unwrap().len(), api::all().count());
     assert_eq!(described[0], api::all().next().unwrap().describe());
 }
@@ -261,7 +289,7 @@ fn actions_lists_every_command_without_plays() {
 #[test]
 fn actions_lists_those_whose_id_or_title_has_what_is_searched_for() {
     let ids = |args: &[&str]| -> Vec<String> {
-        let ran = command_line(None, None, args);
+        let ran = command_line(None, Unanswered::Fails, args);
         assert_eq!(ran.status, 0, "{ran:?}");
         let lines: Vec<&str> = ran.out.lines().collect();
         assert!(lines[0].starts_with("ID "), "{lines:?}");
@@ -300,7 +328,7 @@ fn actions_lists_those_whose_id_or_title_has_what_is_searched_for() {
         "in their titles"
     );
 
-    let described = command_line(None, None, &["--json", "actions", "flip"]).json();
+    let described = command_line(None, Unanswered::Fails, &["--json", "actions", "flip"]).json();
     let described: Vec<&str> = described
         .as_array()
         .unwrap()
@@ -309,30 +337,30 @@ fn actions_lists_those_whose_id_or_title_has_what_is_searched_for() {
         .collect();
     assert_eq!(described, flips);
 
-    let ran = command_line(None, None, &["actions", "nothing_has_this"]);
+    let ran = command_line(None, Unanswered::Fails, &["actions", "nothing_has_this"]);
     assert_eq!(
         (ran.status, ran.out.as_str(), ran.err.as_str()),
         (3, "", "plays: no command nothing_has_this\n")
     );
-    let ran = command_line(None, None, &["actions", "video", "--markdown"]);
+    let ran = command_line(None, Unanswered::Fails, &["actions", "video", "--markdown"]);
     assert_eq!(ran.status, 2, "{ran:?}");
 }
 
 #[test]
 fn completions_are_written_for_each_shell_without_plays() {
-    let ran = command_line(None, None, &["completions", "zsh"]);
+    let ran = command_line(None, Unanswered::Fails, &["completions", "zsh"]);
     assert_eq!(ran.status, 0, "{ran:?}");
     assert!(ran.out.starts_with("#compdef plays"), "{}", ran.out);
-    let ran = command_line(None, None, &["completions", "bash"]);
+    let ran = command_line(None, Unanswered::Fails, &["completions", "bash"]);
     assert!(ran.out.contains("complete -F _plays"), "{}", ran.out);
-    let ran = command_line(None, None, &["completions", "fish"]);
+    let ran = command_line(None, Unanswered::Fails, &["completions", "fish"]);
     assert!(ran.out.contains("complete -c plays"), "{}", ran.out);
-    let ran = command_line(None, None, &["completions", "nushell"]);
+    let ran = command_line(None, Unanswered::Fails, &["completions", "nushell"]);
     assert!(ran.out.contains("export extern plays ["), "{}", ran.out);
-    let ran = command_line(None, None, &["completions", "nu"]);
+    let ran = command_line(None, Unanswered::Fails, &["completions", "nu"]);
     assert!(ran.out.starts_with("module completions {"), "{}", ran.out);
 
-    let ran = command_line(None, None, &["completions", "tcsh"]);
+    let ran = command_line(None, Unanswered::Fails, &["completions", "tcsh"]);
     assert_eq!(ran.status, 2);
     assert!(
         ran.err
@@ -384,7 +412,7 @@ fn the_command_reference_is_current() {
         "docs/commands.md isn't as the commands are: \
          cargo run -- actions --markdown > docs/commands.md"
     );
-    let ran = command_line(None, None, &["actions", "--markdown"]);
+    let ran = command_line(None, Unanswered::Fails, &["actions", "--markdown"]);
     assert_eq!(ran.out, reference::reference());
     #[cfg(debug_assertions)]
     assert!(
@@ -410,7 +438,10 @@ fn with_control_off_it_says_where_to_turn_it_on(cx: &mut TestAppContext) {
         &["do", "-e", "return 1"],
         &["events"],
     ] {
-        let ran = plays(&mut cx, &path, args);
+        let asking = path.clone();
+        let ran = talk(&mut cx, move || {
+            command_line(Some(asking), Unanswered::Off, args)
+        });
         assert_eq!(
             ran.failed(),
             (
@@ -421,8 +452,14 @@ fn with_control_off_it_says_where_to_turn_it_on(cx: &mut TestAppContext) {
             "{args:?}"
         );
     }
-    let ran = plays(&mut cx, &path, &["version"]);
-    assert_eq!(ran.status, 0, "who runs is no control: {ran:?}");
+    let ran = talk(&mut cx, move || {
+        command_line(Some(path), Unanswered::Off, &["version"])
+    });
+    assert_eq!(
+        (ran.status, ran.out.as_str()),
+        (0, "plays 0.1.0\nrunning: none\n"),
+        "who runs is no control"
+    );
 }
 
 #[gpui::test]
@@ -1120,7 +1157,7 @@ fn events_end_and_waits_fail_as_plays_quits(cx: &mut TestAppContext) {
         .iter()
         .map(|args| {
             let (path, args) = (path.clone(), args.to_vec());
-            thread::spawn(move || command_line(Some(path), None, &args))
+            thread::spawn(move || command_line(Some(path), Unanswered::Fails, &args))
         })
         .collect();
     let listening = wait_until(&mut cx, |cx| {
@@ -1216,7 +1253,11 @@ fn the_keymap_lists_the_keys_commands_have_now(cx: &mut TestAppContext) {
     let keys = r#"{"playback.play_pause": ["cmd-p"]}"#;
     let path_now = path.clone();
     let ran = talk(&mut cx, move || {
-        command_line(Some(path_now), None, &["settings", "set", "hotkeys", keys])
+        command_line(
+            Some(path_now),
+            Unanswered::Fails,
+            &["settings", "set", "hotkeys", keys],
+        )
     });
     assert_eq!(ran.status, 0, "{ran:?}");
     let ran = plays(&mut cx, &path, &["keymap"]);
@@ -1299,7 +1340,7 @@ fn output_closed_ends_it_quietly_and_other_trouble_says_so() {
             out: &mut Closed(kind),
             err: &mut err,
         };
-        let status = run(args, None, None, streams);
+        let status = run(args, None, Unanswered::Fails, streams);
         (status, String::from_utf8(err).unwrap())
     };
     assert_eq!(

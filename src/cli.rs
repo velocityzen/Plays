@@ -1,11 +1,13 @@
 //! The command line: `plays ls`, `plays do playback.play_pause`, `plays
 //! events`. It runs apart from the app, without its UI, so it answers at
 //! once: it asks the Plays running over the socket (`api::socket`), and
-//! starts one if none is, unless told not to (`--no-autostart`). What
-//! comes back goes to stdout, as text or, with `--json`, as JSON, and why
-//! not to stderr. The exit status says which, as Rex's do: 0 done, 1
-//! failed, 2 a bad command line, 3 nothing by the name given, 4 no Plays
-//! to ask, and 130 stopped with Ctrl-C, which nothing here catches.
+//! starts one if none is, unless told not to (`--no-autostart`) or
+//! Settings has control from the command line off, as Plays then takes no
+//! socket. What comes back goes to stdout, as text or, with `--json`, as
+//! JSON, and why not to stderr. The exit status says which, as Rex's do:
+//! 0 done, 1 failed, 2 a bad command line, 3 nothing by the name given, 4
+//! no Plays to ask, 5 control from the command line off, and 130 stopped
+//! with Ctrl-C, which nothing here catches.
 //!
 //! `plays do` runs a Lua script too (`lua`), in this process, a client of
 //! the Plays running as the command line is.
@@ -36,6 +38,7 @@ use self::args::{Api, Cli, Command, Options, Settings};
 use crate::api::args::Kind;
 use crate::api::socket::client::{self, Client, Failure};
 use crate::api::{self, Error, Target};
+use crate::files::Folder;
 
 /// Whether `args` are for the command line: a subcommand or one of its
 /// options comes first, or a word that names no file, a subcommand
@@ -68,16 +71,36 @@ pub fn wanted(args: &[OsString]) -> bool {
 }
 
 /// Run the command line `args` asks for, as this process: on the socket
-/// Plays answers on, starting it if need be, reading stdin, printing to
-/// stdout and stderr. Its exit status.
+/// Plays answers on, starting it if need be and control from the command
+/// line is on, reading stdin, printing to stdout and stderr. Its exit
+/// status.
 pub fn main(args: Vec<OsString>) -> u8 {
     let start = client::start_plays;
+    let control = crate::settings::Settings::load(&Folder::app()).command_line_control;
+    let unanswered = if control {
+        Unanswered::Starts(&start)
+    } else {
+        Unanswered::Off
+    };
     let streams = Streams {
         input: &mut io::stdin().lock(),
         out: &mut io::stdout().lock(),
         err: &mut io::stderr().lock(),
     };
-    run(args, api::socket::path(), Some(&start), streams)
+    run(args, api::socket::path(), unanswered, streams)
+}
+
+/// What the command line does when no Plays answers on the socket.
+#[derive(Clone, Copy)]
+pub enum Unanswered<'a> {
+    /// Says so: in tests, which start no Plays.
+    #[cfg(test)]
+    Fails,
+    /// Starts Plays with this, unless `--no-autostart`, and asks it.
+    Starts(&'a dyn Fn() -> io::Result<()>),
+    /// Says control from the command line is off, as Settings has it:
+    /// Plays takes no socket then, so none started would answer.
+    Off,
 }
 
 /// Where a command line reads and prints: stdin, stdout and stderr.
@@ -88,12 +111,11 @@ pub struct Streams<'a> {
 }
 
 /// Run the command line `args` asks for, asking the Plays answering at
-/// `socket`, and starting one with `start`, if given, if none does. Its
-/// exit status.
+/// `socket`, doing as `unanswered` says if none does. Its exit status.
 pub fn run(
     args: Vec<OsString>,
     socket: Option<PathBuf>,
-    start: Option<&dyn Fn() -> io::Result<()>>,
+    unanswered: Unanswered,
     streams: Streams,
 ) -> u8 {
     let Streams { input, out, err } = streams;
@@ -112,7 +134,7 @@ pub fn run(
     let mut session = Session {
         options: cli.options,
         socket,
-        start,
+        unanswered,
         input,
         out,
         err: &mut *err,
@@ -195,7 +217,7 @@ type Done = Result<(), Stop>;
 struct Session<'a> {
     options: Options,
     socket: Option<PathBuf>,
-    start: Option<&'a dyn Fn() -> io::Result<()>>,
+    unanswered: Unanswered<'a>,
     input: &'a mut dyn Read,
     out: &'a mut dyn Write,
     err: &'a mut dyn Write,
@@ -267,8 +289,19 @@ impl Session<'_> {
                 let none = "this build has no socket of its own: name one with PLAYS_SOCKET";
                 return Err(io::Error::new(io::ErrorKind::NotFound, none).into());
             };
-            let start = self.start.filter(|_| !self.options.no_autostart);
-            self.client = Some(client::connect_or_start(path, start)?);
+            let start = match self.unanswered {
+                Unanswered::Starts(start) if !self.options.no_autostart => Some(start),
+                _ => None,
+            };
+            let off = matches!(self.unanswered, Unanswered::Off);
+            let client =
+                client::connect_or_start(path, start).map_err(|failure| match failure {
+                    Failure::Unreachable(err) if off && client::none_answers(&err) => {
+                        Failure::Command(Error::command_line_off())
+                    }
+                    failure => failure,
+                })?;
+            self.client = Some(client);
         }
         Ok(self.client.as_mut().expect("connected"))
     }

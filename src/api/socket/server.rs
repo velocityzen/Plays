@@ -7,10 +7,10 @@
 //! app quits, each client is sent what it was told, the windows closing
 //! and `app.quit` among it, before its connection closes (`end_on_quit`).
 //!
-//! Commands run, and events are heard, only while Settings has control
-//! from the command line on (`allowed`); turning it off cuts off every
-//! client. Who answers, the commands there are, and files handed over by
-//! a Plays started with them are answered either way.
+//! The socket is there only while Settings has control from the command
+//! line on: taken as it's turned on; removed as it's turned off, every
+//! client cut off, and commands and events asked for meanwhile refused
+//! (`allowed`).
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -21,6 +21,7 @@ use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
@@ -30,8 +31,8 @@ use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
 use gpui::{App, Task};
 use serde_json::{Value, json};
 
-use super::Listener;
 use super::protocol::{self, Ask, Heard, Request};
+use super::{Claimed, Listener};
 use crate::api::events::{self, Event, Scope};
 use crate::api::{self, Error, Invocation, Source, Spec, Target, target};
 use crate::settings::Settings;
@@ -55,6 +56,67 @@ type ClientId = u64;
 
 /// The clients connected, by number.
 type Clients = Rc<RefCell<HashMap<ClientId, Client>>>;
+
+/// The socket, as the app answers on it.
+struct Socket {
+    path: PathBuf,
+    /// What the threads tell the app.
+    messages: UnboundedSender<Message>,
+    /// The last client's number: those connecting once it's taken again
+    /// are numbered on.
+    last: Arc<AtomicU64>,
+    /// While it's taken: the thread taking clients.
+    taken: Option<Taking>,
+}
+
+/// The thread taking clients, and what stops it.
+struct Taking {
+    stopped: Arc<AtomicBool>,
+    thread: JoinHandle<()>,
+}
+
+impl Socket {
+    /// Take the socket, unless another Plays answers there, and each
+    /// client connecting.
+    fn claim(&mut self) {
+        let path = self.path.display();
+        match super::claim(&self.path) {
+            Ok(Claimed::Ours(listener)) => self.take(listener),
+            Ok(Claimed::Running) => log::warn!("another Plays answers on {path}"),
+            Err(err) => log::warn!("can't take the socket, {path}: {err}"),
+        }
+    }
+
+    /// Take each client connecting on `listener`, on a thread of its own.
+    fn take(&mut self, listener: Listener) {
+        let stopped = Arc::new(AtomicBool::new(false));
+        let stopping = Arc::clone(&stopped);
+        let (last, messages) = (Arc::clone(&self.last), self.messages.clone());
+        let taking = thread::Builder::new()
+            .name("plays-socket".into())
+            .spawn(move || accept(&listener.listener, &stopping, &last, &messages));
+        match taking {
+            Ok(thread) => self.taken = Some(Taking { stopped, thread }),
+            Err(err) => {
+                log::warn!("can't answer on the socket: {err}");
+                super::remove(&self.path).ok();
+            }
+        }
+    }
+
+    /// Stop taking clients and remove the socket, if it's taken: the
+    /// thread that took them, which ends once woken.
+    fn close(&mut self) -> Option<JoinHandle<()>> {
+        let Taking { stopped, thread } = self.taken.take()?;
+        stopped.store(true, Ordering::SeqCst);
+        // It waits for a client: one connecting wakes it to stop.
+        if let Err(err) = UnixStream::connect(&self.path) {
+            log::debug!("can't wake the thread taking socket clients: {err}");
+        }
+        super::remove(&self.path).ok();
+        Some(thread)
+    }
+}
 
 /// What the threads tell the app.
 enum Message {
@@ -147,21 +209,24 @@ fn tell(out: &Out, event: &Event) {
     }
 }
 
-/// Answer what clients ask on `listener` from now on, and remove the
-/// socket as the app quits.
-pub fn serve(listener: Listener, cx: &mut App) {
-    let Listener { listener, path } = listener;
+/// Answer what clients ask on the socket at `path` while Settings has
+/// control from the command line on: on `listener`, taken as Plays started
+/// with it on, else as it's turned on. Removed as it's turned off, and as
+/// the app quits.
+pub fn serve(path: PathBuf, listener: Option<Listener>, cx: &mut App) {
     let (messages, mut received) = unbounded();
-    let accepting = thread::Builder::new()
-        .name("plays-socket".into())
-        .spawn(move || accept(&listener, &messages));
-    if let Err(err) = accepting {
-        log::warn!("can't answer on the socket: {err}");
-        return;
+    let socket = Rc::new(RefCell::new(Socket {
+        path,
+        messages,
+        last: Arc::default(),
+        taken: None,
+    }));
+    if let Some(listener) = listener {
+        socket.borrow_mut().take(listener);
     }
     let clients = Clients::default();
-    cut_off_when_turned_off(&clients, cx);
-    end_on_quit(&clients, path, cx);
+    follow_control(&socket, &clients, cx);
+    end_on_quit(&socket, &clients, cx);
     cx.spawn(async move |cx| {
         while let Some(message) = received.next().await {
             let handled = cx.update(|cx| handle(message, &mut clients.borrow_mut(), cx));
@@ -177,8 +242,8 @@ pub fn serve(listener: Listener, cx: &mut App) {
 /// send each client what it was told, as nothing else runs then, and
 /// close its connection; remove the socket, and wait, as long as quitting
 /// does, for what was sent to be written.
-fn end_on_quit(clients: &Clients, path: PathBuf, cx: &mut App) {
-    let clients = Rc::clone(clients);
+fn end_on_quit(socket: &Rc<RefCell<Socket>>, clients: &Clients, cx: &mut App) {
+    let (socket, clients) = (Rc::clone(socket), Rc::clone(clients));
     cx.on_app_quit(move |cx| {
         events::quit(cx);
         let writing: Vec<JoinHandle<()>> = clients
@@ -186,7 +251,7 @@ fn end_on_quit(clients: &Clients, path: PathBuf, cx: &mut App) {
             .drain()
             .map(|(_, client)| client.end())
             .collect();
-        super::remove(&path).ok();
+        socket.borrow_mut().close();
         let executor = cx.background_executor().clone();
         async move {
             while !writing.iter().all(JoinHandle::is_finished) {
@@ -203,15 +268,20 @@ fn allowed(cx: &App) -> bool {
         .is_some_and(|settings| settings.command_line_control)
 }
 
-/// Once Settings turns control from the command line off, let go of every
-/// client: each hears no more and is told nothing more, its connection
-/// closing once what it was sent is written.
-fn cut_off_when_turned_off(clients: &Clients, cx: &mut App) {
-    let clients = Rc::clone(clients);
+/// Take the socket as Settings turns control from the command line on. As
+/// it turns it off, remove it, and let go of every client: each hears no
+/// more and is told nothing more, its connection closing once what it was
+/// sent is written.
+fn follow_control(socket: &Rc<RefCell<Socket>>, clients: &Clients, cx: &mut App) {
+    let (socket, clients) = (Rc::clone(socket), Rc::clone(clients));
     let mut was = allowed(cx);
     cx.observe_global::<Settings>(move |cx| {
         let now = allowed(cx);
+        if !was && now {
+            socket.borrow_mut().claim();
+        }
         if was && !now {
+            socket.borrow_mut().close();
             // Once what it's answering, if anything, is answered.
             let clients = Rc::clone(&clients);
             cx.defer(move |cx| {
@@ -226,11 +296,18 @@ fn cut_off_when_turned_off(clients: &Clients, cx: &mut App) {
     .detach();
 }
 
-/// Take each client that connects, numbering them from 1, until the app
-/// stops listening.
-fn accept(listener: &UnixListener, messages: &UnboundedSender<Message>) {
-    let mut last: ClientId = 0;
+/// Take each client that connects, numbering them on from `last`, until
+/// `stopped`, or the app stops listening.
+fn accept(
+    listener: &UnixListener,
+    stopped: &AtomicBool,
+    last: &AtomicU64,
+    messages: &UnboundedSender<Message>,
+) {
     for stream in listener.incoming() {
+        if stopped.load(Ordering::SeqCst) {
+            return;
+        }
         let stream = match stream {
             Ok(stream) => stream,
             Err(err) => {
@@ -239,8 +316,8 @@ fn accept(listener: &UnixListener, messages: &UnboundedSender<Message>) {
                 continue;
             }
         };
-        last += 1;
-        match connect(last, stream, messages) {
+        let client = last.fetch_add(1, Ordering::SeqCst) + 1;
+        match connect(client, stream, messages) {
             Ok(()) => {}
             Err(err) if messages.is_closed() => {
                 log::debug!("the app has stopped answering on the socket: {err}");

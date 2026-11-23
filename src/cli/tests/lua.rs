@@ -6,6 +6,7 @@ use serde_json::json;
 
 use super::*;
 use crate::api::socket::tests::serving;
+use crate::cli::Unanswered;
 use crate::cli::tests::{command_line, plays, plays_reading, window_id};
 use crate::ui::testing::wait_until;
 
@@ -28,9 +29,13 @@ fn a_name_is_a_script_when_it_ends_in_lua_has_a_slash_or_is_a_dash() {
 
 #[test]
 fn a_script_must_be_there_and_its_arguments_given_once_as_json() {
-    let ran = command_line(None, None, &["do", "missing.lua"]);
+    let ran = command_line(None, Unanswered::Fails, &["do", "missing.lua"]);
     assert_eq!(ran.failed(), (3, "plays: no script missing.lua"));
-    let ran = command_line(None, None, &["do", "-e", "return 1", "--args", "{}", "n=1"]);
+    let ran = command_line(
+        None,
+        Unanswered::Fails,
+        &["do", "-e", "return 1", "--args", "{}", "n=1"],
+    );
     assert_eq!(
         ran.failed(),
         (
@@ -38,19 +43,27 @@ fn a_script_must_be_there_and_its_arguments_given_once_as_json() {
             "plays: give the arguments as KEY=VALUE or with --args, not both"
         )
     );
-    let ran = command_line(None, None, &["do", "-e", "return 1", "--args", "[1"]);
+    let ran = command_line(
+        None,
+        Unanswered::Fails,
+        &["do", "-e", "return 1", "--args", "[1"],
+    );
     assert_eq!(ran.status, 2, "{ran:?}");
     assert!(
         ran.err.starts_with("plays: the arguments aren't JSON: "),
         "{ran:?}"
     );
-    let ran = command_line(None, None, &["do", "-e", "1", "--args", "@missing.json"]);
+    let ran = command_line(
+        None,
+        Unanswered::Fails,
+        &["do", "-e", "1", "--args", "@missing.json"],
+    );
     assert_eq!(ran.status, 2, "{ran:?}");
     assert!(
         ran.err.starts_with("plays: can't read missing.json: "),
         "{ran:?}"
     );
-    let ran = command_line(None, None, &["do"]);
+    let ran = command_line(None, Unanswered::Fails, &["do"]);
     assert_eq!(ran.status, 2, "neither a command nor -e: {ran:?}");
 }
 

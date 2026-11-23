@@ -286,8 +286,9 @@ flowchart LR
   menu items send one gpui action, `api::Run`; `api::can_run` enables them
 - `src/api/events.rs`, `events/`: change events, found by `events::look`
   diffing a `Seen` after each command; `kinds.rs` registers each kind
-- `src/api/socket.rs`, `socket/`: the socket, only this user's, JSON a
-  line; requests run on the UI thread; a second Plays hands files over
+- `src/api/socket.rs`, `socket/`: the socket, only this user's, there
+  only while Settings has the command line on; JSON a line; requests run
+  on the UI thread; a second Plays hands files over
 - `src/cli.rs`, `src/cli/`: the command line, a client of that socket;
   `reference.rs` writes `docs/commands.md`; `lua.rs` runs `plays do`'s
   Lua scripts ([docs/lua.md](docs/lua.md))
