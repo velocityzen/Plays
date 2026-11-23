@@ -59,7 +59,7 @@ impl Palette {
                 background: rgb(0x1e1e1e).into(),
                 text: white().opacity(0.85),
                 text_muted: white().opacity(0.55),
-                border: white().opacity(0.1),
+                border: white().opacity(0.05),
                 accent: rgb(0x0a84ff).into(),
                 danger: rgb(0xff453a).into(),
             }
@@ -68,7 +68,7 @@ impl Palette {
                 background: rgb(0xececec).into(),
                 text: black().opacity(0.85),
                 text_muted: black().opacity(0.5),
-                border: black().opacity(0.1),
+                border: black().opacity(0.05),
                 accent: rgb(0x007aff).into(),
                 danger: rgb(0xff3b30).into(),
             }
