@@ -1902,7 +1902,12 @@ impl App {
     /// Dispatch an action to the currently active window or global action handler
     /// See [`crate::Action`] for more information on how actions work
     pub fn dispatch_action(&mut self, action: &dyn Action) {
-        if let Some(active_window) = self.active_window() {
+        // Plays: one closed is none, which the platform can still have in
+        // front (macOS closes its own window on the run loop's next turn).
+        let active_window = self
+            .active_window()
+            .filter(|window| self.windows.contains_key(window.id));
+        if let Some(active_window) = active_window {
             active_window
                 .update(self, |_, window, cx| {
                     window.dispatch_action(action.boxed_clone(), cx)

@@ -1,6 +1,7 @@
 //! The window commands, run as the API runs them: opening an empty window,
 //! closing the others, naming one, going back to one in front before, and
-//! moving one in the ⌘1 to ⌘9 numbering.
+//! moving one in the ⌘1 to ⌘9 numbering; and a closed one, which its
+//! platform may still call about.
 
 use gpui::{TestAppContext, VisualTestContext, WindowHandle, WindowId};
 use serde_json::{Value, json};
@@ -307,4 +308,41 @@ fn move_puts_a_window_at_another_number(cx: &mut TestAppContext) {
         .unwrap();
     cx.run_until_parked();
     assert_eq!(numbered(&cx), ids(&[a, b, d]));
+}
+
+/// A window's platform can still call about it once it has closed, as
+/// macOS does till it closes its own window, and the test platform does,
+/// telling the window in front before that it no longer is. With no window
+/// to update, that's nothing to do, not an error.
+#[gpui::test]
+fn the_platform_calling_about_a_closed_window_logs_no_error(cx: &mut TestAppContext) {
+    let (first, mut cx) = testing::start(cx);
+    let second = open_player(&mut cx);
+    bring_to_front(first, &cx);
+    testing::keep_errors();
+
+    let invocation = on("window.close", Value::Null, first, &cx);
+    run(&mut cx, invocation).unwrap();
+    bring_to_front(second, &cx);
+    assert_eq!(numbered(&cx), ids(&[second]));
+    assert_eq!(front(&cx), Some(second.window_id()));
+    assert_eq!(testing::errors_logged(), Vec::<String>::new());
+}
+
+/// The platform can still have a closed window in front, as macOS does till
+/// it closes its own; a menu's command then runs as with none in front.
+#[gpui::test]
+fn a_menus_command_runs_with_a_closed_window_still_in_front(cx: &mut TestAppContext) {
+    let (first, mut cx) = testing::start(cx);
+    open_player(&mut cx);
+    bring_to_front(first, &cx);
+    let invocation = on("window.close", Value::Null, first, &cx);
+    run(&mut cx, invocation).unwrap();
+    testing::keep_errors();
+
+    let new = api::Run(Invocation::new("window.new"));
+    TestAppContext::update(&cx, |cx| cx.dispatch_action(&new));
+    cx.run_until_parked();
+    assert_eq!(numbered(&cx).len(), 2, "a window opens");
+    assert_eq!(testing::errors_logged(), Vec::<String>::new());
 }

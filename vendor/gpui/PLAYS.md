@@ -338,6 +338,12 @@ window with the mouse while its button is down, as its title bar does
 (`performWindowDragWithEvent` with the event being handled, once it is
 done); the test window has nowhere to move, where it panicked.
 
+`src/window.rs` and `src/app.rs`: a platform window can still call once
+its window has closed (macOS closes its own on the run loop's next turn).
+The window's callbacks then do nothing (`update_from_platform`) rather than
+log "window not found", and `App::dispatch_action`, as a menu does, takes a
+closed window in front as none.
+
 `src/taffy.rs`: two float literals are typed as `f32`, which newer Rust
 warns about otherwise.
 

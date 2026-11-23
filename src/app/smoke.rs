@@ -168,7 +168,11 @@ impl log::Log for Logger {
                 .iter()
                 .any(|&(target, error)| record.target() == target && message == error);
             if !machine {
-                let error = format!("{}: {message}", record.target());
+                let error = match (record.target(), record.file(), record.line()) {
+                    // gpui's `log_err` gives none outside a `crates` folder.
+                    ("", Some(file), Some(line)) => format!("{file}:{line}: {message}"),
+                    (target, ..) => format!("{target}: {message}"),
+                };
                 if !self.0.enabled(record.metadata()) {
                     eprintln!("ERROR {error}");
                 }
