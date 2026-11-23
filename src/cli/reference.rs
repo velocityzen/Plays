@@ -1,32 +1,57 @@
-//! `plays actions`: every command, from the registry this program has, so
-//! Plays needn't be running. As a table of ids, titles and keys; as JSON,
-//! each described; or, with `--markdown`, the command reference kept in
-//! `docs/commands.md`, with every event Plays tells and what tells it.
+//! `plays actions`: every command, or those a search finds, from the
+//! registry this program has, so Plays needn't be running. As a table of
+//! ids, titles and keys; as JSON, each described; or, with `--markdown`,
+//! the command reference kept in `docs/commands.md`, with every event Plays
+//! tells and what tells it.
 
 use std::fmt::Write as _;
-use std::io::{self, Write};
+use std::io::Write;
 
 use serde_json::Value;
 
-use super::show;
+use super::{Done, show};
 use crate::api::args::{Arg, Kind};
 use crate::api::events::{EventKind, Heard, kinds};
-use crate::api::{self, Scope, Spec};
+use crate::api::{self, Error, Scope, Spec};
 use crate::hotkeys;
 
-/// Print every command: as a table, JSON, or the command reference.
-pub fn actions(out: &mut dyn Write, json: bool, markdown: bool) -> io::Result<()> {
+/// Print every command, or those whose id or title has `search`: as a
+/// table, JSON, or the command reference.
+pub(super) fn actions(
+    out: &mut dyn Write,
+    json: bool,
+    markdown: bool,
+    search: Option<&str>,
+) -> Done {
     if markdown {
-        return write!(out, "{}", reference());
+        return Ok(write!(out, "{}", reference())?);
+    }
+    let found = found(search);
+    if let Some(search) = search.filter(|_| found.is_empty()) {
+        return Err(Error::not_found("command", search).into());
     }
     if json {
-        let described: Value = api::all().map(Spec::describe).collect();
-        return show::pretty(out, &described);
+        let described: Value = found.into_iter().map(Spec::describe).collect();
+        return Ok(show::pretty(out, &described)?);
     }
-    let rows: Vec<Vec<String>> = api::all()
+    let rows: Vec<Vec<String>> = found
+        .into_iter()
         .map(|spec| vec![spec.id.to_owned(), spec.title.to_owned(), keys(spec)])
         .collect();
-    show::table(out, &["ID", "TITLE", "KEYS"], &rows)
+    Ok(show::table(out, &["ID", "TITLE", "KEYS"], &rows)?)
+}
+
+/// The commands whose id or title has `search`, in any case (ids are
+/// lowercase); every one without it.
+fn found(search: Option<&str>) -> Vec<&'static Spec> {
+    let search = search.map(str::to_lowercase);
+    api::all()
+        .filter(|spec| {
+            search.as_deref().is_none_or(|search| {
+                spec.id.contains(search) || spec.title.to_lowercase().contains(search)
+            })
+        })
+        .collect()
 }
 
 /// The keys a command starts out with, as menus show them.

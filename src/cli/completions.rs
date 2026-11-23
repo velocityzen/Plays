@@ -1,6 +1,7 @@
 //! `plays completions SHELL`: the script that has bash, zsh, fish or
 //! Nushell complete the command line, its subcommands and options, the ids of
-//! Plays' commands for `do` and `api`, setting keys, and files to open.
+//! Plays' commands for `do` and `api`, and with their namespaces for
+//! `actions`, setting keys, and files to open.
 //! It's written from what clap knows of the command line and the registry
 //! this program has, so Plays needn't be running; one built with other
 //! commands writes them. What clap's scripts leave out, crate
@@ -38,8 +39,13 @@ fn command() -> Command {
             .into_iter()
             .map(|field| (field.key.into_owned(), field.title.into_owned())),
     );
+    let namespaces = api::commands::NAMESPACES
+        .iter()
+        .map(|&(id, title)| (id.to_owned(), title.to_owned()));
+    let searches = named(namespaces).into_iter().chain(commands()).collect();
     Cli::command()
         .mut_subcommand("do", |run| offer(run, "command", commands()))
+        .mut_subcommand("actions", |actions| offer(actions, "search", searches))
         .mut_subcommand("api", |api| {
             api.mut_subcommand("describe", |describe| {
                 offer(describe, "command", commands())

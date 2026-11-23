@@ -234,6 +234,66 @@ fn actions_lists_every_command_without_plays() {
 }
 
 #[test]
+fn actions_lists_those_whose_id_or_title_has_what_is_searched_for() {
+    let ids = |args: &[&str]| -> Vec<String> {
+        let ran = command_line(None, None, args);
+        assert_eq!(ran.status, 0, "{ran:?}");
+        let lines: Vec<&str> = ran.out.lines().collect();
+        assert!(lines[0].starts_with("ID "), "{lines:?}");
+        lines[1..]
+            .iter()
+            .map(|line| line.split_whitespace().next().unwrap().to_owned())
+            .collect()
+    };
+    assert_eq!(
+        ids(&["actions", "video.flip_vertically"]),
+        ["video.flip_vertically"],
+        "an id"
+    );
+    let video = ids(&["actions", "video"]);
+    let namespace = api::all().filter(|spec| spec.namespace() == "video");
+    for spec in namespace {
+        assert!(video.contains(&spec.id.to_owned()), "{video:?}");
+    }
+    let flips = ids(&["actions", "FLIP"]);
+    assert!(
+        flips.contains(&"video.flip_horizontally".to_owned()) && flips.len() >= 2,
+        "a word, in any case: {flips:?}"
+    );
+    for id in video.iter().chain(&flips) {
+        let spec = api::find(id).unwrap();
+        let has = |word| {
+            format!("{} {}", spec.id, spec.title)
+                .to_lowercase()
+                .contains(word)
+        };
+        assert!(has("video") || has("flip"), "{id}");
+    }
+    assert_eq!(
+        ids(&["actions", "play/pause"]),
+        ["playback.play_pause", "playback.play_pause_all"],
+        "in their titles"
+    );
+
+    let described = command_line(None, None, &["--json", "actions", "flip"]).json();
+    let described: Vec<&str> = described
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|spec| spec["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(described, flips);
+
+    let ran = command_line(None, None, &["actions", "nothing_has_this"]);
+    assert_eq!(
+        (ran.status, ran.out.as_str(), ran.err.as_str()),
+        (3, "", "plays: no command nothing_has_this\n")
+    );
+    let ran = command_line(None, None, &["actions", "video", "--markdown"]);
+    assert_eq!(ran.status, 2, "{ran:?}");
+}
+
+#[test]
 fn completions_are_written_for_each_shell_without_plays() {
     let ran = command_line(None, None, &["completions", "zsh"]);
     assert_eq!(ran.status, 0, "{ran:?}");

@@ -58,8 +58,13 @@ pub enum Command {
         #[arg(value_name = "KEY=VALUE")]
         args: Vec<String>,
     },
-    /// List the commands: their ids, titles and keys.
+    /// List the commands, or those whose id or title has SEARCH: their ids,
+    /// titles and keys.
     Actions {
+        /// An id, a namespace or a word, in any case: video.flip_vertically,
+        /// video or flip.
+        #[arg(conflicts_with = "markdown")]
+        search: Option<String>,
         /// Write the command reference, in Markdown.
         #[arg(long)]
         markdown: bool,

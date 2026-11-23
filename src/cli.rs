@@ -186,8 +186,8 @@ impl Session<'_> {
                 let result = self.call(&command, args)?;
                 self.result(&result)
             }
-            Command::Actions { markdown } => {
-                reference::actions(self.out, self.options.json, markdown).map_err(Stop::Output)
+            Command::Actions { search, markdown } => {
+                reference::actions(self.out, self.options.json, markdown, search.as_deref())
             }
             Command::Api(api) => self.api(api),
             Command::Ls => windows::ls(self),

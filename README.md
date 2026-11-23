@@ -200,6 +200,7 @@ plays wait ended -b 1 --timeout 600       # until the first block ends
 plays events --json                       # every change, a JSON line each
 plays settings set autoplay false
 plays actions                             # every command
+plays actions flip                        # those with flip in id or title
 ```
 
 - `-w` names a window and `-b` a block, by id, label or number. Without

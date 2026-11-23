@@ -97,6 +97,16 @@ fn the_words_that_name_commands_or_settings_are_told_the_names() {
     for path in [&["do"][..], &["api", "describe"], &["api", "call"]] {
         assert_eq!(offered(&command, path, "command"), commands, "{path:?}");
     }
+    let namespaces = api::commands::NAMESPACES
+        .iter()
+        .map(|&(id, title)| (id.to_owned(), title.to_owned()));
+    assert_eq!(
+        offered(&command, &["actions"], "search"),
+        namespaces
+            .chain(commands.iter().cloned())
+            .collect::<Vec<_>>(),
+        "a namespace or a command to look for"
+    );
     assert!(offered(&command, &["do"], "args").is_empty());
     assert!(offered(&command, &["api", "call"], "args").is_empty());
 
@@ -148,6 +158,11 @@ fn bash_completes_subcommands_commands_ids_setting_keys_and_shells() {
         ["app.quit"]
     );
     assert_eq!(offers(&["plays", "api", "call", "app.qu"]), ["app.quit"]);
+    let video = offers(&["plays", "actions", "vid"]);
+    assert!(
+        video.contains(&"video".to_owned()) && video.contains(&"video.flip_vertically".to_owned()),
+        "{video:?}"
+    );
     assert_eq!(
         offers(&["plays", "settings", "get", "subtitles.si"]),
         ["subtitles.size"]
