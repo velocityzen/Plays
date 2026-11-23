@@ -548,11 +548,15 @@ pub mod player {
     pub const NOTE_TOP: Pixels = px(44.);
     /// The most an error message is wide.
     pub const ERROR_MAX_WIDTH: Pixels = px(420.);
-    /// Cover art, and the level meter under it.
-    pub const COVER_SIZE: Pixels = px(160.);
-    /// The circle standing in for missing cover art, and its icon.
-    pub const NO_COVER_SIZE: Pixels = px(96.);
-    pub const NO_COVER_ICON: Pixels = px(40.);
+    /// The least cover art is wide, square, as its block shrinks; it grows
+    /// with the block as far as there's room.
+    pub const COVER_MIN_SIZE: Pixels = px(64.);
+    /// The circle standing in for missing cover art, as a part of the room
+    /// the cover would have, and its icon, as a part of the circle.
+    pub const NO_COVER_SCALE: f32 = 0.6;
+    pub const NO_COVER_ICON_SCALE: f32 = 0.42;
+    /// The level meter under a sound file's lines.
+    pub const METER_WIDTH: Pixels = px(160.);
     /// The icon in a block whose video is in Picture in Picture, or that
     /// plays on another device.
     pub const PIP_ICON: Pixels = px(40.);

@@ -8,17 +8,18 @@ use std::rc::Rc;
 
 use gpui::{
     AnyElement, Bounds, ContentTransform, Corners, ObjectFit, Pixels, SharedString, canvas, div,
-    img,
+    img, relative,
 };
 
-use super::PlayerView;
 use super::sound::SoundLines;
+use super::{PlayerView, controls};
 use crate::media::Picture;
 use crate::media::decoder::MediaInfo;
 use crate::ui::components::{ComponentSize, Icon, Meter};
 use crate::ui::framing::Framing;
 use crate::ui::theme::player::{
-    COVER_SIZE, ERROR_MAX_WIDTH, NO_COVER_ICON, NO_COVER_SIZE, PIP_ICON,
+    COVER_MIN_SIZE, ERROR_MAX_WIDTH, METER_WIDTH, NO_COVER_ICON_SCALE, NO_COVER_SCALE, NOTE_TOP,
+    PIP_ICON,
 };
 use crate::ui::theme::{Theme, radius};
 
@@ -75,25 +76,55 @@ impl PlayerView {
         }
     }
 
-    /// Audio-only files get their cover art (or a note), their tags and
-    /// quality, and a level meter.
+    /// Audio-only files get their cover art (or a circle standing in for
+    /// it), their tags and quality, and a level meter. The cover is square,
+    /// and as large as fits with the rest under it, between where the
+    /// header and the controls go.
     fn render_audio(&self, theme: &Theme, info: &MediaInfo) -> AnyElement {
         let artwork = match self.playback.local().cover() {
             Some(cover) => img(cover)
-                .size(COVER_SIZE)
+                .debug_selector(|| "sound-cover-art".into())
+                .size_full()
                 .object_fit(ObjectFit::Contain)
                 .superellipse(ComponentSize::Medium.pick(radius::MENU))
                 .into_any_element(),
             None => div()
+                .debug_selector(|| "sound-no-cover".into())
                 .flex()
                 .items_center()
                 .justify_center()
-                .size(NO_COVER_SIZE)
+                .size(relative(NO_COVER_SCALE))
                 .rounded_full()
                 .bg(theme.surface_hover)
-                .child(Icon::new("music").size(NO_COVER_ICON).color(theme.accent))
+                .child(
+                    Icon::new("music")
+                        .size(relative(NO_COVER_ICON_SCALE))
+                        .color(theme.accent)
+                        .debug_selector("sound-no-cover-icon"),
+                )
                 .into_any_element(),
         };
+        // It grows into the room the rest leaves, no wider than the block.
+        // Square: its least and most widths make its least and most heights,
+        // and something as wide as it is tall in it makes it as wide.
+        let room = div()
+            .debug_selector(|| "sound-cover".into())
+            .relative()
+            .flex()
+            .flex_1()
+            .min_h(COVER_MIN_SIZE)
+            .max_w_full()
+            .map(square)
+            .child(div().h_full().map(square))
+            .child(
+                div()
+                    .absolute()
+                    .inset_0()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .child(artwork),
+            );
         let SoundLines {
             title,
             artist,
@@ -117,7 +148,9 @@ impl PlayerView {
             .justify_center()
             .gap_3()
             .px_4()
-            .child(artwork)
+            .pt(NOTE_TOP)
+            .pb(controls::height(info.live))
+            .child(room)
             .child(
                 div()
                     .flex()
@@ -140,9 +173,21 @@ impl PlayerView {
                     .children(album.map(|album| line("sound-album", album)))
                     .children(quality.map(|quality| line("sound-quality", quality))),
             )
-            .child(Meter::new(self.level).w(COVER_SIZE))
+            .child(
+                div()
+                    .debug_selector(|| "sound-meter".into())
+                    .w(METER_WIDTH)
+                    .max_w_full()
+                    .child(Meter::new(self.level)),
+            )
             .into_any_element()
     }
+}
+
+/// `element` as wide as it is tall.
+fn square<E: Styled>(mut element: E) -> E {
+    element.style().aspect_ratio = Some(1.);
+    element
 }
 
 /// The frame, framed as `framing` says (as it is without), fitted in the
