@@ -10,8 +10,13 @@ pub enum Error {
     Status { request: String, status: u16 },
     /// It wants to be paired with a PIN first.
     NeedsPin,
-    /// Pairing failed: a wrong PIN, or the receiver turned it down.
+    /// Pairing failed: a wrong PIN, or the receiver turned it down for
+    /// now, busy or asking to wait.
     Pairing(String),
+    /// It no longer takes the pairing it was asked to verify, as after
+    /// it's reset, or it isn't the receiver paired with: paired again with
+    /// its PIN, it plays.
+    Forgotten(String),
     /// It turned this computer away before pairing (`403 Forbidden`): it
     /// lets only some senders play to it, as its settings say, such as a
     /// Mac's own user's devices or a home's people.
@@ -31,6 +36,10 @@ impl Error {
         Self::Pairing(what.into())
     }
 
+    pub(crate) fn forgotten(what: impl Into<String>) -> Self {
+        Self::Forgotten(what.into())
+    }
+
     /// The receiver is gone: off, or off the network.
     pub fn is_gone(&self) -> bool {
         matches!(self, Self::Io(_))
@@ -44,6 +53,7 @@ impl fmt::Display for Error {
             Self::Status { request, status } => write!(f, "{request} was answered {status}"),
             Self::NeedsPin => f.write_str("it needs to be paired with the PIN it shows"),
             Self::Pairing(why) => write!(f, "pairing failed: {why}"),
+            Self::Forgotten(why) => write!(f, "to be paired again: {why}"),
             Self::Refused => f.write_str("it doesn't let this computer play to it"),
             Self::Protocol(why) => f.write_str(why),
         }

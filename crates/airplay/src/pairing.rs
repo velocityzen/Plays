@@ -23,7 +23,7 @@ const USERNAME: &[u8] = b"Pair-Setup";
 const TRANSIENT: u8 = 0x10;
 
 const WRONG_PIN: &str = "the PIN is wrong";
-const FORGOTTEN: &str = "it doesn't know this computer any more; pair again";
+const FORGOTTEN: &str = "it doesn't know this computer any more";
 
 /// Whether `proof` is the one `expected`, compared in the same time however
 /// much of it is right, so how long it takes gives nothing away.
@@ -111,19 +111,19 @@ fn new_id() -> String {
 }
 
 /// A received message, checked to be the step expected and not an error;
-/// `refused` says what failing to authenticate means at this step.
-fn received(bytes: &[u8], state: u8, refused: &str) -> Result<Tlv> {
+/// `refused` is what failing to authenticate means at this step.
+fn received(bytes: &[u8], state: u8, refused: Error) -> Result<Tlv> {
     let tlv = Tlv::decode(bytes)?;
     if let Some(code) = tlv.get(Tag::Error).and_then(|code| code.first()) {
-        return Err(Error::pairing(match code {
+        return Err(match code {
             2 => refused,
-            3 => "it asks to wait before trying again",
-            4 => "it has as many pairings as it keeps",
-            5 => "too many tries",
-            6 => "it isn't taking pairings",
-            7 => "it's pairing with something else",
-            _ => "it refused",
-        }));
+            3 => Error::pairing("it asks to wait before trying again"),
+            4 => Error::pairing("it has as many pairings as it keeps"),
+            5 => Error::pairing("too many tries"),
+            6 => Error::pairing("it isn't taking pairings"),
+            7 => Error::pairing("it's pairing with something else"),
+            _ => Error::pairing("it refused"),
+        });
     }
     if tlv.state() != Some(state) {
         return Err(Error::protocol(format!(
@@ -193,7 +193,7 @@ impl Setup {
 
     /// Our public key and proof, from the receiver's salt and public key.
     pub fn m3(&mut self, m2: &[u8]) -> Result<Vec<u8>> {
-        let m2 = received(m2, 2, WRONG_PIN)?;
+        let m2 = received(m2, 2, Error::pairing(WRONG_PIN))?;
         let session = self.client.session::<Sha512>(
             USERNAME,
             self.pin.as_bytes(),
@@ -211,7 +211,7 @@ impl Setup {
 
     /// The session's secret, once the receiver has proven it knows it.
     pub fn m4(&mut self, m4: &[u8]) -> Result<Vec<u8>> {
-        let m4 = received(m4, 4, WRONG_PIN)?;
+        let m4 = received(m4, 4, Error::pairing(WRONG_PIN))?;
         let session = self.session()?;
         if !proves(m4.need(Tag::Proof)?, &session.server_proof) {
             return Err(Error::pairing("the receiver's proof doesn't match"));
@@ -245,7 +245,7 @@ impl Setup {
 
     /// The receiver's id and long-term key, checked against its signature.
     pub fn m6(&self, m6: &[u8]) -> Result<Credentials> {
-        let m6 = received(m6, 6, WRONG_PIN)?;
+        let m6 = received(m6, 6, Error::pairing(WRONG_PIN))?;
         let inner = crypto::open(
             &self.encrypt_key()?,
             message_nonce("PS-Msg06"),
@@ -316,7 +316,7 @@ impl Verify {
 
     /// Checks it is the receiver paired with, and says who we are.
     pub fn m3(&mut self, m2: &[u8]) -> Result<Vec<u8>> {
-        let m2 = received(m2, 2, FORGOTTEN)?;
+        let m2 = received(m2, 2, Error::forgotten(FORGOTTEN))?;
         let theirs = key32(m2.need(Tag::PublicKey)?)?;
         let shared = self
             .secret
@@ -336,13 +336,19 @@ impl Verify {
         let inner = Tlv::decode(&inner)?;
         let receiver = inner.need(Tag::Identifier)?;
         if receiver != self.credentials.receiver.as_bytes() {
-            return Err(Error::pairing("it isn't the receiver paired with"));
+            return Err(Error::forgotten("it isn't the receiver paired with"));
         }
+        // Signed with another key, it's another receiver by the same name,
+        // as one reset is.
         verify(
             &self.credentials.receiver_key,
             &[&theirs[..], receiver, self.public.as_bytes()].concat(),
             inner.need(Tag::Signature)?,
-        )?;
+        )
+        .map_err(|err| match err {
+            Error::Pairing(why) => Error::Forgotten(why),
+            err => err,
+        })?;
 
         let signing = SigningKey::from_bytes(&self.credentials.secret);
         let id = self.credentials.id.as_bytes();
@@ -363,7 +369,7 @@ impl Verify {
 
     /// The session's secret, once the receiver has taken who we are.
     pub fn m4(&self, m4: &[u8]) -> Result<[u8; 32]> {
-        received(m4, 4, FORGOTTEN)?;
+        received(m4, 4, Error::forgotten(FORGOTTEN))?;
         self.shared
             .ok_or_else(|| Error::protocol("pairing steps out of order"))
     }

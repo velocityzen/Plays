@@ -452,7 +452,8 @@ Apple's protocol is unpublished, so an update can break it.
 
 - `browser.rs`, `device.rs`: mDNS for `_airplay._tcp` and `_raop._tcp`
 - `tlv8.rs`, `srp.rs`, `pairing.rs`: HomeKit pairing (SRP-6a, Ed25519,
-  ChaCha20-Poly1305); a `403` is `Error::Refused`
+  ChaCha20-Poly1305); a `403` is `Error::Refused`, a pairing the receiver
+  no longer takes `Error::Forgotten`
 - `channel.rs`, `message.rs`, `connection.rs`: RTSP and HTTP on one TCP
   connection, encrypted once paired
 - `session.rs`: AirPlay 2's session; OPTIONS for AirPlay 1

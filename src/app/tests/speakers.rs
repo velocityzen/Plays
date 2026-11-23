@@ -102,7 +102,7 @@ fn one_that_turns_this_computer_away_says_what_lets_it_in() {
 }
 
 #[test]
-fn credentials_it_turns_down_are_forgotten_and_its_pin_asked_for_again() {
+fn credentials_it_turns_down_ask_for_its_pin_again_and_are_kept_till_then() {
     let tv = FakeReceiver::start(Kind::Tv { pin: "1234" });
     let other = FakeReceiver::start(Kind::Tv { pin: "1234" });
     let speakers = speakers(&[&tv]);
@@ -117,5 +117,9 @@ fn credentials_it_turns_down_are_forgotten_and_its_pin_asked_for_again() {
     let id = speakers.list()[0].id.clone();
     let opened = speakers.open(&mut output(), &id, |_| {});
     assert!(matches!(opened, Err(OpenError::NeedsPin)), "{opened:?}");
-    assert!(speakers.pairings.paired().is_empty(), "forgotten");
+    assert_eq!(
+        speakers.pairings.credentials(&device.id),
+        Some(credentials),
+        "kept till it's paired again"
+    );
 }

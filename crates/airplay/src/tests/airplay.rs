@@ -107,7 +107,7 @@ fn credentials_for_another_tv_dont_verify() {
     let credentials = pair(&one);
     assert!(matches!(
         VideoSession::connect(&other.device(), Some(&credentials), &sender()),
-        Err(Error::Pairing(_))
+        Err(Error::Forgotten(_))
     ));
 }
 

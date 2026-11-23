@@ -42,6 +42,7 @@ fn pairing_with_the_pin_then_verifying_gives_both_sides_the_same_secret() {
 fn a_wrong_pin_is_refused_as_such() {
     let mut accessory = Accessory::new("AA:BB:CC:DD:EE:FF", "1234");
     let err = pair(&mut accessory, "4321").unwrap_err();
+    assert!(matches!(err, Error::Pairing(_)), "{err}");
     assert!(err.to_string().contains("PIN is wrong"), "{err}");
     assert!(accessory.paired().is_empty());
 }
@@ -87,6 +88,7 @@ fn a_sender_whose_proof_is_wrong_is_refused() {
     going(outcome);
     assert!(Tlv::decode(&m4).unwrap().get(Tag::Error).is_some());
     let err = setup.m4(&m4).unwrap_err();
+    assert!(matches!(err, Error::Pairing(_)), "{err}");
     assert!(err.to_string().contains("PIN is wrong"), "{err}");
 }
 
@@ -109,7 +111,44 @@ fn verifying_with_another_receivers_credentials_fails() {
     pair(&mut other, "1234").unwrap();
     let mut verify = Verify::new(&credentials);
     let (m2, _) = other.verify(&verify.m1()).unwrap();
-    assert!(verify.m3(&m2).is_err());
+    let err = verify.m3(&m2).unwrap_err();
+    assert!(matches!(err, Error::Forgotten(_)), "{err}");
+}
+
+#[test]
+fn a_receiver_signing_with_another_key_is_taken_for_one_reset() {
+    let mut ours = Accessory::new("AA:BB:CC:DD:EE:FF", "1234");
+    let credentials = pair(&mut ours, "1234").unwrap();
+    let mut reset = Accessory::new("AA:BB:CC:DD:EE:FF", "1234");
+    let mut verify = Verify::new(&credentials);
+    let (m2, _) = reset.verify(&verify.m1()).unwrap();
+    let err = verify.m3(&m2).unwrap_err();
+    assert!(matches!(err, Error::Forgotten(_)), "{err}");
+}
+
+/// Busy, asking to wait or turning pairings away, a receiver hasn't
+/// forgotten the one it's asked to verify.
+#[test]
+fn a_receiver_turning_verifying_down_for_now_hasnt_forgotten() {
+    let mut accessory = Accessory::new("AA:BB:CC:DD:EE:FF", "1234");
+    let credentials = pair(&mut accessory, "1234").unwrap();
+    let refused = |state: u8, code: u8| {
+        Tlv::new()
+            .byte(Tag::State, state)
+            .byte(Tag::Error, code)
+            .encode()
+    };
+    for code in [3, 4, 5, 6, 7] {
+        let mut verify = Verify::new(&credentials);
+        let err = verify.m3(&refused(2, code)).unwrap_err();
+        assert!(matches!(err, Error::Pairing(_)), "code {code} at M2: {err}");
+        let err = verify.m4(&refused(4, code)).unwrap_err();
+        assert!(matches!(err, Error::Pairing(_)), "code {code} at M4: {err}");
+    }
+    let err = Verify::new(&credentials).m3(&refused(2, 2)).unwrap_err();
+    assert!(matches!(err, Error::Forgotten(_)), "code 2 at M2: {err}");
+    let err = Verify::new(&credentials).m4(&refused(4, 2)).unwrap_err();
+    assert!(matches!(err, Error::Forgotten(_)), "code 2 at M4: {err}");
 }
 
 #[test]
@@ -122,7 +161,7 @@ fn a_receiver_doesnt_verify_a_sender_it_never_paired() {
     let (m4, outcome) = accessory.verify(&verify.m3(&m2).unwrap()).unwrap();
     going(outcome);
     let err = verify.m4(&m4).unwrap_err();
-    assert!(err.to_string().contains("pair again"), "{err}");
+    assert!(matches!(err, Error::Forgotten(_)), "{err}");
 }
 
 #[test]

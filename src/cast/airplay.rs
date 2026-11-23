@@ -110,10 +110,11 @@ impl Target for AirPlayTarget {
                 profile(&receiver.model),
             ))),
             Err(::airplay::Error::NeedsPin) => Err(Error::NeedsPin),
-            // It no longer knows us, as after it's reset: paired again.
-            Err(::airplay::Error::Pairing(why)) if credentials.is_some() => {
+            // It no longer knows us, as after it's reset: paired again,
+            // which replaces what's kept. Kept till then: a receiver turning
+            // its pairing down isn't to be taken at its word.
+            Err(::airplay::Error::Forgotten(why)) => {
                 log::info!("airplay: {} turned down its pairing: {why}", receiver.name);
-                self.pairings.forget(&receiver.id);
                 Err(Error::NeedsPin)
             }
             Err(err) => Err(failed_at(&receiver, &err)),

@@ -454,9 +454,10 @@ fn a_tv_that_forgot_this_computer_asks_for_its_pin_again(cx: &mut TestAppContext
         wants_pin(window, cx)
     });
     assert!(tv.state().pin_shown);
-    assert!(
-        pairings(&mut cx).paired().is_empty(),
-        "what it turned down is forgotten"
+    assert_eq!(
+        pairings(&mut cx).credentials(&device.id).as_ref(),
+        Some(&credentials),
+        "kept till it's paired again"
     );
     cx.simulate_input(PIN);
     press(&mut cx, "enter");
@@ -464,4 +465,9 @@ fn a_tv_that_forgot_this_computer_asks_for_its_pin_again(cx: &mut TestAppContext
         !plays(&tv).is_empty()
     });
     assert_eq!(pairings(&mut cx).paired().len(), 1);
+    assert_ne!(
+        pairings(&mut cx).credentials(&device.id).as_ref(),
+        Some(&credentials),
+        "replaced once paired again"
+    );
 }
