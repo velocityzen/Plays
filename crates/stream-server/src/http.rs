@@ -20,9 +20,9 @@ const IDLE: Duration = Duration::from_secs(30);
 const IDLE: Duration = Duration::from_secs(1);
 /// How many connections are served at once; more are closed as they come.
 #[cfg(not(test))]
-const MAX_CONNECTIONS: usize = 64;
+pub(crate) const MAX_CONNECTIONS: usize = 64;
 #[cfg(test)]
-const MAX_CONNECTIONS: usize = 4;
+pub(crate) const MAX_CONNECTIONS: usize = 4;
 /// How long to wait after taking a connection failed, as it does while
 /// the app is out of file descriptors, before trying again.
 const ACCEPT_AGAIN: Duration = Duration::from_millis(100);
@@ -134,9 +134,15 @@ impl Response {
 
 pub(crate) type Handler = Arc<dyn Fn(&Request) -> Response + Send + Sync>;
 
-/// Accept connections until `stop` is set (and a connection wakes the
-/// listener to see it).
-pub(crate) fn serve(listener: TcpListener, handler: Handler, stop: Arc<AtomicBool>) {
+/// Accept connections from the peers `admit` lets in until `stop` is set
+/// (and a connection wakes the listener to see it). Others are closed as
+/// they come, before they take one of the places or a thread.
+pub(crate) fn serve(
+    listener: TcpListener,
+    handler: Handler,
+    admit: impl Fn(IpAddr) -> bool,
+    stop: Arc<AtomicBool>,
+) {
     let open = Arc::new(AtomicUsize::new(0));
     for stream in listener.incoming() {
         if stop.load(Ordering::Relaxed) {
@@ -150,6 +156,17 @@ pub(crate) fn serve(listener: TcpListener, handler: Handler, stop: Arc<AtomicBoo
                 continue;
             }
         };
+        match stream.peer_addr() {
+            Ok(peer) if admit(peer.ip()) => {}
+            Ok(peer) => {
+                log::debug!("{} isn't let in; closing", peer.ip());
+                continue;
+            }
+            Err(err) => {
+                log::debug!("can't take a connection: {err}");
+                continue;
+            }
+        }
         let Some(slot) = Slot::take(&open) else {
             log::debug!("{MAX_CONNECTIONS} connections open; closing another");
             continue;

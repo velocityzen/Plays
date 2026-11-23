@@ -1,11 +1,12 @@
 //! Serving the fixtures over HTTP, and reading back what comes out.
 
 use std::fs;
-use std::io::{Read, Write};
+use std::io::{ErrorKind, Read, Write};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Duration;
 
 use ffmpeg::codec::Id;
 use ffmpeg::ffi;
@@ -13,6 +14,7 @@ use ffmpeg::media::Type;
 use ffmpeg_next as ffmpeg;
 
 use crate::encode::Colors;
+use crate::http;
 use crate::{
     AudioCodec, AudioPlan, CastRequest, Container, Delivery, Error, MediaInfo, Pick, Profile,
     Segments, Server, Source, SubtitleSource, VideoCodec, VideoPlan,
@@ -244,9 +246,9 @@ fn close(a: f64, b: f64) -> bool {
     (a - b).abs() < 0.05
 }
 
-#[test]
-fn a_cast_is_served_only_to_its_device() {
-    let server = server();
+/// A cast for the device at 127.0.0.2, and its URL as this computer,
+/// which isn't it, reaches it.
+fn cast_elsewhere(server: &Server) -> (crate::Cast, String) {
     let device = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 2));
     let elsewhere = server
         .add(
@@ -254,9 +256,57 @@ fn a_cast_is_served_only_to_its_device() {
             device,
         )
         .expect("the fixture casts");
-    // Asked for from this computer instead.
     let url = elsewhere.url().replace("127.0.0.2", "127.0.0.1");
+    (elsewhere, url)
+}
+
+#[test]
+fn a_cast_is_served_only_to_its_device() {
+    let server = server();
+    let (_elsewhere, url) = cast_elsewhere(&server);
+    // This computer, the device of a cast of its own, asks for the other.
+    let here = cast(&server, "clip.mp4", Profile::default());
+    assert_eq!(get(&here.url()).status, 200);
     assert_eq!(get(&url).status, 404);
+}
+
+/// A connection to `url`'s host asking for it, kept open.
+fn asking(url: &str) -> TcpStream {
+    let (host, path) = url
+        .strip_prefix("http://")
+        .unwrap()
+        .split_once('/')
+        .unwrap();
+    let mut stream = TcpStream::connect(host).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .unwrap();
+    let ask = format!("GET /{path} HTTP/1.1\r\nHost: {host}\r\n\r\n");
+    // Closed already, it may not take this.
+    let _ = stream.write_all(ask.as_bytes());
+    stream
+}
+
+/// Whether the server closed `stream` without answering it.
+fn closed_unanswered(mut stream: TcpStream) -> bool {
+    let mut answer = Vec::new();
+    let closed = match stream.read_to_end(&mut answer) {
+        Ok(_) => true,
+        Err(err) => !matches!(err.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut),
+    };
+    closed && answer.is_empty()
+}
+
+/// Others on the network are closed on as they connect, unanswered: kept
+/// open, they would take the places a device's connections need.
+#[test]
+fn others_on_the_network_take_none_of_the_connections() {
+    let server = server();
+    let (_elsewhere, url) = cast_elsewhere(&server);
+    let others: Vec<_> = (0..=http::MAX_CONNECTIONS).map(|_| asking(&url)).collect();
+    for other in others {
+        assert!(closed_unanswered(other));
+    }
     let here = cast(&server, "clip.mp4", Profile::default());
     assert_eq!(get(&here.url()).status, 200);
 }
@@ -366,11 +416,16 @@ fn keeps_a_connection_open_between_requests() {
 #[test]
 fn stops_serving_a_cast_once_removed() {
     let server = server();
-    let cast = cast(&server, "clip.mp4", Profile::default());
+    let removed = cast(&server, "clip.mp4", Profile::default());
+    let kept = cast(&server, "tone.m4a", Profile::default());
+    server.remove(&removed);
     assert_eq!(server.casts().len(), 1);
-    server.remove(&cast);
+    // Its device, casting something else, finds nothing there.
+    assert_eq!(get(&removed.url()).status, 404);
+    // Casting nothing, it isn't let in.
+    server.remove(&kept);
     assert!(server.casts().is_empty());
-    assert_eq!(get(&cast.url()).status, 404);
+    assert!(closed_unanswered(asking(&kept.url())));
 }
 
 #[test]

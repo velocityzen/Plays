@@ -1,5 +1,6 @@
 //! The server: each cast is served under a path of its own, a random
 //! token, so a device can reach what it was told to play and nothing else.
+//! Only a cast's device is served at all.
 
 use std::collections::HashMap;
 use std::fs::File;
@@ -100,10 +101,13 @@ impl Server {
             Arc::new(move |request: &Request| shared.handle(request))
         };
         let thread = {
+            let shared = Arc::clone(&shared);
             let stop = Arc::clone(&stop);
             thread::Builder::new()
                 .name("stream-server".into())
-                .spawn(move || http::serve(listener, handler, stop))?
+                .spawn(move || {
+                    http::serve(listener, handler, |peer| shared.serves(peer), stop);
+                })?
         };
         Ok(Self {
             shared,
@@ -675,6 +679,11 @@ impl CastState {
 }
 
 impl Shared {
+    /// Whether `peer` is the device of a cast.
+    fn serves(&self, peer: IpAddr) -> bool {
+        lock(&self.casts).values().any(|state| state.device == peer)
+    }
+
     fn handle(&self, request: &Request) -> Response {
         let path = request.path.trim_start_matches('/');
         let Some((token, name)) = path.split_once('/') else {

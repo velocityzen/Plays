@@ -69,7 +69,14 @@ fn server() -> std::net::SocketAddr {
     let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
     let address = listener.local_addr().unwrap();
     let handler: Handler = Arc::new(|_: &Request| Response::status(200));
-    thread::spawn(move || serve(listener, handler, Arc::new(AtomicBool::new(false))));
+    thread::spawn(move || {
+        serve(
+            listener,
+            handler,
+            |_| true,
+            Arc::new(AtomicBool::new(false)),
+        )
+    });
     address
 }
 
