@@ -2,6 +2,7 @@
 //! the options every one takes.
 
 use std::ffi::OsString;
+use std::time::Duration;
 
 use clap::{Args, Parser, Subcommand, ValueEnum, ValueHint};
 
@@ -67,6 +68,13 @@ pub enum Command {
         /// The arguments as JSON, or @FILE for the file's.
         #[arg(long = "args", value_name = "JSON|@FILE")]
         json_args: Option<String>,
+        /// A script with handlers listens at most this long: 90 or 90s, 10m,
+        /// 1.5h.
+        #[arg(long = "for", value_name = "DURATION", value_parser = lasting)]
+        listen_for: Option<Duration>,
+        /// A script with handlers ends as one fails, exit status 1.
+        #[arg(long)]
+        fail_fast: bool,
     },
     /// List the commands, or those whose id or title has SEARCH: their ids,
     /// titles and keys.
@@ -241,4 +249,20 @@ pub enum Settings {
     /// Change a setting: VALUE as the settings file keeps it, true, 0.5 or
     /// dark.
     Set { key: String, value: String },
+}
+
+/// How long `given` says: seconds, as 90 or 90s; minutes, 10m; or hours,
+/// 1.5h.
+pub fn lasting(given: &str) -> Result<Duration, String> {
+    let (number, unit) = match given.char_indices().last() {
+        Some((at, 'h')) => (&given[..at], 3600.0),
+        Some((at, 'm')) => (&given[..at], 60.0),
+        Some((at, 's')) => (&given[..at], 1.0),
+        _ => (given, 1.0),
+    };
+    number
+        .parse::<f64>()
+        .ok()
+        .and_then(|number| Duration::try_from_secs_f64(number * unit).ok())
+        .ok_or_else(|| "seconds, as 90 or 90s; minutes, 10m; or hours, 1.5h".into())
 }

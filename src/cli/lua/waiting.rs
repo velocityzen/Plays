@@ -1,9 +1,11 @@
 //! `plays.sleep` and `plays.wait`: a script waiting a while, or for an
 //! event. Events come on a connection of their own, subscribed at the
 //! script's first call or wait, so calls and events don't wait on each
-//! other. A wait hears what happens from the start of the last call
-//! before it, or from its own start if there's none: each event once, in
-//! order, those it passes over gone.
+//! other: everything's, or with `-w` that window's, and where files are
+//! once a wait or a handler is for that. A wait hears what happens from
+//! the start of the last call before it, in a handler the last in it; with
+//! none, from its own start, or in a handler from its event. Each event
+//! once, in order, those a wait passes over gone, for handlers too.
 
 use std::cell::RefCell;
 use std::io;
@@ -20,32 +22,45 @@ use crate::api::socket::client::{Client, Failure};
 const TIMEOUT: &str = "timeout";
 
 /// The event told only to those who ask for positions.
-const POSITION: &str = "playback.position";
+pub const POSITION: &str = "playback.position";
 
 /// The events a script hears.
 pub struct Events {
     socket: Option<PathBuf>,
+    /// Whose: everything's, or a window's.
+    heard: Heard,
     client: Option<Client>,
+    /// Whether where files are is heard too.
+    positions: bool,
+    /// How many of those heard, and not taken yet, were told before the
+    /// last call began: a wait passes over them.
+    before_call: usize,
 }
 
 impl Events {
-    /// Events from the Plays answering at `socket`, not heard yet.
-    pub fn new(socket: Option<PathBuf>) -> Self {
+    /// The events `heard` from the Plays answering at `socket`, not heard
+    /// yet.
+    pub fn new(socket: Option<PathBuf>, heard: Heard) -> Self {
         Self {
             socket,
+            heard,
             client: None,
+            positions: false,
+            before_call: 0,
         }
     }
 
-    /// As a call begins: hear what happens from now on, and nothing told
-    /// before. Failing, the call goes on: a wait after says why.
+    /// As a call begins: a wait after it hears what happens from now on,
+    /// and nothing told before. Failing, the call goes on: a wait after
+    /// says why.
     pub fn hear_from_now(&mut self) {
-        let heard = match &mut self.client {
-            Some(client) => client.forget_events(),
-            None => self.client().map(drop),
-        };
-        if let Err(failure) = heard {
-            log::debug!("can't hear events: {failure}");
+        let told = self.client().and_then(|client| {
+            client.hello()?;
+            Ok(client.events_waiting())
+        });
+        match told {
+            Ok(told) => self.before_call = told,
+            Err(failure) => log::debug!("can't hear events: {failure}"),
         }
     }
 
@@ -56,21 +71,46 @@ impl Events {
                 return Err(io::Error::new(io::ErrorKind::NotFound, "no socket").into());
             };
             let mut client = Client::connect(path)?;
-            client.subscribe(Heard::All, false)?;
+            client.subscribe(self.heard.clone(), false)?;
             self.client = Some(client);
         }
         Ok(self.client.as_mut().expect("connected"))
     }
 
-    /// Hear where files are as they play too, or not.
-    fn hear_positions(&mut self, positions: bool) -> Result<(), Failure> {
-        self.client()?.subscribe(Heard::All, positions).map(drop)
+    /// Hear where files are as they play too, from now on.
+    pub fn hear_positions(&mut self) -> Result<(), Failure> {
+        if !self.positions {
+            let heard = self.heard.clone();
+            self.client()?.subscribe(heard, true)?;
+            self.positions = true;
+        }
+        Ok(())
+    }
+
+    /// The next event heard, for the handlers, waiting for it until `by`,
+    /// if given: none by then. A wait in a handler hears from it on.
+    pub fn next_for_handlers(
+        &mut self,
+        by: Option<Instant>,
+    ) -> Result<Option<(String, Value)>, Failure> {
+        let next = self.next(by)?;
+        self.before_call = 0;
+        Ok(next)
     }
 
     /// The next event heard, by its type, with its payload, waiting for it
     /// until `by`, if given: none by then.
     fn next(&mut self, by: Option<Instant>) -> Result<Option<(String, Value)>, Failure> {
-        self.client()?.next_event_by(by)
+        let next = self.client()?.next_event_by(by)?;
+        if next.is_some() {
+            self.before_call = self.before_call.saturating_sub(1);
+        }
+        Ok(next)
+    }
+
+    /// Pass over those told before the last call began, heard already.
+    fn pass_over_told(&mut self) {
+        while self.before_call > 0 && matches!(self.next(None), Ok(Some(_))) {}
     }
 }
 
@@ -93,15 +133,13 @@ pub fn wait(
         None => None,
     };
     let filter = Filter::read(lua, filter)?;
-    let positions = kind == POSITION;
-    if positions && let Err(failure) = events.borrow_mut().hear_positions(true) {
+    if kind == POSITION
+        && let Err(failure) = events.borrow_mut().hear_positions()
+    {
         return Ok((LuaValue::Nil, Some(failure.to_string())));
     }
-    let heard = heard(lua, events, &kind, &filter, by);
-    if positions {
-        events.borrow_mut().hear_positions(false).ok();
-    }
-    heard
+    events.borrow_mut().pass_over_told();
+    heard(lua, events, &kind, &filter, by)
 }
 
 /// The next event of type `kind` that `filter` matches, heard by `by`.

@@ -1,13 +1,15 @@
 //! The Lua scripts `plays do` runs: a file, `-e` code or stdin, run here,
 //! a client of the Plays running as the command line is. `plays` holds
-//! what a script is given, calls Plays' commands and waits (`waiting`);
-//! what the script returns is printed as JSON.
+//! what a script is given, calls Plays' commands, waits (`waiting`) and
+//! registers handlers (`handlers`); what the script returns is printed as
+//! JSON, and then, if it has handlers, it listens.
 //!
 //! JSON and Lua: null is nil, and `plays.null` sends one; an object or a
 //! list is a table, a list from Plays staying one, so a table is a list if
 //! it came as one or has items from 1, else an object; integers stay
 //! integers and other numbers floats, both ways.
 
+mod handlers;
 mod waiting;
 
 use std::cell::{Cell, RefCell};
@@ -18,8 +20,11 @@ use mlua::serde::SerializeOptions;
 use mlua::{Function, HookTriggers, Lua, LuaSerdeExt, MultiValue, Table, Value as LuaValue};
 use serde_json::Value;
 
+pub use self::handlers::Listening;
+use self::handlers::{Handlers, Listener};
 use self::waiting::Events;
 use super::{Done, Session, Stop, show};
+use crate::api::socket::Heard;
 use crate::api::socket::client::Failure;
 use crate::api::{self, Error, Scope, Target};
 
@@ -78,24 +83,31 @@ impl Script {
 
 /// Run `script` with `args`, on the window and block `-w` and `-b` name,
 /// else the window in front and the block keys go to in it: print what it
-/// returns.
-pub fn run(session: &mut Session, script: Script, args: Value) -> Done {
+/// returns, then listen as `listening` says, if it has handlers.
+pub fn run(session: &mut Session, script: Script, args: Value, listening: Listening) -> Done {
     let here = whereabouts(session)?;
     let lua = Lua::new();
     let failed = |err: mlua::Error| Stop::Script(message(&err));
     set_up(&lua, script.folder.as_deref()).map_err(failed)?;
     let tostring: Function = lua.globals().get("tostring").map_err(failed)?;
     let stopped = Cell::new(None);
-    let events = RefCell::new(Events::new(session.socket.clone()));
+    let window = here
+        .window
+        .clone()
+        .filter(|_| session.options.window.is_some());
+    let heard = window.clone().map_or(Heard::All, Heard::Window);
+    let events = RefCell::new(Events::new(session.socket.clone(), heard));
+    let handlers = Handlers::default();
     let session = RefCell::new(session);
+    let here = RefCell::new(here);
     let ran = lua.scope(|scope| {
         let plays = lua.create_table()?;
         plays.set("args", to_lua(&lua, &args)?)?;
-        plays.set("window_id", here.window.clone())?;
-        plays.set("block_id", here.block.clone())?;
+        plays.set("window_id", here.borrow().window.clone())?;
+        plays.set("block_id", here.borrow().block.clone())?;
         plays.set("null", lua.null())?;
         let by_id = scope.create_function(|lua, (id, args): (String, LuaValue)| {
-            call(lua, &session, &events, &id, args, &here)
+            call(lua, &session, &events, &id, args, &here.borrow())
         })?;
         plays.set("call", by_id)?;
         let command = scope.create_function(|lua, (node, args): (Table, LuaValue)| {
@@ -103,7 +115,7 @@ pub fn run(session: &mut Session, script: Script, args: Value) -> Done {
                 .metatable()
                 .ok_or_else(|| mlua::Error::runtime("not a command"))?
                 .raw_get("id")?;
-            call(lua, &session, &events, &id, args, &here)
+            call(lua, &session, &events, &id, args, &here.borrow())
         })?;
         add_commands(&lua, &plays, &command)?;
         let stops =
@@ -115,6 +127,7 @@ pub fn run(session: &mut Session, script: Script, args: Value) -> Done {
         )?;
         let wait = scope.create_function(|lua, args| waiting::wait(lua, &events, args))?;
         plays.set("wait", wait)?;
+        plays.set("on", scope.create_function(|_, args| handlers.on(args))?)?;
         let log = scope.create_function(|_, values: MultiValue| {
             let line = line(&tostring, values)?;
             write_all(&mut *session.borrow_mut().err, &line)
@@ -126,15 +139,27 @@ pub fn run(session: &mut Session, script: Script, args: Value) -> Done {
         })?;
         lua.globals().set("print", print)?;
         lua.globals().set("plays", plays)?;
-        lua.load(&script.code[..])
+        let returned = lua
+            .load(&script.code[..])
             .set_name(&script.name)
-            .call::<MultiValue>(())
+            .call::<MultiValue>(())?;
+        let say = |line: &str| writeln!(session.borrow_mut().err, "{line}");
+        let listener = Listener {
+            lua: &lua,
+            handlers: &handlers,
+            events: &events,
+            here: &here,
+            window: window.as_deref(),
+            stopped: &stopped,
+            say: &say,
+        };
+        let printed = print_returned(&mut session.borrow_mut(), &lua, returned);
+        Ok(printed.and_then(|()| handlers::listen(&listener, listening)))
     });
     if let Some(status) = stopped.get() {
         return Err(Stop::Exit(status));
     }
-    let returned = ran.map_err(failed)?;
-    print_returned(session.into_inner(), &lua, returned)
+    ran.map_err(failed)?
 }
 
 /// The ids of the window and block `-w` and `-b` name, else of the window

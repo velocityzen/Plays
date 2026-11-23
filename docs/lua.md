@@ -9,6 +9,7 @@ plays do -e 'return plays.window.ls()'     # code
 echo 'print(plays.window_id)' | plays do - # stdin
 plays do seek.lua --args '{"times": [10, 20]}'
 plays do seek.lua --args @args.json
+plays do loop.lua --for 10m --fail-fast    # listen 10m, end at a failure
 ```
 
 ## What a script has
@@ -26,6 +27,8 @@ plays do seek.lua --args @args.json
 - `plays.sleep(seconds)`: waits that long.
 - `plays.wait(event, filter, timeout)`: waits for an event, as in
   [commands.md](commands.md#events); see [Waiting](#waiting).
+- `plays.on(event, function(ctx, event))`: a handler; see
+  [Handlers](#handlers).
 - `require`: modules beside the script first.
 - Lua's standard library, without `debug`, `io.popen`, `os.execute` and C
   modules.
@@ -44,8 +47,31 @@ plays do seek.lua --args @args.json
 - What it returns: the event's payload; nil and "timeout" once `timeout`
   seconds are up; nil and why if Plays goes. No timeout waits on.
 - What it hears: what happens from the start of the last call before it,
-  or from the wait itself if there's none; each event once, in order,
-  those it passes over gone.
+  in a handler the last in it; with none, from the wait's start, or in a
+  handler from its event. Each event once, in order, those it passes over
+  gone, for handlers too.
+- Everything's events; with `-w`, that window's.
+
+## Handlers
+
+```lua
+plays.on("playback.ended", function(ctx, event)
+  plays.playback.seek{time = 0} -- on the block that ended
+end)
+```
+
+- Registered as the script first runs; `plays.on` in a handler is an
+  error. Event names aren't checked.
+- Run once the first run is over, one at a time, for each event heard
+  from the script's first call or wait on, or else from then, in order.
+- `ctx.window_id`, `ctx.block_id`: the event's; calls in a handler act on
+  them.
+- A wait or a sleep in a handler holds the others.
+- Listens until `plays.stop`, `--for` is up (`90`, `90s`, `10m`, `1.5h`),
+  Plays quits, the window `-w` names closes, or Ctrl-C (exit status 130).
+  Says `listening: N handlers; Ctrl-C to stop` on stderr.
+- A handler failing is said on stderr, and the script goes on; with
+  `--fail-fast` it ends, exit status 1.
 
 ## What it prints
 

@@ -191,6 +191,18 @@ fn help_and_the_version_print_and_a_bad_command_line_says_why() {
             &["wait", "playback.ended", "--timeout", "-1"],
             "can't wait -1 seconds",
         ),
+        (
+            &["do", "--for", "10x", "-e", "return 1"],
+            "seconds, as 90 or 90s; minutes, 10m; or hours, 1.5h",
+        ),
+        (
+            &["do", "--for", "1", "window.ls"],
+            "--for and --fail-fast are for scripts",
+        ),
+        (
+            &["do", "--fail-fast", "window.ls"],
+            "--for and --fail-fast are for scripts",
+        ),
     ] {
         let ran = command_line(None, Unanswered::Fails, args);
         assert_eq!(ran.status, 2, "{args:?}: {ran:?}");
@@ -396,6 +408,27 @@ fn what_it_names_are_windows_and_the_blocks_in_them() {
 }
 
 /// `command`'s help, and each of its subcommands', all the way down.
+#[test]
+fn a_duration_is_seconds_minutes_or_hours() {
+    for (given, seconds) in [
+        ("90", 90.0),
+        ("90s", 90.0),
+        ("0.3s", 0.3),
+        ("10m", 600.0),
+        ("1.5h", 5400.0),
+    ] {
+        let lasting = args::lasting(given);
+        assert_eq!(
+            lasting,
+            Ok(std::time::Duration::from_secs_f64(seconds)),
+            "{given}"
+        );
+    }
+    for given in ["10x", "-1", "-1m", "m", "", "inf", "NaN"] {
+        assert!(args::lasting(given).is_err(), "{given}");
+    }
+}
+
 fn every_help(command: &mut clap::Command, help: &mut String) {
     help.push_str(&command.render_long_help().to_string());
     for sub in command.get_subcommands_mut() {

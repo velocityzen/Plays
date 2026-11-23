@@ -232,7 +232,15 @@ impl Session<'_> {
                 args,
                 eval,
                 json_args,
-            } => self.run_do(command, args, eval, json_args.as_deref()),
+                listen_for,
+                fail_fast,
+            } => {
+                let listening = lua::Listening {
+                    at_most: listen_for,
+                    fail_fast,
+                };
+                self.run_do(command, args, eval, json_args.as_deref(), listening)
+            }
             Command::Actions { search, markdown } => {
                 reference::actions(self.out, self.options.json, markdown, search.as_deref())
             }
@@ -253,13 +261,15 @@ impl Session<'_> {
     }
 
     /// `plays do`: run the command `given` names, or the script, with the
-    /// arguments `pairs` or `json` give.
+    /// arguments `pairs` or `json` give, a script listening as `listening`
+    /// says.
     fn run_do(
         &mut self,
         given: Option<String>,
         mut pairs: Vec<String>,
         eval: Option<String>,
         json: Option<&str>,
+        listening: lua::Listening,
     ) -> Done {
         let script = match (eval, given) {
             (Some(code), first) => {
@@ -268,6 +278,9 @@ impl Session<'_> {
                 lua::Script::inline(code)
             }
             (None, Some(name)) if lua::is_script(&name) => lua::Script::read(&name, self.input)?,
+            (None, Some(_)) if listening.at_most.is_some() || listening.fail_fast => {
+                return Err(Stop::Usage("--for and --fail-fast are for scripts".into()));
+            }
             (None, Some(command)) => {
                 let args = given_arguments(&command, &pairs, json)?;
                 let result = self.call(&command, args)?;
@@ -279,7 +292,7 @@ impl Session<'_> {
             Value::Null => json!({}),
             args => args,
         };
-        lua::run(self, script, args)
+        lua::run(self, script, args, listening)
     }
 
     /// Plays, connected to, or started first.

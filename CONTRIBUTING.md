@@ -179,7 +179,7 @@ mod tests;
 - `src/settings/tests/`: each setting's key and the values it takes
 - `src/tests/`: the settings, progress, recents and hotkeys files; the command line
 - `src/cli/tests/`: shell completions, `events` and `wait`, tables, Lua scripts
-- `src/cli/lua/tests/`: a script's sleeps and waits
+- `src/cli/lua/tests/`: a script's sleeps, waits and handlers
 - `src/api/tests/`, `src/api/*/tests/`: commands, events, the socket
 - `src/cast/tests/`: each protocol's profiles, AirPlay pairings, the cast link
 - `crates/*/src/tests/`: each crate on its own, protocols against fake devices
