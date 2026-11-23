@@ -141,11 +141,37 @@ printf '%s\n' "${COMPREPLY[@]}""#;
     printed(&output)
 }
 
+/// Beside the script in `scratch`: a Lua script, a folder with one in it,
+/// and a film.
+fn scripts_beside(scratch: &Scratch) {
+    let folder = &scratch.folder;
+    fs::create_dir(folder.join("scripts")).unwrap();
+    for file in [
+        "seek.lua",
+        "scripts/next.lua",
+        "film.mkv",
+        "scripts/film.mkv",
+    ] {
+        fs::write(folder.join(file), b"").unwrap();
+    }
+}
+
 #[test]
 fn bash_completes_subcommands_commands_ids_setting_keys_and_shells() {
     let scratch = with_script("bash", Shell::Bash);
     let offers = |words: &[&str]| bash_offers(&scratch.script, words);
     assert_eq!(offers(&["plays", "wi"]), ["window"]);
+    // Lua scripts, and folders to find them in.
+    scripts_beside(&scratch);
+    let folder = scratch.folder.to_str().unwrap();
+    let mut scripts = offers(&["plays", "do", &format!("{folder}/s")]);
+    scripts.sort();
+    let script = |name: &str| format!("{folder}/{name}");
+    assert_eq!(scripts, [script("scripts"), script("seek.lua")]);
+    assert_eq!(
+        offers(&["plays", "do", &format!("{folder}/scripts/")]),
+        [script("scripts/next.lua")]
+    );
     let seeks = offers(&["plays", "do", "playback.seek"]);
     assert!(
         seeks.contains(&"playback.seek_forward".to_owned()),
@@ -238,6 +264,18 @@ fn fish_completes_commands_ids_setting_keys_and_shells_and_still_files() {
     shells.sort();
     assert_eq!(shells, ["bash", "fish", "nushell", "zsh"]);
     assert_eq!(offers("plays open fi"), Some(vec!["film.mkv".to_owned()]));
+
+    // Lua scripts, and folders to find them in; then nor them nor ids.
+    scripts_beside(&scratch);
+    let scripts = |line| offers(line).unwrap();
+    assert_eq!(scripts("plays do sc"), ["scripts/"]);
+    assert_eq!(scripts("plays do see"), ["seek.lua"]);
+    assert_eq!(scripts("plays do scripts/"), ["scripts/next.lua"]);
+    let all = scripts("plays do ");
+    assert!(all.contains(&"seek.lua".to_owned()), "{all:?}");
+    assert!(!all.contains(&"film.mkv".to_owned()), "{all:?}");
+    let given = scripts("plays do seek.lua ");
+    assert!(!given.iter().any(|id| id.contains('\t')), "{given:?}");
 }
 
 #[test]
@@ -249,20 +287,26 @@ fn nushell_offers_the_commands_ids_and_setting_keys_each_with_what_it_is() {
     // What the completer called `name` offers, from its opening brace to
     // its closing one.
     let offers = |name: &str| -> &str {
-        let head = format!("def \"nu-complete {name}\" [] {{");
-        let at = text.find(&head).unwrap_or_else(|| panic!("no {name}")) + head.len();
+        let head = format!("def \"nu-complete {name}\" [");
+        let at = text.find(&head).unwrap_or_else(|| panic!("no {name}"));
+        let at = at + text[at..].find('{').unwrap() + 1;
         &text[at..at + text[at..].find("\n  }").unwrap()]
     };
     let seek = r#"{ value: "playback.seek", description: "Seek To" }"#;
     for path in ["plays do", "plays api describe", "plays api call"] {
-        let typed = format!(r#"command: string@"nu-complete {path} command""#);
+        let typed = format!(r#": string@"nu-complete {path} command""#);
         assert!(text.contains(&typed), "{path}");
         let names = offers(&format!("{path} command"));
         assert!(names.contains(seek), "{names}");
         assert_eq!(
-            names.matches("{ value: ").count(),
+            names.matches("{ value: \"").count(),
             api::all().count(),
             "{path}: each command, with what it is"
+        );
+        assert_eq!(
+            names.contains("str ends-with \".lua\""),
+            path == "plays do",
+            "{path}: Lua scripts too"
         );
     }
     let size = fields::find("subtitles.size", &[]).unwrap();
@@ -351,6 +395,16 @@ fn nushell_completes_commands_ids_setting_keys_shells_and_files() {
         Some(vec!["nushell".to_owned()])
     );
     assert_eq!(offers("plays open fi"), Some(vec!["film.mkv".to_owned()]));
+
+    // Lua scripts, and folders to find them in.
+    scripts_beside(&scratch);
+    let scripts = |line| offers(line).unwrap();
+    assert_eq!(scripts("plays do sc"), ["scripts/"]);
+    assert_eq!(scripts("plays do see"), ["seek.lua"]);
+    assert_eq!(scripts("plays do scripts/"), ["scripts/next.lua"]);
+    let all = scripts("plays do ");
+    assert!(all.contains(&"seek.lua".to_owned()), "{all:?}");
+    assert!(!all.contains(&"film.mkv".to_owned()), "{all:?}");
 }
 
 #[test]
@@ -374,7 +428,7 @@ fn zsh_reads_its_script_and_it_offers_the_commands_ids_and_files() {
             })
             .collect()
     };
-    let commands = offers("':command");
+    let commands = [offers("':command"), offers("'names:command:")].concat();
     assert_eq!(commands.len(), 3, "do, api describe and api call");
     for names in commands {
         assert!(names.contains(r#"playback.seek\:"Seek To""#), "{names}");
@@ -384,6 +438,11 @@ fn zsh_reads_its_script_and_it_offers_the_commands_ids_and_files() {
     for names in keys {
         assert!(names.contains(r"subtitles.size\:"), "{names}");
     }
+    assert!(
+        text.contains(":_plays__subcmd__do__command' \\\n"),
+        "do's word offers both"
+    );
+    assert!(text.contains(r#"'files:file:_files -g "*.lua"'"#));
     assert!(text.contains("':shell:(bash zsh fish nushell)'"));
     assert!(text.contains("'*::paths:_files'"));
     assert!(!text.contains("complete -c plays"), "fish's lines");

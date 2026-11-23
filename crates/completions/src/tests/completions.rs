@@ -17,8 +17,8 @@ use super::*;
 const AWKWARD: &str = r#"it's "quoted", $HOME, (not run), a back\slash and two \\"#;
 
 /// The command line the tests complete, run as `my-probe`: `play` takes a
-/// word with names, `config get` a key, nested a level down, and `open`
-/// files.
+/// word with names, given always, `config get` a key, nested a level down,
+/// and `open` files.
 fn probe() -> Command {
     let words = PossibleValuesParser::new([
         PossibleValue::new("one").help("The first"),
@@ -30,7 +30,7 @@ fn probe() -> Command {
         PossibleValue::new("size.large").help("Large"),
     ]);
     Command::new("my-probe")
-        .subcommand(Command::new("play").arg(Arg::new("word").value_parser(words)))
+        .subcommand(Command::new("play").arg(Arg::new("word").required(true).value_parser(words)))
         .subcommand(
             Command::new("config")
                 .subcommand(Command::new("get").arg(Arg::new("key").value_parser(keys))),
@@ -57,16 +57,23 @@ impl Drop for Scratch {
     }
 }
 
+/// The words of the tests' command line that take files: `play`'s, Lua
+/// scripts besides its names.
+const SCRIPTS: Files = Files {
+    path: &["play"],
+    suffix: ".lua",
+};
+
 /// A folder of the test's own, named for it, with the script for `shell`
-/// in it as `file`.
-fn with_script(name: &str, shell: Shell, file: &str) -> Scratch {
+/// in it as `file`, `files` naming the words that take files.
+fn with_script(name: &str, shell: Shell, file: &str, files: &[Files]) -> Scratch {
     let folder = std::env::temp_dir()
         .join("completions-tests")
         .join(format!("{name}-{}", std::process::id()));
     let _ = fs::remove_dir_all(&folder);
     fs::create_dir_all(&folder).unwrap();
     let path = folder.join(file);
-    fs::write(&path, script(shell, &mut probe(), "my-probe")).unwrap();
+    fs::write(&path, script(shell, &mut probe(), "my-probe", files)).unwrap();
     Scratch {
         folder,
         script: path,
@@ -75,7 +82,7 @@ fn with_script(name: &str, shell: Shell, file: &str) -> Scratch {
 
 #[test]
 fn a_tests_folder_goes_once_it_is_done_with() {
-    let scratch = with_script("gone", Shell::Bash, "my-probe.bash");
+    let scratch = with_script("gone", Shell::Bash, "my-probe.bash", &[]);
     let folder = scratch.folder.clone();
     assert!(scratch.script.is_file());
     drop(scratch);
@@ -116,7 +123,7 @@ fn bash_and_zsh_have_clap_scripts_as_they_are() {
         let mut theirs = Vec::new();
         clap_complete::generate(clap, &mut probe(), "my-probe", &mut theirs);
         assert_eq!(
-            script(shell, &mut probe(), "my-probe"),
+            script(shell, &mut probe(), "my-probe", &[]),
             String::from_utf8(theirs).unwrap(),
             "{shell:?}"
         );
@@ -135,7 +142,7 @@ fn fish_offers(folder: &Path, script: &Path, line: &str) -> Option<Vec<String>> 
 
 #[test]
 fn fish_offers_the_names_a_word_takes_until_one_is_given() {
-    let scratch = with_script("fish", Shell::Fish, "my-probe.fish");
+    let scratch = with_script("fish", Shell::Fish, "my-probe.fish", &[]);
     fs::write(scratch.folder.join("film.mkv"), b"").unwrap();
     let offers = |line: &str| fish_offers(&scratch.folder, &scratch.script, line);
     let Some(words) = offers("my-probe play ") else {
@@ -202,7 +209,7 @@ fn nu_offers(folder: &Path, line: &str) -> Option<Vec<String>> {
 
 #[test]
 fn nushell_offers_the_names_a_word_takes() {
-    let scratch = with_script("nushell", Shell::Nushell, "my-probe.nu");
+    let scratch = with_script("nushell", Shell::Nushell, "my-probe.nu", &[]);
     fs::write(scratch.folder.join("film.mkv"), b"").unwrap();
     let offers = |line: &str| nu_offers(&scratch.folder, line);
     let Some(mut words) = offers("my-probe play ") else {
@@ -220,7 +227,7 @@ fn nushell_offers_the_names_a_word_takes() {
 
 #[test]
 fn nushell_lists_each_name_with_what_it_is() {
-    let scratch = with_script("nushell-text", Shell::Nushell, "my-probe.nu");
+    let scratch = with_script("nushell-text", Shell::Nushell, "my-probe.nu", &[]);
     let text = fs::read_to_string(&scratch.script).unwrap();
     assert!(text.starts_with("module completions {"), "{text}");
     assert!(text.ends_with("export use completions *\n"));
@@ -252,4 +259,144 @@ fn nushell_reads_what_it_offers_as_it_is() {
     if let Some(printed) = ask("nu", &folder, &["--no-config-file", "-c", &read]) {
         assert_eq!(printed, [AWKWARD, AWKWARD]);
     }
+}
+
+/// Beside the script in `scratch`: a Lua script, a folder with one in it,
+/// and a film.
+fn scripts_beside(scratch: &Scratch) {
+    let folder = &scratch.folder;
+    fs::create_dir(folder.join("scripts")).unwrap();
+    for file in [
+        "seek.lua",
+        "scripts/next.lua",
+        "film.mkv",
+        "scripts/film.mkv",
+    ] {
+        fs::write(folder.join(file), b"").unwrap();
+    }
+}
+
+/// What bash offers for the last of `words`, in `folder`, with `script`
+/// loaded, written for the command line run as `probe`.
+fn bash_offers(folder: &Path, script: &Path, words: &[&str]) -> Option<Vec<String>> {
+    const ASK: &str = r#"source "$1"; shift
+COMP_WORDS=("$@"); COMP_CWORD=$(($# - 1)); COMP_LINE="$*"; COMP_POINT=${#COMP_LINE}
+_probe probe "${COMP_WORDS[COMP_CWORD]}" "${COMP_WORDS[COMP_CWORD-1]}"
+printf '%s\n' "${COMPREPLY[@]}""#;
+    let script = script.to_str().unwrap();
+    let args = [
+        &["--norc", "--noprofile", "-c", ASK, "bash", script][..],
+        words,
+    ]
+    .concat();
+    let mut offers = ask("bash", folder, &args)?;
+    offers.sort();
+    Some(offers)
+}
+
+#[test]
+fn bash_offers_the_files_a_word_takes_besides_its_names() {
+    let scratch = with_script("bash-files", Shell::Bash, "probe.bash", &[SCRIPTS]);
+    // As `probe`: clap's script for a name with a dash never reaches its
+    // subcommands, naming their cases apart from what it reads.
+    fs::write(
+        &scratch.script,
+        script(Shell::Bash, &mut probe(), "probe", &[SCRIPTS]),
+    )
+    .unwrap();
+    scripts_beside(&scratch);
+    let offers = |words: &[&str]| bash_offers(&scratch.folder, &scratch.script, words);
+    let Some(all) = offers(&["probe", "play", ""]) else {
+        return;
+    };
+    for offered in ["one", "awkward", "scripts", "seek.lua"] {
+        assert!(all.contains(&offered.to_owned()), "{offered}: {all:?}");
+    }
+    assert!(!all.contains(&"film.mkv".to_owned()), "{all:?}");
+    assert_eq!(
+        offers(&["probe", "play", "s"]).unwrap(),
+        ["scripts", "seek.lua"]
+    );
+    assert_eq!(
+        offers(&["probe", "play", "scripts/"]).unwrap(),
+        ["scripts/next.lua"]
+    );
+    assert_eq!(offers(&["probe", "play", "-"]).unwrap(), ["--help", "-h"]);
+}
+
+#[test]
+fn zsh_offers_the_files_a_word_takes_besides_its_names() {
+    let scratch = with_script("zsh-files", Shell::Zsh, "_my-probe", &[SCRIPTS]);
+    let text = fs::read_to_string(&scratch.script).unwrap();
+    if ask("zsh", &scratch.folder, &["--no-rcs", "-n", "_my-probe"]).is_none() {
+        return;
+    }
+    assert!(
+        text.contains("':word:_my-probe__subcmd__play__word' \\\n"),
+        "{text}"
+    );
+    let function = "(( $+functions[_my-probe__subcmd__play__word] )) ||
+_my-probe__subcmd__play__word() {
+    _alternative \\
+        'names:word:((one\\:\"The first\"";
+    assert!(text.contains(function), "{text}");
+    assert!(
+        text.contains(
+            "'files:file:_files -g \"*.lua\"'\n}\n\nif [ \"$funcstack[1]\" = \"_my-probe\" ]"
+        ),
+        "{text}"
+    );
+}
+
+#[test]
+fn fish_offers_the_files_a_word_takes_besides_its_names_until_one_is_given() {
+    let scratch = with_script("fish-files", Shell::Fish, "my-probe.fish", &[SCRIPTS]);
+    scripts_beside(&scratch);
+    let offers = |line: &str| fish_offers(&scratch.folder, &scratch.script, line);
+    let Some(all) = offers("my-probe play ") else {
+        return;
+    };
+    for offered in ["one\tThe first", "scripts/", "seek.lua"] {
+        assert!(all.contains(&offered.to_owned()), "{offered}: {all:?}");
+    }
+    assert!(!all.contains(&"film.mkv".to_owned()), "{all:?}");
+    assert_eq!(offers("my-probe play se").unwrap(), ["seek.lua"]);
+    assert_eq!(
+        offers("my-probe play scripts/").unwrap(),
+        ["scripts/next.lua"]
+    );
+    // Nor names once a file's given: fish's own files then, as for any
+    // word.
+    let then = offers("my-probe play seek.lua ").unwrap();
+    assert!(!then.iter().any(|word| word.contains('\t')), "{then:?}");
+}
+
+#[test]
+fn nushell_offers_the_files_a_word_takes_besides_its_names() {
+    let scratch = with_script("nushell-files", Shell::Nushell, "my-probe.nu", &[SCRIPTS]);
+    scripts_beside(&scratch);
+    let text = fs::read_to_string(&scratch.script).unwrap();
+    assert!(
+        text.contains("def \"nu-complete my-probe play word\" [context: string] {"),
+        "{text}"
+    );
+    assert!(
+        text.contains("def \"nu-complete my-probe config get key\" [] {"),
+        "{text}"
+    );
+    let offers = |line: &str| nu_offers(&scratch.folder, line);
+    let Some(mut all) = offers("my-probe play ") else {
+        return;
+    };
+    all.sort();
+    assert_eq!(all, ["awkward", "bare", "one", "scripts/", "seek.lua"]);
+    assert_eq!(offers("my-probe play se").unwrap(), ["seek.lua"]);
+    assert_eq!(
+        offers("my-probe play scripts/").unwrap(),
+        ["scripts/next.lua"]
+    );
+    assert_eq!(
+        offers("my-probe play nowhere/").unwrap(),
+        Vec::<String>::new()
+    );
 }

@@ -2,7 +2,7 @@
 name = "completions"
 version = "0.1.0"
 edition = "2024"
-description = "Scripts that complete a clap command line in bash, zsh, fish and Nushell, with what clap's own leave out: in fish, the names a word takes; in Nushell, what each name is"
+description = "Scripts that complete a clap command line in bash, zsh, fish and Nushell, with what clap's own leave out: in fish, the names a word takes; in Nushell, what each name is; and files a word takes besides its names"
 license = "MIT"
 publish = false
 

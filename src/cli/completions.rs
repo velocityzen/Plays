@@ -1,7 +1,7 @@
 //! `plays completions SHELL`: the script that has bash, zsh, fish or
 //! Nushell complete the command line, its subcommands and options, the ids of
 //! Plays' commands for `do` and `api`, and with their namespaces for
-//! `actions`, setting keys, and files to open.
+//! `actions`, setting keys, files to open, and Lua scripts for `do`.
 //! It's written from what clap knows of the command line and the registry
 //! this program has, so Plays needn't be running; one built with other
 //! commands writes them. What clap's scripts leave out, crate
@@ -10,6 +10,7 @@
 use std::io::{self, Write};
 use std::sync::Arc;
 
+use ::completions::Files;
 use clap::builder::{PossibleValue, PossibleValuesParser};
 use clap::{Command, CommandFactory};
 
@@ -27,7 +28,11 @@ pub fn completions(out: &mut dyn Write, shell: Shell) -> io::Result<()> {
         Shell::Fish => ::completions::Shell::Fish,
         Shell::Nushell => ::completions::Shell::Nushell,
     };
-    out.write_all(::completions::script(shell, &mut command(), "plays").as_bytes())
+    let scripts = Files {
+        path: &["do"],
+        suffix: ".lua",
+    };
+    out.write_all(::completions::script(shell, &mut command(), "plays", &[scripts]).as_bytes())
 }
 
 /// The command line as clap reads it, with the names each word can be:

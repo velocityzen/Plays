@@ -98,9 +98,9 @@ script/bundle-macos
 ### Licenses
 
 - Plays is MIT (`LICENSE`), built with FFmpeg (LGPL 2.1 or later) and
-  dav1d (BSD 2-Clause), from unchanged source, GPUI (Apache 2.0), and the
-  crates in `Cargo.lock`.
-- Settings → About credits FFmpeg, dav1d and GPUI, with their license
+  dav1d (BSD 2-Clause), from unchanged source, GPUI (Apache 2.0), Lua
+  (MIT), and the crates in `Cargo.lock`.
+- Settings → About credits FFmpeg, dav1d, GPUI and Lua, with their license
   texts, from `resources/attributions.json`, which `script/attributions`
   writes (`script/bundle-macos` runs it).
 
@@ -177,7 +177,7 @@ mod tests;
 - `src/app/tests/`: menus, the keymap, windows, audio devices, speakers, Bluetooth
 - `src/settings/tests/`: each setting's key and the values it takes
 - `src/tests/`: the settings, progress, recents and hotkeys files; the command line
-- `src/cli/tests/`: shell completions, `events` and `wait`, tables
+- `src/cli/tests/`: shell completions, `events` and `wait`, tables, Lua scripts
 - `src/api/tests/`, `src/api/*/tests/`: commands, events, the socket
 - `src/cast/tests/`: each protocol's profiles, AirPlay pairings, the cast link
 - `crates/*/src/tests/`: each crate on its own, protocols against fake devices
@@ -277,7 +277,8 @@ time); Vulkan can be software (lavapipe). It uses `Xvfb`, `openbox`,
   builds for Linux with
   `cargo check -p gpui --target aarch64-unknown-linux-gnu --tests` (needs
   a C compiler for that target).
-- When FFmpeg, dav1d or gpui changes, run `script/attributions`.
+- When FFmpeg, dav1d, gpui or Lua (crate `lua-src`) changes, run
+  `script/attributions`.
 - The test fixtures are committed; change them with `script/make-fixtures`.
 - After changing a command or an event, write the reference again with
   `cargo run -- actions --markdown > docs/commands.md`. Developer commands,

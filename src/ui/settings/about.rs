@@ -1,5 +1,5 @@
 //! About: the app's version and license, and what it is built with: FFmpeg,
-//! dav1d and GPUI, from `resources/attributions.json` (which
+//! dav1d, GPUI and Lua, from `resources/attributions.json` (which
 //! `script/attributions` writes), each opening to its license.
 
 use std::ffi::CStr;
@@ -24,7 +24,7 @@ const LICENSE: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/LICENSE
 /// What `script/attributions` writes.
 #[derive(Deserialize)]
 struct Attributions {
-    /// FFmpeg, dav1d and GPUI.
+    /// FFmpeg, dav1d, GPUI and Lua.
     libraries: Vec<Credit>,
     /// The license texts, which credits refer to by index.
     texts: Vec<String>,
@@ -276,6 +276,7 @@ fn credit(library: &'static Credit, texts: &'static [String]) -> Entry {
         },
         "dav1d" => entry.hint("Decodes AV1 video, in FFmpeg."),
         "GPUI" => entry.hint("Draws the windows. Made by the Zed team at Zed Industries."),
+        "Lua" => entry.hint("Runs the scripts plays do runs."),
         _ => entry,
     }
 }

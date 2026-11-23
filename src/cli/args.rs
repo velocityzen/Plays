@@ -50,13 +50,23 @@ pub struct Options {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
-    /// Run a command: plays do playback.seek time=90.
+    /// Run a command, plays do playback.seek time=90, or a Lua script: a
+    /// file, plays do seek.lua, code with -e, or stdin with -.
     Do {
-        /// The command's id, as plays actions lists them.
-        command: String,
-        /// Its arguments, each KEY=VALUE. A key given again makes a list.
-        #[arg(value_name = "KEY=VALUE")]
+        /// The command's id, as plays actions lists them; or a script, a file
+        /// when it ends in .lua or has a slash, stdin when -.
+        #[arg(value_name = "COMMAND|SCRIPT", required_unless_present = "eval")]
+        command: Option<String>,
+        /// Its arguments, each KEY=VALUE, a value read as JSON if it is some.
+        /// A key given again makes a list.
+        #[arg(value_name = "KEY=VALUE", value_hint = ValueHint::Other)]
         args: Vec<String>,
+        /// Run this Lua code.
+        #[arg(short, long, value_name = "CODE")]
+        eval: Option<String>,
+        /// The arguments as JSON, or @FILE for the file's.
+        #[arg(long = "args", value_name = "JSON|@FILE")]
+        json_args: Option<String>,
     },
     /// List the commands, or those whose id or title has SEARCH: their ids,
     /// titles and keys.

@@ -44,6 +44,9 @@ gpui = "0.2.2"
 # JPEG for screenshots; PNG goes straight through `png`, which can tag HDR.
 image = { version = "0.25", default-features = false, features = ["jpeg"] }
 log = "0.4"
+# The Lua scripts `plays do` runs: Lua 5.4, built in, its values to and
+# from JSON.
+mlua = { version = "0.12", features = ["lua54", "vendored", "serialize"] }
 parking_lot = "0.12"
 png = "0.18"
 # The threads converting pictures on the CPU share out each frame's rows;

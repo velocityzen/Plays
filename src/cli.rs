@@ -7,12 +7,16 @@
 //! failed, 2 a bad command line, 3 nothing by the name given, 4 no Plays
 //! to ask, and 130 stopped with Ctrl-C, which nothing here catches.
 //!
+//! `plays do` runs a Lua script too (`lua`), in this process, a client of
+//! the Plays running as the command line is.
+//!
 //! `plays FILE…`, with no subcommand, isn't the command line's: it's
 //! Plays started with files, which hands them to the one running.
 
 mod args;
 mod completions;
 mod events;
+mod lua;
 mod reference;
 mod show;
 mod windows;
@@ -22,7 +26,7 @@ mod windows;
 mod tests;
 
 use std::ffi::OsString;
-use std::io::{self, Write};
+use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 
 use clap::{CommandFactory, Parser};
@@ -64,17 +68,23 @@ pub fn wanted(args: &[OsString]) -> bool {
 }
 
 /// Run the command line `args` asks for, as this process: on the socket
-/// Plays answers on, starting it if need be, printing to stdout and
-/// stderr. Its exit status.
+/// Plays answers on, starting it if need be, reading stdin, printing to
+/// stdout and stderr. Its exit status.
 pub fn main(args: Vec<OsString>) -> u8 {
     let start = client::start_plays;
-    run(
-        args,
-        api::socket::path(),
-        Some(&start),
-        &mut io::stdout().lock(),
-        &mut io::stderr().lock(),
-    )
+    let streams = Streams {
+        input: &mut io::stdin().lock(),
+        out: &mut io::stdout().lock(),
+        err: &mut io::stderr().lock(),
+    };
+    run(args, api::socket::path(), Some(&start), streams)
+}
+
+/// Where a command line reads and prints: stdin, stdout and stderr.
+pub struct Streams<'a> {
+    pub input: &'a mut dyn Read,
+    pub out: &'a mut dyn Write,
+    pub err: &'a mut dyn Write,
 }
 
 /// Run the command line `args` asks for, asking the Plays answering at
@@ -84,9 +94,9 @@ pub fn run(
     args: Vec<OsString>,
     socket: Option<PathBuf>,
     start: Option<&dyn Fn() -> io::Result<()>>,
-    out: &mut dyn Write,
-    err: &mut dyn Write,
+    streams: Streams,
 ) -> u8 {
+    let Streams { input, out, err } = streams;
     let cli = match Cli::try_parse_from(std::iter::once(OsString::from("plays")).chain(args)) {
         Ok(cli) => cli,
         // Help and the version too, which aren't errors.
@@ -103,12 +113,17 @@ pub fn run(
         options: cli.options,
         socket,
         start,
+        input,
         out,
+        err: &mut *err,
         client: None,
     };
-    match session.run(cli.command) {
+    let ran = session.run(cli.command);
+    drop(session);
+    match ran {
         Ok(()) => 0,
         Err(Stop::Output(broken)) if broken.kind() == io::ErrorKind::BrokenPipe => 0,
+        Err(Stop::Exit(status)) => status,
         Err(stop) => {
             writeln!(err, "plays: {stop}").ok();
             stop.exit_status()
@@ -126,6 +141,11 @@ enum Stop {
     /// What came back couldn't be printed: stdout closed, as `| head`
     /// closes it, say.
     Output(io::Error),
+    /// A script failed, saying why.
+    Script(String),
+    /// A script stopped with this exit status (`plays.stop`), saying
+    /// nothing.
+    Exit(u8),
 }
 
 impl Stop {
@@ -133,7 +153,8 @@ impl Stop {
         match self {
             Self::Failed(failure) => failure.exit_status(),
             Self::Usage(_) => 2,
-            Self::Output(_) => 1,
+            Self::Output(_) | Self::Script(_) => 1,
+            Self::Exit(status) => *status,
         }
     }
 }
@@ -142,8 +163,9 @@ impl std::fmt::Display for Stop {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Failed(failure) => failure.fmt(f),
-            Self::Usage(why) => f.write_str(why),
+            Self::Usage(why) | Self::Script(why) => f.write_str(why),
             Self::Output(err) => write!(f, "can't print: {err}"),
+            Self::Exit(status) => write!(f, "stopped with {status}"),
         }
     }
 }
@@ -168,24 +190,27 @@ impl From<Error> for Stop {
 
 type Done = Result<(), Stop>;
 
-/// A command line running: what it was given, where it prints, and
-/// Plays, once asked.
+/// A command line running: what it was given, where it reads and prints,
+/// and Plays, once asked.
 struct Session<'a> {
     options: Options,
     socket: Option<PathBuf>,
     start: Option<&'a dyn Fn() -> io::Result<()>>,
+    input: &'a mut dyn Read,
     out: &'a mut dyn Write,
+    err: &'a mut dyn Write,
     client: Option<Client>,
 }
 
 impl Session<'_> {
     fn run(&mut self, command: Command) -> Done {
         match command {
-            Command::Do { command, args } => {
-                let args = arguments(&command, &args)?;
-                let result = self.call(&command, args)?;
-                self.result(&result)
-            }
+            Command::Do {
+                command,
+                args,
+                eval,
+                json_args,
+            } => self.run_do(command, args, eval, json_args.as_deref()),
             Command::Actions { search, markdown } => {
                 reference::actions(self.out, self.options.json, markdown, search.as_deref())
             }
@@ -203,6 +228,36 @@ impl Session<'_> {
                 completions::completions(self.out, shell).map_err(Stop::Output)
             }
         }
+    }
+
+    /// `plays do`: run the command `given` names, or the script, with the
+    /// arguments `pairs` or `json` give.
+    fn run_do(
+        &mut self,
+        given: Option<String>,
+        mut pairs: Vec<String>,
+        eval: Option<String>,
+        json: Option<&str>,
+    ) -> Done {
+        let script = match (eval, given) {
+            (Some(code), first) => {
+                // What came after -e's code is an argument.
+                pairs.splice(0..0, first);
+                lua::Script::inline(code)
+            }
+            (None, Some(name)) if lua::is_script(&name) => lua::Script::read(&name, self.input)?,
+            (None, Some(command)) => {
+                let args = given_arguments(&command, &pairs, json)?;
+                let result = self.call(&command, args)?;
+                return self.result(&result);
+            }
+            (None, None) => return Err(Stop::Usage("name a command or a script".into())),
+        };
+        let args = match given_arguments("", &pairs, json)? {
+            Value::Null => json!({}),
+            args => args,
+        };
+        lua::run(self, script, args)
     }
 
     /// Plays, connected to, or started first.
@@ -366,6 +421,26 @@ impl Session<'_> {
 /// The items of `list`, none if it isn't one.
 fn listed(list: &Value) -> impl Iterator<Item = &Value> {
     list.as_array().into_iter().flatten()
+}
+
+/// The arguments `plays do` was given for `command`: as `json` has them,
+/// JSON or `@FILE` for the file's, else as `pairs`, each `KEY=VALUE`.
+fn given_arguments(command: &str, pairs: &[String], json: Option<&str>) -> Result<Value, Stop> {
+    let Some(json) = json else {
+        return arguments(command, pairs);
+    };
+    if !pairs.is_empty() {
+        return Err(Stop::Usage(
+            "give the arguments as KEY=VALUE or with --args, not both".into(),
+        ));
+    }
+    let text = match json.strip_prefix('@') {
+        Some(file) => std::fs::read_to_string(file)
+            .map_err(|err| Stop::Usage(format!("can't read {file}: {err}")))?,
+        None => json.to_owned(),
+    };
+    serde_json::from_str(&text)
+        .map_err(|err| Stop::Usage(format!("the arguments aren't JSON: {err}")))
 }
 
 /// `pairs`, each `KEY=VALUE`, as `command`'s arguments: each value as its

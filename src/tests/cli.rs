@@ -20,34 +20,49 @@ use crate::ui::workspace::Workspace;
 
 /// What a command line came to: its exit status, and what it printed.
 #[derive(Debug)]
-struct Ran {
-    status: u8,
-    out: String,
-    err: String,
+pub(super) struct Ran {
+    pub(super) status: u8,
+    pub(super) out: String,
+    pub(super) err: String,
 }
 
 impl Ran {
     /// What it printed as JSON.
-    fn json(&self) -> Value {
+    pub(super) fn json(&self) -> Value {
         serde_json::from_str(&self.out).unwrap_or_else(|err| panic!("{err}: {self:?}"))
     }
 
     /// Its status and what it said was wrong.
-    fn failed(&self) -> (u8, &str) {
+    pub(super) fn failed(&self) -> (u8, &str) {
         (self.status, self.err.trim_end())
     }
 }
 
 /// Run `plays ARGS` with Plays answering at `socket`, if anywhere, and
 /// `start` to start one.
-fn command_line(
+pub(super) fn command_line(
     socket: Option<PathBuf>,
     start: Option<&dyn Fn() -> io::Result<()>>,
     args: &[&str],
 ) -> Ran {
+    command_line_reading(socket, start, args, b"")
+}
+
+/// As `command_line`, with `input` on stdin.
+fn command_line_reading(
+    socket: Option<PathBuf>,
+    start: Option<&dyn Fn() -> io::Result<()>>,
+    args: &[&str],
+    mut input: &[u8],
+) -> Ran {
     let args = args.iter().map(OsString::from).collect();
     let (mut out, mut err) = (Vec::new(), Vec::new());
-    let status = run(args, socket, start, &mut out, &mut err);
+    let streams = Streams {
+        input: &mut input,
+        out: &mut out,
+        err: &mut err,
+    };
+    let status = run(args, socket, start, streams);
     Ran {
         status,
         out: String::from_utf8(out).unwrap(),
@@ -57,12 +72,22 @@ fn command_line(
 
 /// Run `plays ARGS` against the Plays answering at `path`, on a thread of
 /// its own, as the app answers.
-fn plays(cx: &mut TestAppContext, path: &Path, args: &[&str]) -> Ran {
-    let path = path.to_owned();
+pub(super) fn plays(cx: &mut TestAppContext, path: &Path, args: &[&str]) -> Ran {
+    plays_reading(cx, path, args, b"")
+}
+
+/// As `plays`, with `input` on stdin.
+pub(super) fn plays_reading(
+    cx: &mut TestAppContext,
+    path: &Path,
+    args: &[&str],
+    input: &[u8],
+) -> Ran {
+    let (path, input) = (path.to_owned(), input.to_owned());
     let args: Vec<String> = args.iter().map(|&arg| arg.to_owned()).collect();
     talk(cx, move || {
         let args: Vec<&str> = args.iter().map(String::as_str).collect();
-        command_line(Some(path), None, &args)
+        command_line_reading(Some(path), None, &args, &input)
     })
 }
 
@@ -87,7 +112,7 @@ fn plays_while(
     running.join().unwrap()
 }
 
-fn window_id(window: WindowHandle<Workspace>, cx: &TestAppContext) -> String {
+pub(super) fn window_id(window: WindowHandle<Workspace>, cx: &TestAppContext) -> String {
     window
         .read_with(cx, |workspace, _| workspace.id().to_string())
         .unwrap()
@@ -146,7 +171,7 @@ fn help_and_the_version_print_and_a_bad_command_line_says_why() {
     for (args, why) in [
         (&["window", "frob"][..], "unrecognized subcommand 'frob'"),
         (&["frob"], "unrecognized subcommand 'frob'"),
-        (&["do"], "<COMMAND>"),
+        (&["do"], "<COMMAND|SCRIPT>"),
         (
             &["do", "window.rename", "Den"],
             "arguments are KEY=VALUE, not Den",
@@ -379,7 +404,12 @@ fn the_command_reference_is_current() {
 fn with_control_off_it_says_where_to_turn_it_on(cx: &mut TestAppContext) {
     let (path, _, mut cx) = serving("cli-off", cx);
     crate::api::socket::tests::allow_control(&mut cx, false);
-    for args in [&["ls"][..], &["do", "playback.toggle_loop"], &["events"]] {
+    for args in [
+        &["ls"][..],
+        &["do", "playback.toggle_loop"],
+        &["do", "-e", "return 1"],
+        &["events"],
+    ] {
         let ran = plays(&mut cx, &path, args);
         assert_eq!(
             ran.failed(),
@@ -1264,7 +1294,12 @@ fn output_closed_ends_it_quietly_and_other_trouble_says_so() {
     let ran = |kind| {
         let mut err = Vec::new();
         let args = owned(&["actions"]);
-        let status = run(args, None, None, &mut Closed(kind), &mut err);
+        let streams = Streams {
+            input: &mut io::empty(),
+            out: &mut Closed(kind),
+            err: &mut err,
+        };
+        let status = run(args, None, None, streams);
         (status, String::from_utf8(err).unwrap())
     };
     assert_eq!(

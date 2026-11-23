@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Write resources/attributions.json, the credits in Settings > About:
-FFmpeg and dav1d, as script/build-ffmpeg builds them, and GPUI, Zed's UI
-framework, from the crate Cargo.lock has, each with the license texts it
-comes with. Plays credits these, not every crate it is built with. Run it
-again when one of them changes.
+FFmpeg and dav1d, as script/build-ffmpeg builds them, GPUI, Zed's UI
+framework, from the crate Cargo.lock has, and Lua, which runs `plays do`'s
+scripts, as the crate lua-src Cargo.lock has builds it; each with the
+license texts it comes with. Plays credits these, not every crate it is
+built with. Run it again when one of them changes.
 """
 
 import json
@@ -43,7 +44,10 @@ class Texts:
 
     def add(self, path):
         with open(path, encoding="utf-8", errors="replace") as file:
-            text = file.read().replace("\r\n", "\n").strip() + "\n"
+            return self.add_text(file.read())
+
+    def add_text(self, text):
+        text = text.replace("\r\n", "\n").strip() + "\n"
         if text not in self.index:
             self.index[text] = len(self.texts)
             self.texts.append(text)
@@ -88,9 +92,8 @@ def native(texts):
     ]
 
 
-def gpui(texts):
-    """GPUI, which draws Plays' windows: the crate Cargo.lock has, as Zed
-    Industries publishes it."""
+def package_named(name):
+    """The crate `name`, as Cargo.lock has it."""
     metadata = json.loads(
         subprocess.run(
             ["cargo", "metadata", "--format-version", "1", "--locked"],
@@ -100,7 +103,13 @@ def gpui(texts):
             text=True,
         ).stdout
     )
-    package = next(package for package in metadata["packages"] if package["name"] == "gpui")
+    return next(package for package in metadata["packages"] if package["name"] == name)
+
+
+def gpui(texts):
+    """GPUI, which draws Plays' windows: the crate Cargo.lock has, as Zed
+    Industries publishes it."""
+    package = package_named("gpui")
     paths = license_files(os.path.dirname(package["manifest_path"]), package.get("license_file"))
     if not paths:
         sys.exit(f"gpui {package['version']} comes with no license text")
@@ -114,9 +123,38 @@ def gpui(texts):
     }
 
 
+def lua(texts):
+    """Lua 5.4, which runs the scripts `plays do` runs: the release the crate
+    lua-src builds, its license as lua.h, its header, says it."""
+    sources = os.path.dirname(package_named("lua-src")["manifest_path"])
+    folder = next(
+        os.path.join(sources, entry)
+        for entry in sorted(os.listdir(sources))
+        if entry.startswith("lua-5.4")
+    )
+    with open(os.path.join(folder, "lua.h"), encoding="utf-8") as file:
+        header = file.read()
+    version = ".".join(
+        re.search(rf'#define LUA_VERSION_{part}\s+"(\d+)"', header).group(1)
+        for part in ("MAJOR", "MINOR", "RELEASE")
+    )
+    notice = re.search(r"^\* (Copyright \(C\).*?)^\*{10,}/", header, re.M | re.S)
+    if not notice:
+        sys.exit(f"lua.h of Lua {version} has no license")
+    text = re.sub(r"^\* ?", "", notice.group(1), flags=re.M)
+    return {
+        "name": "Lua",
+        "version": version,
+        "license": "MIT",
+        "url": "https://www.lua.org",
+        "source": f"https://www.lua.org/ftp/lua-{version}.tar.gz",
+        "texts": [texts.add_text(text)],
+    }
+
+
 def main():
     texts = Texts()
-    libraries = native(texts) + [gpui(texts)]
+    libraries = native(texts) + [gpui(texts), lua(texts)]
     with open(OUTPUT, "w", encoding="utf-8") as file:
         json.dump({"libraries": libraries, "texts": texts.texts}, file, indent=1, ensure_ascii=False)
         file.write("\n")

@@ -681,6 +681,7 @@ fn about_credits_what_plays_is_built_with_each_opening_to_its_license(cx: &mut T
         "credit-library FFmpeg",
         "credit-library dav1d",
         "credit-library GPUI",
+        "credit-library Lua",
     ];
     for credit in credits {
         assert!(shows(&mut settings, credit), "{credit}");

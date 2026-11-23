@@ -1,17 +1,21 @@
 use super::*;
 
 #[test]
-fn it_credits_ffmpeg_dav1d_and_gpui_by_the_zed_team_each_with_its_license() {
+fn it_credits_ffmpeg_dav1d_gpui_by_the_zed_team_and_lua_each_with_its_license() {
     let credits = built_with();
     let names: Vec<&str> = credits.iter().map(|entry| entry.name.as_ref()).collect();
-    assert_eq!(names, ["FFmpeg", "dav1d", "GPUI"], "and no crate besides");
+    assert_eq!(
+        names,
+        ["FFmpeg", "dav1d", "GPUI", "Lua"],
+        "and no crate besides"
+    );
     for entry in &credits {
         assert!(!entry.texts.is_empty(), "{}'s license", entry.name);
         let links: Vec<&str> = entry.links.iter().map(|(label, _)| *label).collect();
         assert_eq!(links, ["Website", "Source code"], "{}", entry.name);
     }
 
-    let [ffmpeg, dav1d, gpui] = credits.as_slice() else {
+    let [ffmpeg, dav1d, gpui, lua] = credits.as_slice() else {
         unreachable!()
     };
     assert_eq!(ffmpeg.version, ffmpeg_version(), "the one it runs with");
@@ -41,6 +45,15 @@ fn it_credits_ffmpeg_dav1d_and_gpui_by_the_zed_team_each_with_its_license() {
             .any(|text| text.contains("Zed Industries"))
     );
     assert_eq!(gpui.license.as_ref(), "Apache-2.0");
+    assert_eq!(
+        (lua.license.as_ref(), lua.hint.as_ref().map(AsRef::as_ref)),
+        ("MIT", Some("Runs the scripts plays do runs."))
+    );
+    assert!(
+        lua.texts
+            .iter()
+            .any(|text| text.contains("Lua.org, PUC-Rio"))
+    );
 
     let plays = license();
     assert_eq!(plays.license.as_ref(), env!("CARGO_PKG_LICENSE"));
