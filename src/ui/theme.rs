@@ -351,8 +351,8 @@ pub mod motion {
     /// sized for the ones that have, and how often it looks.
     pub const FIT_WAIT: Duration = Duration::from_secs(30);
     pub const FIT_POLL: Duration = Duration::from_millis(50);
-    /// How much of the audio level meter's reading is kept each frame as
-    /// the sound gets quieter; it rises at once.
+    /// How much of the sound's level the speaker shows is kept each frame
+    /// as the sound gets quieter; it rises at once.
     pub const LEVEL_FALLOFF: f32 = 0.88;
     /// How often a casting block looks at what its device last said, which
     /// moves its bar.
@@ -555,10 +555,8 @@ pub mod player {
     /// the cover would have, and its icon, as a part of the circle.
     pub const NO_COVER_SCALE: f32 = 0.6;
     pub const NO_COVER_ICON_SCALE: f32 = 0.42;
-    /// The level meter under a sound file's lines.
-    pub const METER_WIDTH: Pixels = px(160.);
-    /// The speaker behind a sound file's cover, as an opacity of the accent.
-    pub const SPEAKER_OPACITY: f32 = 0.35;
+    /// The speaker behind a sound file's cover, as an opacity of white.
+    pub const SPEAKER_OPACITY: f32 = 0.5;
     /// The icon in a block whose video is in Picture in Picture, or that
     /// plays on another device.
     pub const PIP_ICON: Pixels = px(40.);
@@ -636,7 +634,7 @@ pub mod settings {
     /// them.
     pub const PLAYBACK_COLOR: u32 = 0x34c759;
     pub const AUDIO_COLOR: u32 = 0xff375f;
-    pub const AUDIO_MODE_COLOR: u32 = 0xac8e68;
+    pub const MUSIC_MODE_COLOR: u32 = 0xac8e68;
     pub const VIDEO_COLOR: u32 = 0x0a84ff;
     pub const SUBTITLES_COLOR: u32 = 0xff9f0a;
     pub const CASTING_COLOR: u32 = 0x00c7be;

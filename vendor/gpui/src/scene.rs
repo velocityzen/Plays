@@ -822,10 +822,9 @@ impl From<Shadow> for Primitive {
 /// `Window::paint_visualizer`).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum VisualizerShader {
-    /// A speaker seen from the front, in the middle, as wide as fits: its
-    /// basket's rim, the surround, the cone and the dust cap. With `level`,
-    /// from 0 to 1, the cone moves out: the surround narrows, and the cap
-    /// grows and brightens.
+    /// A speaker seen from the front, in the middle, as wide as fits: two
+    /// thin rings, its basket's rim, a point wide, and inside it its cone's
+    /// edge, two points wide, which moves out with `level`, from 0 to 1.
     Speaker {
         /// How loud it plays, from 0 to 1.
         level: f32,
@@ -833,10 +832,14 @@ pub enum VisualizerShader {
 }
 
 impl VisualizerShader {
-    /// Its number in the shaders, and the parameters they read.
-    pub(crate) fn encode(self) -> (VisualizerKind, [f32; 4]) {
+    /// Its number in the shaders, and the parameters they read, drawn at
+    /// `scale_factor` device pixels a point.
+    pub(crate) fn encode(self, scale_factor: f32) -> (VisualizerKind, [f32; 4]) {
         match self {
-            Self::Speaker { level } => (VisualizerKind::Speaker, [level.clamp(0., 1.), 0., 0., 0.]),
+            Self::Speaker { level } => (
+                VisualizerKind::Speaker,
+                [level.clamp(0., 1.), scale_factor, 0., 0.],
+            ),
         }
     }
 

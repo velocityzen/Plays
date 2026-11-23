@@ -67,14 +67,14 @@ fn takes_what_the_window_offers() {
     );
     assert_eq!(set("master_volume", json!(0.25)).master_volume, 0.25);
     assert_eq!(
-        set("audio_mode.visualizer", json!("none"))
-            .audio_mode
+        set("music_mode.visualizer", json!("none"))
+            .music_mode
             .visualizer,
         Visualizer::None
     );
     assert!(
-        !set("audio_mode.show_quality", json!(false))
-            .audio_mode
+        !set("music_mode.show_quality", json!(false))
+            .music_mode
             .show_quality
     );
     assert_eq!(set("subtitles.size", json!(1.5)).subtitles.size, 1.5);

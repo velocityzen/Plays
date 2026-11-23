@@ -2886,7 +2886,7 @@ impl Window {
         let scale_factor = self.scale_factor();
         let content_mask = self.content_mask();
         let opacity = self.element_opacity();
-        let (kind, params) = shader.encode();
+        let (kind, params) = shader.encode(scale_factor);
         self.next_frame.scene.insert_primitive(Visualizer {
             order: 0,
             kind,

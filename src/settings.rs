@@ -114,14 +114,14 @@ impl Default for OverVideo {
 /// How an audio file's block looks.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
-pub struct AudioMode {
+pub struct MusicMode {
     /// What plays behind its cover.
     pub visualizer: Visualizer,
     /// Its codec, bits, sample rate, channels and bit rate, under its tags.
     pub show_quality: bool,
 }
 
-impl Default for AudioMode {
+impl Default for MusicMode {
     fn default() -> Self {
         Self {
             visualizer: Visualizer::Speaker,
@@ -459,7 +459,7 @@ pub struct Settings {
     /// through that display's speakers while it is there, unless it plays
     /// through an output picked for it.
     pub sound_follows_display: bool,
-    pub audio_mode: AudioMode,
+    pub music_mode: MusicMode,
     pub casting: CastingSettings,
     /// Volume new players start at.
     pub default_volume: f32,
@@ -515,7 +515,7 @@ impl Default for Settings {
             master_volume: 1.0,
             audio_output: AudioOutputSettings::default(),
             sound_follows_display: true,
-            audio_mode: AudioMode::default(),
+            music_mode: MusicMode::default(),
             casting: CastingSettings::default(),
             default_volume: 0.8,
             autoplay: true,

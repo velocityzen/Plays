@@ -251,15 +251,15 @@ const FIELDS: &[Field] = &[
         Kind::Languages,
     ),
     Field::new(
-        "audio_mode.visualizer",
+        "music_mode.visualizer",
         "Visualizer",
-        "Audio Mode",
+        "Music Mode",
         Kind::Choice(|| choices(&VISUALIZERS)),
     ),
     Field::new(
-        "audio_mode.show_quality",
+        "music_mode.show_quality",
         "Show quality",
-        "Audio Mode",
+        "Music Mode",
         Kind::Toggle,
     ),
     Field::new(

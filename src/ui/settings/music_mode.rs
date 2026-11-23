@@ -1,4 +1,4 @@
-//! Audio Mode: how an audio file's block looks, what plays behind its
+//! Music Mode: how an audio file's block looks, what plays behind its
 //! cover and whether its quality shows.
 
 use gpui::{AnyElement, Context, Window};
@@ -8,13 +8,13 @@ use super::{Pane, SettingsView};
 use crate::settings::{Settings, fields};
 use crate::ui::components::{Segmented, Switch};
 use crate::ui::theme::Theme;
-use crate::ui::theme::settings::AUDIO_MODE_COLOR;
+use crate::ui::theme::settings::MUSIC_MODE_COLOR;
 
-pub(super) struct AudioModePane;
+pub(super) struct MusicModePane;
 
-impl Pane for AudioModePane {
+impl Pane for MusicModePane {
     fn name(&self) -> &'static str {
-        "Audio Mode"
+        "Music Mode"
     }
 
     fn icon(&self) -> &'static str {
@@ -22,7 +22,7 @@ impl Pane for AudioModePane {
     }
 
     fn color(&self) -> u32 {
-        AUDIO_MODE_COLOR
+        MUSIC_MODE_COLOR
     }
 
     fn content(
@@ -33,7 +33,7 @@ impl Pane for AudioModePane {
         _: &mut Window,
         _: &mut Context<SettingsView>,
     ) -> Vec<AnyElement> {
-        let mode = s.audio_mode;
+        let mode = s.music_mode;
         vec![group(
             None,
             theme,
@@ -43,7 +43,7 @@ impl Pane for AudioModePane {
                     Some("What plays behind an audio file's cover".into()),
                     theme,
                     Segmented::new("visualizer", &fields::VISUALIZERS, mode.visualizer)
-                        .on_select(|&v, _, cx| set("audio_mode.visualizer", v, cx)),
+                        .on_select(|&v, _, cx| set("music_mode.visualizer", v, cx)),
                 ),
                 row(
                     "Show quality",
@@ -53,7 +53,7 @@ impl Pane for AudioModePane {
                     ),
                     theme,
                     Switch::new("show-quality", mode.show_quality)
-                        .on_toggle(|&on, _, cx| set("audio_mode.show_quality", on, cx)),
+                        .on_toggle(|&on, _, cx| set("music_mode.show_quality", on, cx)),
                 ),
             ],
         )]

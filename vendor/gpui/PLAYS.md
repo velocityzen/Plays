@@ -122,16 +122,16 @@ and their shaders; Windows draws none):
 - `Window::paint_visualizer(bounds, VisualizerShader, color)` paints a
   shader drawn whole on the GPU, as a `Visualizer` primitive: its kind,
   bounds, content mask, color and four parameters (`params`), which
-  `VisualizerShader::encode` fills. cbindgen writes the Metal header's
+  `VisualizerShader::encode` fills, with the window's scale factor.
+  cbindgen writes the Metal header's
   copy; asserts in `scene.rs` keep `bounds` on an 8-byte boundary and its
   size 72 bytes, as WGSL lays it out.
 - `VisualizerShader::Speaker { level }`: a loudspeaker seen from the
-  front, a circle as large as fits in the middle of its bounds: a dust
-  cap, a ribbed cone, a rolled surround and the basket's rim, shaded in
-  the color. With `level` (0 to 1) the cone moves out: the cap grows and
-  brightens, and the surround narrows.
+  front, as large as fits in the middle of its bounds: two thin rings in
+  the color, the basket's rim, a point wide, and inside it the cone's
+  edge, two points wide, which moves out with `level` (0 to 1).
 - `fs_visualizer` (WGSL) and `visualizer_fragment` (Metal) pick the shader
-  by kind; the color's alpha is the circle's coverage times its own.
+  by kind; the color's alpha is the rings' coverage times its own.
 - Test support: `Window::painted_visualizers` lists the visualizers the
   last frame drew, and `gpui::render_offscreen` draws them too, over its
   quads.

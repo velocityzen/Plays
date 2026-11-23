@@ -591,38 +591,27 @@ vertex VisualizerVertexOutput visualizer_vertex(
       {clip_distance.x, clip_distance.y, clip_distance.z, clip_distance.w}};
 }
 
+// How much of the pixel `distance` from the middle a ring of `radius`,
+// `width` wide (a device pixel at least), covers.
+float ring(float distance, float radius, float width) {
+  float half_width = max(width, 1.) / 2.;
+  return saturate(half_width + 0.5 - abs(distance - radius));
+}
+
 // A speaker seen from the front, in the middle of `bounds`, as wide as
-// fits: from the middle out, the dust cap, the cone with its ridges, the
-// surround, and the basket's rim. With `level`, from 0 to 1 (as
-// `VisualizerShader::encode` clamps it), the cone moves out: the cap grows
-// and brightens, and the surround narrows. How bright it is at `position`,
-// as a part of its color, and how much of the pixel it covers.
-float2 speaker(float2 position, Bounds_ScaledPixels bounds, float level) {
+// fits: two thin rings, its basket's rim, a point wide (`scale` device
+// pixels), and inside it its cone's edge, two points wide, which moves out
+// with `level`, from 0 to 1 (as `VisualizerShader::encode` clamps it). How
+// much of the pixel at `position` it covers.
+float speaker(float2 position, Bounds_ScaledPixels bounds, float level,
+              float scale) {
   float2 size = float2(bounds.size.width, bounds.size.height);
   float2 center = float2(bounds.origin.x, bounds.origin.y) + size / 2.;
   float radius = max(0.46 * min(size.x, size.y), 1.);
-  // A pixel, and how far from the middle this one is, in radii.
-  float pixel = 1. / radius;
-  float r = length(position - center) / radius;
-
-  float cap = 0.28 * (1. + 0.3 * level);
-  float surround = 0.82 + 0.06 * level;
-  float basket = 0.95;
-
-  float cap_shade = 0.75 + 0.25 * level - 0.3 * (r / cap) * (r / cap);
-  float cone = saturate((r - cap) / (surround - cap));
-  float cone_shade = 0.3 + 0.25 * cone + 0.05 * cos(cone * 40.);
-  float roll = saturate((r - surround) / (basket - surround));
-  float surround_shade = 0.35 + 0.4 * sin(roll * M_PI_F);
-  float basket_shade = 0.6;
-
-  float shade = cone_shade;
-  shade = mix(shade, surround_shade,
-              smoothstep(surround - pixel, surround + pixel, r));
-  shade = mix(shade, basket_shade, smoothstep(basket - pixel, basket + pixel, r));
-  shade = mix(shade, cap_shade, 1. - smoothstep(cap - pixel, cap + pixel, r));
-  float coverage = 1. - smoothstep(1. - pixel, 1. + pixel, r);
-  return float2(shade, coverage);
+  float distance = length(position - center);
+  float rim = ring(distance, radius, scale);
+  float cone = ring(distance, (0.84 + 0.08 * level) * radius, 2. * scale);
+  return max(rim, cone);
 }
 
 fragment float4 visualizer_fragment(
@@ -630,14 +619,15 @@ fragment float4 visualizer_fragment(
     constant Visualizer *visualizers
     [[buffer(VisualizerInputIndex_Visualizers)]]) {
   Visualizer visualizer = visualizers[input.visualizer_id];
-  float2 drawn;
+  float coverage;
   switch (visualizer.kind) {
   case VisualizerKind_Speaker:
   default:
-    drawn = speaker(input.position.xy, visualizer.bounds, visualizer.params[0]);
+    coverage = speaker(input.position.xy, visualizer.bounds,
+                       visualizer.params[0], visualizer.params[1]);
     break;
   }
-  return float4(input.color.rgb * drawn.x, input.color.a * drawn.y);
+  return float4(input.color.rgb, input.color.a * coverage);
 }
 
 struct UnderlineVertexOutput {

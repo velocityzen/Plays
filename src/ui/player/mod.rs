@@ -300,13 +300,13 @@ impl PlayerView {
         self.neighbors.is_some()
     }
 
-    /// The sound's level, from 0 to 1, as its meter shows it.
+    /// The sound's level, from 0 to 1, as its speaker shows it.
     #[cfg(test)]
     pub fn level(&self) -> f32 {
         self.level
     }
 
-    /// Its meter shows `level`, falling from there, as if it had just
+    /// Its speaker shows `level`, falling from there, as if it had just
     /// played that loud: tests have no speaker to measure it at.
     #[cfg(test)]
     pub fn set_level(&mut self, level: f32) {

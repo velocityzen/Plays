@@ -4,13 +4,13 @@
 mod about;
 mod appearance;
 mod audio;
-mod audio_mode;
 mod casting;
 mod command_line;
 mod file;
 mod form;
 mod hotkeys;
 mod languages;
+mod music_mode;
 mod playback;
 mod screenshots;
 mod subtitles;
@@ -90,7 +90,7 @@ trait Pane {
 const PANES: [&dyn Pane; 11] = [
     &playback::PlaybackPane,
     &audio::AudioPane,
-    &audio_mode::AudioModePane,
+    &music_mode::MusicModePane,
     &video::VideoPane,
     &subtitles::SubtitlesPane,
     &casting::CastingPane,

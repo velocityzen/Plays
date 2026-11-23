@@ -35,12 +35,13 @@ fn a_speaker_is_as_see_through_as_what_its_in(cx: &mut TestAppContext) {
 }
 
 /// The speaker, drawn off screen by the renderer windows use on macOS
-/// (Linux's has the same shader in WGSL).
+/// (Linux's has the same shader in WGSL), at a point a pixel.
 #[cfg(target_os = "macos")]
 mod drawn {
     use gpui::{Bounds, DevicePixels, Hsla, VisualizerShader, black, point, px, size, white};
 
-    /// The speaker's radius in a block whose shorter side is 200 px.
+    /// The speaker's radius, its rim's, in a block whose shorter side is
+    /// 200 px.
     const RADIUS: f32 = 0.46 * 200.;
 
     /// A speaker in `color` at `level`, over black, in a block `width` by 200
@@ -67,119 +68,85 @@ mod drawn {
             self.pixels[y * self.width as usize + x][0]
         }
 
-        /// How bright it is `r` radii from its middle, to its right, or up:
-        /// the pixels as far from it, their middles half a pixel past a whole
-        /// one.
-        fn right(&self, r: f32) -> f32 {
+        /// How bright the pixels right of its middle are, from `from` to `to`
+        /// radii out, or up from it: how many pixels' worth of light there.
+        fn right(&self, from: f32, to: f32) -> f32 {
             let middle = self.width as usize / 2;
-            self.at(middle + (r * RADIUS) as usize, 100)
+            Self::out(from, to).map(|x| self.at(middle + x, 100)).sum()
         }
 
-        fn up(&self, r: f32) -> f32 {
+        fn up(&self, from: f32, to: f32) -> f32 {
             let middle = self.width as usize / 2;
-            self.at(middle, 99 - (r * RADIUS) as usize)
+            Self::out(from, to).map(|y| self.at(middle, 99 - y)).sum()
         }
 
-        /// How bright each pixel right of its middle is, from `from` to `to`
-        /// radii out.
-        fn along(&self, from: f32, to: f32) -> Vec<f32> {
-            let middle = self.width as usize / 2;
-            ((from * RADIUS) as usize..=(to * RADIUS) as usize)
-                .map(|x| self.at(middle + x, 100))
-                .collect()
+        /// The pixels from `from` to `to` radii out.
+        fn out(from: f32, to: f32) -> std::ops::RangeInclusive<usize> {
+            (from * RADIUS) as usize..=(to * RADIUS) as usize
         }
 
-        /// How many pixels right of its middle it is darkest, between `from`
-        /// and `to` radii.
-        fn darkest(&self, from: f32, to: f32) -> usize {
+        /// How far right of its middle, in radii, the light between `from`
+        /// and `to` radii is, on the whole.
+        fn middle_of(&self, from: f32, to: f32) -> f32 {
             let middle = self.width as usize / 2;
-            ((from * RADIUS) as usize..=(to * RADIUS) as usize)
-                .min_by(|a, b| {
-                    self.at(middle + a, 100)
-                        .total_cmp(&self.at(middle + b, 100))
-                })
-                .unwrap()
+            let (moment, light) = Self::out(from, to).fold((0., 0.), |(moment, light), x| {
+                let shade = self.at(middle + x, 100);
+                (moment + shade * (x as f32 + 0.5), light + shade)
+            });
+            moment / light / RADIUS
         }
     }
 
-    /// A circle in the middle of its block, as wide as its shorter side lets
-    /// it be, and nothing outside it: as wide across as up.
+    /// Two rings in the middle of its block, as wide as its shorter side
+    /// lets them be, as wide across as up: its rim, a pixel wide, and in it
+    /// its cone's edge, two pixels wide; and nothing else.
     #[test]
-    fn a_speaker_is_a_circle_in_the_middle_of_its_block() {
+    fn a_speaker_is_two_thin_rings_in_the_middle_of_its_block() {
         for width in [200, 320] {
             let speaker = Speaker::draw(width, 0., white());
-            assert!(speaker.at(2, 2) < 0.01, "a corner of {width}");
-            for r in [0., 0.5, 0.97] {
-                assert!(speaker.right(r) > 0.2, "{r} across {width}");
+            for (from, to, light, what) in [
+                (0.97, 1.03, 1., "the rim"),
+                (0.8, 0.88, 2., "the cone's edge"),
+                (0., 0.8, 0., "inside"),
+                (0.88, 0.97, 0., "between them"),
+                (1.03, 1.08, 0., "outside"),
+            ] {
+                let (across, up) = (speaker.right(from, to), speaker.up(from, to));
                 assert!(
-                    (speaker.right(r) - speaker.up(r)).abs() < 0.02,
-                    "{r} up {width}"
+                    (across - light).abs() < 0.05,
+                    "{what} across {width}: {across}"
                 );
+                assert!((up - light).abs() < 0.05, "{what} up {width}: {up}");
             }
-            assert!(speaker.right(1.05) < 0.01, "past its rim across {width}");
-            assert!(speaker.up(1.05) < 0.01, "past its rim up {width}");
+            assert!(speaker.at(2, 2) < 0.01, "a corner of {width}");
         }
     }
 
-    /// With the level, its cap grows and brightens, and the surround, darkest
-    /// where it meets the cone, narrows.
+    /// With the level, its cone's edge moves out, and its rim stays.
     #[test]
     fn a_speakers_cone_moves_out_with_the_level() {
-        let (still, loud) = (
+        let (still, half, loud) = (
             Speaker::draw(200, 0., white()),
+            Speaker::draw(200, 0.5, white()),
             Speaker::draw(200, 1., white()),
         );
-        assert!((still.right(0.) - 0.75).abs() < 0.02, "{}", still.right(0.));
-        assert!(loud.right(0.) > 0.97, "{}", loud.right(0.));
-        // The cap, wider than it was.
-        assert!(loud.right(0.32) > still.right(0.32) + 0.3);
-        let (from, to) = (still.darkest(0.75, 0.95), loud.darkest(0.75, 0.95));
-        assert!(to > from + 3, "the surround from {from} px to {to} px");
-        // Each half way, and the same past it.
-        let half = Speaker::draw(200, 0.5, white());
-        assert!(half.right(0.) > still.right(0.) + 0.1 && half.right(0.) < loud.right(0.) - 0.1);
+        let cone = |speaker: &Speaker| speaker.middle_of(0.78, 0.95);
+        assert!((cone(&still) - 0.84).abs() < 0.01, "{}", cone(&still));
+        assert!((cone(&half) - 0.88).abs() < 0.01, "{}", cone(&half));
+        assert!((cone(&loud) - 0.92).abs() < 0.01, "{}", cone(&loud));
+        assert!((loud.right(0.89, 0.96) - 2.).abs() < 0.05, "as wide");
+        assert!((loud.right(0.97, 1.03) - 1.).abs() < 0.05, "the rim");
         assert_eq!(Speaker::draw(200, 2., white()).pixels, loud.pixels);
-    }
-
-    /// Its cone brightens out from the cap, ridged as it goes, and its
-    /// surround is rolled, brightest half way across.
-    #[test]
-    fn a_speakers_cone_is_ridged_and_its_surround_rolled() {
-        let speaker = Speaker::draw(200, 0., white());
-        let mean = |from, to| {
-            let pixels = speaker.along(from, to);
-            pixels.iter().sum::<f32>() / pixels.len() as f32
-        };
-        let (inner, outer) = (mean(0.35, 0.45), mean(0.65, 0.75));
-        assert!(outer > inner + 0.08, "{inner} out to {outer}");
-        let cone = speaker.along(0.3, 0.8);
-        let ridges = cone
-            .windows(3)
-            .filter(|three| three[1] > three[0] && three[1] >= three[2])
-            .count();
-        assert!(ridges >= 5, "{ridges} ridges: {cone:?}");
-        let (inside, middle, outside) = (
-            speaker.right(0.83),
-            speaker.right(0.885),
-            speaker.right(0.94),
-        );
-        assert!(
-            middle > inside + 0.15 && middle > outside + 0.15,
-            "{inside}, {middle}, {outside}"
-        );
     }
 
     /// Drawn in its color, as see-through as it is.
     #[test]
     fn a_speaker_is_drawn_in_its_color() {
         let speaker = Speaker::draw(200, 0., white().opacity(0.5));
-        assert!(
-            (speaker.right(0.) - 0.375).abs() < 0.02,
-            "{}",
-            speaker.right(0.)
-        );
+        let rim = speaker.right(0.97, 1.03);
+        assert!((rim - 0.5).abs() < 0.03, "{rim}");
         let red = Speaker::draw(200, 0., gpui::red());
-        let [r, g, b, _] = red.pixels[100 * 200 + 100];
-        assert!(r > 0.5 && g < 0.05 && b < 0.05, "{r} {g} {b}");
+        let [r, g, b, _] = red.pixels[100 * 200 + 100 + RADIUS as usize];
+        assert!(r > 0.4 && g < 0.05 && b < 0.05, "{r} {g} {b}");
     }
 }

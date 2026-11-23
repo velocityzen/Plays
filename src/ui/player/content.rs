@@ -1,6 +1,6 @@
-//! What fills a block: the video; for audio, cover art, the file's tags and
-//! quality, and a level meter, over a visualizer, as Settings say; or a
-//! line on what is happening (opening, an error).
+//! What fills a block: the video; for audio, Music Mode: cover art, the
+//! file's tags and quality, over a visualizer, as Settings say; or a line
+//! on what is happening (opening, an error).
 
 use gpui::prelude::*;
 use std::cell::Cell;
@@ -8,7 +8,7 @@ use std::rc::Rc;
 
 use gpui::{
     AnyElement, App, Bounds, ContentTransform, Corners, ObjectFit, Pixels, SharedString, canvas,
-    div, img, relative,
+    div, img, relative, white,
 };
 
 use super::sound::SoundLines;
@@ -16,12 +16,12 @@ use super::visualizer::speaker;
 use super::{PlayerView, controls};
 use crate::media::Picture;
 use crate::media::decoder::MediaInfo;
-use crate::settings::{AudioMode, Settings, Visualizer};
-use crate::ui::components::{ComponentSize, Icon, Meter};
+use crate::settings::{MusicMode, Settings, Visualizer};
+use crate::ui::components::{ComponentSize, Icon};
 use crate::ui::framing::Framing;
 use crate::ui::theme::player::{
-    COVER_MIN_SIZE, ERROR_MAX_WIDTH, METER_WIDTH, NO_COVER_ICON_SCALE, NO_COVER_SCALE, NOTE_TOP,
-    PIP_ICON, SPEAKER_OPACITY,
+    COVER_MIN_SIZE, ERROR_MAX_WIDTH, NO_COVER_ICON_SCALE, NO_COVER_SCALE, NOTE_TOP, PIP_ICON,
+    SPEAKER_OPACITY,
 };
 use crate::ui::theme::{Theme, radius};
 
@@ -67,7 +67,7 @@ impl PlayerView {
         }
         match self.playback.local().info() {
             Some(info) if !info.has_video => {
-                self.render_audio(theme, &info, cx.global::<Settings>().audio_mode)
+                self.render_audio(theme, &info, cx.global::<Settings>().music_mode)
             }
             _ => div()
                 .text_sm()
@@ -82,10 +82,10 @@ impl PlayerView {
     }
 
     /// Audio-only files get their cover art (or a circle standing in for
-    /// it), their tags, their quality if `mode` says, and a level meter,
-    /// over the visualizer it picks: a speaker whose cone moves with the
-    /// level, or none.
-    fn render_audio(&self, theme: &Theme, info: &MediaInfo, mode: AudioMode) -> AnyElement {
+    /// it), their tags and their quality if `mode` says, over the
+    /// visualizer it picks: a speaker whose cone moves with the level, or
+    /// none.
+    fn render_audio(&self, theme: &Theme, info: &MediaInfo, mode: MusicMode) -> AnyElement {
         let SoundLines {
             title,
             artist,
@@ -112,9 +112,7 @@ impl PlayerView {
             .pt(NOTE_TOP)
             .pb(controls::height(info.live))
             .children(match mode.visualizer {
-                Visualizer::Speaker => {
-                    Some(speaker(self.level, theme.accent.opacity(SPEAKER_OPACITY)))
-                }
+                Visualizer::Speaker => Some(speaker(self.level, white().opacity(SPEAKER_OPACITY))),
                 Visualizer::None => None,
             })
             .child(self.render_cover(theme))
@@ -143,13 +141,6 @@ impl PlayerView {
                             .filter(|_| mode.show_quality)
                             .map(|quality| line("sound-quality", quality)),
                     ),
-            )
-            .child(
-                div()
-                    .debug_selector(|| "sound-meter".into())
-                    .w(METER_WIDTH)
-                    .max_w_full()
-                    .child(Meter::new(self.level)),
             )
             .into_any_element()
     }

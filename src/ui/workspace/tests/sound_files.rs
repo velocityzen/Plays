@@ -3,13 +3,12 @@
 
 use std::path::PathBuf;
 
-use gpui::{Bounds, Pixels, TestAppContext, VisualTestContext, VisualizerShader, px, size};
+use gpui::{Bounds, Pixels, TestAppContext, VisualTestContext, VisualizerShader, px, size, white};
 
 use super::{drawn_in, open};
 use crate::files::test_folder;
 use crate::settings::{Settings, Visualizer};
 use crate::ui::testing::{self, find, fixture, shows, wait_until};
-use crate::ui::theme::Theme;
 use crate::ui::theme::player::{
     COVER_MIN_SIZE, NO_COVER_ICON_SCALE, NO_COVER_SCALE, NOTE_TOP, SPEAKER_OPACITY,
 };
@@ -84,12 +83,12 @@ fn cover_fits_its_block(cx: &mut VisualTestContext) {
         "as tall as fits below the header in {block:?}: {cover:?}"
     );
     assert!(cover.size.width < block.size.width - SIDES * 2.);
-    let meter = find(cx, "sound-meter");
-    assert!(meter.top() > cover.bottom(), "the rest under it: {meter:?}");
+    let (title, quality) = (find(cx, "sound-title"), find(cx, "sound-quality"));
+    assert!(title.top() > cover.bottom(), "the rest under it: {title:?}");
     let seek = find(cx, "seek");
     assert!(
-        meter.bottom() < seek.top(),
-        "above the controls: {meter:?}, {seek:?}"
+        quality.bottom() < seek.top(),
+        "above the controls: {quality:?}, {seek:?}"
     );
 
     let (block, cover) = cover_in(cx, 300., 800.);
@@ -103,10 +102,10 @@ fn cover_fits_its_block(cx: &mut VisualTestContext) {
 
     let (block, cover) = cover_in(cx, 180., 160.);
     assert_eq!(cover.size, size(COVER_MIN_SIZE, COVER_MIN_SIZE));
-    let meter = find(cx, "sound-meter");
+    let quality = find(cx, "sound-quality");
     assert!(
-        meter.left() >= block.left() + SIDES && meter.right() <= block.right() - SIDES,
-        "the meter in {block:?}: {meter:?}"
+        quality.left() >= block.left() + SIDES && quality.right() <= block.right() - SIDES,
+        "the quality in {block:?}: {quality:?}"
     );
 
     let mut before = px(0.);
@@ -182,8 +181,8 @@ fn a_sound_with_no_cover_has_a_circle_as_large_as_fits_its_block(cx: &mut TestAp
     assert!(!shows(&mut cx, "sound-cover-art"));
 }
 
-/// A sound plays over a speaker filling its block, in the accent, whose
-/// cone moves with its level, as its meter shows it; a video over none.
+/// A sound plays over a speaker filling its block, in white, whose cone
+/// moves with its level; a video over none.
 #[gpui::test]
 fn a_sound_plays_over_a_speaker_moving_with_its_level(cx: &mut TestAppContext) {
     let (window, mut cx) = testing::start(cx);
@@ -196,8 +195,7 @@ fn a_sound_plays_over_a_speaker_moving_with_its_level(cx: &mut TestAppContext) {
         cx.notify();
     });
     let bounds = find(&mut cx, "block-0");
-    let (level, accent) =
-        cx.update(|window, cx| (block.read(cx).level(), Theme::get(window, cx).accent));
+    let level = cx.update(|_, cx| block.read(cx).level());
     assert!(level > 0.1, "{level}");
     let painted = cx.update(|window, _| window.painted_visualizers());
     assert_eq!(
@@ -205,7 +203,7 @@ fn a_sound_plays_over_a_speaker_moving_with_its_level(cx: &mut TestAppContext) {
         [(
             bounds,
             VisualizerShader::Speaker { level },
-            accent.opacity(SPEAKER_OPACITY)
+            white().opacity(SPEAKER_OPACITY)
         )]
     );
 
@@ -244,22 +242,22 @@ fn settings_take_a_sounds_speaker_and_quality_away(cx: &mut TestAppContext) {
 
     cx.update(|_, cx| {
         Settings::update(cx, false, |s| {
-            s.audio_mode.visualizer = Visualizer::None;
+            s.music_mode.visualizer = Visualizer::None;
         });
     });
     assert_eq!(visualizers(&mut cx), 0);
     assert!(shows(&mut cx, "sound-quality"));
 
-    cx.update(|_, cx| Settings::update(cx, false, |s| s.audio_mode.show_quality = false));
+    cx.update(|_, cx| Settings::update(cx, false, |s| s.music_mode.show_quality = false));
     assert!(!shows(&mut cx, "sound-quality"));
-    for selector in ["sound-title", "sound-artist", "sound-album", "sound-meter"] {
+    for selector in ["sound-title", "sound-artist", "sound-album"] {
         assert!(shows(&mut cx, selector), "{selector}");
     }
     assert_eq!(visualizers(&mut cx), 0);
 
     cx.update(|_, cx| {
         Settings::update(cx, false, |s| {
-            s.audio_mode.visualizer = Visualizer::Speaker;
+            s.music_mode.visualizer = Visualizer::Speaker;
         });
     });
     assert_eq!(visualizers(&mut cx), 1);

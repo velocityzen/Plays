@@ -2120,7 +2120,7 @@ pub fn render_offscreen(
         });
     }
     for (bounds, shader, color) in visualizers {
-        let (kind, params) = shader.encode();
+        let (kind, params) = shader.encode(1.);
         scene.insert_primitive(Visualizer {
             order: 0,
             kind,
