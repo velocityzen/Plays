@@ -5,6 +5,9 @@ pub mod displays;
 pub mod framing;
 #[cfg(debug_assertions)]
 pub mod gallery;
+#[cfg(test)]
+#[path = "tests/linux_shaders.rs"]
+mod linux_shaders;
 pub mod name_sheet;
 pub mod open_url;
 mod overlay;

@@ -112,7 +112,12 @@ script/bundle-macos
 cargo test                          # Plays
 cargo test --workspace              # Plays and the crates in crates/
 cargo test -- --skip media::tests   # without the engine tests
+script/check                        # all a change passes before a commit
 ```
+
+- `script/check` runs the formatting, clippy, the workspace's tests, gpui's
+  Linux build and cargo-deny's advisories; it skips the last two, saying
+  what they need, when that isn't installed.
 
 - The engine tests make clips with the `ffmpeg` command line tool, with
   libx264 and libx265 (`brew install ffmpeg`, `sudo apt install ffmpeg`).
@@ -278,7 +283,8 @@ time); Vulkan can be software (lavapipe). It uses `Xvfb`, `openbox`,
 - gpui isn't in the workspace, so its own tests don't run; check its code
   builds for Linux with
   `cargo check -p gpui --target aarch64-unknown-linux-gnu --tests` (needs
-  a C compiler for that target).
+  a C compiler for that target). Its shaders for Linux are validated as
+  Blade takes them by `src/ui/tests/linux_shaders.rs`.
 - When FFmpeg, dav1d, gpui or Lua (crate `lua-src`) changes, run
   `script/attributions`.
 - The test fixtures are committed; change them with `script/make-fixtures`.

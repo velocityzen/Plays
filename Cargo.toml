@@ -102,6 +102,8 @@ airplay = { path = "crates/airplay", features = ["fake"] }
 # What the AirPlay fake was told, which comes as property lists.
 plist = "1"
 proptest = { version = "1", default-features = false, features = ["std"] }
+# Reads gpui's shaders for Linux, which nothing building on macOS does.
+naga = { version = "25.0", features = ["wgsl-in"] }
 
 [profile.dev]
 # Video decoding and pixel conversion are painfully slow without optimizations.

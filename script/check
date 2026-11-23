@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# What a change passes before it's committed, as there's no CI yet: the
+# formatting, clippy with every feature, the workspace's tests, gpui built
+# for Linux (on macOS, when that target and a C compiler for it are
+# installed), and cargo-deny's advisories (when it's installed). Runs them
+# all, then exits non-zero if any failed.
+set -uo pipefail
+cd "$(dirname "$0")/.."
+failed=()
+check() {
+    echo "== $*"
+    "$@" || failed+=("$*")
+}
+check cargo fmt --all -- --check
+check cargo clippy --workspace --all-targets --all-features -- -D warnings
+check cargo test --workspace
+linux=aarch64-unknown-linux-gnu
+if [ "$(uname)" = Darwin ]; then
+    if ! rustup target list --installed 2>/dev/null | grep -qx "$linux"; then
+        echo "== skipped gpui for Linux: rustup target add $linux"
+    elif [ -z "${CC_aarch64_unknown_linux_gnu:-}" ] &&
+        ! command -v aarch64-linux-gnu-gcc >/dev/null; then
+        echo "== skipped gpui for Linux: needs aarch64-linux-gnu-gcc," \
+            "or CC_aarch64_unknown_linux_gnu naming a C compiler for it"
+    else
+        check cargo check -p gpui --target "$linux" --tests
+    fi
+fi
+if command -v cargo-deny >/dev/null; then
+    check cargo deny check advisories
+else
+    echo "== skipped advisories: cargo install cargo-deny"
+fi
+if [ ${#failed[@]} -gt 0 ]; then
+    printf 'failed: %s\n' "${failed[@]}"
+    exit 1
+fi
+echo "all passed"

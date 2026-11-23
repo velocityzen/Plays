@@ -4801,6 +4801,7 @@ dependencies = [
  "image",
  "log",
  "mlua",
+ "naga",
  "objc",
  "parking_lot",
  "plist",
