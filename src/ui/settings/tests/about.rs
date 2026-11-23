@@ -58,6 +58,10 @@ fn it_credits_ffmpeg_dav1d_gpui_by_the_zed_team_and_lua_each_with_its_license() 
     let plays = license();
     assert_eq!(plays.license.as_ref(), env!("CARGO_PKG_LICENSE"));
     assert_eq!(plays.texts, [SharedString::from(LICENSE)]);
+    assert!(
+        LICENSE.contains("\nCopyright (c) 2026 2dubs LLC\n"),
+        "Plays' copyright holder"
+    );
 }
 
 #[test]
