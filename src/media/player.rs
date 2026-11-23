@@ -641,12 +641,16 @@ impl Player {
 
         if self.buffering {
             // Files play as soon as there is something to play; network
-            // streams wait for a little more so they don't stutter.
+            // streams wait for a little more so they don't stutter. A
+            // stream that has ended has nothing more to wait for, though
+            // the other plays on: past where the sound ends, or the picture.
             let video_ready = !info.has_video
                 || eof
+                || self.shared.video_ended()
                 || (current_pts.is_some() && (!self.network || queued_frames > Some(0)));
             let audio_ready = !has_audio
                 || eof
+                || self.shared.audio_ended()
                 || if self.network {
                     self.shared.queued_audio() >= STREAM_START_AUDIO_SECONDS
                 } else {
@@ -674,8 +678,9 @@ impl Player {
             }
         } else if running && self.network && !eof {
             // A network stream ran dry: hold the clock until data arrives again
-            // instead of playing on in silence with a frozen picture.
-            let starved = if has_audio {
+            // instead of playing on in silence with a frozen picture. Once
+            // the sound has ended, the picture tells.
+            let starved = if has_audio && !self.shared.audio_ended() {
                 self.shared.queued_audio() == 0.0
             } else {
                 let frame_time = info.frame_rate.map_or(0.04, |fps| 1.0 / fps);

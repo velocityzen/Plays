@@ -87,6 +87,11 @@ pub struct Shared {
     subtitles: Mutex<CueQueue>,
     /// Set to the current serial once every frame and sample for it has been queued.
     eof_serial: AtomicU64,
+    /// Each set to the serial its stream has nothing more for: all of it
+    /// queued, or none of it for as far as the demuxer reads ahead. One
+    /// stream may end, or stop for a long while, well before the other.
+    video_ended: AtomicU64,
+    audio_ended: AtomicU64,
     /// Seconds of packets read ahead (`f64` bits), infinite once the demuxer
     /// reached the end. Network streams wait for some before playing.
     read_ahead: AtomicU64,
@@ -130,6 +135,8 @@ impl Shared {
             cover: Mutex::new(None),
             subtitles: Mutex::new(CueQueue::default()),
             eof_serial: AtomicU64::new(0),
+            video_ended: AtomicU64::new(0),
+            audio_ended: AtomicU64::new(0),
             read_ahead: AtomicU64::new(0.0f64.to_bits()),
             stop: AtomicBool::new(false),
             landed: Mutex::new(None),
@@ -291,6 +298,30 @@ impl Shared {
     /// Say every frame and sample for the seek `serial` has been queued.
     pub(super) fn set_eof(&self, serial: u64) {
         self.eof_serial.store(serial, Ordering::Release);
+    }
+
+    /// Whether every frame for the current seek has been queued, or there
+    /// is none for as far as the demuxer reads ahead.
+    pub fn video_ended(&self) -> bool {
+        self.video_ended.load(Ordering::Acquire) == self.serial()
+    }
+
+    /// Say every frame for the seek `serial` has been queued, or there is
+    /// none for as far as the demuxer reads ahead.
+    pub(super) fn set_video_ended(&self, serial: u64) {
+        self.video_ended.store(serial, Ordering::Release);
+    }
+
+    /// Whether every sample for the current seek has been queued, or there
+    /// is none for as far as the demuxer reads ahead.
+    pub fn audio_ended(&self) -> bool {
+        self.audio_ended.load(Ordering::Acquire) == self.serial()
+    }
+
+    /// Say every sample for the seek `serial` has been queued, or there is
+    /// none for as far as the demuxer reads ahead.
+    pub(super) fn set_audio_ended(&self, serial: u64) {
+        self.audio_ended.store(serial, Ordering::Release);
     }
 
     /// Seconds of packets read ahead, infinite once the demuxer reached

@@ -93,6 +93,7 @@ impl AudioDecoder {
         let _ = self.decoder.send_eof();
         self.drain(session);
         self.finished = true;
+        session.shared.set_audio_ended(session.serial);
     }
 
     fn drain(&mut self, session: &Session) {

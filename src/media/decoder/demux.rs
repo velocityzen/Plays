@@ -216,6 +216,10 @@ pub(super) enum Next {
     Packet(Packet),
     /// No more packets until the next seek.
     End,
+    /// None queued, and none read until the other stream's are taken: the
+    /// demux thread has read as far ahead as it may, and the next of this
+    /// one, if any, is further on.
+    Later,
     /// Nothing queued yet.
     Wait,
 }
@@ -252,6 +256,7 @@ impl Demuxer {
                 Next::Packet(packet)
             }
             None if packets.eof => Next::End,
+            None if !packets.wants_more(self.limits) => Next::Later,
             None => Next::Wait,
         }
     }

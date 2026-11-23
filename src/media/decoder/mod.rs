@@ -1022,6 +1022,7 @@ fn decode_video(session: &mut Session, decoders: &mut Decoders, demuxer: &Demuxe
                 v.finish(session);
                 progressed = true;
             }
+            Next::Later => shared.set_video_ended(session.serial),
             Next::Wait => {}
         }
     }
@@ -1051,6 +1052,7 @@ fn decode_audio(session: &mut Session, decoders: &mut Decoders, demuxer: &Demuxe
                 a.finish(session);
                 progressed = true;
             }
+            Next::Later => session.shared.set_audio_ended(session.serial),
             Next::Wait => {}
         }
     }

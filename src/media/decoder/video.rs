@@ -214,6 +214,7 @@ impl VideoDecoder {
         let _ = self.decoder.send_eof();
         self.drain(session);
         self.finished = true;
+        session.shared.set_video_ended(session.serial);
     }
 
     /// Count a decoding error. A hardware decoder that keeps failing (a driver

@@ -212,66 +212,166 @@ fn opens_and_seeks_video_accurately() {
     }
 }
 
-#[test]
-fn reports_the_streams_as_the_file_has_them() {
-    let path = media(
-        "details.mp4",
+/// A file whose picture runs `picture` seconds and its sound `sound`, in
+/// `container`.
+fn ends_apart(picture: u32, sound: u32, container: &str) -> PathBuf {
+    media(
+        &format!("ends/picture-{picture}-sound-{sound}.{container}"),
         &[
             "-f",
             "lavfi",
             "-i",
-            "testsrc=size=320x240:rate=25:duration=1",
+            &format!("testsrc=size=160x120:rate=25:duration={picture}"),
             "-f",
             "lavfi",
             "-i",
-            "sine=frequency=440:sample_rate=48000:duration=1",
+            &format!("sine=frequency=440:sample_rate=48000:duration={sound}"),
             "-c:v",
             "libx264",
-            "-profile:v",
-            "high",
-            "-pix_fmt",
-            "yuv420p",
-            "-colorspace",
-            "bt709",
             "-c:a",
             "aac",
-            "-ac",
-            "2",
         ],
-    );
+    )
+}
+
+/// A player of `path` that has opened it, and the mixer it plays to.
+fn opened(path: PathBuf) -> (Player, Arc<Mixer>) {
     let mixer = Mixer::detached(48_000);
-    let mut player = Player::open(Source::File(path), Some(mixer), options(false, false));
+    let mut player = Player::open(
+        Source::File(path),
+        Some(mixer.clone()),
+        options(true, false),
+    );
     assert!(wait_until(Duration::from_secs(5), || {
         player.tick();
-        player.frame_pts().is_some()
+        player.info().is_some()
     }));
-    let info = player.info().unwrap();
-    assert!(
-        info.container.format.contains("MOV"),
-        "{:?}",
-        info.container
+    (player, mixer)
+}
+
+/// A seek past where one stream ends, into the other's last seconds,
+/// plays on to the end rather than waiting for the one that ended.
+#[test]
+fn plays_on_from_a_seek_past_where_one_stream_ends() {
+    for (picture, sound) in [(3, 1), (1, 3)] {
+        let (mut player, mixer) = opened(ends_apart(picture, sound, "mkv"));
+        player.seek(2.0);
+        let heard = drain_audio(&mut player, &mixer, Duration::from_secs(10), |_| false);
+        assert!(
+            !player.is_playing(),
+            "picture {picture} s, sound {sound} s: still buffering: {}",
+            player.is_buffering()
+        );
+        // The sound from 2 s on, where there is any.
+        let left = if sound > 2 { 48_000 } else { 0 };
+        assert!(
+            (heard as i64 - left).abs() < 4_800,
+            "picture {picture} s, sound {sound} s: heard {heard} frames"
+        );
+    }
+}
+
+/// A seek into one stream going on long after the other, further than is
+/// read ahead, plays, though the file's end, where the other is known to
+/// have ended, isn't read by then. An MP4 lands each stream where it's
+/// asked to.
+#[test]
+fn plays_from_a_seek_into_one_stream_going_on_long_after_the_other() {
+    for (picture, sound) in [(1, 300), (400, 1)] {
+        let (mut player, mixer) = opened(ends_apart(picture, sound, "mp4"));
+        player.seek(10.0);
+        let [heard, _] =
+            drain_each_side(&mut player, &mixer, Duration::from_secs(10), |player, _| {
+                player.position() >= 10.5
+            });
+        assert!(
+            player.position() >= 10.5 && player.is_playing() && !player.is_buffering(),
+            "picture {picture} s, sound {sound} s: at {} s, buffering: {}",
+            player.position(),
+            player.is_buffering()
+        );
+        assert_eq!(
+            heard > 0,
+            sound > 10,
+            "picture {picture} s, sound {sound} s: heard {heard} frames"
+        );
+    }
+}
+
+/// Played again once it has played out, it waits anew for its picture and
+/// its sound, rather than taking them as ended still.
+#[test]
+fn played_again_waits_for_its_picture_and_its_sound() {
+    let picture = media(
+        "ends/picture-only.mkv",
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc=size=160x120:rate=25:duration=0.5",
+            "-c:v",
+            "libx264",
+        ],
     );
-    assert!(info.container.bit_rate.is_some());
-    let video = info.video_details.as_ref().unwrap();
-    assert_eq!(video.profile.as_deref(), Some("High"));
-    assert_eq!(video.coded_size, (320, 240));
-    assert_eq!(video.pixel_format, Some("yuv420p"));
-    // x264 tags the matrix and range, and leaves the rest unspecified.
-    assert_eq!(video.matrix, Some("bt709"));
-    assert_eq!(video.full_range, Some(false));
-    let audio = info.audio_details.as_ref().unwrap();
-    assert_eq!(audio.profile.as_deref(), Some("LC"));
-    assert_eq!((audio.sample_rate, audio.channels), (48_000, 2));
-    assert_eq!(audio.layout.as_deref(), Some("stereo"));
-    assert_eq!(audio.sample_format, Some("fltp"));
-    // The decoder reads on past the frame shown, though not always by the
-    // time the first one shows.
-    let read_on = wait_until(Duration::from_secs(5), || {
-        player.tick();
-        let stats = player.stats();
-        stats.read_ahead > 0.0 && stats.queued_frames > 0
+    let sound = media(
+        "ends/sound-only.wav",
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:sample_rate=48000:duration=0.25",
+        ],
+    );
+    for path in [picture, sound] {
+        let name = path.file_name().unwrap().display().to_string();
+        let (mut player, mixer) = opened(path);
+        drain_audio(&mut player, &mixer, Duration::from_secs(5), |_| false);
+        assert!(player.has_played_out(), "{name}");
+        player.play();
+        assert!(wait_until(Duration::from_secs(5), || {
+            player.tick();
+            !player.is_buffering()
+        }));
+        let info = player.info().unwrap();
+        if info.has_video {
+            assert!(
+                player.frame_pts().is_some_and(|pts| pts.abs() < 0.01),
+                "{name}: showing {:?}",
+                player.frame_pts()
+            );
+        }
+        if info.has_audio {
+            assert!(player.stats().queued_audio > 0.0, "{name}: nothing to play");
+        }
+    }
+}
+
+/// A stream whose sound ends before its picture plays on to the end,
+/// neither waiting for more of the sound nor held each time there's none.
+#[test]
+fn streams_on_past_where_the_sound_ends() {
+    let path = ends_apart(2, 1, "mkv");
+    let addr = http::serve(path.parent().unwrap().to_path_buf(), None);
+    let name = path.file_name().unwrap().to_str().unwrap();
+    let source = Source::parse_url(&format!("http://{addr}/{name}")).unwrap();
+    let mixer = Mixer::detached(48_000);
+    let mut player = Player::open(source, Some(mixer.clone()), options(true, false));
+    let (mut started, mut held) = (false, 0);
+    let [heard, _] = drain_each_side(&mut player, &mixer, Duration::from_secs(15), |player, _| {
+        started |= !player.is_buffering();
+        held += usize::from(started && player.is_buffering());
+        false
     });
-    assert!(read_on, "{:?}", player.stats());
+    assert!(
+        !player.is_playing(),
+        "still buffering: {}",
+        player.is_buffering()
+    );
+    assert_eq!(held, 0, "held {held} times once going");
+    assert!(
+        (heard as i64 - 48_000).abs() < 4_800,
+        "heard {heard} frames"
+    );
 }
 
 /// What a file says of itself once opened, ticking it on till it does.
@@ -490,23 +590,24 @@ fn drain_audio(
     timeout: Duration,
     stop: impl Fn(usize) -> bool,
 ) -> usize {
-    drain_each_side(player, mixer, timeout, |[left, _]| stop(left))[0]
+    drain_each_side(player, mixer, timeout, |_, [left, _]| stop(left))[0]
 }
 
-/// Pull audio through a mixer until the player stops; returns the
-/// non-silent frames heard on the left and on the right.
+/// Pull audio through a mixer until the player stops, or `stop` says to
+/// with the player and what's been heard; returns the non-silent frames
+/// heard on the left and on the right.
 fn drain_each_side(
     player: &mut Player,
     mixer: &Mixer,
     timeout: Duration,
-    stop: impl Fn([usize; 2]) -> bool,
+    mut stop: impl FnMut(&Player, [usize; 2]) -> bool,
 ) -> [usize; 2] {
     let mut heard = [0; 2];
     let mut buffer = vec![0.0f32; 512 * 2];
     let start = Instant::now();
     while start.elapsed() < timeout {
         player.tick();
-        if !player.is_playing() || stop(heard) {
+        if !player.is_playing() || stop(player, heard) {
             break;
         }
         mixer.mix(&mut buffer, 0.0, Instant::now());
@@ -594,7 +695,7 @@ fn plays_channels_kept_in_an_uncommon_order_on_their_sides() {
         Some(mixer.clone()),
         options(true, false),
     );
-    let [left, right] = drain_each_side(&mut player, &mixer, Duration::from_secs(10), |_| false);
+    let [left, right] = drain_each_side(&mut player, &mixer, Duration::from_secs(10), |_, _| false);
     assert!(!player.is_playing(), "player should stop at the end");
     assert_eq!(left, 0, "the tone is on the right");
     // Half a second, resampled from 8 kHz to 48 kHz.
