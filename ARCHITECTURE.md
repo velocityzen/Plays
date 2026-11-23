@@ -189,7 +189,7 @@ flowchart TB
 ```
 
 Audio is the master: the picture follows the clock, the clock follows the
-sound heard. No sound, wall time.
+sound heard. No sound, wall time. A gap in the sound plays as silence.
 
 - `src/media/decoder/demux.rs`: reads ahead (1 s, 15 s for streams), seeks
 - `src/media/decoder/mod.rs`: decodes only while its queues have room

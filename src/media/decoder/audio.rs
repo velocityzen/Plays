@@ -20,6 +20,12 @@ const AUDIO_QUEUE_SECONDS: f64 = 0.75;
 /// The least the decode thread waits for the mixer to make room for more
 /// sound: about a callback's worth, should the mixer stop taking it.
 const AUDIO_ROOM_WAIT: Duration = Duration::from_millis(10);
+/// A gap in the sound's timestamps longer than this, in seconds, plays as
+/// silence, so the clock, which follows the sound, doesn't jump the
+/// picture over it.
+const GAP: f64 = 0.1;
+/// The most silence a gap plays as, in seconds: the clock jumps the rest.
+const MOST_SILENCE: f64 = 10.0;
 
 pub(super) struct AudioDecoder {
     pub(super) index: usize,
@@ -30,6 +36,10 @@ pub(super) struct AudioDecoder {
     resampler: Option<(resampling::Context, (Sample, Layout, u32))>,
     decoded: frame::Audio,
     next_pts: Option<f64>,
+    /// Its sound is due from where playing started, or a seek went, so a
+    /// gap before its first plays as silence: not when where the media
+    /// starts isn't known, nor for a track picked as a live stream plays.
+    pub(super) due_from_the_start: bool,
     pub(super) finished: bool,
 }
 
@@ -50,6 +60,7 @@ impl AudioDecoder {
             resampler: None,
             decoded: frame::Audio::empty(),
             next_pts: None,
+            due_from_the_start: false,
             finished: false,
         })
     }
@@ -79,6 +90,7 @@ impl AudioDecoder {
         self.decoder.flush();
         self.resampler = None;
         self.next_pts = None;
+        self.due_from_the_start = true;
         self.finished = false;
     }
 
@@ -134,7 +146,6 @@ impl AudioDecoder {
             )?;
             self.resampler = Some((resampler, input));
         }
-        let (resampler, _) = self.resampler.as_mut().expect("resampler was just created");
 
         let pts = self
             .decoded
@@ -142,8 +153,19 @@ impl AudioDecoder {
             .map(|ts| ts as f64 * self.time_base - session.start_offset())
             .or(self.next_pts)
             .unwrap_or(0.0);
+        let due = self.next_pts.or_else(|| {
+            self.due_from_the_start
+                .then(|| session.seek_target.unwrap_or(0.0))
+        });
         self.next_pts = Some(pts + in_samples as f64 / in_rate as f64);
+        if let Some(due) = due
+            && pts - due > GAP
+        {
+            let silence = ((pts - due).min(MOST_SILENCE) * f64::from(out_rate)) as usize;
+            self.push(due, vec![0.0; silence * SOURCE_CHANNELS], out_rate, session);
+        }
 
+        let (resampler, _) = self.resampler.as_mut().expect("resampler was just created");
         // Leave room for everything the resampler may still be holding.
         let pending = resampler.delay().map_or(0, |d| d.output.max(0) as usize);
         let capacity = in_samples * out_rate as usize / in_rate as usize + pending + 64;
@@ -152,33 +174,35 @@ impl AudioDecoder {
 
         let frames = output.samples();
         let bytes = &output.data(0)[..frames * SOURCE_CHANNELS * 4];
-        let mut samples: Vec<f32> = bytes
+        let samples: Vec<f32> = bytes
             .as_chunks::<4>()
             .0
             .iter()
             .map(|b| f32::from_ne_bytes(*b))
             .collect();
 
-        let mut pts = pts;
-        if let Some(target) = session.seek_target {
-            let end = pts + frames as f64 / out_rate as f64;
-            if end <= target {
-                return Ok(());
-            }
-            if pts < target {
-                let skip = (((target - pts) * out_rate as f64) as usize).min(frames);
-                samples.drain(..skip * SOURCE_CHANNELS);
-                pts += skip as f64 / out_rate as f64;
-            }
+        self.push(pts, samples, out_rate, session);
+        Ok(())
+    }
+
+    /// Queue `samples`, at `rate` from `pts`, but for what's before where
+    /// the last seek went.
+    fn push(&self, mut pts: f64, mut samples: Vec<f32>, rate: u32, session: &Session) {
+        if let Some(target) = session.seek_target
+            && pts < target
+        {
+            let frames = samples.len() / SOURCE_CHANNELS;
+            let skip = (((target - pts) * f64::from(rate)) as usize).min(frames);
+            samples.drain(..skip * SOURCE_CHANNELS);
+            pts += skip as f64 / f64::from(rate);
         }
         if !samples.is_empty() {
             self.source.push(AudioChunk {
                 pts,
                 samples,
                 pos: 0,
-                rate: out_rate,
+                rate,
             });
         }
-        Ok(())
     }
 }

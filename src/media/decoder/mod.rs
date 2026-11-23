@@ -558,14 +558,8 @@ fn run(
         reading: None,
         subtitle_pick: 0,
     };
-    let found = looking.map(|looking| looking.join().unwrap_or_default());
-    for mut track in found.into_iter().flatten() {
-        let Some(path) = track.file.clone() else {
-            continue;
-        };
-        track.index = decoders.streams.len() + decoders.files.len();
-        tracks.push(track);
-        decoders.files.push(path);
+    if let Some(looking) = looking {
+        add_subtitle_files(looking, &mut tracks, &mut decoders);
     }
 
     let mut cover = open_best_video(&input, &mut decoders, options, source);
@@ -587,6 +581,9 @@ fn run(
 
     let start_offset = media_start(&decoders);
     shared.set_info(media_info(source, &input, &decoders, tracks, start_offset));
+    if let Some(audio) = &mut decoders.audio {
+        audio.due_from_the_start = start_offset.is_some();
+    }
 
     let mut session = Session {
         shared,
@@ -666,6 +663,23 @@ fn look_for_subtitle_files(source: &Source) -> Option<JoinHandle<Vec<Track>>> {
                 .ok()
         }
         _ => None,
+    }
+}
+
+/// Once they're found, add the subtitle files beside it to its tracks,
+/// after its own streams.
+fn add_subtitle_files(
+    looking: JoinHandle<Vec<Track>>,
+    tracks: &mut Vec<Track>,
+    decoders: &mut Decoders,
+) {
+    for mut track in looking.join().unwrap_or_default() {
+        let Some(path) = track.file.clone() else {
+            continue;
+        };
+        track.index = decoders.streams.len() + decoders.files.len();
+        tracks.push(track);
+        decoders.files.push(path);
     }
 }
 

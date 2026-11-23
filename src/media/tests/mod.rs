@@ -249,6 +249,136 @@ fn opened(path: PathBuf) -> (Player, Arc<Mixer>) {
     (player, mixer)
 }
 
+/// A clip of `seconds` of picture with a tone beside it, `sound` passed
+/// to ffmpeg for it: where it starts, or how it's timed.
+fn with_sound(name: &str, seconds: u32, sound: &[&str]) -> PathBuf {
+    let picture = format!("testsrc=size=160x120:rate=25:duration={seconds}");
+    let mut args = vec!["-f", "lavfi", "-i", &picture];
+    args.extend_from_slice(sound);
+    args.extend_from_slice(&["-c:v", "libx264", "-c:a", "aac"]);
+    media(name, &args)
+}
+
+/// Play on for `seconds`, as an output would, in real time: the frames
+/// shown, and the longest run of silence between the first sound and the
+/// last, in frames.
+fn play_for(player: &mut Player, mixer: &Mixer, seconds: f64) -> (Vec<f64>, usize) {
+    let mut shown = Vec::new();
+    let (mut heard, mut silence, mut longest) = (false, 0, 0);
+    let mut buffer = vec![0.0f32; 480 * 2];
+    let start = Instant::now();
+    while start.elapsed().as_secs_f64() < seconds {
+        player.tick();
+        mixer.mix(&mut buffer, 0.0, Instant::now());
+        for frame in buffer.as_chunks::<2>().0 {
+            if frame[0] == 0.0 {
+                silence += 1;
+            } else {
+                if heard {
+                    longest = longest.max(silence);
+                }
+                (heard, silence) = (true, 0);
+            }
+        }
+        if let Some(pts) = player.frame_pts()
+            && shown.last() != Some(&pts)
+        {
+            shown.push(pts);
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    (shown, longest)
+}
+
+/// Whether a frame from `from` to `to` was shown.
+fn showed(shown: &[f64], from: f64, to: f64) -> bool {
+    shown.iter().any(|pts| (from..to).contains(pts))
+}
+
+#[test]
+fn sound_starting_after_the_picture_waits_for_it_in_silence() {
+    let path = with_sound(
+        "with-late-sound.mkv",
+        2,
+        &[
+            "-itsoffset",
+            "1",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:sample_rate=48000:duration=1",
+        ],
+    );
+    let (mut player, mixer) = opened(path);
+    let (shown, _) = play_for(&mut player, &mixer, 0.8);
+    assert!(
+        showed(&shown, 0.2, 0.7),
+        "the picture plays from the start: {shown:?}"
+    );
+}
+
+/// A clip whose sound stops for a second, from 0.5 s to 1.5 s, as a
+/// recording's can, while its picture plays on: a keyframe every 0.2 s,
+/// so a seek into the gap reads no sound till it ends.
+fn with_a_sound_gap() -> PathBuf {
+    with_sound(
+        "with-a-sound-gap-keyed.mkv",
+        3,
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:sample_rate=48000:duration=2",
+            "-af",
+            "asetpts='if(gte(T,0.5),PTS+1/TB,PTS)'",
+            "-g",
+            "5",
+        ],
+    )
+}
+
+#[test]
+fn a_gap_in_the_sound_plays_as_silence_and_the_picture_plays_through_it() {
+    let (mut player, mixer) = opened(with_a_sound_gap());
+    let (shown, longest) = play_for(&mut player, &mixer, 2.5);
+    assert!(
+        showed(&shown, 0.6, 0.9) && showed(&shown, 1.1, 1.4),
+        "the picture plays through it: {shown:?}"
+    );
+    assert!(
+        (40_000..56_000).contains(&longest),
+        "a second of silence, not {longest} frames"
+    );
+}
+
+#[test]
+fn a_seek_into_a_gap_in_the_sound_plays_on_from_there() {
+    let (mut player, mixer) = opened(with_a_sound_gap());
+    player.seek(0.7);
+    let (shown, _) = play_for(&mut player, &mixer, 0.7);
+    assert!(
+        showed(&shown, 0.9, 1.4),
+        "the picture plays on from where it went: {shown:?}"
+    );
+}
+
+#[test]
+fn sound_without_gaps_plays_without_any() {
+    let path = with_sound(
+        "with-sound-whole.mkv",
+        1,
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:sample_rate=48000:duration=1",
+        ],
+    );
+    let (mut player, mixer) = opened(path);
+    let (_, longest) = play_for(&mut player, &mixer, 0.8);
+    assert!(longest < 8, "silent for {longest} frames in it");
+}
+
 /// A seek past where one stream ends, into the other's last seconds,
 /// plays on to the end rather than waiting for the one that ended.
 #[test]
