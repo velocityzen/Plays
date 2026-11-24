@@ -62,3 +62,58 @@ fn hands_over_the_formats_the_gpu_converts() {
     let rgb = frame::Video::new(Pixel::RGB24, 4, 4);
     assert!(converter.convert(&rgb, None).is_none());
 }
+
+/// A 4:2:0 frame whose samples each say where they are: plane, row and
+/// column.
+fn numbered(width: u32, height: u32) -> frame::Video {
+    let mut frame = frame::Video::new(Pixel::YUV420P, width, height);
+    for plane in 0..frame.planes() {
+        let stride = frame.stride(plane);
+        for (y, row) in frame.data_mut(plane).chunks_mut(stride).enumerate() {
+            for (x, sample) in row.iter_mut().enumerate() {
+                *sample = (plane * 100 + y * 10 + x) as u8;
+            }
+        }
+    }
+    frame
+}
+
+/// `frame`'s first `planes` planes stored bottom up, the picture the same:
+/// their rows in reverse, the first last in memory, and their linesizes
+/// negative.
+fn stored_bottom_up(mut frame: frame::Video, planes: usize) -> frame::Video {
+    for plane in 0..planes {
+        let (stride, rows) = (frame.stride(plane), frame.plane_height(plane) as usize);
+        let data = frame.data_mut(plane);
+        let reversed: Vec<u8> = data.chunks(stride).rev().flatten().copied().collect();
+        data.copy_from_slice(&reversed);
+        // SAFETY: the plane holds `rows` rows of `stride` bytes; from the
+        // last one's start, a negative linesize steps back through them.
+        unsafe {
+            let raw = frame.as_mut_ptr();
+            (*raw).data[plane] = (*raw).data[plane].add(stride * (rows - 1));
+            (*raw).linesize[plane] = -(*raw).linesize[plane];
+        }
+    }
+    frame
+}
+
+#[test]
+fn hands_over_a_frame_stored_bottom_up_the_right_way_up() {
+    let mut converter = YuvConverter::default();
+    let upright = converter.convert(&numbered(8, 6), None).unwrap().unwrap();
+    let siting = |picture: &YuvPicture| picture.frame.color().chroma_siting;
+
+    // Every plane, as Dxtory's flipped frames are.
+    let stored = stored_bottom_up(numbered(8, 6), 3);
+    assert!(stored.stride(2).cast_signed() < 0, "stored bottom up");
+    let picture = converter.convert(&stored, None).unwrap().unwrap();
+    assert_eq!(picture.size(), (8, 6));
+    assert_eq!(picture.frame.planes(), upright.frame.planes());
+    assert_eq!(siting(&picture), siting(&upright), "chroma moved");
+
+    // Luma only, as rawvideo's BottomUp is.
+    let stored = stored_bottom_up(numbered(8, 6), 1);
+    let picture = converter.convert(&stored, None).unwrap().unwrap();
+    assert_eq!(picture.frame.planes(), upright.frame.planes());
+}

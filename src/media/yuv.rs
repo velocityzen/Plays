@@ -91,14 +91,21 @@ impl YuvConverter {
             frame.aspect_ratio(),
             max_short_side,
         );
-        if size == (frame.width(), frame.height()) {
+        let at_size = size == (frame.width(), frame.height());
+        if at_size && !bottom_up(frame) {
             return Some(planes(frame, frame, chroma_siting(frame)));
         }
         // swscale takes chroma to sit between luma samples, in the frames
-        // it reads and in those it makes.
+        // it reads and in those it makes, but leaves it where it was in a
+        // frame it only turns the right way up.
+        let siting = if at_size {
+            chroma_siting(frame)
+        } else {
+            [1., 1.]
+        };
         Some(
             self.scaled(frame, size)
-                .and_then(|scaled| planes(scaled, frame, [1., 1.])),
+                .and_then(|scaled| planes(scaled, frame, siting)),
         )
     }
 
@@ -136,6 +143,13 @@ impl YuvConverter {
         scaler.context.run(frame, &mut scaler.output)?;
         Ok(&scaler.output)
     }
+}
+
+/// Whether `frame` is stored bottom up, its planes' rows going back through
+/// memory (a negative linesize), as Dxtory's flipped frames are: `planes`
+/// can't slice those, so swscale turns them the right way up.
+fn bottom_up(frame: &frame::Video) -> bool {
+    (0..frame.planes()).any(|plane| frame.stride(plane).cast_signed() < 0)
 }
 
 /// `samples`' planes, copied row by row, with the colors `tags` says
