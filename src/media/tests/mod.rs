@@ -170,7 +170,8 @@ fn opens_and_seeks_video_accurately() {
 }
 
 /// A file whose picture runs `picture` seconds and its sound `sound`, in
-/// `container`.
+/// `container`, laid out as ffmpeg lays it out: a picture much shorter
+/// than its sound comes after most of the sound.
 fn ends_apart(picture: u32, sound: u32, container: &str) -> PathBuf {
     media(
         &format!("ends/picture-{picture}-sound-{sound}.{container}"),
@@ -360,27 +361,35 @@ fn plays_on_from_a_seek_past_where_one_stream_ends() {
 
 /// A seek into one stream going on long after the other, further than is
 /// read ahead, plays, though the file's end, where the other is known to
-/// have ended, isn't read by then. An MP4 lands each stream where it's
-/// asked to.
+/// have ended, isn't read by then. In Matroska, a seek past where the
+/// picture ends goes by the sound, which the picture's cues would skip.
 #[test]
 fn plays_from_a_seek_into_one_stream_going_on_long_after_the_other() {
-    for (picture, sound) in [(1, 300), (400, 1)] {
-        let (mut player, mixer) = opened(ends_apart(picture, sound, "mp4"));
+    for (picture, sound, container) in [
+        (1, 300, "mp4"),
+        (400, 1, "mp4"),
+        (1, 300, "mkv"),
+        (400, 1, "mkv"),
+    ] {
+        let (mut player, mixer) = opened(ends_apart(picture, sound, container));
         player.seek(10.0);
         let [heard, _] =
             drain_each_side(&mut player, &mixer, Duration::from_secs(10), |player, _| {
                 player.position() >= 10.5
             });
+        // Where it was asked to, not on from where the file read next.
         assert!(
-            player.position() >= 10.5 && player.is_playing() && !player.is_buffering(),
-            "picture {picture} s, sound {sound} s: at {} s, buffering: {}",
+            (10.5..11.5).contains(&player.position())
+                && player.is_playing()
+                && !player.is_buffering(),
+            "{container}, picture {picture} s, sound {sound} s: at {} s, buffering: {}",
             player.position(),
             player.is_buffering()
         );
         assert_eq!(
             heard > 0,
             sound > 10,
-            "picture {picture} s, sound {sound} s: heard {heard} frames"
+            "{container}, picture {picture} s, sound {sound} s: heard {heard} frames"
         );
     }
 }

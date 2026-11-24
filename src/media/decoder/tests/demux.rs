@@ -20,3 +20,22 @@ fn timestamps_at_the_ends_of_what_they_can_be_are_no_trouble() {
     queue.keep_from(f64::MAX, 10);
     assert!(queue.packets.is_empty(), "and the last, ending before then");
 }
+
+#[test]
+fn reads_a_length_as_matroska_tags_it() {
+    assert_eq!(length_in_seconds("00:00:01.000000000"), Some(1.0));
+    assert_eq!(length_in_seconds("01:02:03.500000000"), Some(3723.5));
+    assert_eq!(length_in_seconds(" 00:05:00.021 "), Some(300.021));
+    for wrong in [
+        "",
+        "1.5",
+        "00:01",
+        "00:00:01:00",
+        "00:00:-1",
+        "00:00:inf",
+        "a:00:01",
+        "00:b:01",
+    ] {
+        assert_eq!(length_in_seconds(wrong), None, "{wrong}");
+    }
+}

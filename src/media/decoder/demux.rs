@@ -6,7 +6,8 @@ use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
-use ffmpeg::Packet;
+use ffmpeg::format::context::Input;
+use ffmpeg::{Packet, Rescale};
 use ffmpeg_next as ffmpeg;
 use parking_lot::{Condvar, Mutex};
 
@@ -333,7 +334,7 @@ pub const PANICS_IN_DEMUX: &str = "panics-in-demux";
 
 /// The demux thread: reads packets until the queues are full enough, and
 /// carries out seeks.
-pub(super) fn demux(mut input: ffmpeg::format::context::Input, demuxer: &Demuxer, name: &str) {
+pub(super) fn demux(mut input: Input, demuxer: &Demuxer, name: &str) {
     #[cfg(test)]
     if name.starts_with(PANICS_IN_DEMUX) {
         panic!("the demux thread failing, as the test asked");
@@ -355,11 +356,14 @@ pub(super) fn demux(mut input: ffmpeg::format::context::Input, demuxer: &Demuxer
         };
 
         if let Some(seek) = seek {
-            let video = {
+            let (video, sound) = {
                 let packets = demuxer.packets.lock();
-                packets.video.as_ref().map(|q| (q.index, q.time_base))
+                (
+                    packets.video.as_ref().map(|q| (q.index, q.time_base)),
+                    packets.audio.as_ref().map(|q| q.index),
+                )
             };
-            let landing = land(&mut input, seek, video, name);
+            let landing = land(&mut input, seek, video, sound, name);
             let mut packets = demuxer.packets.lock();
             // A newer seek may have come in meanwhile; it runs next time round.
             if packets.seek == Some(seek) {
@@ -432,16 +436,21 @@ struct Landing {
 
 /// Seek `input` to the keyframe before the target. A skip whose target is
 /// far past it lands on that keyframe instead when going back, or on the
-/// one after the target when going forward, so it shows at once.
+/// one after the target when going forward, so it shows at once. Past
+/// where the `video` stream says it ends, the seek goes by the `sound`
+/// stream: Matroska seeks by the picture's cues, and the cluster of its
+/// last one can come after most of the sound.
 fn land(
-    input: &mut ffmpeg::format::context::Input,
+    input: &mut Input,
     seek: Seek,
     video: Option<(usize, f64)>,
+    sound: Option<usize>,
     name: &str,
 ) -> Landing {
     let target = seek.target;
     let seconds = target as f64 / AV_TIME_BASE;
-    if let Err(err) = input.seek(target, ..target) {
+    let by = sound.filter(|_| video.is_some_and(|(index, _)| ends_before(input, index, seconds)));
+    if let Err(err) = seek_before(input, target, by) {
         log::warn!("{name}: seek to {seconds:.2}s failed: {err}");
     }
     let (SeekMode::Skip { forward }, Some(video)) = (seek.mode, video) else {
@@ -472,9 +481,50 @@ fn land(
     Landing::default()
 }
 
+/// Seek `input` to the keyframe before `target`, in `AV_TIME_BASE` units:
+/// stream `by`'s, or that of the stream FFmpeg picks.
+fn seek_before(input: &mut Input, target: i64, by: Option<usize>) -> Result<(), ffmpeg::Error> {
+    let Some(index) = by else {
+        return input.seek(target, ..target);
+    };
+    let stream = input.stream(index).ok_or(ffmpeg::Error::StreamNotFound)?;
+    let at = target.rescale(ffmpeg::rescale::TIME_BASE, stream.time_base());
+    let index = i32::try_from(index).map_err(|_| ffmpeg::Error::StreamNotFound)?;
+    // SAFETY: `input` owns an open format context, and `index` is one of its
+    // streams, so `at` is in that stream's time base, as FFmpeg asks.
+    let sought =
+        unsafe { ffmpeg::ffi::avformat_seek_file(input.as_mut_ptr(), index, i64::MIN, at, at, 0) };
+    if sought < 0 {
+        Err(ffmpeg::Error::from(sought))
+    } else {
+        Ok(())
+    }
+}
+
+/// Whether stream `index` of `input` says it ends before `seconds`:
+/// Matroska's muxers tag each track with where it ends, from 0.
+fn ends_before(input: &Input, index: usize, seconds: f64) -> bool {
+    input
+        .stream(index)
+        .and_then(|stream| ffmpeg_safe::tag(&stream.metadata(), c"DURATION"))
+        .and_then(|end| length_in_seconds(&end))
+        .is_some_and(|end| end < seconds)
+}
+
+/// The seconds in a length written `HH:MM:SS.fraction`, as Matroska tags
+/// one.
+fn length_in_seconds(text: &str) -> Option<f64> {
+    let mut parts = text.trim().splitn(3, ':');
+    let hours: u32 = parts.next()?.parse().ok()?;
+    let minutes: u32 = parts.next()?.parse().ok()?;
+    let seconds: f64 = parts.next()?.parse().ok()?;
+    let length = f64::from(hours) * 3600.0 + f64::from(minutes) * 60.0 + seconds;
+    (seconds >= 0.0 && length.is_finite()).then_some(length)
+}
+
 /// Read up to the first packet of the `video` stream (index, time base),
 /// keeping its time in `keyframe`.
-fn read_to_video(input: &mut ffmpeg::format::context::Input, video: (usize, f64)) -> Landing {
+fn read_to_video(input: &mut Input, video: (usize, f64)) -> Landing {
     let mut landing = Landing::default();
     while landing.packets.len() < PEEK_PACKETS {
         let mut packet = Packet::empty();
