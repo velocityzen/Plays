@@ -112,6 +112,41 @@ fn credentials_for_another_tv_dont_verify() {
 }
 
 #[test]
+fn a_tv_that_cant_play_the_url_says_why() {
+    let fake = FakeReceiver::start(Kind::Tv { pin: PIN });
+    let credentials = pair(&fake);
+    let (mut session, _events) =
+        VideoSession::connect(&fake.device(), Some(&credentials), &sender()).unwrap();
+    session
+        .play("http://192.0.2.1:8080/stream/master.m3u8", 0.0, true)
+        .unwrap();
+    // As it says why, once it couldn't.
+    let mut error = plist::Dictionary::new();
+    error.insert("domain".into(), "CoreMediaErrorDomain".into());
+    error.insert("code".into(), plist::Value::Integer((-16847).into()));
+    let mut playback = plist::Dictionary::new();
+    playback.insert("error".into(), plist::Value::Dictionary(error));
+    fake.state().playback = playback;
+    let Err(Error::Unplayable(why)) = session.playback_info() else {
+        panic!("it can't play it")
+    };
+    assert_eq!(why, "CoreMediaErrorDomain -16847");
+    assert_eq!(
+        Error::Unplayable(why).to_string(),
+        "it can't play this: CoreMediaErrorDomain -16847"
+    );
+    // Or that it couldn't, alone.
+    let mut playback = plist::Dictionary::new();
+    playback.insert("error".into(), plist::Dictionary::new().into());
+    fake.state().playback = playback;
+    let Err(Error::Unplayable(why)) = session.playback_info() else {
+        panic!("it can't play it")
+    };
+    assert_eq!(why, "an unknown error");
+    session.stop();
+}
+
+#[test]
 fn a_tv_plays_a_url_and_is_driven_while_it_does() {
     let fake = FakeReceiver::start(Kind::Tv { pin: PIN });
     let credentials = pair(&fake);

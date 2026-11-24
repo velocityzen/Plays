@@ -7,16 +7,24 @@ use crate::profile::{AudioCodec, Profile};
 /// The tone, re-encoded to AC-3, in segments a tenth of a second long:
 /// ten of them.
 fn tone() -> Arc<Vod> {
+    let (media, timeline) = tone_in(None);
+    Vod::new(Arc::new(media), timeline)
+}
+
+/// The tone as AC-3 in `hls` segments (the profile's own by default), and
+/// its ten segments.
+fn tone_in(hls: Option<Segments>) -> (Media, Timeline) {
     crate::init();
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/tone.m4a");
     let source = Source::File(path);
     let mut input = media::open(&source, Arc::default()).unwrap();
     let info = MediaInfo::read(&input, &source.location());
-    let profile = Profile {
+    let mut profile = Profile {
         files: Vec::new(),
         audio: vec![AudioCodec::Ac3],
         ..Profile::default()
     };
+    profile.hls = hls.or(profile.hls);
     let plan = plan(&info, &source, Pick::Best, Pick::Best, None, &profile).unwrap();
     let timeline = crate::segments::timeline(&mut input, &info, &plan, 0.1);
     assert_eq!(timeline.len(), 10);
@@ -27,7 +35,48 @@ fn tone() -> Arc<Vod> {
         plan,
         segment: 0.1,
     };
-    Vod::new(Arc::new(media), timeline)
+    (media, timeline)
+}
+
+/// A job from the start and one from the last segment, which only ends:
+/// each hands over MP4's init segment first, once, as it cuts or ends the
+/// segment the init segment was written with.
+#[test]
+fn hands_over_mp4s_init_segment_before_its_first_segment() {
+    let (media, timeline) = tone_in(Some(Segments::Fmp4));
+    assert_eq!(media.kind, Segments::Fmp4);
+    for from in [0, 9] {
+        let mut made = Vec::new();
+        make_segments(&media, &timeline, from, &Arc::default(), &mut |product| {
+            made.push(match product {
+                Product::Init(_) => None,
+                Product::Segment(segment, _) => Some(segment),
+            });
+            true
+        })
+        .unwrap();
+        assert_eq!(made[..2], [None, Some(from)], "from {from}");
+        assert_eq!(made.iter().filter(|made| made.is_none()).count(), 1);
+    }
+}
+
+/// A live stream cut into segments, and one that ends before its first
+/// cut: each hands over MP4's init segment first, once.
+#[test]
+fn a_live_stream_hands_over_mp4s_init_segment_before_its_first_segment() {
+    let (mut media, _) = tone_in(Some(Segments::Fmp4));
+    for segment in [0.1, 10.0] {
+        media.segment = segment;
+        let mut made = Vec::new();
+        make_live(&media, &Arc::default(), &mut |product| {
+            made.push(matches!(product, LiveProduct::Init(_)));
+            true
+        })
+        .unwrap();
+        assert!(made.len() >= 2, "{segment} s segments: {made:?}");
+        assert!(made[0], "{segment} s segments start with the init segment");
+        assert_eq!(made.iter().filter(|init| **init).count(), 1);
+    }
 }
 
 #[test]

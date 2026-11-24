@@ -13,6 +13,9 @@
 #                only AAC gets re-encoded
 # clip-sound-gap.mkv  clip.mp4's picture with 1.6 s of Opus sound and
 #                none from 0.6 s to 1 s, the rest playing from 1 s on
+# clip-sound-ac3.mkv  clip.mp4's picture with 5.1 AC-3 sound, as films
+#                have it
+# clip-sound-eac3.mkv  the same with E-AC-3 sound
 # tone.m4a       1 s of 440 Hz, AAC, no picture
 # tune.flac      0.3 s of 440 Hz, 24-bit 96 kHz FLAC, tagged as Tone by
 #                Plays on Fixtures, whose album artist is Various Artists;
@@ -63,6 +66,12 @@ x264=(-c:v libx264 -pix_fmt yuv420p -preset veryslow -crf 36 -g 25)
     -f lavfi -i "sine=frequency=440:sample_rate=48000:duration=1.6:samples_per_frame=960" \
     -filter:a "asetpts='if(gte(T,0.6),PTS+0.4/TB,PTS)'" -map 0:v -map 1:a \
     -c:v copy -c:a libopus -b:a 24k -ac 1 -map_metadata -1 clip-sound-gap.mkv
+for codec in ac3 eac3; do
+    "${ffmpeg[@]}" -i clip.mp4 \
+        -f lavfi -i "sine=frequency=440:sample_rate=48000:duration=2" \
+        -map 0:v -map 1:a -c:v copy -c:a "$codec" -b:a 96k -ac 6 \
+        -map_metadata -1 "clip-sound-$codec.mkv"
+done
 "${ffmpeg[@]}" -f lavfi -i "sine=frequency=440:sample_rate=48000:duration=1" \
     -c:a aac -b:a 32k -ac 1 -map_metadata -1 tone.m4a
 "${ffmpeg[@]}" -f lavfi -i "sine=frequency=440:sample_rate=96000:duration=0.3" \

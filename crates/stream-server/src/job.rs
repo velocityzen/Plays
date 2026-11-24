@@ -266,15 +266,15 @@ impl Lengths {
 unsafe impl Send for Pipeline {}
 
 impl Pipeline {
-    /// Open the source, seek to `start` and set up each track; returns
-    /// the pipeline and the output's header (for MP4, the init segment).
+    /// Open the source, seek to `start`, set up each track and write the
+    /// output's header.
     fn open(
         media: &Media,
         start: Start,
         keys: Keys,
         domain: Domain,
         stop: Arc<AtomicBool>,
-    ) -> Result<(Self, Vec<u8>), Error> {
+    ) -> Result<Self, Error> {
         let mut input = media::open(&media.source, stop)?;
         let video = media.plan.video_stream();
         let audio = media.plan.audio_stream();
@@ -315,25 +315,22 @@ impl Pipeline {
             outputs.push(out);
         }
         let mut muxer = Muxer::new(media.plan.format(), &outputs)?;
-        let header = muxer.write_header()?;
+        muxer.write_header()?;
         let count = outputs.len();
-        Ok((
-            Self {
-                input,
-                muxer,
-                tracks,
-                lengths: Lengths::new(count),
-                times: vec![0.0; count],
-                #[cfg(test)]
-                reads_left: {
-                    let location = media.source.location();
-                    let mut breaks = lock(&BREAKS);
-                    let at = breaks.iter().position(|(source, _)| *source == location);
-                    at.map(|at| breaks.remove(at).1)
-                },
+        Ok(Self {
+            input,
+            muxer,
+            tracks,
+            lengths: Lengths::new(count),
+            times: vec![0.0; count],
+            #[cfg(test)]
+            reads_left: {
+                let location = media.source.location();
+                let mut breaks = lock(&BREAKS);
+                let at = breaks.iter().position(|(source, _)| *source == location);
+                at.map(|at| breaks.remove(at).1)
             },
-            header,
-        ))
+        })
     }
 
     /// Read the next packet and turn it into output packets; false at the
@@ -855,18 +852,15 @@ fn make_segments(
         (None, _) => Start::Time(timeline.start(from)),
     };
     let keys = Keys::At(timeline.starts[from + 1..].to_vec(), 0);
-    let (mut pipeline, header) = Pipeline::open(media, start, keys, domain, Arc::clone(stop))?;
-    // MPEG-TS has no header of its own; whatever the muxer wrote first
-    // starts the first segment.
-    if media.kind == Segments::Fmp4 && !deliver(Product::Init(header)) {
-        return Ok(());
-    }
+    let mut pipeline = Pipeline::open(media, start, keys, domain, Arc::clone(stop))?;
     let mut segment = from;
     let mut held: Vec<Out> = Vec::new();
     let read = read_through(&mut pipeline, stop, Broken::Fails, &mut |pipeline, out| {
         let leader = out.output == 0;
         if leader && out.key && past(timeline, segment, &out, true) {
-            if !deliver(Product::Segment(segment, pipeline.muxer.cut()?)) {
+            let bytes = pipeline.muxer.cut()?;
+            let cut = Product::Segment(segment, bytes);
+            if !hand_over(&mut pipeline.muxer, cut, Product::Init, deliver) {
                 return Ok(false);
             }
             segment += 1;
@@ -895,7 +889,8 @@ fn make_segments(
     for follower in held {
         pipeline.write(follower)?;
     }
-    if !deliver(Product::Segment(segment, pipeline.muxer.finish()?)) {
+    let last = Product::Segment(segment, pipeline.muxer.finish()?);
+    if !hand_over(&mut pipeline.muxer, last, Product::Init, deliver) {
         return Ok(());
     }
     // The media ended before the segments the timeline has after this.
@@ -1384,11 +1379,8 @@ fn make_live(
         period: media.segment,
         next: None,
     };
-    let (mut pipeline, header) =
+    let mut pipeline =
         Pipeline::open(media, Start::Beginning, keys, Domain::Pts, Arc::clone(stop))?;
-    if media.kind == Segments::Fmp4 && !deliver(LiveProduct::Init(header)) {
-        return Ok(());
-    }
     let mut start: Option<f64> = None;
     let mut latest = f64::NEG_INFINITY;
     let mut held: Vec<Out> = Vec::new();
@@ -1413,7 +1405,7 @@ fn make_live(
                 duration: out.time - begun,
                 bytes: pipeline.muxer.cut()?,
             };
-            if !deliver(segment) {
+            if !hand_over(&mut pipeline.muxer, segment, LiveProduct::Init, deliver) {
                 return Ok(false);
             }
             start = Some(out.time);
@@ -1436,8 +1428,25 @@ fn make_live(
     }
     let bytes = pipeline.muxer.finish()?;
     let duration = start.map_or(0.0, |begun| (latest - begun).max(0.0));
-    deliver(LiveProduct::Segment { duration, bytes });
+    let last = LiveProduct::Segment { duration, bytes };
+    hand_over(&mut pipeline.muxer, last, LiveProduct::Init, deliver);
     Ok(())
+}
+
+/// Hand over what was cut, after MP4's init segment if cutting it wrote
+/// that.
+fn hand_over<P>(
+    muxer: &mut Muxer,
+    cut: P,
+    init: fn(Vec<u8>) -> P,
+    deliver: &mut dyn FnMut(P) -> bool,
+) -> bool {
+    if let Some(bytes) = muxer.take_init()
+        && !deliver(init(bytes))
+    {
+        return false;
+    }
+    deliver(cut)
 }
 
 /// A progressive MPEG-TS stream of the media from `start` seconds, sent
@@ -1475,10 +1484,7 @@ fn make_stream(
         period: media.segment,
         next: None,
     };
-    let (mut pipeline, header) = Pipeline::open(media, from, keys, Domain::Pts, Arc::clone(stop))?;
-    if !header.is_empty() && sender.send(header).is_err() {
-        return Ok(());
-    }
+    let mut pipeline = Pipeline::open(media, from, keys, Domain::Pts, Arc::clone(stop))?;
     let mut written = 0;
     let mut outs = Vec::new();
     loop {

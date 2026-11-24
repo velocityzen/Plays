@@ -622,6 +622,52 @@ fn makes_hls_of_fragmented_mp4() {
     assert!(audio.unwrap().first() >= 9.9);
 }
 
+/// AC-3 and E-AC-3, most films' sound, go into MP4 segments as they are;
+/// the init segment says what is in them, which only a packet tells.
+#[test]
+fn makes_hls_of_fragmented_mp4_with_ac3_and_eac3_sound() {
+    let server = server();
+    let surround = Profile {
+        audio: vec![AudioCodec::Aac, AudioCodec::Ac3, AudioCodec::Eac3],
+        max_channels: 8,
+        ..hls(Segments::Fmp4)
+    };
+    for (name, codec, id, sample_entry) in [
+        ("clip-sound-ac3.mkv", "ac-3", Id::AC3, b"dac3"),
+        ("clip-sound-eac3.mkv", "ec-3", Id::EAC3, b"dec3"),
+    ] {
+        let cast = cast(&server, name, surround.clone());
+        assert_eq!(cast.plan().describe(), "repackaged", "{name}");
+        let master = get(&cast.url()).text();
+        assert!(master.contains(&format!(",{codec}\"")), "{master}");
+        let init = get(&sibling(&cast.url(), "init.mp4"));
+        assert_eq!(init.status, 200, "{name}'s init segment");
+        assert_eq!(&init.body[4..8], b"ftyp");
+        assert!(
+            init.body.windows(4).any(|bytes| bytes == sample_entry),
+            "{name}'s init segment says what its sound is"
+        );
+        assert!(
+            !init.body.windows(4).any(|bytes| bytes == b"moof"),
+            "{name}'s init segment has no fragment in it"
+        );
+        for number in 0..2 {
+            let segment = get(&sibling(&cast.url(), &format!("{number}.m4s")));
+            assert_eq!(
+                &segment.body[4..8],
+                b"moof",
+                "{name}: {number} is a fragment"
+            );
+            let (video, audio) = fetch(&cast.url(), Segments::Fmp4, number);
+            assert_eq!(video.codec, Id::H264);
+            assert!(video.keys[0], "{name}: {number} starts with a keyframe");
+            let audio = audio.expect("sound");
+            assert_eq!(audio.codec, id, "{name}");
+            assert!(!audio.times.is_empty(), "{name}: sound in {number}");
+        }
+    }
+}
+
 #[test]
 fn seeks_into_the_middle() {
     for kind in [Segments::Ts, Segments::Fmp4] {
@@ -1111,6 +1157,47 @@ fn serves_a_live_stream_as_it_comes() {
         assert!(close(video.first(), 10.0 + number as f64));
     }
     assert_eq!(get(&sibling(&cast.url(), "7.ts")).status, 500);
+}
+
+/// A live stream to a device taking MP4 segments, its sound AC-3: the
+/// init segment comes with the first segment made.
+#[test]
+fn serves_a_live_stream_in_fragmented_mp4() {
+    let server = server();
+    let source = Source::Stream {
+        url: fixture("clip-sound-ac3.mkv").to_string_lossy().into_owned(),
+        live: true,
+    };
+    let surround = Profile {
+        audio: vec![AudioCodec::Ac3],
+        max_channels: 8,
+        ..hls(Segments::Fmp4)
+    };
+    let cast = server
+        .add(CastRequest::new(source, surround), LOCALHOST)
+        .unwrap();
+    assert_eq!(cast.plan().delivery, Delivery::Hls(Segments::Fmp4));
+    let playlist = get(&sibling(&cast.url(), "video.m3u8")).text();
+    assert!(
+        playlist.contains("#EXT-X-MAP:URI=\"init.mp4\""),
+        "{playlist}"
+    );
+    let names = segment_names(&playlist);
+    assert_eq!(names, ["0.m4s", "1.m4s"]);
+    let init = get(&sibling(&cast.url(), "init.mp4"));
+    assert_eq!(init.status, 200);
+    assert!(init.body.windows(4).any(|bytes| bytes == b"dac3"));
+    for (number, name) in names.iter().enumerate() {
+        let segment = get(&sibling(&cast.url(), name));
+        assert_eq!(&segment.body[4..8], b"moof", "{name} is a fragment");
+        let mut bytes = init.body.clone();
+        bytes.extend(segment.body);
+        let (video, audio) = probe(&bytes, "mp4");
+        let video = video.unwrap();
+        assert!(video.keys[0], "{name} starts with a keyframe");
+        assert!(close(video.first(), 10.0 + number as f64), "{name}");
+        assert_eq!(audio.unwrap().codec, Id::AC3, "{name}");
+    }
 }
 
 #[test]

@@ -68,6 +68,12 @@ pub(crate) struct Muxer {
     input_time_bases: Vec<Rational>,
     /// Where the context's `pb` writes, from `Box::into_raw`.
     sink: *mut Sink,
+    /// Whether MP4's init segment is yet to be written. It is written with
+    /// the first fragment: only a packet of AC-3 or E-AC-3 sound says what
+    /// the sound is.
+    init_unwritten: bool,
+    /// The init segment, once written, till it is taken.
+    init: Option<Vec<u8>>,
 }
 
 // SAFETY: the muxer is used by one thread at a time, the job's, and the
@@ -214,6 +220,8 @@ impl Muxer {
                 kind,
                 input_time_bases: streams.iter().map(|stream| stream.time_base).collect(),
                 sink: Box::into_raw(Box::default()),
+                init_unwritten: kind == Format::Fmp4,
+                init: None,
             };
             for stream in streams {
                 let out = ffi::avformat_new_stream(context, ptr::null());
@@ -241,9 +249,9 @@ impl Muxer {
         }
     }
 
-    /// Start writing: the header. MP4's, the init segment, is handed back;
-    /// the others' starts what is taken next.
-    pub fn write_header(&mut self) -> Result<Vec<u8>, Error> {
+    /// Start writing: the header. MP4's, the init segment, waits for the
+    /// first fragment (`take_init`); the others' starts what is taken next.
+    pub fn write_header(&mut self) -> Result<(), Error> {
         let mut options = Dictionary::new();
         // Timestamps are written as they come: shifting them to start at
         // zero would shift each job's differently.
@@ -252,7 +260,7 @@ impl Muxer {
             Format::Fmp4 => {
                 options.set(
                     "movflags",
-                    "empty_moov+default_base_moof+frag_custom+frag_discont+skip_trailer",
+                    "empty_moov+delay_moov+default_base_moof+frag_custom+frag_discont+skip_trailer",
                 );
                 options.set("use_editlist", "0");
             }
@@ -263,12 +271,14 @@ impl Muxer {
             let mut raw = options.disown();
             let result = ffi::avformat_write_header(self.context, &mut raw);
             ffi::av_dict_free(&mut raw);
-            check(result, "writing the header")?;
+            check(result, "writing the header")
         }
-        match self.kind {
-            Format::Fmp4 => self.take(),
-            Format::Ts | Format::Adts | Format::Flac => Ok(Vec::new()),
-        }
+    }
+
+    /// MP4's init segment, once the first cut or `finish` wrote it; then
+    /// nothing.
+    pub fn take_init(&mut self) -> Option<Vec<u8>> {
+        self.init.take()
     }
 
     /// The time base packets of stream `index` are written in.
@@ -298,7 +308,8 @@ impl Muxer {
     }
 
     /// Write out the interleaving queue, then the muxer's own buffers (an
-    /// MP4 fragment, or MPEG-TS's PES packets).
+    /// MP4 fragment, or MPEG-TS's PES packets). MP4's first flush writes
+    /// the init segment alone, kept apart; a second, the fragment.
     fn flush(&mut self) -> Result<(), Error> {
         // SAFETY: the context is open; flushing writes to the sink.
         unsafe {
@@ -306,6 +317,19 @@ impl Muxer {
                 ffi::av_interleaved_write_frame(self.context, ptr::null_mut()),
                 "flushing",
             )?;
+        }
+        self.flush_fragment()?;
+        if self.init_unwritten {
+            self.init = Some(self.take()?);
+            self.init_unwritten = false;
+            self.flush_fragment()?;
+        }
+        Ok(())
+    }
+
+    fn flush_fragment(&mut self) -> Result<(), Error> {
+        // SAFETY: the context is open; flushing writes to the sink.
+        unsafe {
             check(
                 ffi::av_write_frame(self.context, ptr::null_mut()),
                 "flushing",

@@ -507,6 +507,35 @@ fn a_tv_that_forgot_this_computer_asks_for_its_pin_again(cx: &mut TestAppContext
     );
 }
 
+/// A TV that can't play what it was told to says so in what it's doing:
+/// the cast ends saying it can't, rather than loading for good.
+#[gpui::test]
+fn a_tv_that_cant_play_it_ends_the_cast_saying_so(cx: &mut TestAppContext) {
+    let tv = tv();
+    let (window, mut cx) = start(cx, &tv, "clip.mp4", true);
+    paired_before(&mut cx, &tv);
+    let view = block(window, &cx);
+    cast(&mut cx, &tv);
+    wait(&mut cx, "the block to say where it plays", |cx| {
+        shows(cx, "play-here")
+    });
+
+    let mut error = Dictionary::new();
+    error.insert("domain".into(), "CoreMediaErrorDomain".into());
+    error.insert("code".into(), Value::Integer((-16847).into()));
+    let mut playback = Dictionary::new();
+    playback.insert("error".into(), Value::Dictionary(error));
+    tv.state().playback = playback;
+    wait(&mut cx, "the cast to end", |cx| {
+        view.read_with(cx, |view, _| view.casting().is_none())
+    });
+    let noted = view.read_with(&cx, |view, _| view.noted());
+    assert_eq!(
+        noted.as_deref(),
+        Some(format!("Can't play on {}: it can't play this", tv.device().name).as_str())
+    );
+}
+
 /// Cast block `at` to `device` (`cast.to`), as its menu does.
 fn cast_block(
     window: WindowHandle<Workspace>,

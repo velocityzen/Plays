@@ -21,6 +21,9 @@ pub enum Error {
     /// lets only some senders play to it, as its settings say, such as a
     /// Mac's own user's devices or a home's people.
     Refused,
+    /// It couldn't play what it was told to: its player's error, by
+    /// domain and code.
+    Unplayable(String),
     /// It said something unexpected.
     Protocol(String),
 }
@@ -55,6 +58,7 @@ impl fmt::Display for Error {
             Self::Pairing(why) => write!(f, "pairing failed: {why}"),
             Self::Forgotten(why) => write!(f, "to be paired again: {why}"),
             Self::Refused => f.write_str("it doesn't let this computer play to it"),
+            Self::Unplayable(why) => write!(f, "it can't play this: {why}"),
             Self::Protocol(why) => f.write_str(why),
         }
     }

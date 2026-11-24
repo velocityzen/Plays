@@ -126,14 +126,19 @@ impl Target for AirPlayTarget {
     }
 }
 
-/// What went wrong, as the block is told; why it can't be reached goes to
-/// the log.
+/// What went wrong, as the block is told; why it can't be reached, or
+/// can't play what it was told to, goes to the log.
 fn failed(err: &::airplay::Error) -> Error {
-    if err.is_gone() {
-        log::warn!("airplay: can't reach the receiver: {err}");
-        Error::Gone
-    } else {
-        Error::Failed(err.to_string())
+    match err {
+        err if err.is_gone() => {
+            log::warn!("airplay: can't reach the receiver: {err}");
+            Error::Gone
+        }
+        ::airplay::Error::Unplayable(why) => {
+            log::warn!("airplay: the receiver can't play it: {why}");
+            Error::Unplayable
+        }
+        err => Error::Failed(err.to_string()),
     }
 }
 

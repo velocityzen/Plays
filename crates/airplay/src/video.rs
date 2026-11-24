@@ -182,13 +182,17 @@ impl VideoSession {
         Ok(())
     }
 
-    /// What it's doing now.
+    /// What it's doing now; why not, if it couldn't play what it was told
+    /// to.
     pub fn playback_info(&mut self) -> Result<PlaybackInfo> {
         let info = self
             .control
             .exchange(Request::http("GET", "/playback-info"))?
             .dictionary()
             .unwrap_or_default();
+        if let Some(why) = failure(&info) {
+            return Err(Error::Unplayable(why));
+        }
         let info = read_playback_info(&info, self.started);
         if matches!(info.state, PlaybackState::Playing | PlaybackState::Paused) {
             self.started = true;
@@ -217,6 +221,20 @@ fn number(info: &Dictionary, key: &str) -> Option<f64> {
 
 fn flag(info: &Dictionary, key: &str) -> bool {
     info.get(key).and_then(Value::as_boolean).unwrap_or(false)
+}
+
+/// Why `/playback-info` says it couldn't play what it was told to, if it
+/// does: its player's error.
+fn failure(info: &Dictionary) -> Option<String> {
+    let error = info.get("error")?;
+    let field = |key: &str| error.as_dictionary().and_then(|error| error.get(key));
+    let domain = field("domain")
+        .and_then(Value::as_string)
+        .unwrap_or("an unknown error");
+    Some(match field("code").and_then(Value::as_signed_integer) {
+        Some(code) => format!("{domain} {code}"),
+        None => domain.to_owned(),
+    })
 }
 
 /// What `/playback-info` says; `started` is whether it was seen playing,
