@@ -645,6 +645,8 @@ pub mod settings {
     pub const SCREENSHOTS_COLOR: u32 = 0xbf5af2;
     pub const HOTKEYS_COLOR: u32 = 0x5e5ce6;
     pub const APPEARANCE_COLOR: u32 = 0x8e8e93;
+    /// Red, as Plays' own icon is.
+    pub const DEFAULT_PLAYER_COLOR: u32 = 0xff3b30;
     /// Dark, as a terminal is.
     pub const COMMAND_LINE_COLOR: u32 = 0x48484a;
     pub const ABOUT_COLOR: u32 = 0x30b0c7;

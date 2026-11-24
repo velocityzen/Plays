@@ -88,6 +88,7 @@ GPU-accelerated UI framework.
 - Every shortcut can be changed
 - The `plays` command line
 - Settings in a JSON file you can export, import and reset
+- Plays as the default player, for the formats you pick in Settings
 - A menu bar on macOS, a toolbar on Linux
 
 ## Getting Plays
@@ -98,13 +99,15 @@ Plays is built from source: see [CONTRIBUTING.md](CONTRIBUTING.md#building).
 
 `script/bundle-macos` makes `target/release/Plays.app`, with FFmpeg built
 in. Finder then offers it under **Open With**, and its Dock icon takes
-dropped files.
+dropped files. Settings → Default Player makes it the default for the
+formats picked; macOS asks you to confirm each.
 
 ### Linux
 
 `script/install-linux` builds Plays, with FFmpeg built in, and installs it
 for you: `plays` in `~/.local/bin`, with its desktop file and icons, for
-launchers and **Open With**. `--uninstall` takes it out again.
+launchers and **Open With**, and for Settings → Default Player to make
+it the default (`xdg-mime`). `--uninstall` takes it out again.
 
 - A working Vulkan driver, OpenSSL, libva and libvdpau
 - For hardware decoding, your GPU's VA-API driver (`intel-media-va-driver`

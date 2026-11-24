@@ -4855,6 +4855,7 @@ dependencies = [
  "airplay",
  "anyhow",
  "ashpd 0.11.1",
+ "block",
  "chardetng",
  "chromecast",
  "clap",

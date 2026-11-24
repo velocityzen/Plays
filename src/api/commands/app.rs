@@ -17,7 +17,7 @@ use crate::media::Source;
 use crate::recents;
 use crate::settings::{OverVideo, Panel, Settings};
 use crate::ui::about::{self, AboutView};
-use crate::ui::settings::ffmpeg_version;
+use crate::ui::settings::{DEFAULT_PLAYER, SettingsView, ffmpeg_version};
 use crate::ui::theme::layout::WINDOW_SIZE;
 use crate::ui::workspace::Workspace;
 
@@ -75,6 +75,20 @@ pub const COMMANDS: &[Spec] = &[
         AboutView::open_window,
     )
     .keywords(&["version", "credits", "licenses"]),
+    Spec::app(
+        "app.default_player",
+        "Make Plays the Default Player…",
+        "Open Settings at Default Player, to pick the formats Plays opens when their files \
+         are opened: from Finder or a file manager, say.",
+        |cx| SettingsView::open_at(DEFAULT_PLAYER, cx),
+    )
+    .keywords(&[
+        "default",
+        "open with",
+        "file types",
+        "formats",
+        "associations",
+    ]),
     Spec::app_with(
         "app.copy_version_info",
         "Copy Version Info",

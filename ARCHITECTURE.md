@@ -138,7 +138,7 @@ Inside `src/`:
 | `main.rs` | Starts the app, runs the command line, or hands files to the running Plays |
 | `api/` | Every command by name, its events, and the command line's socket |
 | `cli.rs`, `cli/` | The `plays` command line |
-| `app/` | Startup, menus, keymap, audio outputs (AirPlay, Bluetooth), staying awake, smoke runs |
+| `app/` | Startup, menus, keymap, audio outputs (AirPlay, Bluetooth), the default player, staying awake, smoke runs |
 | `media/` | Playback engine: decoding, mixers, clocks, subtitles, HDR |
 | `ui/` | gpui views: windows, blocks, Settings, Picture in Picture, components, theme |
 | `cast/` | Casting blocks to TVs and speakers |
@@ -373,6 +373,9 @@ flowchart TB
 - `src/app/mod.rs`, `keymap.rs`, `menus.rs`: startup, keys and menu bar
 - `src/app/windows.rs`, `history.rs`: window numbers and `FocusHistory`
 - `src/app/awake.rs`: keeps the screen awake while video plays
+- `src/app/default_player/`: the app each format opens in, and Plays made
+  it: LaunchServices and NSWorkspace on macOS (`mac.rs`), `xdg-mime` on
+  Linux (`xdg.rs`); `System` stands in for them in tests
 - `src/app/smoke.rs`: scripted runs of the real app (see
   [CONTRIBUTING.md](CONTRIBUTING.md#smoke-runs))
 - `src/hotkeys.rs`: every command's keys, bound in the context their

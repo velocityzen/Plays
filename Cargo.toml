@@ -80,6 +80,8 @@ core-foundation = "0.10"
 core-video = "0.4"
 # To fade the traffic lights, which gpui has no way to hide.
 objc = "0.2"
+# What macOS calls once the user has said whether Plays opens a format.
+block = "0.1"
 raw-window-handle = "0.6"
 
 # The desktop portal's Inhibit, to keep the screen awake while a video

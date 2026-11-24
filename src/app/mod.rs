@@ -5,6 +5,7 @@
 mod audio;
 mod awake;
 mod bluetooth;
+pub mod default_player;
 mod history;
 mod keymap;
 mod menus;

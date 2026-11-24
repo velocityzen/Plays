@@ -27,6 +27,7 @@ use crate::ui::theme::layout::SETTINGS_WINDOW_SIZE;
 use crate::ui::workspace::forget_settings_place;
 
 mod commands;
+mod default_player;
 
 /// Open the About window and bring it to the front.
 fn open_about(cx: &mut VisualTestContext) -> VisualTestContext {

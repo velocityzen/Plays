@@ -6,6 +6,7 @@ mod appearance;
 mod audio;
 mod casting;
 mod command_line;
+mod default_player;
 mod file;
 mod form;
 mod hotkeys;
@@ -20,6 +21,7 @@ mod tests;
 mod video;
 
 pub use about::ffmpeg_version;
+pub use default_player::NAME as DEFAULT_PLAYER;
 pub use subtitles::installed_fonts;
 
 use std::cell::Cell;
@@ -89,7 +91,7 @@ trait Pane {
 }
 
 /// The panes, in the sidebar's order.
-const PANES: [&dyn Pane; 11] = [
+const PANES: [&dyn Pane; 12] = [
     &playback::PlaybackPane,
     &audio::AudioPane,
     &music_mode::MusicModePane,
@@ -99,6 +101,7 @@ const PANES: [&dyn Pane; 11] = [
     &screenshots::ScreenshotsPane,
     &hotkeys::HotkeysPane,
     &appearance::AppearancePane,
+    &default_player::DefaultPlayerPane,
     &command_line::CommandLinePane,
     &about::AboutPane,
 ];
@@ -116,6 +119,7 @@ pub struct SettingsView {
     language_menu: Option<languages::List>,
     /// Whether the settings file's menu is open.
     file_menu: bool,
+    default_player: default_player::State,
     recording: hotkeys::Recording,
     /// Where the pane showing is scrolled to.
     scroll: ScrollHandle,
@@ -183,6 +187,22 @@ impl SettingsView {
         }
     }
 
+    /// Bring the Settings window to the front at the pane named `name`.
+    pub fn open_at(name: &str, cx: &mut App) {
+        Self::open_window(cx);
+        let Some(index) = PANES.iter().position(|pane| pane.name() == name) else {
+            return;
+        };
+        if let Some(handle) = cx.try_global::<SettingsWindow>().map(|open| open.0) {
+            handle
+                .update(cx, |view, _, cx| {
+                    view.show(index);
+                    cx.notify();
+                })
+                .ok();
+        }
+    }
+
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let focus_handle = cx.focus_handle();
         window.focus(&focus_handle);
@@ -194,6 +214,7 @@ impl SettingsView {
             device_menu: false,
             language_menu: None,
             file_menu: false,
+            default_player: default_player::State::default(),
             recording: hotkeys::Recording::default(),
             scroll: ScrollHandle::new(),
             license: None,

@@ -33,6 +33,12 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 - Acts on the app.
 
+### Make Plays the Default Player…
+
+`app.default_player`: Open Settings at Default Player, to pick the formats Plays opens when their files are opened: from Finder or a file manager, say.
+
+- Acts on the app.
+
 ### Copy Version Info
 
 `app.copy_version_info`: Copy Plays' version and the day it was built.

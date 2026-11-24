@@ -25,6 +25,7 @@ icons!(
     "close",
     "display",
     "file",
+    "file-play",
     "info",
     "keyboard",
     "link",
