@@ -264,10 +264,12 @@ impl Overlay {
             end => Some(base + f64::from(end) / 1000.0),
         };
         // SAFETY: the decoder is open. PGS's sets its size from the
-        // canvas each display set gives.
+        // canvas each display set gives. Read through the pointer, never a
+        // reference: it holds the file's numbers, which its Rust enums may
+        // have no variant for.
         let canvas = unsafe {
-            let raw = &*self.decoder.as_ptr();
-            (raw.width, raw.height)
+            let raw = self.decoder.as_ptr();
+            ((*raw).width, (*raw).height)
         };
         let canvas = match canvas {
             (width, height) if width > 0 && height > 0 => (width as u32, height as u32),

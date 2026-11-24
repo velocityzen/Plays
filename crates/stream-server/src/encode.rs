@@ -605,6 +605,7 @@ impl AudioEncoder {
         if self.skip > 0 {
             // SAFETY: the FIFO is valid; draining no more than it holds.
             let drop = unsafe { ffi::av_audio_fifo_size(self.fifo) }.min(self.skip as i32);
+            // SAFETY: as above.
             unsafe { ffi::av_audio_fifo_drain(self.fifo, drop) };
             self.skip -= drop as usize;
         }

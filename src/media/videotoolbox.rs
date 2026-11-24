@@ -30,7 +30,7 @@ use core_foundation::dictionary::CFDictionary;
 use core_foundation::number::CFNumber;
 use core_foundation::string::{CFString, CFStringRef};
 use core_video::buffer::{
-    CVBufferHasAttachment, CVBufferPropagateAttachments, CVBufferSetAttachment,
+    CVBufferHasAttachment, CVBufferPropagateAttachments, CVBufferSetAttachment, TCVBuffer,
     kCVAttachmentMode_ShouldNotPropagate, kCVAttachmentMode_ShouldPropagate,
 };
 use core_video::image_buffer::{
@@ -58,7 +58,7 @@ use super::picture;
 pub const DOLBY_VISION_ATTACHMENT: &str = "PlaysDolbyVision";
 /// The pixel buffer attachment (a `CFNumber`) with the gamma vendor/gpui
 /// draws a surface with. Matches `GAMMA_ATTACHMENT` in its metal_renderer.rs.
-const GAMMA_ATTACHMENT: &str = "PlaysGamma";
+pub(super) const GAMMA_ATTACHMENT: &str = "PlaysGamma";
 
 type VTPixelTransferSessionRef = *mut c_void;
 
@@ -90,8 +90,12 @@ pub struct Surface {
 }
 
 // SAFETY: CoreVideo buffers are reference counted thread-safely, and nothing
-// writes to the pixels after the transfer that fills them.
+// writes to the pixels after the transfer that fills them. The one thing
+// written later is the gamma attachment, by `for_drawing` alone: on the main
+// thread as it paints, which stops while Picture in Picture hands the buffer
+// to AVKit, and only when the gamma changed.
 unsafe impl Send for Surface {}
+// SAFETY: as for `Send`.
 unsafe impl Sync for Surface {}
 
 impl Surface {
@@ -122,19 +126,28 @@ impl Surface {
 
     /// The buffer to draw now, with the current gamma for its kind of video
     /// attached. Set as it is drawn, so a change shows on every surface at
-    /// once, paused ones included.
+    /// once, paused ones included, and only when it changed.
     pub fn for_drawing(&self) -> CVPixelBuffer {
         let key = CFString::from_static_string(GAMMA_ATTACHMENT);
-        let gamma = CFNumber::from(picture::gamma(self.hdr));
-        // SAFETY: the buffer is valid; gpui reads attachments on this
-        // thread, when it draws.
-        unsafe {
-            CVBufferSetAttachment(
-                self.buffer.as_concrete_TypeRef(),
-                key.as_concrete_TypeRef(),
-                gamma.as_CFTypeRef(),
-                kCVAttachmentMode_ShouldNotPropagate,
-            );
+        let gamma = picture::gamma(self.hdr);
+        let attached = self
+            .buffer
+            .as_buffer()
+            .get_attachment(&key, None)
+            .and_then(|value| value.downcast::<CFNumber>())
+            .and_then(|number| number.to_f32());
+        if attached != Some(gamma) {
+            let gamma = CFNumber::from(gamma);
+            // SAFETY: the buffer is valid; gpui reads attachments on this
+            // thread, when it draws.
+            unsafe {
+                CVBufferSetAttachment(
+                    self.buffer.as_concrete_TypeRef(),
+                    key.as_concrete_TypeRef(),
+                    gamma.as_CFTypeRef(),
+                    kCVAttachmentMode_ShouldNotPropagate,
+                );
+            }
         }
         self.buffer.clone()
     }
@@ -212,10 +225,12 @@ impl Converter {
 
     /// Convert a VideoToolbox frame into a `width` x `height` surface.
     pub fn convert(&mut self, frame: &frame::Video, width: u32, height: u32) -> Result<Surface> {
-        // SAFETY: reading fields of a valid frame.
+        // SAFETY: reading fields of a valid frame, through the pointer,
+        // never a reference: it holds the file's numbers, which its Rust
+        // enums may have no variant for.
         let (format, source) = unsafe {
-            let frame = &*frame.as_ptr();
-            (frame.format, frame.data[3] as CVPixelBufferRef)
+            let raw = frame.as_ptr();
+            ((*raw).format, (*raw).data[3] as CVPixelBufferRef)
         };
         if format != ffi::AVPixelFormat::AV_PIX_FMT_VIDEOTOOLBOX as i32 || source.is_null() {
             bail!("not a VideoToolbox frame");

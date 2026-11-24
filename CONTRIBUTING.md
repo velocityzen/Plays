@@ -279,6 +279,8 @@ time); Vulkan can be software (lavapipe). It uses `Xvfb`, `openbox`,
   `[lints] workspace = true`.
 - `too_many_lines`: a function over 100 lines is split into helpers named
   for what each part does.
+- `undocumented_unsafe_blocks`: every unsafe block and impl has a
+  `// SAFETY:` comment just above it.
 - The crates in `crates/` know nothing of Plays or gpui (the protocol
   crates nothing of FFmpeg either), and build and test on their own.
 - Everything Plays changes in `vendor/gpui` is marked "Plays" in the code

@@ -150,6 +150,7 @@ mod mac {
         // as long as it does, here the autorelease pool's.
         let bytes: *const c_char = unsafe { msg_send![string, UTF8String] };
         (!bytes.is_null()).then(|| {
+            // SAFETY: as above, and not null.
             unsafe { CStr::from_ptr(bytes) }
                 .to_string_lossy()
                 .into_owned()

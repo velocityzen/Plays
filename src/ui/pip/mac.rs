@@ -138,16 +138,21 @@ impl CGRect {
 // which only describe the methods to the runtime.
 unsafe impl Encode for CMTime {
     fn encode() -> Encoding {
+        // SAFETY: CMTime's fields: int64, int32, uint32, int64.
         unsafe { Encoding::from_str("{?=qiIq}") }
     }
 }
+// SAFETY: as for `CMTime`.
 unsafe impl Encode for CMTimeRange {
     fn encode() -> Encoding {
+        // SAFETY: CMTimeRange's fields: two CMTimes.
         unsafe { Encoding::from_str("{?={?=qiIq}{?=qiIq}}") }
     }
 }
+// SAFETY: as for `CMTime`.
 unsafe impl Encode for CMVideoDimensions {
     fn encode() -> Encoding {
+        // SAFETY: CMVideoDimensions' fields: two int32s.
         unsafe { Encoding::from_str("{?=ii}") }
     }
 }
@@ -331,10 +336,12 @@ struct Block {
 /// # Safety
 /// `block` must be such a block, or null.
 unsafe fn call_block(block: *mut Block) {
+    // SAFETY: `block` is a block or null, as the caller promises.
     if let Some(literal) = unsafe { block.as_ref() } {
         // SAFETY: a block's function takes the block, then its arguments.
         let invoke: unsafe extern "C" fn(*mut Block) =
             unsafe { std::mem::transmute(literal.invoke) };
+        // SAFETY: the block's own function, given the block.
         unsafe { invoke(block) };
     }
 }
@@ -344,10 +351,12 @@ unsafe fn call_block(block: *mut Block) {
 /// # Safety
 /// `block` must be such a block, or null.
 unsafe fn call_block_with(block: *mut Block, value: BOOL) {
+    // SAFETY: as in `call_block`.
     if let Some(literal) = unsafe { block.as_ref() } {
         // SAFETY: as in `call_block`.
         let invoke: unsafe extern "C" fn(*mut Block, BOOL) =
             unsafe { std::mem::transmute(literal.invoke) };
+        // SAFETY: as in `call_block`.
         unsafe { invoke(block, value) };
     }
 }
@@ -374,12 +383,13 @@ extern "C" fn set_playing(this: &Object, _: Sel, _: *mut Object, playing: BOOL) 
 
 extern "C" fn time_range(this: &Object, _: Sel, _: *mut Object) -> CMTimeRange {
     match shared(this).and_then(|shared| shared.playback.lock().duration) {
-        // SAFETY: reading CoreMedia's constants.
         Some(duration) => CMTimeRange {
+            // SAFETY: reading CoreMedia's constant.
             start: unsafe { kCMTimeZero },
             duration: time(duration),
         },
         // Live: no end, and nothing to skip through.
+        // SAFETY: reading CoreMedia's constants.
         None => unsafe {
             CMTimeRange {
                 start: kCMTimeNegativeInfinity,
@@ -1328,6 +1338,7 @@ impl Drop for Scaler {
 /// # Safety
 /// Both must be layers, on the main thread.
 unsafe fn place(layer: *mut Object, superlayer: *mut Object, frame: Bounds<Pixels>) {
+    // SAFETY: both are layers, on the main thread, as the caller promises.
     unsafe {
         let bounds: CGRect = msg_send![superlayer, bounds];
         let flipped: BOOL = msg_send![superlayer, isGeometryFlipped];

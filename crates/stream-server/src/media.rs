@@ -282,12 +282,13 @@ fn bit_depth(format: i32) -> u8 {
 }
 
 fn audio_info(parameters: &ffmpeg::codec::Parameters) -> AudioInfo {
-    // SAFETY: the parameters belong to an open stream.
+    // SAFETY: the parameters belong to an open stream. They are read
+    // through the pointer, never a reference, as `video_info` says.
     let (channels, sample_rate) = unsafe {
-        let raw = &*parameters.as_ptr();
+        let raw = parameters.as_ptr();
         (
-            raw.ch_layout.nb_channels.max(0) as u16,
-            raw.sample_rate.max(0) as u32,
+            (*raw).ch_layout.nb_channels.max(0) as u16,
+            (*raw).sample_rate.max(0) as u32,
         )
     };
     AudioInfo {

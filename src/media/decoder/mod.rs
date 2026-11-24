@@ -310,10 +310,12 @@ impl StreamInfo {
 
     /// The video's size before scaling or aspect-ratio correction.
     fn coded_size(&self) -> Option<(u32, u32)> {
-        // SAFETY: the parameters are owned and valid while `self` is.
+        // SAFETY: the parameters are owned and valid while `self` is. Read
+        // through the pointer, never a reference: a file can hold numbers
+        // their Rust enums have no variant for.
         let (width, height) = unsafe {
-            let raw = &*self.parameters.as_ptr();
-            (raw.width, raw.height)
+            let raw = self.parameters.as_ptr();
+            ((*raw).width, (*raw).height)
         };
         (width > 0 && height > 0).then_some((width as u32, height as u32))
     }

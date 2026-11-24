@@ -17,9 +17,11 @@ members = [".", "crates/*"]
 
 # Lints for Plays and every crate, each of which takes them with
 # `[lints] workspace = true`. A function over 100 lines is split into
-# helpers named for what each part does.
+# helpers named for what each part does. Every unsafe block and impl says
+# why it's sound, in a `// SAFETY:` comment just above it.
 [workspace.lints.clippy]
 too_many_lines = "warn"
+undocumented_unsafe_blocks = "warn"
 
 [lints]
 workspace = true

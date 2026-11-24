@@ -1104,6 +1104,47 @@ fn switches_audio_and_subtitle_tracks() {
 
 /// `tracks_media` opened wanting `wanted`, once it's known: the audio and
 /// subtitle tracks it plays.
+/// A picture subtitle is placed on the size its track gives or, where it
+/// gives none, as in a VOB, on the video's: in fractions of the picture.
+#[test]
+fn picture_subtitles_are_placed_on_the_size_they_are_drawn_for() {
+    let sized = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/clip-dvdsub.mkv");
+    let remux = "-map 0:v -map 0:s -c:v mpeg2video -c:s copy -f vob";
+    let args: Vec<&str> = ["-i", sized.to_str().unwrap()]
+        .into_iter()
+        .chain(remux.split(' '))
+        .collect();
+    let sizeless = media("clip-dvdsub.vob", &args);
+    // Its cues: 80×16 at (40, 96), then at (40, 8), of 160×120.
+    let placed = |top: f32| [40. / 160., top / 120., 80. / 160., 16. / 120.];
+    for path in [sized, sizeless] {
+        let (mut player, _mixer) = opened(path.clone());
+        let info = player.info().unwrap();
+        let track = info.tracks(TrackKind::Subtitle).next().unwrap().index;
+        player.select_track(TrackKind::Subtitle, Some(track));
+        player.seek(0.5);
+        let mut rect = None;
+        let shown = wait_until(Duration::from_secs(5), || {
+            player.tick();
+            let cues = player.subtitles();
+            rect = cues
+                .iter()
+                .flat_map(|cue| &cue.bitmaps)
+                .map(|b| b.rect)
+                .next();
+            rect.is_some()
+        });
+        assert!(shown, "{}: no picture subtitle", path.display());
+        let rect = rect.unwrap();
+        let at = |placed: [f32; 4]| rect.iter().zip(placed).all(|(a, b)| (a - b).abs() < 1e-3);
+        assert!(
+            at(placed(96.)) || at(placed(8.)),
+            "{}: at {rect:?}",
+            path.display()
+        );
+    }
+}
+
 fn opened_wanting(wanted: Wanted, mixer: &Arc<Mixer>) -> (Player, Option<usize>, Option<usize>) {
     let mut player = Player::open(
         Source::File(tracks_media()),
@@ -2126,6 +2167,62 @@ fn surfaces_match_software_colors() {
             "{name}: colors differ by {mean:.2} levels on average, {p90:.2} at the 90th percentile"
         );
     }
+}
+
+/// A surface's buffer carries the gamma it's drawn with, set as it's drawn
+/// and only when that changed: one Picture in Picture had is left as it is.
+#[cfg(target_os = "macos")]
+#[test]
+fn a_surface_is_tagged_with_its_gamma_only_when_that_changed() {
+    use core_foundation::base::TCFType;
+    use core_foundation::number::CFNumber;
+    use core_foundation::string::CFString;
+    use core_video::buffer::{
+        CVAttachmentMode, TCVBuffer, kCVAttachmentMode_ShouldNotPropagate,
+        kCVAttachmentMode_ShouldPropagate,
+    };
+
+    use super::picture::{self, Picture};
+    use super::videotoolbox::GAMMA_ATTACHMENT;
+
+    let source = "testsrc2=size=640x360:rate=30:duration=1";
+    let args = [
+        "-f", "lavfi", "-i", source, "-c:v", "libx264", "-pix_fmt", "yuv420p",
+    ];
+    let path = media("gamma-tagged.mp4", &args);
+    let Picture::Surface(surface) = first_frame(&path, true) else {
+        panic!("hardware frames should stay on the GPU");
+    };
+    let buffer = surface.buffer().as_buffer();
+    let key = CFString::from_static_string(GAMMA_ATTACHMENT);
+    let tagged = || {
+        let mut mode: CVAttachmentMode = kCVAttachmentMode_ShouldPropagate;
+        let gamma = buffer
+            .get_attachment(&key, Some(&mut mode))
+            .and_then(|value| value.downcast::<CFNumber>())
+            .and_then(|number| number.to_f32());
+        (gamma, mode)
+    };
+    let tag = |gamma: f32| {
+        let gamma = CFNumber::from(gamma).as_CFType();
+        buffer.set_attachment(&key, &gamma, kCVAttachmentMode_ShouldPropagate);
+    };
+    let gamma = picture::gamma(false);
+    let drawn = (Some(gamma), kCVAttachmentMode_ShouldNotPropagate);
+
+    surface.for_drawing();
+    assert_eq!(tagged(), drawn);
+
+    // Already its gamma, though set another way: left as it is.
+    tag(gamma);
+    surface.for_drawing();
+    let kept = (Some(gamma), kCVAttachmentMode_ShouldPropagate);
+    assert_eq!(tagged(), kept, "set again");
+
+    // Another: set to its own.
+    tag(gamma + 1.);
+    surface.for_drawing();
+    assert_eq!(tagged(), drawn);
 }
 
 /// The first frame of the video at `path`, decoded on the GPU or in

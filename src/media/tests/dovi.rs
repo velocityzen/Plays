@@ -18,6 +18,7 @@ fn profile5() -> (
     let mut header: sys::RpuDataHeader = unsafe { std::mem::zeroed() };
     header.coef_log2_denom = 23;
     header.bl_bit_depth = 10;
+    // SAFETY: as for the header.
     let mut mapping: Box<sys::DataMapping> = Box::new(unsafe { std::mem::zeroed() });
     let luma = &mut mapping.curves[0];
     luma.num_pivots = 3;

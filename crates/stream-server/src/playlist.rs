@@ -189,13 +189,15 @@ pub(crate) fn audio_codec(parameters: &codec::Parameters) -> Option<String> {
 
 fn extradata(parameters: &codec::Parameters) -> &[u8] {
     // SAFETY: the parameters own `extradata_size` bytes of extradata while
-    // they are borrowed.
+    // they are borrowed. Read through the pointer, never a reference: a file
+    // can hold numbers their Rust enums have no variant for.
     unsafe {
-        let raw = &*parameters.as_ptr();
-        if raw.extradata.is_null() || raw.extradata_size <= 0 {
+        let raw = parameters.as_ptr();
+        let (data, size) = ((*raw).extradata, (*raw).extradata_size);
+        if data.is_null() || size <= 0 {
             &[]
         } else {
-            std::slice::from_raw_parts(raw.extradata, raw.extradata_size as usize)
+            std::slice::from_raw_parts(data, size as usize)
         }
     }
 }

@@ -93,11 +93,13 @@ impl Orientation {
     pub fn of(parameters: &codec::Parameters) -> Self {
         // SAFETY: the parameters and their side data are valid while
         // `parameters` is; the matrix's size is checked before it's read.
+        // Read through the pointer, never a reference: a file can hold
+        // numbers their Rust enums have no variant for.
         unsafe {
-            let parameters = &*parameters.as_ptr();
+            let raw = parameters.as_ptr();
             let side = ffi::av_packet_side_data_get(
-                parameters.coded_side_data,
-                parameters.nb_coded_side_data,
+                (*raw).coded_side_data,
+                (*raw).nb_coded_side_data,
                 ffi::AVPacketSideDataType::AV_PKT_DATA_DISPLAYMATRIX,
             );
             if side.is_null() || (*side).data.is_null() || (*side).size < 9 * 4 {

@@ -280,10 +280,12 @@ impl SubtitleDecoder {
 
     /// The size bitmaps are placed on: the stream's own, else the video's.
     fn canvas(&self) -> Option<(u32, u32)> {
-        // SAFETY: the decoder's context is valid while it is.
+        // SAFETY: the decoder's context is valid while it is. Read through
+        // the pointer, never a reference: it holds the file's numbers, which
+        // its Rust enums may have no variant for.
         let (width, height) = unsafe {
-            let context = &*self.decoder.as_ptr();
-            (context.width, context.height)
+            let raw = self.decoder.as_ptr();
+            ((*raw).width, (*raw).height)
         };
         if width > 0 && height > 0 {
             Some((width as u32, height as u32))

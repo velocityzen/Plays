@@ -54,13 +54,16 @@ impl Track {
         ffmpeg::decoder::find(parameters.id())?;
         let metadata = stream.metadata();
         let tag = |key: &CStr| ffmpeg_safe::tag(&metadata, key);
-        // SAFETY: the parameters belong to the stream, which outlives this call.
-        let raw = unsafe { &*parameters.as_ptr() };
+        // SAFETY: the parameters belong to the stream, which outlives this
+        // call. Read through the pointer, never a reference: a file can hold
+        // numbers their Rust enums have no variant for.
+        let (width, height, channels) = unsafe {
+            let raw = parameters.as_ptr();
+            ((*raw).width, (*raw).height, (*raw).ch_layout.nb_channels)
+        };
         let format = match kind {
-            TrackKind::Video if raw.width > 0 && raw.height > 0 => {
-                Some(format!("{}×{}", raw.width, raw.height))
-            }
-            TrackKind::Audio => channels_name(raw.ch_layout.nb_channels),
+            TrackKind::Video if width > 0 && height > 0 => Some(format!("{width}×{height}")),
+            TrackKind::Audio => channels_name(channels),
             _ => None,
         };
         Some(Self {
