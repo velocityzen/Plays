@@ -14,8 +14,10 @@ use super::casting::{block, get, wait};
 use super::open;
 use super::sound_to_airplay::forget_tv;
 use crate::api::{self, Invocation};
+use crate::app::AudioEngine;
 use crate::cast::airplay::{AirPlayTarget, KIND};
 use crate::cast::{AppPairings, Casting, Pairings};
+use crate::media::output::DeviceInfo;
 use crate::media::tracks::TrackKind;
 use crate::ui::testing::{self, click, press, shows};
 use crate::ui::workspace::Workspace;
@@ -134,6 +136,34 @@ fn cast(cx: &mut VisualTestContext, tv: &FakeReceiver) {
     wait(cx, "the TV to be told to play", |_| {
         plays(tv).len() > before
     });
+}
+
+#[gpui::test]
+fn a_tv_cast_to_is_checked_for_the_sound_as_the_output_it_is_too(cx: &mut TestAppContext) {
+    let tv = tv();
+    let (_, mut cx) = start(cx, &tv, "clip.mp4", false);
+    paired_before(&mut cx, &tv);
+    // As speakers find it too.
+    let found = tv.device();
+    let outputs = vec![
+        DeviceInfo {
+            id: "desk".into(),
+            name: "Desk".into(),
+        },
+        DeviceInfo {
+            id: format!("airplay:{}", found.id),
+            name: found.name,
+        },
+    ];
+    cx.update(|_, cx| AudioEngine::set_devices(outputs, cx));
+    cast(&mut cx, &tv);
+    click(&mut cx, "cast");
+    assert!(testing::checked(&mut cx, "cast-0"));
+    assert!(
+        testing::checked(&mut cx, "sound-1"),
+        "the output that is the TV"
+    );
+    assert!(!shows(&mut cx, "sound-cast"), "listed once");
 }
 
 /// Whether the pairing sheet waits for the PIN the TV shows.

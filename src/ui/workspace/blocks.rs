@@ -11,7 +11,6 @@ use crate::api::{self, Invocation};
 use crate::app::{Awake, refresh_menus};
 use crate::cast::Device;
 use crate::progress::{self, Note};
-use crate::settings::AudioDevice;
 use crate::ui::displays;
 use crate::ui::player::{BlockLayout, PlayerEvent, PlayerView};
 use crate::ui::theme::layout::{
@@ -72,6 +71,7 @@ impl Workspace {
             let note = block.view.read(cx).progress();
             progress::note(note, true, cx);
             block.view.update(cx, |view, _| view.release_pictures());
+            Self::let_go_of_block_sound(&block.view, cx);
         }
         if self.maximized == Some(id) {
             self.maximized = None;
@@ -130,8 +130,7 @@ impl Workspace {
         let Some(view) = self.release_block(id, cx) else {
             return Ok(None);
         };
-        let sound = self.sound_device().cloned();
-        opened.update(cx, |workspace, _, cx| workspace.adopt(view, sound, cx))?;
+        opened.update(cx, |workspace, _, cx| workspace.take_block(view, cx))?;
         Ok(Some(opened))
     }
 
@@ -153,8 +152,9 @@ impl Workspace {
         Some(block.view)
     }
 
-    /// Take in a block another window let go of, playing on through what
-    /// this one plays through, last among them; keys go to it.
+    /// Take in a block another window let go of, last among them, playing
+    /// on through its own output, or else through what this one plays
+    /// through; keys go to it.
     pub fn take_block(&mut self, view: Entity<PlayerView>, cx: &mut Context<Self>) {
         let graveyard = self.graveyard.clone();
         view.update(cx, |view, _| view.move_to_window(graveyard));
@@ -163,18 +163,6 @@ impl Workspace {
         self.add_block(view, cx);
         self.blocks_changed(cx);
         refresh_menus(cx);
-    }
-
-    /// Take in a block from another window, with the device that window
-    /// plays through instead of the app's output.
-    fn adopt(
-        &mut self,
-        view: Entity<PlayerView>,
-        sound: Option<AudioDevice>,
-        cx: &mut Context<Self>,
-    ) {
-        self.set_sound_device(sound, cx);
-        self.take_block(view, cx);
     }
 
     /// Close every block but `id`.
@@ -195,6 +183,7 @@ impl Workspace {
         progress::note(notes, true, cx);
         for block in self.blocks.drain(..) {
             block.view.update(cx, |view, _| view.release_pictures());
+            Self::let_go_of_block_sound(&block.view, cx);
         }
         self.maximized = None;
         self.active = None;

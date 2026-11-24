@@ -204,8 +204,8 @@ fn what_menus_and_controls_send_is_what_their_commands_take() {
         video::set_crop(None),
         output::set_device(Some(&headphones)),
         output::set_device(None),
-        output::set_window_device(Some(&headphones)),
-        output::set_window_device(None),
+        output::set_block_device(Some(&headphones)),
+        output::set_block_device(None),
         cast::to(Some(&tv)),
         cast::to(None),
         cast::pair(&tv),
@@ -676,7 +676,7 @@ fn says_what_can_run_and_what_its_state_is(cx: &mut TestAppContext) {
     assert_eq!(now("video.set_aspect_ratio", &mut cx), Ok(Value::Null));
 
     assert_eq!(now("output.set_device", &mut cx), Ok(Value::Null));
-    assert_eq!(now("output.set_window_device", &mut cx), Ok(Value::Null));
+    assert_eq!(now("output.set_block_device", &mut cx), Ok(Value::Null));
     assert_eq!(now("cast.to", &mut cx), Ok(Value::Null));
     assert_eq!(now("playback.go_to_chapter", &mut cx), Ok(Value::Null));
     assert_eq!(now("window.toggle_full_screen", &mut cx), Ok(json!(false)));

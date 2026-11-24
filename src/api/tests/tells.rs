@@ -311,7 +311,7 @@ fn other_ways(plan: &Plan) -> Option<Vec<Way>> {
             vec![command("cast.to").with_args(device())],
             vec![plan.it()],
         )],
-        "output.set_device" | "output.set_window_device" => vec![
+        "output.set_device" | "output.set_block_device" => vec![
             way(Vec::new(), vec![plan.with(json!({"id": "speakers"}))]),
             // One not connected, waited for.
             way(

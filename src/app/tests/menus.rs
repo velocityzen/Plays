@@ -4,6 +4,7 @@ use std::time::{Duration, Instant};
 use gpui::{Bounds, TestAppContext, VisualTestContext, WindowHandle};
 
 use super::*;
+use crate::api::Invocation;
 use crate::cast::fake::FakeTarget;
 use crate::ui::testing::{self, OPEN_WAIT};
 use crate::ui::theme::layout::WINDOW_SIZE;
@@ -756,7 +757,7 @@ fn a_device_found_by_two_protocols_shows_as_two() {
         ]
     );
     assert_eq!(
-        listed(&window_output_menu(
+        listed(&block_output_menu(
             &[device("hdmi", "Beamer"), device("airplay:tv", "Beamer")],
             None
         )),
@@ -816,10 +817,10 @@ fn lists_the_output_picked_while_it_is_away() {
 }
 
 #[test]
-fn checks_the_output_the_window_in_front_plays_through() {
+fn checks_the_output_the_block_in_front_plays_through() {
     let devices = [device("a", "Speakers"), device("b", "TV")];
     assert_eq!(
-        listed(&window_output_menu(&devices, None)),
+        listed(&block_output_menu(&devices, None)),
         [
             ("Same as the App".into(), true),
             ("Speakers".into(), false),
@@ -831,7 +832,7 @@ fn checks_the_output_the_window_in_front_plays_through() {
         name: "TV".into(),
     };
     assert_eq!(
-        listed(&window_output_menu(&devices, Some(&own))),
+        listed(&block_output_menu(&devices, Some(&own))),
         [
             ("Same as the App".into(), false),
             ("Speakers".into(), false),
@@ -839,7 +840,7 @@ fn checks_the_output_the_window_in_front_plays_through() {
         ]
     );
     assert_eq!(
-        listed(&window_output_menu(&devices[..1], Some(&own))),
+        listed(&block_output_menu(&devices[..1], Some(&own))),
         [
             ("Same as the App".into(), false),
             ("Speakers".into(), false),
@@ -913,6 +914,31 @@ fn open_with_devices(cx: &mut TestAppContext, file: &str) -> VisualTestContext {
         cx.run_until_parked();
     }
     cx
+}
+
+#[gpui::test]
+fn audio_checks_the_output_the_block_in_front_plays_through(cx: &mut TestAppContext) {
+    let mut cx = open_with_devices(cx, "clip.mp4");
+    let block_outputs = |cx: &mut VisualTestContext| {
+        TestAppContext::update(cx, |cx| {
+            let state = MenuState::now(cx);
+            cx.set_global(state);
+            let audio = menus(cx).into_iter().find(|menu| menu.name == "Audio");
+            let items = audio.expect("an Audio menu").items;
+            let outputs = items.into_iter().find_map(|item| match item {
+                MenuItem::Submenu(menu) if menu.name == "Block Output Device" => Some(menu),
+                _ => None,
+            });
+            checked(&outputs.expect("Block Output Device"))
+        })
+    };
+    let devices = vec![device("desk", "Desk"), device("tv", "TV")];
+    cx.update(|_, cx| AudioEngine::set_devices(devices, cx));
+    assert_eq!(block_outputs(&mut cx), ["Same as the App"]);
+    let pick = Invocation::new("output.set_block_device").with_args(json!({"id": "tv"}));
+    TestAppContext::update(&cx, |cx| api::run(pick, cx)).unwrap();
+    cx.run_until_parked();
+    assert_eq!(block_outputs(&mut cx), ["TV"]);
 }
 
 #[gpui::test]
@@ -1016,7 +1042,7 @@ fn every_item_runs_a_command_titled_as_it_is(cx: &mut TestAppContext) {
         "video.set_aspect_ratio",
         "video.set_crop",
         "output.set_device",
-        "output.set_window_device",
+        "output.set_block_device",
         "window.show_on_display",
     ] {
         assert!(commands.contains(command), "no item runs {command}");

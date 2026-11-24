@@ -231,14 +231,14 @@ A decoded picture reaches gpui in one of three forms
 
 ```mermaid
 flowchart LR
-    subgraph appwindows ["Windows without a device of their own"]
+    subgraph appblocks ["Blocks without a device of their own"]
         p1["Players"]
     end
-    subgraph ownwindows ["Windows that picked a device"]
+    subgraph ownblocks ["Blocks that picked a device"]
         p2["Players"]
     end
     p1 --> m1["The app's mixer"] --> o1["The app's output<br/>the device picked in Settings → Audio,<br/>or the system's default"]
-    p2 --> m2["That device's mixer,<br/>shared by every window that picks it"] --> o2["That device's output"]
+    p2 --> m2["That device's mixer,<br/>shared by every block that picks it"] --> o2["That device's output"]
 ```
 
 - `src/media/audio.rs`: a mixer per output; sums players and tells each
@@ -247,13 +247,16 @@ flowchart LR
 - `src/media/output.rs`: where a mixer's sound goes: a cpal stream, an
   AirPlay speaker, or nowhere; not `Send`, so each stays on its thread
 - `src/app/audio.rs`: the `AudioEngine`: the app's output, and one per
-  device a window picks, each with a thread opening devices through
+  device a block picks, each with a thread opening devices through
   `Devices` (`Local` via cpal, Bluetooth, AirPlay), so the UI never waits.
   A device gone means silence or the system default until it's back.
 - `src/app/speakers.rs`: AirPlay speakers as outputs (`airplay:` ids),
   sharing `Pairings` with casting; `OpenError::NeedsPin`
 - `src/app/bluetooth.rs` (macOS): paired devices, connected when picked
-- `src/ui/workspace/sound.rs`: a window's own output device, if it picks one
+- `src/ui/workspace/sound.rs`: a block's own output device, if it picks
+  one; a window sent to a TV plays its other blocks through its speakers
+- `src/ui/player/cast.rs`: a block's menu: where its picture and its sound
+  play
 
 ## Subtitles
 

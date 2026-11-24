@@ -146,9 +146,10 @@ pub struct PlayerView {
     console: Option<Task<()>>,
     /// The menu of devices to cast to is open.
     cast_open: bool,
-    /// The device its window plays through instead of the app's output,
-    /// which its menu checks.
-    window_sound: Option<AudioDevice>,
+    /// The output it plays through of its own, picked for it, instead of
+    /// its window's: the app's, or a display's speakers. It takes it along
+    /// to another window.
+    sound: Option<AudioDevice>,
     /// Where the picture was pressed, while that may yet move the window.
     window_press: Option<Point<Pixels>>,
     /// Drawing it panicked, while the file it had opened then (counted by
@@ -273,7 +274,7 @@ impl PlayerView {
             over_controls: false,
             console: None,
             cast_open: false,
-            window_sound: None,
+            sound: None,
             window_press: None,
             drawing_failed: None,
             #[cfg(test)]
@@ -572,11 +573,16 @@ impl PlayerView {
         );
     }
 
-    /// Play into `mixer` from now on, its window's, which plays through
-    /// `device` instead of the app's output, if any.
+    /// Play into `mixer` from now on: that of `device`, its own output, or
+    /// with `None` its window's.
     pub fn play_into(&mut self, mixer: Option<Arc<Mixer>>, device: Option<AudioDevice>) {
         self.playback.set_mixer(mixer);
-        self.window_sound = device;
+        self.sound = device;
+    }
+
+    /// The output it plays through of its own, if any.
+    pub fn sound_device(&self) -> Option<&AudioDevice> {
+        self.sound.as_ref()
     }
 
     /// Move this block to another window, whose frames are released through

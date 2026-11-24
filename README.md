@@ -68,7 +68,7 @@ GPU-accelerated UI framework.
 
 - Full screen on any display, the others blacked out if you like
 - macOS full screen in a Space of its own, or just over the display
-- An output device for the app, and for each window
+- An output device for the app, and for each block
 - A window sent to a TV plays through the TV's speakers
 - AirPlay speakers as outputs, on macOS and Linux
 - Bluetooth headphones connected when picked (macOS)

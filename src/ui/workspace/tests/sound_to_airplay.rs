@@ -1,5 +1,5 @@
 //! Playing the sound through the AirPlay crate's fake speakers, picked as
-//! someone at the screen would, as the app's output or a window's: found
+//! someone at the screen would, as the app's output or a block's: found
 //! on the network beside this computer's own, played through, gone and
 //! back, paired with the PIN a TV shows when it wants one, and forgotten.
 
@@ -39,7 +39,7 @@ fn this_computer(output: &mut AudioOutput, id: Option<&str>) -> Result<Playing, 
 
 /// The app with `receivers` found on the network beside this computer's
 /// output, waiting for a device picked while it's gone or not, as
-/// `wait_for_device` says, and a tone playing over and over in its window.
+/// `wait_for_device` says, and a tone playing over and over in a block.
 fn start(
     cx: &mut TestAppContext,
     receivers: &[&FakeReceiver],
@@ -207,23 +207,24 @@ fn a_tv_wants_its_pin_before_it_plays_the_apps_sound(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn a_tv_a_window_plays_through_wants_its_pin_too(cx: &mut TestAppContext) {
+fn a_tv_a_block_plays_through_wants_its_pin_too(cx: &mut TestAppContext) {
     let tv = FakeReceiver::start(Kind::Tv { pin: PIN });
     let (window, mut cx, _) = start(cx, &[&tv], true);
     let device = output(&mut cx, &tv);
-    cx.dispatch_action(output::set_window_device(Some(&device)));
+    cx.dispatch_action(output::set_block_device(Some(&device)));
     pair(window, &mut cx, &tv);
-    wait(&mut cx, "the window to play through it once paired", |_| {
+    wait(&mut cx, "the block to play through it once paired", |_| {
         heard(&tv)
     });
     assert!(plays_through(&mut cx, HERE), "the app's sound stays here");
 }
 
-/// The device window `window` plays through of its own, by name.
-fn window_sound(window: WindowHandle<Workspace>, cx: &mut VisualTestContext) -> Option<String> {
+/// The device the block in `window` plays through of its own, by name.
+fn block_sound(window: WindowHandle<Workspace>, cx: &mut VisualTestContext) -> Option<String> {
     window
-        .read_with(cx, |workspace, _| {
-            workspace.sound_device().map(|device| device.name.clone())
+        .read_with(cx, |workspace, cx| {
+            let view = workspace.blocks[0].view.read(cx);
+            view.sound_device().map(|device| device.name.clone())
         })
         .unwrap()
 }
@@ -248,8 +249,8 @@ fn a_tv_not_paired_with_is_picked_no_longer_and_the_sound_comes_back_here(cx: &m
     let picked = cx.update(|_, cx| cx.global::<Settings>().audio_output.device.clone());
     assert_eq!(picked, None, "the system's default is picked again");
 
-    // Picked for the window, by one that turns this computer away: once
-    // the sheet saying so is closed, the window plays through the app's,
+    // Picked for the block, by one that turns this computer away: once
+    // the sheet saying so is closed, the block plays through the app's,
     // which plays on through what it picked.
     let other = output(&mut cx, &speaker);
     cx.dispatch_action(output::set_device(Some(&other)));
@@ -259,14 +260,14 @@ fn a_tv_not_paired_with_is_picked_no_longer_and_the_sound_comes_back_here(cx: &m
         |cx| plays_through(cx, "Fake Speaker"),
     );
     tv.state().refuse_pairing = true;
-    cx.dispatch_action(output::set_window_device(Some(&device)));
+    cx.dispatch_action(output::set_block_device(Some(&device)));
     wait(&mut cx, "the sheet to say why it can't pair", |cx| {
         sheet_says(window, cx).starts_with("Can't pair")
     });
-    assert_eq!(window_sound(window, &mut cx), Some("Fake TV".into()));
+    assert_eq!(block_sound(window, &mut cx), Some("Fake TV".into()));
     click(&mut cx, "pairing-cancel");
-    wait(&mut cx, "the window to play through the app's", |cx| {
-        window_sound(window, cx).is_none()
+    wait(&mut cx, "the block to play through the app's", |cx| {
+        block_sound(window, cx).is_none()
     });
     assert!(
         plays_through(&mut cx, "Fake Speaker"),
@@ -351,19 +352,19 @@ fn a_tv_forgotten_plays_the_apps_sound_no_longer(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn a_tv_forgotten_plays_a_windows_sound_no_longer(cx: &mut TestAppContext) {
+fn a_tv_forgotten_plays_a_blocks_sound_no_longer(cx: &mut TestAppContext) {
     let tv = FakeReceiver::start(Kind::Tv { pin: PIN });
     let (window, mut cx, _) = start(cx, &[&tv], true);
     let device = output(&mut cx, &tv);
-    cx.dispatch_action(output::set_window_device(Some(&device)));
+    cx.dispatch_action(output::set_block_device(Some(&device)));
     pair(window, &mut cx, &tv);
-    wait(&mut cx, "the window to play through it once paired", |_| {
+    wait(&mut cx, "the block to play through it once paired", |_| {
         heard(&tv)
     });
 
     forget_tv(&mut cx);
-    wait(&mut cx, "the window to play through the app's", |cx| {
-        window_sound(window, cx).is_none()
+    wait(&mut cx, "the block to play through the app's", |cx| {
+        block_sound(window, cx).is_none()
     });
     assert!(tv.wait_for(|state| state.closed > 0), "it's let go of");
     assert!(plays_through(&mut cx, HERE));

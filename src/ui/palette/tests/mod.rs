@@ -574,21 +574,21 @@ fn the_outputs_are_audio_and_a_window_goes_back_to_the_apps_as_the_menus_say(
         found.flat_map(|(_, ids)| ids).collect()
     };
     let outputs = under("Audio Output");
-    for id in ["output.set_device", "output.set_window_device"] {
+    for id in ["output.set_device", "output.set_block_device"] {
         assert!(outputs.contains(&&id.to_owned()), "{id}: {headed:?}");
     }
     assert!(under("Output").is_empty(), "not just Output: {headed:?}");
 
-    type_in(&mut cx, "window output device");
+    type_in(&mut cx, "block output device");
     press_and_wait(&mut cx, "enter");
     assert_eq!(
         read(window, &cx, Palette::asking),
-        Some(("output.set_window_device", "id"))
+        Some(("output.set_block_device", "id"))
     );
     assert_eq!(
         listed(window, &cx).first().map(String::as_str),
         Some("Same as the App"),
-        "as Audio → Window Output Device and a block's menu say"
+        "as Audio → Block Output Device and the block's menu say"
     );
     assert_eq!(read(window, &cx, Palette::current), ["Same as the App"]);
 }

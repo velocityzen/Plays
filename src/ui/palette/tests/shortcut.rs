@@ -196,19 +196,19 @@ fn back_in_the_footer_goes_back_to_the_command_whose_keys_changed(cx: &mut TestA
     type_in(&mut cx, "window");
     let at = listed(window, &cx)
         .iter()
-        .position(|id| id == "window.new")
-        .expect("New Window is found");
+        .position(|id| id == "window.next")
+        .expect("Next Window is found");
     assert!(at > 0, "not the first found");
     for _ in 0..at {
         press_and_wait(&mut cx, "down");
     }
     testing::click(&mut cx, "palette-change-shortcut");
     cx.run_until_parked();
-    assert_eq!(changing(window, &cx), Some("window.new"));
+    assert_eq!(changing(window, &cx), Some("window.next"));
     testing::click(&mut cx, "palette-back");
     cx.run_until_parked();
     assert_eq!(changing(window, &cx), None);
-    assert_eq!(picked(window, &cx).as_deref(), Some("window.new"));
+    assert_eq!(picked(window, &cx).as_deref(), Some("window.next"));
     press(&mut cx, "escape");
     cx.run_until_parked();
     assert!(palette(window, &cx).is_none());

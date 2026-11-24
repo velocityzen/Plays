@@ -1,7 +1,7 @@
 //! Bluetooth headphones paired with this computer, from fakes of macOS's
 //! Bluetooth and outputs, picked as someone at the screen would: listed
 //! while they aren't connected, connected once picked, in Settings or for
-//! a window, even picked already, and played through once they are; not
+//! a block, even picked already, and played through once they are; not
 //! connected for starting the app, nor once they go away.
 
 use std::sync::Mutex;
@@ -150,7 +150,7 @@ fn device((address, name): (&str, &str)) -> AudioDevice {
 #[gpui::test]
 fn headphones_paired_are_outputs_and_picking_them_connects_them(cx: &mut TestAppContext) {
     CONNECTED.lock().unwrap().push(output_id(PODS.0));
-    let (_, mut cx) = testing::start(cx);
+    let (window, mut cx) = testing::start(cx);
     let radio = device(RADIO);
     cx.update(|_, cx| {
         // Picked last time, and waited for.
@@ -208,9 +208,10 @@ fn headphones_paired_are_outputs_and_picking_them_connects_them(cx: &mut TestApp
     std::thread::sleep(SETTLE);
     assert_eq!(asked(), [RADIO.0], "not once they go away");
 
-    // A window picks one connected already, and one not paired.
-    cx.dispatch_action(output::set_window_device(Some(&device(PODS))));
-    cx.dispatch_action(output::set_window_device(Some(&device((
+    // A block picks one connected already, and one not paired.
+    super::open(window, &mut cx, &["tone.m4a"], false);
+    cx.dispatch_action(output::set_block_device(Some(&device(PODS))));
+    cx.dispatch_action(output::set_block_device(Some(&device((
         "00-00-5e-00-53-2c",
         "Stranger",
     )))));
@@ -219,7 +220,7 @@ fn headphones_paired_are_outputs_and_picking_them_connects_them(cx: &mut TestApp
     assert_eq!(asked(), [RADIO.0], "nothing to connect");
 
     // And them: the app's sound, waiting for them, plays through them too.
-    cx.dispatch_action(output::set_window_device(Some(&radio)));
+    cx.dispatch_action(output::set_block_device(Some(&radio)));
     wait(&mut cx, "the sound to play through them again", |cx| {
         plays_through(cx, RADIO.1)
     });

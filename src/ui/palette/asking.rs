@@ -184,7 +184,7 @@ fn choices(
         ("block.move_to_window", "window") => ("Window", other_windows(on)),
         ("cast.to" | "cast.pair", "device") => ("Device", devices(on)),
         ("output.set_device", "id") => ("Output", outputs(spec.id, "System Default", on)),
-        ("output.set_window_device", "id") => ("Output", outputs(spec.id, output::SAME_AS_APP, on)),
+        ("output.set_block_device", "id") => ("Output", outputs(spec.id, output::SAME_AS_APP, on)),
         ("app.settings.get" | "app.settings.reset", "key") => ("Setting", settings(true, on.cx)),
         ("app.settings.set", "key") => ("Setting", settings(false, on.cx)),
         ("app.settings.set", "value") => ("Value", setting_values(args, on)?),

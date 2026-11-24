@@ -101,10 +101,10 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 ### Inspect Window
 
-`window.inspect`: Say all about the window: where it is, how it shows, its output and its blocks.
+`window.inspect`: Say all about the window: where it is, how it shows and its blocks.
 
 - Acts on a player window.
-- Hands back: {id, label, title, number, front, blocks: [as block.ls], bounds: {x, y, width, height}, display, full_screen, on_top, output: {id, name} or null}: as window.ls says, its blocks as block.ls lists them, where it is in points, the id of the display it's on, whether it's full screen and floats on top, and its own output.
+- Hands back: {id, label, title, number, front, blocks: [as block.ls], bounds: {x, y, width, height}, display, full_screen, on_top}: as window.ls says, its blocks as block.ls lists them, where it is in points, the id of the display it's on, and whether it's full screen and floats on top.
 
 ### New Window
 
@@ -320,7 +320,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 `block.inspect`: Say all about the block: what it plays, where it is, and how it's set to play.
 
 - Acts on a block.
-- Hands back: {as block.ls, window, window_title, position, duration, frame_rate, ended, volume, muted, looping, tracks: {video, audio, subtitles: [{number, label, language, title, codec, format, default, forced, hearing_impaired, file}]}, picked: {video, audio, subtitles}, delays: {audio, subtitles}, picture: {turns, mirrored, aspect_ratio, crop}, chapter, chapters: [{number, name, start, end}], casting: {id, kind, name} or null}: its window's id and title, times in seconds (duration null for a live stream), frames a second (null for sound alone), volume from 0 to 100, tracks and chapters numbered from 1, the tracks picked and the chapter by number or null, delays in seconds, and quarter turns clockwise.
+- Hands back: {as block.ls, window, window_title, position, duration, frame_rate, ended, volume, muted, looping, tracks: {video, audio, subtitles: [{number, label, language, title, codec, format, default, forced, hearing_impaired, file}]}, picked: {video, audio, subtitles}, delays: {audio, subtitles}, picture: {turns, mirrored, aspect_ratio, crop}, chapter, chapters: [{number, name, start, end}], casting: {id, kind, name} or null, output: {id, name} or null}: its window's id and title, times in seconds (duration null for a live stream), frames a second (null for sound alone), volume from 0 to 100, tracks and chapters numbered from 1, the tracks picked and the chapter by number or null, delays in seconds, quarter turns clockwise, and the output it plays through of its own.
 
 ### Go to Block
 
@@ -1058,17 +1058,17 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 - Acts on the app.
 - Arguments:
-  - `id` (text, optional): The output's id; none for the system's default, or for a window, the app's output.
+  - `id` (text, optional): The output's id; none for the system's default, or for a block, the app's output.
   - `name` (text, optional): What it's called, for an output not connected now, which is waited for.
 - Tells: `output.route_changed`, `app.settings.changed`.
 
-### Window Output Device
+### Block Output Device
 
-`output.set_window_device`: Play the window's sound through an output of its own, or through the app's again.
+`output.set_block_device`: Play the block's sound through an output of its own, or through the app's again.
 
-- Acts on a player window.
+- Acts on a block.
 - Arguments:
-  - `id` (text, optional): The output's id; none for the system's default, or for a window, the app's output.
+  - `id` (text, optional): The output's id; none for the system's default, or for a block, the app's output.
   - `name` (text, optional): What it's called, for an output not connected now, which is waited for.
 
 ## display

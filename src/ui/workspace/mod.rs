@@ -142,9 +142,10 @@ pub struct Workspace {
     place: Option<place::Place>,
     /// Where it was before Output Device put it full screen elsewhere.
     home: Option<place::Home>,
-    /// The device it plays through instead of the app's output, and that
-    /// output's mixer.
-    sound: Option<(AudioDevice, Arc<Mixer>)>,
+    /// The speakers of the display Output Device sent it to, which its
+    /// blocks without an output of their own play through instead of the
+    /// app's, and that output's mixer.
+    display_sound: Option<(AudioDevice, Arc<Mixer>)>,
     _settings_subscription: Subscription,
     /// Blocks show a cast button while there are devices to cast to.
     _casting_subscription: Subscription,
@@ -289,7 +290,7 @@ impl Workspace {
             moving_to: None,
             place: place::Place::of(window, cx),
             home: None,
-            sound: None,
+            display_sound: None,
             gamma: cx.global::<Settings>().gamma(),
             _settings_subscription: settings_subscription,
             _casting_subscription: casting_subscription,

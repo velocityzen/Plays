@@ -5,19 +5,23 @@
 //! cast ends. A video cast to a speaker sends only its sound, and the
 //! picture plays on here, following the speaker.
 //!
-//! The cast button's menu also lists the displays, with more than one, to
-//! put the window full screen on, as Video → Output Device does on macOS;
-//! and, with more than one audio output, those the window can play its
-//! sound through instead of the app's, as Audio → Window Output Device
-//! does: the only place to pick them on Linux, which has no menu bar.
+//! The cast button's menu says where the block plays. Play Video On: the
+//! displays, with more than one, to put the window full screen on, as
+//! Video → Output Device does on macOS, and the devices that show video.
+//! Play Audio On: with more than one audio output, those the block can
+//! play its sound through instead of the app's, as Audio → Block Output
+//! Device does (the only place to pick them on Linux, which has no menu
+//! bar), and the speakers to cast its sound to.
 
 use gpui::prelude::*;
-use gpui::{AnyElement, App, Context, Corner, Div, ElementId, MouseDownEvent, Task, Window, div};
+use gpui::{
+    AnyElement, App, ClickEvent, Context, Corner, Div, ElementId, MouseDownEvent, Task, Window, div,
+};
 use stream_server::{Pick, SubtitleSource};
 
 use super::PlayerView;
 use crate::api::commands::{cast, output, window as windows};
-use crate::app::{AudioEngine, output_kind};
+use crate::app::{AudioEngine, airplay_id, output_kind};
 use crate::cast::target::FOLLOW_POLL;
 use crate::cast::{Casting, Device, Error, Link, Phase, Request, Shows, SubtitleChoice};
 use crate::media::Source;
@@ -25,7 +29,7 @@ use crate::media::decoder::MediaInfo;
 use crate::media::output::DeviceInfo;
 use crate::media::tracks::TrackKind;
 use crate::settings::{AudioDevice, Settings};
-use crate::ui::components::{Button, ClickHandler, Icon, MenuRow, Panel, Popover};
+use crate::ui::components::{Button, Icon, MenuRow, Panel, Popover};
 use crate::ui::displays::{self, DisplayInfo};
 use crate::ui::framing::Adjustments;
 use crate::ui::theme::Theme;
@@ -359,11 +363,9 @@ impl PlayerView {
         )
     }
 
-    /// The cast button, while there are devices to cast to, displays or
-    /// audio outputs to pick, and the menu of them it opens. It's lit while
-    /// the block plays elsewhere: cast to a device (or about to go on
-    /// casting with the file just opened), or its window's sound playing
-    /// through an output of its own.
+    /// The cast button, while there are displays, devices or outputs to
+    /// play the block on, and the menu of them it opens. It's lit while the
+    /// block plays elsewhere (`plays_elsewhere`).
     pub(super) fn render_cast_button(
         &self,
         info: Option<&MediaInfo>,
@@ -371,27 +373,13 @@ impl PlayerView {
         window: &Window,
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
-        // Until the file says, it may well have sound.
-        let has_audio = info.is_none_or(|info| info.has_audio);
-        let has_video = info.is_some_and(|info| info.has_video);
-        let mut devices = Casting::devices_for(cx, has_audio);
-        if let Some(casting) = self.casting()
-            && !devices.iter().any(|device| device.is(casting))
-        {
-            devices.push(casting.clone());
-        }
-        let mut screens = displays::connected(cx);
-        if screens.len() < 2 {
-            screens.clear();
-        }
-        let outputs = AudioEngine::devices(cx);
-        let outputs = (outputs.len() > 1 || self.window_sound.is_some()).then(|| outputs.to_vec());
-        if devices.is_empty() && screens.is_empty() && outputs.is_none() {
+        let choices = self.choices(info, window, cx);
+        if choices.is_empty() {
             return None;
         }
         let button = Button::icon("cast", "cast")
             .overlay()
-            .selected(self.casting().is_some() || self.window_sound.is_some())
+            .selected(self.plays_elsewhere(cx))
             .on_click(cx.listener(|this, _, _, cx| {
                 this.cast_open = !this.cast_open;
                 // As Linux doesn't say when outputs come and go.
@@ -404,141 +392,205 @@ impl PlayerView {
             Popover::new("cast-backdrop", button)
                 .anchor(Corner::BottomRight, TRACK_MENU_OFFSET)
                 .when(self.cast_open, |this| {
-                    let here = (!screens.is_empty())
-                        .then(|| displays::of(window, cx))
-                        .flatten();
-                    this.menu(
-                        self.render_cast_menu(
-                            devices, screens, here, outputs, has_video, theme, cx,
-                        ),
-                    )
+                    this.menu(self.render_cast_menu(choices, theme, cx))
                 })
                 .on_dismiss(cx.listener(close_cast_menu))
                 .into_any_element(),
         )
     }
 
-    /// This computer, or each display (`screens`) with the window's
-    /// (`here`) checked, and the devices: the one playing checked. A
-    /// speaker says it takes only a video's sound. Picking a display puts
-    /// the window full screen there (`window.show_on_display`), or plays the block
-    /// here again while it casts, if the window is on it; Wayland may keep
-    /// it on its own display, which the menu says. Then the window's sound
-    /// (`render_window_sound`), with `outputs` to pick from.
-    #[allow(clippy::too_many_arguments)]
+    /// Whether the block plays elsewhere: cast to a device (or about to go
+    /// on casting with the file just opened), through an output of its own,
+    /// or through the app's, an AirPlay speaker.
+    fn plays_elsewhere(&self, cx: &App) -> bool {
+        let app = cx.global::<Settings>().audio_output.device.as_ref();
+        self.casting().is_some()
+            || self.sound.is_some()
+            || app.is_some_and(|device| output_kind(&device.id).is_some())
+    }
+
+    /// What its menu lists, as things are now.
+    fn choices(&self, info: Option<&MediaInfo>, window: &Window, cx: &App) -> Choices {
+        // Until the file says, it may well have sound.
+        let has_audio = info.is_none_or(|info| info.has_audio);
+        let has_video = info.is_some_and(|info| info.has_video);
+        let mut devices = Casting::devices_for(cx, has_audio);
+        if let Some(casting) = self.casting()
+            && !devices.iter().any(|device| device.is(casting))
+        {
+            devices.push(casting.clone());
+        }
+        // Numbered among them all, in both lists.
+        let (video, sound) = devices
+            .into_iter()
+            .enumerate()
+            .partition(|(_, device)| has_video && device.shows == Shows::Video);
+        let mut screens = if has_video {
+            displays::connected(cx)
+        } else {
+            Vec::new()
+        };
+        if screens.len() < 2 {
+            screens.clear();
+        }
+        let here = (!screens.is_empty())
+            .then(|| displays::of(window, cx))
+            .flatten();
+        let outputs = AudioEngine::devices(cx);
+        let outputs = if has_audio && (outputs.len() > 1 || self.sound.is_some()) {
+            outputs.to_vec()
+        } else {
+            Vec::new()
+        };
+        Choices {
+            screens,
+            here,
+            video,
+            sound,
+            outputs,
+        }
+    }
+
+    /// Where its picture plays (`render_video_on`), while it has one to play
+    /// elsewhere, then where its sound does (`render_audio_on`).
     fn render_cast_menu(
         &self,
-        devices: Vec<Device>,
-        screens: Vec<DisplayInfo>,
-        here: Option<u32>,
-        outputs: Option<Vec<DeviceInfo>>,
-        has_video: bool,
+        choices: Choices,
         theme: &Theme,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let play_on = !devices.is_empty() || !screens.is_empty();
-        let sound = outputs.map(|outputs| self.render_window_sound(outputs, cx));
-        let casting = self.casting().cloned();
-        let this_computer = screens.is_empty().then(|| {
-            MenuRow::new("cast-here", "This Computer")
-                .checked(casting.is_none())
-                .mx_1()
-                .on_click(cx.listener(|this, _, _, cx| this.send_cast(None, cx)))
-        });
-        let wayland = !screens.is_empty() && displays::placed_by_compositor();
-        let screens = screens.into_iter().enumerate().map(|(i, screen)| {
-            MenuRow::new(
-                ElementId::Name(format!("display-{i}").into()),
-                screen.name.clone(),
-            )
-            .checked(casting.is_none() && here == Some(screen.id))
-            .detail(div().text_xs().child("Full screen"))
-            .mx_1()
-            .on_click(cx.listener(move |this, _, window, cx| {
-                this.cast_open = false;
-                window.dispatch_action(Box::new(windows::show_on_display(screen.id)), cx);
-                cx.notify();
-            }))
-        });
-        let rows = devices.into_iter().enumerate().map(|(i, device)| {
-            let checked = casting.as_ref().is_some_and(|casting| casting.is(&device));
-            let detail = if has_video && device.shows == Shows::Sound {
-                format!("{} · sound only", device.kind)
-            } else {
-                device.kind.to_owned()
-            };
-            MenuRow::new(
-                ElementId::Name(format!("cast-{i}").into()),
-                device.name.clone(),
-            )
-            .checked(checked)
-            .detail(div().text_xs().child(detail))
-            .mx_1()
-            .on_click(cx.listener(move |this, _, _, cx| this.send_cast(Some(&device), cx)))
-        });
+        let Choices {
+            screens,
+            here,
+            video,
+            sound,
+            outputs,
+        } = choices;
+        let picture = (!video.is_empty() || !screens.is_empty())
+            .then(|| self.render_video_on(screens, here, video, theme, cx));
+        let audio = (!outputs.is_empty() || !sound.is_empty())
+            .then(|| self.render_audio_on(outputs, sound, cx));
         Panel::new()
             .occlude()
             .flex()
             .flex_col()
             .w(CAST_MENU_WIDTH)
             .pb_1()
-            .when(play_on, |this| {
-                this.child(heading("Play This Block On", theme))
-                    .children(this_computer)
-                    .children(screens)
-                    .when(wayland, |this| {
-                        this.child(
-                            div()
-                                .px_3()
-                                .py_1()
-                                .text_xs()
-                                .text_color(theme.text_muted)
-                                .child("Wayland may keep it where it is"),
-                        )
-                    })
-                    .children(rows)
+            .when_some(picture, |this, rows| {
+                this.child(heading("Play Video On", theme)).children(rows)
             })
-            .when_some(sound, |this, sound| {
-                this.child(heading("Play This Window's Sound On", theme))
-                    .children(sound)
+            .when_some(audio, |this, rows| {
+                this.child(heading("Play Audio On", theme)).children(rows)
             })
             .into_any_element()
     }
 
-    /// The app's output, checked unless the window plays through one of its
-    /// own; then `outputs`, the window's own checked, and listed too while
-    /// it isn't connected.
-    /// Picking one plays the whole window through it
-    /// (`output.set_window_device`).
-    fn render_window_sound(
+    /// This computer, or each display (`screens`) with the window's
+    /// (`here`) checked, and the devices that show the picture (`devices`),
+    /// the one it's cast to checked. Picking a display puts the window full
+    /// screen there (`window.show_on_display`), or plays the block here
+    /// again while it casts, if the window is on it; Wayland may keep it on
+    /// its own display, which the menu says.
+    fn render_video_on(
+        &self,
+        screens: Vec<DisplayInfo>,
+        here: Option<u32>,
+        devices: Vec<(usize, Device)>,
+        theme: &Theme,
+        cx: &mut Context<Self>,
+    ) -> Vec<AnyElement> {
+        let picture = self
+            .casting()
+            .filter(|device| device.shows == Shows::Video)
+            .cloned();
+        let mut rows = Vec::new();
+        if screens.is_empty() {
+            let row = MenuRow::new("cast-here", "This Computer").checked(picture.is_none());
+            let row = match picture {
+                Some(_) => row.on_click(cx.listener(|this, _, _, cx| this.send_cast(None, cx))),
+                None => row.on_click(cx.listener(close_menu)),
+            };
+            rows.push(row.mx_1().into_any_element());
+        }
+        let wayland = !screens.is_empty() && displays::placed_by_compositor();
+        for (i, screen) in screens.into_iter().enumerate() {
+            let row = MenuRow::new(
+                ElementId::Name(format!("display-{i}").into()),
+                screen.name.clone(),
+            )
+            .checked(picture.is_none() && here == Some(screen.id))
+            .detail(div().text_xs().child("Full screen"))
+            .mx_1()
+            .on_click(cx.listener(move |this, _, window, cx| {
+                this.cast_open = false;
+                window.dispatch_action(Box::new(windows::show_on_display(screen.id)), cx);
+                cx.notify();
+            }));
+            rows.push(row.into_any_element());
+        }
+        if wayland {
+            rows.push(
+                div()
+                    .px_3()
+                    .py_1()
+                    .text_xs()
+                    .text_color(theme.text_muted)
+                    .child("Wayland may keep it where it is")
+                    .into_any_element(),
+            );
+        }
+        for (i, device) in devices {
+            let checked = picture.as_ref().is_some_and(|picture| picture.is(&device));
+            rows.push(cast_row(i, device, checked, cx));
+        }
+        rows
+    }
+
+    /// The app's output, saying which it is, then `outputs`, its own
+    /// checked, and listed too while it isn't connected; then the devices
+    /// that play its sound alone (`devices`). The one it's cast to is
+    /// checked instead, its picture with it or not, and listed while it
+    /// isn't an output. Picking an output plays the block here, through it
+    /// (`output.set_block_device`).
+    fn render_audio_on(
         &self,
         outputs: Vec<DeviceInfo>,
+        devices: Vec<(usize, Device)>,
         cx: &mut Context<Self>,
-    ) -> Vec<MenuRow> {
-        let own = self.window_sound.clone();
-        let mut rows = vec![
-            MenuRow::new("sound-app", output::SAME_AS_APP)
-                .checked(own.is_none())
-                .mx_1()
-                .on_click(pick_window_sound(None, cx)),
-        ];
+    ) -> Vec<AnyElement> {
+        let casting = self.casting().cloned();
+        let own = self.sound.clone().filter(|_| casting.is_none());
+        let app = cx.global::<Settings>().audio_output.device.as_ref();
+        let app = app.map_or_else(|| "System Default".to_owned(), |app| app.name.clone());
+        let same = casting.is_none() && own.is_none();
+        let mut rows = vec![sound_row(
+            MenuRow::new("sound-app", output::SAME_AS_APP).detail(
+                div()
+                    .debug_selector(|| "sound-app-output".into())
+                    .text_xs()
+                    .child(app),
+            ),
+            None,
+            same,
+            cx,
+        )];
         let missing = own
             .clone()
             .filter(|own| !outputs.iter().any(|output| output.id == own.id));
+        let mut cast_listed = false;
         for (i, output) in outputs.into_iter().enumerate() {
-            let device = AudioDevice {
-                id: output.id,
-                name: output.name,
-            };
-            let checked = own.as_ref().is_some_and(|own| own.id == device.id);
+            let cast_here = casting
+                .as_ref()
+                .is_some_and(|cast| is_cast_to(&output.id, cast));
+            cast_listed |= cast_here;
+            let checked = cast_here || own.as_ref().is_some_and(|own| own.id == output.id);
             let mut row = MenuRow::new(
                 ElementId::Name(format!("sound-{i}").into()),
-                device.name.clone(),
-            )
-            .checked(checked);
-            // As the devices above say theirs: a speaker also cast to, with
-            // DLNA say, is told apart.
-            if let Some(kind) = output_kind(&device.id) {
+                output.name.clone(),
+            );
+            // As the devices say theirs: a speaker also cast to, with DLNA
+            // say, is told apart.
+            if let Some(kind) = output_kind(&output.id) {
                 row = row.detail(
                     div()
                         .debug_selector(move || format!("sound-{i}-kind"))
@@ -546,28 +598,107 @@ impl PlayerView {
                         .child(kind),
                 );
             }
-            rows.push(row.mx_1().on_click(pick_window_sound(Some(device), cx)));
+            let device = AudioDevice {
+                id: output.id,
+                name: output.name,
+            };
+            rows.push(sound_row(row, Some(device), checked, cx));
         }
         if let Some(device) = missing {
-            rows.push(
-                MenuRow::new("sound-missing", device.name.clone())
-                    .checked(true)
-                    .detail(div().text_xs().child("Not connected"))
-                    .mx_1()
-                    .on_click(pick_window_sound(Some(device), cx)),
-            );
+            let row = MenuRow::new("sound-missing", device.name.clone())
+                .detail(div().text_xs().child("Not connected"));
+            rows.push(sound_row(row, Some(device), true, cx));
+        }
+        for (i, device) in devices {
+            let checked = casting.as_ref().is_some_and(|cast| cast.is(&device));
+            cast_listed |= checked;
+            rows.push(cast_row(i, device, checked, cx));
+        }
+        if let Some(cast) = casting.filter(|_| !cast_listed) {
+            let row = MenuRow::new("sound-cast", cast.name.clone())
+                .checked(true)
+                .detail(div().text_xs().child(cast.kind))
+                .mx_1()
+                .on_click(cx.listener(close_menu));
+            rows.push(row.into_any_element());
         }
         rows
     }
 }
 
-/// Clicks that play the window through `device`, or the app's output.
-fn pick_window_sound(device: Option<AudioDevice>, cx: &mut Context<PlayerView>) -> ClickHandler {
-    Box::new(cx.listener(move |view, _, window, cx| {
+/// What a block's menu lists.
+struct Choices {
+    /// The displays to put the window full screen on, while there are two
+    /// or more and the block has a picture.
+    screens: Vec<DisplayInfo>,
+    /// The display the window is on, while they're listed.
+    here: Option<u32>,
+    /// The devices that show its picture, and play its sound with it,
+    /// numbered among all it can be cast to.
+    video: Vec<(usize, Device)>,
+    /// Those that play its sound alone: speakers, or for a block without a
+    /// picture, any.
+    sound: Vec<(usize, Device)>,
+    /// The outputs to pick from, while there's a choice.
+    outputs: Vec<DeviceInfo>,
+}
+
+impl Choices {
+    fn is_empty(&self) -> bool {
+        self.screens.is_empty()
+            && self.video.is_empty()
+            && self.sound.is_empty()
+            && self.outputs.is_empty()
+    }
+}
+
+/// Whether output `id` is the device `cast`, as an AirPlay TV is both.
+fn is_cast_to(id: &str, cast: &Device) -> bool {
+    output_kind(id) == Some(cast.kind) && airplay_id(id) == Some(cast.id.as_str())
+}
+
+/// Device `device`, the `i`th the block can be cast to, `checked` while it
+/// is; picking it casts the block there.
+fn cast_row(i: usize, device: Device, checked: bool, cx: &mut Context<PlayerView>) -> AnyElement {
+    MenuRow::new(
+        ElementId::Name(format!("cast-{i}").into()),
+        device.name.clone(),
+    )
+    .checked(checked)
+    .detail(div().text_xs().child(device.kind))
+    .mx_1()
+    .on_click(cx.listener(move |this, _, _, cx| this.send_cast(Some(&device), cx)))
+    .into_any_element()
+}
+
+/// `row`, for `device` (or with `None`, the app's output), `checked` while
+/// the block plays there. Picking it, unchecked, plays the block here
+/// through it: one cast plays here again first.
+fn sound_row(
+    row: MenuRow,
+    device: Option<AudioDevice>,
+    checked: bool,
+    cx: &mut Context<PlayerView>,
+) -> AnyElement {
+    let row = row.checked(checked).mx_1();
+    if checked {
+        return row.on_click(cx.listener(close_menu)).into_any_element();
+    }
+    row.on_click(cx.listener(move |view, _, _, cx| {
         view.cast_open = false;
-        window.dispatch_action(Box::new(output::set_window_device(device.as_ref())), cx);
+        if view.casting().is_some() {
+            view.send_run(cast::to(None), cx);
+        }
+        view.send_run(output::set_block_device(device.as_ref()), cx);
         cx.notify();
     }))
+    .into_any_element()
+}
+
+/// Clicks on what's picked already close the menu, and do nothing else.
+fn close_menu(view: &mut PlayerView, _: &ClickEvent, _: &mut Window, cx: &mut Context<PlayerView>) {
+    view.cast_open = false;
+    cx.notify();
 }
 
 /// Which track of a kind to cast: the one playing here.

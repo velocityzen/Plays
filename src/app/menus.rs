@@ -50,15 +50,15 @@ fn menus(cx: &mut App) -> Vec<Menu> {
         .unwrap_or_else(|| MenuState::now(cx));
     let devices = AudioEngine::devices(cx);
     let picked: Option<AudioDevice> = state.read("output.set_device");
-    let own: Option<AudioDevice> = state.read("output.set_window_device");
+    let own: Option<AudioDevice> = state.read("output.set_block_device");
     let outputs = output_menu(devices, picked.as_ref(), &state);
-    let window_outputs = window_output_menu(devices, own.as_ref());
+    let block_outputs = block_output_menu(devices, own.as_ref());
     vec![
         plays_menu(&state),
         file_menu(&state),
         playback_menu(&state),
         video_menu(&state),
-        audio_menu(outputs, window_outputs, &state),
+        audio_menu(outputs, block_outputs, &state),
         subtitles_menu(&state),
         interface_menu(&state),
         window_menu(&state),
@@ -294,7 +294,7 @@ fn interface_menu(state: &MenuState) -> Menu {
 }
 
 /// The sound of the block in front and every block, and where it plays.
-fn audio_menu(outputs: Menu, window_outputs: Menu, state: &MenuState) -> Menu {
+fn audio_menu(outputs: Menu, block_outputs: Menu, state: &MenuState) -> Menu {
     let mut menu = items(
         &[
             "audio.volume_up",
@@ -314,10 +314,7 @@ fn audio_menu(outputs: Menu, window_outputs: Menu, state: &MenuState) -> Menu {
         ],
         state,
     );
-    menu.extend([
-        MenuItem::submenu(outputs),
-        MenuItem::submenu(window_outputs),
-    ]);
+    menu.extend([MenuItem::submenu(outputs), MenuItem::submenu(block_outputs)]);
     Menu {
         name: "Audio".into(),
         items: menu,
@@ -773,12 +770,12 @@ fn output_menu(devices: &[DeviceInfo], picked: Option<&AudioDevice>, outputs: &M
     }
 }
 
-/// The app's output, checked unless the window in front plays through a
+/// The app's output, checked unless the block in front plays through a
 /// device of its own, then every output connected, its own checked; its
 /// own is listed too while it isn't connected, as its sound waits for it.
-fn window_output_menu(devices: &[DeviceInfo], own: Option<&AudioDevice>) -> Menu {
+fn block_output_menu(devices: &[DeviceInfo], own: Option<&AudioDevice>) -> Menu {
     let mut items = vec![
-        MenuItem::action(output::SAME_AS_APP, output::set_window_device(None))
+        MenuItem::action(output::SAME_AS_APP, output::set_block_device(None))
             .checked(own.is_none()),
         MenuItem::separator(),
     ];
@@ -790,7 +787,7 @@ fn window_output_menu(devices: &[DeviceInfo], own: Option<&AudioDevice>) -> Menu
             id: device.id.clone(),
             name: device.name.clone(),
         };
-        MenuItem::action(title, output::set_window_device(Some(&device))).checked(checked)
+        MenuItem::action(title, output::set_block_device(Some(&device))).checked(checked)
     }));
     if let Some(own) = own
         && !devices.iter().any(|device| device.id == own.id)
@@ -798,13 +795,13 @@ fn window_output_menu(devices: &[DeviceInfo], own: Option<&AudioDevice>) -> Menu
         items.push(
             MenuItem::action(
                 format!("{} (Not Connected)", own.name),
-                output::set_window_device(Some(own)),
+                output::set_block_device(Some(own)),
             )
             .checked(true),
         );
     }
     Menu {
-        name: "Window Output Device".into(),
+        name: "Block Output Device".into(),
         items,
     }
 }

@@ -1,7 +1,8 @@
 //! The audio outputs players play through, and which devices those are.
 //! The app's plays through the one picked in Settings → Audio, or the
-//! system's default. A window may play through a device of its own
-//! instead, whose output every window picking it shares. While a device
+//! system's default. A block may play through a device of its own
+//! instead, and a window sent to a TV through its speakers: each device's
+//! output is shared by every block playing through it. While a device
 //! picked isn't connected, its sound waits for it (players keep playing,
 //! silently) or goes through the system's default, as settings say; either
 //! way it goes back to the device as soon as it's there. Each output
@@ -379,20 +380,22 @@ impl Devices {
     }
 }
 
-/// The output of a device windows play through instead of the app's.
-struct WindowOutput {
+/// The output of a device blocks play through instead of the app's: one
+/// picked for them, or the speakers of the display their window was sent
+/// to.
+struct DeviceOutput {
     device: AudioDevice,
     output: Output,
-    /// How many windows play through it.
-    windows: usize,
+    /// How many blocks and windows play through it.
+    users: usize,
 }
 
 /// The audio outputs, shared by every player.
 pub struct AudioEngine {
-    /// The app's: what every window without a device of its own plays
+    /// The app's: what every block without a device of its own plays
     /// through.
     main: Output,
-    windows: Vec<WindowOutput>,
+    others: Vec<DeviceOutput>,
     /// Counts routings, to tell what an event is about.
     generation: u64,
     /// The output devices, as last listed.
@@ -419,7 +422,7 @@ impl AudioEngine {
                 "Silent in tests",
                 &events,
             ),
-            windows: Vec::new(),
+            others: Vec::new(),
             generation: 0,
             listed: Vec::new(),
             events,
@@ -451,7 +454,7 @@ impl AudioEngine {
                 "Not started",
                 &events,
             ),
-            windows: Vec::new(),
+            others: Vec::new(),
             generation: 0,
             listed: Vec::new(),
             events: events.clone(),
@@ -486,7 +489,7 @@ impl AudioEngine {
             }
             let engine = cx.global_mut::<Self>();
             if wanted.wait_for_device != engine.main.wanted.wait_for_device {
-                engine.windows_wait_for_devices(wanted.wait_for_device);
+                engine.others_wait_for_devices(wanted.wait_for_device);
             }
             // Only whether to wait changed, and the device wanted is
             // playing: nothing to move.
@@ -539,12 +542,12 @@ impl AudioEngine {
                 if engine.main.generation == generation {
                     Self::reroute(cx);
                 } else if let Some(index) = engine
-                    .windows
+                    .others
                     .iter()
-                    .position(|window| window.output.generation == generation)
+                    .position(|other| other.output.generation == generation)
                 {
                     let wait = engine.main.wanted.wait_for_device;
-                    engine.route_window(index, wait);
+                    engine.route_other(index, wait);
                     cx.refresh_windows();
                 } else {
                     // About an output since routed again, or closed.
@@ -575,12 +578,12 @@ impl AudioEngine {
         }
         let engine = cx.global_mut::<Self>();
         let wait = engine.main.wanted.wait_for_device;
-        for index in 0..engine.windows.len() {
+        for index in 0..engine.others.len() {
             if !matches!(
-                engine.windows[index].output.route,
+                engine.others[index].output.route,
                 Route::Device { missing: None, .. }
             ) {
-                engine.route_window(index, wait);
+                engine.route_other(index, wait);
             }
         }
         cx.refresh_windows();
@@ -589,7 +592,8 @@ impl AudioEngine {
     /// What picked output `id` no longer does, rather than wait for it,
     /// silent, as when it wanted its PIN and the sheet asking for it closed
     /// without pairing, or it was forgotten: the app's output goes back to
-    /// the system's default, and a window's to the app's output.
+    /// the system's default, and a block's, or a window's following a
+    /// display, to the app's output.
     pub fn unpick(id: &str, cx: &mut App) {
         let picked = |pick: Option<&AudioDevice>| pick.is_some_and(|pick| pick.id == id);
         if picked(cx.global::<Settings>().audio_output.device.as_ref()) {
@@ -597,18 +601,14 @@ impl AudioEngine {
         }
         let windows = cx.windows().into_iter();
         for window in windows.filter_map(|window| window.downcast::<Workspace>()) {
-            let _ = window.update(cx, |workspace, _, cx| {
-                if picked(workspace.sound_device()) {
-                    workspace.set_sound_device(None, cx);
-                }
-            });
+            let _ = window.update(cx, |workspace, _, cx| workspace.unpick(id, cx));
         }
     }
 
     /// The output routed as `generation`, as it is still.
     fn output_mut(&mut self, generation: u64) -> Option<&mut Output> {
         std::iter::once(&mut self.main)
-            .chain(self.windows.iter_mut().map(|window| &mut window.output))
+            .chain(self.others.iter_mut().map(|other| &mut other.output))
             .find(|output| output.generation == generation)
     }
 
@@ -625,35 +625,35 @@ impl AudioEngine {
         cx.refresh_windows();
     }
 
-    /// Play the output of window device `index` through it, or as near as
-    /// there is, waiting for it while it isn't connected if `wait`.
-    fn route_window(&mut self, index: usize, wait: bool) {
+    /// Play the output of device `index` among the others through it, or as
+    /// near as there is, waiting for it while it isn't connected if `wait`.
+    fn route_other(&mut self, index: usize, wait: bool) {
         let Some(devices) = self.devices.clone() else {
             return;
         };
         self.generation += 1;
-        let window = &mut self.windows[index];
+        let other = &mut self.others[index];
         let wanted = AudioOutputSettings {
-            device: Some(window.device.clone()),
+            device: Some(other.device.clone()),
             wait_for_device: wait,
         };
-        window.output.route_to(wanted, self.generation, devices);
+        other.output.route_to(wanted, self.generation, devices);
     }
 
-    /// Settings say whether to wait for a device now: windows' outputs not
+    /// Settings say whether to wait for a device now: the other outputs not
     /// playing through theirs go by it.
-    fn windows_wait_for_devices(&mut self, wait: bool) {
-        for index in 0..self.windows.len() {
-            let output = &mut self.windows[index].output;
+    fn others_wait_for_devices(&mut self, wait: bool) {
+        for index in 0..self.others.len() {
+            let output = &mut self.others[index].output;
             if matches!(output.route, Route::Device { missing: None, .. }) {
                 output.wanted.wait_for_device = wait;
             } else {
-                self.route_window(index, wait);
+                self.route_other(index, wait);
             }
         }
     }
 
-    /// Output device `device` was picked, for the app or a window, even
+    /// Output device `device` was picked, for the app or a block, even
     /// picked again: if it's a Bluetooth device paired with this computer
     /// that isn't connected, connect it, in the background. What picked it
     /// plays through it once it's up, as through any device picked that
@@ -674,19 +674,20 @@ impl AudioEngine {
             .ok();
     }
 
-    /// The mixer of `device`'s output, for a window to play through instead
-    /// of the app's: the one windows play through already, or a new one.
-    /// The window lets go of it (`let_go`) once it doesn't.
-    pub fn window_mixer(device: &AudioDevice, cx: &mut App) -> Option<Arc<Mixer>> {
+    /// The mixer of `device`'s output, for a block, or a window following a
+    /// display, to play through instead of the app's: the one played
+    /// through already, or a new one. It lets go of it (`let_go`) once it
+    /// doesn't.
+    pub fn device_mixer(device: &AudioDevice, cx: &mut App) -> Option<Arc<Mixer>> {
         if !cx.has_global::<Self>() {
             return None;
         }
         let settings = cx.global::<Settings>().clone();
         let engine = cx.global_mut::<Self>();
         let index = match engine
-            .windows
+            .others
             .iter()
-            .position(|window| window.device.id == device.id)
+            .position(|other| other.device.id == device.id)
         {
             Some(index) => index,
             None => {
@@ -699,39 +700,39 @@ impl AudioEngine {
                 } else {
                     "Not started"
                 };
-                engine.windows.push(WindowOutput {
+                engine.others.push(DeviceOutput {
                     device: device.clone(),
                     output: Output::new(&settings, wanted, why, &engine.events),
-                    windows: 0,
+                    users: 0,
                 });
-                let index = engine.windows.len() - 1;
-                engine.route_window(index, settings.audio_output.wait_for_device);
+                let index = engine.others.len() - 1;
+                engine.route_other(index, settings.audio_output.wait_for_device);
                 index
             }
         };
-        let window = &mut engine.windows[index];
-        window.windows += 1;
-        let mixer = window.output.mixer.clone();
+        let other = &mut engine.others[index];
+        other.users += 1;
+        let mixer = other.output.mixer.clone();
         cx.refresh_windows();
         Some(mixer)
     }
 
-    /// A window doesn't play through `device`'s output any more: it closes
-    /// once none does.
+    /// A block, or a window, doesn't play through `device`'s output any
+    /// more: it closes once none does.
     pub fn let_go(device: &AudioDevice, cx: &mut App) {
         if !cx.has_global::<Self>() {
             return;
         }
         let engine = cx.global_mut::<Self>();
         if let Some(index) = engine
-            .windows
+            .others
             .iter()
-            .position(|window| window.device.id == device.id)
+            .position(|other| other.device.id == device.id)
         {
-            let window = &mut engine.windows[index];
-            window.windows = window.windows.saturating_sub(1);
-            if window.windows == 0 {
-                engine.windows.remove(index);
+            let other = &mut engine.others[index];
+            other.users = other.users.saturating_sub(1);
+            if other.users == 0 {
+                engine.others.remove(index);
             }
         }
     }
@@ -739,8 +740,8 @@ impl AudioEngine {
     /// Every output's volume, over each player's.
     pub fn set_master_volume(volume: f32, cx: &App) {
         if let Some(engine) = cx.try_global::<Self>() {
-            for output in std::iter::once(&engine.main)
-                .chain(engine.windows.iter().map(|window| &window.output))
+            for output in
+                std::iter::once(&engine.main).chain(engine.others.iter().map(|other| &other.output))
             {
                 output.mixer.set_master_volume(volume);
             }
@@ -787,10 +788,11 @@ impl AudioEngine {
         cx.global_mut::<Self>().listed = devices;
     }
 
-    /// For tests: how many outputs windows play through of their own.
+    /// For tests: how many outputs blocks and windows play through besides
+    /// the app's.
     #[cfg(test)]
-    pub fn window_outputs(cx: &App) -> usize {
-        cx.global::<Self>().windows.len()
+    pub fn other_outputs(cx: &App) -> usize {
+        cx.global::<Self>().others.len()
     }
 
     /// Where the app's sound goes.

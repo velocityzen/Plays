@@ -43,7 +43,8 @@ impl PlayerView {
     /// it is, its video's frame rate and whether it ended; its volume (in
     /// percent), mute and loop; its tracks (numbered from 1 within each
     /// kind) and those picked; the delays and picture adjustments; its
-    /// chapters (from 1) and the one it's in; and the device it casts to.
+    /// chapters (from 1) and the one it's in; the device it casts to; and
+    /// the output it plays through of its own, if any.
     pub fn inspect(&self) -> Map<String, Value> {
         let player = self.player();
         let info = player.info();
@@ -104,6 +105,7 @@ impl PlayerView {
             "chapter": self.chapter().map(|at| at + 1),
             "chapters": chapters,
             "casting": self.casting().map(device_json),
+            "output": self.sound_device(),
         });
         if let Value::Object(more) = more {
             inspected.extend(more);

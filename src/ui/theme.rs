@@ -563,8 +563,9 @@ pub mod player {
     /// The icon in a block whose video is in Picture in Picture, or that
     /// plays on another device.
     pub const PIP_ICON: Pixels = px(40.);
-    /// The cast menu, and how far it goes from its button.
-    pub const CAST_MENU_WIDTH: Pixels = px(240.);
+    /// The cast menu: room for "Same as the App" and the app's output
+    /// beside it.
+    pub const CAST_MENU_WIDTH: Pixels = px(280.);
 }
 
 /// The console over a block (`~`).

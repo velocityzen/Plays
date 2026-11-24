@@ -34,12 +34,12 @@ pub const COMMANDS: &[Spec] = &[
     Spec::query(
         "window.inspect",
         "Inspect Window",
-        "Say all about the window: where it is, how it shows, its output and its blocks.",
+        "Say all about the window: where it is, how it shows and its blocks.",
         Scope::Window,
         "{id, label, title, number, front, blocks: [as block.ls], bounds: {x, y, width, height}, \
-         display, full_screen, on_top, output: {id, name} or null}: as window.ls says, \
-         its blocks as block.ls lists them, where it is in points, the id of the display \
-         it's on, whether it's full screen and floats on top, and its own output.",
+         display, full_screen, on_top}: as window.ls says, its blocks as block.ls lists \
+         them, where it is in points, the id of the display it's on, and whether it's \
+         full screen and floats on top.",
         inspect,
     )
     .keywords(&["info", "details", "describe"]),

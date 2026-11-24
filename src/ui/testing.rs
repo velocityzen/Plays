@@ -104,6 +104,15 @@ pub fn painted(cx: &mut VisualTestContext) -> Vec<(SharedString, Bounds<Pixels>)
     cx.update(|window, _| window.painted_text())
 }
 
+/// Whether the menu row tagged `selector` is checked: drawn with a ✓.
+pub fn checked(cx: &mut VisualTestContext, selector: &'static str) -> bool {
+    let row = find(cx, selector);
+    painted(cx).into_iter().any(|(text, bounds)| {
+        let middle = bounds.center().y;
+        text == "✓" && row.origin.y <= middle && middle <= row.bottom()
+    })
+}
+
 /// Move the mouse to the middle of the element tagged `selector`.
 pub fn hover(cx: &mut VisualTestContext, selector: &'static str) {
     let at = find(cx, selector).center();

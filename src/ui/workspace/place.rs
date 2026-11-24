@@ -15,7 +15,6 @@ use serde::{Deserialize, Serialize};
 
 use super::Workspace;
 use crate::files::{self, Folder};
-use crate::settings::AudioDevice;
 use crate::ui::displays::{self, DisplayInfo};
 use crate::ui::theme::layout::WINDOW_SIZE;
 
@@ -90,9 +89,6 @@ pub(super) struct Home {
     /// It has been full screen there since, so leaving full screen is the
     /// way back.
     pub(super) shown: bool,
-    /// While its sound follows the display it was sent to, what it played
-    /// through before (`None` for the app's output), which it goes back to.
-    pub(super) sound: Option<Option<AudioDevice>>,
 }
 
 /// The place of Plays' window in front, or of the last one closed: where
@@ -253,7 +249,6 @@ impl Workspace {
             self.home = self.place.clone().map(|place| Home {
                 place,
                 shown: false,
-                sound: None,
             });
         }
     }
@@ -286,12 +281,10 @@ impl Workspace {
         } else if moved {
             home.shown = false;
         } else if home.shown {
-            let Some(Home { place, sound, .. }) = self.home.take() else {
+            let Some(Home { place, .. }) = self.home.take() else {
                 return;
             };
-            if let Some(before) = sound {
-                self.play_through(before, cx);
-            }
+            self.play_through_display(None, cx);
             let display = place
                 .find(&displays::list(cx))
                 .and_then(|id| cx.find_display(displays::find(id, cx)?));

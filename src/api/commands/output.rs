@@ -1,4 +1,4 @@
-//! `output`: where the sound plays: the app's output, and a window's own.
+//! `output`: where the sound plays: the app's output, and a block's own.
 
 use gpui::App;
 use serde::Deserialize;
@@ -7,14 +7,14 @@ use serde_json::{Value, json};
 use super::done;
 use crate::api::args::{Arg, Kind};
 use crate::api::events::{EventField, EventKind};
-use crate::api::registry::{Args, Scope, Spec};
-use crate::api::target;
+use crate::api::registry::{Args, Outcome, Scope, Spec};
+use crate::api::target::{self, Target};
 use crate::api::{Error, Run};
 use crate::app::{AudioEngine, Route, output_kind};
 use crate::settings::{AudioDevice, Settings};
 
-/// What picking no output of a window's own is called, wherever it's
-/// picked: Audio → Window Output Device, a block's menu, the palette.
+/// What picking no output of a block's own is called, wherever it's
+/// picked: Audio → Block Output Device, the block's menu, the palette.
 pub const SAME_AS_APP: &str = "Same as the App";
 
 /// What the output commands take: an output, or none.
@@ -22,7 +22,7 @@ const DEVICE: &[Arg] = &[
     Arg::optional(
         "id",
         Kind::Text,
-        "The output's id; none for the system's default, or for a window, the app's output.",
+        "The output's id; none for the system's default, or for a block, the app's output.",
     ),
     Arg::optional(
         "name",
@@ -79,19 +79,13 @@ pub const COMMANDS: &[Spec] = &[
     ])
     // The output picked, or null for the system's default.
     .state(|_, cx| Ok(json!(cx.global::<Settings>().audio_output.device))),
-    Spec::window_with(
-        "output.set_window_device",
-        "Window Output Device",
-        "Play the window's sound through an output of its own, or through the app's again.",
+    Spec::custom_with(
+        "output.set_block_device",
+        "Block Output Device",
+        "Play the block's sound through an output of its own, or through the app's again.",
+        Scope::Block,
         DEVICE,
-        |args, workspace, _, cx| {
-            let device = device(args, cx)?;
-            if let Some(device) = &device {
-                AudioEngine::bring(device, cx);
-            }
-            workspace.set_sound_device(device, cx);
-            done()
-        },
+        pick_block_device,
     )
     .keywords(&[
         "sound",
@@ -102,12 +96,25 @@ pub const COMMANDS: &[Spec] = &[
         "airplay",
     ])
     // Its own output, or null for the app's.
-    .state(|target, cx| {
-        target::in_window(target, cx, |workspace, _, _| {
-            Ok(json!(workspace.sound_device()))
-        })
-    }),
+    .state(|target, cx| target::read_block(target, cx, |player, _| json!(player.sound_device()))),
 ];
+
+/// Play the block named, or the one keys go to, through the output `args`
+/// name, or the app's.
+fn pick_block_device(args: Args, target: &Target, cx: &mut App) -> Outcome {
+    let device = device(args, cx)?;
+    let (window, block) = target::block(target, cx)?;
+    if let Some(device) = &device {
+        AudioEngine::bring(device, cx);
+    }
+    let id = block.entity_id();
+    window
+        .update(cx, |workspace, _, cx| {
+            workspace.set_block_sound(id, device, cx)
+        })
+        .map_err(|_| Error::failed("the window has closed"))?;
+    done()
+}
 
 /// The outputs' events.
 pub const EVENTS: &[EventKind] = &[
@@ -198,9 +205,9 @@ pub fn set_device(device: Option<&AudioDevice>) -> Run {
     Run::with("output.set_device", output(device))
 }
 
-/// Play the window in front through `device`, or the app's output again.
-pub fn set_window_device(device: Option<&AudioDevice>) -> Run {
-    Run::with("output.set_window_device", output(device))
+/// Play the block in front through `device`, or the app's output again.
+pub fn set_block_device(device: Option<&AudioDevice>) -> Run {
+    Run::with("output.set_block_device", output(device))
 }
 
 /// The arguments the output commands take for `device`: by id and name,

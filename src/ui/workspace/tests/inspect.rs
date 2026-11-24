@@ -94,7 +94,6 @@ fn window_ls_and_inspect_say_what_each_window_is(cx: &mut TestAppContext) {
             "display": display,
             "full_screen": false,
             "on_top": false,
-            "output": null,
         })
     );
     let other = query(
@@ -107,24 +106,12 @@ fn window_ls_and_inspect_say_what_each_window_is(cx: &mut TestAppContext) {
         "named"
     );
 
-    // Full screen, floating on top and its own output show.
-    cx.update(|window, cx| {
-        window.toggle_fullscreen();
-        let desk = DeviceInfo {
-            id: "desk".into(),
-            name: "Desk".into(),
-        };
-        AudioEngine::set_devices(vec![desk], cx);
-    });
+    // Full screen and floating on top show.
+    cx.update(|window, _| window.toggle_fullscreen());
     query(&mut cx, Invocation::new("window.toggle_float_on_top"));
-    let device = Invocation::new("output.set_window_device")
-        .with_args(json!({"id": "desk"}))
-        .in_window(one.as_str());
-    query(&mut cx, device);
     let inspected = query(&mut cx, Invocation::new("window.inspect"));
     assert_eq!(inspected["full_screen"], true);
     assert_eq!(inspected["on_top"], true);
-    assert_eq!(inspected["output"], json!({"id": "desk", "name": "Desk"}));
 }
 
 /// A window with a file with chapters and one with subtitles, and the
@@ -273,11 +260,29 @@ fn block_inspect_says_how_a_block_plays(cx: &mut TestAppContext) {
         "chapter": null,
         "chapters": [],
         "casting": null,
+        "output": null,
     });
     assert_eq!(
         on_block(&mut cx, "block.inspect", Value::Null, "Subs"),
         expected
     );
+
+    // Its own output, once picked.
+    cx.update(|_, cx| {
+        let desk = DeviceInfo {
+            id: "desk".into(),
+            name: "Desk".into(),
+        };
+        AudioEngine::set_devices(vec![desk], cx);
+    });
+    on_block(
+        &mut cx,
+        "output.set_block_device",
+        json!({"id": "desk"}),
+        "Subs",
+    );
+    let inspected = on_block(&mut cx, "block.inspect", Value::Null, "Subs");
+    assert_eq!(inspected["output"], json!({"id": "desk", "name": "Desk"}));
 }
 
 #[gpui::test]

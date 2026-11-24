@@ -26,8 +26,7 @@ impl Workspace {
 
     /// All `window.inspect` says of it: its summary; where it is, in
     /// points, and on which display; whether it's full screen and floats
-    /// on top; its own output, if it has one; and its blocks, as `block.ls`
-    /// says.
+    /// on top; and its blocks, as `block.ls` says.
     pub fn inspect(
         &self,
         number: usize,
@@ -50,7 +49,6 @@ impl Workspace {
             ("display".into(), json!(displays::of(window, cx))),
             ("full_screen".into(), json!(window.is_fullscreen())),
             ("on_top".into(), json!(self.on_top)),
-            ("output".into(), json!(self.sound_device())),
             ("blocks".into(), Value::from(self.blocks_listed(cx))),
         ]);
         inspected
