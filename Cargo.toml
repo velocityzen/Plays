@@ -42,6 +42,9 @@ ffmpeg-next = { version = "9.1", default-features = false, features = [
     "software-resampling",
     "software-scaling",
 ] }
+# The formats a folder opens to; script/file-types writes from them what
+# macOS and Linux offer Plays for.
+file-types = { path = "crates/file-types" }
 # Sound reads of what ffmpeg-next reads unsoundly.
 ffmpeg-safe = { path = "crates/ffmpeg-safe" }
 gpui = "0.2.2"

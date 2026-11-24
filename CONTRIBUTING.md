@@ -91,7 +91,8 @@ script/bundle-macos
 - Builds FFmpeg if it isn't built, writes the credits again, and always
   uses the app's own FFmpeg, whatever `FFMPEG_DIR` says
 - Compiles the icon, `assets/AppIcon.icon`, which takes Xcode 26 or later,
-  and signs the bundle ad hoc
+  makes each format's document icon from `resources/file-types`, and signs
+  the bundle ad hoc
 - Finder offers it under Open With once it's in `/Applications` or has
   been opened once
 
@@ -297,6 +298,9 @@ time); Vulkan can be software (lavapipe). It uses `Xvfb`, `openbox`,
 - When FFmpeg, dav1d, gpui or Lua (crate `lua-src`) changes, run
   `script/attributions`.
 - The test fixtures are committed; change them with `script/make-fixtures`.
+- The formats Plays opens are listed in `crates/file-types`. After changing
+  them, run `script/file-types` (needs a Fira font): it writes macOS's
+  document types, the desktop file's MIME types and each format's icon.
 - After changing a command or an event, write the reference again with
   `cargo run -- actions --markdown > docs/commands.md`. Developer commands,
   in debug builds only, aren't in it.

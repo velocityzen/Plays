@@ -1,0 +1,23 @@
+[package]
+name = "file-types"
+version = "0.1.0"
+edition = "2024"
+description = "The video and audio formats Plays opens, and `file-types`, which writes from them what macOS and Linux need to offer Plays for their files, with an icon for each format"
+license = "MIT"
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+# The icons: text to outlines, SVG to PNG. The version and features gpui
+# already builds.
+resvg = { version = "0.45", default-features = false, features = [
+    "text",
+    "system-fonts",
+    "memmap-fonts",
+] }
+
+[dev-dependencies]
+# Reads back the document types written for macOS.
+plist = "1"

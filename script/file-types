@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Write, from the formats Plays opens (crates/file-types), what macOS and
+# Linux offer Plays for: the document types merged into Info.plist
+# (resources/macos/DocumentTypes.plist), the desktop file's MimeType=, and
+# an icon for each format (resources/file-types, and by MIME type in
+# resources/linux/icons). The extensions on the icons are in Fira Sans, or
+# another Fira font installed; --font FILE names one.
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+
+exec cargo run -q --release -p file-types -- write "$@"

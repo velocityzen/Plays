@@ -49,6 +49,7 @@ icons!(
     "stop",
     "subtitles",
     "terminal",
+    "video",
     "volume",
     "window-max",
     "window-min",

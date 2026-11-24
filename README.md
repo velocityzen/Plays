@@ -107,7 +107,8 @@ dropped files.
   or `mesa-va-drivers`), or NVIDIA's for NVDEC
 - Sound goes through ALSA (PipeWire and PulseAudio provide it)
 - For **Open With**, put `plays` on your `PATH` and copy
-  `resources/linux/plays.desktop` to `~/.local/share/applications/`
+  `resources/linux/plays.desktop` to `~/.local/share/applications/`; for
+  its file icons, `resources/linux/icons/` to `~/.local/share/icons/`
 
 ```bash
 plays video.mp4 song.mp3 https://example.com/live.m3u8

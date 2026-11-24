@@ -7,4 +7,4 @@ Exec=plays %F
 Terminal=false
 Categories=AudioVideo;Video;Audio;Player;
 StartupWMClass=plays
-MimeType=video/mp4;video/x-m4v;video/quicktime;video/x-matroska;video/webm;video/ogg;video/mpeg;video/mp2t;video/x-msvideo;video/x-flv;video/3gpp;video/x-ms-wmv;application/mxf;audio/mpeg;audio/mp4;audio/x-m4a;audio/aac;audio/flac;audio/x-flac;audio/ogg;audio/opus;audio/x-wav;audio/wav;audio/x-aiff;audio/webm;audio/x-matroska;audio/x-ms-wma;audio/x-ape;audio/x-wavpack;
+MimeType=video/3gpp;video/vnd.avi;video/x-msvideo;video/x-flv;video/x-m4v;video/x-matroska;video/quicktime;video/mp4;video/mpeg;application/mxf;video/ogg;video/x-theora+ogg;video/mp2t;video/webm;video/x-ms-wmv;audio/aac;audio/x-aiff;audio/x-ape;audio/flac;audio/x-flac;audio/mp4;audio/x-m4b;audio/x-matroska;audio/mp2;audio/mpeg;audio/ogg;audio/x-vorbis+ogg;audio/x-flac+ogg;audio/x-speex+ogg;audio/x-opus+ogg;audio/vnd.wave;audio/x-wav;audio/webm;audio/x-ms-wma;audio/x-wavpack;

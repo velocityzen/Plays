@@ -10,14 +10,6 @@ const STREAM_SCHEMES: &[&str] = &[
     "srt", "udp", "tcp", "mms", "mmsh", "mmst", "ftp",
 ];
 
-/// Extensions of the media files a folder opens to, and that a file's
-/// previous and next ones are picked from.
-const MEDIA_EXTENSIONS: &[&str] = &[
-    "3gp", "aac", "aif", "aiff", "alac", "ape", "avi", "flac", "flv", "gif", "m2ts", "m4a", "m4b",
-    "m4v", "mka", "mkv", "mov", "mp2", "mp3", "mp4", "mpeg", "mpg", "mts", "mxf", "oga", "ogg",
-    "ogv", "opus", "ts", "vob", "wav", "weba", "webm", "wma", "wmv", "wv",
-];
-
 /// The media files directly in `folder`, by name.
 ///
 /// It reads the folder once, and looks no further at entries without a
@@ -67,7 +59,7 @@ fn is(entry: &DirEntry, listed: fn(&FileType) -> bool, followed: fn(&Path) -> bo
 #[cfg(test)]
 pub(crate) static FOLLOWED: std::sync::Mutex<Vec<PathBuf>> = std::sync::Mutex::new(Vec::new());
 
-/// A file with a media file's extension, and not hidden.
+/// A file of a format Plays opens (`file_types::FORMATS`), and not hidden.
 fn is_media(path: &Path) -> bool {
     let hidden = path
         .file_name()
@@ -76,7 +68,7 @@ fn is_media(path: &Path) -> bool {
     let known = path
         .extension()
         .and_then(|e| e.to_str())
-        .is_some_and(|e| MEDIA_EXTENSIONS.contains(&e.to_ascii_lowercase().as_str()));
+        .is_some_and(|e| file_types::format_of(e).is_some());
     known && !hidden
 }
 

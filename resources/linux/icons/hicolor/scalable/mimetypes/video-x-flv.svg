@@ -1,0 +1,24 @@
+<svg width="256" height="256" viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+        <linearGradient id="page" x1="0" y1="0" x2="0" y2="1" gradientUnits="userSpaceOnUse" gradientTransform="matrix(176 0 0 224 40 16)">
+            <stop offset="0" stop-color="#9a6bff"/>
+            <stop offset="1" stop-color="#6a3be0"/>
+        </linearGradient>
+        <clipPath id="clipPath1">
+            <path fill="#000000" stroke="none" d="M 68 74 L 188 74 L 188 146 L 68 146 Z"/>
+        </clipPath>
+    </defs>
+    <path fill="url(#page)" stroke="none" d="M 54 16 L 160 16 L 216 72 L 216 226 Q 216 240 202 240 L 54 240 Q 40 240 40 226 L 40 30 Q 40 16 54 16 Z"/>
+    <path fill="#ffffff" fill-opacity="0.4" stroke="none" d="M 160 16 L 160 62.2 Q 160 72 169.8 72 L 216 72 Z"/>
+    <g clip-path="url(#clipPath1)">
+        <g transform="matrix(6 0 0 6 56 44)">
+            <g>
+                <path fill="none" stroke="#ffffff" stroke-width="2" d="M 3 6 L 21 6 L 21 16 L 3 16 Z"/>
+                <path fill="none" stroke="#ffffff" d="M 5.5 8.5 L 18.5 8.5 L 18.5 13.5 L 5.5 13.5 Z"/>
+            </g>
+        </g>
+    </g>
+    <g>
+        <path fill="#ffffff" stroke="none" d="M 99.682045 188.00615 L 99.682045 196.28719 L 110.64819 196.28719 L 110.64819 201.58974 L 99.682045 201.58974 L 99.682045 214 L 92.25846 214 L 92.25846 182.72615 L 112.814354 182.72615 L 112.04717 188.00615 L 99.682045 188.00615 Z M 118.658455 214 L 118.658455 182.72615 L 126.05949 182.72615 L 126.05949 208.1559 L 139.62051 208.1559 L 138.85333 214 L 118.658455 214 Z M 155.2123 208.22359 L 161.10153 182.72615 L 168.68307 182.72615 L 159.65742 214 L 150.4964 214 L 141.51588 182.72615 L 149.3682 182.72615 L 155.2123 208.22359 Z"/>
+    </g>
+</svg>

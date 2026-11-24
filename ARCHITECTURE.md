@@ -122,11 +122,12 @@ on its own. Clippy lints in the root `Cargo.toml` apply to all.
 | `crates/ffmpeg-link` | Links the static FFmpeg into Plays and the stream server's tests |
 | `crates/ffmpeg-safe` | Sound reads of what ffmpeg-next reads unsoundly: channel layouts, tags |
 | `crates/completions` | Shell completion scripts for a clap command line |
+| `crates/file-types` | The formats Plays opens, and what macOS and Linux are told of them, with an icon each |
 | `vendor/block` | block 0.1.6, patched for what a future Rust rejects |
 | `vendor/gpui` | gpui 0.2.2, patched |
 | `vendor/xattr` | xattr 0.2.3, patched to build on Linux |
-| `script/` | FFmpeg build, macOS bundle, credits, fixtures, smoke runs, checks, gpui upgrades |
-| `resources/` | Credits (`attributions.json`), macOS `Info.plist`, Linux `.desktop` |
+| `script/` | FFmpeg build, macOS bundle, credits, file types, fixtures, smoke runs, checks, gpui upgrades |
+| `resources/` | Credits (`attributions.json`), macOS `Info.plist` and document types, Linux `.desktop`, file icons |
 | `assets/` | App icon and UI icons |
 | `tests/fixtures` | Small media files for tests |
 

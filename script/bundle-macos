@@ -4,7 +4,7 @@
 #
 # The app icon comes from assets/AppIcon.icon, made with Icon
 # Composer; without it the app gets the generic icon. Compiling it takes
-# Xcode 26 or later.
+# Xcode 26 or later. The document icons come from resources/file-types.
 #
 # FFmpeg is built into the app (script/build-ffmpeg, which this runs the
 # first time), so it runs on any Mac, with nothing else installed.
@@ -62,6 +62,14 @@ if [ -d "$icon" ]; then
 else
     echo "No $icon, so the app gets the generic icon."
 fi
+
+# What Finder opens with Plays (script/file-types writes it), and the icon
+# each format's files get when Plays is their default player.
+/usr/libexec/PlistBuddy -c "Merge resources/macos/DocumentTypes.plist" "$plist" >/dev/null
+cargo run -q --release -p file-types -- iconsets "$work/types"
+for iconset in "$work"/types/*.iconset; do
+    iconutil -c icns -o "$app/Contents/Resources/$(basename "$iconset" .iconset).icns" "$iconset"
+done
 
 plutil -lint "$plist" >/dev/null
 # Sign the bundle as a whole (ad hoc), which seals Info.plist and the icon
