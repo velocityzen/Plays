@@ -14,6 +14,7 @@ source and linked statically. [README.md](README.md) says what it does,
 - [Subtitles](#subtitles)
 - [The rest of the media engine](#the-rest-of-the-media-engine)
 - [The app and its windows](#the-app-and-its-windows)
+- [Threads and saved state](#threads-and-saved-state)
 - [Casting](#casting)
 - [The stream server](#the-stream-server)
 - [The network crate](#the-network-crate)
@@ -288,6 +289,69 @@ flowchart LR
 
 ## The app and its windows
 
+```mermaid
+flowchart TB
+    subgraph globals ["App globals: src/app/mod.rs"]
+        direction TB
+        settings["Settings, Progress,<br/>Recents"]
+        engine["AudioEngine<br/>the app's output,<br/>one more per device picked"]
+        casting["Casting<br/>protocols, devices found,<br/>the stream server"]
+        order["Opened, History<br/>⌘1–9, ⌘'"]
+    end
+
+    subgraph windows ["Windows"]
+        direction TB
+        subgraph workspace ["Workspace × N, a window: src/ui/workspace"]
+            direction TB
+            wstate["blocks, active, maximized,<br/>sheets, place, display_sound"]
+            subgraph block ["Block × N, a PlayerView per file: src/ui/player"]
+                direction TB
+                bstate["layout, sound, picked tracks,<br/>playlist, label"]
+                playback["Playback"] --> player["Player<br/>src/media/player.rs"]
+                playback --> cast["Cast<br/>while casting"]
+                pip["PipSession<br/>a window of its own, macOS"]
+            end
+        end
+        settingswin["Settings window<br/>one, while open"]
+        about["About window<br/>one, while open"]
+    end
+
+    globals ~~~ windows
+```
+
+```mermaid
+flowchart TB
+    subgraph ui ["UI thread"]
+        block["Block<br/>PlayerView"] --> playback["Playback<br/>here, or on a device"]
+        playback --> player["Player<br/>playing, buffering, ended, volume"]
+        playback --> cast["Cast<br/>while casting"]
+    end
+
+    subgraph shared ["Shared, an Arc per player: src/media/decoder/shared.rs"]
+        clock["Clock"]
+        frames["Video frames"]
+        cues["Cues"]
+        source["AudioSource"]
+    end
+
+    subgraph decoding ["Two threads per player"]
+        demux["Demux<br/>reads ahead, seeks"] --> decode["Decode<br/>pictures, sound, cues"]
+    end
+
+    file["File or URL"] --> demux
+    player -->|"commands"| decode
+    decode --> frames
+    decode --> cues
+    decode --> source
+    frames --> player
+    cues --> player
+    clock --> player
+    source -->|"sound"| mixer["Mixer<br/>in an output's callback"]
+    mixer -.->|"time being heard"| clock
+    mixer --> speakers(["Output device"])
+    cast --> link["Link thread<br/>drives the device"]
+```
+
 - `src/api/`: every command, by name, which every action runs
 - `src/api/commands/`: a file per namespace, each a list of `Spec`s: id
   (`playback.toggle_loop`), arguments, keys, state, the events it `tells`
@@ -336,6 +400,80 @@ flowchart LR
 - `src/ui/framing.rs`, `screenshot.rs`: a block's picture, and saving it
 - `src/ui/components/`, `theme.rs`: `RenderOnce` components, and the theme
 - `src/ui/gallery.rs`: debug-only Component Gallery
+
+## Threads and saved state
+
+```mermaid
+flowchart LR
+    subgraph ui ["UI thread: the gpui main loop"]
+        direction LR
+        windows["Workspaces"]
+        blocks["Blocks, Playback"]
+        players["Players"]
+        globals["Settings, Progress, Recents,<br/>AudioEngine, Casting"]
+    end
+
+    subgraph between ["Shared: Arc, locks, atomics"]
+        direction LR
+        shared["Shared<br/>UI, demux, decode"]
+        source["AudioSource<br/>decode, output callback, UI"]
+        mixer["Mixer<br/>UI, device thread,<br/>output callback"]
+        linkstate["Link state<br/>UI, link thread"]
+        queue["Write queue<br/>UI, background writer"]
+    end
+
+    subgraph own ["Threads of their own"]
+        direction LR
+        decoding["Demux, decode<br/>two per player"]
+        output["Device thread, output callback<br/>two per output"]
+        link["Link<br/>one per cast"]
+        server["Stream server<br/>one per connection, per job"]
+        writer["Background writer<br/>gpui's executor"]
+        pairing["Pairing<br/>while pairing with AirPlay"]
+    end
+
+    subgraph disk ["Saved in the config folder"]
+        direction LR
+        progress["progress.json<br/>each file's place and tracks<br/>by the background writer"]
+        recents["recent-files.json,<br/>recent-commands.json<br/>by the background writer"]
+        settings["settings.json<br/>on the UI thread"]
+        places["window.json,<br/>settings-window.json<br/>on the UI thread"]
+        airplay["airplay.json<br/>pairings, owner-only<br/>by the pairing thread"]
+    end
+
+    ui ~~~ between ~~~ own ~~~ disk
+```
+
+```mermaid
+flowchart LR
+    subgraph saving ["Saving, while files play"]
+        direction TB
+        block["Block<br/>path, position, picked tracks"]
+        progress["Progress, a global<br/>a spot per path, kept 30 days"]
+        queue["Write queue<br/>each file's latest bytes"]
+        writer["Background writer<br/>beside, then renamed over;<br/>at quit, on the UI thread"]
+        block -->|"every 10 s, on close,<br/>on another file, at quit"| progress
+        progress -->|"all spots,<br/>once one changed"| queue
+        queue --> writer
+    end
+
+    subgraph restoring ["The next launch"]
+        direction TB
+        load["Progress::load<br/>drops spots over 30 days old"]
+        opens["A block opens the file<br/>progress::picked, progress::recall"]
+        player["Player<br/>opens with those tracks, seeks there"]
+        load --> opens --> player
+    end
+
+    saving --> file[("progress.json")] --> restoring
+```
+
+- Only `Shared`, `AudioSource`, the mixers, a link's state and the write
+  queue cross threads; the rest is the UI thread's, in gpui entities and
+  globals
+- `src/progress.rs`: files opened from disk only, while Settings → Playback
+  → Resume files is on; one barely begun or nearly over starts again, with
+  its tracks. Which windows and blocks were open isn't kept
 
 ## Casting
 
