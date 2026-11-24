@@ -44,6 +44,7 @@ use super::theme::{Theme, radius};
 use super::workspace::{
     float_with_players, note_settings_place, save_settings_place, settings_place,
 };
+use crate::api::socket::NotListening;
 use crate::cast::Casting;
 use crate::settings::Settings;
 
@@ -119,8 +120,9 @@ pub struct SettingsView {
     scroll: ScrollHandle,
     /// The credit in About whose license shows.
     license: Option<SharedString>,
-    /// Shows the protocols and devices in Casting as they change.
-    _casting: Subscription,
+    /// Shows the protocols and devices in Casting as they change, and
+    /// why Plays doesn't answer the command line.
+    _globals: [Subscription; 2],
     /// Notes where the window is as it moves and is resized, and saves it
     /// once it closes.
     _place: [Subscription; 2],
@@ -194,7 +196,10 @@ impl SettingsView {
             recording: hotkeys::Recording::default(),
             scroll: ScrollHandle::new(),
             license: None,
-            _casting: cx.observe_global::<Casting>(|_, cx| cx.notify()),
+            _globals: [
+                cx.observe_global::<Casting>(|_, cx| cx.notify()),
+                cx.observe_global::<NotListening>(|_, cx| cx.notify()),
+            ],
             _place: [
                 cx.observe_window_bounds(window, |_, window, cx| note_settings_place(window, cx)),
                 cx.on_release(|_, cx| save_settings_place(cx)),

@@ -52,4 +52,12 @@ fn bash_offers_the_files_a_word_takes_besides_its_names() {
         ["scripts/next.lua"]
     );
     assert_eq!(offers(&["probe", "play", "-"]).unwrap(), ["--help", "-h"]);
+
+    fs::write(scratch.folder.join("zz seek.lua"), b"").unwrap();
+    fs::create_dir(scratch.folder.join("zz scripts")).unwrap();
+    assert_eq!(
+        offers(&["probe", "play", "zz"]).unwrap(),
+        ["zz scripts", "zz seek.lua"],
+        "a name with a space, whole"
+    );
 }

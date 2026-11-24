@@ -50,6 +50,30 @@ fn a_client_sent_the_end_is_written_what_came_before_then_its_connection_closes(
     );
 }
 
+/// Closing waits for another Plays looking at the socket, so one taking
+/// it as this one lets go of it keeps it.
+#[test]
+fn closing_the_socket_waits_for_a_plays_looking_at_it() {
+    let path = crate::api::socket::tests::socket("close-turn");
+    let (messages, _received) = unbounded();
+    let mut socket = Socket {
+        path: path.clone(),
+        messages,
+        last: Arc::default(),
+        taken: None,
+    };
+    assert_eq!(socket.claim(), None, "taken");
+    let lock = std::fs::File::open(path.with_file_name(super::super::LOCK)).unwrap();
+    lock.lock().unwrap();
+    let closing = thread::spawn(move || socket.close().map(JoinHandle::join));
+    thread::sleep(Duration::from_millis(100));
+    assert!(!closing.is_finished(), "it waits its turn");
+    assert!(path.exists(), "the socket left till then");
+    lock.unlock().unwrap();
+    assert!(closing.join().unwrap().is_some_and(|ended| ended.is_ok()));
+    assert!(!path.exists(), "then removed");
+}
+
 #[test]
 fn closing_the_socket_stops_the_thread_taking_clients() {
     let path = crate::api::socket::tests::socket("close");
@@ -60,7 +84,7 @@ fn closing_the_socket_stops_the_thread_taking_clients() {
         last: Arc::default(),
         taken: None,
     };
-    socket.claim();
+    assert_eq!(socket.claim(), None, "taken");
     // Not connecting, which would wake the thread itself.
     assert!(path.exists(), "taken");
     let taking = socket.close().expect("it was taken");

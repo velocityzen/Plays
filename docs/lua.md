@@ -67,7 +67,7 @@ plays do -e 'print(plays.block.inspect().title)'   # talk.mkv
 - An error: its message, exit status 1. `plays.stop(status)`: ends it at
   once, with that exit status, 0 if none.
 - Exit statuses as for other commands: 3 no such script, 4 no Plays to
-  ask, 5 control from the command line off.
+  ask, 5 control from the command line off, 6 no answer in time.
 
 ## Calling Plays
 

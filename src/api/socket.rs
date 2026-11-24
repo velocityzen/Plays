@@ -3,7 +3,7 @@
 //! (`protocol`): a client asks Plays to run a command, as a key would,
 //! lists and describes the commands, and hears events (`api::events`).
 //! Nothing goes on the network: it's a Unix socket, in a folder only this
-//! user can open, that only they can connect to.
+//! user can change, that only they can connect to.
 //!
 //! Plays takes it as it starts (`start`), so one runs: one already
 //! running, another hands it the files it was given and exits; a socket
@@ -16,14 +16,14 @@ mod protocol;
 mod server;
 
 use std::ffi::OsString;
-use std::fs::{self, DirBuilder, File, Permissions};
+use std::fs::{self, DirBuilder, File, OpenOptions, Permissions};
 use std::io;
-use std::os::unix::fs::{DirBuilderExt, FileTypeExt, PermissionsExt};
+use std::os::unix::fs::{DirBuilderExt, FileTypeExt, MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 
 pub use protocol::Heard;
-pub use server::serve;
+pub use server::{NotListening, serve};
 
 /// The socket's name, in the folder `path` finds.
 const NAME: &str = "plays.sock";
@@ -79,15 +79,11 @@ pub enum Claimed {
 
 /// Take the socket at `path`, unless a Plays answers there: one that
 /// doesn't, which crashed, left it, and it's taken over. Its folder is made
-/// if it isn't there, open to this user only; the socket is theirs only.
+/// if it isn't there, open to this user only, and one there already must
+/// be theirs; the socket is theirs only.
 pub fn claim(path: &Path) -> io::Result<Claimed> {
-    let folder = path.parent().unwrap_or(Path::new("."));
-    DirBuilder::new()
-        .recursive(true)
-        .mode(0o700)
-        .create(folder)?;
-    let lock = File::create(folder.join(LOCK))?;
-    lock.lock()?;
+    made_private(folder(path))?;
+    let _looking = locked(path)?;
     for _ in 0..TRIES {
         match UnixStream::connect(path) {
             Ok(_) => return Ok(Claimed::Running),
@@ -109,6 +105,49 @@ pub fn claim(path: &Path) -> io::Result<Claimed> {
         }
     }
     Err(io::Error::other("another Plays keeps taking the socket"))
+}
+
+/// The folder the socket at `path` is in.
+fn folder(path: &Path) -> &Path {
+    path.parent()
+        .filter(|folder| !folder.as_os_str().is_empty())
+        .unwrap_or(Path::new("."))
+}
+
+/// Make `folder`, if it isn't there, open to this user only. One there
+/// already must be theirs, and no one else may write in it: else another
+/// could put what they like where the socket goes. Others may look in it,
+/// as in the app's folder, which holds the socket on macOS.
+fn made_private(folder: &Path) -> io::Result<()> {
+    DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(folder)?;
+    let found = fs::metadata(folder)?;
+    // SAFETY: geteuid has no preconditions and can't fail.
+    let theirs = found.uid() == unsafe { libc::geteuid() };
+    if !theirs || found.permissions().mode() & 0o022 != 0 {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            format!("{} isn't this user's alone", folder.display()),
+        ));
+    }
+    Ok(())
+}
+
+/// The lock beside the socket at `path`, taken: while it's held, no other
+/// Plays takes or removes the socket. Opened as it is, never through a
+/// link, nor emptied.
+fn locked(path: &Path) -> io::Result<File> {
+    let lock = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .mode(0o600)
+        .custom_flags(libc::O_NOFOLLOW)
+        .open(folder(path).join(LOCK))?;
+    lock.lock()?;
+    Ok(lock)
 }
 
 /// Remove the socket at `path`, if it's there; anything else there stays.

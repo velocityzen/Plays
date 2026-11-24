@@ -33,8 +33,11 @@ pub(crate) fn with_files(script: &mut String, files: &Files) {
         return;
     };
     let suffix = files.suffix.replace('\'', r"'\''");
+    // A line a name, so one with a space in it is offered whole; it
+    // returns just after, which puts IFS back.
     let lines = format!(
         "                compopt -o filenames 2> /dev/null\n                \
+         local IFS=$'\\n'\n                \
          COMPREPLY+=( $(compgen -d -- \"${{cur}}\") \
          $(compgen -f -X '!*{suffix}' -- \"${{cur}}\") )\n"
     );

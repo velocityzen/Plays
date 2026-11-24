@@ -256,6 +256,66 @@ fn two_plays_starting_at_once_take_the_socket_in_turn() {
     assert!(claimed.join().unwrap());
 }
 
+#[test]
+fn a_folder_others_can_write_in_isnt_used() {
+    let path = socket("shared");
+    let folder = path.parent().unwrap();
+    fs::create_dir_all(folder).unwrap();
+    fs::set_permissions(folder, fs::Permissions::from_mode(0o777)).unwrap();
+    let err = claim(&path).err().expect("refused");
+    assert_eq!(err.kind(), io::ErrorKind::PermissionDenied);
+    assert!(
+        err.to_string().ends_with("isn't this user's alone"),
+        "{err}"
+    );
+    assert!(!path.exists(), "nothing taken there");
+    assert!(!path.with_file_name(LOCK).exists(), "nor its lock");
+}
+
+#[test]
+fn a_folder_of_this_users_others_can_only_read_is_used_as_it_is() {
+    let path = socket("readable");
+    let folder = path.parent().unwrap();
+    fs::create_dir_all(folder).unwrap();
+    fs::set_permissions(folder, fs::Permissions::from_mode(0o755)).unwrap();
+    let Ok(Claimed::Ours(_listener)) = claim(&path) else {
+        panic!("taking the socket")
+    };
+    let mode = |path: &Path| fs::metadata(path).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode(folder), 0o755, "as it was");
+    assert_eq!(mode(&path), 0o600, "no one else connects");
+}
+
+#[test]
+fn another_users_folder_isnt_used() {
+    // SAFETY: geteuid has no preconditions and can't fail.
+    if unsafe { libc::geteuid() } == 0 {
+        return;
+    }
+    let path = Path::new("/usr/plays-test.sock");
+    let err = claim(path).err().expect("refused");
+    assert_eq!(err.kind(), io::ErrorKind::PermissionDenied);
+    assert_eq!(err.to_string(), "/usr isn't this user's alone");
+    assert!(!path.exists());
+}
+
+#[test]
+fn a_lock_that_is_a_link_isnt_followed() {
+    let path = socket("linked");
+    let folder = path.parent().unwrap();
+    fs::create_dir_all(folder).unwrap();
+    let elsewhere = folder.join("mine");
+    fs::write(&elsewhere, "mine").unwrap();
+    std::os::unix::fs::symlink(&elsewhere, path.with_file_name(LOCK)).unwrap();
+    assert!(claim(&path).is_err());
+    assert_eq!(
+        fs::read_to_string(&elsewhere).unwrap(),
+        "mine",
+        "not emptied"
+    );
+    assert!(!path.exists());
+}
+
 /// A Plays of the test's own at `path`, answering one client with
 /// `lines`, as they come, once it asks; then it goes.
 fn answering(path: &Path, lines: &'static [&'static str]) -> thread::JoinHandle<()> {
@@ -333,6 +393,65 @@ fn an_event_half_read_by_the_time_given_is_read_whole_the_next_time() {
         Some(("playback.ended".into(), json!({"block_id": "1"})))
     );
     plays.join().unwrap();
+}
+
+#[test]
+fn a_request_unanswered_in_time_may_still_be_done() {
+    let path = socket("slow");
+    let Ok(Claimed::Ours(listener)) = claim(&path) else {
+        panic!("taking the socket")
+    };
+    let mut client = Client::connect(&path).unwrap();
+    // Taken, and never answered.
+    let _taken = listener.listener.accept().unwrap();
+    client.answering_within(Duration::from_millis(100));
+    assert_eq!(
+        said(client.hello().unwrap_err()),
+        (
+            6,
+            "Plays didn't answer in time: it may still do what was asked".into()
+        )
+    );
+}
+
+#[test]
+fn a_plays_started_from_the_command_line_is_opened_as_the_app_its_in() {
+    let app = Path::new("/Applications/Plays.app/Contents/MacOS/plays");
+    let socket = std::ffi::OsStr::new("/tmp/elsewhere/plays.sock");
+    let opened = |program, socket| {
+        client::opening(program, socket).map(|open: Command| {
+            let args = open
+                .get_args()
+                .map(|arg| arg.to_string_lossy().into_owned());
+            (open.get_program().to_owned(), args.collect::<Vec<_>>())
+        })
+    };
+    if cfg!(target_os = "macos") {
+        assert_eq!(
+            opened(app, Some(socket)),
+            Some((
+                "open".into(),
+                vec![
+                    "-n".into(),
+                    "-g".into(),
+                    "-a".into(),
+                    "/Applications/Plays.app".into(),
+                    "--env".into(),
+                    "PLAYS_SOCKET=/tmp/elsewhere/plays.sock".into(),
+                ]
+            ))
+        );
+        let opened_plain = opened(app, None).unwrap().1;
+        assert_eq!(opened_plain, ["-n", "-g", "-a", "/Applications/Plays.app"]);
+    } else {
+        assert_eq!(opened(app, Some(socket)), None, "macOS's alone");
+    }
+    let built = Path::new("/Users/me/plays/target/debug/plays");
+    assert_eq!(
+        opened(built, Some(socket)),
+        None,
+        "not in an app: run as is"
+    );
 }
 
 #[test]
@@ -509,6 +628,23 @@ fn a_socket_another_plays_answers_on_is_left_to_it(cx: &mut TestAppContext) {
         path.exists(),
         "as control is turned on and off, and the app quits"
     );
+}
+
+#[gpui::test]
+fn a_plays_not_listening_says_why_and_tries_again_as_control_is_turned_on(cx: &mut TestAppContext) {
+    let (_, mut cx) = testing::start(cx);
+    let path = socket("not-listening");
+    let Ok(Claimed::Ours(theirs)) = claim(&path) else {
+        panic!("taking the socket")
+    };
+    TestAppContext::update(&cx, |cx| serve(path.clone(), None, cx));
+    let why = |cx: &VisualTestContext| cx.read(|cx| cx.global::<NotListening>().0.clone());
+    assert_eq!(why(&cx).as_deref(), Some("Another Plays answers it."));
+    // Gone, as one that crashed: its socket left.
+    drop(theirs);
+    allow_control(&mut cx, true);
+    assert_eq!(why(&cx), None, "taken as control is turned on");
+    assert_eq!(numbered(&mut cx, &path), Ok(json!(1)));
 }
 
 #[gpui::test]

@@ -20,7 +20,7 @@ use super::message;
 use super::timers::Timers;
 use super::waiting::POSITION;
 use crate::api::Target;
-use crate::cli::{Done, Stop, show};
+use crate::cli::{Done, Stop, after, show};
 
 /// How long a script with handlers or timers runs on, and whether one
 /// failing ends it.
@@ -62,10 +62,7 @@ pub fn listen(listener: &Listener) -> Done {
         listener.inbox.borrow_mut().hear_positions()?;
     }
     (listener.say)(&format!("{}; Ctrl-C to stop", going(handlers, timers)))?;
-    let by = listener
-        .listening
-        .at_most
-        .map(|at_most| Instant::now() + at_most);
+    let by = listener.listening.at_most.map(after);
     loop {
         // Those due by now, each once: one taking longer than its period
         // doesn't keep the rest waiting.

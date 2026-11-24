@@ -9,6 +9,7 @@ use serde_json::{Map, Value};
 
 use super::Answer;
 use super::inbox::Inbox;
+use crate::cli::after;
 
 /// What a wait comes back with once its time is up.
 const TIMEOUT: &str = "timeout";
@@ -31,7 +32,7 @@ pub fn wait(
     (kind, filter, timeout): (String, LuaValue, Option<f64>),
 ) -> mlua::Result<Answer> {
     let by = match timeout {
-        Some(seconds) => Some(Instant::now() + duration("plays.wait can't wait", seconds)?),
+        Some(seconds) => Some(after(duration("plays.wait can't wait", seconds)?)),
         None => None,
     };
     let filter = Filter::read(lua, filter)?;

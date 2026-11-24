@@ -19,8 +19,8 @@ use clap::{Args, Parser, Subcommand, ValueEnum, ValueHint};
                   them from the Finder does.",
     after_help = "Exit statuses: 0 done, 1 failed, 2 a bad command line, 3 nothing by \
                   the name given, 4 no Plays to ask, 5 control from the command line \
-                  turned off (Settings → Command Line turns it on), 130 stopped with \
-                  Ctrl-C."
+                  turned off (Settings → Command Line turns it on), 6 no answer in \
+                  time (Plays may still do what was asked), 130 stopped with Ctrl-C."
 )]
 pub struct Cli {
     #[command(flatten)]

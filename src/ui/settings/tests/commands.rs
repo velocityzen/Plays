@@ -8,6 +8,7 @@ use gpui::{Modifiers, MouseButton, TestAppContext, VisualTestContext, point, px}
 use serde_json::{Value, json};
 
 use super::open_settings;
+use crate::api::socket::NotListening;
 use crate::api::{self, Error, Invocation};
 use crate::app::AudioEngine;
 use crate::cast::Casting;
@@ -139,6 +140,29 @@ fn the_command_line_pane_turns_control_on_and_installs_the_tool(cx: &mut TestApp
         click(&mut window, "install-cli");
         assert_eq!(recorded(&mut window), [Invocation::new("cli.install")]);
     }
+}
+
+#[gpui::test]
+fn the_command_line_pane_says_why_plays_isnt_listening(cx: &mut TestAppContext) {
+    let (_, mut cx) = testing::start(cx);
+    let mut window = open_settings(&mut cx);
+    click(&mut window, "pane-Command Line");
+    let not_listening = "command-line-not-listening";
+    assert!(
+        !testing::shows(&mut window, not_listening),
+        "nothing to say"
+    );
+    let why = "Another Plays answers it.";
+    window.update(|_, cx| cx.set_global(NotListening(Some(why.into()))));
+    assert!(testing::shows(&mut window, not_listening));
+    assert!(
+        testing::painted(&mut window)
+            .iter()
+            .any(|(text, _)| text.contains(why)),
+        "and why"
+    );
+    window.update(|_, cx| cx.set_global(NotListening(None)));
+    assert!(!testing::shows(&mut window, not_listening), "once it is");
 }
 
 #[gpui::test]

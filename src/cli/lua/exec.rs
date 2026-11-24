@@ -24,6 +24,7 @@ use mlua::{Function, Lua, Scope, Table, UserData, UserDataMethods, Value as LuaV
 
 use super::Answer;
 use super::inbox::{Came, Inbox};
+use crate::cli::after;
 
 /// How often a program's watcher looks whether it's ended.
 const LOOK_EVERY: Duration = Duration::from_millis(10);
@@ -304,7 +305,7 @@ impl Programs {
         read(child.stdout.take(), id, Stream::Out, sender.clone());
         read(child.stderr.take(), id, Stream::Err, sender.clone());
         let (stop, stopping) = mpsc::channel();
-        let deadline = options.timeout.map(|timeout| Instant::now() + timeout);
+        let deadline = options.timeout.map(after);
         let watcher = thread::spawn(move || watch(child, id, deadline, &stopping, &sender));
         let program = Rc::new(Program {
             id,

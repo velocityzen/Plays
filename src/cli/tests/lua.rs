@@ -308,3 +308,21 @@ fn a_script_prints_logs_stops_and_fails(cx: &mut TestAppContext) {
     let ran = plays_reading(&mut cx, &path, &["do", "-"], b"error('piped')");
     assert_eq!(ran.failed(), (1, "plays: stdin:1: piped"));
 }
+
+#[gpui::test]
+fn a_wait_longer_than_anything_lasts_as_long_as_it_takes(cx: &mut TestAppContext) {
+    let (path, _, mut cx) = serving("lua-forever", cx);
+    let code = r#"
+        plays.after(1e19, function() end):cancel()
+        print(plays.exec({"true"}, {timeout = 1e19}).ok)
+        plays.window.rename{label = "Forever"}
+        print(plays.wait("window.label_changed", nil, 1e19).label)
+        plays.after(0.05, function() print("ran") end)
+    "#;
+    let ran = plays(&mut cx, &path, &["do", "--for", "1e19", "-e", code]);
+    assert_eq!(
+        (ran.status, ran.out.as_str()),
+        (0, "true\nForever\nran\n"),
+        "{ran:?}"
+    );
+}

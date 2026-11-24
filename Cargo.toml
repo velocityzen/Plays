@@ -47,6 +47,9 @@ ffmpeg-safe = { path = "crates/ffmpeg-safe" }
 gpui = "0.2.2"
 # JPEG for screenshots; PNG goes straight through `png`, which can tag HDR.
 image = { version = "0.25", default-features = false, features = ["jpeg"] }
+# This user's id, and opening without following a link, for the socket's
+# folder and lock.
+libc = "0.2"
 log = "0.4"
 # The Lua scripts `plays do` runs: Lua 5.4, built in, its values to and
 # from JSON.

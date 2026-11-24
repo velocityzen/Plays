@@ -1,11 +1,14 @@
 //! Command Line: whether a command line, `plays` and scripts, may run
-//! commands and hear what changes, which is off until turned on here; and,
-//! on macOS, installing `plays` where a terminal finds it.
+//! commands and hear what changes, which is off until turned on here, and
+//! why this Plays doesn't answer it, if it doesn't; and, on macOS,
+//! installing `plays` where a terminal finds it.
 
-use gpui::{AnyElement, Context, Window};
+use gpui::prelude::*;
+use gpui::{AnyElement, Context, Window, div};
 
 use super::form::{group, row, set};
 use super::{Pane, SettingsView};
+use crate::api::socket::NotListening;
 use crate::api::{self, Invocation};
 use crate::settings::Settings;
 use crate::ui::components::{Button, Switch};
@@ -33,7 +36,7 @@ impl Pane for CommandLinePane {
         s: &Settings,
         theme: &Theme,
         _: &mut Window,
-        _: &mut Context<SettingsView>,
+        cx: &mut Context<SettingsView>,
     ) -> Vec<AnyElement> {
         let mut rows = vec![row(
             "Allow control from the command line",
@@ -47,6 +50,23 @@ impl Pane for CommandLinePane {
             Switch::new("command-line-control", s.command_line_control)
                 .on_toggle(|&on, _, cx| set("command_line_control", on, cx)),
         )];
+        if let Some(why) = cx
+            .try_global::<NotListening>()
+            .and_then(|not| not.0.clone())
+        {
+            let hint = format!("{why} Turn control off and on to try again.");
+            rows.push(
+                div()
+                    .debug_selector(|| "command-line-not-listening".into())
+                    .child(row(
+                        "Plays doesn't answer the command line",
+                        Some(hint.into()),
+                        theme,
+                        div(),
+                    ))
+                    .into_any_element(),
+            );
+        }
         // Elsewhere, Plays is installed where the system keeps programs.
         if api::find("cli.install").is_some_and(|spec| (spec.available)()) {
             rows.push(row(

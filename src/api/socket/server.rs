@@ -9,7 +9,9 @@
 //!
 //! With control from the command line off in Settings, only files handed
 //! over are taken: all else is refused (`allowed`), and turning it off
-//! cuts every client off.
+//! cuts every client off. A Plays not listening, as another answers there
+//! or the socket can't be taken, says why in Settings (`NotListening`),
+//! and tries again as control is turned on.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -27,7 +29,7 @@ use std::time::Duration;
 
 use futures::StreamExt as _;
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
-use gpui::{App, Task};
+use gpui::{App, Global, Task};
 use serde_json::{Value, json};
 
 use super::protocol::{self, Ask, Heard, Request};
@@ -56,6 +58,13 @@ type ClientId = u64;
 /// The clients connected, by number.
 type Clients = Rc<RefCell<HashMap<ClientId, Client>>>;
 
+/// Why this Plays doesn't listen on its socket, while it doesn't: another
+/// answers there, or it can't be taken. For Settings to say.
+#[derive(Default)]
+pub struct NotListening(pub Option<String>);
+
+impl Global for NotListening {}
+
 /// The socket, as the app answers on it.
 struct Socket {
     path: PathBuf,
@@ -75,18 +84,21 @@ struct Taking {
 
 impl Socket {
     /// Take the socket, unless another Plays answers there, and each
-    /// client connecting.
-    fn claim(&mut self) {
+    /// client connecting: why not, if it isn't taken.
+    fn claim(&mut self) -> Option<String> {
         let path = self.path.display();
-        match super::claim(&self.path) {
-            Ok(Claimed::Ours(listener)) => self.take(listener),
-            Ok(Claimed::Running) => log::warn!("another Plays answers on {path}"),
-            Err(err) => log::warn!("can't take the socket, {path}: {err}"),
-        }
+        let why = match super::claim(&self.path) {
+            Ok(Claimed::Ours(listener)) => return self.take(listener),
+            Ok(Claimed::Running) => "Another Plays answers it.".to_owned(),
+            Err(err) => format!("Its socket, {path}, can't be taken: {err}."),
+        };
+        log::warn!("not listening on {path}: {why}");
+        Some(why)
     }
 
-    /// Take each client connecting on `listener`, on a thread of its own.
-    fn take(&mut self, listener: Listener) {
+    /// Take each client connecting on `listener`, on a thread of its own:
+    /// why not, if it can't.
+    fn take(&mut self, listener: Listener) -> Option<String> {
         let stopped = Arc::new(AtomicBool::new(false));
         let stopping = Arc::clone(&stopped);
         let (last, messages) = (Arc::clone(&self.last), self.messages.clone());
@@ -94,24 +106,34 @@ impl Socket {
             .name("plays-socket".into())
             .spawn(move || accept(&listener.listener, &stopping, &last, &messages));
         match taking {
-            Ok(thread) => self.taken = Some(Taking { stopped, thread }),
+            Ok(thread) => {
+                self.taken = Some(Taking { stopped, thread });
+                None
+            }
             Err(err) => {
                 log::warn!("can't answer on the socket: {err}");
                 super::remove(&self.path).ok();
+                Some(format!("It can't answer on its socket: {err}."))
             }
         }
     }
 
     /// Stop taking clients and remove the socket, if it's taken: the
-    /// thread that took them, which ends once woken.
+    /// thread that took them, which ends once woken. With the lock held,
+    /// so another Plays taking the socket as this one lets go of it keeps
+    /// it.
     fn close(&mut self) -> Option<JoinHandle<()>> {
         let Taking { stopped, thread } = self.taken.take()?;
+        let looking = super::locked(&self.path);
         stopped.store(true, Ordering::SeqCst);
         // It waits for a client: one connecting wakes it to stop.
         if let Err(err) = UnixStream::connect(&self.path) {
             log::debug!("can't wake the thread taking socket clients: {err}");
         }
-        super::remove(&self.path).ok();
+        match looking {
+            Ok(_) => drop(super::remove(&self.path)),
+            Err(err) => log::debug!("leaving the socket, as its lock can't be taken: {err}"),
+        }
         Some(thread)
     }
 }
@@ -218,12 +240,14 @@ pub fn serve(path: PathBuf, listener: Option<Listener>, cx: &mut App) {
         last: Arc::default(),
         taken: None,
     };
-    match listener {
+    let why = match listener {
         Some(listener) => socket.take(listener),
         None => socket.claim(),
-    }
+    };
+    cx.set_global(NotListening(why));
+    let socket = Rc::new(RefCell::new(socket));
     let clients = Clients::default();
-    follow_control(&clients, cx);
+    follow_control(&socket, &clients, cx);
     end_on_quit(socket, &clients, cx);
     cx.spawn(async move |cx| {
         while let Some(message) = received.next().await {
@@ -240,7 +264,7 @@ pub fn serve(path: PathBuf, listener: Option<Listener>, cx: &mut App) {
 /// send each client what it was told, as nothing else runs then, and
 /// close its connection; remove the socket, and wait, as long as quitting
 /// does, for what was sent to be written.
-fn end_on_quit(mut socket: Socket, clients: &Clients, cx: &mut App) {
+fn end_on_quit(socket: Rc<RefCell<Socket>>, clients: &Clients, cx: &mut App) {
     let clients = Rc::clone(clients);
     cx.on_app_quit(move |cx| {
         events::quit(cx);
@@ -249,7 +273,7 @@ fn end_on_quit(mut socket: Socket, clients: &Clients, cx: &mut App) {
             .drain()
             .map(|(_, client)| client.end())
             .collect();
-        socket.close();
+        socket.borrow_mut().close();
         let executor = cx.background_executor().clone();
         async move {
             while !writing.iter().all(JoinHandle::is_finished) {
@@ -269,12 +293,18 @@ fn allowed(cx: &App) -> bool {
 /// As Settings turns control from the command line off, let go of every
 /// client: each hears no more and is told nothing more, its connection
 /// closing once what it was sent is written. The socket stays, for files
-/// handed over.
-fn follow_control(clients: &Clients, cx: &mut App) {
+/// handed over. As it turns it on, take the socket, if this Plays doesn't
+/// listen on it.
+fn follow_control(socket: &Rc<RefCell<Socket>>, clients: &Clients, cx: &mut App) {
+    let socket = Rc::clone(socket);
     let clients = Rc::clone(clients);
     let mut was = allowed(cx);
     cx.observe_global::<Settings>(move |cx| {
         let now = allowed(cx);
+        if !was && now && socket.borrow().taken.is_none() {
+            let why = socket.borrow_mut().claim();
+            cx.set_global(NotListening(why));
+        }
         if was && !now {
             // Once what it's answering, if anything, is answered.
             let clients = Rc::clone(&clients);

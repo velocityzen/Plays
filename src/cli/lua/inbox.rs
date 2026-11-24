@@ -150,7 +150,7 @@ impl Inbox {
                 return Err(Failure::Closed);
             }
             let Some(came) = self.receive(Some(by)) else {
-                return Err(io::Error::from(io::ErrorKind::TimedOut).into());
+                return Err(Failure::TimedOut);
             };
             match self.keep(came)? {
                 Some(answered) if answered.id == *id => return answered.answer,

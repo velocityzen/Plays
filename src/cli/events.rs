@@ -1,7 +1,7 @@
 //! `plays events` and `plays wait`: what changes in Plays, printed as it
 //! does, and waiting for one change, such as a block ending.
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use serde_json::{Value, json};
 
@@ -37,7 +37,7 @@ pub fn events(session: &mut Session, positions: bool, count: Option<usize>) -> D
 pub fn wait(session: &mut Session, kind: &str, timeout: Option<f64>) -> Done {
     let by = match timeout {
         Some(seconds) => match Duration::try_from_secs_f64(seconds) {
-            Ok(timeout) => Some(Instant::now() + timeout),
+            Ok(timeout) => Some(super::after(timeout)),
             Err(_) => return Err(Stop::Usage(format!("can't wait {seconds} seconds"))),
         },
         None => None,

@@ -4797,6 +4797,7 @@ dependencies = [
  "futures",
  "gpui",
  "image",
+ "libc",
  "log",
  "mlua",
  "naga",

@@ -43,17 +43,20 @@ pub enum Failure {
     Command(api::Error),
     /// Plays couldn't read the request, or this its answer.
     BadRequest(String),
+    /// No answer came in time: Plays was asked, and may still do it.
+    TimedOut,
 }
 
 impl Failure {
     /// The exit status the command line gives it, as Rex's does: those of
     /// `api::Error`, 1 for what Plays couldn't read, 4 for no Plays, or
-    /// none any more.
+    /// none any more, 6 for no answer in time.
     pub fn exit_status(&self) -> u8 {
         match self {
             Self::Unreachable(_) | Self::Closed => 4,
             Self::Command(err) => err.exit_status(),
             Self::BadRequest(_) => 1,
+            Self::TimedOut => 6,
         }
     }
 }
@@ -65,6 +68,9 @@ impl fmt::Display for Failure {
             Self::Closed => f.write_str("Plays closed the connection"),
             Self::Command(err) => err.fmt(f),
             Self::BadRequest(why) => write!(f, "Plays didn't understand: {why}"),
+            Self::TimedOut => {
+                f.write_str("Plays didn't answer in time: it may still do what was asked")
+            }
         }
     }
 }
@@ -89,6 +95,8 @@ pub struct Client {
     /// What's been read of a line not read whole yet, as waiting for it
     /// ran out.
     partial: Vec<u8>,
+    /// How long an answer may take.
+    answer_wait: Duration,
 }
 
 impl Client {
@@ -101,15 +109,26 @@ impl Client {
             asked: 0,
             events: VecDeque::new(),
             partial: Vec::new(),
+            answer_wait: ANSWER_WAIT,
         })
     }
 
-    /// Ask, and wait for the answer.
+    /// Wait at most `wait` for each answer, not `ANSWER_WAIT`.
+    #[cfg(test)]
+    pub fn answering_within(&mut self, wait: Duration) {
+        self.answer_wait = wait;
+    }
+
+    /// Ask, and wait for the answer: one not come in time may still.
     pub fn request(&mut self, ask: Ask) -> Result<Value, Failure> {
         let id = send(&mut self.writer, &mut self.asked, ask)?;
-        self.wait(Some(ANSWER_WAIT));
+        self.wait(Some(self.answer_wait));
         loop {
-            match self.next()? {
+            let came = match self.next() {
+                Err(Failure::Unreachable(err)) if timed_out(&err) => Err(Failure::TimedOut),
+                came => came,
+            };
+            match came? {
                 Incoming::Event { kind, payload } => self.events.push_back((kind, payload)),
                 Incoming::Answer { id: answered, .. } if answered != id => {
                     log::debug!("an answer to another request: {answered}");
@@ -380,14 +399,56 @@ pub fn none_answers(err: &io::Error) -> bool {
 
 /// Start Plays, this program, apart from this process: it outlives it,
 /// out of the terminal's way, its output going nowhere. By its own path,
-/// not the link a terminal ran it by, so on macOS it starts as the app
-/// it's in. Not in tests, which would start themselves.
+/// not the link a terminal ran it by; on macOS, as the app it's in, if it's
+/// in one (`opening`). Not in tests, which would start themselves.
 pub fn start_plays() -> io::Result<()> {
-    Command::new(std::env::current_exe()?.canonicalize()?)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
+    let program = std::env::current_exe()?.canonicalize()?;
+    let socket = std::env::var_os(super::VARIABLE).filter(|socket| !socket.is_empty());
+    if let Some(mut open) = opening(&program, socket.as_deref()) {
+        match quietly(&mut open).status() {
+            Ok(opened) if opened.success() => return Ok(()),
+            Ok(opened) => log::debug!("open couldn't start Plays: {opened}"),
+            Err(err) => log::debug!("can't run open: {err}"),
+        }
+    }
+    quietly(&mut Command::new(program))
         .process_group(0)
         .spawn()
         .map(drop)
+}
+
+/// `command`, reading nothing and its output going nowhere.
+fn quietly(command: &mut Command) -> &mut Command {
+    command
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+}
+
+/// On macOS, what opens the app `program` is in, if it's in one, as the
+/// Finder does, so what the system lets it do (the local network, folders
+/// it asks for) is asked for and kept as Plays', not the terminal's it was
+/// started from: a new one, as the one running may answer on another
+/// socket, kept in the background, with `socket` named if it's given.
+pub fn opening(program: &Path, socket: Option<&OsStr>) -> Option<Command> {
+    if !cfg!(target_os = "macos") {
+        return None;
+    }
+    let macos = program.parent()?;
+    let contents = macos.parent()?;
+    let app = contents.parent()?;
+    let in_app = macos.file_name()? == "MacOS"
+        && contents.file_name()? == "Contents"
+        && app.extension()? == "app";
+    if !in_app {
+        return None;
+    }
+    let mut open = Command::new("open");
+    open.args(["-n", "-g", "-a"]).arg(app);
+    if let Some(socket) = socket {
+        let mut named = OsString::from(format!("{}=", super::VARIABLE));
+        named.push(socket);
+        open.arg("--env").arg(named);
+    }
+    Some(open)
 }

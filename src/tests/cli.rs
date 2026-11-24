@@ -257,6 +257,14 @@ fn with_no_plays_to_ask_it_says_so_or_starts_one() {
 }
 
 #[test]
+fn a_wait_longer_than_anything_lasts_as_long_as_it_takes() {
+    let path = socket("cli-forever");
+    let args = ["wait", "playback.ended", "--timeout", "1e19"];
+    let ran = command_line(Some(path), Unanswered::Fails, &args);
+    assert_eq!(ran.status, 4, "on to asking Plays: {ran:?}");
+}
+
+#[test]
 fn with_control_off_a_plays_that_cant_be_reached_for_another_reason_says_why() {
     let path = socket("cli-off-denied");
     let folder = path.parent().unwrap().to_owned();

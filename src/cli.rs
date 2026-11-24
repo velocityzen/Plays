@@ -6,8 +6,8 @@
 //! none of it. What comes back goes to stdout, as text or, with `--json`, as
 //! JSON, and why not to stderr. The exit status says which, as Rex's do:
 //! 0 done, 1 failed, 2 a bad command line, 3 nothing by the name given, 4
-//! no Plays to ask, 5 control from the command line off, and 130 stopped
-//! with Ctrl-C, which nothing here catches.
+//! no Plays to ask, 5 control from the command line off, 6 no answer in
+//! time, and 130 stopped with Ctrl-C, which nothing here catches.
 //!
 //! `plays do` runs a Lua script too (`lua`), in this process, a client of
 //! the Plays running as the command line is.
@@ -30,6 +30,7 @@ mod tests;
 use std::ffi::OsString;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 use clap::{CommandFactory, Parser};
 use serde_json::{Map, Value, json};
@@ -39,6 +40,16 @@ use crate::api::args::Kind;
 use crate::api::socket::client::{self, Client, Failure};
 use crate::api::{self, Error, Target};
 use crate::files::Folder;
+
+/// The longest a wait is taken to be: one longer, as far as a clock goes,
+/// lasts as long as it takes.
+const LONGEST_WAIT: Duration = Duration::from_secs(100 * 365 * 24 * 60 * 60);
+
+/// When `wait` from now is up: a wait longer than a century is taken as
+/// one.
+pub fn after(wait: Duration) -> Instant {
+    Instant::now() + wait.min(LONGEST_WAIT)
+}
 
 /// Whether `args` are for the command line: a subcommand or one of its
 /// options comes first, or a word that names no file, a subcommand

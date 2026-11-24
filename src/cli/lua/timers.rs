@@ -11,6 +11,8 @@ use std::time::{Duration, Instant};
 
 use mlua::{AnyUserData, Function, Lua, UserData, UserDataMethods};
 
+use crate::cli::after;
+
 /// How many timers a script may have going.
 pub const MOST: usize = 1024;
 
@@ -57,7 +59,7 @@ impl Timers {
         let cancelled = Rc::new(Cell::new(false));
         self.each.borrow_mut().push(Timer {
             function,
-            due: Instant::now() + wait,
+            due: after(wait),
             every: every.then_some(wait),
             cancelled: cancelled.clone(),
         });

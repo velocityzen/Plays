@@ -89,7 +89,7 @@ fn a_folder_that_isnt_there_is_made_too() {
         cant.command().as_deref(),
         Some(
             format!(
-                "sudo mkdir -p {} && sudo ln -sf '{}' {}",
+                "sudo mkdir -p '{}' && sudo ln -sf '{}' '{}'",
                 missing.display(),
                 program.display(),
                 missing.join("plays").display()
@@ -98,6 +98,38 @@ fn a_folder_that_isnt_there_is_made_too() {
         )
     );
     assert!(!missing.exists(), "made by whoever types it, not by Plays");
+}
+
+/// Each path in the command typed is read by the shell as it is, quotes
+/// and all, and nothing in one runs.
+#[test]
+fn the_command_typed_keeps_each_path_whole() {
+    for program in [
+        "/Applications/Bob's Apps/Plays.app/Contents/MacOS/plays",
+        "/Users/me/x'$(echo ran)'/plays",
+    ] {
+        let cant = Cant::Denied {
+            program: program.into(),
+            link: "/usr/local/my bin/plays".into(),
+            folder_missing: true,
+            why: String::new(),
+        };
+        // As a shell reads it, printing each path in place of using it.
+        let printed = cant
+            .command()
+            .unwrap()
+            .replace("sudo mkdir -p", "printf '%s\\n'")
+            .replace("sudo ln -sf", "printf '%s\\n'");
+        let out = std::process::Command::new("sh")
+            .args(["-c", &printed])
+            .output()
+            .unwrap();
+        assert_eq!(
+            String::from_utf8(out.stdout).unwrap(),
+            format!("/usr/local/my bin\n{program}\n/usr/local/my bin/plays\n"),
+            "{printed}"
+        );
+    }
 }
 
 fn denied() -> Cant {
@@ -203,7 +235,7 @@ fn a_folder_it_cant_write_to_says_what_to_type_instead() {
     let program = Path::new("/Applications/Plays.app/Contents/MacOS/plays");
     let err = link(program, &folder).unwrap_err().to_string();
     let typed = format!(
-        "sudo ln -sf '{}' {}",
+        "sudo ln -sf '{}' '{}'",
         program.display(),
         folder.join("plays").display()
     );

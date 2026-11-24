@@ -83,13 +83,19 @@ impl Cant {
         else {
             return None;
         };
-        let link_it = format!("sudo ln -sf '{}' {}", program.display(), link.display());
+        let link_it = format!("sudo ln -sf {} {}", quoted(program), quoted(link));
         let folder = link.parent().filter(|_| *folder_missing);
         Some(match folder {
-            Some(folder) => format!("sudo mkdir -p {} && {link_it}", folder.display()),
+            Some(folder) => format!("sudo mkdir -p {} && {link_it}", quoted(folder)),
             None => link_it,
         })
     }
+}
+
+/// `path` as a shell reads it whole and as it is: in single quotes, each
+/// one in it closing them, escaped, and opening them again.
+fn quoted(path: &Path) -> String {
+    format!("'{}'", path.display().to_string().replace('\'', r"'\''"))
 }
 
 impl fmt::Display for Cant {

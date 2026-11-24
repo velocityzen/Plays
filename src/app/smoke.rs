@@ -138,9 +138,12 @@ pub fn from_args(args: Vec<OsString>) -> (Option<Scenario>, Vec<OsString>) {
     (Some(scenario), args.into_iter().skip(2).collect())
 }
 
-/// The `cli` scenario's socket's folder, in the temporary folder.
+/// The `cli` scenario's socket's folder: in this user's runtime folder,
+/// on Linux, not the temporary folder everyone shares; macOS's is theirs.
 fn cli_folder() -> PathBuf {
-    std::env::temp_dir().join(format!("plays-smoke-{}", std::process::id()))
+    dirs::runtime_dir()
+        .unwrap_or_else(std::env::temp_dir)
+        .join(format!("plays-smoke-{}", std::process::id()))
 }
 
 /// Log as `RUST_LOG` says, defaulting to Plays' info, and keep every
