@@ -116,7 +116,7 @@ pub fn svg(kind: Kind, label: Option<&str>, family: &str) -> Result<String> {
     if let Some(label) = label {
         writeln!(
             svg,
-            r##"<text x="128" y="214" text-anchor="middle" font-family="{family}" font-weight="700" font-size="44" fill="#fff">{label}</text>"##
+            r##"<text x="128" y="214" text-anchor="middle" font-family="{family}" font-weight="700" font-size="38" fill="#fff">{label}</text>"##
         )
         .unwrap();
     }
