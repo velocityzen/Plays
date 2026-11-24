@@ -3,7 +3,8 @@
 This is gpui 0.2.2 from crates.io, without its examples, with HDR video on
 macOS, video frames converted on the GPU on Linux, turned and cropped
 pictures, backdrops, visualizers, and a few small fixes. Plays uses it through `[patch.crates-io]` in its
-Cargo.toml. Everything Plays changed is marked "Plays" in the code.
+Cargo.toml. Everything Plays changed is marked "Plays" in the code;
+`script/gpui-fork diff` shows it all, as a patch to crates.io's.
 
 ## What changed
 
@@ -345,6 +346,9 @@ The window's callbacks then do nothing (`update_from_platform`) rather than
 log "window not found", and `App::dispatch_action`, as a menu does, takes a
 closed window in front as none.
 
+`Cargo.toml`: stacksafe 1.0, not 0.1, whose macros used proc-macro-error2,
+which a future Rust rejects.
+
 `src/taffy.rs`: two float literals are typed as `f32`, which newer Rust
 warns about otherwise.
 
@@ -354,6 +358,6 @@ decoding on macOS, and for Dolby Vision on Linux.
 
 ## Updating gpui
 
-Copy the new version from crates.io over this folder (leaving out
-`examples/` and their `[[example]]` entries in Cargo.toml), then apply the
-changes above again.
+`script/gpui-fork upgrade <version>` merges a release from crates.io into
+this folder, three ways from the one it's patched from, and names the files
+it left conflicts in.

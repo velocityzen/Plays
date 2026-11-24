@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+# The vendored gpui against the crates.io release it's patched from, the
+# version its Cargo.toml says:
+#
+#   script/gpui-fork diff            every change Plays made, as a patch
+#   script/gpui-fork upgrade 0.2.3   the release's changes merged in
+#
+# An upgrade merges three ways, from the release it was patched from, and
+# names the files it left conflicts in. Releases come from cargo's cache,
+# else crates.io, without their examples or what cargo packed with them,
+# as the fork has none.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+fork=$PWD/vendor/gpui
+from=$(sed -n 's/^version = "\(.*\)"$/\1/p' "$fork/Cargo.toml" | head -1)
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+
+# Unpack gpui $1 into $work/$1.
+unpack() {
+    local crate
+    crate=$(find ~/.cargo/registry/cache -name "gpui-$1.crate" 2>/dev/null | head -1)
+    if [ -z "$crate" ]; then
+        crate=$work/gpui-$1.crate
+        curl -fsSL "https://static.crates.io/crates/gpui/gpui-$1.crate" -o "$crate"
+    fi
+    mkdir "$work/$1"
+    tar -xzf "$crate" -C "$work/$1" --strip-components 1
+    rm -rf "$work/$1/examples"
+    rm -f "$work/$1"/{.cargo_vcs_info.json,Cargo.lock,Cargo.toml.orig}
+}
+
+# Whether $1 and $2 are the same file, or both missing.
+same() {
+    if [ -e "$1" ]; then [ -e "$2" ] && cmp -s "$1" "$2"; else [ ! -e "$2" ]; fi
+}
+
+case ${1:-} in
+diff)
+    unpack "$from"
+    ln -s "$fork" "$work/plays"
+    cd "$work"
+    diff -ruN -x .DS_Store "$from" plays || [ $? -eq 1 ]
+    ;;
+upgrade)
+    to=${2:?which release: script/gpui-fork upgrade 0.2.3}
+    if [ "$to" = "$from" ]; then
+        echo "It's gpui $to already"
+        exit
+    fi
+    unpack "$from"
+    unpack "$to"
+    conflicts=()
+    while IFS= read -r -d '' file; do
+        base=$work/$from/$file ours=$fork/$file theirs=$work/$to/$file
+        if same "$base" "$theirs" || same "$ours" "$theirs"; then
+            continue
+        elif same "$base" "$ours"; then
+            if [ -e "$theirs" ]; then
+                mkdir -p "$(dirname "$ours")"
+                cp "$theirs" "$ours"
+            else
+                rm "$ours"
+            fi
+        elif [ -e "$base" ] && [ -e "$ours" ] && [ -e "$theirs" ] &&
+            git merge-file -q -L plays -L "$from" -L "$to" "$ours" "$base" "$theirs"; then
+            continue
+        else
+            conflicts+=("$file")
+        fi
+    done < <(
+        for tree in "$work/$from" "$fork" "$work/$to"; do
+            (cd "$tree" && find . -type f ! -name .DS_Store -print0)
+        done | sort -zu
+    )
+    if [ ${#conflicts[@]} -gt 0 ]; then
+        echo "Merged gpui $to, but for these, marked where they conflict:"
+        printf '  vendor/gpui/%s\n' "${conflicts[@]#./}"
+        exit 1
+    fi
+    echo "Merged gpui $to"
+    ;;
+*)
+    echo "usage: script/gpui-fork diff | upgrade <version>" >&2
+    exit 2
+    ;;
+esac

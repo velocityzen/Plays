@@ -21,7 +21,7 @@ source and linked statically. [README.md](README.md) says what it does,
 - [The DLNA crate](#the-dlna-crate)
 - [The AirPlay crate](#the-airplay-crate)
 - [Linking FFmpeg](#linking-ffmpeg)
-- [Vendored gpui and xattr](#vendored-gpui-and-xattr)
+- [Vendored gpui, xattr and block](#vendored-gpui-xattr-and-block)
 
 ## Overview
 
@@ -121,9 +121,10 @@ on its own. Clippy lints in the root `Cargo.toml` apply to all.
 | `crates/ffmpeg-link` | Links the static FFmpeg into Plays and the stream server's tests |
 | `crates/ffmpeg-safe` | Sound reads of what ffmpeg-next reads unsoundly: channel layouts, tags |
 | `crates/completions` | Shell completion scripts for a clap command line |
+| `vendor/block` | block 0.1.6, patched for what a future Rust rejects |
 | `vendor/gpui` | gpui 0.2.2, patched |
 | `vendor/xattr` | xattr 0.2.3, patched to build on Linux |
-| `script/` | FFmpeg build, macOS bundle, credits, fixtures, smoke runs |
+| `script/` | FFmpeg build, macOS bundle, credits, fixtures, smoke runs, checks, gpui upgrades |
 | `resources/` | Credits (`attributions.json`), macOS `Info.plist`, Linux `.desktop` |
 | `assets/` | App icon and UI icons |
 | `tests/fixtures` | Small media files for tests |
@@ -481,12 +482,16 @@ Apple's protocol is unpublished, so an update can break it.
 - Linking is a crate of its own: a build script's link arguments reach only
   its own package, and the stream server links FFmpeg too
 
-## Vendored gpui and xattr
+## Vendored gpui, xattr and block
 
 - `vendor/gpui`: gpui 0.2.2, through `[patch.crates-io]` in `Cargo.toml`,
   for HDR, GPU video conversion on Linux, pictures turned and cropped,
   backdrops, visualizers, floating windows, displays and full screen, and
   tests
 - Every change is marked "Plays" and listed in `vendor/gpui/PLAYS.md`
+- `script/gpui-fork diff` shows every change from crates.io's 0.2.2;
+  `script/gpui-fork upgrade <version>` merges a release in
 - `vendor/xattr`: xattr 0.2.3, building on Linux; `vendor/xattr/PLAYS.md`
   says when to drop it
+- `vendor/block`: block 0.1.6, without what a future Rust rejects;
+  `vendor/block/PLAYS.md` says when to drop it

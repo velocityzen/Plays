@@ -115,9 +115,10 @@ cargo test -- --skip media::tests   # without the engine tests
 script/check                        # all a change passes before a commit
 ```
 
-- `script/check` runs the formatting, clippy, the workspace's tests, gpui's
-  Linux build and cargo-deny's advisories; it skips the last two, saying
-  what they need, when that isn't installed.
+- `script/check` runs the formatting, clippy, the workspace's tests, a check
+  that no crate is one a future Rust rejects, gpui's Linux build and
+  cargo-deny's advisories; it skips the last two, saying what they need,
+  when that isn't installed.
 
 - The engine tests make clips with the `ffmpeg` command line tool, with
   libx264 and libx265 (`brew install ffmpeg`, `sudo apt install ffmpeg`).

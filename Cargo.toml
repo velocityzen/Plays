@@ -123,8 +123,10 @@ lto = "thin"
 [profile.smoke]
 inherits = "release"
 
-# gpui with HDR video on macOS, and the xattr it reaches building on Linux
-# with today's libc; see PLAYS.md in each for what changed.
+# gpui with HDR video on macOS, the xattr it reaches building on Linux with
+# today's libc, and block without what a future Rust rejects; see PLAYS.md
+# in each for what changed.
 [patch.crates-io]
+block = { path = "vendor/block" }
 gpui = { path = "vendor/gpui" }
 xattr = { path = "vendor/xattr" }
