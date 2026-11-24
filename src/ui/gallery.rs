@@ -12,6 +12,7 @@ use gpui::{
     WindowBounds, WindowHandle, WindowOptions, black, div, rgb,
 };
 
+use super::APP_ID;
 use super::components::{
     Badge, Button, ButtonVariant, Card, ComponentSize, Icon, MenuRow, Meter, Panel, Segmented,
     Sizable, Slider, SliderEvent, Switch,
@@ -106,7 +107,7 @@ impl GalleryView {
                     traffic_light_position: mac.then_some(TRAFFIC_LIGHTS),
                 }),
                 window_min_size: Some(WINDOW_MIN_SIZE),
-                app_id: Some("plays".into()),
+                app_id: Some(APP_ID.into()),
                 focus: true,
                 ..Default::default()
             },

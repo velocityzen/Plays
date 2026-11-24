@@ -1,0 +1,91 @@
+#!/usr/bin/env bash
+# Build Plays and install it for you on Linux: plays in ~/.local/bin, its
+# desktop file in ~/.local/share/applications, for launchers and Open With
+# to offer it for the formats it plays, and its icons, the app's and one
+# a MIME type (script/file-types), in ~/.local/share/icons. XDG_BIN_HOME
+# and XDG_DATA_HOME name other folders. --uninstall takes them out again.
+#
+# FFmpeg is built into the app (script/build-ffmpeg, which this runs the
+# first time).
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+
+if [ "$(uname -s)" != Linux ]; then
+    echo "install-linux is for Linux; on macOS, script/bundle-macos makes Plays.app" >&2
+    exit 1
+fi
+
+bin=${XDG_BIN_HOME:-$HOME/.local/bin}
+data=${XDG_DATA_HOME:-$HOME/.local/share}
+applications=$data/applications
+icons=resources/linux/icons
+
+# The icons, as paths in an icon theme folder: hicolor/scalable/apps/plays.svg
+# and so on.
+icon_files() {
+    (cd "$icons" && find hicolor -type f -name '*.svg' | sort)
+}
+
+# Caches that launchers and file managers read, where the tools that make
+# them are installed: which apps open each MIME type, and the icons.
+update_caches() {
+    if [ -d "$applications" ] && command -v update-desktop-database >/dev/null; then
+        update-desktop-database -q "$applications"
+    fi
+    if [ -d "$data/icons/hicolor" ] && command -v gtk-update-icon-cache >/dev/null; then
+        gtk-update-icon-cache -q -f -t "$data/icons/hicolor"
+    fi
+}
+
+install_plays() {
+    # Exec= names plays by its path, quoted, so Open With finds it whether
+    # or not the session's PATH has the folder.
+    case $bin in
+    *[\"\`\$\\%]*)
+        echo "install-linux: a desktop file can't name $bin here; set XDG_BIN_HOME to another folder" >&2
+        exit 1
+        ;;
+    esac
+
+    script/build-ffmpeg
+    cargo build --release
+
+    mkdir -p "$bin" "$applications"
+    install -m 755 target/release/plays "$bin/plays"
+    while IFS= read -r line; do
+        case $line in
+        "Exec=plays "*) line="Exec=\"$bin/plays\" ${line#Exec=plays }" ;;
+        esac
+        printf '%s\n' "$line"
+    done <resources/linux/plays.desktop >"$applications/plays.desktop"
+    icon_files | while IFS= read -r icon; do
+        mkdir -p "$data/icons/$(dirname "$icon")"
+        install -m 644 "$icons/$icon" "$data/icons/$icon"
+    done
+    update_caches
+
+    echo "Installed $bin/plays, $applications/plays.desktop and its icons in $data/icons"
+    case ":$PATH:" in
+    *":$bin:"*) ;;
+    *) echo "$bin isn't on your PATH: launchers and Open With find Plays, the plays command needs its path" ;;
+    esac
+}
+
+uninstall_plays() {
+    rm -f "$bin/plays" "$applications/plays.desktop"
+    icon_files | while IFS= read -r icon; do
+        rm -f "$data/icons/$icon"
+    done
+    update_caches
+    echo "Took out $bin/plays, $applications/plays.desktop and its icons in $data/icons"
+}
+
+case ${1-} in
+"") install_plays ;;
+--uninstall) uninstall_plays ;;
+*)
+    echo "usage: script/install-linux [--uninstall]" >&2
+    exit 2
+    ;;
+esac

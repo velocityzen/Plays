@@ -36,6 +36,7 @@ use gpui::{
 };
 use serde_json::json;
 
+use super::APP_ID;
 use super::displays;
 use super::name_sheet::NameSheet;
 use super::open_url::{OpenUrlDialog, OpenUrlEvent, UrlForm};
@@ -191,7 +192,7 @@ impl Workspace {
                     traffic_light_position: Some(TRAFFIC_LIGHTS),
                 }),
                 window_min_size: Some(WINDOW_MIN_SIZE),
-                app_id: Some("plays".into()),
+                app_id: Some(APP_ID.into()),
                 focus: true,
                 ..Default::default()
             },

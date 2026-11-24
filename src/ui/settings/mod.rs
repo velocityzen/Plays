@@ -33,6 +33,7 @@ use gpui::{
     div, rgb, white,
 };
 
+use super::APP_ID;
 use super::components::Icon;
 use super::displays;
 use super::theme::layout::{SETTINGS_WINDOW_MIN_SIZE, SETTINGS_WINDOW_SIZE, TRAFFIC_LIGHTS};
@@ -167,7 +168,7 @@ impl SettingsView {
                     traffic_light_position: mac.then_some(TRAFFIC_LIGHTS),
                 }),
                 window_min_size: Some(SETTINGS_WINDOW_MIN_SIZE),
-                app_id: Some("plays".into()),
+                app_id: Some(APP_ID.into()),
                 focus: true,
                 ..Default::default()
             },

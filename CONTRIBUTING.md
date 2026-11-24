@@ -96,6 +96,22 @@ script/bundle-macos
 - Finder offers it under Open With once it's in `/Applications` or has
   been opened once
 
+### Installing on Linux
+
+```bash
+script/install-linux
+```
+
+- Builds Plays, and FFmpeg if it isn't built, and installs it in
+  `~/.local`: `plays` in `bin`, the desktop file in `share/applications`,
+  its `Exec=` naming `plays` by its path, and the icons in `share/icons`
+- `XDG_BIN_HOME` and `XDG_DATA_HOME` name other folders; `--uninstall`
+  takes it all out
+- The app icon, `resources/linux/icons/hicolor/scalable/apps/plays.svg`,
+  is `assets/AppIcon.icon` drawn flat by hand: change them together
+- The windows' app_id, `plays`, names the desktop file, as Wayland
+  requires for their icon
+
 ### Licenses
 
 - Plays is MIT (`LICENSE`), built with FFmpeg (LGPL 2.1 or later) and

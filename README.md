@@ -102,13 +102,14 @@ dropped files.
 
 ### Linux
 
+`script/install-linux` builds Plays, with FFmpeg built in, and installs it
+for you: `plays` in `~/.local/bin`, with its desktop file and icons, for
+launchers and **Open With**. `--uninstall` takes it out again.
+
 - A working Vulkan driver, OpenSSL, libva and libvdpau
 - For hardware decoding, your GPU's VA-API driver (`intel-media-va-driver`
   or `mesa-va-drivers`), or NVIDIA's for NVDEC
 - Sound goes through ALSA (PipeWire and PulseAudio provide it)
-- For **Open With**, put `plays` on your `PATH` and copy
-  `resources/linux/plays.desktop` to `~/.local/share/applications/`; for
-  its file icons, `resources/linux/icons/` to `~/.local/share/icons/`
 
 ```bash
 plays video.mp4 song.mp3 https://example.com/live.m3u8

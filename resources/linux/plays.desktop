@@ -3,6 +3,7 @@ Type=Application
 Name=Plays
 GenericName=Media Player
 Comment=Play many videos and audio files at once
+Icon=plays
 Exec=plays %F
 Terminal=false
 Categories=AudioVideo;Video;Audio;Player;

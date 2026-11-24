@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <!-- Plays' app icon on Linux: assets/AppIcon.icon as macOS draws it,
+       without the glass. -->
+  <defs>
+    <linearGradient id="fill" x1="0" y1="25" x2="0" y2="231" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ff008a"/>
+      <stop offset="0.67" stop-color="#ff005e"/>
+    </linearGradient>
+  </defs>
+  <rect x="25.5" y="25.5" width="205" height="205" rx="46" fill="url(#fill)"/>
+  <g transform="translate(0.5 2) scale(0.98)" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
+    <polyline points="116.166967 92.319023 116.166967 178.186039 116.167067 178.415596 186.333133 119.944075"/>
+    <polygon points="186.333133 119.944075 186.333133 119.978559 186.333133 136.084404 116.166967 194.584404 103.497731 188.74144 91.6668674 167.442853 91.6668674 70.8397691 116.167067 61.4155956 186.333133 119.915596"/>
+    <polyline points="116.167067 163.016258 167.828775 119.944075 167.828775 119.915596 103.637405 66.3685749"/>
+    <polyline points="158.507172 127.615368 103.497731 81.7520613 103.497731 188.616297"/>
+  </g>
+</svg>

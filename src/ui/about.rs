@@ -9,6 +9,7 @@ use gpui::{
     WindowOptions, div, img, linear_color_stop, linear_gradient, rgb, svg, white,
 };
 
+use super::APP_ID;
 use super::displays;
 use super::theme::Theme;
 use super::theme::about::{ICON, ICON_BOTTOM, ICON_GLYPH, ICON_RADIUS, ICON_TOP, WINDOW_SIZE};
@@ -89,7 +90,7 @@ impl AboutView {
                 }),
                 is_resizable: false,
                 is_minimizable: false,
-                app_id: Some("plays".into()),
+                app_id: Some(APP_ID.into()),
                 focus: true,
                 ..Default::default()
             },

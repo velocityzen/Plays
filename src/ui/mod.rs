@@ -1,6 +1,9 @@
 pub mod about;
 pub mod blackout;
 pub mod components;
+#[cfg(test)]
+#[path = "tests/desktop_file.rs"]
+mod desktop_file;
 pub mod displays;
 pub mod framing;
 #[cfg(debug_assertions)]
@@ -26,3 +29,7 @@ pub mod text_input;
 pub mod theme;
 mod traffic_lights;
 pub mod workspace;
+
+/// The windows' app_id on Wayland and WM_CLASS on X11, by which Linux
+/// finds their desktop file, `resources/linux/plays.desktop`, and its icon.
+pub const APP_ID: &str = "plays";
