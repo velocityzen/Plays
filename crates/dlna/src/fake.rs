@@ -41,6 +41,8 @@ pub struct Call {
     pub service: String,
     pub action: String,
     pub args: Vec<(String, String)>,
+    /// When it was asked.
+    pub at: Instant,
 }
 
 impl Call {

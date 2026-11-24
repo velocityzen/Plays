@@ -35,8 +35,9 @@ const SILENCE: Duration = Duration::from_secs(15);
 const TICK: Duration = Duration::from_millis(500);
 #[cfg(test)]
 const HEARTBEAT_EVERY: Duration = Duration::from_millis(100);
+/// Ten heartbeats: a test machine, however busy, answers sooner.
 #[cfg(test)]
-const SILENCE: Duration = Duration::from_millis(500);
+const SILENCE: Duration = Duration::from_secs(1);
 #[cfg(test)]
 const TICK: Duration = Duration::from_millis(20);
 

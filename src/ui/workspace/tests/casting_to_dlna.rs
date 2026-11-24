@@ -3,7 +3,7 @@
 //! one, serving this computer only.
 
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use dlna::fake::{FakeRenderer, Kind};
 use gpui::{TestAppContext, VisualTestContext, WindowHandle};
@@ -229,10 +229,22 @@ fn a_videos_sound_goes_to_a_speaker_as_a_stream_asked_where_it_is_often(cx: &mut
     );
 
     // The picture follows it, so it's asked where it is far more often
-    // than once a second, from the start.
-    std::thread::sleep(Duration::from_millis(1000));
-    let polls = asked(&speaker, "GetPositionInfo");
-    assert!(polls >= 4, "asked {polls} times in its first second");
+    // than once a second, from the start: how often, however late a
+    // busy machine asks.
+    wait(&mut cx, "it to be asked where it is", |_| {
+        asked(&speaker, "GetPositionInfo") >= 6
+    });
+    let asked_at: Vec<Instant> = speaker
+        .state()
+        .received("GetPositionInfo")
+        .iter()
+        .take(6)
+        .map(|call| call.at)
+        .collect();
+    let mut gaps: Vec<Duration> = asked_at.windows(2).map(|at| at[1] - at[0]).collect();
+    gaps.sort();
+    let every = gaps[gaps.len() / 2];
+    assert!(every < Duration::from_millis(300), "asked every {every:?}");
 
     // Seen moving, it plays on from when it was first heard where it is,
     // as a renderer moves its position on only now and then.

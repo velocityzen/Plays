@@ -201,6 +201,9 @@ mod tests;
   time. A file plays on only as its block ticks: advance the clock a step
   at a time (`play_until`). The test platform's timers don't play a file
   to its end.
+- What happens on real threads is waited for toward a deadline, not
+  slept for and then checked: a busy machine is slower. Timing is
+  compared with the player's clock, or the times a fake device notes.
 - `ui::testing` clicks and types, finding things by debug selector
   (`block-0`, a row's or button's id; a selected button also has
   `<id>-selected`); `testing::painted` lists the text a window drew, every

@@ -80,7 +80,7 @@ fn connecting_launches_the_default_media_receiver_and_keeps_the_heartbeat() {
         "it pings the device, and answers the device's ping"
     );
     // Well past the silence a cast ends after, the heartbeat keeps it.
-    thread::sleep(Duration::from_millis(800));
+    thread::sleep(Duration::from_millis(1500));
     assert_eq!(ended(&mut events, Duration::ZERO), None);
     assert_eq!(session.status().unwrap(), None, "nothing loaded yet");
     assert_eq!(
@@ -249,7 +249,7 @@ fn the_cast_ends_when_the_device_goes_away() {
     let (fake, session, mut events) = casting();
     fake.go_away();
     assert_eq!(
-        ended(&mut events, Duration::from_millis(300)),
+        ended(&mut events, Duration::from_secs(5)),
         Some(Ended::Gone)
     );
     assert!(matches!(session.play(), Err(Error::Ended)));
@@ -260,7 +260,7 @@ fn the_cast_ends_when_the_device_stops_answering() {
     let (fake, _session, mut events) = casting();
     fake.state().silent = true;
     assert_eq!(
-        ended(&mut events, Duration::from_secs(2)),
+        ended(&mut events, Duration::from_secs(5)),
         Some(Ended::Gone)
     );
 }

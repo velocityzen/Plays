@@ -194,6 +194,7 @@ pub fn read_call(message: &http::Message) -> Option<crate::fake::Call> {
         service: kind.to_owned(),
         action: action.to_owned(),
         args,
+        at: std::time::Instant::now(),
     })
 }
 

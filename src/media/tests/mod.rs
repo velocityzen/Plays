@@ -68,12 +68,17 @@ fn a_paused_player_lets_its_decoder_sleep() {
         player.tick();
         player.frame_pts().is_some()
     }));
-    // The picture and sound queues fill; then there's nothing to do.
-    std::thread::sleep(Duration::from_millis(300));
-    let before = player.decoder_waits();
-    std::thread::sleep(Duration::from_millis(500));
-    let waits = player.decoder_waits() - before;
-    assert!(waits <= 5, "it looked {waits} times in half a second");
+    // The picture and sound queues fill, as soon as the machine lets
+    // them; then there's nothing to do, and half a second passes with
+    // hardly a look. Busy filling them, it looks more.
+    let mut looked = Vec::new();
+    let quiet = wait_until(Duration::from_secs(10), || {
+        let before = player.decoder_waits();
+        std::thread::sleep(Duration::from_millis(500));
+        looked.push(player.decoder_waits() - before);
+        looked.last() <= Some(&5)
+    });
+    assert!(quiet, "it looked {looked:?} times in each half second");
 }
 
 /// What a file holds is shared with whatever asks, every frame, not
@@ -1543,13 +1548,20 @@ fn keeps_playing_while_a_subtitle_file_is_read() {
 
     player.select_track(TrackKind::Subtitle, Some(subtitles[1]));
     let from = player.frame_pts().unwrap();
+    let clock_from = player.position();
     let start = Instant::now();
     while start.elapsed() < Duration::from_millis(1500) {
         player.tick();
         std::thread::sleep(Duration::from_millis(5));
     }
+    // The picture kept up with the clock, however fast the machine let
+    // the clock go.
     let played = player.frame_pts().unwrap() - from;
-    assert!(played > 1.1, "played {played:.2}s of 1.5 while it was read");
+    let clocked = player.position() - clock_from;
+    assert!(
+        clocked > 1.0 && played > clocked - 0.4,
+        "played {played:.2}s of {clocked:.2} while it was read"
+    );
     assert_eq!(player.info().unwrap().subtitle_track, Some(subtitles[1]));
 
     assert!(
@@ -1969,18 +1981,20 @@ fn delays_subtitles_against_the_picture() {
     assert_eq!(subtitles_at(&mut player, 1.5, &[]), none);
 }
 
-/// With the window hidden, frames are only consumed a few times a second. Large
-/// frames fill the queue quickly, so the decoder must skip frames that are
-/// already late instead of falling further and further behind.
+/// With the window hidden, frames are only consumed a few times a second,
+/// and more are due between than the queue holds, so the decoder must skip
+/// frames that are already late instead of falling further and further
+/// behind. Small frames, so it decodes them faster than they're due,
+/// however busy the machine.
 #[test]
 fn keeps_up_when_frames_are_rarely_consumed() {
     let path = media(
-        "big60.mp4",
+        "small60.mp4",
         &[
             "-f",
             "lavfi",
             "-i",
-            "testsrc2=size=1920x1080:rate=60:duration=4",
+            "testsrc2=size=320x240:rate=60:duration=4",
             "-c:v",
             "libx264",
             "-preset",
@@ -1991,9 +2005,10 @@ fn keeps_up_when_frames_are_rarely_consumed() {
     );
     let mut player = Player::open(Source::File(path), None, options(true, false));
     let start = Instant::now();
-    while start.elapsed() < Duration::from_millis(2500) {
+    // Each time, 24 frames are due: more than the 16 the queue holds.
+    while start.elapsed() < Duration::from_millis(2800) {
         player.tick();
-        std::thread::sleep(Duration::from_millis(200));
+        std::thread::sleep(Duration::from_millis(400));
     }
     player.tick();
     let behind = player.position() - player.frame_pts().unwrap();

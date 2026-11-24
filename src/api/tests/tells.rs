@@ -31,6 +31,13 @@ const NOT_RUN: [(&str, &str); 2] = [
     ("cli.install", "it links plays into /usr/local/bin"),
 ];
 
+/// Whether the command `id` telling `kind` can be heard here.
+fn heard_here(id: &str, kind: &str) -> bool {
+    !NOT_HEARD
+        .iter()
+        .any(|&(not_id, event, _)| not_id == id && event == kind)
+}
+
 /// Events commands tell that can't be heard here, and why.
 const NOT_HEARD: [(&str, &str, &str); 4] = [
     (
@@ -55,8 +62,13 @@ const NOT_HEARD: [(&str, &str, &str); 4] = [
     ),
 ];
 
-/// How long nothing new is told before a command is taken to be done.
+/// How long nothing new is told before a way of running a command, but
+/// the last, is taken to be done.
 const QUIET: Duration = Duration::from_millis(300);
+/// How long nothing new is told before the last way is taken to be done,
+/// without all the command says it tells: under load, what's told can
+/// come late.
+const ALL_TOLD: Duration = Duration::from_secs(5);
 
 /// What each command runs in: two player windows, the front one, in
 /// front, with a file of several tracks (block 1, keys going to it) and
@@ -424,7 +436,12 @@ fn hear(
     device: &str,
     cx: &mut TestAppContext,
 ) -> (BTreeSet<&'static str>, Vec<String>) {
-    let declared: BTreeSet<&str> = spec.tells.iter().copied().collect();
+    let declared: BTreeSet<&str> = spec
+        .tells
+        .iter()
+        .copied()
+        .filter(|&kind| heard_here(spec.id, kind))
+        .collect();
     let mut heard = BTreeSet::new();
     let mut wrong = Vec::new();
     let unseen = World {
@@ -460,7 +477,9 @@ fn hear(
         if spec.id == "app.quit" {
             cx.update(events::quit);
         }
-        // Until all it says it tells is heard, or nothing more is.
+        // Until all it says it tells is heard. A way but the last stops
+        // once nothing more is told: the ways left tell the rest.
+        let enough = if at + 1 == count { ALL_TOLD } else { QUIET };
         let mut last = Instant::now();
         loop {
             settle(cx);
@@ -470,7 +489,7 @@ fn hear(
             if heard.len() > before {
                 last = Instant::now();
             }
-            if declared.is_subset(&heard) || last.elapsed() >= QUIET {
+            if declared.is_subset(&heard) || last.elapsed() >= enough {
                 break;
             }
         }
@@ -514,12 +533,12 @@ fn check(namespace: &str, cx: &mut TestAppContext) {
         }
         let (heard, mut failed) = hear(spec, &settings, &tv.id, cx);
         wrong.append(&mut failed);
-        let unheard = |kind: &&str| {
-            !NOT_HEARD
-                .iter()
-                .any(|&(id, event, _)| id == spec.id && event == *kind)
-        };
-        let declared: BTreeSet<&str> = spec.tells.iter().copied().filter(unheard).collect();
+        let declared: BTreeSet<&str> = spec
+            .tells
+            .iter()
+            .copied()
+            .filter(|&kind| heard_here(spec.id, kind))
+            .collect();
         if heard != declared {
             wrong.push(format!(
                 "{} tells {heard:?}, and says {declared:?}",

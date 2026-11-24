@@ -190,7 +190,9 @@ fn headphones_paired_are_outputs_and_picking_them_connects_them(cx: &mut TestApp
         listed(cx).contains(&RADIO.1.to_owned())
     });
     assert_eq!(listed(&mut cx), [HERE, PODS.1, RADIO.1], "each once");
-    assert_eq!(route(&mut cx), Some(Route::Waiting(RADIO.1.into())));
+    wait(&mut cx, "the sound to wait for the radio", |cx| {
+        route(cx) == Some(Route::Waiting(RADIO.1.into()))
+    });
     std::thread::sleep(SETTLE);
     assert!(asked().is_empty(), "not for starting the app");
 
