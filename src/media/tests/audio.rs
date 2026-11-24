@@ -240,6 +240,6 @@ fn a_player_moved_to_another_mixer_plays_at_its_rate() {
         4410,
         "what it had queued"
     );
-    assert!(here.sources.lock().is_empty());
-    assert_eq!(there.sources.lock().len(), 1);
+    assert_eq!(here.source_count(), 0);
+    assert_eq!(there.source_count(), 1);
 }

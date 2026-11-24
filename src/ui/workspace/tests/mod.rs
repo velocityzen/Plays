@@ -15,6 +15,7 @@ mod events;
 mod every_window;
 mod inspect;
 mod languages;
+mod letting_go;
 mod over_video;
 mod playlist;
 mod sound_files;

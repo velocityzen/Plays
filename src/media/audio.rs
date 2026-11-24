@@ -353,6 +353,12 @@ impl Mixer {
         Self::new(sample_rate, 1.0)
     }
 
+    /// How many players it mixes, for tests.
+    #[cfg(test)]
+    pub fn source_count(&self) -> usize {
+        self.sources.lock().len()
+    }
+
     /// Fill `mix` (interleaved stereo) with the sum of all playing sources.
     pub(crate) fn mix(&self, mix: &mut [f32], latency: f64, now: Instant) {
         mix.fill(0.0);
