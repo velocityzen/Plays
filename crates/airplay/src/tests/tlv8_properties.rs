@@ -6,12 +6,7 @@ use super::*;
 proptest! {
     #[test]
     fn values_come_back_whole_however_long(
-        // Two items of a tag in a row would read as one, as TLV8 has
-        // them; pairing never sends them so.
-        items in vec((any::<u8>(), vec(any::<u8>(), 0..600)), 0..6)
-            .prop_filter("a tag after itself", |items| {
-                items.windows(2).all(|pair| pair[0].0 != pair[1].0)
-            }),
+        items in vec((any::<u8>(), vec(any::<u8>(), 0..600)), 0..6),
     ) {
         let tlv = Tlv { items };
         prop_assert_eq!(Tlv::decode(&tlv.encode()).unwrap(), tlv);

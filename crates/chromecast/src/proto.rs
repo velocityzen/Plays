@@ -92,6 +92,9 @@ pub fn take(buffer: &mut Vec<u8>) -> std::io::Result<Option<CastMessage>> {
 }
 
 #[cfg(test)]
+#[path = "tests/proto_fuzz.rs"]
+mod fuzz;
+#[cfg(test)]
 #[path = "tests/proto_properties.rs"]
 mod properties;
 #[cfg(test)]

@@ -1,0 +1,4 @@
+# Hegel's settings, for the protocol crates' fuzz tests (`*_fuzz.rs`).
+# `HEGEL_DEFAULT_PROFILE=fuzz cargo test --workspace fuzz` runs them long.
+[profiles.fuzz]
+test_cases = 1000000

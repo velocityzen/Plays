@@ -59,15 +59,18 @@ impl Tlv {
 
     pub fn encode(&self) -> Vec<u8> {
         let mut bytes = Vec::new();
-        for (tag, value) in &self.items {
-            if value.is_empty() {
-                bytes.extend([*tag, 0]);
-                continue;
-            }
+        for (i, (tag, value)) in self.items.iter().enumerate() {
             for piece in value.chunks(255) {
                 bytes.push(*tag);
                 bytes.push(piece.len() as u8);
                 bytes.extend_from_slice(piece);
+            }
+            // An empty value is an empty piece. One of whole pieces ends
+            // with an empty piece too when an item of its tag follows,
+            // which would otherwise read as more of it.
+            let next_of_its_tag = self.items.get(i + 1).is_some_and(|(next, _)| next == tag);
+            if value.is_empty() || (value.len() % 255 == 0 && next_of_its_tag) {
+                bytes.extend([*tag, 0]);
             }
         }
         bytes
@@ -97,6 +100,9 @@ impl Tlv {
     }
 }
 
+#[cfg(test)]
+#[path = "tests/tlv8_fuzz.rs"]
+mod fuzz;
 #[cfg(test)]
 #[path = "tests/tlv8_properties.rs"]
 mod properties;

@@ -19,4 +19,7 @@ log = "0.4"
 mdns-sd = { version = "0.22.0", optional = true }
 
 [dev-dependencies]
+# The fuzz tests: what a device might send, run long with
+# `HEGEL_DEFAULT_PROFILE=fuzz`.
+hegeltest = "0.54"
 proptest = { version = "1", default-features = false, features = ["std"] }

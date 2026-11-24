@@ -27,6 +27,24 @@ fn a_value_of_exactly_255_bytes_isnt_joined_to_the_next_item_of_another_kind() {
 }
 
 #[test]
+fn items_of_a_tag_in_a_row_come_back_apart() {
+    for (first, second) in [(255, 0), (255, 1), (510, 3), (3, 1)] {
+        let tlv = Tlv::new()
+            .with(Tag::EncryptedData, vec![1; first])
+            .with(Tag::EncryptedData, vec![2; second]);
+        assert_eq!(
+            Tlv::decode(&tlv.encode()).unwrap(),
+            tlv,
+            "{first} then {second}"
+        );
+    }
+    // A value of whole pieces followed by another tag, or by nothing,
+    // needs no empty piece.
+    let tlv = Tlv::new().with(Tag::Salt, [1; 255]);
+    assert_eq!(tlv.encode().len(), 2 + 255);
+}
+
+#[test]
 fn a_message_cut_short_is_an_error() {
     assert!(Tlv::decode(&[0x06, 2, 1]).is_err());
     assert!(Tlv::decode(&[0x06]).is_err());

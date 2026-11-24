@@ -24,4 +24,7 @@ quick-xml = "0.42"
 socket2 = { version = "0.6", features = ["all"] }
 
 [dev-dependencies]
+# The fuzz tests: what a device might send, run long with
+# `HEGEL_DEFAULT_PROFILE=fuzz`.
+hegeltest = "0.54"
 proptest = { version = "1", default-features = false, features = ["std"] }

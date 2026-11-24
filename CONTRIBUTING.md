@@ -126,6 +126,9 @@ script/check                        # all a change passes before a commit
 - Hardware decoding tests need VideoToolbox on macOS.
 - What fish and Nushell complete is checked only where they're installed.
 - Property tests try 256 cases each; `PROPTEST_CASES` sets more.
+- Fuzz tests try 100 cases each;
+  `HEGEL_DEFAULT_PROFILE=fuzz cargo test --workspace fuzz` tries a million
+  (`hegel.toml`).
 
 Ignored tests, and the protocol crates' examples for real devices:
 
@@ -164,6 +167,9 @@ mod tests;
 - proptest saves a failure in the crate's `proptest-regressions/` at the
   property file's path (`proptest-regressions/tests/http_properties.txt`):
   commit it with the fix.
+- Fuzz tests are in `tests/<file>_fuzz.rs`, declared as `mod fuzz`, with
+  Hegel (`hegeltest`). It keeps a failure in the crate's `.hegel/`, which
+  isn't committed: a unit test of the fix keeps it.
 - Window tests are `ui::workspace`'s, in `src/ui/workspace/tests/`, a file
   per feature; one named for a workspace code file, such as `screensaver`,
   is that file's tests (`ui::workspace::screensaver::tests`).
@@ -190,6 +196,7 @@ mod tests;
 - `src/cast/tests/`: each protocol's profiles, AirPlay pairings, the cast link
 - `crates/*/src/tests/`: each crate on its own, protocols against fake devices
 - `*_properties.rs`: parsers fed what a hostile device or client might send
+- `*_fuzz.rs`: the protocol crates' parsers on what a device might send, run long
 
 ### Window and command tests
 

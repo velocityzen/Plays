@@ -1,4 +1,6 @@
 /target
+# Failures Hegel keeps to try first (`.hegel/examples`)
+.hegel/
 .DS_Store
 # Local media for trying things out
 /ignore

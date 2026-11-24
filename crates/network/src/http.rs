@@ -373,6 +373,9 @@ impl<S: Write> Write for Deadline<S> {
 }
 
 #[cfg(test)]
+#[path = "tests/http_fuzz.rs"]
+mod fuzz;
+#[cfg(test)]
 #[path = "tests/http_properties.rs"]
 mod properties;
 #[cfg(test)]

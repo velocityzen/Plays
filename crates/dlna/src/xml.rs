@@ -148,6 +148,9 @@ pub fn escape(text: &str) -> Cow<'_, str> {
 }
 
 #[cfg(test)]
+#[path = "tests/xml_fuzz.rs"]
+mod fuzz;
+#[cfg(test)]
 #[path = "tests/xml_properties.rs"]
 mod properties;
 #[cfg(test)]
