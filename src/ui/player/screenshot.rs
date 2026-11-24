@@ -54,6 +54,7 @@ impl PlayerView {
         });
         let request = Request {
             source: self.playback.local().source().clone(),
+            max_short_side: self.playback.local().max_short_side(),
             stream,
             timestamp,
             position,

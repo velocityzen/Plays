@@ -61,6 +61,8 @@ const FOLLOW_STILL: f64 = 0.04;
 
 pub struct Player {
     source: Source,
+    /// The resolution limit it was opened with.
+    max_short_side: Option<u32>,
     shared: Arc<Shared>,
     commands: Sender<Command>,
     mixer: Option<Arc<Mixer>>,
@@ -202,6 +204,7 @@ impl Player {
         );
         Self {
             source,
+            max_short_side: options.max_short_side,
             stats: Stats::new(name),
             recent: Recent::default(),
             network,
@@ -278,6 +281,11 @@ impl Player {
     /// What is playing.
     pub fn source(&self) -> &Source {
         &self.source
+    }
+
+    /// The resolution limit it was opened with.
+    pub fn max_short_side(&self) -> Option<u32> {
+        self.max_short_side
     }
 
     pub fn cover(&self) -> Option<Arc<RenderImage>> {

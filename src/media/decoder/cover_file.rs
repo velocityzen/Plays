@@ -69,7 +69,7 @@ pub(super) fn find(file: &Path) -> Option<PathBuf> {
 /// The picture in the file at `path`, decoded as cover art in a file's
 /// tags is.
 fn open(path: &Path, max_short_side: Option<u32>) -> Result<Arc<RenderImage>> {
-    let mut input = open_input(&Source::File(path.to_owned()), || false)?;
+    let mut input = open_input(&Source::File(path.to_owned()), None, || false)?;
     let info = input
         .streams()
         .best(media::Type::Video)

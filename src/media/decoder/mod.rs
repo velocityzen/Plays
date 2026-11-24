@@ -24,6 +24,8 @@ mod audio;
 mod convert;
 mod cover_file;
 mod demux;
+pub(super) mod fetch;
+mod hls;
 mod shared;
 mod video;
 
@@ -31,7 +33,7 @@ use std::any::Any;
 use std::ffi::CStr;
 use std::fmt::Display;
 use std::panic::{self, AssertUnwindSafe};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, TryRecvError};
 use std::thread::{self, JoinHandle};
@@ -263,23 +265,52 @@ impl Session<'_> {
     }
 }
 
-/// Open the file or stream; network reads give up once `stop` says so.
+/// Open the file or stream; network reads give up once `stop` says so. An
+/// HLS master playlist is cut down to the variant that plays within
+/// `max_short_side` (`hls`), or played whole if that won't open.
 pub(super) fn open_input(
+    source: &Source,
+    max_short_side: Option<u32>,
+    stop: impl Fn() -> bool + Clone + Send + 'static,
+) -> Result<ffmpeg::format::context::Input> {
+    if let Some(variant) = hls::variant(source, max_short_side, stop.clone())? {
+        match open(Path::new(&variant), source, stop.clone()) {
+            Ok(input) => return Ok(input),
+            Err(err) if stop() => return Err(err),
+            Err(err) => {
+                log::warn!("{source}: playing every variant, as one alone won't open: {err:#}")
+            }
+        }
+    }
+    open(source.location(), source, stop)
+}
+
+/// Open `location`, where `source` is.
+fn open(
+    location: &Path,
     source: &Source,
     stop: impl Fn() -> bool + Send + 'static,
 ) -> Result<ffmpeg::format::context::Input> {
-    let mut options = ffmpeg::Dictionary::new();
-    if source.is_network() {
-        options.set("rw_timeout", NETWORK_TIMEOUT_MICROS);
-        options.set("timeout", NETWORK_TIMEOUT_MICROS);
-        options.set("reconnect", "1");
-        options.set("reconnect_streamed", "1");
-        options.set("reconnect_delay_max", "5");
-        // Like most players: UDP rarely makes it through NAT and firewalls.
-        options.set("rtsp_transport", "tcp");
-    }
-    ffmpeg::format::input_with_interrupt_and_dictionary(source.location(), stop, options)
+    let options = if source.is_network() {
+        network_options()
+    } else {
+        ffmpeg::Dictionary::new()
+    };
+    ffmpeg::format::input_with_interrupt_and_dictionary(location, stop, options)
         .with_context(|| format!("could not open {source}"))
+}
+
+/// What a stream is opened with.
+fn network_options() -> ffmpeg::Dictionary<'static> {
+    let mut options = ffmpeg::Dictionary::new();
+    options.set("rw_timeout", NETWORK_TIMEOUT_MICROS);
+    options.set("timeout", NETWORK_TIMEOUT_MICROS);
+    options.set("reconnect", "1");
+    options.set("reconnect_streamed", "1");
+    options.set("reconnect_delay_max", "5");
+    // Like most players: UDP rarely makes it through NAT and firewalls.
+    options.set("rtsp_transport", "tcp");
+    options
 }
 
 /// What the decode thread keeps of each stream once the demux thread has the file.
@@ -545,7 +576,7 @@ fn run(
     // opens: each can take a while.
     let looking = look_for_subtitle_files(source);
     let interrupt = shared.clone();
-    let input = open_input(source, move || interrupt.stopped())?;
+    let input = open_input(source, options.max_short_side, move || interrupt.stopped())?;
     let name = source.name();
     let mut tracks: Vec<Track> = input.streams().filter_map(|s| Track::of(&s)).collect();
     let mut decoders = Decoders {

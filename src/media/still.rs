@@ -33,9 +33,17 @@ pub struct Still {
 
 /// The frame of `stream` at `timestamp` (in the stream's time base), at
 /// its display size (corrected for non-square pixels). HDR video is tone
-/// mapped for an SDR screen as players show it, unless `keep_hdr`.
-pub fn grab(source: &Source, stream: usize, timestamp: i64, keep_hdr: bool) -> Result<Still> {
-    let frame = decode(source, stream, timestamp)?;
+/// mapped for an SDR screen as players show it, unless `keep_hdr`. A stream
+/// is opened as it plays, with the resolution limit it opened with,
+/// `max_short_side`: its HLS playlist cut down to the same variant.
+pub fn grab(
+    source: &Source,
+    max_short_side: Option<u32>,
+    stream: usize,
+    timestamp: i64,
+    keep_hdr: bool,
+) -> Result<Still> {
+    let frame = decode(source, max_short_side, stream, timestamp)?;
     let transfer = Transfer::of(&frame);
     let reshaping = Reshaping::of(&frame);
     match (keep_hdr, reshaping, transfer) {
@@ -46,8 +54,13 @@ pub fn grab(source: &Source, stream: usize, timestamp: i64, keep_hdr: bool) -> R
 }
 
 /// Decode the frame at `timestamp`, or the nearest one.
-fn decode(source: &Source, stream: usize, timestamp: i64) -> Result<frame::Video> {
-    let mut input = open_input(source, || false)?;
+fn decode(
+    source: &Source,
+    max_short_side: Option<u32>,
+    stream: usize,
+    timestamp: i64,
+) -> Result<frame::Video> {
+    let mut input = open_input(source, max_short_side, || false)?;
     let (parameters, time_base) = {
         let found = input
             .stream(stream)

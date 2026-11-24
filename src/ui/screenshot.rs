@@ -28,6 +28,9 @@ use crate::settings::{ScreenshotFormat, ScreenshotSettings};
 /// What to save, gathered on the UI thread.
 pub struct Request {
     pub source: Source,
+    /// The resolution limit it was opened with: a stream's playlist is cut
+    /// down to the variant playing.
+    pub max_short_side: Option<u32>,
     /// The video track, by stream index.
     pub stream: usize,
     /// When the frame shows, in the stream's time base.
@@ -51,6 +54,7 @@ pub fn take(request: Request) -> Result<PathBuf> {
     let settings = &request.settings;
     let still = still::grab(
         &request.source,
+        request.max_short_side,
         request.stream,
         request.timestamp,
         settings.keeps_hdr(),

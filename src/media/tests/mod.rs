@@ -20,6 +20,7 @@ use super::source::Source;
 use super::tracks::TrackKind;
 
 mod made;
+mod playlists;
 use made::{in_own_folder, kept, made_from, made_in, media};
 
 fn options(autoplay: bool, looping: bool) -> PlayerOptions {
@@ -2633,24 +2634,41 @@ mod http {
     use std::io::{BufRead, BufReader, Write};
     use std::net::{SocketAddr, TcpListener, TcpStream};
     use std::path::PathBuf;
+    use std::sync::{Arc, Mutex};
     use std::time::Duration;
+
+    /// The paths asked for, in order.
+    pub type Asked = Arc<Mutex<Vec<String>>>;
 
     /// Serve files from `dir`, with byte ranges like a real web server. With
     /// `stall`, ranges aren't offered and each response pauses for that long
     /// halfway through, like a congested connection.
     pub fn serve(dir: PathBuf, stall: Option<Duration>) -> SocketAddr {
+        serve_noting(dir, stall).0
+    }
+
+    /// As `serve`, noting each path asked for.
+    pub fn serve_noting(dir: PathBuf, stall: Option<Duration>) -> (SocketAddr, Asked) {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = listener.local_addr().unwrap();
+        let asked = Asked::default();
+        let noting = asked.clone();
         std::thread::spawn(move || {
             for stream in listener.incoming().flatten() {
                 let dir = dir.clone();
-                std::thread::spawn(move || respond(stream, &dir, stall));
+                let noting = noting.clone();
+                std::thread::spawn(move || respond(stream, &dir, stall, &noting));
             }
         });
-        addr
+        (addr, asked)
     }
 
-    fn respond(mut stream: TcpStream, dir: &std::path::Path, stall: Option<Duration>) {
+    fn respond(
+        mut stream: TcpStream,
+        dir: &std::path::Path,
+        stall: Option<Duration>,
+        asked: &Asked,
+    ) {
         let mut reader = BufReader::new(stream.try_clone().unwrap());
         let mut request = String::new();
         if reader.read_line(&mut request).is_err() {
@@ -2669,6 +2687,7 @@ mod http {
             line.clear();
         }
         let path = request.split_whitespace().nth(1).unwrap_or("/");
+        asked.lock().unwrap().push(path.to_owned());
         let Ok(body) = std::fs::read(dir.join(path.trim_start_matches('/'))) else {
             let _ = stream.write_all(
                 b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
@@ -2997,11 +3016,11 @@ fn stills_are_the_frame_shown_at_full_size() {
     let grey = |still: &still::Still| f64::from(still.pixels[still.pixels.len() / 2][1]) / 257.0;
     // Frame `n` in full-range RGB.
     let frame = |n: f64| 4.0 * n * 255.0 / 219.0;
-    let shot = still::grab(&source, stream, timestamp, false).unwrap();
+    let shot = still::grab(&source, None, stream, timestamp, false).unwrap();
     assert_eq!((shot.width, shot.height, shot.hdr), (640, 360, None));
     assert!((grey(&shot) - frame(25.0)).abs() < 1.5, "{}", grey(&shot));
     // The first frame, which is a keyframe, too.
-    let first = still::grab(&source, stream, 0, false).unwrap();
+    let first = still::grab(&source, None, stream, 0, false).unwrap();
     assert!(grey(&first) < 1.5, "{}", grey(&first));
 }
 
@@ -3036,8 +3055,8 @@ fn hdr_stills_keep_their_signal() {
         ],
     );
     let source = Source::File(path);
-    let sdr = still::grab(&source, 0, 0, false).unwrap();
-    let hdr = still::grab(&source, 0, 0, true).unwrap();
+    let sdr = still::grab(&source, None, 0, 0, false).unwrap();
+    let hdr = still::grab(&source, None, 0, 0, true).unwrap();
     assert_eq!(sdr.hdr, None);
     assert_eq!(hdr.hdr, Some(Transfer::Pq));
     assert_eq!((hdr.width, hdr.height), (sdr.width, sdr.height));
