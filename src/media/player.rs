@@ -748,3 +748,7 @@ impl Drop for Player {
 pub(super) fn wait_for(seconds: f64) -> Duration {
     Duration::try_from_secs_f64(seconds.max(0.0)).unwrap_or(Duration::MAX)
 }
+
+#[cfg(test)]
+#[path = "tests/player_properties.rs"]
+mod properties;

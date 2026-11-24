@@ -167,3 +167,7 @@ impl Incoming {
 #[cfg(test)]
 #[path = "tests/protocol.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "tests/protocol_properties.rs"]
+mod properties;

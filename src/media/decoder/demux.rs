@@ -554,3 +554,7 @@ fn read_to_video(input: &mut Input, video: (usize, f64)) -> Landing {
 #[cfg(test)]
 #[path = "tests/demux.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "tests/demux_properties.rs"]
+mod properties;

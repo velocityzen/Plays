@@ -314,15 +314,7 @@ impl SubtitleDecoder {
                 raw.data[1].cast::<u32>(),
                 raw.nb_colors.clamp(0, 256) as usize,
             );
-            let mut pixels = Vec::with_capacity(width * height * 4);
-            for row in indices.chunks(stride).take(height) {
-                for &index in &row[..width] {
-                    // 0xAARRGGBB, which is BGRA in memory on little-endian
-                    // machines, the byte order gpui reads images in.
-                    let color = palette.get(usize::from(index)).copied().unwrap_or(0);
-                    pixels.extend_from_slice(&color.to_le_bytes());
-                }
-            }
+            let pixels = pixels(indices, stride, (width, height), palette)?;
             (pixels, width as u32, height as u32, raw.x, raw.y)
         };
         let buffer = image::RgbaImage::from_raw(width, height, pixels)?;
@@ -337,6 +329,33 @@ impl SubtitleDecoder {
             ],
         })
     }
+}
+
+/// A bitmap's `height` rows of `width` palette indices, `stride` bytes
+/// apart in `indices`, as pixels: each its color in `palette`, 0xAARRGGBB,
+/// which is BGRA in memory on little-endian machines, the byte order gpui
+/// reads images in; an index past it is clear. None if the rows aren't all
+/// there.
+fn pixels(
+    indices: &[u8],
+    stride: usize,
+    (width, height): (usize, usize),
+    palette: &[u32],
+) -> Option<Vec<u8>> {
+    let needed = stride
+        .checked_mul(height.checked_sub(1)?)?
+        .checked_add(width)?;
+    if width == 0 || stride < width || indices.len() < needed {
+        return None;
+    }
+    let mut pixels = Vec::with_capacity(width * height * 4);
+    for row in indices.chunks(stride).take(height) {
+        for &index in &row[..width] {
+            let color = palette.get(usize::from(index)).copied().unwrap_or(0);
+            pixels.extend_from_slice(&color.to_le_bytes());
+        }
+    }
+    Some(pixels)
 }
 
 /// The text of an ASS dialogue line as FFmpeg gives it:
@@ -468,3 +487,7 @@ fn build_text(chars: Vec<(char, Style)>, placement: Placement) -> Option<Text> {
 #[cfg(test)]
 #[path = "tests/subtitles.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "tests/subtitles_properties.rs"]
+mod properties;

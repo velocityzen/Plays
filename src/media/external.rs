@@ -475,17 +475,24 @@ pub fn text_encoding(path: &Path) -> Option<&'static str> {
         .take(ENCODING_SAMPLE_BYTES)
         .read_to_end(&mut bytes)
         .ok()?;
-    if encoding_rs::Encoding::for_bom(&bytes).is_some() {
+    let whole = bytes.len() < ENCODING_SAMPLE_BYTES as usize;
+    encoding(&bytes, whole)
+}
+
+/// The encoding of `bytes`, a whole file or its start, by its iconv name;
+/// none for UTF-8 and UTF-16.
+fn encoding(bytes: &[u8], whole: bool) -> Option<&'static str> {
+    if encoding_rs::Encoding::for_bom(bytes).is_some() {
         return None;
     }
-    match std::str::from_utf8(&bytes) {
+    match std::str::from_utf8(bytes) {
         Ok(_) => return None,
         // Cut off in the middle of a character by the sample's size.
-        Err(err) if err.error_len().is_none() => return None,
+        Err(err) if !whole && err.error_len().is_none() => return None,
         Err(_) => {}
     }
     let mut detector = chardetng::EncodingDetector::new();
-    detector.feed(&bytes, true);
+    detector.feed(bytes, true);
     let encoding = detector.guess(None, false);
     // WHATWG's names, which iconv knows but for these two.
     Some(if encoding == encoding_rs::X_MAC_CYRILLIC {
@@ -500,3 +507,7 @@ pub fn text_encoding(path: &Path) -> Option<&'static str> {
 #[cfg(test)]
 #[path = "tests/external.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "tests/external_properties.rs"]
+mod properties;

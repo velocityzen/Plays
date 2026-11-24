@@ -775,8 +775,8 @@ fn leniently<T: Default + Serialize + DeserializeOwned>(
 
 /// Lay `fields` over the object at `path` in `root`, into objects there
 /// too, putting back what was there wherever `T` can't read the whole with
-/// the value laid over it.
-fn lay_over<T: DeserializeOwned>(
+/// the value laid over it (`reads_whole`).
+fn lay_over<T: Serialize + DeserializeOwned>(
     root: &mut Value,
     path: &mut Vec<String>,
     fields: Map<String, Value>,
@@ -795,7 +795,7 @@ fn lay_over<T: DeserializeOwned>(
             }
             value => {
                 let before = here.insert(key.clone(), value);
-                if serde_json::from_value::<T>(root.clone()).is_ok() {
+                if reads_whole::<T>(root) {
                     continue;
                 }
                 if let Some(here) = object_at(root, path) {
@@ -814,6 +814,15 @@ fn lay_over<T: DeserializeOwned>(
     }
 }
 
+/// Whether `T` reads `value`, and reads again what it writes of it: a
+/// number too big for its setting reads as infinity, which JSON can't hold.
+fn reads_whole<T: Serialize + DeserializeOwned>(value: &Value) -> bool {
+    serde_json::from_value::<T>(value.clone())
+        .ok()
+        .and_then(|read| serde_json::to_value(read).ok())
+        .is_some_and(|written| serde_json::from_value::<T>(written).is_ok())
+}
+
 fn object_at<'a>(root: &'a mut Value, path: &[String]) -> Option<&'a mut Map<String, Value>> {
     path.iter()
         .try_fold(root, |value, key| value.get_mut(key))?
@@ -823,3 +832,7 @@ fn object_at<'a>(root: &'a mut Value, path: &[String]) -> Option<&'a mut Map<Str
 #[cfg(test)]
 #[path = "tests/settings.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "tests/settings_properties.rs"]
+mod properties;

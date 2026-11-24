@@ -4,6 +4,16 @@ fn naming(middle: &str) -> Naming {
     Naming::parse(middle)
 }
 
+/// A whole file ending partway through a character isn't UTF-8; the
+/// start of a longer one cut there by the sample may be.
+#[test]
+fn a_file_ending_partway_through_a_character_is_named_an_encoding() {
+    let cafe = "Caf\u{e9}".as_bytes();
+    let cut = &cafe[..cafe.len() - 1];
+    assert_ne!(encoding(cut, true), None);
+    assert_eq!(encoding(cut, false), None);
+}
+
 #[test]
 fn reads_names() {
     assert_eq!(naming(""), Naming::default());
@@ -161,4 +171,15 @@ fn tells_text_encodings() {
     let bitmap = dir.join("disc.sup");
     fs::write(&bitmap, [0xff, 0xfe, 0x80]).unwrap();
     assert_eq!(text_encoding(&bitmap), None);
+
+    // A file ending partway through a character isn't UTF-8; one longer
+    // than what's read of it, cut there, is.
+    let text = "1\n00:00:01,000 --> 00:00:02,000\nCaf\u{e9}\n".as_bytes();
+    let cut = dir.join("cut.srt");
+    fs::write(&cut, &text[..text.len() - 2]).unwrap();
+    assert_ne!(text_encoding(&cut), None);
+    let long = dir.join("long.srt");
+    let sample = usize::try_from(ENCODING_SAMPLE_BYTES).unwrap();
+    fs::write(&long, format!("a{}", "\u{e9}".repeat(sample))).unwrap();
+    assert_eq!(text_encoding(&long), None);
 }

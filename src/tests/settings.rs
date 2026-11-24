@@ -120,6 +120,15 @@ fn volumes_in_the_file_are_read_as_full_at_most() {
     );
 }
 
+/// A number too big for its setting is left out: read as infinity, it
+/// would be saved as nothing, and the file set aside the next time.
+#[test]
+fn a_number_too_big_for_its_setting_is_left_as_it_starts_out() {
+    let imported = Settings::import(r#"{ "hdr_gamma": 1e300, "master_volume": 0.5 }"#).unwrap();
+    assert_eq!(imported.hdr_gamma, Settings::default().hdr_gamma);
+    assert_eq!(imported.master_volume, 0.5);
+}
+
 /// A setting this Plays can't take, as from a later one, leaves just that
 /// one as it starts out, as loading does.
 #[test]

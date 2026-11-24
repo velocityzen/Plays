@@ -11,6 +11,8 @@ mod media;
 mod progress;
 mod recents;
 mod settings;
+#[cfg(test)]
+mod testing;
 mod ui;
 
 use std::ffi::OsString;

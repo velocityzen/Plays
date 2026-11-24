@@ -599,3 +599,7 @@ pub fn seconds(typed: &str) -> Option<f64> {
 #[cfg(test)]
 #[path = "tests/asking.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "tests/asking_properties.rs"]
+mod properties;
