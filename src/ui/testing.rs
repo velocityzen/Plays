@@ -16,6 +16,7 @@ use gpui::{
 };
 
 use crate::app;
+use crate::ui::settings::SettingsView;
 use crate::ui::theme::layout::WINDOW_SIZE;
 use crate::ui::workspace::Workspace;
 
@@ -42,6 +43,21 @@ pub fn start(cx: &mut TestAppContext) -> (WindowHandle<Workspace>, VisualTestCon
     visual.update(|window, _| window.activate_window());
     visual.run_until_parked();
     (window, visual)
+}
+
+/// Open the Settings window and bring it to the front.
+pub fn open_settings(cx: &mut VisualTestContext) -> VisualTestContext {
+    cx.update(|_, cx| SettingsView::open_window(cx));
+    cx.run_until_parked();
+    let handle = cx
+        .windows()
+        .into_iter()
+        .find_map(|window| window.downcast::<SettingsView>())
+        .expect("a Settings window");
+    let mut settings = VisualTestContext::from_window(handle.into(), cx);
+    settings.update(|window, _| window.activate_window());
+    settings.run_until_parked();
+    settings
 }
 
 /// Run what's ready until `done`, giving decoding threads real time, for

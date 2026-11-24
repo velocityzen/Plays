@@ -18,8 +18,7 @@ use crate::app::{AudioEngine, Bluetooth, Devices, Local, Paired, Route};
 use crate::media::AudioOutput;
 use crate::media::output::{DeviceEvent, DeviceInfo, OpenError, Playing};
 use crate::settings::{AudioDevice, Settings};
-use crate::ui::settings::SettingsView;
-use crate::ui::testing::{self, click};
+use crate::ui::testing::{self, click, open_settings};
 
 const HERE: &str = "This computer";
 /// Paired, and connected from the start.
@@ -146,21 +145,6 @@ fn device((address, name): (&str, &str)) -> AudioDevice {
         id: output_id(address),
         name: name.into(),
     }
-}
-
-/// Open the Settings window and bring it to the front.
-fn open_settings(cx: &mut VisualTestContext) -> VisualTestContext {
-    cx.update(|_, cx| SettingsView::open_window(cx));
-    cx.run_until_parked();
-    let handle = cx
-        .windows()
-        .into_iter()
-        .find_map(|window| window.downcast::<SettingsView>())
-        .expect("a Settings window");
-    let mut settings = VisualTestContext::from_window(handle.into(), cx);
-    settings.update(|window, _| window.activate_window());
-    settings.run_until_parked();
-    settings
 }
 
 #[gpui::test]

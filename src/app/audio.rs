@@ -586,12 +586,12 @@ impl AudioEngine {
         cx.refresh_windows();
     }
 
-    /// Output device `device` wanted its PIN, and the sheet asking for it
-    /// closed without pairing: what picked it no longer does, rather than
-    /// wait for it, silent. The app's output goes back to the system's
-    /// default, and a window's to the app's output.
-    pub fn not_paired(device: &AudioDevice, cx: &mut App) {
-        let picked = |pick: Option<&AudioDevice>| pick.is_some_and(|pick| pick.id == device.id);
+    /// What picked output `id` no longer does, rather than wait for it,
+    /// silent, as when it wanted its PIN and the sheet asking for it closed
+    /// without pairing, or it was forgotten: the app's output goes back to
+    /// the system's default, and a window's to the app's output.
+    pub fn unpick(id: &str, cx: &mut App) {
+        let picked = |pick: Option<&AudioDevice>| pick.is_some_and(|pick| pick.id == id);
         if picked(cx.global::<Settings>().audio_output.device.as_ref()) {
             Settings::update(cx, true, |settings| settings.audio_output.device = None);
         }

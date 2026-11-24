@@ -1,6 +1,6 @@
 //! Casting a block to the AirPlay crate's fake TV, as someone at the screen
-//! would: pairing with the PIN it shows, then driving it. The stream
-//! server is the real one, serving this computer only.
+//! would: pairing with the PIN it shows, then driving it, and forgetting
+//! it. The stream server is the real one, serving this computer only.
 
 use std::sync::Arc;
 
@@ -12,6 +12,7 @@ use serde_json::json;
 
 use super::casting::{block, get, wait};
 use super::open;
+use super::sound_to_airplay::forget_tv;
 use crate::api::{self, Invocation};
 use crate::cast::airplay::{AirPlayTarget, KIND};
 use crate::cast::{AppPairings, Casting, Pairings};
@@ -57,8 +58,12 @@ fn pairings(cx: &mut VisualTestContext) -> Arc<Pairings> {
 
 /// Pair with `tv` as if that had been done before.
 fn paired_before(cx: &mut VisualTestContext, tv: &FakeReceiver) {
-    let device = tv.device();
-    let credentials = PinPairing::start(&device)
+    paired_before_as(cx, tv, &tv.device());
+}
+
+/// Pair with `tv`, found as `device`, as if that had been done before.
+fn paired_before_as(cx: &mut VisualTestContext, tv: &FakeReceiver, device: &airplay::Device) {
+    let credentials = PinPairing::start(device)
         .and_then(|pairing| pairing.finish(PIN))
         .expect("paired with the fake");
     pairings(cx).keep(&device.id, &device.name, &credentials);
@@ -470,4 +475,61 @@ fn a_tv_that_forgot_this_computer_asks_for_its_pin_again(cx: &mut TestAppContext
         Some(&credentials),
         "replaced once paired again"
     );
+}
+
+/// Cast block `at` to `device` (`cast.to`), as its menu does.
+fn cast_block(
+    window: WindowHandle<Workspace>,
+    at: usize,
+    device: &airplay::Device,
+    cx: &mut VisualTestContext,
+) {
+    let name = window
+        .read_with(cx, |workspace, cx| {
+            workspace.blocks[at].view.read(cx).id().to_string()
+        })
+        .unwrap();
+    let args = json!({"device": device.id, "kind": KIND});
+    let invocation = Invocation::new("cast.to").with_args(args).on_block(name);
+    TestAppContext::update(cx, |cx| api::run(invocation, cx)).expect("cast.to");
+}
+
+#[gpui::test]
+fn a_tv_forgotten_is_cast_to_no_longer(cx: &mut TestAppContext) {
+    // Two TVs; the other one in the den.
+    let (tv, den) = (tv(), tv());
+    let mut den_tv = den.device();
+    den_tv.id = "02:00:00:00:00:05".into();
+    den_tv.name = "Den TV".into();
+    let (window, mut cx) = testing::start(cx);
+    let found = vec![tv.device(), den_tv.clone()];
+    let target = AirPlayTarget::with(found, pairings(&mut cx));
+    cx.update(|_, cx| cx.set_global(Casting::local(vec![Arc::new(target)])));
+    open(window, &mut cx, &["clip.mp4", "clip-subs.mkv"], true);
+    paired_before(&mut cx, &tv);
+    paired_before_as(&mut cx, &den, &den_tv);
+    cast_block(window, 0, &tv.device(), &mut cx);
+    cast_block(window, 1, &den_tv, &mut cx);
+    wait(&mut cx, "both to be told to play", |_| {
+        !plays(&tv).is_empty() && !plays(&den).is_empty()
+    });
+
+    forget_tv(&mut cx);
+    let casting = |at: usize, cx: &mut VisualTestContext| {
+        window
+            .read_with(cx, |workspace, cx| {
+                let view = workspace.blocks[at].view.read(cx);
+                view.casting().map(|device| device.id.clone())
+            })
+            .unwrap()
+    };
+    assert_eq!(casting(0, &mut cx), None, "it plays here again");
+    assert_eq!(casting(1, &mut cx), Some(den_tv.id), "the other plays on");
+    wait(&mut cx, "the TV to be stopped", |_| {
+        !tv.state().requests("POST", "/stop").is_empty()
+    });
+    assert!(den.state().requests("POST", "/stop").is_empty());
+    let kept = pairings(&mut cx).paired();
+    assert_eq!(kept.len(), 1);
+    assert_eq!(kept[0].1, "Den TV");
 }

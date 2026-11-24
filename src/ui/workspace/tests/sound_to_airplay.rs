@@ -1,7 +1,7 @@
 //! Playing the sound through the AirPlay crate's fake speakers, picked as
 //! someone at the screen would, as the app's output or a window's: found
 //! on the network beside this computer's own, played through, gone and
-//! back, and paired with the PIN a TV shows when it wants one.
+//! back, paired with the PIN a TV shows when it wants one, and forgotten.
 
 use std::sync::Arc;
 
@@ -17,7 +17,7 @@ use crate::cast::AppPairings;
 use crate::media::AudioOutput;
 use crate::media::output::{OpenError, Playing};
 use crate::settings::{AudioDevice, Settings};
-use crate::ui::testing::{self, click, press, shows};
+use crate::ui::testing::{self, click, open_settings, press, shows};
 use crate::ui::workspace::Workspace;
 
 const PIN: &str = "4321";
@@ -319,4 +319,52 @@ fn a_tv_asks_for_its_pin_once_and_cancelled_isnt_asked_again(cx: &mut TestAppCon
     );
     assert!(tv.state().packets.is_empty());
     assert!(cx.update(|_, cx| cx.global::<AppPairings>().0.paired().is_empty()));
+}
+
+/// Forget the TV in Settings → Casting.
+pub(super) fn forget_tv(cx: &mut VisualTestContext) {
+    let mut settings = open_settings(cx);
+    click(&mut settings, "pane-Casting");
+    click(&mut settings, "forget-Fake TV");
+    assert!(!shows(&mut settings, "forget-Fake TV"), "it goes");
+}
+
+#[gpui::test]
+fn a_tv_forgotten_plays_the_apps_sound_no_longer(cx: &mut TestAppContext) {
+    let tv = FakeReceiver::start(Kind::Tv { pin: PIN });
+    let (window, mut cx, _) = start(cx, &[&tv], false);
+    let device = output(&mut cx, &tv);
+    cx.dispatch_action(output::set_device(Some(&device)));
+    pair(window, &mut cx, &tv);
+    wait(&mut cx, "it to play once paired", |cx| {
+        plays_through(cx, "Fake TV") && heard(&tv)
+    });
+
+    forget_tv(&mut cx);
+    wait(&mut cx, "the sound to come back here", |cx| {
+        plays_through(cx, HERE)
+    });
+    let picked = cx.update(|_, cx| cx.global::<Settings>().audio_output.device.clone());
+    assert_eq!(picked, None, "the system's default is picked again");
+    assert!(tv.wait_for(|state| state.closed > 0), "it's let go of");
+    assert!(!shows(&mut cx, "pairing"), "not asked for its PIN again");
+}
+
+#[gpui::test]
+fn a_tv_forgotten_plays_a_windows_sound_no_longer(cx: &mut TestAppContext) {
+    let tv = FakeReceiver::start(Kind::Tv { pin: PIN });
+    let (window, mut cx, _) = start(cx, &[&tv], true);
+    let device = output(&mut cx, &tv);
+    cx.dispatch_action(output::set_window_device(Some(&device)));
+    pair(window, &mut cx, &tv);
+    wait(&mut cx, "the window to play through it once paired", |_| {
+        heard(&tv)
+    });
+
+    forget_tv(&mut cx);
+    wait(&mut cx, "the window to play through the app's", |cx| {
+        window_sound(window, cx).is_none()
+    });
+    assert!(tv.wait_for(|state| state.closed > 0), "it's let go of");
+    assert!(plays_through(&mut cx, HERE));
 }

@@ -88,7 +88,7 @@ impl Workspace {
                 // Not paired with: the sound doesn't wait for it, silent.
                 // Once this window is done updating, as it may be one.
                 (PairingEvent::Dismiss, Then::Play(device)) => {
-                    cx.defer(move |cx| AudioEngine::not_paired(&device, cx));
+                    cx.defer(move |cx| AudioEngine::unpick(&device.id, cx));
                 }
                 (PairingEvent::Dismiss, Then::Cast { .. }) => {}
             }

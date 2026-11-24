@@ -9,7 +9,7 @@ use gpui::{AnyElement, Context, SharedString, Window, div};
 
 use super::form::{group, row, set};
 use super::{Pane, SettingsView};
-use crate::app::{AudioEngine, airplay_id};
+use crate::app::{AudioEngine, airplay_id, forget_receiver};
 use crate::cast::{AppPairings, Casting, Device, Looking, Shows, airplay};
 use crate::media::output::DeviceInfo;
 use crate::settings::{Settings, fields};
@@ -122,7 +122,7 @@ impl Pane for CastingPane {
 }
 
 /// The AirPlay TVs paired with, each of which can be forgotten, to ask for
-/// its PIN again.
+/// its PIN again and be played through no longer (`forget_receiver`).
 fn paired(theme: &Theme, cx: &mut Context<SettingsView>) -> Vec<AnyElement> {
     let Some(pairings) = cx
         .try_global::<AppPairings>()
@@ -135,7 +135,6 @@ fn paired(theme: &Theme, cx: &mut Context<SettingsView>) -> Vec<AnyElement> {
         .into_iter()
         .map(|(id, name)| {
             let selector = format!("forget-{name}");
-            let pairings = Arc::clone(&pairings);
             row(
                 name,
                 Some("AirPlay: asks for its PIN again once forgotten".into()),
@@ -143,7 +142,7 @@ fn paired(theme: &Theme, cx: &mut Context<SettingsView>) -> Vec<AnyElement> {
                 div().debug_selector(move || selector).child(
                     Button::new(SharedString::from(format!("forget-{id}")), "Forget").on_click(
                         cx.listener(move |_, _, _, cx| {
-                            pairings.forget(&id);
+                            forget_receiver(&id, cx);
                             cx.notify();
                         }),
                     ),

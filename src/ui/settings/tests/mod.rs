@@ -12,7 +12,6 @@ use airplay::fake::{FakeReceiver, Kind};
 use gpui::{Bounds, Pixels, TestAppContext, VisualTestContext, point, px, size};
 use parking_lot::Mutex;
 
-use super::SettingsView;
 use crate::api::commands::output;
 use crate::app::AudioEngine;
 use crate::cast::fake::{FakeTarget, KIND};
@@ -22,26 +21,11 @@ use crate::files::Folder;
 use crate::media::output::DeviceInfo;
 use crate::settings::{AudioDevice, MusicMode, PanelLook, Settings, Visualizer};
 use crate::ui::about::AboutView;
-use crate::ui::testing::{self, click, press, shows, wait_until};
+use crate::ui::testing::{self, click, open_settings, press, shows, wait_until};
 use crate::ui::theme::layout::SETTINGS_WINDOW_SIZE;
 use crate::ui::workspace::forget_settings_place;
 
 mod commands;
-
-/// Open the Settings window and bring it to the front.
-fn open_settings(cx: &mut VisualTestContext) -> VisualTestContext {
-    cx.update(|_, cx| SettingsView::open_window(cx));
-    cx.run_until_parked();
-    let handle = cx
-        .windows()
-        .into_iter()
-        .find_map(|window| window.downcast::<SettingsView>())
-        .expect("a Settings window");
-    let mut settings = VisualTestContext::from_window(handle.into(), cx);
-    settings.update(|window, _| window.activate_window());
-    settings.run_until_parked();
-    settings
-}
 
 /// Open the About window and bring it to the front.
 fn open_about(cx: &mut VisualTestContext) -> VisualTestContext {

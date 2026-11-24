@@ -4,7 +4,7 @@
 //! the pictures stay here, in step. Apple TVs are listed too, for their
 //! sound. One that wants it is paired with the PIN it shows, the first
 //! time, as a TV cast to is: what that leaves is kept in the same
-//! `Pairings`.
+//! `Pairings`, until Settings forget it.
 
 use std::sync::Arc;
 use std::thread;
@@ -12,13 +12,16 @@ use std::thread;
 use airplay::{AudioStream, Browser, Found};
 use futures::StreamExt as _;
 use futures::channel::mpsc::UnboundedReceiver;
+use gpui::App;
 use parking_lot::Mutex;
 
-use crate::cast::Pairings;
-use crate::cast::airplay::{AirPlayPairing, turned_away};
+use super::AudioEngine;
+use crate::cast::airplay::{AirPlayPairing, KIND, turned_away};
 use crate::cast::target::{Error, Pairing};
+use crate::cast::{AppPairings, Pairings};
 use crate::media::AudioOutput;
 use crate::media::output::{DeviceEvent, DeviceInfo, OpenError, Playing};
+use crate::ui::workspace::all;
 
 /// What a speaker's id starts with among the outputs, after which comes
 /// its id among AirPlay receivers.
@@ -34,7 +37,25 @@ pub fn airplay_id(id: &str) -> Option<&str> {
 /// none for this computer's own outputs. A device found by another
 /// protocol too, as a speaker with DLNA, is told apart by it.
 pub fn output_kind(id: &str) -> Option<&'static str> {
-    airplay_id(id).map(|_| crate::cast::airplay::KIND)
+    airplay_id(id).map(|_| KIND)
+}
+
+/// Forget AirPlay receiver `id`, which then asks for its PIN again, and
+/// play through it no longer: what picked it as an output no longer does
+/// (`AudioEngine::unpick`), and a block cast to it plays here again.
+pub fn forget_receiver(id: &str, cx: &mut App) {
+    if let Some(pairings) = cx.try_global::<AppPairings>() {
+        pairings.0.forget(id);
+    }
+    AudioEngine::unpick(&format!("{PREFIX}{id}"), cx);
+    for view in all::views(cx) {
+        view.update(cx, |view, cx| {
+            let cast = view.casting();
+            if cast.is_some_and(|device| device.kind == KIND && device.id == id) {
+                view.cast_to(None, cx);
+            }
+        });
+    }
 }
 
 pub struct Speakers {
