@@ -108,9 +108,9 @@ pub fn svg(kind: Kind, label: Option<&str>, family: &str) -> Result<String> {
     // Over the label, or bigger without one, as at the sizes it'd be too
     // small to read at.
     let (center, most) = if label.is_some() {
-        (110.0, (120.0, 90.0))
+        (110.0, (90.0, 67.5))
     } else {
-        (132.0, (136.0, 112.0))
+        (132.0, (102.0, 84.0))
     };
     svg.push_str(&glyph(kind, center, most)?);
     if let Some(label) = label {
