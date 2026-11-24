@@ -17,6 +17,24 @@ fn receiver(answer: impl FnOnce(&mut TcpStream) + Send + 'static) -> SocketAddr 
 }
 
 #[test]
+fn a_receiver_that_stops_reading_holds_a_request_no_longer_than_an_answer() {
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let address = listener.local_addr().unwrap();
+    std::thread::spawn(move || {
+        // Takes the connection, and reads none of it.
+        let (_stream, _) = listener.accept().unwrap();
+        std::thread::sleep(REPLY_TIMEOUT * 5);
+    });
+    let mut connection = Connection::open(&[address]).unwrap();
+    // More than the connection's buffers take.
+    let request = Request::rtsp("SET_PARAMETER", "*").body("text/plain", vec![b'x'; 64 << 20]);
+    let asked = Instant::now();
+    assert!(connection.send(request).is_err());
+    let took = asked.elapsed();
+    assert!(took < REPLY_TIMEOUT * 3, "it took {took:?}");
+}
+
+#[test]
 fn an_answer_longer_than_any_may_be_is_an_error() {
     let address = receiver(|stream| {
         let _ = stream.write_all(

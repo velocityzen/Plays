@@ -31,6 +31,10 @@ use crate::{Error, segments};
 const SEGMENT: f64 = 6.0;
 /// How long a request waits for subtitles to be read.
 const SUBTITLES_WAIT: Duration = Duration::from_secs(60);
+/// The most MPEG-TS streams of a cast made at once. Each is encoded apart,
+/// and a TV may ask over a few connections at once: past this, the oldest
+/// still made is stopped, so they don't take every hardware encoder.
+const MOST_STREAMS: usize = 2;
 /// The DLNA flags for media: streamed, in the background, and allowed to
 /// stall, by DLNA 1.5.
 const DLNA_FLAGS: &str = "01700000000000000000000000000000";
@@ -198,6 +202,7 @@ impl Server {
             variant,
             hls_subtitles: request.profile.hls_subtitles,
             stop,
+            streams: Mutex::default(),
             subtitles: Mutex::default(),
         });
         state.set_subtitles(request.subtitles);
@@ -362,6 +367,8 @@ struct CastState {
     /// Whether the HLS playlist lists the subtitles.
     hls_subtitles: bool,
     stop: Arc<AtomicBool>,
+    /// What stops each MPEG-TS stream made, oldest first.
+    streams: Mutex<Vec<Arc<AtomicBool>>>,
     subtitles: Mutex<Option<Arc<Subtitles>>>,
 }
 
@@ -398,6 +405,9 @@ impl Subtitles {
 impl CastState {
     fn close(&self) {
         self.stop.store(true, Ordering::Relaxed);
+        for stream in lock(&self.streams).iter() {
+            stream.store(true, Ordering::Relaxed);
+        }
         match &self.output {
             Output::Vod(vod) => vod.close(),
             Output::Live(live) => live.close(),
@@ -592,6 +602,19 @@ impl CastState {
         }
     }
 
+    /// What stops a stream about to be made: the cast closing, or
+    /// `MOST_STREAMS` newer ones. A stream that's ended has let go of it.
+    fn new_stream(&self) -> Arc<AtomicBool> {
+        let stop = Arc::new(AtomicBool::new(self.stop.load(Ordering::Relaxed)));
+        let mut streams = lock(&self.streams);
+        streams.retain(|stream| Arc::strong_count(stream) > 1);
+        if streams.len() >= MOST_STREAMS {
+            streams.remove(0).store(true, Ordering::Relaxed);
+        }
+        streams.push(Arc::clone(&stop));
+        stop
+    }
+
     fn respond_stream(&self, request: &Request) -> Response {
         let duration = self.media.info.duration;
         let seek = request
@@ -612,7 +635,7 @@ impl CastState {
             Body::Stream(job::stream(
                 Arc::clone(&self.media),
                 self.media.info.start + start,
-                Arc::clone(&self.stop),
+                self.new_stream(),
             ))
         };
         let mut response = Response::new(200, body).with("Content-Type", self.mime());

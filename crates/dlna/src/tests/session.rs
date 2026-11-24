@@ -47,7 +47,7 @@ fn the_events_listener_stops_without_being_woken() {
     let (stopped, stops) = mpsc::channel();
     let closed = Arc::clone(&closing);
     thread::spawn(move || {
-        listen(&inner, &listener, &closed);
+        listen(&inner, &listener, &[], &closed);
         let _ = stopped.send(());
     });
     thread::sleep(Duration::from_millis(50));

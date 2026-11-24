@@ -6,7 +6,7 @@
 //! a channel.
 
 use std::io;
-use std::net::TcpListener;
+use std::net::{IpAddr, SocketAddr, TcpListener};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -544,8 +544,10 @@ impl Inner {
     }
 }
 
-/// Take the renderer's events until `closing`.
-fn listen(inner: &Inner, listener: &TcpListener, closing: &AtomicBool) {
+/// Take the renderer's events, from its `addresses` alone, until
+/// `closing`. What comes from elsewhere is left unread: its state is
+/// still asked for then, as no event of its own has come.
+fn listen(inner: &Inner, listener: &TcpListener, addresses: &[IpAddr], closing: &AtomicBool) {
     let base = Url::parse(&inner.callback)
         .map(|url| url.path)
         .unwrap_or_default();
@@ -560,7 +562,11 @@ fn listen(inner: &Inner, listener: &TcpListener, closing: &AtomicBool) {
     }
     while !closing.load(Ordering::Relaxed) {
         let stream = match listener.accept() {
-            Ok((stream, _)) => stream,
+            Ok((stream, peer)) if addresses.contains(&peer.ip()) => stream,
+            Ok((_, peer)) => {
+                log::debug!("dlna: an event from {peer}, not the renderer");
+                continue;
+            }
             Err(err) => {
                 if !matches!(
                     err.kind(),
@@ -648,11 +654,10 @@ impl Session {
         let control = Url::parse(&device.av_transport.control).ok_or_else(|| {
             Error::protocol(format!("a control URL {:?}", device.av_transport.control))
         })?;
-        let remote = control
-            .addresses()?
+        let addresses: Vec<IpAddr> = control.addresses()?.iter().map(SocketAddr::ip).collect();
+        let remote = *addresses
             .first()
-            .ok_or_else(|| Error::protocol(format!("no address for {}", control.host)))?
-            .ip();
+            .ok_or_else(|| Error::protocol(format!("no address for {}", control.host)))?;
         // Events come to the address the renderer is reached from.
         let listener = TcpListener::bind((http::local_address_towards(remote)?, 0))?;
         let listening = listener.local_addr()?;
@@ -670,7 +675,7 @@ impl Session {
         let closed = Arc::clone(&closing);
         let listener = thread::Builder::new()
             .name("dlna events".into())
-            .spawn(move || listen(&listened, &listener, &closed))?;
+            .spawn(move || listen(&listened, &listener, &addresses, &closed))?;
         let services = [
             (Evented::AvTransport, Some(&device.av_transport)),
             (Evented::RenderingControl, device.rendering_control.as_ref()),

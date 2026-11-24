@@ -451,7 +451,8 @@ Chromecast crate.
 - `device.rs`, `xml.rs`: device descriptions, read into capabilities
 - `http.rs`, `soap.rs`: just enough HTTP/1.1, and SOAP actions
 - `media.rs`: DIDL-Lite, subtitles as Samsung's `sec:CaptionInfoEx` too
-- `session.rs`: AVTransport, RenderingControl; GENA events, else polling
+- `session.rs`: AVTransport, RenderingControl; GENA events from the renderer
+  alone, else polling
 - `fake.rs` (feature `fake`): a pretend renderer
 - `cargo run -p dlna --example dlna -- list` lists renderers
 

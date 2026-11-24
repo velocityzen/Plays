@@ -1,3 +1,5 @@
+use futures::channel::mpsc::{self, UnboundedSender};
+
 use super::*;
 
 #[test]
@@ -24,6 +26,62 @@ fn media_starts_at_its_url_from_where_it_is_to_start() {
         starting_at(&queried, 1.0).url,
         "http://plays/1/sound.aac?token=1&start=1.000"
     );
+}
+
+/// What `learn` knows, as renderers are found over the channel it's
+/// handed.
+fn learning() -> (UnboundedSender<Found>, Arc<Mutex<Known>>) {
+    let (found, finding) = mpsc::unbounded();
+    let known = Arc::new(Mutex::new(Known::default()));
+    let learned = Arc::clone(&known);
+    thread::spawn(move || futures::executor::block_on(learn(finding, &learned)));
+    (found, known)
+}
+
+fn learned(known: &Mutex<Known>, id: &str, within: std::time::Duration) -> bool {
+    let deadline = Instant::now() + within;
+    while Instant::now() < deadline {
+        if known.lock().plays.contains_key(id) {
+            return true;
+        }
+        thread::sleep(std::time::Duration::from_millis(10));
+    }
+    false
+}
+
+#[test]
+fn a_renderer_slow_to_say_what_it_plays_holds_up_no_other() {
+    use dlna::fake::{FakeRenderer, Kind as Renderer};
+    let slow = FakeRenderer::start(Renderer::Tv);
+    slow.state().answer_after = std::time::Duration::from_secs(5);
+    let quick = FakeRenderer::start(Renderer::Speaker);
+    let (found, known) = learning();
+    found.unbounded_send(Found::Added(slow.device())).unwrap();
+    found.unbounded_send(Found::Added(quick.device())).unwrap();
+    let within = std::time::Duration::from_secs(3);
+    assert!(
+        learned(&known, &quick.device().id, within),
+        "the quick one waited"
+    );
+    assert!(!known.lock().plays.contains_key(&slow.device().id));
+    assert!(
+        learned(&known, &slow.device().id, within),
+        "the slow one in time"
+    );
+}
+
+#[test]
+fn a_renderer_gone_while_asked_is_forgotten_once_it_answers() {
+    use dlna::fake::{FakeRenderer, Kind as Renderer};
+    let tv = FakeRenderer::start(Renderer::Tv);
+    tv.state().answer_after = std::time::Duration::from_millis(300);
+    let (found, known) = learning();
+    found.unbounded_send(Found::Added(tv.device())).unwrap();
+    found.unbounded_send(Found::Removed(tv.device())).unwrap();
+    assert!(tv.wait_for(|state| !state.received("GetProtocolInfo").is_empty()));
+    let answered = std::time::Duration::from_secs(1);
+    assert!(!learned(&known, &tv.device().id, answered));
+    assert!(known.lock().asking.is_empty());
 }
 
 fn listed(name: &str) -> Option<Vec<Capability>> {

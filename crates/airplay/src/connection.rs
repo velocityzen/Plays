@@ -172,6 +172,9 @@ impl Connection {
     pub fn open(addresses: &[SocketAddr]) -> Result<Self> {
         let (stream, remote) = network::connect_first(addresses, CONNECT_TIMEOUT)?;
         stream.set_nodelay(true)?;
+        // A receiver that stops reading holds a request no longer than one
+        // that doesn't answer.
+        stream.set_write_timeout(Some(REPLY_TIMEOUT))?;
         Ok(Self {
             local: stream.local_addr()?.ip(),
             link: Some(Link::plain(stream)),

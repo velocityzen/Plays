@@ -20,7 +20,7 @@ use crate::ssdp::{self, Advert, MEDIA_RENDERER};
 use crate::xml::{Element, escape};
 
 const AV_TRANSPORT: &str = "urn:schemas-upnp-org:service:AVTransport:1";
-const RENDERING_CONTROL: &str = "urn:schemas-upnp-org:service:RenderingControl:1";
+pub(crate) const RENDERING_CONTROL: &str = "urn:schemas-upnp-org:service:RenderingControl:1";
 const CONNECTION_MANAGER: &str = "urn:schemas-upnp-org:service:ConnectionManager:1";
 /// What it says it plays something else when told to.
 pub const SOMETHING_ELSE: &str = "http://192.0.2.99/something-else.mp4";
@@ -117,7 +117,8 @@ impl State {
             .collect()
     }
 
-    fn last_change(&self, service: &str) -> String {
+    /// The body of an event telling `service`'s state.
+    pub(crate) fn last_change(&self, service: &str) -> String {
         let instance = if service == AV_TRANSPORT {
             format!(
                 "<TransportState val=\"{}\"/><AVTransportURI val=\"{}\"/>\

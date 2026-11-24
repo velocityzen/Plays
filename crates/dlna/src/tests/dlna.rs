@@ -2,12 +2,15 @@
 //! loading with subtitles, driving it, what it does told by events and by
 //! asking, and every way a session ends.
 
+use std::io::{Read, Write};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
 use std::thread;
 use std::time::{Duration, Instant};
 
 use futures_channel::mpsc::UnboundedReceiver;
 
-use crate::fake::{FakeRenderer, Kind as Renderer, SOMETHING_ELSE};
+use crate::fake::{FakeRenderer, Kind as Renderer, RENDERING_CONTROL, SOMETHING_ELSE};
+use crate::http::Url;
 use crate::xml::Element;
 use crate::*;
 
@@ -317,6 +320,83 @@ fn events_tell_what_it_does() {
     assert!(fake.state().received("GetTransportInfo").is_empty());
     assert!(fake.state().received("GetVolume").is_empty());
     assert_eq!(session.status().state, TransportState::Stopped);
+}
+
+/// This computer's address on its network: as far as the events listener
+/// can tell, someone else on it.
+fn elsewhere_on_the_network() -> IpAddr {
+    if_addrs::get_if_addrs()
+        .unwrap()
+        .into_iter()
+        .find(|interface| !interface.is_loopback() && interface.ip().is_ipv4())
+        .expect("this computer is on a network")
+        .ip()
+}
+
+/// Send the event `body` to `callback`, as subscription `sid`, from `from`.
+fn notify_from(from: IpAddr, callback: &str, sid: &str, body: &str) {
+    let url = Url::parse(callback).unwrap();
+    let to = url.addresses().unwrap()[0];
+    let socket = socket2::Socket::new(
+        socket2::Domain::for_address(to),
+        socket2::Type::STREAM,
+        None,
+    )
+    .unwrap();
+    socket.bind(&SocketAddr::new(from, 0).into()).unwrap();
+    socket
+        .connect_timeout(&to.into(), Duration::from_secs(2))
+        .unwrap();
+    let mut stream = TcpStream::from(socket);
+    let _ = write!(
+        stream,
+        "NOTIFY {} HTTP/1.1\r\nHost: {}\r\nContent-Type: text/xml\r\n\
+         NT: upnp:event\r\nNTS: upnp:propchange\r\nSID: {sid}\r\nSEQ: 1\r\n\
+         Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        url.path,
+        url.authority(),
+        body.len()
+    );
+    let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
+    let _ = stream.read_to_end(&mut Vec::new());
+}
+
+/// Events come from the renderer alone: one from elsewhere on the network,
+/// as anyone there could send, isn't heard.
+#[test]
+fn an_event_from_elsewhere_is_not_heard() {
+    let fake = FakeRenderer::start(Renderer::Tv);
+    fake.state().silent = true;
+    let (_session, mut events) = Session::connect(&fake.device()).unwrap();
+    let quiet = Volume {
+        level: 0.2,
+        muted: false,
+    };
+    assert!(volume(&mut events, quiet), "asked");
+    let (callback, sid, loud) = {
+        let mut state = fake.state();
+        let subscriber = state
+            .subscribers
+            .iter()
+            .find(|subscriber| subscriber.service == RENDERING_CONTROL)
+            .cloned()
+            .unwrap();
+        state.volume = 90;
+        let loud = state.last_change(RENDERING_CONTROL);
+        state.volume = 20;
+        (subscriber.callback, subscriber.sid, loud)
+    };
+    let heard = Volume {
+        level: 0.9,
+        muted: false,
+    };
+
+    let elsewhere = elsewhere_on_the_network();
+    notify_from(elsewhere, &callback, &sid, &loud);
+    assert!(!volume(&mut events, heard), "heard from {elsewhere}");
+    // The same from the renderer's address is heard.
+    notify_from(IpAddr::V4(Ipv4Addr::LOCALHOST), &callback, &sid, &loud);
+    assert!(volume(&mut events, heard));
 }
 
 #[test]

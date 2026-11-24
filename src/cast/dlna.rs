@@ -95,8 +95,13 @@ const MIMES: &[(Container, &[&str])] = &[
 ];
 
 /// What each renderer found plays, by its UDN: `None` where it doesn't
-/// say.
-type Known = HashMap<String, Option<Vec<Capability>>>;
+/// say. And which asking of each counts, the last, while it's asked.
+#[derive(Default)]
+struct Known {
+    plays: HashMap<String, Option<Vec<Capability>>>,
+    asking: HashMap<String, u64>,
+    asked: u64,
+}
 
 pub struct DlnaTarget {
     browser: Browser,
@@ -118,7 +123,7 @@ impl DlnaTarget {
     }
 
     fn with(browser: Browser, found: UnboundedReceiver<Found>) -> Self {
-        let known = Arc::new(Mutex::new(Known::new()));
+        let known = Arc::new(Mutex::new(Known::default()));
         let learning = Arc::clone(&known);
         // Asking a renderer waits on the network, so it's done apart, as
         // each is found, until the browser goes.
@@ -133,23 +138,48 @@ impl DlnaTarget {
 }
 
 /// Ask each renderer found what it plays.
-async fn learn(mut found: UnboundedReceiver<Found>, known: &Mutex<Known>) {
+async fn learn(mut found: UnboundedReceiver<Found>, known: &Arc<Mutex<Known>>) {
     while let Some(found) = found.next().await {
         match found {
-            Found::Added(device) | Found::Changed(device) => {
-                let capabilities = device
-                    .capabilities()
-                    .inspect_err(|err| {
-                        log::info!("dlna: {} doesn't say what it plays: {err}", device.name);
-                    })
-                    .ok()
-                    .filter(|capabilities| !capabilities.is_empty());
-                known.lock().insert(device.id, capabilities);
-            }
+            Found::Added(device) | Found::Changed(device) => ask(device, known),
             Found::Removed(device) => {
-                known.lock().remove(&device.id);
+                let mut known = known.lock();
+                known.plays.remove(&device.id);
+                known.asking.remove(&device.id);
             }
         }
+    }
+}
+
+/// Ask `device` what it plays, apart, so one slow to answer holds up no
+/// other. What it says counts unless it's been asked again since, or gone.
+fn ask(device: ::dlna::Device, known: &Arc<Mutex<Known>>) {
+    let asking = {
+        let mut known = known.lock();
+        known.asked += 1;
+        let asking = known.asked;
+        known.asking.insert(device.id.clone(), asking);
+        asking
+    };
+    let known = Arc::clone(known);
+    let spawned = thread::Builder::new()
+        .name("dlna asking".into())
+        .spawn(move || {
+            let capabilities = device
+                .capabilities()
+                .inspect_err(|err| {
+                    log::info!("dlna: {} doesn't say what it plays: {err}", device.name);
+                })
+                .ok()
+                .filter(|capabilities| !capabilities.is_empty());
+            let mut known = known.lock();
+            if known.asking.get(&device.id) == Some(&asking) {
+                known.asking.remove(&device.id);
+                known.plays.insert(device.id, capabilities);
+            }
+        });
+    if let Err(err) = spawned {
+        log::warn!("dlna: can't ask a renderer what it plays: {err}");
     }
 }
 
@@ -166,7 +196,7 @@ impl Target for DlnaTarget {
             .devices()
             .into_iter()
             .filter_map(|device| {
-                let shows = shows(known.get(&device.id)?.as_deref())?;
+                let shows = shows(known.plays.get(&device.id)?.as_deref())?;
                 Some(Device {
                     kind: KIND,
                     address: device.address()?,
@@ -185,7 +215,7 @@ impl Target for DlnaTarget {
             .into_iter()
             .find(|renderer| renderer.id == device.id)
             .ok_or(Error::Gone)?;
-        let capabilities = self.known.lock().get(&device.id).cloned().flatten();
+        let capabilities = self.known.lock().plays.get(&device.id).cloned().flatten();
         let (session, events) =
             ::dlna::Session::connect(&renderer).map_err(|err| Error::Failed(err.to_string()))?;
         Ok(Box::new(DlnaSession {

@@ -15,6 +15,10 @@ use mdns_sd::{ServiceDaemon, ServiceEvent, instance_name_unescaped};
 
 use crate::{Found, lock};
 
+/// The most records of a type kept: past it, new ones are left out, so a
+/// network sending without end can't fill memory.
+const MOST_KEPT: usize = 256;
+
 /// A service record as mDNS gives it, resolved.
 #[derive(Clone, PartialEq, Debug)]
 pub struct Record {
@@ -82,18 +86,30 @@ impl<P: Protocol> Default for Directory<P> {
 }
 
 impl<P: Protocol> Directory<P> {
-    /// A record of the `service`th type resolved, new or again.
+    /// A record of the `service`th type resolved, new or again. Its
+    /// loopback addresses are left out: what's cast to one would go to
+    /// whatever listens there on this computer. A record with no others
+    /// is taken as gone.
     pub fn resolved(
         &mut self,
         service: usize,
         fullname: String,
-        record: Record,
+        mut record: Record,
     ) -> Option<Found<P::Device>> {
+        record
+            .addresses
+            .retain(|ip| !ip.is_loopback() && !ip.is_unspecified());
+        if record.addresses.is_empty() {
+            return self.removed(service, &fullname);
+        }
         let id = P::id(service, &record)?;
+        let records = self.records.get_mut(service)?;
+        if records.len() >= MOST_KEPT && !records.contains_key(&fullname) {
+            log::debug!("{}: {MOST_KEPT} records kept; not {fullname}", P::NAME);
+            return None;
+        }
         self.resolutions += 1;
-        let before = self
-            .records
-            .get_mut(service)?
+        let before = records
             .insert(fullname, (self.resolutions, record))
             .and_then(|(_, old)| P::id(service, &old));
         // A record that now names another device leaves the one before.

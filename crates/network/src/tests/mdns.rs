@@ -46,6 +46,54 @@ fn addresses_go_ipv4_first_once_each() {
 }
 
 #[test]
+fn a_record_at_loopback_is_left_out() {
+    let mut directory = Directory::<Named>::default();
+    let mut at_loopback = record("a", "A");
+    at_loopback.addresses = vec!["127.0.0.1".parse().unwrap(), "::1".parse().unwrap()];
+    assert_eq!(directory.resolved(FIRST, "a.1".into(), at_loopback), None);
+    assert!(directory.devices().is_empty());
+
+    // Found, then at loopback too: only its other addresses kept.
+    let mut also = record("a", "A");
+    also.addresses.push("127.0.0.1".parse().unwrap());
+    directory.resolved(FIRST, "a.1".into(), also);
+    let kept = &directory.records[FIRST]["a.1"].1;
+    assert_eq!(kept.addresses, record("a", "A").addresses);
+
+    // Then at loopback alone, or nowhere: gone.
+    let mut only = record("a", "A");
+    only.addresses = vec!["0.0.0.0".parse().unwrap()];
+    assert_eq!(
+        directory.resolved(FIRST, "a.1".into(), only),
+        Some(Found::Removed("A".into()))
+    );
+}
+
+#[test]
+fn records_past_the_most_kept_are_left_out() {
+    let mut directory = Directory::<Named>::default();
+    for n in 0..MOST_KEPT {
+        let name = n.to_string();
+        directory.resolved(FIRST, format!("{name}.1"), record(&name, &name));
+    }
+    assert_eq!(directory.devices().len(), MOST_KEPT);
+    assert_eq!(
+        directory.resolved(FIRST, "new.1".into(), record("new", "New")),
+        None
+    );
+    assert_eq!(directory.devices().len(), MOST_KEPT);
+    // One kept is resolved again as ever, and another type has room.
+    assert_eq!(
+        directory.resolved(FIRST, "0.1".into(), record("0", "Renamed")),
+        Some(Found::Changed("Renamed".into()))
+    );
+    assert_eq!(
+        directory.resolved(SECOND, "new.2".into(), record("new", "New")),
+        Some(Found::Added("New".into()))
+    );
+}
+
+#[test]
 fn the_newest_record_of_a_type_wins() {
     let mut directory = Directory::<Named>::default();
     assert_eq!(
