@@ -108,7 +108,7 @@ pub fn svg(kind: Kind, label: Option<&str>, family: &str) -> Result<String> {
     // Over the label, or bigger without one, as at the sizes it'd be too
     // small to read at.
     let (center, most) = if label.is_some() {
-        (110.0, (90.0, 67.5))
+        (126.0, (90.0, 67.5))
     } else {
         (132.0, (102.0, 84.0))
     };
@@ -116,7 +116,7 @@ pub fn svg(kind: Kind, label: Option<&str>, family: &str) -> Result<String> {
     if let Some(label) = label {
         writeln!(
             svg,
-            r##"<text x="128" y="214" text-anchor="middle" font-family="{family}" font-weight="700" font-size="38" fill="#fff">{label}</text>"##
+            r##"<text x="128" y="208" text-anchor="middle" font-family="{family}" font-weight="700" font-size="38" fill="#fff">{label}</text>"##
         )
         .unwrap();
     }
