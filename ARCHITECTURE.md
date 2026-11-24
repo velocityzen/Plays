@@ -251,7 +251,8 @@ flowchart LR
   `Devices` (`Local` via cpal, Bluetooth, AirPlay), so the UI never waits.
   A device gone means silence or the system default until it's back.
 - `src/app/speakers.rs`: AirPlay speakers as outputs (`airplay:` ids),
-  sharing `Pairings` with casting; `OpenError::NeedsPin`
+  sharing `Pairings` with casting; `OpenError::NeedsPin`; one a block is
+  cast to is held (`Held`), not played through until the cast ends
 - `src/app/bluetooth.rs` (macOS): paired devices, connected when picked
 - `src/ui/workspace/sound.rs`: a block's own output device, if it picks
   one; a window sent to a TV plays its other blocks through its speakers

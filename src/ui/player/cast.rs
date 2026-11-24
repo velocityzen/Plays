@@ -21,7 +21,8 @@ use stream_server::{Pick, SubtitleSource};
 
 use super::PlayerView;
 use crate::api::commands::{cast, output, window as windows};
-use crate::app::{AudioEngine, airplay_id, output_kind};
+use crate::app::{AudioEngine, Held, airplay_id, hold_receiver, output_kind};
+use crate::cast::airplay;
 use crate::cast::target::FOLLOW_POLL;
 use crate::cast::{Casting, Device, Error, Link, Phase, Request, Shows, SubtitleChoice};
 use crate::media::Source;
@@ -45,6 +46,9 @@ pub(super) struct Cast {
     on: bool,
     /// Only the sound goes; the picture plays here, following the device.
     pub(super) picture_here: bool,
+    /// The AirPlay receiver it's cast to, which no output plays through
+    /// meanwhile; let go of once the link is.
+    _held: Option<Held>,
     /// Keeps the block up to date with the device.
     _follow: Task<()>,
 }
@@ -145,6 +149,13 @@ impl PlayerView {
         // Another device this casts to lets go; its sound is here again
         // until the new one plays it.
         self.playback.let_go_of_cast();
+        // A receiver plays one thing at a time: outputs playing through it
+        // let go of it first, rather than take it back from the cast.
+        let held = if device.kind == airplay::KIND {
+            hold_receiver(&device.id, cx)
+        } else {
+            None
+        };
         match Casting::link(cx, &device, request) {
             Ok(link) => {
                 if !picture_here {
@@ -167,6 +178,7 @@ impl PlayerView {
                     link,
                     on: false,
                     picture_here,
+                    _held: held,
                     _follow: follow,
                 });
             }

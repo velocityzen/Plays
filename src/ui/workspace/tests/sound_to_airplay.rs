@@ -1,7 +1,8 @@
 //! Playing the sound through the AirPlay crate's fake speakers, picked as
 //! someone at the screen would, as the app's output or a block's: found
 //! on the network beside this computer's own, played through, gone and
-//! back, paired with the PIN a TV shows when it wants one, and forgotten.
+//! back, paired with the PIN a TV shows when it wants one, let go of
+//! while a block is cast to it, and forgotten.
 
 use std::sync::Arc;
 
@@ -12,8 +13,10 @@ use super::casting::wait;
 use super::casting_to_airplay::{sheet_says, wants_pin};
 use super::open;
 use crate::api::commands::output;
+use crate::api::{self, Invocation};
 use crate::app::{AudioEngine, Bluetooth, Devices, Local, Route, Speakers};
-use crate::cast::AppPairings;
+use crate::cast::airplay::AirPlayTarget;
+use crate::cast::{AppPairings, Casting};
 use crate::media::AudioOutput;
 use crate::media::output::{OpenError, Playing};
 use crate::settings::{AudioDevice, Settings};
@@ -368,4 +371,83 @@ fn a_tv_forgotten_plays_a_blocks_sound_no_longer(cx: &mut TestAppContext) {
     });
     assert!(tv.wait_for(|state| state.closed > 0), "it's let go of");
     assert!(plays_through(&mut cx, HERE));
+}
+
+/// Cast the block to `tv` from its menu, and wait for it to be told to
+/// play.
+fn cast_to(cx: &mut VisualTestContext, tv: &FakeReceiver) {
+    let pairings = cx.update(|_, cx| Arc::clone(&cx.global::<AppPairings>().0));
+    let target = AirPlayTarget::with(vec![tv.device()], pairings);
+    cx.update(|_, cx| cx.set_global(Casting::local(vec![Arc::new(target)])));
+    click(cx, "cast");
+    click(cx, "cast-0");
+    wait(cx, "the TV to be told to play", |_| {
+        !tv.state().requests("POST", "/play").is_empty()
+    });
+}
+
+/// Play the block here again (`cast.stop`).
+fn stop_cast(cx: &mut VisualTestContext) {
+    TestAppContext::update(cx, |cx| api::run(Invocation::new("cast.stop"), cx)).unwrap();
+    cx.run_until_parked();
+}
+
+#[gpui::test]
+fn a_tv_cast_to_plays_the_apps_sound_again_once_the_cast_ends(cx: &mut TestAppContext) {
+    let tv = FakeReceiver::start(Kind::Tv { pin: PIN });
+    let (window, mut cx, speakers) = start(cx, &[&tv], true);
+    let device = output(&mut cx, &tv);
+    cx.dispatch_action(output::set_device(Some(&device)));
+    pair(window, &mut cx, &tv);
+    wait(&mut cx, "the app's sound to play through it", |_| {
+        heard(&tv)
+    });
+
+    // It plays one thing at a time: the sound lets go of it, and waits
+    // rather than take it back from the cast.
+    let closed = tv.state().closed;
+    cast_to(&mut cx, &tv);
+    wait(&mut cx, "the sound to let go of it", |_| {
+        tv.state().closed > closed
+    });
+    wait(&mut cx, "the sound to wait for it", |cx| {
+        cx.update(|_, cx| AudioEngine::route(cx).cloned()) == Some(Route::Waiting("Fake TV".into()))
+    });
+    assert!(!speakers.is_there(&device.id), "not opened again meanwhile");
+
+    let connections = tv.state().connections;
+    stop_cast(&mut cx);
+    wait(&mut cx, "the sound to play through it again", |cx| {
+        plays_through(cx, "Fake TV") && tv.state().connections > connections
+    });
+}
+
+#[gpui::test]
+fn a_tv_a_block_plays_through_and_is_cast_to_plays_it_again_once_the_cast_ends(
+    cx: &mut TestAppContext,
+) {
+    let tv = FakeReceiver::start(Kind::Tv { pin: PIN });
+    let (window, mut cx, speakers) = start(cx, &[&tv], true);
+    let device = output(&mut cx, &tv);
+    cx.dispatch_action(output::set_block_device(Some(&device)));
+    pair(window, &mut cx, &tv);
+    wait(&mut cx, "the block to play through it", |_| heard(&tv));
+
+    let closed = tv.state().closed;
+    cast_to(&mut cx, &tv);
+    wait(&mut cx, "the block's output to let go of it", |_| {
+        tv.state().closed > closed
+    });
+    assert!(!speakers.is_there(&device.id), "not opened again meanwhile");
+    assert_eq!(
+        block_sound(window, &mut cx),
+        Some("Fake TV".into()),
+        "still picked"
+    );
+
+    let connections = tv.state().connections;
+    stop_cast(&mut cx);
+    wait(&mut cx, "its output to play through it again", |_| {
+        tv.state().connections > connections
+    });
 }

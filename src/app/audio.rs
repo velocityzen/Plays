@@ -201,6 +201,9 @@ fn route(
                 missing,
             });
             let route = if wanted.wait_for_device {
+                // Not on through what it played through before, as one
+                // held for a cast would be.
+                output.play_nowhere();
                 Route::Waiting(device.name.clone())
             } else {
                 match devices.open(output, None, on_event()) {
@@ -770,6 +773,28 @@ impl AudioEngine {
             .ok();
         })
         .detach();
+    }
+
+    /// The AirPlay speakers, while it looks for them.
+    pub(super) fn speakers(cx: &App) -> Option<Arc<Speakers>> {
+        cx.try_global::<Self>()?.devices.as_ref()?.speakers.clone()
+    }
+
+    /// Have the outputs playing through output `id` open it again, as it
+    /// can't be played through now.
+    pub(super) fn reopen(id: &str, cx: &mut App) {
+        let picked = cx.global::<Settings>().audio_output.device.as_ref();
+        if picked.is_some_and(|device| device.id == id) {
+            Self::reroute(cx);
+        }
+        let engine = cx.global_mut::<Self>();
+        let wait = engine.main.wanted.wait_for_device;
+        for index in 0..engine.others.len() {
+            if engine.others[index].device.id == id {
+                engine.route_other(index, wait);
+            }
+        }
+        cx.refresh_windows();
     }
 
     /// The app's output's mixer.

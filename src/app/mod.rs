@@ -31,7 +31,7 @@ pub(crate) use history::FocusHistory;
 pub use menus::refresh as refresh_menus;
 #[cfg(test)]
 pub(crate) use speakers::Speakers;
-pub use speakers::{airplay_id, forget_receiver, output_kind};
+pub use speakers::{Held, airplay_id, forget_receiver, hold_receiver, output_kind};
 pub(crate) use windows::{
     back as back_window, last_front, move_to as move_window, note_front, players as player_windows,
     recent as recent_window, step as step_window,

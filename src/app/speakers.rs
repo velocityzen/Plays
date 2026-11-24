@@ -4,7 +4,9 @@
 //! the pictures stay here, in step. Apple TVs are listed too, for their
 //! sound. One that wants it is paired with the PIN it shows, the first
 //! time, as a TV cast to is: what that leaves is kept in the same
-//! `Pairings`, until Settings forget it.
+//! `Pairings`, until Settings forget it. One a block is cast to is held
+//! (`hold_receiver`): a receiver plays one thing at a time, and opening its
+//! output again would take it back from the cast.
 
 use std::sync::Arc;
 use std::thread;
@@ -58,12 +60,43 @@ pub fn forget_receiver(id: &str, cx: &mut App) {
     }
 }
 
+/// Hold AirPlay receiver `id` while a block is cast to it: outputs playing
+/// through it let go of it, and wait for it or play through the system's
+/// default, as while it's gone, until the `Held` handed back is dropped.
+pub fn hold_receiver(id: &str, cx: &mut App) -> Option<Held> {
+    let speakers = AudioEngine::speakers(cx)?;
+    speakers.held.lock().push(id.to_owned());
+    AudioEngine::reopen(&format!("{PREFIX}{id}"), cx);
+    Some(Held {
+        speakers,
+        id: id.to_owned(),
+    })
+}
+
+/// An AirPlay receiver held for a cast (`hold_receiver`), let go of when
+/// dropped: outputs waiting for it find it again.
+pub struct Held {
+    speakers: Arc<Speakers>,
+    id: String,
+}
+
+impl Drop for Held {
+    fn drop(&mut self) {
+        let mut held = self.speakers.held.lock();
+        if let Some(at) = held.iter().position(|id| *id == self.id) {
+            held.swap_remove(at);
+        }
+    }
+}
+
 pub struct Speakers {
     /// Looking for them until dropped; tests have their fakes instead.
     browser: Option<Browser>,
     /// What the browser finds, until watched.
     found: Mutex<Option<UnboundedReceiver<Found>>>,
     pairings: Arc<Pairings>,
+    /// The receivers held for casts, once for each (`hold_receiver`).
+    held: Mutex<Vec<String>>,
     #[cfg(test)]
     fakes: Mutex<Vec<airplay::Device>>,
 }
@@ -77,6 +110,7 @@ impl Speakers {
                 browser: Some(browser),
                 found: Mutex::new(Some(found)),
                 pairings,
+                held: Mutex::default(),
                 #[cfg(test)]
                 fakes: Mutex::default(),
             }),
@@ -94,6 +128,7 @@ impl Speakers {
             browser: None,
             found: Mutex::default(),
             pairings,
+            held: Mutex::default(),
             fakes: Mutex::new(fakes),
         }
     }
@@ -149,9 +184,12 @@ impl Speakers {
         airplay_id(id).is_some()
     }
 
-    /// The receiver output `id` is, as found now.
+    /// The receiver output `id` is, as found now, unless it's held.
     fn receiver(&self, id: &str) -> Option<airplay::Device> {
         let id = airplay_id(id)?;
+        if self.held.lock().iter().any(|held| held == id) {
+            return None;
+        }
         self.found()
             .into_iter()
             .find(|receiver| receiver.id == id && receiver.plays_audio())
