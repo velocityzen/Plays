@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
-use anyhow::{Context as _, Result};
+use anyhow::{Context as _, Result, bail};
 use ffmpeg::software::resampling;
 use ffmpeg::util::{channel_layout::ChannelLayout, format::Sample};
 use ffmpeg::{Packet, codec, frame};
@@ -26,6 +26,10 @@ const AUDIO_ROOM_WAIT: Duration = Duration::from_millis(10);
 const GAP: f64 = 0.1;
 /// The most silence a gap plays as, in seconds: the clock jumps the rest.
 const MOST_SILENCE: f64 = 10.0;
+/// The fewest samples a second sound can have to play. Telephones take
+/// 8000; fewer than this is a broken or hostile file, a frame of which,
+/// resampled, would take gigabytes.
+const LEAST_RATE: u32 = 1000;
 
 pub(super) struct AudioDecoder {
     pub(super) index: usize,
@@ -52,6 +56,11 @@ impl AudioDecoder {
             .decoder()
             .audio()
             .context("opening the audio decoder")?;
+        let rate = decoder.rate();
+        // Not yet known is learned from the first frame.
+        if rate != 0 && rate < LEAST_RATE {
+            bail!("its sound has {rate} samples a second, too few to play");
+        }
         Ok(Self {
             index: stream.index,
             decoder,
@@ -118,7 +127,10 @@ impl AudioDecoder {
 
     fn process(&mut self, session: &Session) -> Result<()> {
         let out_rate = self.output_rate();
-        let in_rate = self.decoded.rate().max(1);
+        let in_rate = self.decoded.rate();
+        if in_rate < LEAST_RATE {
+            bail!("sound with {in_rate} samples a second, too few to play");
+        }
         let in_samples = self.decoded.samples();
         if in_samples == 0 {
             return Ok(());

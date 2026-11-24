@@ -21,8 +21,8 @@ const FIRST_RATE: u32 = 48_000;
 
 /// How often the mixer runs while nothing is heard.
 const SILENT_PERIOD: Duration = Duration::from_millis(10);
-/// Frames an output callback has room for from the start: more than a
-/// device asks for at once.
+/// Frames an output callback mixes at a time: what most devices ask for
+/// at once, and more.
 const MOST_CALLBACK_FRAMES: usize = 8192;
 /// The rate AirPlay speakers play at.
 const SPEAKER_RATE: u32 = 44_100;
@@ -558,16 +558,13 @@ where
 {
     let channels = config.channels as usize;
     let sample_rate = f64::from(config.sample_rate);
-    // Made ready for more than a device asks for at once, so the callback
-    // doesn't allocate.
-    let mut mix = Vec::<f32>::with_capacity(MOST_CALLBACK_FRAMES * SOURCE_CHANNELS);
+    // Made before, so the callback doesn't allocate.
+    let mut mix = vec![0.0f32; MOST_CALLBACK_FRAMES * SOURCE_CHANNELS];
 
     let stream = device.build_output_stream::<T, _, _>(
         config,
         move |out: &mut [T], info: &cpal::OutputCallbackInfo| {
             let frames = out.len() / channels;
-            mix.resize(frames * SOURCE_CHANNELS, 0.0);
-
             let timestamp = info.timestamp();
             let latency = timestamp
                 .playback
@@ -575,29 +572,50 @@ where
                 .map(|d| d.as_secs_f64())
                 .unwrap_or(frames as f64 / sample_rate)
                 + f64::from(stream_latency.load(Ordering::Relaxed)) / sample_rate;
-            mixer.mix(&mut mix, latency, Instant::now());
-
-            for (frame, lr) in out
-                .chunks_exact_mut(channels)
-                .zip(mix.as_chunks::<SOURCE_CHANNELS>().0)
-            {
-                let l = lr[0].clamp(-1.0, 1.0);
-                let r = lr[1].clamp(-1.0, 1.0);
-                if channels == 1 {
-                    frame[0] = T::from_sample((l + r) * 0.5);
-                } else {
-                    frame[0] = T::from_sample(l);
-                    frame[1] = T::from_sample(r);
-                    for extra in &mut frame[2..] {
-                        *extra = T::from_sample(0.0f32);
-                    }
-                }
-            }
+            fill(out, channels, &mut mix, &mixer, latency, sample_rate);
         },
         on_error,
         None,
     )?;
     Ok(stream)
+}
+
+/// Fill `out`, `channels` to a frame at `sample_rate`, with what `mixer`
+/// mixes, heard `latency` seconds from now: as much at a time as `mix`
+/// holds, so a device asking for more at once than it was made for is
+/// filled without allocating.
+fn fill<T: SizedSample + FromSample<f32>>(
+    out: &mut [T],
+    channels: usize,
+    mix: &mut [f32],
+    mixer: &Mixer,
+    latency: f64,
+    sample_rate: f64,
+) {
+    let most = mix.len() / SOURCE_CHANNELS;
+    for (n, out) in out.chunks_mut(most * channels).enumerate() {
+        let frames = out.len() / channels;
+        let mix = &mut mix[..frames * SOURCE_CHANNELS];
+        // Each part is heard after the one before.
+        let later = (n * most) as f64 / sample_rate;
+        mixer.mix(mix, latency + later, Instant::now());
+        for (frame, lr) in out
+            .chunks_exact_mut(channels)
+            .zip(mix.as_chunks::<SOURCE_CHANNELS>().0)
+        {
+            let l = lr[0].clamp(-1.0, 1.0);
+            let r = lr[1].clamp(-1.0, 1.0);
+            if channels == 1 {
+                frame[0] = T::from_sample((l + r) * 0.5);
+            } else {
+                frame[0] = T::from_sample(l);
+                frame[1] = T::from_sample(r);
+                for extra in &mut frame[2..] {
+                    *extra = T::from_sample(0.0f32);
+                }
+            }
+        }
+    }
 }
 
 /// Mixes into an AirPlay speaker's stream on a thread of its own, a

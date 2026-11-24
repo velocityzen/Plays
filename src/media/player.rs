@@ -249,8 +249,7 @@ impl Player {
         }
         let frames = self.shared.frames()?;
         let next = frames.front()?;
-        let left = next.pts - self.shared.clock().now();
-        Some(Duration::from_secs_f64(left.max(0.0)))
+        Some(wait_for(next.pts - self.shared.clock().now()))
     }
 
     pub fn error(&self) -> Option<String> {
@@ -741,4 +740,11 @@ impl Drop for Player {
             mixer.remove_source(audio);
         }
     }
+}
+
+/// `seconds` as a wait: none for a time gone by, and the longest there is
+/// for one further off than a `Duration` holds, as a hostile time base can
+/// put a frame.
+pub(super) fn wait_for(seconds: f64) -> Duration {
+    Duration::try_from_secs_f64(seconds.max(0.0)).unwrap_or(Duration::MAX)
 }

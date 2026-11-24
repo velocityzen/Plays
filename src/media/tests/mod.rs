@@ -19,6 +19,7 @@ use super::player::{Player, PlayerOptions};
 use super::source::Source;
 use super::tracks::TrackKind;
 
+mod limits;
 mod made;
 mod playlists;
 use made::{in_own_folder, kept, made_from, made_in, media};

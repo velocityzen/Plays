@@ -181,15 +181,30 @@ pub fn spawn(
     options: DecodeOptions,
     wanted: Wanted,
     commands: Receiver<Command>,
-) -> JoinHandle<()> {
-    thread::Builder::new()
-        .name(format!("decode {}", source.name()))
+) {
+    let name = source.name();
+    let told = shared.clone();
+    let spawned = thread::Builder::new()
+        .name(format!("decode {name}"))
         .spawn(move || {
             guarded(&shared, &source, || {
                 run(&source, &shared, options, &wanted, &commands)
             });
-        })
-        .expect("spawning a decoder thread")
+        });
+    started(spawned, &told, &name);
+}
+
+/// Whether the decode thread for `name` started; the player says why not,
+/// as when the system has no more threads to give.
+pub(in crate::media) fn started(
+    spawned: std::io::Result<JoinHandle<()>>,
+    shared: &Shared,
+    name: &str,
+) {
+    if let Err(err) = spawned {
+        log::error!("{name}: couldn't start decoding: {err}");
+        shared.fail(format!("couldn't start decoding: {err}"));
+    }
 }
 
 /// Run a decoder thread's `body`, saying why it failed, a panic as much
@@ -742,8 +757,8 @@ fn open_best_video(
 }
 
 /// Play the audio stream `wanted` (`picking::Wanted`), else the best one.
-/// With no audio device a video plays without it, and sound alone can't
-/// play.
+/// With no audio device, or sound that can't play, a video plays without
+/// it, and sound alone says why it can't.
 fn open_audio(
     input: &ffmpeg::format::context::Input,
     wanted: Option<usize>,
@@ -756,6 +771,7 @@ fn open_audio(
         match shared.audio() {
             Some(output) => match AudioDecoder::new(&decoders.streams[index], output.clone()) {
                 Ok(decoder) => decoders.audio = Some(decoder),
+                Err(err) if decoders.video.is_none() => return Err(err),
                 Err(err) => log::warn!("{source}: skipping audio: {err:#}"),
             },
             None if decoders.video.is_none() => bail!("no audio output device is available"),

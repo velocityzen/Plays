@@ -181,3 +181,29 @@ fn plays_through_the_devices_here() {
     assert!(matches!(gone, Err(OpenError::Missing)), "{gone:?}");
     assert!(output.playing().is_none());
 }
+
+/// A device asking for more at once than the callback mixes at a time is
+/// filled whole, a part at a time, each heard after the one before.
+#[test]
+fn a_device_asking_for_more_than_is_mixed_at_once_is_filled_whole() {
+    let mixer = Mixer::new(48_000, 1.0);
+    let source = playing_in(&mixer, 0.25, 10.0);
+    // A tenth of a second at a time, twice over and a part, into four
+    // channels.
+    let mut mix = vec![0.0f32; 4_800 * SOURCE_CHANNELS];
+    let mut out = vec![1.0f32; 10_000 * 4];
+    fill(&mut out, 4, &mut mix, &mixer, 0.5, 48_000.0);
+    for frame in out.as_chunks::<4>().0 {
+        assert_eq!(frame, &[0.25, 0.25, 0.0, 0.0]);
+    }
+    // What it starts with is heard half a second from now.
+    let now = source.clock.now();
+    assert!((now - 9.5).abs() < 0.05, "at {now}");
+
+    // The part left took no more than it filled: the next goes on from
+    // where it ended.
+    fill(&mut out, 4, &mut mix, &mixer, 0.5, 48_000.0);
+    let now = source.clock.now();
+    let next = 9.5 + 10_000.0 / 48_000.0;
+    assert!((now - next).abs() < 0.02, "then at {now}, not {next}");
+}
