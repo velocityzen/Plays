@@ -18,6 +18,7 @@ use ffmpeg_safe::Layout;
 
 use crate::Error;
 use crate::profile::{AudioCodec, VideoCodec};
+use crate::sync::lock;
 
 /// The hardware encoders to try for a codec, in order.
 fn video_encoders(codec: VideoCodec) -> &'static [&'static str] {
@@ -46,9 +47,7 @@ pub(crate) fn video_encoder(
 ) -> Option<&'static str> {
     static PROBED: OnceLock<Mutex<Probed>> = OnceLock::new();
     let probed = PROBED.get_or_init(Default::default);
-    let mut probed = probed
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut probed = lock(probed);
     probed.encoder(codec, (width, height), ten_bit, Instant::now(), |name| {
         let settings = VideoSettings {
             encoder: name,

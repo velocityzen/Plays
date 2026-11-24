@@ -705,17 +705,24 @@ impl Settings {
 
     /// Settings from a file someone picked, such as one exported: a JSON
     /// object with some of the settings in it, and the defaults for the
-    /// rest. One with none of them in it is some other file.
+    /// rest. Read as they're loaded, each value on its own: one this Plays
+    /// can't take, as from a later one, leaves just that setting as it
+    /// starts out. One with none of them in it is some other file.
     pub fn import(text: &str) -> anyhow::Result<Self> {
         let value: serde_json::Value = serde_json::from_str(text)?;
         let known = serde_json::to_value(Self::default())?;
-        let (Some(fields), Some(known)) = (value.as_object(), known.as_object()) else {
+        let (Value::Object(mut fields), Some(known)) = (value, known.as_object()) else {
             anyhow::bail!("It isn't a Plays settings file.");
         };
         if !fields.keys().any(|key| known.contains_key(key)) {
             anyhow::bail!("It isn't a Plays settings file.");
         }
-        Ok(serde_json::from_value(value)?)
+        fields.remove("version");
+        let (settings, unread) = leniently(fields);
+        if !unread.is_empty() {
+            log::warn!("importing settings: {} can't be read", unread.join(", "));
+        }
+        Ok(settings)
     }
 
     /// Volume on top of every player's own, full at most whatever the file

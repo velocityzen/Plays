@@ -5,6 +5,7 @@ use gpui::SharedString;
 
 use super::console::{bit_rate, joined, sample_rate, with_profile};
 use crate::media::decoder::MediaInfo;
+use crate::ui::sentence::capitalized;
 
 /// The lines under a sound file's cover, each there only if the file says.
 #[derive(Debug, PartialEq)]
@@ -102,14 +103,6 @@ pub(super) fn codec_name(codec: &str) -> String {
         other => return other.to_uppercase(),
     };
     name.to_owned()
-}
-
-fn capitalized(text: &str) -> String {
-    let mut chars = text.chars();
-    chars
-        .next()
-        .map(|first| first.to_uppercase().chain(chars).collect())
-        .unwrap_or_default()
 }
 
 #[cfg(test)]

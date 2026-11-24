@@ -120,6 +120,21 @@ fn volumes_in_the_file_are_read_as_full_at_most() {
     );
 }
 
+/// A setting this Plays can't take, as from a later one, leaves just that
+/// one as it starts out, as loading does.
+#[test]
+fn imports_take_what_they_can_read() {
+    let imported = Settings::import(
+        r#"{ "version": 99, "master_volume": 0.5, "theme": "purple", "subtitles": { "color": "red", "size": 1.5 } }"#,
+    )
+    .unwrap();
+    let default = Settings::default();
+    assert_eq!(imported.master_volume, 0.5);
+    assert_eq!(imported.theme, default.theme);
+    assert_eq!(imported.subtitles.color, default.subtitles.color);
+    assert_eq!(imported.subtitles.size, 1.5);
+}
+
 #[test]
 fn other_files_dont_import() {
     assert!(Settings::import("not json").is_err());

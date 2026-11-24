@@ -1,14 +1,5 @@
 use super::*;
 
-#[test]
-fn why_a_protocol_cant_look_begins_as_a_sentence() {
-    assert_eq!(
-        sentence("can't look for DLNA renderers: no network"),
-        "Can't look for DLNA renderers: no network"
-    );
-    assert_eq!(sentence(""), "");
-}
-
 fn device(kind: &'static str, id: &str, name: &str, shows: Shows) -> Device {
     Device {
         kind,

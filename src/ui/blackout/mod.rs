@@ -110,21 +110,48 @@ struct Blackout {
     covered: Vec<Screen>,
     peek: Peek,
     native: Native,
+    /// Something looks, every `BLACKOUT_POLL`, at what to cover.
+    watching: bool,
 }
 
 impl Global for Blackout {}
 
-/// Look, every `BLACKOUT_POLL`, at what to cover.
+/// Look, every `BLACKOUT_POLL` while the setting is on, at what to cover:
+/// while it's off, nothing wakes for it.
 pub fn watch(cx: &mut App) {
+    cx.observe_global::<Settings>(start_watching).detach();
+    start_watching(cx);
+}
+
+/// Start looking, when the setting is on and nothing looks yet. Turned
+/// off, it looks once more, to take the covers away, and stops.
+fn start_watching(cx: &mut App) {
+    if !cx.global::<Settings>().black_out_displays || cx.default_global::<Blackout>().watching {
+        return;
+    }
+    cx.global_mut::<Blackout>().watching = true;
     cx.spawn(async move |cx| {
         loop {
             cx.background_executor().timer(BLACKOUT_POLL).await;
-            if cx.update(update).is_err() {
+            let on = cx.update(|cx| {
+                update(cx);
+                let on = cx.global::<Settings>().black_out_displays;
+                cx.global_mut::<Blackout>().watching = on;
+                on
+            });
+            if !on.unwrap_or(false) {
                 break;
             }
         }
     })
     .detach();
+}
+
+/// Whether something looks at what to cover.
+#[cfg(test)]
+pub fn watching(cx: &App) -> bool {
+    cx.try_global::<Blackout>()
+        .is_some_and(|blackout| blackout.watching)
 }
 
 /// Cover the screens to cover now, and only those.

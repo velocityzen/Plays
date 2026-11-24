@@ -48,7 +48,7 @@ use crate::ui::theme::backdrop;
 use crate::ui::theme::layout::{
     AUDIO_WINDOW_SIZE, BLOCK_GAP, LOGO_MAX, WINDOW_GAP, WINDOW_MIN_SIZE, WINDOW_SIZE,
 };
-use crate::ui::theme::motion::FIT_POLL;
+use crate::ui::theme::motion::{BLACKOUT_POLL, FIT_POLL};
 use crate::ui::{blackout, displays};
 
 /// The lines of text drawn in the element tagged `selector`.
@@ -568,6 +568,28 @@ fn an_empty_window_shows_the_logo_with_the_open_buttons_alike_under_it(cx: &mut 
     assert!(!shows(&mut cx, "logo"), "a file opened, it goes");
 }
 
+/// Open URL says why what's typed won't open; moving the cursor keeps
+/// that, and typing takes it away.
+#[gpui::test]
+fn open_urls_error_stays_till_something_is_typed(cx: &mut TestAppContext) {
+    let (window, mut cx) = testing::start(cx);
+    window
+        .update(&mut cx, |workspace, window, cx| {
+            workspace.show_open_url(window, cx)
+        })
+        .unwrap();
+    cx.simulate_input("not a url");
+    press(&mut cx, "enter");
+    assert!(shows(&mut cx, "open-url-error"), "it says why");
+    press(&mut cx, "left right home end shift-right");
+    assert!(
+        shows(&mut cx, "open-url-error"),
+        "moving the cursor keeps it"
+    );
+    cx.simulate_input("x");
+    assert!(!shows(&mut cx, "open-url-error"), "typing takes it away");
+}
+
 #[gpui::test]
 fn blocks_sit_in_the_grid(cx: &mut TestAppContext) {
     let (window, mut cx) = testing::start(cx);
@@ -926,6 +948,52 @@ fn other_displays_black_out_while_a_window_is_full_screen(cx: &mut TestAppContex
     assert_eq!(covered(&mut cx), [second]);
     cx.deactivate_window();
     assert_eq!(covered(&mut cx), [0u32; 0], "nor with another app in front");
+}
+
+/// A window ticks often, to keep it going while hidden, only while
+/// something in it plays.
+#[gpui::test]
+fn a_window_ticks_often_only_while_something_plays(cx: &mut TestAppContext) {
+    let (window, mut cx) = testing::start(cx);
+    let busy = |cx: &mut TestAppContext| {
+        window
+            .read_with(cx, |workspace, cx| workspace.busy(cx))
+            .unwrap()
+    };
+    assert!(!busy(&mut cx), "empty");
+    open(window, &mut cx, &["clip.mp4"], true);
+    assert!(busy(&mut cx), "playing");
+    click(&mut cx, "block-0");
+    press(&mut cx, "space");
+    let paused = wait_until(&mut cx, |cx| !busy(cx));
+    assert!(paused, "paused");
+    window
+        .update(&mut cx, |workspace, _, _| workspace.moving_to = Some(1))
+        .unwrap();
+    assert!(busy(&mut cx), "on its way to another display");
+}
+
+/// Black out looks at what to cover only while it's on: off, nothing wakes
+/// for it.
+#[gpui::test]
+fn black_out_looks_only_while_its_on(cx: &mut TestAppContext) {
+    let (_, mut cx) = testing::start(cx);
+    cx.update(|_, cx| blackout::watch(cx));
+    let watching = |cx: &mut VisualTestContext| {
+        cx.run_until_parked();
+        cx.update(|_, cx| blackout::watching(cx))
+    };
+    assert!(!watching(&mut cx));
+    cx.update(|_, cx| Settings::update(cx, false, |s| s.black_out_displays = true));
+    assert!(watching(&mut cx), "turned on");
+    cx.executor().advance_clock(BLACKOUT_POLL * 3);
+    assert!(watching(&mut cx));
+    cx.update(|_, cx| Settings::update(cx, false, |s| s.black_out_displays = false));
+    assert!(watching(&mut cx), "till it next looks");
+    cx.executor().advance_clock(BLACKOUT_POLL);
+    assert!(!watching(&mut cx), "turned off");
+    cx.update(|_, cx| Settings::update(cx, false, |s| s.black_out_displays = true));
+    assert!(watching(&mut cx), "and on again");
 }
 
 #[gpui::test]

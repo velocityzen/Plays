@@ -6,10 +6,11 @@ use std::ops::Range;
 
 use gpui::{
     App, Bounds, ClipboardItem, ContentMask, Context, CursorStyle, Element, ElementId,
-    ElementInputHandler, Entity, EntityInputHandler, FocusHandle, Focusable, GlobalElementId, Hsla,
-    KeyBinding, LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad,
-    Pixels, Point, ShapedLine, SharedString, Style, TextRun, UTF16Selection, UnderlineStyle,
-    Window, actions, div, fill, point, prelude::*, px, relative, size,
+    ElementInputHandler, Entity, EntityInputHandler, EventEmitter, FocusHandle, Focusable,
+    GlobalElementId, Hsla, KeyBinding, LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent,
+    MouseUpEvent, PaintQuad, Pixels, Point, ShapedLine, SharedString, Style, TextRun,
+    UTF16Selection, UnderlineStyle, Window, actions, div, fill, point, prelude::*, px, relative,
+    size,
 };
 use unicode_segmentation::UnicodeSegmentation as _;
 
@@ -75,6 +76,12 @@ pub struct TextInput {
     bare: bool,
 }
 
+/// Its text changed: typed, deleted, pasted, composed or set; not the
+/// cursor or the selection alone moving, which only redraws it.
+pub struct Edited;
+
+impl EventEmitter<Edited> for TextInput {}
+
 #[derive(Clone, Copy)]
 struct Colors {
     placeholder: Hsla,
@@ -133,6 +140,7 @@ impl TextInput {
         self.selected_range = 0..self.content.len();
         self.selection_reversed = false;
         self.marked_range = None;
+        cx.emit(Edited);
         cx.notify();
     }
 
@@ -366,6 +374,7 @@ impl EntityInputHandler for TextInput {
                 .into();
         self.selected_range = range.start + new_text.len()..range.start + new_text.len();
         self.marked_range.take();
+        cx.emit(Edited);
         cx.notify();
     }
 
@@ -389,6 +398,7 @@ impl EntityInputHandler for TextInput {
             .map(|selected| utf8_range(new_text, selected))
             .map(|selected| range.start + selected.start..range.start + selected.end)
             .unwrap_or_else(|| range.start + new_text.len()..range.start + new_text.len());
+        cx.emit(Edited);
         cx.notify();
     }
 

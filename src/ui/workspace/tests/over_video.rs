@@ -17,6 +17,7 @@ use crate::settings::{OverVideo, Settings};
 use crate::ui::player::PlayerView;
 use crate::ui::testing::{self, OPEN_WAIT, click, hover, shows};
 use crate::ui::theme::layout::WINDOW_SIZE;
+use crate::ui::theme::motion::MOUSE_IDLE;
 use crate::ui::workspace::Workspace;
 
 /// Run `command` as a deferred command does, outside any window's update.
@@ -535,4 +536,46 @@ fn a_screenshot_saved_is_unsaid_with_notes_hidden_but_one_failed_is_not(cx: &mut
     });
     assert!(said, "saved, said so: {:?}", noted(&mut cx));
     let _ = fs::remove_dir_all(&folder);
+}
+
+/// The mouse resting over a playing picture, as gpui's clock tells, hides
+/// the pointer and fades the controls; moved, they're back.
+#[gpui::test]
+fn a_mouse_resting_over_the_picture_fades_the_controls(cx: &mut TestAppContext) {
+    let (window, mut cx) = testing::start(cx);
+    open(window, &mut cx, &["clip.mp4"], true);
+    let middle = gpui::point(WINDOW_SIZE.width / 2., WINDOW_SIZE.height / 2.);
+    cx.simulate_mouse_move(middle, None, gpui::Modifiers::none());
+    cx.run_until_parked();
+    let resting = |cx: &VisualTestContext| {
+        window
+            .read_with(cx, |workspace, cx| {
+                workspace.blocks[0].view.read(cx).layout().mouse_idle
+            })
+            .unwrap()
+    };
+    assert!(!resting(&cx));
+    cx.executor().advance_clock(MOUSE_IDLE / 2);
+    cx.run_until_parked();
+    assert!(!resting(&cx), "not for long enough");
+    cx.executor().advance_clock(MOUSE_IDLE);
+    cx.run_until_parked();
+    assert!(resting(&cx));
+    cx.simulate_mouse_move(
+        middle + gpui::point(px(5.), px(5.)),
+        None,
+        gpui::Modifiers::none(),
+    );
+    cx.run_until_parked();
+    assert!(!resting(&cx), "moved");
+
+    // Moved again halfway, it rests a whole while from then.
+    cx.executor().advance_clock(MOUSE_IDLE / 2);
+    cx.simulate_mouse_move(middle, None, gpui::Modifiers::none());
+    cx.executor().advance_clock(MOUSE_IDLE * 3 / 4);
+    cx.run_until_parked();
+    assert!(!resting(&cx), "from the last move");
+    cx.executor().advance_clock(MOUSE_IDLE / 2);
+    cx.run_until_parked();
+    assert!(resting(&cx));
 }

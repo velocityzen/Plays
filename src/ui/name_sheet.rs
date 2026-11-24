@@ -11,7 +11,7 @@ use gpui::{
 };
 
 use super::components::{Button, Panel, Sizable};
-use super::text_input::TextInput;
+use super::text_input::{Edited, TextInput};
 use super::theme::text::TextStyle;
 use super::theme::{Theme, dialog, radius};
 
@@ -59,7 +59,7 @@ impl NameSheet {
             input
         });
         window.focus(&input.focus_handle(cx));
-        let input_changed = cx.observe(&input, |this, _, cx| {
+        let input_changed = cx.subscribe(&input, |this, _, _: &Edited, cx| {
             if this.error.take().is_some() {
                 cx.notify();
             }

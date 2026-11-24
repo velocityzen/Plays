@@ -9,7 +9,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener, TcpStream, UdpSocket};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::sync_channel;
-use std::sync::{Arc, Condvar, Mutex, MutexGuard};
+use std::sync::{Arc, Condvar, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
@@ -25,6 +25,7 @@ use crate::plan::{self, AudioPlan, Delivery, Pick, Plan, VideoPlan};
 use crate::playlist::{self, SubtitlesRendition, Variant};
 use crate::profile::{AudioCodec, Container, HLS_MIME, Profile, Segments};
 use crate::subtitles::{self, Cue, SubtitleSource};
+use crate::sync::{self, lock};
 use crate::{Error, segments};
 
 /// How long segments are, about, in seconds.
@@ -38,12 +39,6 @@ const MOST_STREAMS: usize = 2;
 /// The DLNA flags for media: streamed, in the background, and allowed to
 /// stall, by DLNA 1.5.
 const DLNA_FLAGS: &str = "01700000000000000000000000000000";
-
-fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-}
 
 /// What to cast, and what the device it goes to plays.
 #[derive(Clone, Debug)]
@@ -393,11 +388,7 @@ impl Subtitles {
             if left.is_zero() {
                 return Err("reading the subtitles took too long".into());
             }
-            cues = self
-                .ready
-                .wait_timeout(cues, left)
-                .unwrap_or_else(|poisoned| poisoned.into_inner())
-                .0;
+            cues = sync::wait_timeout(&self.ready, cues, left);
         }
     }
 }

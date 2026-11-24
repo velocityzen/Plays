@@ -1020,3 +1020,18 @@ fn choices_are_found_by_name_or_detail_best_first() {
         "none in its name"
     );
 }
+
+/// Moving the cursor in the field, or selecting in it, keeps the row picked.
+#[gpui::test]
+fn moving_the_cursor_keeps_the_row_picked(cx: &mut TestAppContext) {
+    let (window, mut cx) = testing::start(cx);
+    open_palette(&mut cx);
+    type_in(&mut cx, "window");
+    let rows = listed(window, &cx);
+    assert!(rows.len() > 1, "{rows:?}");
+    press_and_wait(&mut cx, "down");
+    assert_eq!(read(window, &cx, Palette::picked), rows.get(1).cloned());
+    press_and_wait(&mut cx, "left left right home end shift-left");
+    assert_eq!(read(window, &cx, Palette::picked), rows.get(1).cloned());
+    assert_eq!(listed(window, &cx), rows);
+}

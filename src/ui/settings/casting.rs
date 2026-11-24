@@ -14,6 +14,7 @@ use crate::cast::{AppPairings, Casting, Device, Looking, Shows, airplay};
 use crate::media::output::DeviceInfo;
 use crate::settings::{Settings, fields};
 use crate::ui::components::{Button, Switch};
+use crate::ui::sentence::capitalized;
 use crate::ui::theme::Theme;
 use crate::ui::theme::settings::CASTING_COLOR;
 
@@ -48,7 +49,7 @@ impl Pane for CastingPane {
             .into_iter()
             .map(|(kind, finds, looking)| {
                 let hint = match looking {
-                    Looking::Failed(why) => sentence(&why),
+                    Looking::Failed(why) => capitalized(&why),
                     Looking::Off | Looking::On => finds.to_owned(),
                 };
                 row(
@@ -150,14 +151,6 @@ fn paired(theme: &Theme, cx: &mut Context<SettingsView>) -> Vec<AnyElement> {
             )
         })
         .collect()
-}
-
-/// Why a protocol can't look, as it's logged, begun as a sentence.
-fn sentence(why: &str) -> String {
-    let mut chars = why.chars();
-    chars.next().map_or_else(String::new, |first| {
-        first.to_uppercase().chain(chars).collect()
-    })
 }
 
 /// What a device found shows.

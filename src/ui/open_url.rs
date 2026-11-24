@@ -9,7 +9,7 @@ use gpui::{
 };
 
 use super::components::{Button, Icon, Panel, Sizable};
-use super::text_input::TextInput;
+use super::text_input::{Edited, TextInput};
 use super::theme::text::TextStyle;
 use super::theme::{Theme, dialog, radius};
 use crate::media::Source;
@@ -45,7 +45,7 @@ impl EventEmitter<OpenUrlEvent> for UrlForm {}
 impl UrlForm {
     pub fn new(cx: &mut Context<Self>) -> Self {
         let input = cx.new(|cx| TextInput::new("https://example.com/live/stream.m3u8", cx).large());
-        let input_changed = cx.observe(&input, |this, _, cx| {
+        let input_changed = cx.subscribe(&input, |this, _, _: &Edited, cx| {
             if this.error.take().is_some() {
                 cx.notify();
             }
@@ -120,7 +120,13 @@ impl Render for UrlForm {
                     .gap_1p5()
                     .child(self.input.clone())
                     .when_some(self.error.clone(), |this, error| {
-                        this.child(div().text_xs().text_color(theme.danger).child(error))
+                        this.child(
+                            div()
+                                .debug_selector(|| "open-url-error".into())
+                                .text_xs()
+                                .text_color(theme.danger)
+                                .child(error),
+                        )
                     }),
             )
             .child(

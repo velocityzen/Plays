@@ -21,6 +21,7 @@ use crate::files::Folder;
 use crate::media::output::DeviceInfo;
 use crate::settings::{AudioDevice, MusicMode, PanelLook, Settings, Visualizer};
 use crate::ui::about::AboutView;
+use crate::ui::displays;
 use crate::ui::testing::{self, click, open_settings, press, shows, wait_until};
 use crate::ui::theme::layout::SETTINGS_WINDOW_SIZE;
 use crate::ui::workspace::forget_settings_place;
@@ -112,6 +113,31 @@ fn settings_opens_where_it_was_left_this_launch_or_the_last(cx: &mut TestAppCont
         [120., 140., 760., 560.].map(Some),
         "saved as the app quit"
     );
+}
+
+/// Where Settings is names its display as last looked at, not asking the
+/// system on every move.
+#[gpui::test]
+fn settings_names_its_display_as_last_looked_at(cx: &mut TestAppContext) {
+    let (_, mut cx) = testing::start(cx);
+    let folder = Folder::for_test("settings-window-named");
+    cx.update(|_, cx| {
+        cx.set_global(folder.clone());
+        let mut seen = displays::list(cx);
+        for display in &mut seen {
+            display.name = "Looked at".into();
+        }
+        displays::remember(seen, cx);
+    });
+    let mut settings = open_settings(&mut cx);
+    drag_to(
+        &mut settings,
+        Bounds::new(point(px(60.), px(80.)), size(px(900.), px(640.))),
+    );
+    close(&mut settings);
+    let saved = std::fs::read_to_string(folder.file("settings-window.json").unwrap()).unwrap();
+    let saved: serde_json::Value = serde_json::from_str(&saved).unwrap();
+    assert_eq!(saved["name"], "Looked at");
 }
 
 #[gpui::test]

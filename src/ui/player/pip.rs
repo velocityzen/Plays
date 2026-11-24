@@ -45,9 +45,10 @@ pub(super) struct PipSession {
 }
 
 /// The cues showing, how they look, and the size of the frames they go on.
-#[derive(PartialEq)]
 struct Layout {
-    cues: Vec<*const CueContent>,
+    /// Held, so none is let go of while laid out and another made where it
+    /// was taken for it.
+    cues: Vec<Arc<CueContent>>,
     style: SubtitleStyle,
     picture: (u32, u32),
     orientation: Orientation,
@@ -210,17 +211,13 @@ impl PlayerView {
                 && laid.orientation == orientation
                 && laid.size == size
                 && laid.style == *style
-                && laid
-                    .cues
-                    .iter()
-                    .copied()
-                    .eq(self.cues.iter().map(Arc::as_ptr))
+                && same_cues(&laid.cues, &self.cues)
         });
         if same {
             return;
         }
         let layout = Layout {
-            cues: self.cues.iter().map(Arc::as_ptr).collect(),
+            cues: self.cues.clone(),
             style: style.clone(),
             picture,
             orientation,
@@ -328,6 +325,11 @@ fn bring_back(window: &mut Window, cx: &mut Context<PlayerView>) {
     cx.activate(true);
     window.activate_window();
     cx.emit(PlayerEvent::Activate);
+}
+
+/// Whether `laid` are the cues `showing`, each the very one.
+fn same_cues(laid: &[Arc<CueContent>], showing: &[Arc<CueContent>]) -> bool {
+    laid.len() == showing.len() && laid.iter().zip(showing).all(|(a, b)| Arc::ptr_eq(a, b))
 }
 
 #[cfg(test)]

@@ -1,8 +1,6 @@
 //! The mouse in and out of the window, and resting in it, and the traffic
 //! lights, which fade out with the controls while it is away or resting.
 
-use std::time::Instant;
-
 use gpui::prelude::*;
 use gpui::{
     Context, DispatchPhase, MouseDownEvent, MouseExitEvent, MouseMoveEvent, ScrollWheelEvent,
@@ -17,7 +15,7 @@ use crate::ui::traffic_lights;
 impl Workspace {
     fn mouse_moved(&mut self, cx: &mut Context<Self>) {
         self.used(cx);
-        self.mouse_moved_at = Instant::now();
+        self.mouse_moved_at = cx.background_executor().now();
         if !self.mouse_inside || self.mouse_idle || self.keyboard_focus {
             self.mouse_inside = true;
             self.mouse_idle = false;
@@ -46,7 +44,10 @@ impl Workspace {
             loop {
                 cx.background_executor().timer(wait).await;
                 let rested = this.update(cx, |this, cx| {
-                    let rested = this.mouse_moved_at.elapsed();
+                    let rested = cx
+                        .background_executor()
+                        .now()
+                        .saturating_duration_since(this.mouse_moved_at);
                     if rested < MOUSE_IDLE {
                         return Some(MOUSE_IDLE - rested);
                     }

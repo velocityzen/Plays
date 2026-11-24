@@ -282,7 +282,7 @@ impl Workspace {
             window_moves: 0,
             mouse_inside: true,
             mouse_idle: false,
-            mouse_moved_at: Instant::now(),
+            mouse_moved_at: cx.background_executor().now(),
             watching_idle: false,
             traffic_lights_shown: true,
             over_video: cx.global::<Settings>().over_video,
@@ -301,24 +301,30 @@ impl Workspace {
     }
 }
 
+/// How often a window ticks (`keep_ticking`) while something in it plays
+/// or it's on its way to another display, and while not.
+const TICK_BUSY: Duration = Duration::from_millis(200);
+const TICK_IDLE: Duration = Duration::from_secs(1);
+
 /// Rendering stops while the window is hidden; keep players moving anyway,
 /// and the window floating while they play.
 fn keep_ticking(window: &mut Window, cx: &mut Context<Workspace>) {
     cx.spawn_in(window, async move |this, cx| {
+        let mut wait = TICK_BUSY;
         loop {
-            cx.background_executor()
-                .timer(Duration::from_millis(200))
-                .await;
-            let alive = this.update_in(cx, |this, window, cx| {
+            cx.background_executor().timer(wait).await;
+            let busy = this.update_in(cx, |this, window, cx| {
                 for block in &this.blocks {
                     block.view.update(cx, |view, cx| view.background_tick(cx));
                 }
                 this.update_on_top(window, cx);
                 this.finish_moving(window, cx);
+                this.busy(cx)
             });
-            if alive.is_err() {
+            let Ok(busy) = busy else {
                 break;
-            }
+            };
+            wait = if busy { TICK_BUSY } else { TICK_IDLE };
         }
     })
     .detach();

@@ -264,8 +264,17 @@ fn rename_with_no_label_asks_for_one(cx: &mut TestAppContext) {
     );
     assert!(shows(&mut cx, "rename-block"), "and it asks again");
     assert_eq!(label(a, &cx), None);
+    press(&mut cx, "left right home end shift-left");
+    assert!(
+        shows(&mut cx, "rename-block-error"),
+        "moving the cursor keeps it"
+    );
 
     press(&mut cx, "backspace backspace backspace backspace backspace");
+    assert!(
+        !shows(&mut cx, "rename-block-error"),
+        "typing takes it away"
+    );
     cx.simulate_input("Clip");
     press(&mut cx, "enter");
     cx.run_until_parked();

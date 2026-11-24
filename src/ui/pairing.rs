@@ -17,6 +17,7 @@ use gpui::{
 use parking_lot::Mutex;
 
 use super::components::{Button, Icon, Panel, Sizable};
+use super::sentence::capitalized;
 use super::text_input::TextInput;
 use super::theme::motion::PAIRING_POLL;
 use super::theme::text::TextStyle;
@@ -177,7 +178,7 @@ impl PairingDialog {
             Step::Asking => (format!("Asking {name} for a PIN…").into(), false),
             Step::Showing { wrong: None } => (format!("Enter the PIN {name} shows.").into(), false),
             Step::Showing { wrong: Some(why) } => (
-                format!("{}. Enter the new PIN {name} shows.", sentence(why)).into(),
+                format!("{}. Enter the new PIN {name} shows.", capitalized(why)).into(),
                 true,
             ),
             Step::Checking | Step::Paired => (format!("Pairing with {name}…").into(), false),
@@ -226,14 +227,6 @@ fn pair(
             }
         }
     }
-}
-
-/// `why`, begun as a sentence.
-fn sentence(why: &str) -> String {
-    let mut chars = why.chars();
-    chars.next().map_or_else(String::new, |first| {
-        first.to_uppercase().chain(chars).collect()
-    })
 }
 
 impl Render for PairingDialog {
@@ -324,7 +317,3 @@ impl Render for PairingDialog {
             .child(card)
     }
 }
-
-#[cfg(test)]
-#[path = "tests/pairing.rs"]
-mod tests;

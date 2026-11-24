@@ -21,6 +21,7 @@ use crate::media::tracks;
 use crate::settings::Settings;
 use crate::settings::fields::{self, Field};
 use crate::ui::player::format_time;
+use crate::ui::sentence::capitalized;
 use crate::ui::settings::installed_fonts;
 
 /// One of the things to pick for an argument.
@@ -570,14 +571,6 @@ fn read_typed(arg: &Arg, typed: &str) -> Result<Value, String> {
     };
     arg.check(&value).map_err(|why| capitalized(&why))?;
     Ok(value)
-}
-
-fn capitalized(text: &str) -> String {
-    let mut chars = text.chars();
-    chars
-        .next()
-        .map(|first| first.to_uppercase().chain(chars).collect())
-        .unwrap_or_default()
 }
 
 /// The seconds in a time typed as 1:23:45, 23:45 or 90, a fraction of a

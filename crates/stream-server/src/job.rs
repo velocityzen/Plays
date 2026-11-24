@@ -29,6 +29,7 @@ use crate::plan::{AudioPlan, Plan, VideoPlan};
 use crate::playlist;
 use crate::profile::Segments;
 use crate::segments::{Domain, Timeline, set_discard_all_but};
+use crate::sync::{self, lock};
 
 /// How close a timestamp may fall short of a segment's start and still be
 /// taken as at it, in seconds.
@@ -59,12 +60,6 @@ pub(crate) struct Media {
     pub segment: f64,
 }
 
-fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-}
-
 /// Wait for `changed` to be rung, until `deadline` at the most; past it,
 /// a request fails as `late` says.
 fn wait_until<'a, T>(
@@ -77,10 +72,7 @@ fn wait_until<'a, T>(
     if left.is_zero() {
         return Err(Error::Mux(late.into()));
     }
-    Ok(changed
-        .wait_timeout(state, left)
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .0)
+    Ok(sync::wait_timeout(changed, state, left))
 }
 
 /// Reads that fail partway, for the tests: a source's location, and how
@@ -1149,10 +1141,7 @@ impl Vod {
                     && !state.closed
                     && segment + 1 > state.wanted + AHEAD
                 {
-                    state = self
-                        .changed
-                        .wait(state)
-                        .unwrap_or_else(|poisoned| poisoned.into_inner());
+                    state = sync::wait(&self.changed, state);
                 }
             }
         }
@@ -1351,10 +1340,7 @@ impl Live {
                 }
                 self.changed.notify_all();
                 while self.paced && !state.closed && state.next_sequence >= state.wanted + AHEAD {
-                    state = self
-                        .changed
-                        .wait(state)
-                        .unwrap_or_else(|poisoned| poisoned.into_inner());
+                    state = sync::wait(&self.changed, state);
                 }
             }
         }

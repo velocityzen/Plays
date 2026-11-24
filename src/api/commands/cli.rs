@@ -12,6 +12,7 @@ use serde_json::Value;
 use crate::api::registry::Spec;
 use crate::api::{Error, Source};
 use crate::settings::Settings;
+use crate::ui::sentence::capitalized;
 
 /// Where the command line goes: on the PATH a terminal has to start with.
 const FOLDER: &str = "/usr/local/bin";
@@ -218,15 +219,6 @@ fn tell(source: Source, installed: &Result<PathBuf, Cant>, cx: &mut App) {
         })
         .detach();
     });
-}
-
-/// `text` with a capital at the start, as an alert's sentences have.
-fn capitalized(text: &str) -> String {
-    let mut chars = text.chars();
-    chars
-        .next()
-        .map(|first| first.to_uppercase().chain(chars).collect())
-        .unwrap_or_default()
 }
 
 #[cfg(test)]

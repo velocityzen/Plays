@@ -38,7 +38,7 @@ use gpui::{
 use serde_json::{Map, Value};
 
 use super::components::{Icon, Panel};
-use super::text_input::TextInput;
+use super::text_input::{Edited, TextInput};
 use super::theme::palette::{
     CHECK_WIDTH, DETAIL_SELECTED, FIELD_HEIGHT, FIELD_RADIUS, INSET, KEYCAP_RADIUS, LIST_PADDING,
     MARGIN, RADIUS, ROW_HEIGHT, ROW_RADIUS, ROWS, SEARCH_ICON, WIDTH as PALETTE_WIDTH,
@@ -387,7 +387,7 @@ impl Palette {
         };
         let input = cx.new(|cx| TextInput::new(placeholder, cx).bare());
         window.focus(&input.focus_handle(cx));
-        let input_changed = cx.observe(&input, |this, _, cx| this.filter(cx));
+        let input_changed = cx.subscribe(&input, |this, _, _: &Edited, cx| this.filter(cx));
         let rows = listing.order("");
         let mut palette = Self {
             window: window_target,

@@ -16,6 +16,12 @@ impl Workspace {
             .iter()
             .any(|block| block.view.read(cx).is_playing())
     }
+
+    /// Whether it ticks often: something in it plays, or it's on its way
+    /// to another display.
+    pub(super) fn busy(&self, cx: &App) -> bool {
+        self.any_playing(cx) || self.moving_to.is_some()
+    }
 }
 
 /// The blocks in every player window but `except`, window by window as

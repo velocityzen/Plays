@@ -29,6 +29,7 @@ mod profile;
 mod segments;
 mod server;
 mod subtitles;
+mod sync;
 
 #[cfg(test)]
 #[path = "tests/stream_server.rs"]

@@ -320,3 +320,37 @@ fn ime_is_told_where_wide_characters_are_drawn(cx: &mut TestAppContext) {
         );
     }
 }
+
+/// It says its text changed when typed, deleted, composed or set; not when
+/// only the cursor or the selection moved.
+#[gpui::test]
+fn says_when_its_text_changes_not_its_cursor(cx: &mut TestAppContext) {
+    let (input, cx) = new_input(cx);
+    let edits = std::rc::Rc::new(std::cell::Cell::new(0));
+    let counted = edits.clone();
+    let _edited = cx.update(|_, cx| {
+        cx.subscribe(&input, move |_, _: &Edited, _| {
+            counted.set(counted.get() + 1)
+        })
+    });
+    type_text(cx, &input, "abc");
+    assert_eq!(edits.get(), 1);
+    edit(cx, &input, |input, window, cx| {
+        input.left(&Left, window, cx);
+        input.right(&Right, window, cx);
+        input.home(&Home, window, cx);
+        input.end(&End, window, cx);
+        input.select_left(&SelectLeft, window, cx);
+        input.select_right(&SelectRight, window, cx);
+        input.select_all(&SelectAll, window, cx);
+    });
+    assert_eq!(edits.get(), 1, "moving and selecting aren't edits");
+    edit(cx, &input, |input, window, cx| {
+        input.backspace(&Backspace, window, cx)
+    });
+    assert_eq!(edits.get(), 2);
+    compose(cx, &input, "n", 1..1);
+    assert_eq!(edits.get(), 3);
+    edit(cx, &input, |input, _, cx| input.set_text("set", cx));
+    assert_eq!(edits.get(), 4);
+}

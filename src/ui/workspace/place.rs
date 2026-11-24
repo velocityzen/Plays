@@ -130,9 +130,10 @@ fn save(file: &str, place: &Place, cx: &App) {
 }
 
 /// `place` with its display's name, to know the display by when the
-/// system numbers it anew.
+/// system numbers it anew: as last looked at (`displays::connected`), as
+/// asking the system on every move is slow on X11.
 fn named(place: Place, cx: &App) -> Place {
-    let name = displays::list(cx)
+    let name = displays::connected(cx)
         .into_iter()
         .find(|display| display.id == place.display)
         .map(|display| display.name);
