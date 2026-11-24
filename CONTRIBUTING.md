@@ -125,8 +125,7 @@ script/check                        # all a change passes before a commit
   Without it they fail, saying so.
 - Hardware decoding tests need VideoToolbox on macOS.
 - What fish and Nushell complete is checked only where they're installed.
-- Property tests try 256 cases each; `PROPTEST_CASES` sets more.
-- Fuzz tests try 100 cases each;
+- Property and fuzz tests try 100 cases each; `HEGEL_TEST_CASES` sets more.
   `HEGEL_DEFAULT_PROFILE=fuzz cargo test --workspace fuzz` tries a million
   (`hegel.toml`).
 
@@ -160,16 +159,13 @@ mod tests;
 
 - A folder module's own tests (its `mod.rs`'s) are in `tests/mod.rs`.
 - A crate root's are named after the crate
-  (`crates/dlna/src/tests/dlna.rs`), as proptest takes a folder holding a
-  `lib.rs` or `main.rs` for the crate's own.
+  (`crates/dlna/src/tests/dlna.rs`).
 - Property tests are in `tests/<file>_properties.rs`, declared as
   `mod properties`; a helper both use is `pub(super)` in the unit tests.
-- proptest saves a failure in the crate's `proptest-regressions/` at the
-  property file's path (`proptest-regressions/tests/http_properties.txt`):
-  commit it with the fix.
-- Fuzz tests are in `tests/<file>_fuzz.rs`, declared as `mod fuzz`, with
-  Hegel (`hegeltest`). It keeps a failure in the crate's `.hegel/`, which
-  isn't committed: a unit test of the fix keeps it.
+- Fuzz tests are in `tests/<file>_fuzz.rs`, declared as `mod fuzz`.
+- Both are Hegel's (`hegeltest`). It keeps a failure in the crate's
+  `.hegel/`, which isn't committed: a unit test of the fix, or a
+  `#[hegel::explicit_test_case]`, keeps it.
 - Window tests are `ui::workspace`'s, in `src/ui/workspace/tests/`, a file
   per feature; one named for a workspace code file, such as `screensaver`,
   is that file's tests (`ui::workspace::screensaver::tests`).

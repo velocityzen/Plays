@@ -1,60 +1,66 @@
-use proptest::collection::vec;
-use proptest::prelude::*;
-use proptest::sample::select;
+use hegel::TestCase;
+use hegel::generators::{self as gs, Generator};
 
 use super::*;
 
+/// XML's pieces.
+const PIECES: &[&str] = &[
+    "<a>",
+    "</a>",
+    "<b x=\"1\"/>",
+    "<p:c xmlns:p=\"u\" p:y='2'>",
+    "</p:c>",
+    "&amp;",
+    "&#x41;",
+    "&#xFFFFFFFF;",
+    "&#0;",
+    "&bogus;",
+    "<![CDATA[<x>]]>",
+    "<?xml version=\"1.0\"?>",
+    "<!-- c -->",
+    "<!DOCTYPE a>",
+    "<",
+    ">",
+    "&",
+    "\"",
+    "\u{feff}",
+];
+
 /// XML's pieces, put together any which way, among any characters.
-fn xmlish() -> impl Strategy<Value = String> {
-    let piece = prop_oneof![
-        any::<char>().prop_map(String::from),
-        select(vec![
-            "<a>",
-            "</a>",
-            "<b x=\"1\"/>",
-            "<p:c xmlns:p=\"u\" p:y='2'>",
-            "</p:c>",
-            "&amp;",
-            "&#x41;",
-            "&#xFFFFFFFF;",
-            "&#0;",
-            "&bogus;",
-            "<![CDATA[<x>]]>",
-            "<?xml version=\"1.0\"?>",
-            "<!-- c -->",
-            "<!DOCTYPE a>",
-            "<",
-            ">",
-            "&",
-            "\"",
-            "\u{feff}",
-        ])
-        .prop_map(str::to_owned),
-    ];
-    vec(piece, 0..48).prop_map(|pieces| pieces.concat())
+#[hegel::composite]
+fn xmlish(tc: &TestCase) -> String {
+    let piece = hegel::one_of!(
+        gs::characters().map(String::from),
+        gs::sampled_from(PIECES).map(str::to_owned),
+    );
+    tc.draw(gs::vecs(piece).max_size(47)).concat()
 }
 
-proptest! {
-    #[test]
-    fn any_text_is_read_or_refused_without_panicking(text in xmlish()) {
-        if let Ok(root) = Element::parse(&text) {
-            prop_assert!(depth(&root) <= MAX_DEPTH);
-        }
+#[hegel::test]
+fn any_text_is_read_or_refused_without_panicking(tc: TestCase) {
+    let text = tc.draw(xmlish());
+    if let Ok(root) = Element::parse(&text) {
+        assert!(depth(&root) <= MAX_DEPTH);
     }
+}
 
-    #[test]
-    fn elements_nest_only_so_deep(
-        depth in prop_oneof![0..=2 * MAX_DEPTH, 0usize..100_000],
-        empty in any::<bool>(),
-    ) {
-        let inside = if empty { "<b/>" } else { "" };
-        let document = format!("{}{inside}{}", "<a>".repeat(depth), "</a>".repeat(depth));
-        let deepest = depth + usize::from(empty);
-        prop_assert_eq!(
-            Element::parse(&document).is_ok(),
-            (1..=MAX_DEPTH).contains(&deepest)
-        );
-    }
+#[hegel::test]
+fn elements_nest_only_so_deep(tc: TestCase) {
+    let depth = tc.draw(hegel::one_of!(
+        gs::integers::<usize>()
+            .min_value(MAX_DEPTH - 1)
+            .max_value(MAX_DEPTH + 1),
+        gs::integers::<usize>().max_value(2 * MAX_DEPTH),
+        gs::integers::<usize>().max_value(99_999),
+    ));
+    let empty = tc.draw(gs::booleans());
+    let inside = if empty { "<b/>" } else { "" };
+    let document = format!("{}{inside}{}", "<a>".repeat(depth), "</a>".repeat(depth));
+    let deepest = depth + usize::from(empty);
+    assert_eq!(
+        Element::parse(&document).is_ok(),
+        (1..=MAX_DEPTH).contains(&deepest)
+    );
 }
 
 /// How deep an element and what's in it go.

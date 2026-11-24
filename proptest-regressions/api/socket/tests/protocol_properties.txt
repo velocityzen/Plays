@@ -1,7 +1,0 @@
-# Seeds for failure cases proptest has generated in the past. It is
-# automatically read and these particular cases re-run before any
-# novel cases are generated.
-#
-# It is recommended to check this file in to source control so that
-# everyone who runs the test benefits from these saved cases.
-cc 7923c11e6f8c7d2d38efbe36307990c2ef272d580cd113a4437c54e31b350d6c # shrinks to request = Request { id: Null, ask: Call { command: "", args: Array [Object {"id": Number(3.754371804680854e-157)}], target: Target { window: None, block: None } } }

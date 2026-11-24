@@ -106,7 +106,8 @@ chromecast = { path = "crates/chromecast", features = ["fake"] }
 airplay = { path = "crates/airplay", features = ["fake"] }
 # What the AirPlay fake was told, which comes as property lists.
 plist = "1"
-proptest = { version = "1", default-features = false, features = ["std"] }
+# The property tests.
+hegeltest = "0.54"
 # Reads gpui's shaders for Linux, which nothing building on macOS does.
 naga = { version = "25.0", features = ["wgsl-in"] }
 

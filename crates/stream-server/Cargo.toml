@@ -24,4 +24,5 @@ log = "0.4"
 ffmpeg-link = { path = "../ffmpeg-link" }
 
 [dev-dependencies]
-proptest = { version = "1", default-features = false, features = ["std"] }
+# The property tests.
+hegeltest = "0.54"

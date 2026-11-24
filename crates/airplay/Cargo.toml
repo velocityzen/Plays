@@ -34,7 +34,6 @@ subtle = "2.6.1"
 x25519-dalek = { version = "2", features = ["static_secrets"] }
 
 [dev-dependencies]
-# The fuzz tests: what a device might send, run long with
-# `HEGEL_DEFAULT_PROFILE=fuzz`.
+# The property and fuzz tests; `HEGEL_DEFAULT_PROFILE=fuzz` runs the
+# fuzz tests, of what a device might send, long.
 hegeltest = "0.54"
-proptest = { version = "1", default-features = false, features = ["std"] }

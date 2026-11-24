@@ -24,8 +24,7 @@ rustls = { version = "0.23", default-features = false, features = ["logging", "r
 serde_json = "1"
 
 [dev-dependencies]
-# The fuzz tests: what a device might send, run long with
-# `HEGEL_DEFAULT_PROFILE=fuzz`.
+# The property and fuzz tests; `HEGEL_DEFAULT_PROFILE=fuzz` runs the
+# fuzz tests, of what a device might send, long.
 hegeltest = "0.54"
-proptest = { version = "1", default-features = false, features = ["std"] }
 rcgen = { version = "0.14", default-features = false, features = ["crypto", "ring"] }
