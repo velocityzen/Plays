@@ -38,6 +38,7 @@ use gpui::{
 pub use controls::format_time;
 pub use drag::{DraggedBlock, move_window_once_dragged};
 pub use graveyard::Graveyard;
+pub use osd::update_note;
 
 use super::components::Panel;
 use super::framing::{Adjustments, Framing};
@@ -723,7 +724,7 @@ impl PlayerView {
         };
 
         let bars = self.render_bars(&reveal, info.as_deref(), &theme, window, cx);
-        let osd = self.render_osd(window);
+        let osd = self.render_osd(window, cx);
         let console = self.render_console();
 
         let surface = self.render_surface(window, cx);

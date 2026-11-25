@@ -5,6 +5,9 @@
 //!
 //! The feed's URL and the keys it's signed with are in
 //! `resources/updates.json` (`feed`); with no feed there, updates are off.
+//! An update ready is said in a note over the block keys go to, or at the
+//! top of an empty window, with Dismiss and Restart Now: it stays until
+//! it's dismissed or installed, and none shows where notes are hidden.
 
 mod feed;
 
@@ -55,6 +58,10 @@ pub trait Source: Send + Sync + 'static {
     fn install(&self) -> Result<(), String>;
     /// Where Plays is installed, to start again from.
     fn installed_at(&self) -> PathBuf;
+    /// How long after starting Plays first checks.
+    fn first_check(&self) -> Duration {
+        FIRST_CHECK
+    }
 }
 
 /// Where updating is.
@@ -106,6 +113,8 @@ pub struct Updates {
     cancel: Arc<AtomicBool>,
     /// How Plays starts again: its own way, or a test's.
     restart: fn(&mut App),
+    /// The version whose note saying it's ready was dismissed.
+    dismissed: Option<Version>,
 }
 
 impl Global for Updates {}
@@ -117,6 +126,11 @@ pub fn version() -> Version {
 
 /// Updates from the feed, if Plays has one and updates itself here.
 pub fn start(cx: &mut App) {
+    #[cfg(debug_assertions)]
+    if let Some(trying) = feed::trying() {
+        start_with(trying, feed::run_again, cx);
+        return;
+    }
     start_with(feed::open(), App::restart, cx);
 }
 
@@ -131,19 +145,20 @@ pub(crate) fn start_with(
         Ok(source) => (Some(source), State::Idle),
         Err(why) => (None, State::Off(why)),
     };
-    let on = source.is_some();
+    let first_check = source.as_ref().map(|source| source.first_check());
     cx.set_global(Updates {
         source,
         state,
         checked: None,
         cancel: Arc::default(),
         restart,
+        dismissed: None,
     });
-    if !on {
+    let Some(first_check) = first_check else {
         return;
-    }
+    };
     cx.spawn(async move |cx| {
-        cx.background_executor().timer(FIRST_CHECK).await;
+        cx.background_executor().timer(first_check).await;
         loop {
             if cx
                 .update(|cx| {
@@ -255,6 +270,29 @@ pub fn check(cx: &mut App) {
         .ok();
     })
     .detach();
+}
+
+/// The update ready to say so in a note, if it isn't dismissed: none
+/// where notes are hidden.
+pub fn notice(cx: &App) -> Option<Found> {
+    if !cx.global::<Settings>().over_video.notes {
+        return None;
+    }
+    let updates = cx.try_global::<Updates>()?;
+    match &updates.state {
+        State::Ready(found) if updates.dismissed.as_ref() != Some(&found.version) => {
+            Some(found.clone())
+        }
+        _ => None,
+    }
+}
+
+/// The note saying the update is ready put away, in every window; About
+/// still says it.
+pub fn dismiss(cx: &mut App) {
+    set(cx, |updates| {
+        updates.dismissed = updates.state.found().map(|found| found.version.clone());
+    });
 }
 
 /// Install the update that's ready, and start Plays again to run it.

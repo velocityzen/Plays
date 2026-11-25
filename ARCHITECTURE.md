@@ -127,7 +127,7 @@ on its own. Clippy lints in the root `Cargo.toml` apply to all.
 | `vendor/block` | block 0.1.6, patched for what a future Rust rejects |
 | `vendor/gpui` | gpui 0.2.2, patched |
 | `vendor/xattr` | xattr 0.2.3, patched to build on Linux |
-| `script/` | FFmpeg build, macOS bundle, Linux install, credits, file types, fixtures, smoke runs, checks, gpui upgrades, release files, the update feed |
+| `script/` | FFmpeg build, macOS bundle, Linux install, credits, file types, fixtures, smoke runs, checks, gpui upgrades, release files, the update feed, trying updates |
 | `.github/workflows` | Releases, from a tag or run by hand for one OS; a weekly check that the update feed holds |
 | `resources/` | Credits (`attributions.json`), the update feed (`updates.json`), macOS `Info.plist` and document types, Linux `.desktop` and app icon, file icons |
 | `assets/` | App icon and UI icons |

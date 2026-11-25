@@ -191,6 +191,14 @@ pub mod overlay {
     pub fn hover() -> Hsla {
         hsla(0.0, 0.0, 1.0, 0.16)
     }
+    /// A primary button's frosted fill over video, at rest and hovered or
+    /// pressed: the accent would fight the picture.
+    pub fn fill() -> Hsla {
+        hsla(0.0, 0.0, 1.0, 0.24)
+    }
+    pub fn fill_hover() -> Hsla {
+        hsla(0.0, 0.0, 1.0, 0.34)
+    }
     pub fn track() -> Hsla {
         hsla(0.0, 0.0, 1.0, 0.28)
     }
@@ -332,6 +340,9 @@ pub mod panel {
     pub const OVERLAY_PADDING: [Pixels; 3] = [px(8.), px(12.), px(16.)];
     /// Above and below a note's line; across, it has its size's padding.
     pub const NOTE_PADDING_Y: Pixels = px(4.);
+    /// Between notes shown at once: the one that an update is ready, and
+    /// one on what a shortcut did.
+    pub const NOTES_GAP: Pixels = px(8.);
     /// Around the track reel's rows, as much as a menu has around its rows.
     pub const REEL_PADDING: Pixels = px(4.);
 }

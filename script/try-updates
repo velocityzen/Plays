@@ -1,0 +1,185 @@
+#!/usr/bin/env bash
+# Try updating, on this machine: the debug build updates a stand-in for its
+# install from a feed served here, to see Settings → About, the notes, the
+# download's progress and the note that says an update is ready.
+#
+#   script/try-updates [FILE…]
+#
+# - target/try-updates: a key pair of its own; a stand-in install at the
+#   version in Cargo.toml; the update files of it and of two newer versions,
+#   with deltas to them; their feed; and try.json, which the build reads
+#   from PLAYS_TRY_UPDATES
+# - The newest's notes are release.md's, if there's one, else a sample's.
+# - The feed is served on 127.0.0.1:PORT (8765), RATE bytes a second
+#   (2000000), so the download takes a while.
+# - Plays checks FIRST_CHECK seconds (5) after starting, or with Plays →
+#   Check for Updates….
+# - The FILEs open in it.
+# - It runs beside another Plays, with a socket of its own.
+# - Ctrl-C stops serving the feed.
+set -euo pipefail
+
+# The FILEs, from where it's run.
+files=()
+for file in "$@"; do
+    case $file in
+    /* | *://*) files+=("$file") ;;
+    *) files+=("$PWD/$file") ;;
+    esac
+done
+cd "$(dirname "$0")/.."
+
+port=${PORT:-8765}
+rate=${RATE:-2000000}
+first_check=${FIRST_CHECK:-5}
+try=$PWD/target/try-updates
+feed=$try/feed
+version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
+IFS=. read -r major minor patch <<<"$version"
+fix=$major.$minor.$((patch + 1))
+next=$major.$((minor + 1)).0
+
+case $(uname -s) in
+Darwin) os=macos ;;
+Linux) os=linux ;;
+*) echo "try-updates runs on macOS and Linux" >&2; exit 1 ;;
+esac
+case $(uname -m) in
+arm64 | aarch64) arch=aarch64 ;;
+x86_64 | amd64) arch=x86_64 ;;
+*) arch=$(uname -m) ;;
+esac
+platform=$os-$arch
+
+cargo build -q -p updater --features release
+cargo build -q
+updater=$PWD/target/debug/updater
+plays=$PWD/target/debug/plays
+
+rm -rf "$try"
+mkdir -p "$try/install" "$try/downloads" "$feed"
+export UPDATER_PASSWORD=try
+"$updater" keygen "$try/keys" >/dev/null
+key=$try/keys/updates.key
+
+# Each version's stand-in: 16 MB they share, then 8 MB of its own, so a
+# delta is a third of the whole update.
+head -c 16000000 /dev/urandom >"$try/shared"
+stand_in() {
+    cp "$try/shared" "$2"
+    head -c 8000000 /dev/urandom >>"$2"
+    chmod +x "$2"
+    "$updater" pack --version "$1" "$2" "$feed/Plays-$1-$platform.update" >/dev/null
+}
+stand_in "$version" "$try/install/plays"
+stand_in "$fix" "$try/fix"
+stand_in "$next" "$try/next"
+"$updater" delta "$feed/Plays-$version-$platform.update" "$feed/Plays-$fix-$platform.update" \
+    "$feed/Plays-$version-to-$fix-$platform.update" >/dev/null
+for from in "$version" "$fix"; do
+    "$updater" delta "$feed/Plays-$from-$platform.update" "$feed/Plays-$next-$platform.update" \
+        "$feed/Plays-$from-to-$next-$platform.update" >/dev/null
+done
+rm "$try/shared" "$try/fix" "$try/next"
+
+cat >"$try/$version.md" <<EOF
+The version this build is: the feed stops here.
+EOF
+cat >"$try/$fix.md" <<'EOF'
+## Fixed
+
+- A file with a **broken** index plays from the start, not from its middle.
+- Subtitles in `.ass` files keep their ~~colours~~ colors.
+EOF
+if [ -f release.md ] && grep -q '[^[:space:]]' release.md; then
+    cp release.md "$try/$next.md"
+else
+    cat >"$try/$next.md" <<'EOF'
+# What's new
+
+Plays now updates *itself*, from a feed signed with
+[minisign](https://jedisct1.github.io/minisign/).
+
+## New
+
+- Settings → About shows the notes of every release since yours.
+- A note says when an update is ready:
+  1. it stays until it's dismissed
+  2. none while notes are hidden
+
+> Updates download in the background, and install as Plays quits.
+
+```
+plays do 'block.1.position@120.5s'
+```
+
+---
+
+## Fixed
+
+- Seeking past the end of a live stream stops at its edge.
+EOF
+fi
+
+"$updater" feed "$feed/feed.jsonl" --app plays --key "$key" --notes "$try/$version.md" \
+    --update "$platform=$feed/Plays-$version-$platform.update" >/dev/null
+"$updater" feed "$feed/feed.jsonl" --key "$key" --notes "$try/$fix.md" \
+    --update "$platform=$feed/Plays-$fix-$platform.update" \
+    --delta "$platform=$feed/Plays-$version-to-$fix-$platform.update" >/dev/null
+"$updater" feed "$feed/feed.jsonl" --key "$key" --notes "$try/$next.md" \
+    --update "$platform=$feed/Plays-$next-$platform.update" \
+    --delta "$platform=$feed/Plays-$version-to-$next-$platform.update" \
+    --delta "$platform=$feed/Plays-$fix-to-$next-$platform.update" >/dev/null
+
+python3 - "$try" "$port" "$first_check" <<'EOF'
+import json, sys
+folder, port, first_check = sys.argv[1], sys.argv[2], int(sys.argv[3])
+with open(f"{folder}/keys/updates.pub") as key:
+    keys = [key.read()]
+with open(f"{folder}/try.json", "w") as out:
+    json.dump({
+        "feed": f"http://127.0.0.1:{port}/feed.jsonl",
+        "keys": keys,
+        "install": f"{folder}/install/plays",
+        "downloads": f"{folder}/downloads",
+        "first_check": first_check,
+    }, out, indent=2)
+EOF
+
+# The feed's folder, served RATE bytes a second.
+cat >"$try/serve.py" <<'EOF'
+import functools, http.server, sys, time
+
+folder, port, rate = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
+
+class Slow(http.server.SimpleHTTPRequestHandler):
+    def copyfile(self, source, out):
+        while chunk := source.read(64 * 1024):
+            out.write(chunk)
+            time.sleep(len(chunk) / rate)
+
+    def log_message(self, format, *args):
+        sys.stderr.write("feed: " + format % args + "\n")
+
+handler = functools.partial(Slow, directory=folder)
+http.server.ThreadingHTTPServer(("127.0.0.1", port), handler).serve_forever()
+EOF
+if curl -s -o /dev/null "http://127.0.0.1:$port/"; then
+    echo "something answers on port $port already: stop it, or set PORT" >&2
+    exit 1
+fi
+python3 "$try/serve.py" "$feed" "$port" "$rate" &
+server=$!
+trap 'kill "$server" 2>/dev/null' EXIT
+trap 'exit 130' INT TERM HUP
+for _ in $(seq 50); do
+    if curl -sf "http://127.0.0.1:$port/feed.jsonl" >/dev/null; then
+        break
+    fi
+    sleep 0.1
+done
+
+echo "Plays $version, updating to $next from http://127.0.0.1:$port/feed.jsonl"
+echo "The stand-in it updates: $try/install/plays. Ctrl-C stops serving the feed."
+PLAYS_TRY_UPDATES=$try PLAYS_SOCKET=$try/plays.sock RUST_LOG=${RUST_LOG:-info} "$plays" ${files[@]+"${files[@]}"} &
+wait "$server"

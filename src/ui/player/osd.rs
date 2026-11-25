@@ -1,14 +1,17 @@
 //! Notes over a block on what a shortcut did: a line of text, or the reel of
 //! tracks rolling to the one picked. They show for a moment, then fade out.
+//! Over the block keys go to, the note that an update is ready stays above
+//! them until it's dismissed, or Plays restarts to install it.
 
 use std::time::{Duration, Instant};
 
 use gpui::prelude::*;
-use gpui::{AnyElement, Context, Div, SharedString, Window, div};
+use gpui::{AnyElement, App, Context, Div, SharedString, Window, div};
 
 use super::PlayerView;
 use super::tracks::{TrackChoice, track_row};
-use crate::ui::components::{ComponentSize, Panel};
+use crate::app::updates::{self, Found};
+use crate::ui::components::{Button, ComponentSize, Panel, Sizable};
 use crate::ui::theme::motion::{OSD_DURATION, OSD_FADE, REEL_ROLL};
 use crate::ui::theme::player::{NOTE_TOP, REEL_FADED, TRACK_MENU_WIDTH};
 use crate::ui::theme::{menu, panel};
@@ -73,7 +76,12 @@ impl PlayerView {
 
     /// The note showing, below the header and fading as it ends; none once
     /// it is over.
-    pub(super) fn render_osd(&mut self, window: &mut Window) -> Option<Div> {
+    pub(super) fn render_osd(&mut self, window: &mut Window, cx: &App) -> Option<Div> {
+        let update = if self.layout.active && self.over_video().notes {
+            updates::notice(cx)
+        } else {
+            None
+        };
         let osd = self.osd.as_ref().and_then(|(osd, shown)| {
             let shown = shown.elapsed();
             let left = OSD_DURATION.checked_sub(shown)?;
@@ -89,18 +97,67 @@ impl PlayerView {
         } else {
             self.osd = None;
         }
-        osd.map(|(note, fade)| {
+        if update.is_none() && osd.is_none() {
+            return None;
+        }
+        Some(
             div()
                 .absolute()
                 .top(NOTE_TOP)
                 .left_0()
                 .w_full()
                 .flex()
-                .justify_center()
-                .opacity(fade)
-                .child(note)
-        })
+                .flex_col()
+                .items_center()
+                .gap(panel::NOTES_GAP)
+                .children(update.map(|found| update_note(&found)))
+                .children(osd.map(|(note, fade)| div().opacity(fade).child(note))),
+        )
     }
+}
+
+/// The note that `found` is ready, with Dismiss and Restart Now, pills as
+/// round as it is: it takes the mouse, for its buttons, so a click on it
+/// doesn't reach the block.
+pub fn update_note(found: &Found) -> Div {
+    let buttons = div()
+        .flex()
+        .items_center()
+        .gap_1()
+        .child(
+            Button::new("update-dismiss", "Dismiss")
+                .ghost()
+                .overlay()
+                .small()
+                .rounded_full()
+                .on_click(|_, _, cx| updates::dismiss(cx)),
+        )
+        .child(
+            Button::new("update-restart", "Restart Now")
+                .primary()
+                .overlay()
+                .small()
+                .rounded_full()
+                .on_click(|_, _, cx| {
+                    // About says why, if it can't.
+                    if let Err(why) = updates::restart(cx) {
+                        log::warn!("{why}");
+                    }
+                }),
+        );
+    div().debug_selector(|| "update-ready".into()).child(
+        Panel::note(
+            div()
+                .flex()
+                .items_center()
+                .gap_3()
+                .child(format!("Plays {} is ready to install", found.version))
+                .child(buttons),
+        )
+        .occlude()
+        // Its buttons' ends as round as the pill's, and as far in.
+        .pr(panel::NOTE_PADDING_Y),
+    )
 }
 
 /// The reel `shown` after a track was picked: it rolls up a row, from the

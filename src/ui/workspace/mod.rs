@@ -41,10 +41,12 @@ use super::displays;
 use super::name_sheet::NameSheet;
 use super::open_url::{OpenUrlDialog, OpenUrlEvent, UrlForm};
 use super::palette::Palette;
-use super::player::{Graveyard, PlayerView};
+use super::player::{Graveyard, PlayerView, update_note};
 use super::theme::layout::{DROP_INSET, TOOLBAR_HEIGHT, TRAFFIC_LIGHTS, WINDOW_MIN_SIZE};
+use super::theme::player::NOTE_TOP;
 use super::theme::{self, Theme};
 use crate::api::Id;
+use crate::app::updates;
 use crate::app::{AudioEngine, FocusHistory, note_front, refresh_menus};
 use crate::cast::{self, Casting};
 use crate::media::{Mixer, picture};
@@ -431,6 +433,20 @@ impl Render for Workspace {
             .capture_key_down(cx.listener(|this, _: &KeyDownEvent, _, cx| this.used(cx)))
             .child(mouse::track_mouse(cx.entity().downgrade()))
             .child(workspace)
+            // With no block to say it over, an update ready is said where a
+            // block's note would be.
+            .when_some(updates::notice(cx).filter(|_| empty), |this, found| {
+                this.child(
+                    div()
+                        .absolute()
+                        .top(TOOLBAR_SPACE + NOTE_TOP)
+                        .left_0()
+                        .w_full()
+                        .flex()
+                        .justify_center()
+                        .child(update_note(&found)),
+                )
+            })
             .when_some(self.open_url.as_ref(), |this, (dialog, _)| {
                 this.child(dialog.clone())
             })

@@ -222,6 +222,16 @@ impl GalleryView {
                         .with_size(size),
                 )
                 .child(
+                    Button::new(
+                        SharedString::from(format!("{id}-overlay-primary")),
+                        "Primary",
+                    )
+                    .primary()
+                    .overlay()
+                    .rounded_full()
+                    .with_size(size),
+                )
+                .child(
                     Button::icon(SharedString::from(format!("{id}-overlay-icon")), "play")
                         .overlay()
                         .with_size(size),

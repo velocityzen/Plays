@@ -11,6 +11,7 @@ use parking_lot::Mutex;
 
 use super::*;
 use crate::api::{self, Invocation};
+use crate::ui::testing;
 
 /// A feed, as the test has it: what each check finds, how downloading and
 /// installing go, and how many times each was asked.
@@ -325,4 +326,93 @@ fn nothing_is_installed_as_plays_quits_with_no_update_ready(cx: &mut TestAppCont
     check_now(cx);
     cx.quit();
     assert_eq!(fake.installed(), 0);
+}
+
+#[gpui::test]
+fn an_update_ready_is_said_in_a_note_that_stays_until_dismissed(cx: &mut TestAppContext) {
+    let (_, mut window) = testing::start(cx);
+    let fake = Fake::finding(Some(found()));
+    start(&fake, Settings::default(), cx);
+    assert!(!testing::shows(&mut window, "update-ready"));
+    check_now(cx);
+    assert!(testing::shows(&mut window, "update-ready"), "said");
+    cx.executor().advance_clock(Duration::from_secs(60 * 60));
+    cx.run_until_parked();
+    assert!(
+        testing::shows(&mut window, "update-ready"),
+        "and still said"
+    );
+
+    testing::click(&mut window, "update-dismiss");
+    assert!(!testing::shows(&mut window, "update-ready"), "dismissed");
+    assert_eq!(state_now(cx), State::Ready(found()), "About still says it");
+    assert_eq!(fake.installed(), 0);
+}
+
+#[gpui::test]
+fn restart_now_in_the_note_installs_the_update_and_starts_plays_again(cx: &mut TestAppContext) {
+    let (_, mut window) = testing::start(cx);
+    let fake = Fake::finding(Some(found()));
+    start(&fake, Settings::default(), cx);
+    check_now(cx);
+    let before = restarts();
+    testing::click(&mut window, "update-restart");
+    assert_eq!(fake.installed(), 1);
+    assert_eq!(restarts(), before + 1);
+    assert_eq!(state_now(cx), State::Installed(found()));
+    assert!(!testing::shows(&mut window, "update-ready"));
+}
+
+#[gpui::test]
+fn an_update_ready_isnt_said_with_notes_hidden(cx: &mut TestAppContext) {
+    let (_, mut window) = testing::start(cx);
+    let fake = Fake::finding(Some(found()));
+    start(&fake, Settings::default(), cx);
+    let notes = |shown, cx: &mut TestAppContext| {
+        cx.update(|cx| Settings::update(cx, false, |s| s.over_video.notes = shown));
+        cx.run_until_parked();
+    };
+    notes(false, cx);
+    check_now(cx);
+    assert_eq!(state_now(cx), State::Ready(found()));
+    assert!(!testing::shows(&mut window, "update-ready"), "hidden");
+    notes(true, cx);
+    assert!(testing::shows(&mut window, "update-ready"), "shown again");
+}
+
+#[gpui::test]
+fn an_update_ready_is_said_over_the_block_keys_go_to_above_its_notes(cx: &mut TestAppContext) {
+    let (window, mut visual) = testing::start(cx);
+    window
+        .update(cx, |workspace, _, cx| {
+            workspace.open_paths(vec![testing::fixture("clip.mp4")], cx);
+        })
+        .unwrap();
+    assert!(testing::wait_until(cx, |cx| {
+        window
+            .read_with(cx, |workspace, _| workspace.active_player().is_some())
+            .unwrap()
+    }));
+    let block = window
+        .read_with(cx, |workspace, _| workspace.active_player())
+        .unwrap()
+        .unwrap();
+    let fake = Fake::finding(Some(found()));
+    start(&fake, Settings::default(), cx);
+    check_now(cx);
+    assert!(testing::shows(&mut visual, "update-ready"));
+
+    block.update(cx, |view, cx| view.note_change("Volume 50%", cx));
+    assert!(testing::shows(&mut visual, "update-ready"), "beside it");
+    let noted = block.read_with(cx, |view, _| view.noted());
+    assert_eq!(noted.as_deref(), Some("Volume 50%"));
+    let (update, below) = (
+        testing::find(&mut visual, "update-ready"),
+        testing::painted(&mut visual)
+            .into_iter()
+            .find(|(text, _)| text == "Volume 50%")
+            .map(|(_, bounds)| bounds)
+            .expect("the shortcut's note is drawn"),
+    );
+    assert!(update.bottom() <= below.top(), "{update:?} above {below:?}");
 }

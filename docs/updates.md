@@ -176,7 +176,28 @@ updater sign feed.jsonl --key ~/plays-release-keys/updates.key
   - it's installed under `/usr`, `/nix` or `/gnu`
   - it's in a Flatpak or Snap, or from the Microsoft Store
   - macOS runs it from a translocated copy
+- Once an update is ready, a note over the block keys go to, or at the
+  top of an empty window, says so until it's dismissed, with Dismiss and
+  Restart Now: none while notes are hidden.
 - About says why it doesn't update, or why an update failed.
+
+## Trying it here
+
+```bash
+script/try-updates tests/fixtures/clip.mp4
+```
+
+- The debug build updates a stand-in for its install, from a feed served
+  on `127.0.0.1`, with a key of its own: Settings → About, the notes, the
+  download's progress, the note that says it's ready, and Restart to
+  Update.
+- In `target/try-updates`: the stand-in at `Cargo.toml`'s version, two
+  newer versions with deltas, their feed, and `try.json`, which
+  `PLAYS_TRY_UPDATES` names. Release builds don't read it.
+- The newest's notes are `release.md`'s, if there's one.
+- `RATE` (bytes a second), `FIRST_CHECK` (seconds), `PORT`.
+- The files open in it.
+- It runs beside another Plays.
 
 ## Trying a release
 

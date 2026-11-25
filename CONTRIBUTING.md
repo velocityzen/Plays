@@ -126,6 +126,9 @@ script/install-linux
   or Actions → Release, run by hand with the tag and the OS, or all; its
   notes are `release.md`;
   `script/feed add VERSION` signs the feed here and pushes it to `gh-pages`
+- `script/try-updates [FILE…]`: the debug build updates a stand-in from a
+  feed served here, to try About, the notes and the note that says an
+  update is ready
 - [docs/updates.md](docs/updates.md): each step, with its commands
 
 ### Licenses

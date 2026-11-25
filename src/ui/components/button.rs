@@ -156,7 +156,8 @@ impl Button {
     }
 
     /// Colors for drawing over video, which is dark in both themes, for
-    /// ghost and icon buttons.
+    /// ghost, icon and primary buttons: a primary one is frosted white, not
+    /// the accent.
     pub fn overlay(mut self) -> Self {
         self.overlay = true;
         self
@@ -257,6 +258,16 @@ impl Look {
                 hover: theme.surface_hover,
                 active: theme.surface_active,
                 selected: theme.surface_active,
+            },
+            ButtonVariant::Primary if over_video => Self {
+                background: overlay::fill(),
+                border: clear,
+                text,
+                icon: text,
+                shortcut: muted,
+                hover: overlay::fill_hover(),
+                active: overlay::fill_hover(),
+                selected: overlay::fill_hover(),
             },
             ButtonVariant::Primary => filled(theme.accent),
             ButtonVariant::Danger => filled(theme.danger),
