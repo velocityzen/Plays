@@ -87,7 +87,7 @@ fn syncing_and_stepping_all_reach_the_blocks_in_every_window(cx: &mut TestAppCon
     });
     run(
         &mut cx,
-        Invocation::new("playback.sync_all").on_block(named),
+        Invocation::new("block.playback.sync_all").on_block(named),
     )
     .unwrap();
     assert_eq!(playing(&[front, back], &cx), [true, true]);
@@ -109,13 +109,13 @@ fn playing_seeking_and_the_sound_of_all_reach_every_window(cx: &mut TestAppConte
     assert_eq!(playing(&windows, &cx), [false, false]);
     press(&mut cx, "shift-space");
     assert_eq!(playing(&windows, &cx), [true, true]);
-    run(&mut cx, Invocation::new("playback.pause_all")).unwrap();
+    run(&mut cx, Invocation::new("app.playback.pause")).unwrap();
     assert_eq!(playing(&windows, &cx), [false, false]);
-    run(&mut cx, Invocation::new("playback.play_all")).unwrap();
+    run(&mut cx, Invocation::new("app.playback.play")).unwrap();
     assert_eq!(playing(&windows, &cx), [true, true]);
-    run(&mut cx, Invocation::new("playback.pause_all")).unwrap();
+    run(&mut cx, Invocation::new("app.playback.pause")).unwrap();
 
-    run(&mut cx, Invocation::new("playback.restart_all")).unwrap();
+    run(&mut cx, Invocation::new("app.playback.restart")).unwrap();
     wait_for_frames(front, &mut cx, 0.0);
     wait_for_frames(back, &mut cx, 0.0);
     press(&mut cx, "shift-right");
@@ -136,7 +136,7 @@ fn playing_seeking_and_the_sound_of_all_reach_every_window(cx: &mut TestAppConte
             .collect::<Vec<_>>()
     };
     let before = sound(&cx);
-    run(&mut cx, Invocation::new("audio.volume_down_all")).unwrap();
+    run(&mut cx, Invocation::new("app.audio.volume_down")).unwrap();
     let after = sound(&cx);
     for (before, after) in before.iter().zip(&after) {
         assert!(
@@ -144,7 +144,7 @@ fn playing_seeking_and_the_sound_of_all_reach_every_window(cx: &mut TestAppConte
             "each turned down: {before:?} to {after:?}"
         );
     }
-    run(&mut cx, Invocation::new("audio.mute_all.toggle")).unwrap();
+    run(&mut cx, Invocation::new("app.audio.mute.toggle")).unwrap();
     assert!(sound(&cx).iter().all(|&(_, muted)| muted), "all muted");
 }
 
@@ -156,7 +156,7 @@ fn closing_all_is_a_windows_own_and_the_rest_take_no_window(cx: &mut TestAppCont
         .unwrap();
     let aimed = run(
         &mut cx,
-        Invocation::new("playback.play_all").in_window(name.clone()),
+        Invocation::new("app.playback.play").in_window(name.clone()),
     );
     assert!(
         matches!(aimed, Err(Error::BadArgs { .. })),
@@ -187,7 +187,7 @@ fn play_and_pause_set_a_block_or_a_window_as_asked_whatever_it_was(cx: &mut Test
     for _ in 0..2 {
         run(
             &mut cx,
-            Invocation::new("playback.play").on_block(block.clone()),
+            Invocation::new("block.playback.play").on_block(block.clone()),
         )
         .unwrap();
         assert_eq!(playing(&windows, &cx), [true, false]);
@@ -195,7 +195,7 @@ fn play_and_pause_set_a_block_or_a_window_as_asked_whatever_it_was(cx: &mut Test
     for _ in 0..2 {
         run(
             &mut cx,
-            Invocation::new("playback.pause").on_block(block.clone()),
+            Invocation::new("block.playback.pause").on_block(block.clone()),
         )
         .unwrap();
         assert_eq!(playing(&windows, &cx), [false, false]);
@@ -203,13 +203,13 @@ fn play_and_pause_set_a_block_or_a_window_as_asked_whatever_it_was(cx: &mut Test
 
     // A window's blocks, not the other's.
     for _ in 0..2 {
-        let play = Invocation::new("playback.play_window").in_window(window(back, &cx));
+        let play = Invocation::new("window.playback.play").in_window(window(back, &cx));
         run(&mut cx, play).unwrap();
         assert_eq!(playing(&windows, &cx), [false, true]);
     }
-    run(&mut cx, Invocation::new("playback.play")).unwrap();
+    run(&mut cx, Invocation::new("block.playback.play")).unwrap();
     for _ in 0..2 {
-        let pause = Invocation::new("playback.pause_window").in_window(window(back, &cx));
+        let pause = Invocation::new("window.playback.pause").in_window(window(back, &cx));
         run(&mut cx, pause).unwrap();
         assert_eq!(playing(&windows, &cx), [true, false]);
     }

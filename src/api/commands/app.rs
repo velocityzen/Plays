@@ -87,7 +87,7 @@ pub const COMMANDS: &[Spec] = &[
         "block.created",
         "window.layout_changed",
         "block.active_changed",
-        "playback.opened",
+        "block.playback.opened",
     ])
     .keywords(&["file", "folder", "stream", "url", "play", "add"])
     .returns("{window}: the id of the window they open in."),

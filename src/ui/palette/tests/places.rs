@@ -276,7 +276,7 @@ fn return_goes_to_a_block_or_window_plays_a_file_in_the_folder_or_opens_one_play
     assert_eq!(
         ran(&mut cx),
         [palette_ran(
-            "playback.play_file",
+            "block.playback.play_file",
             json!({"path": opus}),
             here.clone()
         )]
@@ -391,7 +391,7 @@ fn files_opened_or_played_in_place_are_noted_once_the_latest_first(cx: &mut Test
     });
     assert!(looked);
     let name = block.read_with(&cx, |view, _| view.id().to_string());
-    let next = Invocation::new("playback.next_file").on_block(name);
+    let next = Invocation::new("block.playback.next_file").on_block(name);
     TestAppContext::update(&cx, |cx| api::run(next, cx)).unwrap();
     cx.run_until_parked();
     assert_eq!(

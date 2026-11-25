@@ -173,7 +173,11 @@ fn in_folder(window: &Target, cx: &App) -> Vec<Place> {
             Place::new(
                 Kind::InFolder,
                 files::name(&file),
-                invocation("playback.play_file", json!({"path": file}), window.clone()),
+                invocation(
+                    "block.playback.play_file",
+                    json!({"path": file}),
+                    window.clone(),
+                ),
             )
             .current(current)
         })

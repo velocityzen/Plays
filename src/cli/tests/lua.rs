@@ -22,7 +22,7 @@ fn a_name_is_a_script_when_it_ends_in_lua_has_a_slash_or_is_a_dash() {
     for name in ["seek.lua", "./seek", "scripts/seek", "-", "/tmp/a.lua"] {
         assert!(is_script(name), "{name}");
     }
-    for name in ["playback.seek", "window.ls", "lua", "seek.luac"] {
+    for name in ["block.playback.seek", "window.ls", "lua", "seek.luac"] {
         assert!(!is_script(name), "{name}");
     }
 }
@@ -182,7 +182,7 @@ fn a_script_calls_commands_on_its_window_and_block(cx: &mut TestAppContext) {
     let code = "return {select('#', plays.window.ls()), select('#', plays.call('playback.nope'))}";
     let ran = plays(&mut cx, &path, &["do", "-e", code]);
     assert_eq!(ran.json(), json!([1, 2]), "{ran:?}");
-    let code = "local _, why = plays.playback.play_pause(); return why";
+    let code = "local _, why = plays.block.playback.play_pause(); return why";
     let ran = plays(&mut cx, &path, &["do", "-e", code]);
     assert_eq!(
         ran.json(),

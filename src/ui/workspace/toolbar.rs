@@ -56,14 +56,14 @@ impl Workspace {
                     "play-pause-all",
                     if playing { "pause" } else { "play" },
                     if playing { "Pause all" } else { "Play all" },
-                    |_, _, cx| api::dispatch(Invocation::new("playback.play_pause_all"), cx),
+                    |_, _, cx| api::dispatch(Invocation::new("app.playback.play_pause"), cx),
                 ))
                 .child(tool(
                     compact,
                     "restart-all",
                     "replay",
                     "Restart all",
-                    |_, _, cx| api::dispatch(Invocation::new("playback.restart_all"), cx),
+                    |_, _, cx| api::dispatch(Invocation::new("app.playback.restart"), cx),
                 ))
                 .child(tool(
                     compact,

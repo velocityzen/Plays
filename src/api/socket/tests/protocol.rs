@@ -5,10 +5,10 @@ fn reads_each_request_with_what_it_leaves_out_at_its_default() {
     let cases = [
         (r#"{"id": 1, "method": "hello"}"#, json!(1), Ask::Hello),
         (
-            r#"{"id": "a", "method": "call", "command": "playback.seek", "args": {"seconds": 30}, "target": {"window": "2"}}"#,
+            r#"{"id": "a", "method": "call", "command": "block.playback.seek", "args": {"seconds": 30}, "target": {"window": "2"}}"#,
             json!("a"),
             Ask::Call {
-                command: "playback.seek".into(),
+                command: "block.playback.seek".into(),
                 args: json!({"seconds": 30}),
                 target: Target {
                     window: Some("2".into()),
@@ -176,9 +176,9 @@ fn a_client_reads_answers_errors_and_events_back() {
             },
         ),
         (
-            json!({"type": "playback.playing", "payload": {"block_id": "1"}}),
+            json!({"type": "block.playback.playing", "payload": {"block_id": "1"}}),
             Incoming::Event {
-                kind: "playback.playing".into(),
+                kind: "block.playback.playing".into(),
                 payload: json!({"block_id": "1"}),
             },
         ),

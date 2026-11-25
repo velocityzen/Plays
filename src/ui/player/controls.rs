@@ -176,7 +176,7 @@ impl PlayerView {
                         .icon_color(overlay::text_muted())
                         .selected(looping)
                         .on_click(cx.listener(|this, _, _, cx| {
-                            this.send("playback.loop.toggle", Value::Null, cx);
+                            this.send("block.playback.loop.toggle", Value::Null, cx);
                         })),
                 )
             })
@@ -185,7 +185,7 @@ impl PlayerView {
                     Button::icon("mute", volume_icon)
                         .overlay()
                         .on_click(cx.listener(|this, _, _, cx| {
-                            this.send("audio.mute.toggle", Value::Null, cx);
+                            this.send("block.audio.mute.toggle", Value::Null, cx);
                         })),
                 )
                 .child(
@@ -248,7 +248,7 @@ impl PlayerView {
                     .overlay()
                     .disabled(!self.has_beside(-1))
                     .on_click(cx.listener(|this, _, _, cx| {
-                        this.send("playback.previous_file", Value::Null, cx);
+                        this.send("block.playback.previous_file", Value::Null, cx);
                     })),
             )
             .child(
@@ -256,14 +256,14 @@ impl PlayerView {
                     .overlay()
                     .disabled(live)
                     .on_click(cx.listener(|this, _, _, cx| {
-                        this.send("playback.seek_backward", Value::Null, cx);
+                        this.send("block.playback.seek_backward", Value::Null, cx);
                     })),
             )
             .child(
                 Button::icon("play", play_icon)
                     .overlay()
                     .on_click(cx.listener(|this, _, _, cx| {
-                        this.send("playback.play_pause", Value::Null, cx);
+                        this.send("block.playback.play_pause", Value::Null, cx);
                     })),
             )
             .child(
@@ -271,7 +271,7 @@ impl PlayerView {
                     .overlay()
                     .disabled(live)
                     .on_click(cx.listener(|this, _, _, cx| {
-                        this.send("playback.seek_forward", Value::Null, cx);
+                        this.send("block.playback.seek_forward", Value::Null, cx);
                     })),
             )
             .child(
@@ -279,7 +279,7 @@ impl PlayerView {
                     .overlay()
                     .disabled(!self.has_beside(1))
                     .on_click(cx.listener(|this, _, _, cx| {
-                        this.send("playback.next_file", Value::Null, cx);
+                        this.send("block.playback.next_file", Value::Null, cx);
                     })),
             )
     }
@@ -295,7 +295,7 @@ impl PlayerView {
         match event.slide {
             Slide::Start => self.playback.begin_scrub(time),
             Slide::Move => self.playback.scrub(time),
-            Slide::End => self.send("playback.seek", json!({"time": time}), cx),
+            Slide::End => self.send("block.playback.seek", json!({"time": time}), cx),
         }
         cx.notify();
     }
@@ -305,7 +305,7 @@ impl PlayerView {
         match event.slide {
             Slide::End => {
                 let volume = f64::from(event.value) * 100.0;
-                self.send("audio.set_volume", json!({"volume": volume}), cx);
+                self.send("block.audio.set_volume", json!({"volume": volume}), cx);
             }
             _ => self.set_volume_to(event.value, cx),
         }

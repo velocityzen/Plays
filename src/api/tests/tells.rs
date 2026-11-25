@@ -65,13 +65,13 @@ const NOT_HEARD: [(&str, &str, &str); 7] = [
         PIP,
     ),
     (
-        "video.next_track",
-        "playback.track_changed",
+        "block.video.next_track",
+        "block.playback.track_changed",
         "no file here has two video tracks",
     ),
     (
-        "video.select_track",
-        "playback.track_changed",
+        "block.video.select_track",
+        "block.playback.track_changed",
         "no file here has two video tracks",
     ),
     (
@@ -177,7 +177,7 @@ fn chapters() -> Invocation {
 
 /// Seek the block keys go to to `time`.
 fn at(time: f64) -> Invocation {
-    command("playback.seek").with_args(json!({"time": time}))
+    command("block.playback.seek").with_args(json!({"time": time}))
 }
 
 /// Four blocks in the front window, two to a row.
@@ -195,7 +195,7 @@ fn ways(spec: &Spec, world: &World) -> Vec<Way> {
     match spec.namespace() {
         "app" | "window" => window_ways(&plan),
         "block" => block_ways(&plan),
-        "playback" => playback_ways(&plan),
+        "block.playback" | "window.playback" | "app.playback" => playback_ways(&plan),
         _ => other_ways(&plan),
     }
     .unwrap_or_else(|| Plan::twice(plan.it()))
@@ -270,46 +270,48 @@ fn block_ways(plan: &Plan) -> Option<Vec<Way>> {
 fn playback_ways(plan: &Plan) -> Option<Vec<Way>> {
     let it = || plan.it();
     let third = || plan.on("3");
-    let playing = || command("playback.play_pause");
+    let playing = || command("block.playback.play_pause");
     Some(match plan.id {
-        "playback.seek" => vec![
+        "block.playback.seek" => vec![
             way(
                 vec![chapters()],
                 vec![plan.with(json!({"time": 1})).on_block("3")],
             ),
             way(Vec::new(), vec![plan.with(json!({"time": 100}))]),
         ],
-        "playback.seek_forward" | "playback.next_chapter" => {
+        "block.playback.seek_forward" | "block.playback.next_chapter" => {
             vec![way(vec![chapters()], vec![third(), third()])]
         }
-        "playback.seek_forward_all" => vec![way(vec![chapters()], vec![it(), it()])],
-        "playback.seek_backward" | "playback.restart" | "playback.previous_chapter" => {
+        "app.playback.seek_forward" => vec![way(vec![chapters()], vec![it(), it()])],
+        "block.playback.seek_backward"
+        | "block.playback.restart"
+        | "block.playback.previous_chapter" => {
             vec![way(vec![chapters(), at(1.5).on_block("3")], vec![third()])]
         }
-        "playback.seek_backward_all" | "playback.restart_all" => {
+        "app.playback.seek_backward" | "app.playback.restart" => {
             vec![way(vec![chapters(), at(1.5).on_block("3")], vec![it()])]
         }
-        "playback.go_to_chapter" => vec![way(
+        "block.playback.go_to_chapter" => vec![way(
             vec![chapters()],
             vec![plan.with(json!({"number": 2})).on_block("3")],
         )],
-        "playback.next_frame"
-        | "playback.previous_frame"
-        | "playback.next_frame_all"
-        | "playback.previous_frame_all" => vec![way(vec![playing()], vec![it()])],
-        "playback.pause_all" => vec![way(vec![command("playback.play_all")], vec![it()])],
-        "playback.pause" => vec![way(vec![playing()], vec![it(), it()])],
-        "playback.pause_window" => {
-            vec![way(vec![command("playback.play_window")], vec![it(), it()])]
+        "block.playback.next_frame"
+        | "block.playback.previous_frame"
+        | "app.playback.next_frame"
+        | "app.playback.previous_frame" => vec![way(vec![playing()], vec![it()])],
+        "app.playback.pause" => vec![way(vec![command("app.playback.play")], vec![it()])],
+        "block.playback.pause" => vec![way(vec![playing()], vec![it(), it()])],
+        "window.playback.pause" => {
+            vec![way(vec![command("window.playback.play")], vec![it(), it()])]
         }
         // Paused, and playing on, as it was.
-        "playback.previous_file" | "playback.next_file" => {
+        "block.playback.previous_file" | "block.playback.next_file" => {
             vec![
                 way(Vec::new(), vec![it()]),
                 way(vec![playing()], vec![it()]),
             ]
         }
-        "playback.play_file" => {
+        "block.playback.play_file" => {
             let file = || plan.with(json!({"path": path("clip-ip.mkv")}));
             vec![
                 way(Vec::new(), vec![file()]),
@@ -317,9 +319,9 @@ fn playback_ways(plan: &Plan) -> Option<Vec<Way>> {
             ]
         }
         // Where keys go, playing, or paused.
-        "playback.sync_all" => vec![
+        "block.playback.sync_all" => vec![
             way(vec![playing()], vec![it()]),
-            way(vec![command("playback.play_all"), playing()], vec![it()]),
+            way(vec![command("app.playback.play"), playing()], vec![it()]),
         ],
         _ => return None,
     })
@@ -327,7 +329,7 @@ fn playback_ways(plan: &Plan) -> Option<Vec<Way>> {
 
 /// Keys for the play button, as Settings → Hotkeys sets them.
 fn hotkeys() -> serde_json::Value {
-    json!({"key": "hotkeys", "value": {"playback.play_pause": ["ctrl-p"]}})
+    json!({"key": "hotkeys", "value": {"block.playback.play_pause": ["ctrl-p"]}})
 }
 
 /// Notes over the video hidden, in every window and block.
@@ -338,16 +340,18 @@ fn hide_notes() -> serde_json::Value {
 fn other_ways(plan: &Plan) -> Option<Vec<Way>> {
     let device = || json!({"device": plan.world.device});
     Some(match plan.id {
-        "audio.set_volume" => Plan::twice(plan.with(json!({"volume": 30}))),
-        "audio.select_track" => Plan::twice(plan.with(json!({"number": 2}))),
+        "block.audio.set_volume" => Plan::twice(plan.with(json!({"volume": 30}))),
+        "block.audio.select_track" => Plan::twice(plan.with(json!({"number": 2}))),
         // Shown, then none.
-        "subtitles.select_track" => vec![way(
+        "block.subtitles.select_track" => vec![way(
             Vec::new(),
             vec![plan.with(json!({"number": 2})), plan.with(json!({}))],
         )],
         // The first, the second, then none after the last.
-        "subtitles.next_track" => vec![way(Vec::new(), vec![plan.it(), plan.it(), plan.it()])],
-        "video.select_track" => Plan::twice(plan.with(json!({"number": 1}))),
+        "block.subtitles.next_track" => {
+            vec![way(Vec::new(), vec![plan.it(), plan.it(), plan.it()])]
+        }
+        "block.video.select_track" => Plan::twice(plan.with(json!({"number": 1}))),
         "cast.to" | "cast.pair" => Plan::twice(plan.with(device())),
         "cast.stop" => vec![way(
             vec![command("cast.to").with_args(device())],
@@ -386,7 +390,7 @@ fn other_ways(plan: &Plan) -> Option<Vec<Way>> {
                 let kept = cx.global::<Settings>().clone();
                 Settings::update(cx, true, |settings| {
                     settings.autoplay = !settings.autoplay;
-                    settings.hotkeys.add("playback.play_pause", "ctrl-p");
+                    settings.hotkeys.add("block.playback.play_pause", "ctrl-p");
                     settings.over_video.notes = !settings.over_video.notes;
                 });
                 Settings::update(cx, false, |settings| *settings = kept);
@@ -610,10 +614,13 @@ namespaces! {
     app_commands_tell_what_they_say: "app",
     window_commands_tell_what_they_say: "window",
     block_commands_tell_what_they_say: "block",
-    playback_commands_tell_what_they_say: "playback",
-    audio_commands_tell_what_they_say: "audio",
-    subtitles_commands_tell_what_they_say: "subtitles",
-    video_commands_tell_what_they_say: "video",
+    block_playback_commands_tell_what_they_say: "block.playback",
+    window_playback_commands_tell_what_they_say: "window.playback",
+    app_playback_commands_tell_what_they_say: "app.playback",
+    block_audio_commands_tell_what_they_say: "block.audio",
+    app_audio_commands_tell_what_they_say: "app.audio",
+    block_subtitles_commands_tell_what_they_say: "block.subtitles",
+    block_video_commands_tell_what_they_say: "block.video",
     cast_commands_tell_what_they_say: "cast",
     output_commands_tell_what_they_say: "output",
     settings_commands_tell_what_they_say: "app.settings",

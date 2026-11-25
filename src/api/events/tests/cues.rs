@@ -59,7 +59,7 @@ fn a_cue_is_known_by_its_type() {
     assert!(is_cue("block.2.position@5s"));
     assert!(is_cue("block.2.position@soon"), "Plays says what's wrong");
     assert!(!is_cue("block.closed"));
-    assert!(!is_cue("playback.position"));
+    assert!(!is_cue("block.playback.position"));
     assert!(!is_cue("window.2.position@5s"));
 }
 

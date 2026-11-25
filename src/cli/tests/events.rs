@@ -20,7 +20,7 @@ fn a_block_that_has_ended_has_nothing_to_wait_for() {
         "frame_rate": 24.0,
     }));
     assert_eq!(
-        ended.already("playback.ended"),
+        ended.already("block.playback.ended"),
         Some(json!({
             "window_id": "aaaa1111",
             "window_title": "Kitchen",
@@ -35,13 +35,17 @@ fn a_block_that_has_ended_has_nothing_to_wait_for() {
     let mut labeled = ended.state.clone();
     labeled["label"] = json!("left");
     assert_eq!(
-        block(labeled).already("playback.ended").unwrap()["block_title"],
+        block(labeled).already("block.playback.ended").unwrap()["block_title"],
         "left",
         "its label, as its header shows"
     );
-    assert_eq!(ended.already("playback.paused"), None, "only its ending");
+    assert_eq!(
+        ended.already("block.playback.paused"),
+        None,
+        "only its ending"
+    );
     let playing = block(json!({"ended": false, "position": 3.0}));
-    assert_eq!(playing.already("playback.ended"), None);
+    assert_eq!(playing.already("block.playback.ended"), None);
 }
 
 #[test]

@@ -1,7 +1,7 @@
 //! Cues: a block reaching a time or a frame, told once, to the listener
 //! that set it, as that frame becomes the block's: its name, such as
 //! `block.3fa9c2d1.position@120.5s` or `block.intro.position@345f`, is
-//! the event's type, and its payload is `playback.position`'s.
+//! the event's type, and its payload is `block.playback.position`'s.
 //!
 //! A block reaches a cue as it plays from before it to it or past it,
 //! frame by frame (`Watch`), or as it lands on it, within one frame: a

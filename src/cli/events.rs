@@ -57,7 +57,7 @@ pub fn wait(session: &mut Session, kind: &str, timeout: Option<f64>) -> Done {
     // Hearing first, so nothing happens unheard while the block is looked at.
     session
         .client()?
-        .subscribe(Heard::All, kind == "playback.position")?;
+        .subscribe(Heard::All, kind == "block.playback.position")?;
     let watched = if is_cue(kind) {
         let set = session.client()?.cue(kind)?;
         Watched {
@@ -149,7 +149,7 @@ impl Watched {
     /// the block titled by its label, or else what it plays.
     fn already(&self, kind: &str) -> Option<Value> {
         let state = &self.state;
-        (kind == "playback.ended" && state["ended"] == true).then(|| {
+        (kind == "block.playback.ended" && state["ended"] == true).then(|| {
             let at = playhead(
                 state["position"].as_f64().unwrap_or_default(),
                 state["duration"].as_f64(),

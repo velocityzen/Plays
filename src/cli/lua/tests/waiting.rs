@@ -211,8 +211,8 @@ fn a_wait_for_where_a_file_is_hears_positions(cx: &mut TestAppContext) {
             "do",
             "-e",
             r#"
-            plays.playback.play_pause{}
-            local heard = plays.wait("playback.position", nil, 5)
+            plays.block.playback.play_pause{}
+            local heard = plays.wait("block.playback.position", nil, 5)
             return heard.block_id == plays.block_id and heard.time ~= nil
             "#,
         ],
@@ -237,7 +237,7 @@ fn a_wait_for_a_cue_hears_its_block_reach_it_once(cx: &mut TestAppContext) {
             "do",
             "-e",
             r#"
-            plays.playback.seek{time = 0}
+            plays.block.playback.seek{time = 0}
             local cue = "block." .. plays.block_id .. ".position@25f"
             local heard = plays.wait(cue, nil, 10)
             local again, why = plays.wait(cue, nil, 0.3)

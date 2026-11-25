@@ -341,11 +341,15 @@ time); Vulkan can be software (lavapipe). It uses `Xvfb`, `openbox`,
 - After changing a command or an event, write the reference again with
   `cargo run -- actions --markdown > docs/commands.md`. Developer commands,
   in debug builds only, aren't in it.
-- Each command namespace is a file of its own in `src/api/commands/`.
+- Each command namespace is a file of its own in `src/api/commands/`; a
+  group's at each scope share one, as `playback.rs` has `block.playback`,
+  `window.playback` and `app.playback`.
+- An id starts with what the command acts on: `block.`, `window.` or
+  `app.`, every block in every window, without `_all`.
 - Every command has its own lower-case id in a namespace, its own title, a
   description that is a sentence, and its arguments named once. Every
   event is registered once, named in its namespace as commands are
-  (`playback.ended`), with a sentence for it and each field.
+  (`block.playback.ended`), with a sentence for it and each field.
 - Each feature turned on and off has the commands `<feature>.toggle`,
   `.on` and `.off`, `.on` and `.off` doing nothing if it already is, and
   the events `<feature>.on` and `.off`, told however it turns.

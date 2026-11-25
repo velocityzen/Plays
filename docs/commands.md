@@ -29,7 +29,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
   - `several_files` (one of together, playlist, optional): Several, or a folder's, each in a block of its own (together), or in one playing them one after another (playlist): as Settings say if not given.
   - `kind` (one of video, audio, optional): Only the video files in folders, or only the sound files: all their media files if not given.
 - Hands back: {window}: the id of the window they open in.
-- Tells: `window.created`, `window.active_changed`, `block.created`, `window.layout_changed`, `block.active_changed`, `playback.opened`.
+- Tells: `window.created`, `window.active_changed`, `block.created`, `window.layout_changed`, `block.active_changed`, `block.playback.opened`.
 
 ### Clear Recent Files
 
@@ -874,404 +874,410 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 - Acts on a block.
 - Tells: `block.console.off`.
 
-## playback
+## block.playback
 
 ### Play/Pause
 
-`playback.play_pause`: Pause the block if it plays, else play it.
+`block.playback.play_pause`: Pause the block if it plays, else play it.
 
 - Acts on a block.
 - Keys: Space, P
-- Tells: `playback.playing`, `playback.paused`.
+- Tells: `block.playback.playing`, `block.playback.paused`.
 
 ### Play
 
-`playback.play`: Play the block, unless it plays already; from the start if it played to its end.
+`block.playback.play`: Play the block, unless it plays already; from the start if it played to its end.
 
 - Acts on a block.
-- Tells: `playback.playing`.
+- Tells: `block.playback.playing`.
 
 ### Pause
 
-`playback.pause`: Pause the block, unless it's paused already.
+`block.playback.pause`: Pause the block, unless it's paused already.
 
 - Acts on a block.
-- Tells: `playback.paused`.
+- Tells: `block.playback.paused`.
 
 ### Seek To
 
-`playback.seek`: Play from a time in the file, here or on the device it's cast to.
+`block.playback.seek`: Play from a time in the file, here or on the device it's cast to.
 
 - Acts on a block.
 - Arguments:
   - `time` (a number, at least 0): Seconds from the start; past the end is the end.
-- Tells: `playback.seeked`, `playback.ended`, `playback.chapter_changed`.
+- Tells: `block.playback.seeked`, `block.playback.ended`, `block.playback.chapter_changed`.
 
 ### Seek Forward
 
-`playback.seek_forward`: Skip ahead by the seek step set in Settings.
+`block.playback.seek_forward`: Skip ahead by the seek step set in Settings.
 
 - Acts on a block.
 - Keys: →
-- Tells: `playback.seeked`, `playback.ended`, `playback.chapter_changed`.
+- Tells: `block.playback.seeked`, `block.playback.ended`, `block.playback.chapter_changed`.
 
 ### Seek Backward
 
-`playback.seek_backward`: Skip back by the seek step set in Settings.
+`block.playback.seek_backward`: Skip back by the seek step set in Settings.
 
 - Acts on a block.
 - Keys: ←
-- Tells: `playback.seeked`, `playback.chapter_changed`.
+- Tells: `block.playback.seeked`, `block.playback.chapter_changed`.
 
 ### Next Frame
 
-`playback.next_frame`: Pause and show the next frame.
+`block.playback.next_frame`: Pause and show the next frame.
 
 - Acts on a block.
 - Keys: ⌥→, ., >
-- Tells: `playback.paused`, `playback.seeked`.
+- Tells: `block.playback.paused`, `block.playback.seeked`.
 
 ### Previous Frame
 
-`playback.previous_frame`: Pause and show the frame before.
+`block.playback.previous_frame`: Pause and show the frame before.
 
 - Acts on a block.
 - Keys: ⌥←, ,, <
-- Tells: `playback.paused`, `playback.seeked`.
+- Tells: `block.playback.paused`, `block.playback.seeked`.
 
 ### Next Chapter
 
-`playback.next_chapter`: Play from the start of the next chapter.
+`block.playback.next_chapter`: Play from the start of the next chapter.
 
 - Acts on a block.
 - Keys: ⇟
-- Tells: `playback.seeked`, `playback.chapter_changed`.
+- Tells: `block.playback.seeked`, `block.playback.chapter_changed`.
 
 ### Previous Chapter
 
-`playback.previous_chapter`: Play from the start of this chapter, or of the one before near its start.
+`block.playback.previous_chapter`: Play from the start of this chapter, or of the one before near its start.
 
 - Acts on a block.
 - Keys: ⇞
-- Tells: `playback.seeked`, `playback.chapter_changed`.
+- Tells: `block.playback.seeked`, `block.playback.chapter_changed`.
 
 ### Go to Chapter
 
-`playback.go_to_chapter`: Play from the start of a chapter.
+`block.playback.go_to_chapter`: Play from the start of a chapter.
 
 - Acts on a block.
 - Arguments:
   - `number` (a whole number, at least 1): Which chapter, from 1.
-- Tells: `playback.seeked`, `playback.chapter_changed`.
+- Tells: `block.playback.seeked`, `block.playback.chapter_changed`.
 
 ### Restart
 
-`playback.restart`: Play from the start.
+`block.playback.restart`: Play from the start.
 
 - Acts on a block.
 - Keys: ↖
-- Tells: `playback.seeked`, `playback.chapter_changed`.
+- Tells: `block.playback.seeked`, `block.playback.chapter_changed`.
 
 ### Previous File
 
-`playback.previous_file`: Play the file before this one in its playlist, or else its folder, instead.
+`block.playback.previous_file`: Play the file before this one in its playlist, or else its folder, instead.
 
 - Acts on a block.
 - Keys: ⌘←
-- Tells: `playback.opened`, `playback.playing`.
+- Tells: `block.playback.opened`, `block.playback.playing`.
 
 ### Next File
 
-`playback.next_file`: Play the file after this one in its playlist, or else its folder, instead.
+`block.playback.next_file`: Play the file after this one in its playlist, or else its folder, instead.
 
 - Acts on a block.
 - Keys: ⌘→
-- Tells: `playback.opened`, `playback.playing`.
+- Tells: `block.playback.opened`, `block.playback.playing`.
 
 ### Play File Instead
 
-`playback.play_file`: Play another file in the block instead, one in its folder say, at the same volume, muted and looping as this one is, and playing if it is.
+`block.playback.play_file`: Play another file in the block instead, one in its folder say, at the same volume, muted and looping as this one is, and playing if it is.
 
 - Acts on a block.
 - Arguments:
   - `path` (text): The file's full path.
-- Tells: `playback.opened`, `playback.playing`.
+- Tells: `block.playback.opened`, `block.playback.playing`.
 
 ### Loop
 
-`playback.loop.toggle`: Play the file again from the start at its end, or stop at its end.
+`block.playback.loop.toggle`: Play the file again from the start at its end, or stop at its end.
 
 - Acts on a block.
 - Keys: ⇧⌘L
-- Tells: `playback.loop.on`, `playback.loop.off`.
+- Tells: `block.playback.loop.on`, `block.playback.loop.off`.
 
 ### Start Looping
 
-`playback.loop.on`: Play the file again from the start at its end, unless it does already.
+`block.playback.loop.on`: Play the file again from the start at its end, unless it does already.
 
 - Acts on a block.
-- Tells: `playback.loop.on`.
+- Tells: `block.playback.loop.on`.
 
 ### Stop Looping
 
-`playback.loop.off`: Stop the file at its end, unless it does already.
+`block.playback.loop.off`: Stop the file at its end, unless it does already.
 
 - Acts on a block.
-- Tells: `playback.loop.off`.
-
-### Play/Pause All
-
-`playback.play_pause_all`: Pause every file in every window if any plays, else play them all.
-
-- Acts on every block in every window.
-- Keys: ⇧Space
-- Tells: `playback.playing`, `playback.paused`.
-
-### Play All
-
-`playback.play_all`: Play every file in every window.
-
-- Acts on every block in every window.
-- Tells: `playback.playing`.
-
-### Pause All
-
-`playback.pause_all`: Pause every file in every window.
-
-- Acts on every block in every window.
-- Tells: `playback.paused`.
-
-### Play Window
-
-`playback.play_window`: Play every file in the window.
-
-- Acts on every block in a window.
-- Tells: `playback.playing`.
-
-### Pause Window
-
-`playback.pause_window`: Pause every file in the window.
-
-- Acts on every block in a window.
-- Tells: `playback.paused`.
-
-### Restart All
-
-`playback.restart_all`: Play every file in every window from the start.
-
-- Acts on every block in every window.
-- Keys: ⇧↖
-- Tells: `playback.seeked`, `playback.chapter_changed`.
-
-### Seek All Forward
-
-`playback.seek_forward_all`: Skip every file in every window ahead by the seek step.
-
-- Acts on every block in every window.
-- Keys: ⇧→
-- Tells: `playback.seeked`, `playback.ended`, `playback.chapter_changed`.
-
-### Seek All Backward
-
-`playback.seek_backward_all`: Skip every file in every window back by the seek step.
-
-- Acts on every block in every window.
-- Keys: ⇧←
-- Tells: `playback.seeked`, `playback.chapter_changed`.
-
-### Next Frame on All
-
-`playback.next_frame_all`: Pause every file in every window and show its next frame.
-
-- Acts on every block in every window.
-- Keys: ⌥⇧→
-- Tells: `playback.paused`, `playback.seeked`.
-
-### Previous Frame on All
-
-`playback.previous_frame_all`: Pause every file in every window and show the frame before.
-
-- Acts on every block in every window.
-- Keys: ⌥⇧←
-- Tells: `playback.paused`, `playback.seeked`.
+- Tells: `block.playback.loop.off`.
 
 ### Sync All to This Block
 
-`playback.sync_all`: Bring every file in every window to where the block is, playing or paused as it is.
+`block.playback.sync_all`: Bring every file in every window to where the block is, playing or paused as it is.
 
 - Acts on a block.
 - Keys: ⇧S
-- Tells: `playback.seeked`, `playback.playing`, `playback.paused`.
+- Tells: `block.playback.seeked`, `block.playback.playing`, `block.playback.paused`.
 
-## audio
+## window.playback
+
+### Play Window
+
+`window.playback.play`: Play every file in the window.
+
+- Acts on every block in a window.
+- Tells: `block.playback.playing`.
+
+### Pause Window
+
+`window.playback.pause`: Pause every file in the window.
+
+- Acts on every block in a window.
+- Tells: `block.playback.paused`.
+
+## app.playback
+
+### Play/Pause All
+
+`app.playback.play_pause`: Pause every file in every window if any plays, else play them all.
+
+- Acts on every block in every window.
+- Keys: ⇧Space
+- Tells: `block.playback.playing`, `block.playback.paused`.
+
+### Play All
+
+`app.playback.play`: Play every file in every window.
+
+- Acts on every block in every window.
+- Tells: `block.playback.playing`.
+
+### Pause All
+
+`app.playback.pause`: Pause every file in every window.
+
+- Acts on every block in every window.
+- Tells: `block.playback.paused`.
+
+### Restart All
+
+`app.playback.restart`: Play every file in every window from the start.
+
+- Acts on every block in every window.
+- Keys: ⇧↖
+- Tells: `block.playback.seeked`, `block.playback.chapter_changed`.
+
+### Seek All Forward
+
+`app.playback.seek_forward`: Skip every file in every window ahead by the seek step.
+
+- Acts on every block in every window.
+- Keys: ⇧→
+- Tells: `block.playback.seeked`, `block.playback.ended`, `block.playback.chapter_changed`.
+
+### Seek All Backward
+
+`app.playback.seek_backward`: Skip every file in every window back by the seek step.
+
+- Acts on every block in every window.
+- Keys: ⇧←
+- Tells: `block.playback.seeked`, `block.playback.chapter_changed`.
+
+### Next Frame on All
+
+`app.playback.next_frame`: Pause every file in every window and show its next frame.
+
+- Acts on every block in every window.
+- Keys: ⌥⇧→
+- Tells: `block.playback.paused`, `block.playback.seeked`.
+
+### Previous Frame on All
+
+`app.playback.previous_frame`: Pause every file in every window and show the frame before.
+
+- Acts on every block in every window.
+- Keys: ⌥⇧←
+- Tells: `block.playback.paused`, `block.playback.seeked`.
+
+## block.audio
 
 ### Volume Up
 
-`audio.volume_up`: Turn the block's volume up, unmuting it.
+`block.audio.volume_up`: Turn the block's volume up, unmuting it.
 
 - Acts on a block.
 - Keys: ↑
-- Tells: `audio.volume_changed`.
+- Tells: `block.audio.volume_changed`.
 
 ### Volume Down
 
-`audio.volume_down`: Turn the block's volume down.
+`block.audio.volume_down`: Turn the block's volume down.
 
 - Acts on a block.
 - Keys: ↓
-- Tells: `audio.volume_changed`.
+- Tells: `block.audio.volume_changed`.
 
 ### Set Volume
 
-`audio.set_volume`: Set the block's volume, unmuting it unless it's none.
+`block.audio.set_volume`: Set the block's volume, unmuting it unless it's none.
 
 - Acts on a block.
 - Arguments:
   - `volume` (a number from 0 to 100): How loud, from 0 to 100.
-- Tells: `audio.volume_changed`.
+- Tells: `block.audio.volume_changed`.
 
 ### Mute/Unmute
 
-`audio.mute.toggle`: Mute the block, or play its sound again.
+`block.audio.mute.toggle`: Mute the block, or play its sound again.
 
 - Acts on a block.
 - Keys: ⌘/, M
-- Tells: `audio.mute.on`, `audio.mute.off`.
+- Tells: `block.audio.mute.on`, `block.audio.mute.off`.
 
 ### Mute
 
-`audio.mute.on`: Mute the block, unless it's muted already.
+`block.audio.mute.on`: Mute the block, unless it's muted already.
 
 - Acts on a block.
-- Tells: `audio.mute.on`.
+- Tells: `block.audio.mute.on`.
 
 ### Unmute
 
-`audio.mute.off`: Play the block's sound again, unless it plays already.
+`block.audio.mute.off`: Play the block's sound again, unless it plays already.
 
 - Acts on a block.
-- Tells: `audio.mute.off`.
+- Tells: `block.audio.mute.off`.
 
 ### Next Audio Track
 
-`audio.next_track`: Play the file's next audio track, the first after the last.
+`block.audio.next_track`: Play the file's next audio track, the first after the last.
 
 - Acts on a block.
 - Keys: ⌃⌘A
-- Tells: `playback.track_changed`.
+- Tells: `block.playback.track_changed`.
 
 ### Pick Audio Track
 
-`audio.select_track`: Play one of the file's audio tracks.
+`block.audio.select_track`: Play one of the file's audio tracks.
 
 - Acts on a block.
 - Arguments:
   - `number` (a whole number, at least 1): Which, from 1, as the tracks menu lists them.
-- Tells: `playback.track_changed`.
+- Tells: `block.playback.track_changed`.
 
 ### Audio Earlier
 
-`audio.earlier`: Play the block's sound a little earlier than its picture.
+`block.audio.earlier`: Play the block's sound a little earlier than its picture.
 
 - Acts on a block.
 - Keys: ⌃-
 
 ### Audio Later
 
-`audio.later`: Play the block's sound a little later than its picture.
+`block.audio.later`: Play the block's sound a little later than its picture.
 
 - Acts on a block.
 - Keys: ⌃=
 
 ### Reset Audio Delay
 
-`audio.reset_delay`: Play the block's sound with its picture again.
+`block.audio.reset_delay`: Play the block's sound with its picture again.
 
 - Acts on a block.
 - Keys: ⌃⌫
 
+## app.audio
+
 ### Volume Up on All
 
-`audio.volume_up_all`: Turn every file's volume in every window up, each from its own.
+`app.audio.volume_up`: Turn every file's volume in every window up, each from its own.
 
 - Acts on every block in every window.
 - Keys: ⇧↑
-- Tells: `audio.volume_changed`.
+- Tells: `block.audio.volume_changed`.
 
 ### Volume Down on All
 
-`audio.volume_down_all`: Turn every file's volume in every window down, each from its own.
+`app.audio.volume_down`: Turn every file's volume in every window down, each from its own.
 
 - Acts on every block in every window.
 - Keys: ⇧↓
-- Tells: `audio.volume_changed`.
+- Tells: `block.audio.volume_changed`.
 
 ### Mute/Unmute All
 
-`audio.mute_all.toggle`: Mute every file in every window if any plays its sound, else unmute them all.
+`app.audio.mute.toggle`: Mute every file in every window if any plays its sound, else unmute them all.
 
 - Acts on every block in every window.
 - Keys: ⇧M
-- Tells: `audio.mute.on`, `audio.mute.off`.
+- Tells: `block.audio.mute.on`, `block.audio.mute.off`.
 
 ### Mute All
 
-`audio.mute_all.on`: Mute every file in every window.
+`app.audio.mute.on`: Mute every file in every window.
 
 - Acts on every block in every window.
-- Tells: `audio.mute.on`.
+- Tells: `block.audio.mute.on`.
 
 ### Unmute All
 
-`audio.mute_all.off`: Play the sound of every file in every window again.
+`app.audio.mute.off`: Play the sound of every file in every window again.
 
 - Acts on every block in every window.
-- Tells: `audio.mute.off`.
+- Tells: `block.audio.mute.off`.
 
-## subtitles
+## block.subtitles
 
 ### Next Subtitles
 
-`subtitles.next_track`: Show the file's next subtitles, and none after the last.
+`block.subtitles.next_track`: Show the file's next subtitles, and none after the last.
 
 - Acts on a block.
 - Keys: ⌃⌘S
-- Tells: `playback.track_changed`, `subtitles.on`, `subtitles.off`.
+- Tells: `block.playback.track_changed`, `block.subtitles.on`, `block.subtitles.off`.
 
 ### Pick Subtitles
 
-`subtitles.select_track`: Show one of the file's subtitles, or none.
+`block.subtitles.select_track`: Show one of the file's subtitles, or none.
 
 - Acts on a block.
 - Arguments:
   - `number` (a whole number, at least 1, optional): Which, from 1, as the tracks menu lists them; none for no subtitles.
-- Tells: `playback.track_changed`, `subtitles.on`, `subtitles.off`.
+- Tells: `block.playback.track_changed`, `block.subtitles.on`, `block.subtitles.off`.
 
 ### Show/Hide Subtitles
 
-`subtitles.toggle`: Hide the subtitles showing, or show the ones hidden.
+`block.subtitles.toggle`: Hide the subtitles showing, or show the ones hidden.
 
 - Acts on a block.
 - Keys: V
-- Tells: `subtitles.on`, `subtitles.off`, `playback.track_changed`.
+- Tells: `block.subtitles.on`, `block.subtitles.off`, `block.playback.track_changed`.
 
 ### Show Subtitles
 
-`subtitles.on`: Show the subtitles hidden, or the file's first, unless some show already.
+`block.subtitles.on`: Show the subtitles hidden, or the file's first, unless some show already.
 
 - Acts on a block.
-- Tells: `subtitles.on`, `playback.track_changed`.
+- Tells: `block.subtitles.on`, `block.playback.track_changed`.
 
 ### Hide Subtitles
 
-`subtitles.off`: Hide the subtitles showing, unless none show.
+`block.subtitles.off`: Hide the subtitles showing, unless none show.
 
 - Acts on a block.
-- Tells: `subtitles.off`, `playback.track_changed`.
+- Tells: `block.subtitles.off`, `block.playback.track_changed`.
 
 ### Bigger Subtitles
 
-`subtitles.bigger`: Make every file's subtitles bigger.
+`block.subtitles.bigger`: Make every file's subtitles bigger.
 
 - Acts on a block.
 - Keys: ⇧G
@@ -1279,7 +1285,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 ### Smaller Subtitles
 
-`subtitles.smaller`: Make every file's subtitles smaller.
+`block.subtitles.smaller`: Make every file's subtitles smaller.
 
 - Acts on a block.
 - Keys: ⇧F
@@ -1287,7 +1293,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 ### Move Subtitles Up
 
-`subtitles.up`: Show every file's subtitles higher up.
+`block.subtitles.up`: Show every file's subtitles higher up.
 
 - Acts on a block.
 - Keys: R
@@ -1295,7 +1301,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 ### Move Subtitles Down
 
-`subtitles.down`: Show every file's subtitles lower down.
+`block.subtitles.down`: Show every file's subtitles lower down.
 
 - Acts on a block.
 - Keys: ⇧R, T
@@ -1303,82 +1309,82 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 ### Subtitles Earlier
 
-`subtitles.earlier`: Show the block's subtitles a little earlier.
+`block.subtitles.earlier`: Show the block's subtitles a little earlier.
 
 - Acts on a block.
 - Keys: Z
 
 ### Subtitles Later
 
-`subtitles.later`: Show the block's subtitles a little later.
+`block.subtitles.later`: Show the block's subtitles a little later.
 
 - Acts on a block.
 - Keys: X
 
 ### Reset Subtitle Delay
 
-`subtitles.reset_delay`: Show the block's subtitles at their own times again.
+`block.subtitles.reset_delay`: Show the block's subtitles at their own times again.
 
 - Acts on a block.
 - Keys: ⇧⌫
 
-## video
+## block.video
 
 ### Next Video Track
 
-`video.next_track`: Show the file's next video track, the first after the last.
+`block.video.next_track`: Show the file's next video track, the first after the last.
 
 - Acts on a block.
 - Keys: ⌃⌘V
-- Tells: `playback.track_changed`.
+- Tells: `block.playback.track_changed`.
 
 ### Pick Video Track
 
-`video.select_track`: Show one of the file's video tracks.
+`block.video.select_track`: Show one of the file's video tracks.
 
 - Acts on a block.
 - Arguments:
   - `number` (a whole number, at least 1): Which, from 1, as the tracks menu lists them.
-- Tells: `playback.track_changed`.
+- Tells: `block.playback.track_changed`.
 
 ### Rotate Right
 
-`video.rotate_right`: Turn the picture a quarter turn clockwise.
+`block.video.rotate_right`: Turn the picture a quarter turn clockwise.
 
 - Acts on a block.
 - Keys: ⌘R
 
 ### Rotate Left
 
-`video.rotate_left`: Turn the picture a quarter turn counterclockwise.
+`block.video.rotate_left`: Turn the picture a quarter turn counterclockwise.
 
 - Acts on a block.
 - Keys: ⌘L
 
 ### Flip Horizontally
 
-`video.flip_horizontally`: Mirror the picture left to right.
+`block.video.flip_horizontally`: Mirror the picture left to right.
 
 - Acts on a block.
 - Keys: ⇧⌘H
 
 ### Flip Vertically
 
-`video.flip_vertically`: Turn the picture upside down, mirrored.
+`block.video.flip_vertically`: Turn the picture upside down, mirrored.
 
 - Acts on a block.
 - Keys: ⇧⌘V
 
 ### Next Aspect Ratio
 
-`video.next_aspect_ratio`: Show the picture at the next aspect ratio, then as the file is.
+`block.video.next_aspect_ratio`: Show the picture at the next aspect ratio, then as the file is.
 
 - Acts on a block.
 - Keys: A
 
 ### Aspect Ratio
 
-`video.set_aspect_ratio`: Show the picture at an aspect ratio, or as the file is.
+`block.video.set_aspect_ratio`: Show the picture at an aspect ratio, or as the file is.
 
 - Acts on a block.
 - Arguments:
@@ -1386,14 +1392,14 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 ### Next Crop
 
-`video.next_crop`: Crop the picture to the next shape, then not at all.
+`block.video.next_crop`: Crop the picture to the next shape, then not at all.
 
 - Acts on a block.
 - Keys: C
 
 ### Crop
 
-`video.set_crop`: Crop the picture to a shape, or not at all.
+`block.video.set_crop`: Crop the picture to a shape, or not at all.
 
 - Acts on a block.
 - Arguments:
@@ -1401,14 +1407,14 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 ### Reset Picture
 
-`video.reset_picture`: Show the picture as the file is: not turned, flipped, reshaped or cropped.
+`block.video.reset_picture`: Show the picture as the file is: not turned, flipped, reshaped or cropped.
 
 - Acts on a block.
 - Keys: ⌘0
 
 ### Take Screenshot
 
-`video.take_screenshot`: Save the frame showing as a file, and say where it went.
+`block.video.take_screenshot`: Save the frame showing as a file, and say where it went.
 
 - Acts on a block.
 - Keys: S
@@ -1566,7 +1572,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 What changes in Plays, its windows and their blocks, by namespace: `plays events` prints each as it comes, and `plays wait` waits for one. Each is a JSON object, `{type, payload}`. The payload of one about a window starts with `window_id` and `window_title`, as its title bar shows it; of one about a block, with `block_id` and `block_title` too, as its header shows it. A listener hears the app's, one window's, or all of them. Readers ignore events and fields they don't know.
 
-A cue is a block reaching a time or a frame: `block.<block>.position@120.5s`, or `…@345f`, the block by id, label or number. `plays wait` waits for one and `plays events --cue` hears them: each once, the cue its type, with `playback.position`'s payload.
+A cue is a block reaching a time or a frame: `block.<block>.position@120.5s`, or `…@345f`, the block by id, label or number. `plays wait` waits for one and `plays events --cue` hears them: each once, the cue its type, with `block.playback.position`'s payload.
 
 ## app
 
@@ -2058,27 +2064,27 @@ A block shows no notes on what a shortcut changed; notes on what's wrong still s
   - `window_id`, `window_title`, `block_id`, `block_title`: its window's and its block's.
 - Follows: `app.ui.toggle`, `app.ui.off`, `app.notes.toggle`, `app.notes.off`, `window.ui.toggle`, `window.ui.off`, `window.set_ui`, `window.notes.toggle`, `window.notes.off`, `block.ui.toggle`, `block.ui.off`, `block.notes.toggle`, `block.notes.off`, `app.settings.set`, `app.settings.reload`, or Settings turning a panel over the video on or off, importing a settings file or resetting every setting.
 
-## playback
+## block.playback
 
-### playback.loop.on
+### block.playback.loop.on
 
 A block's file is set to play again from the start at its end.
 
 - Heard by those listening to its window's events.
 - Payload:
   - `window_id`, `window_title`, `block_id`, `block_title`: its window's and its block's.
-- Follows: `playback.loop.toggle`, or `playback.loop.on`.
+- Follows: `block.playback.loop.toggle`, or `block.playback.loop.on`.
 
-### playback.loop.off
+### block.playback.loop.off
 
 A block's file is set to stop at its end.
 
 - Heard by those listening to its window's events.
 - Payload:
   - `window_id`, `window_title`, `block_id`, `block_title`: its window's and its block's.
-- Follows: `playback.loop.toggle`, or `playback.loop.off`.
+- Follows: `block.playback.loop.toggle`, or `block.playback.loop.off`.
 
-### playback.opened
+### block.playback.opened
 
 A file opened in a block, paused at its start.
 
@@ -2089,9 +2095,9 @@ A file opened in a block, paused at its start.
   - `file`: Its path; none for a stream.
   - `url`: The stream's URL; none for a file.
   - `duration`: How long it plays, in seconds; none for a live stream.
-- Follows: `app.open`, `playback.previous_file`, `playback.next_file`, `playback.play_file`, files dropped on a window or picked when `window.open_files` or `window.open_url` asks, or a playlist going on to its next file, once one plays to its end.
+- Follows: `app.open`, `block.playback.previous_file`, `block.playback.next_file`, `block.playback.play_file`, files dropped on a window or picked when `window.open_files` or `window.open_url` asks, or a playlist going on to its next file, once one plays to its end.
 
-### playback.open_failed
+### block.playback.open_failed
 
 A file couldn't be opened.
 
@@ -2101,7 +2107,7 @@ A file couldn't be opened.
   - `error`: Why.
 - Follows: a file Plays can't play or a stream it can't reach.
 
-### playback.failed
+### block.playback.failed
 
 A file stopped playing on an error.
 
@@ -2111,7 +2117,7 @@ A file stopped playing on an error.
   - `error`: Why.
 - Follows: a file that's damaged or a stream that went.
 
-### playback.playing
+### block.playback.playing
 
 A file began playing: told once it moves, not as it's set to play while what it plays from isn't there yet, as just after it opens or a seek.
 
@@ -2121,9 +2127,9 @@ A file began playing: told once it moves, not as it's set to play while what it 
   - `position`: How far through the file it is, from 0 to 1; none while its duration isn't known, as a live stream's.
   - `time`: Where it is, in seconds.
   - `frame`: The number of the frame showing then, from 0; none for sound alone.
-- Follows: `playback.play_pause`, `playback.play`, `playback.previous_file`, `playback.next_file`, `playback.play_file`, `playback.play_pause_all`, `playback.play_all`, `playback.play_window`, `playback.sync_all`, a file opening while Autoplay is on, or a playlist going on to its next file, once one plays to its end.
+- Follows: `block.playback.play_pause`, `block.playback.play`, `block.playback.previous_file`, `block.playback.next_file`, `block.playback.play_file`, `block.playback.sync_all`, `window.playback.play`, `app.playback.play_pause`, `app.playback.play`, a file opening while Autoplay is on, or a playlist going on to its next file, once one plays to its end.
 
-### playback.paused
+### block.playback.paused
 
 A file paused.
 
@@ -2133,9 +2139,9 @@ A file paused.
   - `position`: How far through the file it is, from 0 to 1; none while its duration isn't known, as a live stream's.
   - `time`: Where it is, in seconds.
   - `frame`: The number of the frame showing then, from 0; none for sound alone.
-- Follows: `playback.play_pause`, `playback.pause`, `playback.next_frame`, `playback.previous_frame`, `playback.play_pause_all`, `playback.pause_all`, `playback.pause_window`, `playback.next_frame_all`, `playback.previous_frame_all`, or `playback.sync_all`.
+- Follows: `block.playback.play_pause`, `block.playback.pause`, `block.playback.next_frame`, `block.playback.previous_frame`, `block.playback.sync_all`, `window.playback.pause`, `app.playback.play_pause`, `app.playback.pause`, `app.playback.next_frame`, or `app.playback.previous_frame`.
 
-### playback.seeked
+### block.playback.seeked
 
 A file was sought to another time, here or on the device it's cast to: where it went.
 
@@ -2145,9 +2151,9 @@ A file was sought to another time, here or on the device it's cast to: where it 
   - `position`: How far through the file it is, from 0 to 1; none while its duration isn't known, as a live stream's.
   - `time`: Where it is, in seconds.
   - `frame`: The number of the frame showing then, from 0; none for sound alone.
-- Follows: `playback.seek`, `playback.seek_forward`, `playback.seek_backward`, `playback.next_frame`, `playback.previous_frame`, `playback.next_chapter`, `playback.previous_chapter`, `playback.go_to_chapter`, `playback.restart`, `playback.restart_all`, `playback.seek_forward_all`, `playback.seek_backward_all`, `playback.next_frame_all`, `playback.previous_frame_all`, or `playback.sync_all`.
+- Follows: `block.playback.seek`, `block.playback.seek_forward`, `block.playback.seek_backward`, `block.playback.next_frame`, `block.playback.previous_frame`, `block.playback.next_chapter`, `block.playback.previous_chapter`, `block.playback.go_to_chapter`, `block.playback.restart`, `block.playback.sync_all`, `app.playback.restart`, `app.playback.seek_forward`, `app.playback.seek_backward`, `app.playback.next_frame`, or `app.playback.previous_frame`.
 
-### playback.ended
+### block.playback.ended
 
 A file played to its end, and stopped there.
 
@@ -2157,9 +2163,9 @@ A file played to its end, and stopped there.
   - `position`: How far through the file it is, from 0 to 1; none while its duration isn't known, as a live stream's.
   - `time`: Where it is, in seconds.
   - `frame`: The number of the frame showing then, from 0; none for sound alone.
-- Follows: `playback.seek`, `playback.seek_forward`, `playback.seek_forward_all`, or a file playing to its end.
+- Follows: `block.playback.seek`, `block.playback.seek_forward`, `app.playback.seek_forward`, or a file playing to its end.
 
-### playback.position
+### block.playback.position
 
 Where a file is as it plays: told only to those who ask for positions, at most once a second, and only once it has moved.
 
@@ -2172,7 +2178,7 @@ Where a file is as it plays: told only to those who ask for positions, at most o
   - `duration`: How long it plays, in seconds; none for a live stream.
 - Follows: a file playing.
 
-### playback.chapter_changed
+### block.playback.chapter_changed
 
 A file is in another chapter.
 
@@ -2180,9 +2186,9 @@ A file is in another chapter.
 - Payload:
   - `window_id`, `window_title`, `block_id`, `block_title`: its window's and its block's.
   - `chapter`: The chapter, from 1; none before the first.
-- Follows: `playback.seek`, `playback.seek_forward`, `playback.seek_backward`, `playback.next_chapter`, `playback.previous_chapter`, `playback.go_to_chapter`, `playback.restart`, `playback.restart_all`, `playback.seek_forward_all`, `playback.seek_backward_all`, or a file playing into its next chapter.
+- Follows: `block.playback.seek`, `block.playback.seek_forward`, `block.playback.seek_backward`, `block.playback.next_chapter`, `block.playback.previous_chapter`, `block.playback.go_to_chapter`, `block.playback.restart`, `app.playback.restart`, `app.playback.seek_forward`, `app.playback.seek_backward`, or a file playing into its next chapter.
 
-### playback.track_changed
+### block.playback.track_changed
 
 Another of a file's tracks plays, or none of its kind.
 
@@ -2191,57 +2197,57 @@ Another of a file's tracks plays, or none of its kind.
   - `window_id`, `window_title`, `block_id`, `block_title`: its window's and its block's.
   - `kind`: The track's: video, audio or subtitles.
   - `track`: The one playing, from 1 among its kind's, as the tracks menu lists them; none for none.
-- Follows: `audio.next_track`, `audio.select_track`, `subtitles.next_track`, `subtitles.select_track`, `subtitles.toggle`, `subtitles.on`, `subtitles.off`, `video.next_track`, or `video.select_track`.
+- Follows: `block.audio.next_track`, `block.audio.select_track`, `block.subtitles.next_track`, `block.subtitles.select_track`, `block.subtitles.toggle`, `block.subtitles.on`, `block.subtitles.off`, `block.video.next_track`, or `block.video.select_track`.
 
-## audio
+## block.audio
 
-### audio.volume_changed
+### block.audio.volume_changed
 
 A block's volume changed.
 
 - Heard by those listening to its window's events.
 - Payload:
   - `window_id`, `window_title`, `block_id`, `block_title`: its window's and its block's.
-  - `volume`: Its volume, in percent, as `audio.set_volume` takes it.
-- Follows: `audio.volume_up`, `audio.volume_down`, `audio.set_volume`, `audio.volume_up_all`, or `audio.volume_down_all`.
+  - `volume`: Its volume, in percent, as `block.audio.set_volume` takes it.
+- Follows: `block.audio.volume_up`, `block.audio.volume_down`, `block.audio.set_volume`, `app.audio.volume_up`, or `app.audio.volume_down`.
 
-### audio.mute.on
+### block.audio.mute.on
 
 A block was muted.
 
 - Heard by those listening to its window's events.
 - Payload:
   - `window_id`, `window_title`, `block_id`, `block_title`: its window's and its block's.
-- Follows: `audio.mute.toggle`, `audio.mute.on`, `audio.mute_all.toggle`, or `audio.mute_all.on`.
+- Follows: `block.audio.mute.toggle`, `block.audio.mute.on`, `app.audio.mute.toggle`, or `app.audio.mute.on`.
 
-### audio.mute.off
+### block.audio.mute.off
 
 A block was unmuted.
 
 - Heard by those listening to its window's events.
 - Payload:
   - `window_id`, `window_title`, `block_id`, `block_title`: its window's and its block's.
-- Follows: `audio.mute.toggle`, `audio.mute.off`, `audio.mute_all.toggle`, `audio.mute_all.off`, or its volume turned up.
+- Follows: `block.audio.mute.toggle`, `block.audio.mute.off`, `app.audio.mute.toggle`, `app.audio.mute.off`, or its volume turned up.
 
-## subtitles
+## block.subtitles
 
-### subtitles.on
+### block.subtitles.on
 
 A block's subtitles show: a subtitle track was picked where none was.
 
 - Heard by those listening to its window's events.
 - Payload:
   - `window_id`, `window_title`, `block_id`, `block_title`: its window's and its block's.
-- Follows: `subtitles.next_track`, `subtitles.select_track`, `subtitles.toggle`, or `subtitles.on`.
+- Follows: `block.subtitles.next_track`, `block.subtitles.select_track`, `block.subtitles.toggle`, or `block.subtitles.on`.
 
-### subtitles.off
+### block.subtitles.off
 
 A block's subtitles hid: no subtitle track is picked now.
 
 - Heard by those listening to its window's events.
 - Payload:
   - `window_id`, `window_title`, `block_id`, `block_title`: its window's and its block's.
-- Follows: `subtitles.next_track`, `subtitles.select_track`, `subtitles.toggle`, or `subtitles.off`.
+- Follows: `block.subtitles.next_track`, `block.subtitles.select_track`, `block.subtitles.toggle`, or `block.subtitles.off`.
 
 ## cast
 
@@ -2303,7 +2309,7 @@ Settings changed.
 - Heard by those listening to the app's events.
 - Payload:
   - `keys`: The keys of those that changed, as `app.settings.get` takes them.
-- Follows: `app.ui.toggle`, `app.ui.on`, `app.ui.off`, `app.controls.toggle`, `app.controls.on`, `app.controls.off`, `app.top_bar.toggle`, `app.top_bar.on`, `app.top_bar.off`, `app.track_switcher.toggle`, `app.track_switcher.on`, `app.track_switcher.off`, `app.notes.toggle`, `app.notes.on`, `app.notes.off`, `window.float_on_top.toggle`, `window.float_on_top.on`, `window.float_on_top.off`, `window.float_on_top_while_playing.toggle`, `window.float_on_top_while_playing.on`, `window.float_on_top_while_playing.off`, `subtitles.bigger`, `subtitles.smaller`, `subtitles.up`, `subtitles.down`, `output.set_device`, `app.settings.set`, `app.settings.reset`, `app.settings.reload`, or Settings moving a slider, importing a settings file or resetting every setting.
+- Follows: `app.ui.toggle`, `app.ui.on`, `app.ui.off`, `app.controls.toggle`, `app.controls.on`, `app.controls.off`, `app.top_bar.toggle`, `app.top_bar.on`, `app.top_bar.off`, `app.track_switcher.toggle`, `app.track_switcher.on`, `app.track_switcher.off`, `app.notes.toggle`, `app.notes.on`, `app.notes.off`, `window.float_on_top.toggle`, `window.float_on_top.on`, `window.float_on_top.off`, `window.float_on_top_while_playing.toggle`, `window.float_on_top_while_playing.on`, `window.float_on_top_while_playing.off`, `block.subtitles.bigger`, `block.subtitles.smaller`, `block.subtitles.up`, `block.subtitles.down`, `output.set_device`, `app.settings.set`, `app.settings.reset`, `app.settings.reload`, or Settings moving a slider, importing a settings file or resetting every setting.
 
 ### app.settings.keymap_changed
 

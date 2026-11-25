@@ -209,7 +209,7 @@ fn rename_labels_a_block_its_header_shows_and_names_it_by(cx: &mut TestAppContex
     assert_eq!(title(a, &cx), "Intro", "its header shows it");
     run(
         &mut cx,
-        Invocation::new("audio.mute.toggle").on_block("Intro"),
+        Invocation::new("block.audio.mute.toggle").on_block("Intro"),
     )
     .unwrap();
     let muted: Vec<bool> = players(window, &cx).iter().map(|p| p.2).collect();
@@ -313,7 +313,7 @@ fn copies_the_files_path_and_where_it_is(cx: &mut TestAppContext) {
     assert_eq!(copied, json!(path("tone.m4a")), "what was copied");
     assert_eq!(clipboard(&cx), Some(path("tone.m4a")));
 
-    run_on(&mut cx, "playback.seek", json!({"time": 1.5}), clip).unwrap();
+    run_on(&mut cx, "block.playback.seek", json!({"time": 1.5}), clip).unwrap();
     let copied = run_on(&mut cx, "block.copy_time", Value::Null, clip).unwrap();
     assert_eq!(copied, json!("0:01"));
     assert_eq!(clipboard(&cx).as_deref(), Some("0:01"));

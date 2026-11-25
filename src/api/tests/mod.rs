@@ -18,14 +18,17 @@ use crate::ui::workspace::Workspace;
 mod tells;
 
 /// The namespaces command ids start with.
-const NAMESPACES: [&str; 12] = [
+const NAMESPACES: [&str; 15] = [
     "app",
     "window",
     "block",
-    "playback",
-    "audio",
-    "subtitles",
-    "video",
+    "block.playback",
+    "window.playback",
+    "app.playback",
+    "block.audio",
+    "app.audio",
+    "block.subtitles",
+    "block.video",
     "cast",
     "output",
     "display",
@@ -132,15 +135,15 @@ fn queries_say_what_they_hand_back_and_take_no_keys() {
 
 #[test]
 fn describes_each_command() {
-    let chapter = find("playback.go_to_chapter").unwrap().describe();
+    let chapter = find("block.playback.go_to_chapter").unwrap().describe();
     assert_eq!(
         chapter,
         json!({
-            "id": "playback.go_to_chapter",
+            "id": "block.playback.go_to_chapter",
             "title": "Go to Chapter",
             "description": "Play from the start of a chapter.",
             "keywords": ["chapters", "jump", "skip"],
-            "namespace": "playback",
+            "namespace": "block.playback",
             "scope": "block",
             "keys": [],
             "setting": null,
@@ -153,19 +156,19 @@ fn describes_each_command() {
             }],
             "state": true,
             "returns": null,
-            "tells": ["playback.seeked", "playback.chapter_changed"],
+            "tells": ["block.playback.seeked", "block.playback.chapter_changed"],
             "query": false,
             "available": true,
         })
     );
-    let play = find("playback.play_pause").unwrap().describe();
+    let play = find("block.playback.play_pause").unwrap().describe();
     assert_eq!(play["keys"], json!(["space", "p"]));
     assert_eq!(
         play["setting"], "play_pause",
         "its name in the settings file"
     );
     assert_eq!(play["state"], false);
-    let all = find("playback.play_all").unwrap().describe();
+    let all = find("app.playback.play").unwrap().describe();
     assert_eq!(all["scope"], "every_block");
     let close_all = find("block.close_all").unwrap().describe();
     assert_eq!(close_all["scope"], "blocks");
@@ -235,7 +238,7 @@ fn what_menus_and_controls_send_is_what_their_commands_take() {
 
 #[test]
 fn an_invocation_reads_and_writes_as_json() {
-    let invocation = Invocation::new("playback.go_to_chapter")
+    let invocation = Invocation::new("block.playback.go_to_chapter")
         .with_args(json!({"number": 2}))
         .in_window("2")
         .on_block("a1")
@@ -244,7 +247,7 @@ fn an_invocation_reads_and_writes_as_json() {
     assert_eq!(
         json,
         json!({
-            "command": "playback.go_to_chapter",
+            "command": "block.playback.go_to_chapter",
             "args": {"number": 2},
             "target": {"window": "2", "block": "a1"},
             "source": "cli",
@@ -352,7 +355,7 @@ fn a_command_aimed_at_a_block_acts_on_it_not_on_the_one_in_front(cx: &mut TestAp
         .ok()
         .unwrap();
     let second_id = id(&second, &mut cx);
-    let toggle_loop = || Invocation::new("playback.loop.toggle");
+    let toggle_loop = || Invocation::new("block.playback.loop.toggle");
 
     // By id.
     assert_eq!(
@@ -372,7 +375,7 @@ fn a_command_aimed_at_a_block_acts_on_it_not_on_the_one_in_front(cx: &mut TestAp
     run_now(toggle_loop(), &mut cx).unwrap();
     assert!(looping(&first, &mut cx));
     let loops = |target: Target, cx: &mut VisualTestContext| {
-        TestAppContext::update(cx, |cx| state("playback.loop.toggle", &target, cx))
+        TestAppContext::update(cx, |cx| state("block.playback.loop.toggle", &target, cx))
     };
     let block = |name: &str| Target {
         window: None,
@@ -395,7 +398,7 @@ fn a_command_aimed_at_a_block_acts_on_it_not_on_the_one_in_front(cx: &mut TestAp
     assert_eq!(in_front(&mut cx), Some(front));
 
     // The window by its position, ⌘2's, and the block keys go to in it.
-    let mute = || Invocation::new("audio.mute.toggle");
+    let mute = || Invocation::new("block.audio.mute.toggle");
     run_now(mute().in_window("2"), &mut cx).unwrap();
     assert!(muted(&other, &mut cx));
     assert!(!muted(&first, &mut cx), "not the window in front's");
@@ -410,7 +413,11 @@ fn a_command_aimed_at_a_block_acts_on_it_not_on_the_one_in_front(cx: &mut TestAp
     run_now(mute().in_window(&back_id).on_block("1"), &mut cx).unwrap();
     assert!(muted(&other, &mut cx));
     assert_eq!(
-        TestAppContext::update(&cx, |cx| state("audio.mute.toggle", &block(&other_id), cx)),
+        TestAppContext::update(&cx, |cx| state(
+            "block.audio.mute.toggle",
+            &block(&other_id),
+            cx
+        )),
         Ok(json!(true))
     );
     assert_eq!(in_front(&mut cx), Some(front), "none brought to the front");
@@ -434,7 +441,7 @@ fn a_command_aimed_at_a_block_acts_on_it_not_on_the_one_in_front(cx: &mut TestAp
     run_now(mute(), &mut cx).unwrap();
     assert!(muted(&other, &mut cx));
     // Every block in every window, named none.
-    run_now(Invocation::new("playback.play_all"), &mut cx).unwrap();
+    run_now(Invocation::new("app.playback.play"), &mut cx).unwrap();
     let playing = |player: &Entity<PlayerView>, cx: &mut VisualTestContext| {
         TestAppContext::update(cx, |cx| player.read(cx).is_playing())
     };
@@ -451,11 +458,11 @@ fn goes_to_a_chapter_by_its_number(cx: &mut TestAppContext) {
     let (window, mut cx) = testing::start(cx);
     open(window, &["clip-chapters.mkv"], &mut cx);
     let go = |number: usize| {
-        Invocation::new("playback.go_to_chapter").with_args(json!({"number": number}))
+        Invocation::new("block.playback.go_to_chapter").with_args(json!({"number": number}))
     };
     let at = |cx: &mut VisualTestContext| {
         TestAppContext::update(cx, |cx| {
-            state("playback.go_to_chapter", &Target::default(), cx)
+            state("block.playback.go_to_chapter", &Target::default(), cx)
         })
     };
     assert_eq!(at(&mut cx), Ok(json!(1)), "counted from 1");
@@ -507,8 +514,8 @@ fn closes_the_window_in_front_settings_too_or_the_one_named(cx: &mut TestAppCont
 #[gpui::test]
 fn each_kind_of_error_comes_back(cx: &mut TestAppContext) {
     let (window, mut cx) = testing::start(cx);
-    let bad = |message: &str| Err(Error::bad_args("playback.go_to_chapter", message));
-    let chapter = |args: Value| Invocation::new("playback.go_to_chapter").with_args(args);
+    let bad = |message: &str| Err(Error::bad_args("block.playback.go_to_chapter", message));
+    let chapter = |args: Value| Invocation::new("block.playback.go_to_chapter").with_args(args);
     let window_id = TestAppContext::update(&cx, |cx| window.read(cx).unwrap().id().to_string());
 
     assert_eq!(
@@ -550,7 +557,7 @@ fn each_kind_of_error_comes_back(cx: &mut TestAppContext) {
     );
 
     // What it's aimed at.
-    let play = || Invocation::new("playback.play_pause");
+    let play = || Invocation::new("block.playback.play_pause");
     assert_eq!(
         run_now(play(), &mut cx),
         Err(Error::not_found("block", format!("in window {window_id}"))),
@@ -615,17 +622,20 @@ fn says_what_can_run_and_what_its_state_is(cx: &mut TestAppContext) {
     let window_id = TestAppContext::update(&cx, |cx| window.read(cx).unwrap().id().to_string());
     let past = past_the_last(&window_id);
     assert!(!can("block.close_all", named(&past), &mut cx), "no other");
-    assert!(!can("playback.play_pause", none(), &mut cx), "no file");
     assert!(
-        !can("playback.play_all", none(), &mut cx),
+        !can("block.playback.play_pause", none(), &mut cx),
+        "no file"
+    );
+    assert!(
+        !can("app.playback.play", none(), &mut cx),
         "no file anywhere"
     );
     assert!(can("window.close", none(), &mut cx));
     open(window, &["clip.mp4"], &mut cx);
-    assert!(can("playback.play_pause", none(), &mut cx));
-    assert!(can("playback.play_all", none(), &mut cx));
+    assert!(can("block.playback.play_pause", none(), &mut cx));
+    assert!(can("app.playback.play", none(), &mut cx));
     assert!(
-        !can("playback.play_all", named("1"), &mut cx),
+        !can("app.playback.play", named("1"), &mut cx),
         "it takes none"
     );
     assert_eq!(
@@ -637,7 +647,7 @@ fn says_what_can_run_and_what_its_state_is(cx: &mut TestAppContext) {
         TestAppContext::update(cx, |cx| state(command, &Target::default(), cx))
     };
     assert_eq!(
-        now("playback.play_pause", &mut cx),
+        now("block.playback.play_pause", &mut cx),
         Ok(Value::Null),
         "none to read"
     );
@@ -650,36 +660,45 @@ fn says_what_can_run_and_what_its_state_is(cx: &mut TestAppContext) {
     );
     run_now(Invocation::new("window.float_on_top.toggle"), &mut cx).unwrap();
 
-    assert_eq!(now("video.set_crop", &mut cx), Ok(Value::Null));
+    assert_eq!(now("block.video.set_crop", &mut cx), Ok(Value::Null));
     run_now(
-        Invocation::new("video.set_crop").with_args(json!({"crop": "16:9"})),
+        Invocation::new("block.video.set_crop").with_args(json!({"crop": "16:9"})),
         &mut cx,
     )
     .unwrap();
-    assert_eq!(now("video.set_crop", &mut cx), Ok(json!("16:9")));
+    assert_eq!(now("block.video.set_crop", &mut cx), Ok(json!("16:9")));
     assert_eq!(
         run_now(
-            Invocation::new("video.set_crop").with_args(json!({"crop": "5:4"})),
+            Invocation::new("block.video.set_crop").with_args(json!({"crop": "5:4"})),
             &mut cx
         ),
         Err(Error::bad_args(
-            "video.set_crop",
+            "block.video.set_crop",
             "crop is one of 1:1, 4:3, 16:9, 1.85:1, 2.39:1"
         ))
     );
     run_now(
-        Invocation::new("video.set_aspect_ratio").with_args(json!({"ratio": "4:3"})),
+        Invocation::new("block.video.set_aspect_ratio").with_args(json!({"ratio": "4:3"})),
         &mut cx,
     )
     .unwrap();
-    assert_eq!(now("video.set_aspect_ratio", &mut cx), Ok(json!("4:3")));
-    run_now(Invocation::new("video.set_aspect_ratio"), &mut cx).unwrap();
-    assert_eq!(now("video.set_aspect_ratio", &mut cx), Ok(Value::Null));
+    assert_eq!(
+        now("block.video.set_aspect_ratio", &mut cx),
+        Ok(json!("4:3"))
+    );
+    run_now(Invocation::new("block.video.set_aspect_ratio"), &mut cx).unwrap();
+    assert_eq!(
+        now("block.video.set_aspect_ratio", &mut cx),
+        Ok(Value::Null)
+    );
 
     assert_eq!(now("output.set_device", &mut cx), Ok(Value::Null));
     assert_eq!(now("output.set_block_device", &mut cx), Ok(Value::Null));
     assert_eq!(now("cast.to", &mut cx), Ok(Value::Null));
-    assert_eq!(now("playback.go_to_chapter", &mut cx), Ok(Value::Null));
+    assert_eq!(
+        now("block.playback.go_to_chapter", &mut cx),
+        Ok(Value::Null)
+    );
     assert_eq!(now("window.full_screen.toggle", &mut cx), Ok(json!(false)));
     assert_eq!(
         TestAppContext::update(&cx, |cx| state("app.quit", &named("1"), cx)),
@@ -697,6 +716,6 @@ fn scopes_are_what_their_commands_act_on() {
     assert_eq!(scope("window.close"), Scope::AnyWindow);
     assert_eq!(scope("window.focus"), Scope::Window);
     assert_eq!(scope("block.close_all"), Scope::Blocks);
-    assert_eq!(scope("playback.play_pause"), Scope::Block);
+    assert_eq!(scope("block.playback.play_pause"), Scope::Block);
     assert_eq!(scope("block.close"), Scope::Block);
 }

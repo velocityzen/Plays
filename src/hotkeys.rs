@@ -45,8 +45,8 @@ pub fn commands() -> impl Iterator<Item = &'static Spec> {
 /// Keys commands started out with before they had the ones they have now.
 /// A settings file that still has them gets today's instead.
 const EARLIER_DEFAULTS: &[(&str, &[&str])] = &[
-    ("playback.next_frame", &["alt-right", "."]),
-    ("playback.previous_frame", &["alt-left", ","]),
+    ("block.playback.next_frame", &["alt-right", "."]),
+    ("block.playback.previous_frame", &["alt-left", ","]),
 ];
 
 /// The keys of every command that takes them, by its id.

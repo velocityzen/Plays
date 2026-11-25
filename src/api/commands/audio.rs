@@ -18,27 +18,27 @@ const DELAY_STEP: f64 = 0.05;
 
 pub const COMMANDS: &[Spec] = &[
     Spec::block(
-        "audio.volume_up",
+        "block.audio.volume_up",
         "Volume Up",
         "Turn the block's volume up, unmuting it.",
         |player, _, cx| player.change_volume(VOLUME_STEP, cx),
     )
-    .tells(&["audio.volume_changed"])
+    .tells(&["block.audio.volume_changed"])
     .keywords(&["louder", "sound"])
     .setting("volume_up")
     .keys(&["up"]),
     Spec::block(
-        "audio.volume_down",
+        "block.audio.volume_down",
         "Volume Down",
         "Turn the block's volume down.",
         |player, _, cx| player.change_volume(-VOLUME_STEP, cx),
     )
-    .tells(&["audio.volume_changed"])
+    .tells(&["block.audio.volume_changed"])
     .keywords(&["quieter", "softer", "sound"])
     .setting("volume_down")
     .keys(&["down"]),
     Spec::block_with(
-        "audio.set_volume",
+        "block.audio.set_volume",
         "Set Volume",
         "Set the block's volume, unmuting it unless it's none.",
         &[Arg::required(
@@ -56,47 +56,49 @@ pub const COMMANDS: &[Spec] = &[
             done()
         },
     )
-    .tells(&["audio.volume_changed"])
+    .tells(&["block.audio.volume_changed"])
     .keywords(&["loudness", "sound", "level"]),
     Spec::block(
-        "audio.mute.toggle",
+        "block.audio.mute.toggle",
         "Mute/Unmute",
         "Mute the block, or play its sound again.",
         |player, _, cx| player.turn_mute(|on| Switch::Toggle.turn(on), cx),
     )
-    .tells(&["audio.mute.on", "audio.mute.off"])
+    .tells(&["block.audio.mute.on", "block.audio.mute.off"])
     .keywords(&["silence", "sound"])
     .setting("mute")
     .keys(&["secondary-/", "m"])
     .state(|target, cx| target::read_block(target, cx, |player, _| json!(player.is_muted()))),
     Spec::block(
-        "audio.mute.on",
+        "block.audio.mute.on",
         "Mute",
         "Mute the block, unless it's muted already.",
         |player, _, cx| player.turn_mute(|on| Switch::On.turn(on), cx),
     )
-    .tells(&["audio.mute.on"])
-    .keywords(&["silence", "sound"]),
+    .tells(&["block.audio.mute.on"])
+    .keywords(&["silence", "sound"])
+    .setting("audio.mute.on"),
     Spec::block(
-        "audio.mute.off",
+        "block.audio.mute.off",
         "Unmute",
         "Play the block's sound again, unless it plays already.",
         |player, _, cx| player.turn_mute(|on| Switch::Off.turn(on), cx),
     )
-    .tells(&["audio.mute.off"])
-    .keywords(&["sound", "hear"]),
+    .tells(&["block.audio.mute.off"])
+    .keywords(&["sound", "hear"])
+    .setting("audio.mute.off"),
     Spec::block(
-        "audio.next_track",
+        "block.audio.next_track",
         "Next Audio Track",
         "Play the file's next audio track, the first after the last.",
         |player, _, cx| player.next_track(TrackKind::Audio, cx),
     )
-    .tells(&["playback.track_changed"])
+    .tells(&["block.playback.track_changed"])
     .keywords(&["language", "dub", "commentary"])
     .setting("next_audio_track")
     .keys(on_mac(&["ctrl-cmd-a"], &["ctrl-alt-a"])),
     Spec::block_with(
-        "audio.select_track",
+        "block.audio.select_track",
         "Pick Audio Track",
         "Play one of the file's audio tracks.",
         &[Arg::required(
@@ -106,10 +108,10 @@ pub const COMMANDS: &[Spec] = &[
         )],
         |args, player, _, cx| select_track(args, TrackKind::Audio, player, cx),
     )
-    .tells(&["playback.track_changed"])
+    .tells(&["block.playback.track_changed"])
     .keywords(&["language", "dub", "commentary"]),
     Spec::block(
-        "audio.earlier",
+        "block.audio.earlier",
         "Audio Earlier",
         "Play the block's sound a little earlier than its picture.",
         |player, _, cx| player.shift_audio(-DELAY_STEP, cx),
@@ -118,7 +120,7 @@ pub const COMMANDS: &[Spec] = &[
     .setting("audio_earlier")
     .keys(&["ctrl--"]),
     Spec::block(
-        "audio.later",
+        "block.audio.later",
         "Audio Later",
         "Play the block's sound a little later than its picture.",
         |player, _, cx| player.shift_audio(DELAY_STEP, cx),
@@ -127,7 +129,7 @@ pub const COMMANDS: &[Spec] = &[
     .setting("audio_later")
     .keys(&["ctrl-="]),
     Spec::block(
-        "audio.reset_delay",
+        "block.audio.reset_delay",
         "Reset Audio Delay",
         "Play the block's sound with its picture again.",
         |player, _, cx| player.set_audio_delay(0.0, cx),
@@ -136,65 +138,67 @@ pub const COMMANDS: &[Spec] = &[
     .setting("reset_audio_delay")
     .keys(&["ctrl-backspace"]),
     Spec::every_block(
-        "audio.volume_up_all",
+        "app.audio.volume_up",
         "Volume Up on All",
         "Turn every file's volume in every window up, each from its own.",
         |cx| all::change_volume(VOLUME_STEP, cx),
     )
-    .tells(&["audio.volume_changed"])
+    .tells(&["block.audio.volume_changed"])
     .keywords(&["every", "louder"])
     .setting("volume_up_all")
     .keys(&["shift-up"]),
     Spec::every_block(
-        "audio.volume_down_all",
+        "app.audio.volume_down",
         "Volume Down on All",
         "Turn every file's volume in every window down, each from its own.",
         |cx| all::change_volume(-VOLUME_STEP, cx),
     )
-    .tells(&["audio.volume_changed"])
+    .tells(&["block.audio.volume_changed"])
     .keywords(&["every", "quieter"])
     .setting("volume_down_all")
     .keys(&["shift-down"]),
     Spec::every_block(
-        "audio.mute_all.toggle",
+        "app.audio.mute.toggle",
         "Mute/Unmute All",
         "Mute every file in every window if any plays its sound, else unmute them all.",
         |cx| all::turn_mute(|on| Switch::Toggle.turn(on), cx),
     )
-    .tells(&["audio.mute.on", "audio.mute.off"])
+    .tells(&["block.audio.mute.on", "block.audio.mute.off"])
     .keywords(&["every", "silence"])
     .setting("mute_all")
     .keys(&["shift-m"]),
     Spec::every_block(
-        "audio.mute_all.on",
+        "app.audio.mute.on",
         "Mute All",
         "Mute every file in every window.",
         |cx| all::turn_mute(|on| Switch::On.turn(on), cx),
     )
-    .tells(&["audio.mute.on"])
-    .keywords(&["every", "silence"]),
+    .tells(&["block.audio.mute.on"])
+    .keywords(&["every", "silence"])
+    .setting("audio.mute_all.on"),
     Spec::every_block(
-        "audio.mute_all.off",
+        "app.audio.mute.off",
         "Unmute All",
         "Play the sound of every file in every window again.",
         |cx| all::turn_mute(|on| Switch::Off.turn(on), cx),
     )
-    .tells(&["audio.mute.off"])
-    .keywords(&["every", "sound", "hear"]),
+    .tells(&["block.audio.mute.off"])
+    .keywords(&["every", "sound", "hear"])
+    .setting("audio.mute_all.off"),
 ];
 
 /// The blocks' events about their sound.
 pub const EVENTS: &[EventKind] = &[
     EventKind::block(
-        "audio.volume_changed",
+        "block.audio.volume_changed",
         "A block's volume changed.",
         &[EventField::new(
             "volume",
-            "Its volume, in percent, as `audio.set_volume` takes it.",
+            "Its volume, in percent, as `block.audio.set_volume` takes it.",
         )],
     ),
-    EventKind::block("audio.mute.on", "A block was muted.", &[]),
-    EventKind::block("audio.mute.off", "A block was unmuted.", &[])
+    EventKind::block("block.audio.mute.on", "A block was muted.", &[]),
+    EventKind::block("block.audio.mute.off", "A block was unmuted.", &[])
         .causes(&["its volume turned up"]),
 ];
 

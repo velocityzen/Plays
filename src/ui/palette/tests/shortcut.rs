@@ -139,7 +139,8 @@ fn keys_a_player_takes_are_recorded_while_changing(cx: &mut TestAppContext) {
     assert!(keys(&mut cx, "window.new").contains(&key("space")));
     let ran: Vec<Invocation> = cx.update(|_, cx| api::recorded(cx));
     assert!(
-        !ran.iter().any(|ran| ran.command == "playback.play_pause"),
+        !ran.iter()
+            .any(|ran| ran.command == "block.playback.play_pause"),
         "{ran:?}"
     );
 }

@@ -143,7 +143,7 @@ fn its_keys_list_every_command_that_can_run_in_the_window(cx: &mut TestAppContex
     let has = |id: &str| listed.iter().any(|listed| listed == id);
     assert!(has("window.new") && has("app.settings.open") && has("window.open_url"));
     assert!(
-        !has("playback.loop.toggle"),
+        !has("block.playback.loop.toggle"),
         "an empty window has no file to loop"
     );
     assert!(!has("window.ls"), "a query only reads");
@@ -256,20 +256,22 @@ fn rows_show_what_commands_change_and_run_on_the_window_its_over(cx: &mut TestAp
     cx.update(|_, cx| api::record(cx));
     open_palette(&mut cx);
     assert_eq!(
-        read(window, &cx, |palette| palette.state("playback.loop.toggle")),
+        read(window, &cx, |palette| palette
+            .state("block.playback.loop.toggle")),
         Some(State::Nothing),
         "a file can loop now"
     );
     type_in(&mut cx, "loop");
     press_and_wait(&mut cx, "enter");
     let here = aimed_at(window, &cx);
-    let mut toggled = Invocation::new("playback.loop.toggle").from(Source::Palette);
+    let mut toggled = Invocation::new("block.playback.loop.toggle").from(Source::Palette);
     toggled.target = here;
     assert_eq!(ran(&mut cx), [toggled]);
 
     open_palette(&mut cx);
     assert_eq!(
-        read(window, &cx, |palette| palette.state("playback.loop.toggle")),
+        read(window, &cx, |palette| palette
+            .state("block.playback.loop.toggle")),
         Some(State::On),
         "a check"
     );
@@ -292,7 +294,7 @@ fn the_all_commands_run_from_it_aimed_at_no_window_as_they_reach_every_one(
     press_and_wait(&mut cx, "enter");
     assert_eq!(
         ran(&mut cx),
-        [Invocation::new("playback.play_all").from(Source::Palette)]
+        [Invocation::new("app.playback.play").from(Source::Palette)]
     );
     let playing = window
         .read_with(&cx, |workspace, cx| {
@@ -312,7 +314,7 @@ fn a_command_taking_a_choice_asks_for_it_from_a_list(cx: &mut TestAppContext) {
     press_and_wait(&mut cx, "enter");
     assert_eq!(
         read(window, &cx, Palette::asking),
-        Some(("playback.go_to_chapter", "number"))
+        Some(("block.playback.go_to_chapter", "number"))
     );
     assert!(
         shows(&mut cx, "palette-asking"),
@@ -337,7 +339,7 @@ fn a_command_taking_a_choice_asks_for_it_from_a_list(cx: &mut TestAppContext) {
     assert_eq!(listed(window, &cx), ["End"]);
     press_and_wait(&mut cx, "enter");
     assert!(palette(window, &cx).is_none());
-    let mut went = Invocation::new("playback.go_to_chapter")
+    let mut went = Invocation::new("block.playback.go_to_chapter")
         .with_args(json!({"number": 3}))
         .from(Source::Palette);
     went.target = aimed_at(window, &cx);
@@ -360,7 +362,7 @@ fn a_command_taking_a_value_asks_for_it_typed_until_it_will_do(cx: &mut TestAppC
     press_and_wait(&mut cx, "enter");
     assert_eq!(
         read(window, &cx, Palette::asking),
-        Some(("audio.set_volume", "volume"))
+        Some(("block.audio.set_volume", "volume"))
     );
     assert!(shows(&mut cx, "palette-prompt"), "it says what to type");
     assert!(painted(&mut cx, "OK"), "Return takes what's typed");
@@ -376,7 +378,7 @@ fn a_command_taking_a_value_asks_for_it_typed_until_it_will_do(cx: &mut TestAppC
     type_in(&mut cx, "40");
     press_and_wait(&mut cx, "enter");
     assert!(palette(window, &cx).is_none());
-    let mut set = Invocation::new("audio.set_volume")
+    let mut set = Invocation::new("block.audio.set_volume")
         .with_args(json!({"volume": 40.0}))
         .from(Source::Palette);
     set.target = aimed_at(window, &cx);
@@ -390,7 +392,7 @@ fn a_command_taking_a_value_asks_for_it_typed_until_it_will_do(cx: &mut TestAppC
     press_and_wait(&mut cx, "enter");
     let commands = ran(&mut cx);
     assert_eq!(commands.len(), 1);
-    assert_eq!(commands[0].command, "playback.seek");
+    assert_eq!(commands[0].command, "block.playback.seek");
     assert_eq!(commands[0].args, json!({"time": 1.5}));
 }
 
@@ -886,7 +888,10 @@ fn every_argument_is_picked_from_a_list_but_times_volumes_paths_and_names(cx: &m
         .filter(|(_, how)| *how == "typed")
         .map(|(id, _)| *id)
         .collect();
-    assert_eq!(typed, ["app.open", "playback.seek", "audio.set_volume"]);
+    assert_eq!(
+        typed,
+        ["app.open", "block.playback.seek", "block.audio.set_volume"]
+    );
     let unasked: Vec<&str> = asks
         .iter()
         .filter(|(_, how)| *how == "nothing")
@@ -928,10 +933,10 @@ fn lists_offer_what_there_is_with_what_is_picked_now(cx: &mut TestAppContext) {
     // Its tracks are known a little after it opens.
     let known = wait_until(&mut cx, |cx| {
         let mut cx = VisualTestContext::from_window(window.into(), cx);
-        choices("subtitles.select_track", &mut cx).len() > 1
+        choices("block.subtitles.select_track", &mut cx).len() > 1
     });
     assert!(known, "its tracks are known");
-    let subtitles = choices("subtitles.select_track", &mut cx);
+    let subtitles = choices("block.subtitles.select_track", &mut cx);
     assert_eq!(labels(&subtitles), ["Off", "English"]);
     assert_eq!(subtitles[0].args, Map::new(), "off has no number");
     assert_eq!(
@@ -939,7 +944,7 @@ fn lists_offer_what_there_is_with_what_is_picked_now(cx: &mut TestAppContext) {
         json!({"number": 1}).as_object().unwrap().clone()
     );
     assert_eq!(subtitles.iter().filter(|choice| choice.current).count(), 1);
-    let audio = choices("audio.select_track", &mut cx);
+    let audio = choices("block.audio.select_track", &mut cx);
     assert_eq!(audio.len(), 1);
     assert!(audio[0].current, "the track playing");
 
@@ -951,7 +956,7 @@ fn lists_offer_what_there_is_with_what_is_picked_now(cx: &mut TestAppContext) {
             .unwrap()
     });
     assert!(looked, "its folder is looked through");
-    let files = choices("playback.play_file", &mut cx);
+    let files = choices("block.playback.play_file", &mut cx);
     let opus = files
         .iter()
         .find(|choice| choice.label.as_ref() == "clip-opus.mkv")
@@ -965,7 +970,7 @@ fn lists_offer_what_there_is_with_what_is_picked_now(cx: &mut TestAppContext) {
         .collect();
     assert_eq!(playing, ["clip-subs.mkv"], "the one it plays");
 
-    let ratios = choices("video.set_aspect_ratio", &mut cx);
+    let ratios = choices("block.video.set_aspect_ratio", &mut cx);
     assert_eq!(ratios[0].label.as_ref(), "Original");
     assert!(ratios[0].current, "none set");
     assert!(labels(&ratios).contains(&"16:9".to_owned()));

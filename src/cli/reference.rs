@@ -92,7 +92,7 @@ pub fn reference() -> String {
          A cue is a block reaching a time or a frame: `block.<block>.position@120.5s`, or \
          `…@345f`, the block by id, label or number. `plays wait` waits for one and \
          `plays events --cue` hears them: each once, the cue its type, with \
-         `playback.position`'s payload.\n",
+         `block.playback.position`'s payload.\n",
     );
     let mut namespace = "";
     for (in_namespace, kind) in kinds::all() {

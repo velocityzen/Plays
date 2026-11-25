@@ -36,7 +36,7 @@ fn settings_are_told_by_key_and_shortcuts_by_command(cx: &mut TestAppContext) {
 
     cx.update(|cx| {
         Settings::update(cx, false, |settings| {
-            settings.hotkeys.add("playback.play_pause", "ctrl-p");
+            settings.hotkeys.add("block.playback.play_pause", "ctrl-p");
         });
     });
     cx.run_until_parked();
@@ -46,7 +46,7 @@ fn settings_are_told_by_key_and_shortcuts_by_command(cx: &mut TestAppContext) {
             ("app.settings.changed", json!({"keys": ["hotkeys"]})),
             (
                 "app.settings.keymap_changed",
-                json!({"commands": ["playback.play_pause"]})
+                json!({"commands": ["block.playback.play_pause"]})
             ),
         ]
     );

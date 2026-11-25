@@ -150,10 +150,10 @@ fn block_ls_says_what_each_block_is(cx: &mut TestAppContext) {
         subs,
         ..
     } = two_files(cx);
-    query(&mut cx, Invocation::new("playback.play_all"));
+    query(&mut cx, Invocation::new("app.playback.play"));
     let listed = query(&mut cx, Invocation::new("block.ls"));
     assert_eq!(listed[0]["playing"], true);
-    query(&mut cx, Invocation::new("playback.pause_all"));
+    query(&mut cx, Invocation::new("app.playback.pause"));
     let listed = query(&mut cx, Invocation::new("block.ls"));
     assert_eq!(
         listed,
@@ -266,21 +266,21 @@ fn block_inspect_says_how_a_block_plays(cx: &mut TestAppContext) {
         subs,
         ..
     } = two_files(cx);
-    query(&mut cx, Invocation::new("playback.pause_all"));
+    query(&mut cx, Invocation::new("app.playback.pause"));
     for (command, args) in [
         ("block.rename", json!({"label": "Subs"})),
-        ("playback.seek", json!({"time": 1.0})),
-        ("playback.loop.toggle", Value::Null),
-        ("audio.set_volume", json!({"volume": 50})),
-        ("audio.mute.toggle", Value::Null),
-        ("audio.later", Value::Null),
-        ("subtitles.earlier", Value::Null),
-        ("subtitles.select_track", json!({"number": 1})),
+        ("block.playback.seek", json!({"time": 1.0})),
+        ("block.playback.loop.toggle", Value::Null),
+        ("block.audio.set_volume", json!({"volume": 50})),
+        ("block.audio.mute.toggle", Value::Null),
+        ("block.audio.later", Value::Null),
+        ("block.subtitles.earlier", Value::Null),
+        ("block.subtitles.select_track", json!({"number": 1})),
         // Mirrored, then turned: as kept.
-        ("video.flip_horizontally", Value::Null),
-        ("video.rotate_right", Value::Null),
-        ("video.set_aspect_ratio", json!({"ratio": "4:3"})),
-        ("video.set_crop", json!({"crop": "16:9"})),
+        ("block.video.flip_horizontally", Value::Null),
+        ("block.video.rotate_right", Value::Null),
+        ("block.video.set_aspect_ratio", json!({"ratio": "4:3"})),
+        ("block.video.set_crop", json!({"crop": "16:9"})),
     ] {
         on_block(&mut cx, command, args, &subs);
     }
@@ -373,7 +373,7 @@ fn block_inspect_says_its_chapters_and_its_end(cx: &mut TestAppContext) {
     // The chapters, and the one it's in, from 1.
     on_block(
         &mut cx,
-        "playback.go_to_chapter",
+        "block.playback.go_to_chapter",
         json!({"number": 2}),
         &chapters,
     );
@@ -396,7 +396,12 @@ fn block_inspect_says_its_chapters_and_its_end(cx: &mut TestAppContext) {
     );
 
     // At its end, it says so.
-    on_block(&mut cx, "playback.seek", json!({"time": 3.0}), &chapters);
+    on_block(
+        &mut cx,
+        "block.playback.seek",
+        json!({"time": 3.0}),
+        &chapters,
+    );
     let inspected = on_block(&mut cx, "block.inspect", Value::Null, &chapters);
     assert_eq!(
         (&inspected["position"], &inspected["ended"]),

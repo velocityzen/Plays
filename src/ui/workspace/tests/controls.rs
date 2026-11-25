@@ -80,13 +80,13 @@ fn each_of_a_blocks_controls_sends_its_command_to_it(cx: &mut TestAppContext) {
     hover(&mut cx, "block-0");
 
     for (control, command) in [
-        ("play", "playback.play_pause"),
-        ("skip-back", "playback.seek_backward"),
-        ("skip-forward", "playback.seek_forward"),
-        ("previous", "playback.previous_file"),
-        ("next", "playback.next_file"),
-        ("loop", "playback.loop.toggle"),
-        ("mute", "audio.mute.toggle"),
+        ("play", "block.playback.play_pause"),
+        ("skip-back", "block.playback.seek_backward"),
+        ("skip-forward", "block.playback.seek_forward"),
+        ("previous", "block.playback.previous_file"),
+        ("next", "block.playback.next_file"),
+        ("loop", "block.playback.loop.toggle"),
+        ("mute", "block.audio.mute.toggle"),
         ("maximize", "block.zoom"),
         ("close", "block.close"),
     ] {
@@ -115,23 +115,23 @@ fn each_of_a_blocks_controls_sends_its_command_to_it(cx: &mut TestAppContext) {
     // Pressed and let go in the middle: half way, once let go.
     click(&mut cx, "seek");
     let seek = sent_one(&mut cx, "the seek bar");
-    assert_eq!(seek.command, "playback.seek");
+    assert_eq!(seek.command, "block.playback.seek");
     assert_eq!(seek.target.block.as_deref(), Some(block.as_str()));
     let time = number(&seek.args, "time");
     assert!((time / duration - 0.5).abs() < 0.2, "{time} of {duration}");
 
     click(&mut cx, "volume");
     let volume = sent_one(&mut cx, "the volume slider");
-    assert_eq!(volume.command, "audio.set_volume");
+    assert_eq!(volume.command, "block.audio.set_volume");
     assert_eq!(volume.target.block.as_deref(), Some(block.as_str()));
     let volume = number(&volume.args, "volume");
     assert!((volume - 50.0).abs() < 20.0, "{volume}");
 
     // Its one audio track, its subtitles, and none: rows by stream.
     for (row, command, number) in [
-        ("track-2", "audio.select_track", json!(1)),
-        ("track-3", "subtitles.select_track", json!(1)),
-        ("track-0", "subtitles.select_track", Value::Null),
+        ("track-2", "block.audio.select_track", json!(1)),
+        ("track-3", "block.subtitles.select_track", json!(1)),
+        ("track-0", "block.subtitles.select_track", Value::Null),
     ] {
         click(&mut cx, "tracks");
         click(&mut cx, row);

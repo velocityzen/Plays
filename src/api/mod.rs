@@ -4,7 +4,7 @@
 //! command line run them here too.
 //!
 //! A command (`registry`, with the commands themselves in `commands`) has
-//! an id such as `playback.play_pause`, a title, a description, keywords,
+//! an id such as `block.playback.play_pause`, a title, a description, keywords,
 //! its keys, the arguments it takes (`args`) and what it acts on: the app,
 //! a window, every block in a window, or a block, by default the window in
 //! front and the block in it that keys go to, or as an invocation names

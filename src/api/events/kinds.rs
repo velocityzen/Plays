@@ -7,7 +7,7 @@ use crate::api::commands;
 
 /// An event Plays tells.
 pub struct EventKind {
-    /// Its `type`, such as `audio.volume_changed`.
+    /// Its `type`, such as `block.audio.volume_changed`.
     pub name: &'static str,
     /// A sentence saying what changed.
     pub description: &'static str,

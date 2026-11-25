@@ -17,7 +17,7 @@ use crate::cli::after;
 const TIMEOUT: &str = "timeout";
 
 /// The event told only to those who ask for positions.
-pub const POSITION: &str = "playback.position";
+pub const POSITION: &str = "block.playback.position";
 
 /// `plays.sleep`, `plays.wait` and `plays.mark`, added to `plays`, as
 /// long as `scope` is.

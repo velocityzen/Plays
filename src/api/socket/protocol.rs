@@ -3,11 +3,11 @@
 //! A client asks, each request with an `id` of its choosing, which its
 //! answer carries back:
 //!
-//! - `{"id": 1, "method": "call", "command": "playback.seek", "args":
+//! - `{"id": 1, "method": "call", "command": "block.playback.seek", "args":
 //!   {"seconds": 30}, "target": {"window": "2"}}` runs a command, as a key
 //!   would; `args` and `target` may be left out.
 //! - `{"method": "commands"}` lists every command, as `describe` describes
-//!   one: `{"method": "describe", "command": "playback.seek"}`.
+//!   one: `{"method": "describe", "command": "block.playback.seek"}`.
 //! - `{"method": "subscribe", "scope": "all", "positions": true}` hears
 //!   events from now on: the app's (`"app"`), one window's (`{"window":
 //!   "2"}`) or, as it is left out, all; with positions, at most once a

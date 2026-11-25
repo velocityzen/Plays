@@ -97,8 +97,8 @@ fn a_block_opened_renamed_and_its_window_full_screen_are_told_once_in_order(
             "block.created",
             "window.layout_changed",
             "block.active_changed",
-            "playback.opened",
-            "playback.playing",
+            "block.playback.opened",
+            "block.playback.playing",
         ]
     );
     assert_eq!(opened[3].payload["block_id"], json!(t.to_string()));
@@ -304,11 +304,11 @@ fn a_file_set_to_play_is_told_playing_once_it_moves_where_it_is_then(cx: &mut Te
     // ticked till asked.
     run(
         &mut cx,
-        Invocation::new("playback.seek").with_args(json!({"time": 1.0})),
+        Invocation::new("block.playback.seek").with_args(json!({"time": 1.0})),
     );
-    run(&mut cx, Invocation::new("playback.play"));
+    run(&mut cx, Invocation::new("block.playback.play"));
     look(&mut cx);
-    assert_eq!(kinds(&mut heard), ["playback.seeked"]);
+    assert_eq!(kinds(&mut heard), ["block.playback.seeked"]);
     let inspected = run(&mut cx, Invocation::new("block.inspect"));
     assert_eq!(
         (&inspected["playing"], &inspected["buffering"]),
@@ -322,7 +322,7 @@ fn a_file_set_to_play_is_told_playing_once_it_moves_where_it_is_then(cx: &mut Te
     let told = told(&mut heard);
     assert_eq!(
         told.iter().map(|event| event.kind).collect::<Vec<_>>(),
-        ["playback.playing"]
+        ["block.playback.playing"]
     );
     let time = told[0].payload["time"].as_f64().unwrap();
     assert!(
@@ -339,26 +339,26 @@ fn how_a_file_plays_is_told_for_its_controls_and_commands(cx: &mut TestAppContex
     let mut heard = listen(&mut cx, Scope::Window(w), false);
     let mut elsewhere = listen(&mut cx, Scope::Window(Id::next()), false);
 
-    run(&mut cx, Invocation::new("playback.play_pause"));
+    run(&mut cx, Invocation::new("block.playback.play_pause"));
     assert_eq!(
         kinds(&mut heard),
-        ["playback.paused"],
+        ["block.playback.paused"],
         "not the command: the app's"
     );
     // Its play button sends the command once the click is handled.
     click(&mut cx, "play");
     look(&mut cx);
-    assert_eq!(kinds(&mut heard), ["playback.playing"]);
-    run(&mut cx, Invocation::new("playback.play_pause"));
+    assert_eq!(kinds(&mut heard), ["block.playback.playing"]);
+    run(&mut cx, Invocation::new("block.playback.play_pause"));
     kinds(&mut heard);
 
     run(
         &mut cx,
-        Invocation::new("playback.seek").with_args(json!({"time": 0.5})),
+        Invocation::new("block.playback.seek").with_args(json!({"time": 0.5})),
     );
     let sought = told(&mut heard);
     assert_eq!(sought.len(), 1);
-    assert_eq!(sought[0].kind, "playback.seeked");
+    assert_eq!(sought[0].kind, "block.playback.seeked");
     // Its time in seconds, how far through from 0 to 1, and the frame at
     // 25 a second.
     assert_eq!(sought[0].payload["time"], json!(0.5));
@@ -366,7 +366,7 @@ fn how_a_file_plays_is_told_for_its_controls_and_commands(cx: &mut TestAppContex
     assert_eq!(sought[0].payload["frame"], json!(12));
     // A step back from there goes to the start; a frame on, once one
     // shows, past it.
-    run(&mut cx, Invocation::new("playback.seek_backward"));
+    run(&mut cx, Invocation::new("block.playback.seek_backward"));
     let back = told(&mut heard);
     assert_eq!(back.len(), 1, "{back:?}");
     let start = json!({"position": 0.0, "time": 0.0, "frame": 0});
@@ -386,20 +386,20 @@ fn how_a_file_plays_is_told_for_its_controls_and_commands(cx: &mut TestAppContex
             .unwrap()
     });
     assert!(shown, "no frame showed");
-    run(&mut cx, Invocation::new("playback.next_frame"));
+    run(&mut cx, Invocation::new("block.playback.next_frame"));
     let stepped = told(&mut heard);
     assert_eq!(
         stepped.iter().map(|event| event.kind).collect::<Vec<_>>(),
-        ["playback.seeked"]
+        ["block.playback.seeked"]
     );
     assert_eq!(stepped[0].payload["frame"], json!(1), "{stepped:?}");
     assert!(stepped[0].payload["position"].as_f64().unwrap() > 0.0);
 
     run(
         &mut cx,
-        Invocation::new("audio.set_volume").with_args(json!({"volume": 40})),
+        Invocation::new("block.audio.set_volume").with_args(json!({"volume": 40})),
     );
-    run(&mut cx, Invocation::new("audio.mute.toggle"));
+    run(&mut cx, Invocation::new("block.audio.mute.toggle"));
     let volumes: Vec<Value> = told(&mut heard)
         .into_iter()
         .map(|event| json!([event.kind, event.payload["volume"]]))
@@ -407,19 +407,19 @@ fn how_a_file_plays_is_told_for_its_controls_and_commands(cx: &mut TestAppContex
     assert_eq!(
         volumes,
         [
-            json!(["audio.volume_changed", 40.0]),
-            json!(["audio.mute.on", null]),
+            json!(["block.audio.volume_changed", 40.0]),
+            json!(["block.audio.mute.on", null]),
         ]
     );
 
     run(
         &mut cx,
-        Invocation::new("playback.go_to_chapter").with_args(json!({"number": 2})),
+        Invocation::new("block.playback.go_to_chapter").with_args(json!({"number": 2})),
     );
     let chapter = told(&mut heard);
     assert_eq!(
         chapter.iter().map(|event| event.kind).collect::<Vec<_>>(),
-        ["playback.seeked", "playback.chapter_changed"]
+        ["block.playback.seeked", "block.playback.chapter_changed"]
     );
     assert_eq!(chapter[1].payload["chapter"], json!(2));
     assert!(
@@ -435,17 +435,17 @@ fn a_file_played_to_its_end_is_told_ended_not_paused(cx: &mut TestAppContext) {
     open(window, &mut cx, &["clip-chapters.mkv"], true);
     let w = window_id(window, &cx);
     let mut heard = listen(&mut cx, Scope::Window(w), false);
-    run(&mut cx, Invocation::new("playback.play_pause"));
-    assert_eq!(kinds(&mut heard), ["playback.paused"]);
+    run(&mut cx, Invocation::new("block.playback.play_pause"));
+    assert_eq!(kinds(&mut heard), ["block.playback.paused"]);
 
     let duration = run(&mut cx, Invocation::new("block.inspect"))["duration"]
         .as_f64()
         .unwrap();
     run(
         &mut cx,
-        Invocation::new("playback.seek").with_args(json!({"time": duration - 0.2})),
+        Invocation::new("block.playback.seek").with_args(json!({"time": duration - 0.2})),
     );
-    run(&mut cx, Invocation::new("playback.play_pause"));
+    run(&mut cx, Invocation::new("block.playback.play_pause"));
     let ended = play_until(&mut cx, |cx| {
         let inspected =
             TestAppContext::update(cx, |cx| api::run(Invocation::new("block.inspect"), cx));
@@ -456,10 +456,10 @@ fn a_file_played_to_its_end_is_told_ended_not_paused(cx: &mut TestAppContext) {
     assert_eq!(
         kinds(&mut heard),
         [
-            "playback.seeked",
-            "playback.chapter_changed",
-            "playback.playing",
-            "playback.ended"
+            "block.playback.seeked",
+            "block.playback.chapter_changed",
+            "block.playback.playing",
+            "block.playback.ended"
         ]
     );
 }
@@ -474,7 +474,7 @@ fn positions_are_told_only_to_those_who_ask_once_a_second_at_most(cx: &mut TestA
     let positions = |listener: &mut UnboundedReceiver<Event>| -> Vec<f64> {
         told(listener)
             .into_iter()
-            .filter(|event| event.kind == "playback.position")
+            .filter(|event| event.kind == "block.playback.position")
             .map(|event| {
                 let payload = &event.payload;
                 let time = payload["time"].as_f64().unwrap();
@@ -514,7 +514,7 @@ fn positions_are_told_only_to_those_who_ask_once_a_second_at_most(cx: &mut TestA
     assert!(positions(&mut not_asked).is_empty());
 
     // Paused, it stays where it is: told once more at most.
-    run(&mut cx, Invocation::new("playback.play_pause"));
+    run(&mut cx, Invocation::new("block.playback.play_pause"));
     let mut after = Vec::new();
     play_until(&mut cx, |_| {
         after.extend(positions(&mut asked));
@@ -530,12 +530,12 @@ fn sound_alone_is_told_with_no_frame(cx: &mut TestAppContext) {
     let mut heard = listen(&mut cx, Scope::All, false);
     run(
         &mut cx,
-        Invocation::new("playback.seek").with_args(json!({"time": 0.5})),
+        Invocation::new("block.playback.seek").with_args(json!({"time": 0.5})),
     );
     let sought = told(&mut heard);
     let sought = sought
         .iter()
-        .find(|event| event.kind == "playback.seeked")
+        .find(|event| event.kind == "block.playback.seeked")
         .unwrap();
     assert_eq!(sought.payload["time"], json!(0.5));
     assert!(sought.payload["position"].as_f64().unwrap() > 0.0);
@@ -613,7 +613,7 @@ fn tracks_and_a_file_opened_in_place_of_another_are_told_as_they_change(cx: &mut
     open(window, &mut cx, &["clip-subs.mkv"], false);
     let mut heard = listen(&mut cx, Scope::All, false);
     let subtitles = |number: Option<u64>| {
-        Invocation::new("subtitles.select_track").with_args(match number {
+        Invocation::new("block.subtitles.select_track").with_args(match number {
             Some(number) => json!({"number": number}),
             None => json!({}),
         })
@@ -624,7 +624,7 @@ fn tracks_and_a_file_opened_in_place_of_another_are_told_as_they_change(cx: &mut
     run(&mut cx, subtitles(None));
     let tracks: Vec<Value> = told(&mut heard)
         .into_iter()
-        .filter(|event| event.kind == "playback.track_changed")
+        .filter(|event| event.kind == "block.playback.track_changed")
         .map(|event| json!([event.payload["kind"], event.payload["track"]]))
         .collect();
     assert!(
@@ -634,7 +634,7 @@ fn tracks_and_a_file_opened_in_place_of_another_are_told_as_they_change(cx: &mut
     assert!(tracks.len() <= 3, "{tracks:?}");
 
     // The next file in the folder, in the same block: it opens, as itself.
-    run(&mut cx, Invocation::new("playback.next_file"));
+    run(&mut cx, Invocation::new("block.playback.next_file"));
     let inspect = |cx: &mut VisualTestContext| {
         TestAppContext::update(cx, |cx| api::run(Invocation::new("block.inspect"), cx)).unwrap()
     };
@@ -649,18 +649,18 @@ fn tracks_and_a_file_opened_in_place_of_another_are_told_as_they_change(cx: &mut
     assert_eq!(
         kinds
             .iter()
-            .filter(|&&kind| kind == "playback.opened")
+            .filter(|&&kind| kind == "block.playback.opened")
             .count(),
         1,
         "{kinds:?}"
     );
     let at = kinds
         .iter()
-        .position(|&kind| kind == "playback.opened")
+        .position(|&kind| kind == "block.playback.opened")
         .unwrap();
     assert_eq!(opened[at].payload["title"], json!("clip.mp4"));
     assert!(
-        !kinds.contains(&"playback.track_changed") && !kinds.contains(&"block.created"),
+        !kinds.contains(&"block.playback.track_changed") && !kinds.contains(&"block.created"),
         "the same block, its tracks as the file has them: {kinds:?}"
     );
 
@@ -680,7 +680,7 @@ fn tracks_and_a_file_opened_in_place_of_another_are_told_as_they_change(cx: &mut
     look(&mut cx);
     let opened: Vec<Event> = told(&mut heard)
         .into_iter()
-        .filter(|event| event.kind == "playback.opened")
+        .filter(|event| event.kind == "block.playback.opened")
         .collect();
     assert_eq!(opened.len(), 1, "{opened:?}");
     assert_eq!(opened[0].payload["title"], json!("clip-subs.mkv"));
@@ -718,7 +718,7 @@ fn a_file_that_cant_open_is_told_so_and_where_it_is_isnt(cx: &mut TestAppContext
             "block.created",
             "window.layout_changed",
             "block.active_changed",
-            "playback.open_failed",
+            "block.playback.open_failed",
         ]
     );
     assert!(!events[3].payload["error"].as_str().unwrap().is_empty());

@@ -103,10 +103,15 @@ fn the_tracks_picked_in_a_file_play_again_as_it_opens_again(cx: &mut TestAppCont
     prefer(&["eng"], &[], &mut cx);
     assert_eq!(opened(window, &mut cx), (Some(ENGLISH_AUDIO), None));
     let first = block(window, &cx);
-    on(&first, "audio.select_track", json!({"number": 2}), &mut cx);
     on(
         &first,
-        "subtitles.select_track",
+        "block.audio.select_track",
+        json!({"number": 2}),
+        &mut cx,
+    );
+    on(
+        &first,
+        "block.subtitles.select_track",
         json!({"number": 2}),
         &mut cx,
     );
@@ -118,7 +123,12 @@ fn the_tracks_picked_in_a_file_play_again_as_it_opens_again(cx: &mut TestAppCont
     );
 
     // Hidden, they stay hidden, whatever's preferred.
-    on(&block(window, &cx), "subtitles.toggle", json!({}), &mut cx);
+    on(
+        &block(window, &cx),
+        "block.subtitles.toggle",
+        json!({}),
+        &mut cx,
+    );
     close_all(window, &mut cx);
     prefer(&["eng"], &["eng"], &mut cx);
     assert_eq!(opened(window, &mut cx), (Some(GERMAN_AUDIO), None));
@@ -152,8 +162,13 @@ fn a_file_played_instead_opens_with_its_own_tracks(cx: &mut TestAppContext) {
         (Some(GERMAN_AUDIO), Some(FRENCH_SUBTITLES)),
         "as Settings prefer"
     );
-    on(&block, "audio.select_track", json!({"number": 1}), &mut cx);
-    on(&block, "subtitles.select_track", json!({}), &mut cx);
+    on(
+        &block,
+        "block.audio.select_track",
+        json!({"number": 1}),
+        &mut cx,
+    );
+    on(&block, "block.subtitles.select_track", json!({}), &mut cx);
 
     play_instead("clip.mp4", &mut cx);
     let picked = block.read_with(&cx, |view, _| view.progress().map(|note| note.picked));

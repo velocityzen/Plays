@@ -184,36 +184,37 @@ fn recent_menu(state: &MenuState) -> Option<Menu> {
 fn playback_menu(state: &MenuState) -> Menu {
     let mut menu = items(
         &[
-            "playback.play_pause",
-            "playback.restart",
-            "playback.loop.toggle",
+            "block.playback.play_pause",
+            "block.playback.restart",
+            "block.playback.loop.toggle",
             "",
-            "playback.next_frame",
-            "playback.previous_frame",
-            "playback.next_chapter",
-            "playback.previous_chapter",
-            "playback.seek_forward",
-            "playback.seek_backward",
-            "playback.previous_file",
-            "playback.next_file",
+            "block.playback.next_frame",
+            "block.playback.previous_frame",
+            "block.playback.next_chapter",
+            "block.playback.previous_chapter",
+            "block.playback.seek_forward",
+            "block.playback.seek_backward",
+            "block.playback.previous_file",
+            "block.playback.next_file",
         ],
         state,
     );
     menu.extend(
-        chapter_menu(&state.chapters, state.state("playback.go_to_chapter")).map(MenuItem::submenu),
+        chapter_menu(&state.chapters, state.state("block.playback.go_to_chapter"))
+            .map(MenuItem::submenu),
     );
     menu.extend(items(
         &[
             "",
-            "playback.play_pause_all",
-            "playback.play_all",
-            "playback.pause_all",
-            "playback.restart_all",
-            "playback.seek_forward_all",
-            "playback.seek_backward_all",
-            "playback.next_frame_all",
-            "playback.previous_frame_all",
-            "playback.sync_all",
+            "app.playback.play_pause",
+            "app.playback.play",
+            "app.playback.pause",
+            "app.playback.restart",
+            "app.playback.seek_forward",
+            "app.playback.seek_backward",
+            "app.playback.next_frame",
+            "app.playback.previous_frame",
+            "block.playback.sync_all",
         ],
         state,
     ));
@@ -239,26 +240,29 @@ fn video_menu(state: &MenuState) -> Menu {
     menu.extend(items(
         &[
             "",
-            "video.next_track",
+            "block.video.next_track",
             "",
-            "video.rotate_right",
-            "video.rotate_left",
-            "video.flip_horizontally",
-            "video.flip_vertically",
+            "block.video.rotate_right",
+            "block.video.rotate_left",
+            "block.video.flip_horizontally",
+            "block.video.flip_vertically",
             "",
         ],
         state,
     ));
     menu.extend([
-        MenuItem::submenu(aspect_menu(state.state("video.set_aspect_ratio"), state)),
-        MenuItem::submenu(crop_menu(state.state("video.set_crop"), state)),
+        MenuItem::submenu(aspect_menu(
+            state.state("block.video.set_aspect_ratio"),
+            state,
+        )),
+        MenuItem::submenu(crop_menu(state.state("block.video.set_crop"), state)),
     ]);
     menu.extend(items(
         &[
             "",
-            "video.reset_picture",
+            "block.video.reset_picture",
             "",
-            "video.take_screenshot",
+            "block.video.take_screenshot",
             "",
             "block.console.toggle",
         ],
@@ -305,19 +309,19 @@ fn interface_menu(state: &MenuState) -> Menu {
 fn audio_menu(outputs: Menu, block_outputs: Menu, state: &MenuState) -> Menu {
     let mut menu = items(
         &[
-            "audio.volume_up",
-            "audio.volume_down",
-            "audio.mute.toggle",
+            "block.audio.volume_up",
+            "block.audio.volume_down",
+            "block.audio.mute.toggle",
             "",
-            "audio.next_track",
+            "block.audio.next_track",
             "",
-            "audio.earlier",
-            "audio.later",
-            "audio.reset_delay",
+            "block.audio.earlier",
+            "block.audio.later",
+            "block.audio.reset_delay",
             "",
-            "audio.volume_up_all",
-            "audio.volume_down_all",
-            "audio.mute_all.toggle",
+            "app.audio.volume_up",
+            "app.audio.volume_down",
+            "app.audio.mute.toggle",
             "",
         ],
         state,
@@ -335,17 +339,17 @@ fn subtitles_menu(state: &MenuState) -> Menu {
         name: "Subtitles".into(),
         items: items(
             &[
-                "subtitles.toggle",
-                "subtitles.next_track",
+                "block.subtitles.toggle",
+                "block.subtitles.next_track",
                 "",
-                "subtitles.bigger",
-                "subtitles.smaller",
-                "subtitles.up",
-                "subtitles.down",
+                "block.subtitles.bigger",
+                "block.subtitles.smaller",
+                "block.subtitles.up",
+                "block.subtitles.down",
                 "",
-                "subtitles.earlier",
-                "subtitles.later",
-                "subtitles.reset_delay",
+                "block.subtitles.earlier",
+                "block.subtitles.later",
+                "block.subtitles.reset_delay",
             ],
             state,
         ),
@@ -614,7 +618,7 @@ fn chapter_menu(chapters: &[String], chapter: &Value) -> Option<Menu> {
 /// file is), checked.
 fn aspect_menu(aspect: &Value, state: &MenuState) -> Menu {
     Menu {
-        name: title("video.set_aspect_ratio").into(),
+        name: title("block.video.set_aspect_ratio").into(),
         items: [(None, "As the File Is")]
             .into_iter()
             .chain(ASPECT_RATIOS.map(|r| (Some(r), r.name)))
@@ -622,7 +626,7 @@ fn aspect_menu(aspect: &Value, state: &MenuState) -> Menu {
                 MenuItem::action(name, video::set_aspect_ratio(ratio))
                     .checked(*aspect == named(ratio))
             })
-            .chain(items(&["", "video.next_aspect_ratio"], state))
+            .chain(items(&["", "block.video.next_aspect_ratio"], state))
             .collect(),
     }
 }
@@ -631,14 +635,14 @@ fn aspect_menu(aspect: &Value, state: &MenuState) -> Menu {
 /// checked.
 fn crop_menu(crop: &Value, state: &MenuState) -> Menu {
     Menu {
-        name: title("video.set_crop").into(),
+        name: title("block.video.set_crop").into(),
         items: [(None, "None")]
             .into_iter()
             .chain(CROPS.map(|r| (Some(r), r.name)))
             .map(|(ratio, name)| {
                 MenuItem::action(name, video::set_crop(ratio)).checked(*crop == named(ratio))
             })
-            .chain(items(&["", "video.next_crop"], state))
+            .chain(items(&["", "block.video.next_crop"], state))
             .collect(),
     }
 }

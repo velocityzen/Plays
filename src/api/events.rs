@@ -213,7 +213,7 @@ struct Listening {
 
 impl Listening {
     fn hears(&self, event: &Event) -> bool {
-        event.heard_in(self.scope) && (event.kind != "playback.position" || self.positions)
+        event.heard_in(self.scope) && (event.kind != "block.playback.position" || self.positions)
     }
 }
 
@@ -431,7 +431,7 @@ fn positions(seen: &Seen, cx: &mut App) {
                 let mut payload = block.playhead(block.position);
                 payload["duration"] = json!(block.duration);
                 tell(
-                    &Event::block("playback.position", window, block, payload),
+                    &Event::block("block.playback.position", window, block, payload),
                     cx,
                 );
             }

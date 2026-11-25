@@ -332,7 +332,7 @@ async fn subtitles(cx: &mut AsyncApp) -> Result<(), String> {
     if !listed {
         return Err("clip.srt isn't listed beside clip.mp4".into());
     }
-    press_for(cx, "playback.play_pause")?;
+    press_for(cx, "block.playback.play_pause")?;
     wait_for(cx, "the video to pause", |cx| {
         player_state(cx, |view| !view.player().is_playing())
     })
@@ -346,12 +346,12 @@ async fn subtitles(cx: &mut AsyncApp) -> Result<(), String> {
     })
     .await?;
 
-    press_for(cx, "subtitles.next_track")?;
+    press_for(cx, "block.subtitles.next_track")?;
     wait_for(cx, "the subtitles to turn off", |cx| {
         selected_subtitles(cx).is_none() && showing(cx).is_empty()
     })
     .await?;
-    press_for(cx, "subtitles.next_track")?;
+    press_for(cx, "block.subtitles.next_track")?;
     wait_for(cx, "the subtitles to come back", |cx| {
         selected_subtitles(cx).is_some() && showing(cx) == ["First"]
     })
@@ -365,7 +365,7 @@ async fn step_back(cx: &mut AsyncApp) -> Result<(), String> {
     open(cx, &["clip.mp4"]).await?;
     settle(cx).await?;
     check_playing(cx).await?;
-    press_for(cx, "playback.play_pause")?;
+    press_for(cx, "block.playback.play_pause")?;
     wait_for(cx, "the video to pause", |cx| {
         player_state(cx, |view| !view.player().is_playing())
     })
@@ -376,9 +376,9 @@ async fn step_back(cx: &mut AsyncApp) -> Result<(), String> {
     })?;
     let mut at = wait_for_frame(cx, 1.0).await?;
     for (command, step) in [
-        ("playback.next_frame", 1.0),
-        ("playback.previous_frame", -1.0),
-        ("playback.previous_frame", -1.0),
+        ("block.playback.next_frame", 1.0),
+        ("block.playback.previous_frame", -1.0),
+        ("block.playback.previous_frame", -1.0),
     ] {
         press_for(cx, command)?;
         at = wait_for_frame(cx, at + step * FRAME).await?;
@@ -401,12 +401,12 @@ async fn float_on_top(cx: &mut AsyncApp) -> Result<(), String> {
     if !in_mission_control(cx, false)? {
         return Err("the window floating is missing from Mission Control".into());
     }
-    press_for(cx, "playback.play_pause")?;
+    press_for(cx, "block.playback.play_pause")?;
     wait_for(cx, "the window to come down when paused", |cx| {
         !is_on_top(cx, false)
     })
     .await?;
-    press_for(cx, "playback.play_pause")?;
+    press_for(cx, "block.playback.play_pause")?;
     wait_for(cx, "the window to float again when playing", |cx| {
         is_on_top(cx, false)
     })
@@ -502,22 +502,22 @@ async fn cli(cx: &mut AsyncApp) -> Result<(), String> {
         return Err(format!("plays block ls listed {blocks}"));
     }
 
-    succeeds(cx, &["do", "playback.loop.toggle"]).await?;
+    succeeds(cx, &["do", "block.playback.loop.toggle"]).await?;
     let block = json(&succeeds(cx, &["--json", "block", "inspect"]).await?)?;
     if block["looping"] != false {
         return Err(format!("the block still loops: {block}"));
     }
     let ended = succeeds(
         cx,
-        &["wait", "playback.ended", "-b", "1", "--timeout", "10"],
+        &["wait", "block.playback.ended", "-b", "1", "--timeout", "10"],
     )
     .await?;
     // Where it ended: how far through, in seconds and by frame.
     let said = |field| ended.contains(&format!(" {field}="));
-    if !ended.starts_with("playback.ended window_id=")
+    if !ended.starts_with("block.playback.ended window_id=")
         || !["position", "time", "frame"].iter().all(said)
     {
-        return Err(format!("plays wait playback.ended printed {ended:?}"));
+        return Err(format!("plays wait block.playback.ended printed {ended:?}"));
     }
     let block = json(&succeeds(cx, &["--json", "block", "inspect"]).await?)?;
     if block["ended"] != true {
@@ -529,7 +529,7 @@ async fn cli(cx: &mut AsyncApp) -> Result<(), String> {
         &[
             "--json",
             "wait",
-            "playback.ended",
+            "block.playback.ended",
             "--timeout",
             "0.5",
             "-b",
@@ -540,7 +540,10 @@ async fn cli(cx: &mut AsyncApp) -> Result<(), String> {
     let again = json(&again)?;
     // As the event said it, from what the block says of itself.
     let through = again["payload"]["position"].as_f64().unwrap_or_default();
-    if again["type"] != "playback.ended" || through < 0.9 || !again["payload"]["frame"].is_u64() {
+    if again["type"] != "block.playback.ended"
+        || through < 0.9
+        || !again["payload"]["frame"].is_u64()
+    {
         return Err(format!("waiting again printed {again}"));
     }
 

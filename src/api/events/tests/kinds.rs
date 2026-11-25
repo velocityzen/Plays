@@ -50,7 +50,7 @@ fn each_event_is_registered_once_and_said_whole() {
         }
     }
     assert_eq!(
-        find("audio.volume_changed").map(|kind| kind.heard),
+        find("block.audio.volume_changed").map(|kind| kind.heard),
         Some(Heard::Block)
     );
     assert!(find("volume").is_none());
@@ -132,7 +132,14 @@ fn an_event_fits_only_as_registered() {
         payload.as_object_mut().expect("an object").extend(fields);
         payload
     };
-    let volume = |fields: Value| told("audio.volume_changed", payload(fields), false, &[window]);
+    let volume = |fields: Value| {
+        told(
+            "block.audio.volume_changed",
+            payload(fields),
+            false,
+            &[window],
+        )
+    };
     let loud = json!({"volume": 40});
     assert_eq!(fits(&volume(loud.clone())), Ok(()));
     assert_eq!(
@@ -145,7 +152,7 @@ fn an_event_fits_only_as_registered() {
     );
     assert_eq!(
         fits(&told(
-            "audio.volume_changed",
+            "block.audio.volume_changed",
             loud.clone(),
             false,
             &[window]
@@ -153,14 +160,14 @@ fn an_event_fits_only_as_registered() {
         Err("its payload has no window_id".into())
     );
     let elsewhere = told(
-        "audio.volume_changed",
+        "block.audio.volume_changed",
         payload(loud.clone()),
         false,
         &[other],
     );
     assert!(fits(&elsewhere).is_err(), "heard by another window");
     let app_too = told(
-        "audio.volume_changed",
+        "block.audio.volume_changed",
         payload(loud.clone()),
         true,
         &[window],
@@ -169,7 +176,7 @@ fn an_event_fits_only_as_registered() {
         fits(&app_too).is_err(),
         "the app's listeners hear only theirs"
     );
-    let unheard = told("audio.volume_changed", payload(loud), false, &[]);
+    let unheard = told("block.audio.volume_changed", payload(loud), false, &[]);
     assert!(fits(&unheard).is_err(), "heard by none");
     assert_eq!(
         fits(&told("loudness", json!({}), true, &[])),
@@ -209,8 +216,8 @@ fn an_event_fits_only_as_registered() {
 }
 
 #[gpui::test]
-#[should_panic(expected = "audio.volume_changed isn't told as the events reference says")]
+#[should_panic(expected = "block.audio.volume_changed isn't told as the events reference says")]
 fn an_event_told_otherwise_than_registered_fails_the_test(cx: &mut gpui::TestAppContext) {
-    let event = Event::app("audio.volume_changed", json!({}));
+    let event = Event::app("block.audio.volume_changed", json!({}));
     cx.update(|cx| super::super::tell(&event, cx));
 }

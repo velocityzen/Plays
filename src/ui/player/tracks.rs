@@ -122,9 +122,9 @@ impl PlayerView {
 /// The command that plays a track of `kind`.
 fn select_command(kind: TrackKind) -> &'static str {
     match kind {
-        TrackKind::Video => "video.select_track",
-        TrackKind::Audio => "audio.select_track",
-        TrackKind::Subtitle => "subtitles.select_track",
+        TrackKind::Video => "block.video.select_track",
+        TrackKind::Audio => "block.audio.select_track",
+        TrackKind::Subtitle => "block.subtitles.select_track",
     }
 }
 

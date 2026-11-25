@@ -51,7 +51,7 @@ pub struct Options {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
-    /// Run a command, plays do playback.seek time=90, or a Lua script: a
+    /// Run a command, plays do block.playback.seek time=90, or a Lua script: a
     /// file, plays do seek.lua, code with -e, or stdin with -.
     Do {
         /// The command's id, as plays actions lists them; or a script, a file
@@ -79,7 +79,7 @@ pub enum Command {
     /// List the commands, or those whose id or title has SEARCH: their ids,
     /// titles and keys.
     Actions {
-        /// An id, a namespace or a word, in any case: video.flip_vertically,
+        /// An id, a namespace or a word, in any case: block.video.flip_vertically,
         /// video or flip.
         #[arg(conflicts_with = "markdown")]
         search: Option<String>,
@@ -122,11 +122,11 @@ pub enum Command {
         cues: Vec<String>,
     },
     /// Wait for an event from the block (-b) or window (-w) named, such as
-    /// playback.ended, or for a block to reach a time or a frame, and print
+    /// block.playback.ended, or for a block to reach a time or a frame, and print
     /// it.
     Wait {
-        /// The event's type, as plays events prints it: playback.ended,
-        /// playback.paused, block.closed…; or a cue, the block named in it
+        /// The event's type, as plays events prints it: block.playback.ended,
+        /// block.playback.paused, block.closed…; or a cue, the block named in it
         /// reaching a time or a frame: block.<block>.position@120.5s, or
         /// …@345f.
         event: String,

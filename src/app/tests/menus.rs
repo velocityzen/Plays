@@ -103,13 +103,13 @@ fn the_chapters_menu_follows_the_block_in_front(cx: &mut TestAppContext) {
     assert!(known, "its chapters are known");
     let state = TestAppContext::update(&cx, MenuState::now);
     assert_eq!(state.chapters, ["Opening", "Middle", "End"]);
-    assert_eq!(state.state("playback.go_to_chapter"), &json!(1));
+    assert_eq!(state.state("block.playback.go_to_chapter"), &json!(1));
 
     cx.dispatch_action(playback::go_to_chapter(3));
     cx.run_until_parked();
     let shown = cx.update(|_, cx| {
         let state = cx.try_global::<MenuState>().cloned().unwrap_or_default();
-        state.state("playback.go_to_chapter").clone()
+        state.state("block.playback.go_to_chapter").clone()
     });
     assert_eq!(shown, json!(3), "at once");
 }
@@ -553,7 +553,10 @@ fn the_menus_follow_the_picture_of_the_block_in_front_at_once(cx: &mut TestAppCo
         let state = cx.update(|_, cx| cx.try_global::<MenuState>().cloned());
         state.map(|state| {
             let read = |command| state.state(command).clone();
-            (read("video.set_aspect_ratio"), read("video.set_crop"))
+            (
+                read("block.video.set_aspect_ratio"),
+                read("block.video.set_crop"),
+            )
         })
     };
     let crop = CROPS[0];
@@ -570,7 +573,7 @@ fn the_menus_follow_the_picture_of_the_block_in_front_at_once(cx: &mut TestAppCo
         Some((none.clone(), none.clone())),
         "the other block's"
     );
-    cx.dispatch_action(Run::command("video.next_aspect_ratio"));
+    cx.dispatch_action(Run::command("block.video.next_aspect_ratio"));
     cx.run_until_parked();
     assert_eq!(shown(&mut cx), Some((ratio.clone(), none.clone())));
 
@@ -1039,9 +1042,9 @@ fn every_item_runs_a_command_titled_as_it_is(cx: &mut TestAppContext) {
         .collect();
     assert_eq!(plain + with_args.len(), commands.len(), "one item each");
     for command in [
-        "playback.go_to_chapter",
-        "video.set_aspect_ratio",
-        "video.set_crop",
+        "block.playback.go_to_chapter",
+        "block.video.set_aspect_ratio",
+        "block.video.set_crop",
         "output.set_device",
         "output.set_block_device",
         "window.show_on_display",
@@ -1068,7 +1071,7 @@ fn checks_what_is_on_and_enables_what_can_run(cx: &mut TestAppContext) {
             .is_some_and(|(_, _, checked)| checked)
     };
     // An empty window: nothing to play.
-    assert!(!enabled("playback.play_pause", &mut cx));
+    assert!(!enabled("block.playback.play_pause", &mut cx));
     assert!(!enabled("block.close", &mut cx));
     assert!(enabled("window.open_files", &mut cx));
     assert!(enabled("app.quit", &mut cx));
@@ -1078,7 +1081,7 @@ fn checks_what_is_on_and_enables_what_can_run(cx: &mut TestAppContext) {
             workspace.open_paths(vec![testing::fixture("clip.mp4")], cx)
         })
         .unwrap();
-    let opened = testing::wait_until(&mut cx, |cx| enabled("playback.play_pause", cx));
+    let opened = testing::wait_until(&mut cx, |cx| enabled("block.playback.play_pause", cx));
     assert!(opened, "a file to play");
     assert!(enabled("block.close", &mut cx));
     assert_eq!(
@@ -1087,7 +1090,7 @@ fn checks_what_is_on_and_enables_what_can_run(cx: &mut TestAppContext) {
     );
 
     assert!(!checked("Loop", &mut cx));
-    cx.dispatch_action(Run::command("playback.loop.toggle"));
+    cx.dispatch_action(Run::command("block.playback.loop.toggle"));
     cx.run_until_parked();
     assert!(checked("Loop", &mut cx), "at once");
     assert!(!checked("Float on Top", &mut cx));

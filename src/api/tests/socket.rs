@@ -339,9 +339,9 @@ fn a_client_passes_over_other_answers_and_keeps_the_events_that_come_first() {
         &path,
         &[
             r#"{"id": 99, "result": "stale"}"#,
-            r#"{"type": "playback.playing", "payload": {"block_id": "1"}}"#,
+            r#"{"type": "block.playback.playing", "payload": {"block_id": "1"}}"#,
             r#"{"id": 1, "result": "hello"}"#,
-            r#"{"type": "playback.paused", "payload": null}"#,
+            r#"{"type": "block.playback.paused", "payload": null}"#,
         ],
     );
     let mut client = Client::connect(&path).unwrap();
@@ -350,11 +350,11 @@ fn a_client_passes_over_other_answers_and_keeps_the_events_that_come_first() {
     plays.join().unwrap();
     assert_eq!(
         client.next_event().unwrap(),
-        ("playback.playing".into(), json!({"block_id": "1"}))
+        ("block.playback.playing".into(), json!({"block_id": "1"}))
     );
     assert_eq!(
         client.next_event().unwrap(),
-        ("playback.paused".into(), Value::Null)
+        ("block.playback.paused".into(), Value::Null)
     );
     assert_eq!(
         said(client.next_event().unwrap_err()),
@@ -375,7 +375,7 @@ fn an_event_half_read_by_the_time_given_is_read_whole_the_next_time() {
         let mut asked = String::new();
         BufReader::new(&stream).read_line(&mut asked).unwrap();
         writeln!(&stream, r#"{{"id": 1, "result": "hello"}}"#).unwrap();
-        write!(&stream, r#"{{"type": "playback.ended", "pay"#).unwrap();
+        write!(&stream, r#"{{"type": "block.playback.ended", "pay"#).unwrap();
         told.recv().unwrap();
         writeln!(&stream, r#"load": {{"block_id": "1"}}}}"#).unwrap();
     });
@@ -390,7 +390,7 @@ fn an_event_half_read_by_the_time_given_is_read_whole_the_next_time() {
     go_on.send(()).unwrap();
     assert_eq!(
         client.next_event_by(None).unwrap(),
-        Some(("playback.ended".into(), json!({"block_id": "1"})))
+        Some(("block.playback.ended".into(), json!({"block_id": "1"})))
     );
     plays.join().unwrap();
 }
@@ -1150,7 +1150,7 @@ fn positions_reach_only_those_who_ask_for_them(cx: &mut TestAppContext) {
         &mut cx,
         &path,
         |client| client.subscribe(Heard::All, true).unwrap(),
-        |client| until(client, "playback.position"),
+        |client| until(client, "block.playback.position"),
     );
     let (_, without) = listening(
         &mut cx,
@@ -1191,7 +1191,7 @@ fn positions_reach_only_those_who_ask_for_them(cx: &mut TestAppContext) {
     assert!(wait_until(&mut cx, |_| without.is_finished()));
     let without = without.join().unwrap();
     assert!(
-        !kinds(&without).contains(&"playback.position"),
+        !kinds(&without).contains(&"block.playback.position"),
         "{:?}",
         kinds(&without)
     );

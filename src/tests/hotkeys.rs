@@ -48,8 +48,8 @@ fn every_command_that_takes_keys_has_its_own_and_they_dont_clash() {
         hotkeys.keys("window.open_files"),
         [normalize("secondary-o").unwrap()]
     );
-    assert_eq!(hotkeys.keys("playback.play_all"), [] as [String; 0]);
-    assert!(hotkeys.0.contains_key("playback.play_all"));
+    assert_eq!(hotkeys.keys("app.playback.play"), [] as [String; 0]);
+    assert!(hotkeys.0.contains_key("app.playback.play"));
     // Needing what they act on named, or arguments, they take none.
     assert!(!hotkeys.0.contains_key("window.focus"));
     assert!(!hotkeys.0.contains_key("window.show_on_display"));
@@ -69,8 +69,11 @@ fn every_command_that_takes_keys_has_its_own_and_they_dont_clash() {
             );
         }
     }
-    assert_eq!(hotkeys.keys("playback.play_pause"), ["space", "p"]);
-    assert_eq!(command_for(&hotkeys, "shift-g"), Some("subtitles.bigger"));
+    assert_eq!(hotkeys.keys("block.playback.play_pause"), ["space", "p"]);
+    assert_eq!(
+        command_for(&hotkeys, "shift-g"),
+        Some("block.subtitles.bigger")
+    );
 }
 
 #[test]
@@ -94,13 +97,13 @@ fn binds_each_key_where_its_command_works() {
     // A player window's keys: there, but not while typing, nor elsewhere.
     assert_eq!(
         run("space", &player).as_deref(),
-        Some("playback.play_pause")
+        Some("block.playback.play_pause")
     );
     assert_eq!(run("space", &typing), None);
     assert_eq!(run("space", &elsewhere), None);
     assert_eq!(
         run("secondary-shift-l", &player).as_deref(),
-        Some("playback.loop.toggle")
+        Some("block.playback.loop.toggle")
     );
     assert_eq!(run("secondary-shift-l", &typing), None);
     assert_eq!(run("space", &empty), None);
@@ -166,17 +169,17 @@ fn binds_each_key_where_its_command_works() {
 fn moves_a_key_to_its_new_command() {
     let mut hotkeys = Hotkeys::default();
     assert_eq!(
-        hotkeys.add("playback.restart", "p"),
-        Some("playback.play_pause")
+        hotkeys.add("block.playback.restart", "p"),
+        Some("block.playback.play_pause")
     );
-    assert_eq!(hotkeys.keys("playback.play_pause"), ["space"]);
-    assert_eq!(hotkeys.keys("playback.restart"), ["home", "p"]);
-    assert_eq!(hotkeys.add("playback.restart", "home"), None);
-    assert_eq!(hotkeys.keys("playback.restart"), ["p", "home"]);
-    hotkeys.remove("playback.restart", "p");
-    assert_eq!(hotkeys.keys("playback.restart"), ["home"]);
-    assert_eq!(hotkeys.add("playback.restart", "not a key"), None);
-    assert_eq!(hotkeys.keys("playback.restart"), ["home"]);
+    assert_eq!(hotkeys.keys("block.playback.play_pause"), ["space"]);
+    assert_eq!(hotkeys.keys("block.playback.restart"), ["home", "p"]);
+    assert_eq!(hotkeys.add("block.playback.restart", "home"), None);
+    assert_eq!(hotkeys.keys("block.playback.restart"), ["p", "home"]);
+    hotkeys.remove("block.playback.restart", "p");
+    assert_eq!(hotkeys.keys("block.playback.restart"), ["home"]);
+    assert_eq!(hotkeys.add("block.playback.restart", "not a key"), None);
+    assert_eq!(hotkeys.keys("block.playback.restart"), ["home"]);
 
     // One that takes no keys gets none.
     assert_eq!(hotkeys.add("window.focus", "g"), None);
@@ -192,21 +195,24 @@ fn a_key_moves_only_among_commands_that_work_where_it_does() {
     assert_eq!(hotkeys.add("block.close", &w), None);
     assert_eq!(hotkeys.keys("window.close").last(), Some(&w));
     // Given to another in a player window, the file in front's goes.
-    assert_eq!(hotkeys.add("playback.restart", &w), Some("block.close"));
+    assert_eq!(
+        hotkeys.add("block.playback.restart", &w),
+        Some("block.close")
+    );
     assert!(!hotkeys.keys("block.close").contains(&w));
     assert!(hotkeys.keys("window.close").contains(&w));
     // And to another that works anywhere, the window in front's.
     assert_eq!(hotkeys.add("app.about", &w), Some("window.close"));
     assert!(!hotkeys.keys("window.close").contains(&w));
     assert_eq!(hotkeys.keys("app.about"), std::slice::from_ref(&w));
-    assert_eq!(hotkeys.keys("playback.restart").last(), Some(&w));
+    assert_eq!(hotkeys.keys("block.playback.restart").last(), Some(&w));
 }
 
 #[test]
 fn reads_and_writes_the_settings_file() {
     let mut hotkeys = Hotkeys::default();
-    hotkeys.add("audio.mute.toggle", "shift-x");
-    hotkeys.remove("playback.play_pause", "p");
+    hotkeys.add("block.audio.mute.toggle", "shift-x");
+    hotkeys.remove("block.playback.play_pause", "p");
     hotkeys.add("window.open_files", "secondary-shift-k");
     let saved = serde_json::to_value(&hotkeys).unwrap();
     // Under the names they had before commands had ids, so files saved
@@ -225,15 +231,15 @@ fn reads_and_writes_the_settings_file() {
     // a command may be named by its id.
     let read: Hotkeys = serde_json::from_str(
         r#"{"play_pause": ["k", "bad key"], "dance": ["d"], "loop": ["cmd-l"],
-            "playback.restart": ["shift-k"]}"#,
+            "block.playback.restart": ["shift-k"]}"#,
     )
     .unwrap();
-    assert_eq!(read.keys("playback.play_pause"), ["k"]);
-    assert_eq!(read.keys("playback.loop.toggle"), ["cmd-l"]);
-    assert_eq!(read.keys("playback.restart"), ["shift-k"]);
+    assert_eq!(read.keys("block.playback.play_pause"), ["k"]);
+    assert_eq!(read.keys("block.playback.loop.toggle"), ["cmd-l"]);
+    assert_eq!(read.keys("block.playback.restart"), ["shift-k"]);
     assert_eq!(
-        read.keys("audio.mute.toggle"),
-        Hotkeys::default().keys("audio.mute.toggle")
+        read.keys("block.audio.mute.toggle"),
+        Hotkeys::default().keys("block.audio.mute.toggle")
     );
     assert_eq!(read.0.len(), commands().count());
 }
@@ -319,7 +325,7 @@ fn every_name_saved_before_commands_had_ids_still_names_one() {
 fn saves_only_changed_keys_so_new_defaults_arrive() {
     assert_eq!(serde_json::to_string(&Hotkeys::default()).unwrap(), "{}");
     let mut hotkeys = Hotkeys::default();
-    hotkeys.remove("playback.restart", "home");
+    hotkeys.remove("block.playback.restart", "home");
     assert_eq!(
         serde_json::to_string(&hotkeys).unwrap(),
         r#"{"restart":[]}"#
@@ -328,8 +334,11 @@ fn saves_only_changed_keys_so_new_defaults_arrive() {
     let read: Hotkeys =
         serde_json::from_str(r#"{"next_frame": ["alt-right", "."], "previous_frame": [","]}"#)
             .unwrap();
-    assert_eq!(read.keys("playback.next_frame"), ["alt-right", ".", ">"]);
-    assert_eq!(read.keys("playback.previous_frame"), [","]);
+    assert_eq!(
+        read.keys("block.playback.next_frame"),
+        ["alt-right", ".", ">"]
+    );
+    assert_eq!(read.keys("block.playback.previous_frame"), [","]);
 }
 
 #[test]

@@ -172,21 +172,25 @@ fn bash_completes_subcommands_commands_ids_setting_keys_and_shells() {
         offers(&["plays", "do", &format!("{folder}/scripts/")]),
         [script("scripts/next.lua")]
     );
-    let seeks = offers(&["plays", "do", "playback.seek"]);
+    let seeks = offers(&["plays", "do", "block.playback.seek"]);
     assert!(
-        seeks.contains(&"playback.seek_forward".to_owned()),
+        seeks.contains(&"block.playback.seek_forward".to_owned()),
         "{seeks:?}"
     );
-    assert!(seeks.iter().all(|id| id.starts_with("playback.seek")));
-    assert_eq!(offers(&["plays", "-w", "1", "do", "playback.seek"]), seeks);
+    assert!(seeks.iter().all(|id| id.starts_with("block.playback.seek")));
+    assert_eq!(
+        offers(&["plays", "-w", "1", "do", "block.playback.seek"]),
+        seeks
+    );
     assert_eq!(
         offers(&["plays", "api", "describe", "app.qu"]),
         ["app.quit"]
     );
     assert_eq!(offers(&["plays", "api", "call", "app.qu"]), ["app.quit"]);
-    let video = offers(&["plays", "actions", "vid"]);
+    let video = offers(&["plays", "actions", "block.vid"]);
     assert!(
-        video.contains(&"video".to_owned()) && video.contains(&"video.flip_vertically".to_owned()),
+        video.contains(&"block.video".to_owned())
+            && video.contains(&"block.video.flip_vertically".to_owned()),
         "{video:?}"
     );
     assert_eq!(
@@ -229,16 +233,16 @@ fn fish_completes_commands_ids_setting_keys_and_shells_and_still_files() {
             &["-c", "source $argv[1]; complete -C $argv[2]", script, line],
         )
     };
-    let Some(seeks) = offers("plays do playback.seek") else {
+    let Some(seeks) = offers("plays do block.playback.seek") else {
         return;
     };
     assert!(
-        seeks.contains(&"playback.seek\tSeek To".to_owned()),
+        seeks.contains(&"block.playback.seek\tSeek To".to_owned()),
         "{seeks:?}"
     );
-    assert!(seeks.iter().all(|id| id.starts_with("playback.seek")));
-    assert_eq!(offers("plays -w 1 do playback.seek"), Some(seeks));
-    let given = offers("plays do playback.seek ").unwrap();
+    assert!(seeks.iter().all(|id| id.starts_with("block.playback.seek")));
+    assert_eq!(offers("plays -w 1 do block.playback.seek"), Some(seeks));
+    let given = offers("plays do block.playback.seek ").unwrap();
     assert!(!given.iter().any(|id| id.contains('\t')), "{given:?}");
 
     let quit = Some(vec!["app.quit\tQuit Plays".to_owned()]);
@@ -292,7 +296,7 @@ fn nushell_offers_the_commands_ids_and_setting_keys_each_with_what_it_is() {
         let at = at + text[at..].find('{').unwrap() + 1;
         &text[at..at + text[at..].find("\n  }").unwrap()]
     };
-    let seek = r#"{ value: "playback.seek", description: "Seek To" }"#;
+    let seek = r#"{ value: "block.playback.seek", description: "Seek To" }"#;
     for path in ["plays do", "plays api describe", "plays api call"] {
         let typed = format!(r#": string@"nu-complete {path} command""#);
         assert!(text.contains(&typed), "{path}");
@@ -367,16 +371,16 @@ fn nushell_completes_commands_ids_setting_keys_shells_and_files() {
     fs::copy(&scratch.script, scratch.folder.join("plays.nu")).unwrap();
     fs::write(scratch.folder.join("film.mkv"), b"").unwrap();
     let offers = |line: &str| nu_offers(&scratch.folder, line);
-    let Some(seeks) = offers("plays do playback.seek") else {
+    let Some(seeks) = offers("plays do block.playback.seek") else {
         return;
     };
     assert!(
-        seeks.contains(&"playback.seek_forward".to_owned()),
+        seeks.contains(&"block.playback.seek_forward".to_owned()),
         "{seeks:?}"
     );
-    assert!(seeks.iter().all(|id| id.starts_with("playback.seek")));
+    assert!(seeks.iter().all(|id| id.starts_with("block.playback.seek")));
     // An option before the subcommand hides it from Nushell; after, not.
-    assert_eq!(offers("plays do -w 1 playback.seek"), Some(seeks));
+    assert_eq!(offers("plays do -w 1 block.playback.seek"), Some(seeks));
     let quit = Some(vec!["app.quit".to_owned()]);
     assert_eq!(offers("plays api describe app.qu"), quit);
     assert_eq!(offers("plays api call app.qu"), quit);
@@ -431,7 +435,10 @@ fn zsh_reads_its_script_and_it_offers_the_commands_ids_and_files() {
     let commands = [offers("':command"), offers("'names:command:")].concat();
     assert_eq!(commands.len(), 3, "do, api describe and api call");
     for names in commands {
-        assert!(names.contains(r#"playback.seek\:"Seek To""#), "{names}");
+        assert!(
+            names.contains(r#"block.playback.seek\:"Seek To""#),
+            "{names}"
+        );
     }
     let keys = offers("':key:");
     assert_eq!(keys.len(), 2, "settings get and set");

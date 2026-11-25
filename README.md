@@ -199,19 +199,19 @@ only files another Plays hands over. On macOS, Plays → Install Command Line To
 `/usr/local/bin`.
 
 ```bash
-plays ls                                  # windows, each with its blocks
-plays open ~/Movies/film.mkv              # in the window in front
-plays -w Kitchen block ls                 # the window labeled Kitchen
-plays do playback.seek time=90            # any command, by its id
-plays do seek.lua time=90                 # a Lua script; -e CODE, - for stdin
-plays -b 2 do audio.set_volume volume=40  # on the second block
-plays do window.full_screen.on            # each feature: .on, .off, .toggle
-plays wait playback.ended -b 1            # until the first block ends
-plays wait block.1.position@90s           # until it plays to 1:30
-plays events --json                       # every change, a JSON line each
+plays ls                                        # windows, each with its blocks
+plays open ~/Movies/film.mkv                    # in the window in front
+plays -w Kitchen block ls                       # the window labeled Kitchen
+plays do block.playback.seek time=90            # any command, by its id
+plays do seek.lua time=90                       # a Lua script; -e CODE, - for stdin
+plays -b 2 do block.audio.set_volume volume=40  # on the second block
+plays do window.full_screen.on                  # each feature: .on, .off, .toggle
+plays wait block.playback.ended -b 1            # until the first block ends
+plays wait block.1.position@90s                 # until it plays to 1:30
+plays events --json                             # every change, a JSON line each
 plays settings set autoplay false
-plays actions                             # every command
-plays actions flip                        # those with flip in id or title
+plays actions                                   # every command
+plays actions flip                              # those with flip in id or title
 ```
 
 - `-w` names a window and `-b` a block, by id, label or number. Without

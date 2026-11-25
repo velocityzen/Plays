@@ -9,7 +9,7 @@ has handlers, `plays.on`, or timers to run on with
 -- louder.lua: every block in the window louder by 10
 for _, block in ipairs(plays.block.ls()) do
   local volume = plays.block.inspect{block_id = block.id}.volume
-  plays.audio.set_volume{block_id = block.id, volume = math.min(volume + 10, 100)}
+  plays.block.audio.set_volume{block_id = block.id, volume = math.min(volume + 10, 100)}
 end
 ```
 
@@ -39,7 +39,7 @@ plays do solo.lua --for 10m --fail-fast     # run on 10m, end at a failure
 ```lua
 -- seek.lua: every block in the window to a time
 for _, block in ipairs(plays.block.ls()) do
-  plays.playback.seek{block_id = block.id, time = plays.args.time or 0}
+  plays.block.playback.seek{block_id = block.id, time = plays.args.time or 0}
 end
 ```
 
@@ -73,14 +73,17 @@ plays do -e 'print(plays.block.inspect().title)'   # talk.mkv
 ## Calling Plays
 
 ```lua
-plays.playback.seek{time = 90}            -- a command, by its id
-plays.call("playback.seek", {time = 90})  -- the same
-plays.playback.loop.on()                  -- looping, unless it is already
+plays.block.playback.seek{time = 90}            -- a command, by its id
+plays.call("block.playback.seek", {time = 90})  -- the same
+plays.block.playback.loop.on()                  -- looping, unless it is already
 local block = plays.block.inspect()
 print(block.title, block.position, block.duration)
 ```
 
 - Every command in [commands.md](commands.md), its arguments a table.
+- An id starts with what it acts on: `block.playback.pause` a block,
+  `window.playback.pause` every block in a window, `app.playback.pause`
+  every block in every window.
 - On the script's window, or its block, as the command acts on one.
   `window_id` and `block_id` among its arguments name another, by id,
   label or number.
@@ -102,8 +105,8 @@ window = assert(plays.window.inspect{window_id = "Kitchen"})
 
 ```lua
 -- next.lua: once the block ends, the next file in its folder
-plays.wait("playback.ended", {block_id = plays.block_id})
-plays.playback.next_file()
+plays.wait("block.playback.ended", {block_id = plays.block_id})
+plays.block.playback.next_file()
 ```
 
 ```lua
@@ -112,7 +115,7 @@ local mark = plays.mark()
 plays.app.open{urls = {"/films/a.mkv", "/films/b.mkv"}}
 plays.window.set_ui{visible = {}}
 for _ = 1, 2 do
-  local event, kind = plays.wait({"playback.opened", "playback.open_failed"}, nil, 10, mark)
+  local event, kind = plays.wait({"block.playback.opened", "block.playback.open_failed"}, nil, 10, mark)
   print(kind, event and event.block_id)
 end
 ```
@@ -159,7 +162,7 @@ plays.after(60, function() ticking:cancel() end)
 ```lua
 -- tidy.lua: the window's blocks paused, however the script ends
 plays.on_stop(function()
-  for _, block in ipairs(plays.block.ls()) do plays.playback.pause{block_id = block.id} end
+  for _, block in ipairs(plays.block.ls()) do plays.block.playback.pause{block_id = block.id} end
 end)
 ```
 
@@ -240,7 +243,7 @@ return found
 -- same-time.lua: every block in the window to the same time, then where
 -- each is
 for _, block in ipairs(plays.block.ls()) do
-  plays.playback.seek{block_id = block.id, time = plays.args.time}
+  plays.block.playback.seek{block_id = block.id, time = plays.args.time}
 end
 local where = {}
 for _, block in ipairs(plays.block.ls()) do

@@ -11,9 +11,9 @@ fn each_kind_has_its_exit_status_and_says_what_went_wrong() {
             "no command dance",
         ),
         (
-            Error::bad_args("playback.go_to_chapter", "needs number"),
+            Error::bad_args("block.playback.go_to_chapter", "needs number"),
             2,
-            "playback.go_to_chapter: needs number",
+            "block.playback.go_to_chapter: needs number",
         ),
         (Error::not_found("window", "9"), 3, "no window 9"),
         (

@@ -100,7 +100,7 @@ fn a_handler_for_a_cue_runs_once_and_one_whose_block_closes_never(cx: &mut TestA
     let (path, window, mut cx) = serving("lua-on-cue", cx);
     playing_the_clip(&mut cx, &path, window);
     let code = r#"
-        plays.playback.seek{time = 0}
+        plays.block.playback.seek{time = 0}
         local block = plays.block_id
         plays.on("block." .. block .. ".position@0.5s", function(ctx, event)
           print("reached", ctx.block_id == block, event.time >= 0.5)
@@ -261,11 +261,11 @@ fn a_handler_for_where_a_file_is_hears_positions(cx: &mut TestAppContext) {
             "10",
             "-e",
             r#"
-            plays.on("playback.position", function(ctx, event)
+            plays.on("block.playback.position", function(ctx, event)
               print(ctx.block_id == plays.block_id, event.time ~= nil)
               plays.stop()
             end)
-            plays.playback.play_pause{}
+            plays.block.playback.play_pause{}
             "#,
         ],
         |cx, _| {

@@ -72,18 +72,18 @@ fn seeking_plays_from_the_time_given_no_later_than_the_end(cx: &mut TestAppConte
     let duration = block.read_with(&cx, |view, _| view.duration()).unwrap();
     let position = |cx: &VisualTestContext| block.read_with(cx, |view, _| view.player().position());
 
-    run_on(&mut cx, &block, "playback.seek", json!({"time": 1.0})).unwrap();
+    run_on(&mut cx, &block, "block.playback.seek", json!({"time": 1.0})).unwrap();
     assert!((position(&cx) - 1.0).abs() < 1e-9, "at {}", position(&cx));
-    run_on(&mut cx, &block, "playback.seek", json!({"time": 1e6})).unwrap();
+    run_on(&mut cx, &block, "block.playback.seek", json!({"time": 1e6})).unwrap();
     assert!(
         position(&cx) <= duration,
         "no further than the end, {duration}: {}",
         position(&cx)
     );
-    let before = run_on(&mut cx, &block, "playback.seek", json!({"time": -1}));
+    let before = run_on(&mut cx, &block, "block.playback.seek", json!({"time": -1}));
     assert_eq!(
         before,
-        Err(Error::bad_args("playback.seek", "time is at least 0"))
+        Err(Error::bad_args("block.playback.seek", "time is at least 0"))
     );
 }
 
@@ -116,7 +116,7 @@ fn the_seek_bar_dragged_holds_and_let_go_seeks_and_plays_on(cx: &mut TestAppCont
     cx.run_until_parked();
     let sent = cx.update(|_, cx| api::recorded(cx));
     assert_eq!(sent.len(), 1, "one seek, once let go: {sent:?}");
-    assert_eq!(sent[0].command, "playback.seek");
+    assert_eq!(sent[0].command, "block.playback.seek");
     let time = sent[0].args["time"].as_f64().unwrap();
     assert!((time / duration - 0.7).abs() < 0.1, "{time} of {duration}");
     let at = block.read_with(&cx, |view, _| view.player().position());
@@ -124,7 +124,13 @@ fn the_seek_bar_dragged_holds_and_let_go_seeks_and_plays_on(cx: &mut TestAppCont
     assert!(playing(&cx), "it plays on, as it played before the drag");
 
     // Played from there, the bar follows playback again.
-    run_on(&mut cx, &block, "playback.seek", json!({"time": 0.25})).unwrap();
+    run_on(
+        &mut cx,
+        &block,
+        "block.playback.seek",
+        json!({"time": 0.25}),
+    )
+    .unwrap();
     let (bar, at) = block.read_with(&cx, |view, _| (view.bar_position(), view.position()));
     assert!(
         (at - 0.25).abs() < 0.2 && (bar - at).abs() < 1e-9,
@@ -144,14 +150,34 @@ fn set_volume_sets_it_in_percent_and_unmutes_unless_none(cx: &mut TestAppContext
     };
     block.update(&mut cx, |view, _| view.set_muted(true));
 
-    run_on(&mut cx, &block, "audio.set_volume", json!({"volume": 0})).unwrap();
+    run_on(
+        &mut cx,
+        &block,
+        "block.audio.set_volume",
+        json!({"volume": 0}),
+    )
+    .unwrap();
     assert_eq!(sound(&cx), (0.0, true), "none leaves it muted");
-    run_on(&mut cx, &block, "audio.set_volume", json!({"volume": 40})).unwrap();
+    run_on(
+        &mut cx,
+        &block,
+        "block.audio.set_volume",
+        json!({"volume": 40}),
+    )
+    .unwrap();
     assert_eq!(sound(&cx), (0.4, false));
-    let loud = run_on(&mut cx, &block, "audio.set_volume", json!({"volume": 101}));
+    let loud = run_on(
+        &mut cx,
+        &block,
+        "block.audio.set_volume",
+        json!({"volume": 101}),
+    );
     assert_eq!(
         loud,
-        Err(Error::bad_args("audio.set_volume", "volume is at most 100"))
+        Err(Error::bad_args(
+            "block.audio.set_volume",
+            "volume is at most 100"
+        ))
     );
 }
 
@@ -164,10 +190,22 @@ fn play_file_instead_plays_another_in_the_block_as_this_one_was(cx: &mut TestApp
         view.set_muted(true);
         view.turn_loop(|_| true, cx);
     });
-    run_on(&mut cx, &block, "audio.set_volume", json!({"volume": 0})).unwrap();
+    run_on(
+        &mut cx,
+        &block,
+        "block.audio.set_volume",
+        json!({"volume": 0}),
+    )
+    .unwrap();
     let opus = fixture("clip-opus.mkv");
 
-    run_on(&mut cx, &block, "playback.play_file", json!({"path": opus})).unwrap();
+    run_on(
+        &mut cx,
+        &block,
+        "block.playback.play_file",
+        json!({"path": opus}),
+    )
+    .unwrap();
     assert_eq!(
         blocks(window, &cx),
         slice::from_ref(&block),
@@ -190,13 +228,13 @@ fn play_file_instead_plays_another_in_the_block_as_this_one_was(cx: &mut TestApp
     let relative = run_on(
         &mut cx,
         &block,
-        "playback.play_file",
+        "block.playback.play_file",
         json!({"path": "clip.mp4"}),
     );
     assert_eq!(
         relative,
         Err(Error::bad_args(
-            "playback.play_file",
+            "block.playback.play_file",
             "clip.mp4: give a file's full path"
         ))
     );
@@ -225,7 +263,7 @@ fn tracks_are_picked_by_number_and_subtitles_by_none_too(cx: &mut TestAppContext
     run_on(
         &mut cx,
         &block,
-        "subtitles.select_track",
+        "block.subtitles.select_track",
         json!({"number": 1}),
     )
     .unwrap();
@@ -234,35 +272,41 @@ fn tracks_are_picked_by_number_and_subtitles_by_none_too(cx: &mut TestAppContext
         Some(2),
         "stream 2, its first"
     );
-    run_on(&mut cx, &block, "subtitles.select_track", Value::Null).unwrap();
+    run_on(&mut cx, &block, "block.subtitles.select_track", Value::Null).unwrap();
     assert!(settles(&mut cx, TrackKind::Subtitle, None), "none, none");
     run_on(
         &mut cx,
         &block,
-        "subtitles.select_track",
+        "block.subtitles.select_track",
         json!({"number": 1}),
     )
     .unwrap();
     run_on(
         &mut cx,
         &block,
-        "subtitles.select_track",
+        "block.subtitles.select_track",
         json!({"number": null}),
     )
     .unwrap();
     assert!(settles(&mut cx, TrackKind::Subtitle, None), "null, none");
 
-    run_on(&mut cx, &block, "audio.select_track", json!({"number": 1})).unwrap();
+    run_on(
+        &mut cx,
+        &block,
+        "block.audio.select_track",
+        json!({"number": 1}),
+    )
+    .unwrap();
     assert_eq!(selected(&cx, TrackKind::Audio), Some(1));
     for (command, number) in [
-        ("audio.select_track", 2),
-        ("video.select_track", 2),
-        ("subtitles.select_track", 2),
+        ("block.audio.select_track", 2),
+        ("block.video.select_track", 2),
+        ("block.subtitles.select_track", 2),
     ] {
         let missing = run_on(&mut cx, &block, command, json!({"number": number}));
         assert_eq!(missing, Err(Error::not_found("track", "2")), "{command}");
     }
-    let none = run_on(&mut cx, &block, "audio.select_track", Value::Null);
+    let none = run_on(&mut cx, &block, "block.audio.select_track", Value::Null);
     assert!(
         matches!(none, Err(Error::BadArgs { .. })),
         "audio needs a number: {none:?}"

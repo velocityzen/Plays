@@ -103,7 +103,7 @@ pub enum Run {
 
 /// A command.
 pub struct Spec {
-    /// `namespace.name`, such as `playback.play_pause`.
+    /// `namespace.name`, such as `block.playback.play_pause`.
     pub id: &'static str,
     pub title: &'static str,
     /// A sentence saying what it does.

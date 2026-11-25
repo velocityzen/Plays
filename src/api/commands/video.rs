@@ -14,17 +14,17 @@ use crate::ui::framing::{ASPECT_RATIOS, CROPS, Ratio};
 
 pub const COMMANDS: &[Spec] = &[
     Spec::block(
-        "video.next_track",
+        "block.video.next_track",
         "Next Video Track",
         "Show the file's next video track, the first after the last.",
         |player, _, cx| player.next_track(TrackKind::Video, cx),
     )
-    .tells(&["playback.track_changed"])
+    .tells(&["block.playback.track_changed"])
     .keywords(&["angle", "stream"])
     .setting("next_video_track")
     .keys(on_mac(&["ctrl-cmd-v"], &["ctrl-alt-v"])),
     Spec::block_with(
-        "video.select_track",
+        "block.video.select_track",
         "Pick Video Track",
         "Show one of the file's video tracks.",
         &[Arg::required(
@@ -34,10 +34,10 @@ pub const COMMANDS: &[Spec] = &[
         )],
         |args, player, _, cx| select_track(args, TrackKind::Video, player, cx),
     )
-    .tells(&["playback.track_changed"])
+    .tells(&["block.playback.track_changed"])
     .keywords(&["angle", "stream"]),
     Spec::block(
-        "video.rotate_right",
+        "block.video.rotate_right",
         "Rotate Right",
         "Turn the picture a quarter turn clockwise.",
         |player, _, cx| player.rotate(1, cx),
@@ -46,7 +46,7 @@ pub const COMMANDS: &[Spec] = &[
     .setting("rotate_right")
     .keys(&["secondary-r"]),
     Spec::block(
-        "video.rotate_left",
+        "block.video.rotate_left",
         "Rotate Left",
         "Turn the picture a quarter turn counterclockwise.",
         |player, _, cx| player.rotate(-1, cx),
@@ -55,7 +55,7 @@ pub const COMMANDS: &[Spec] = &[
     .setting("rotate_left")
     .keys(&["secondary-l"]),
     Spec::block(
-        "video.flip_horizontally",
+        "block.video.flip_horizontally",
         "Flip Horizontally",
         "Mirror the picture left to right.",
         |player, _, cx| player.flip(true, cx),
@@ -64,7 +64,7 @@ pub const COMMANDS: &[Spec] = &[
     .setting("flip_horizontally")
     .keys(&["secondary-shift-h"]),
     Spec::block(
-        "video.flip_vertically",
+        "block.video.flip_vertically",
         "Flip Vertically",
         "Turn the picture upside down, mirrored.",
         |player, _, cx| player.flip(false, cx),
@@ -73,7 +73,7 @@ pub const COMMANDS: &[Spec] = &[
     .setting("flip_vertically")
     .keys(&["secondary-shift-v"]),
     Spec::block(
-        "video.next_aspect_ratio",
+        "block.video.next_aspect_ratio",
         "Next Aspect Ratio",
         "Show the picture at the next aspect ratio, then as the file is.",
         |player, _, cx| player.next_aspect_ratio(cx),
@@ -82,7 +82,7 @@ pub const COMMANDS: &[Spec] = &[
     .setting("next_aspect_ratio")
     .keys(&["a"]),
     Spec::block_with(
-        "video.set_aspect_ratio",
+        "block.video.set_aspect_ratio",
         "Aspect Ratio",
         "Show the picture at an aspect ratio, or as the file is.",
         &[Arg::optional(
@@ -103,7 +103,7 @@ pub const COMMANDS: &[Spec] = &[
         })
     }),
     Spec::block(
-        "video.next_crop",
+        "block.video.next_crop",
         "Next Crop",
         "Crop the picture to the next shape, then not at all.",
         |player, _, cx| player.next_crop(cx),
@@ -112,7 +112,7 @@ pub const COMMANDS: &[Spec] = &[
     .setting("next_crop")
     .keys(&["c"]),
     Spec::block_with(
-        "video.set_crop",
+        "block.video.set_crop",
         "Crop",
         "Crop the picture to a shape, or not at all.",
         &[Arg::optional(
@@ -133,7 +133,7 @@ pub const COMMANDS: &[Spec] = &[
         })
     }),
     Spec::block(
-        "video.reset_picture",
+        "block.video.reset_picture",
         "Reset Picture",
         "Show the picture as the file is: not turned, flipped, reshaped or cropped.",
         |player, _, cx| player.reset_picture(cx),
@@ -142,7 +142,7 @@ pub const COMMANDS: &[Spec] = &[
     .setting("reset_picture")
     .keys(&["secondary-0"]),
     Spec::block(
-        "video.take_screenshot",
+        "block.video.take_screenshot",
         "Take Screenshot",
         "Save the frame showing as a file, and say where it went.",
         |player, window, cx| player.take_screenshot(window, cx),
@@ -175,7 +175,7 @@ fn named(ratios: &[Ratio], name: Option<String>) -> Option<Ratio> {
 /// Show the block in front at `ratio`, or as the file is.
 pub fn set_aspect_ratio(ratio: Option<Ratio>) -> Run {
     Run::with(
-        "video.set_aspect_ratio",
+        "block.video.set_aspect_ratio",
         json!({"ratio": ratio.map(|ratio| ratio.name)}),
     )
 }
@@ -183,7 +183,7 @@ pub fn set_aspect_ratio(ratio: Option<Ratio>) -> Run {
 /// Crop the block in front to `crop`, or not at all.
 pub fn set_crop(crop: Option<Ratio>) -> Run {
     Run::with(
-        "video.set_crop",
+        "block.video.set_crop",
         json!({"crop": crop.map(|crop| crop.name)}),
     )
 }

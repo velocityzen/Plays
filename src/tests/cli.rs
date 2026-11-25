@@ -193,7 +193,7 @@ fn help_and_the_version_print_and_a_bad_command_line_says_why() {
             "the arguments aren't JSON",
         ),
         (
-            &["wait", "playback.ended", "--timeout", "-1"],
+            &["wait", "block.playback.ended", "--timeout", "-1"],
             "can't wait -1 seconds",
         ),
         (
@@ -260,7 +260,7 @@ fn with_no_plays_to_ask_it_says_so_or_starts_one() {
 #[test]
 fn a_wait_longer_than_anything_lasts_as_long_as_it_takes() {
     let path = socket("cli-forever");
-    let args = ["wait", "playback.ended", "--timeout", "1e19"];
+    let args = ["wait", "block.playback.ended", "--timeout", "1e19"];
     let ran = command_line(Some(path), Unanswered::Fails, &args);
     assert_eq!(ran.status, 4, "on to asking Plays: {ran:?}");
 }
@@ -299,7 +299,7 @@ fn actions_lists_every_command_without_plays() {
     assert_eq!(lines.len(), api::all().count() + 1, "a line for each");
     let play = lines
         .iter()
-        .find(|line| line.starts_with("playback.play_pause "))
+        .find(|line| line.starts_with("block.playback.play_pause "))
         .unwrap();
     assert!(
         play.contains("Play/Pause") && play.ends_with("Space, P"),
@@ -324,18 +324,18 @@ fn actions_lists_those_whose_id_or_title_has_what_is_searched_for() {
             .collect()
     };
     assert_eq!(
-        ids(&["actions", "video.flip_vertically"]),
-        ["video.flip_vertically"],
+        ids(&["actions", "block.video.flip_vertically"]),
+        ["block.video.flip_vertically"],
         "an id"
     );
     let video = ids(&["actions", "video"]);
-    let namespace = api::all().filter(|spec| spec.namespace() == "video");
+    let namespace = api::all().filter(|spec| spec.namespace() == "block.video");
     for spec in namespace {
         assert!(video.contains(&spec.id.to_owned()), "{video:?}");
     }
     let flips = ids(&["actions", "FLIP"]);
     assert!(
-        flips.contains(&"video.flip_horizontally".to_owned()) && flips.len() >= 2,
+        flips.contains(&"block.video.flip_horizontally".to_owned()) && flips.len() >= 2,
         "a word, in any case: {flips:?}"
     );
     for id in video.iter().chain(&flips) {
@@ -349,7 +349,7 @@ fn actions_lists_those_whose_id_or_title_has_what_is_searched_for() {
     }
     assert_eq!(
         ids(&["actions", "play/pause"]),
-        ["playback.play_pause", "playback.play_pause_all"],
+        ["block.playback.play_pause", "app.playback.play_pause"],
         "in their titles"
     );
 
@@ -465,7 +465,7 @@ fn the_command_reference_is_current() {
         api::find("app.show_components").is_some() && !kept.contains("app.show_components"),
         "but not the commands for working on Plays, which release builds don't have"
     );
-    let play = "### Play/Pause\n\n`playback.play_pause`: ";
+    let play = "### Play/Pause\n\n`block.playback.play_pause`: ";
     assert!(kept.contains(play), "each command under its title");
     assert!(kept.contains("- Keys: Space, P\n"));
     assert!(
@@ -480,7 +480,7 @@ fn with_control_off_it_says_where_to_turn_it_on(cx: &mut TestAppContext) {
     crate::api::socket::tests::allow_control(&mut cx, false);
     for args in [
         &["ls"][..],
-        &["do", "playback.loop.toggle"],
+        &["do", "block.playback.loop.toggle"],
         &["do", "-e", "return 1"],
         &["events"],
     ] {
@@ -552,7 +552,10 @@ fn arguments_are_typed_as_their_commands_take_them() {
         args("window.rename", &["label=1984"]),
         json!({"label": "1984"})
     );
-    assert_eq!(args("playback.seek", &["time=90.5"]), json!({"time": 90.5}));
+    assert_eq!(
+        args("block.playback.seek", &["time=90.5"]),
+        json!({"time": 90.5})
+    );
     assert_eq!(
         args("app.open", &["urls=a.mkv"]),
         json!({"urls": ["a.mkv"]}),
@@ -936,14 +939,14 @@ fn events_hear_every_window_and_block_unless_one_is_named(cx: &mut TestAppContex
             plays(cx, &path, &["open", "tests/fixtures/clip.mp4"]);
             playing(cx, true);
             for command in [
-                &["do", "audio.volume_down"][..],
-                &["do", "audio.volume_up"],
-                &["do", "audio.set_volume", "volume=30"],
+                &["do", "block.audio.volume_down"][..],
+                &["do", "block.audio.volume_up"],
+                &["do", "block.audio.set_volume", "volume=30"],
             ] {
                 assert_eq!(plays(cx, &path, command).status, 0, "{command:?}");
                 cx.update(api::events::look);
             }
-            plays(cx, &path, &["do", "playback.play_pause"]);
+            plays(cx, &path, &["do", "block.playback.play_pause"]);
             playing(cx, false);
         },
     );
@@ -959,26 +962,26 @@ fn events_hear_every_window_and_block_unless_one_is_named(cx: &mut TestAppContex
             "app.command_run" => event["payload"]["command"]
                 .as_str()
                 .filter(|command| !command.starts_with("app.")),
-            kind @ ("playback.opened"
-            | "playback.playing"
-            | "audio.volume_changed"
-            | "playback.paused") => Some(kind),
+            kind @ ("block.playback.opened"
+            | "block.playback.playing"
+            | "block.audio.volume_changed"
+            | "block.playback.paused") => Some(kind),
             _ => None,
         })
         .collect();
     assert_eq!(
         said,
         [
-            "playback.opened",
-            "playback.playing",
-            "audio.volume_down",
-            "audio.volume_changed",
-            "audio.volume_up",
-            "audio.volume_changed",
-            "audio.set_volume",
-            "audio.volume_changed",
-            "playback.play_pause",
-            "playback.paused",
+            "block.playback.opened",
+            "block.playback.playing",
+            "block.audio.volume_down",
+            "block.audio.volume_changed",
+            "block.audio.volume_up",
+            "block.audio.volume_changed",
+            "block.audio.set_volume",
+            "block.audio.volume_changed",
+            "block.playback.play_pause",
+            "block.playback.paused",
         ],
         "{heard:#?}"
     );
@@ -988,15 +991,15 @@ fn events_hear_every_window_and_block_unless_one_is_named(cx: &mut TestAppContex
             .filter(move |event| event["type"] == kind)
             .map(|event| &event["payload"])
     };
-    let opened = told("playback.opened").next().unwrap();
+    let opened = told("block.playback.opened").next().unwrap();
     assert_eq!(opened["block_title"], "clip.mp4", "{opened}");
     assert_eq!(opened["window_title"], "Plays", "{opened}");
-    for payload in told("playback.playing").chain(told("playback.paused")) {
+    for payload in told("block.playback.playing").chain(told("block.playback.paused")) {
         assert!(payload["position"].is_number(), "{payload}");
         assert!(payload["time"].is_number(), "{payload}");
         assert!(payload["frame"].is_u64(), "{payload}");
     }
-    let volumes: Vec<&Value> = told("audio.volume_changed")
+    let volumes: Vec<&Value> = told("block.audio.volume_changed")
         .map(|payload| &payload["volume"])
         .collect();
     assert!(
@@ -1077,9 +1080,9 @@ fn files_dropped_are_heard_each_opened_then_playing(cx: &mut TestAppContext) {
             })
         };
         let opened =
-            told("playback.opened").unwrap_or_else(|| panic!("{title} opened: {heard:#?}"));
+            told("block.playback.opened").unwrap_or_else(|| panic!("{title} opened: {heard:#?}"));
         let playing =
-            told("playback.playing").unwrap_or_else(|| panic!("{title} playing: {heard:#?}"));
+            told("block.playback.playing").unwrap_or_else(|| panic!("{title} playing: {heard:#?}"));
         assert!(opened < playing, "{title}: opened, then playing");
         for at in [opened, playing] {
             let payload = &heard[at]["payload"];
@@ -1141,13 +1144,24 @@ fn waiting_for_a_block_ends_with_its_event_or_says_why_not(cx: &mut TestAppConte
     let ran = plays(
         &mut cx,
         &path,
-        &["wait", "playback.playing", "-b", "1", "--timeout", "0.2"],
+        &[
+            "wait",
+            "block.playback.playing",
+            "-b",
+            "1",
+            "--timeout",
+            "0.2",
+        ],
     );
     assert_eq!(
         ran.failed(),
-        (1, "plays: no playback.playing in 0.2 seconds")
+        (1, "plays: no block.playback.playing in 0.2 seconds")
     );
-    let ran = plays(&mut cx, &path, &["wait", "playback.ended", "-b", "Attic"]);
+    let ran = plays(
+        &mut cx,
+        &path,
+        &["wait", "block.playback.ended", "-b", "Attic"],
+    );
     assert_eq!(ran.status, 3, "{ran:?}");
 
     // Where a block is, told only to those who ask, as waiting for it does.
@@ -1155,11 +1169,18 @@ fn waiting_for_a_block_ends_with_its_event_or_says_why_not(cx: &mut TestAppConte
     let ran = plays_while(
         &mut cx,
         &path,
-        &["wait", "playback.position", "-b", "1", "--timeout", "5"],
+        &[
+            "wait",
+            "block.playback.position",
+            "-b",
+            "1",
+            "--timeout",
+            "5",
+        ],
         |cx, time| {
             if time == 0 {
                 looked(cx);
-                plays(cx, &path, &["-b", "1", "do", "playback.play_pause"]);
+                plays(cx, &path, &["-b", "1", "do", "block.playback.play_pause"]);
             }
             cx.executor()
                 .advance_clock(std::time::Duration::from_millis(100));
@@ -1169,7 +1190,7 @@ fn waiting_for_a_block_ends_with_its_event_or_says_why_not(cx: &mut TestAppConte
     );
     assert_eq!(ran.status, 0, "{ran:?}");
     assert!(
-        ran.out.starts_with("playback.position window_id="),
+        ran.out.starts_with("block.playback.position window_id="),
         "{ran:?}"
     );
 
@@ -1177,7 +1198,7 @@ fn waiting_for_a_block_ends_with_its_event_or_says_why_not(cx: &mut TestAppConte
     let ran = plays_while(
         &mut cx,
         &path,
-        &["wait", "playback.ended", "-b", "1"],
+        &["wait", "block.playback.ended", "-b", "1"],
         |cx, time| {
             if time == 0 {
                 // Closed first, the other would be block 1.
@@ -1188,7 +1209,7 @@ fn waiting_for_a_block_ends_with_its_event_or_says_why_not(cx: &mut TestAppConte
     );
     assert_eq!(
         ran.failed(),
-        (1, "plays: the block closed before its playback.ended")
+        (1, "plays: the block closed before its block.playback.ended")
     );
 }
 
@@ -1228,7 +1249,7 @@ fn a_cue_is_heard_as_its_block_reaches_it_and_waited_for(cx: &mut TestAppContext
         .unwrap();
     let block = id.to_string();
     let cue = format!("block.{block}.position@1s");
-    let from_the_start = ["-b", &block, "do", "playback.seek", "time=0"];
+    let from_the_start = ["-b", &block, "do", "block.playback.seek", "time=0"];
 
     // Among a window's events, though the block is another's: a window of
     // its own, where nothing else happens.
@@ -1289,9 +1310,9 @@ fn events_end_and_waits_fail_as_plays_quits(cx: &mut TestAppContext) {
     let lines: [&[&'static str]; 5] = [
         &["--json", "events"],
         &["-w", "1", "events"],
-        &["wait", "playback.ended"],
+        &["wait", "block.playback.ended"],
         &["wait", "app.quit"],
-        &["-w", "1", "wait", "playback.ended"],
+        &["-w", "1", "wait", "block.playback.ended"],
     ];
     let running: Vec<thread::JoinHandle<Ran>> = lines
         .iter()
@@ -1341,7 +1362,7 @@ fn events_end_and_waits_fail_as_plays_quits(cx: &mut TestAppContext) {
     );
     assert_eq!(
         ended.failed(),
-        (1, "plays: Plays quit before its playback.ended")
+        (1, "plays: Plays quit before its block.playback.ended")
     );
     assert_eq!(
         (quit.status, quit.out.as_str()),
@@ -1350,7 +1371,10 @@ fn events_end_and_waits_fail_as_plays_quits(cx: &mut TestAppContext) {
     );
     assert_eq!(
         closed.failed(),
-        (1, "plays: the window closed before its playback.ended")
+        (
+            1,
+            "plays: the window closed before its block.playback.ended"
+        )
     );
 }
 
@@ -1390,7 +1414,7 @@ fn settings_are_listed_read_and_changed(cx: &mut TestAppContext) {
 #[gpui::test]
 fn the_keymap_lists_the_keys_commands_have_now(cx: &mut TestAppContext) {
     let (path, _, mut cx) = serving("cli-keymap", cx);
-    let keys = r#"{"playback.play_pause": ["cmd-p"]}"#;
+    let keys = r#"{"block.playback.play_pause": ["cmd-p"]}"#;
     let path_now = path.clone();
     let ran = talk(&mut cx, move || {
         command_line(
@@ -1408,14 +1432,14 @@ fn the_keymap_lists_the_keys_commands_have_now(cx: &mut TestAppContext) {
     );
     let play = lines
         .iter()
-        .find(|line| line.contains(" playback.play_pause "))
+        .find(|line| line.contains(" block.playback.play_pause "))
         .unwrap();
     assert!(
         play.starts_with("⌘P ") && play.ends_with("Play/Pause"),
         "{play}"
     );
     let keymap = plays(&mut cx, &path, &["--json", "keymap"]).json();
-    let play = listed(&keymap).find(|command| command["command"] == "playback.play_pause");
+    let play = listed(&keymap).find(|command| command["command"] == "block.playback.play_pause");
     assert_eq!(play.unwrap()["keys"], json!(["cmd-p"]));
 }
 

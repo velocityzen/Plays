@@ -393,10 +393,10 @@ fn how_a_file_plays_is_told_once_it_has_opened() {
         said(&block_changes(&opening, &open)),
         [
             (
-                "playback.opened",
+                "block.playback.opened",
                 json!({"title": "clip.mp4", "duration": 10.0})
             ),
-            ("playback.playing", at(0.0, 0.0, 0)),
+            ("block.playback.playing", at(0.0, 0.0, 0)),
         ]
     );
 
@@ -409,7 +409,7 @@ fn how_a_file_plays_is_told_once_it_has_opened() {
     };
     assert_eq!(
         said(&block_changes(&open, &sought)),
-        [("playback.seeked", at(0.5, 5.0, 125))]
+        [("block.playback.seeked", at(0.5, 5.0, 125))]
     );
 
     let ended = BlockSeen {
@@ -420,7 +420,7 @@ fn how_a_file_plays_is_told_once_it_has_opened() {
     };
     assert_eq!(
         said(&block_changes(&sought, &ended)),
-        [("playback.ended", at(1.0, 10.0, 250))],
+        [("block.playback.ended", at(1.0, 10.0, 250))],
         "not paused"
     );
     let again = BlockSeen {
@@ -431,7 +431,7 @@ fn how_a_file_plays_is_told_once_it_has_opened() {
     };
     assert_eq!(
         said(&block_changes(&ended, &again)),
-        [("playback.playing", at(0.0, 0.0, 0))]
+        [("block.playback.playing", at(0.0, 0.0, 0))]
     );
     let paused = BlockSeen {
         playing: false,
@@ -440,7 +440,7 @@ fn how_a_file_plays_is_told_once_it_has_opened() {
     };
     assert_eq!(
         said(&block_changes(&again, &paused)),
-        [("playback.paused", at(0.1, 1.0, 25))]
+        [("block.playback.paused", at(0.1, 1.0, 25))]
     );
 
     let mut changed = BlockSeen {
@@ -454,18 +454,18 @@ fn how_a_file_plays_is_told_once_it_has_opened() {
     assert_eq!(
         said(&block_changes(&paused, &changed)),
         [
-            ("audio.volume_changed", json!({"volume": 50.0})),
-            ("audio.mute.on", json!({})),
+            ("block.audio.volume_changed", json!({"volume": 50.0})),
+            ("block.audio.mute.on", json!({})),
             (
-                "playback.track_changed",
+                "block.playback.track_changed",
                 json!({"kind": "audio", "track": 2})
             ),
             (
-                "playback.track_changed",
+                "block.playback.track_changed",
                 json!({"kind": "subtitles", "track": 1})
             ),
-            ("subtitles.on", json!({})),
-            ("playback.chapter_changed", json!({"chapter": 2})),
+            ("block.subtitles.on", json!({})),
+            ("block.playback.chapter_changed", json!({"chapter": 2})),
         ]
     );
     assert!(block_changes(&changed, &changed).is_empty());
@@ -481,24 +481,28 @@ fn muting_and_subtitles_are_told_turning_on_and_off() {
     on.tracks[2] = Some(2);
     assert_eq!(
         kinds(&block_changes(&here, &on)),
-        ["audio.mute.on", "playback.track_changed", "subtitles.on"]
+        [
+            "block.audio.mute.on",
+            "block.playback.track_changed",
+            "block.subtitles.on"
+        ]
     );
     let mut other = on.clone();
     other.tracks[2] = Some(1);
     assert_eq!(
         kinds(&block_changes(&on, &other)),
-        ["playback.track_changed"],
+        ["block.playback.track_changed"],
         "still on"
     );
     assert_eq!(
         said(&block_changes(&other, &here)),
         [
-            ("audio.mute.off", json!({})),
+            ("block.audio.mute.off", json!({})),
             (
-                "playback.track_changed",
+                "block.playback.track_changed",
                 json!({"kind": "subtitles", "track": null})
             ),
-            ("subtitles.off", json!({})),
+            ("block.subtitles.off", json!({})),
         ]
     );
 }
@@ -517,15 +521,20 @@ fn files_dropped_together_are_each_told_opening_and_playing_however_looks_fall()
         .iter()
         .flat_map(|id| {
             [
-                ("playback.opened", json!(id.to_string())),
-                ("playback.playing", json!(id.to_string())),
+                ("block.playback.opened", json!(id.to_string())),
+                ("block.playback.playing", json!(id.to_string())),
             ]
         })
         .collect();
     let opening = |events: &[Event]| -> Vec<(&str, Value)> {
         events
             .iter()
-            .filter(|event| matches!(event.kind, "playback.opened" | "playback.playing"))
+            .filter(|event| {
+                matches!(
+                    event.kind,
+                    "block.playback.opened" | "block.playback.playing"
+                )
+            })
             .map(|event| (event.kind, event.payload["block_id"].clone()))
             .collect()
     };
@@ -542,12 +551,12 @@ fn files_dropped_together_are_each_told_opening_and_playing_however_looks_fall()
             "block.created",
             "window.layout_changed",
             "block.active_changed",
-            "playback.opened",
-            "playback.playing",
-            "playback.opened",
-            "playback.playing",
-            "playback.opened",
-            "playback.playing",
+            "block.playback.opened",
+            "block.playback.playing",
+            "block.playback.opened",
+            "block.playback.playing",
+            "block.playback.opened",
+            "block.playback.playing",
         ]
     );
     assert_eq!(opening(&events), each);
@@ -637,15 +646,15 @@ fn a_file_opened_in_place_of_another_is_told_as_it_opens_or_fails() {
     assert_eq!(
         said(&block_changes(&next, &next_open)),
         [
-            ("playback.opened", json!({"title": "next.mp4"})),
-            ("playback.playing", at(0.0, 0.0, 0)),
+            ("block.playback.opened", json!({"title": "next.mp4"})),
+            ("block.playback.playing", at(0.0, 0.0, 0)),
         ],
         "its volume as it was, and no seek"
     );
     // Straight from one to the next.
     assert_eq!(
         kinds(&block_changes(&first, &next_open)),
-        ["playback.opened", "playback.playing"]
+        ["block.playback.opened", "block.playback.playing"]
     );
 
     let missing = BlockSeen {
@@ -657,7 +666,10 @@ fn a_file_opened_in_place_of_another_is_told_as_it_opens_or_fails() {
     };
     assert_eq!(
         said(&block_changes(&next_open, &missing)),
-        [("playback.open_failed", json!({"error": "no such file"}))]
+        [(
+            "block.playback.open_failed",
+            json!({"error": "no such file"})
+        )]
     );
     assert!(block_changes(&missing, &missing).is_empty());
 
@@ -668,7 +680,7 @@ fn a_file_opened_in_place_of_another_is_told_as_it_opens_or_fails() {
     assert_eq!(
         said(&block_changes(&next_open, &broken)),
         [(
-            "playback.failed",
+            "block.playback.failed",
             json!({"error": "the connection dropped"})
         )]
     );
@@ -705,7 +717,7 @@ fn casts_and_picture_in_picture_are_told_as_they_start_and_end() {
     };
     assert_eq!(
         kinds(&block_changes(&on_speaker, &next)),
-        ["playback.opened"]
+        ["block.playback.opened"]
     );
     let back = BlockSeen {
         casting: None,
@@ -736,11 +748,11 @@ fn casts_and_picture_in_picture_are_told_as_they_start_and_end() {
     };
     assert_eq!(
         kinds(&block_changes(&here, &looping)),
-        ["block.console.on", "playback.loop.on"]
+        ["block.console.on", "block.playback.loop.on"]
     );
     assert_eq!(
         kinds(&block_changes(&looping, &here)),
-        ["block.console.off", "playback.loop.off"]
+        ["block.console.off", "block.playback.loop.off"]
     );
 }
 

@@ -72,7 +72,7 @@ fn run(cx: &mut VisualTestContext, invocation: Invocation) {
 fn seek(cx: &mut VisualTestContext, time: f64) {
     run(
         cx,
-        Invocation::new("playback.seek").with_args(json!({"time": time})),
+        Invocation::new("block.playback.seek").with_args(json!({"time": time})),
     );
 }
 
@@ -126,7 +126,7 @@ fn a_cue_is_told_once_as_its_block_plays_to_it(cx: &mut TestAppContext) {
 fn a_seek_landing_on_a_cue_reaches_it_and_one_past_it_doesnt(cx: &mut TestAppContext) {
     let (window, mut cx) = testing::start(cx);
     open(window, &mut cx, &["clip.mp4"], true);
-    run(&mut cx, Invocation::new("playback.play_pause"));
+    run(&mut cx, Invocation::new("block.playback.play_pause"));
     seek(&mut cx, 0.2);
     tick(&mut cx);
     let block = block_id(window, &cx);
@@ -151,7 +151,7 @@ fn a_seek_landing_on_a_cue_reaches_it_and_one_past_it_doesnt(cx: &mut TestAppCon
     seek(&mut cx, 0.2);
     tick(&mut cx);
     assert_eq!(told(&mut heard), []);
-    run(&mut cx, Invocation::new("playback.play_pause"));
+    run(&mut cx, Invocation::new("block.playback.play_pause"));
     let mut cued = Vec::new();
     let reached = play_until(&mut cx, || {
         cued.extend(told(&mut heard));

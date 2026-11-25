@@ -403,16 +403,16 @@ fn hidden_bars_are_not_drawn_and_the_mouse_is_not_over_them(cx: &mut TestAppCont
 /// What a shortcut changes on a file with sound, video and subtitles,
 /// each saying so in a note of its own: the subtitles shown, then hidden.
 const CHANGES: [&str; 10] = [
-    "audio.volume_up",
-    "audio.mute.toggle",
-    "playback.loop.toggle",
-    "subtitles.toggle",
-    "subtitles.toggle",
-    "audio.later",
-    "subtitles.later",
-    "subtitles.bigger",
-    "video.rotate_right",
-    "video.reset_picture",
+    "block.audio.volume_up",
+    "block.audio.mute.toggle",
+    "block.playback.loop.toggle",
+    "block.subtitles.toggle",
+    "block.subtitles.toggle",
+    "block.audio.later",
+    "block.subtitles.later",
+    "block.subtitles.bigger",
+    "block.video.rotate_right",
+    "block.video.reset_picture",
 ];
 
 #[gpui::test]
@@ -450,20 +450,20 @@ fn hidden_notes_and_switcher_leave_changes_unsaid_but_not_whats_wrong(cx: &mut T
     run(&mut cx, "app.notes.toggle").unwrap();
     run(&mut cx, "app.track_switcher.toggle").unwrap();
 
-    on(block, "audio.mute.toggle", &mut cx);
+    on(block, "block.audio.mute.toggle", &mut cx);
     assert!(
         block.read_with(&cx, |view, _| view.player().is_muted()),
         "it changed"
     );
-    on(block, "audio.mute.toggle", &mut cx);
+    on(block, "block.audio.mute.toggle", &mut cx);
     for command in CHANGES {
         on(block, command, &mut cx);
         assert_eq!(noted(block, &mut cx), None, "{command}: unsaid");
     }
-    on(chapters, "playback.next_chapter", &mut cx);
+    on(chapters, "block.playback.next_chapter", &mut cx);
     assert_eq!(noted(chapters, &mut cx), None, "the chapter: unsaid");
     let before = block.read_with(&cx, |view, _| subtitles(view));
-    on(block, "subtitles.next_track", &mut cx);
+    on(block, "block.subtitles.next_track", &mut cx);
     let switched = testing::wait_until(&mut cx, |cx| {
         block.read_with(cx, |view, _| subtitles(view)) != before
     });
@@ -472,7 +472,7 @@ fn hidden_notes_and_switcher_leave_changes_unsaid_but_not_whats_wrong(cx: &mut T
         !reels(block, &mut cx) && noted(block, &mut cx).is_none(),
         "unshown"
     );
-    on(block, "playback.next_chapter", &mut cx);
+    on(block, "block.playback.next_chapter", &mut cx);
     assert_eq!(
         noted(block, &mut cx).as_deref(),
         Some("No chapters"),
@@ -486,10 +486,10 @@ fn hidden_notes_and_switcher_leave_changes_unsaid_but_not_whats_wrong(cx: &mut T
         let note = noted(block, &mut cx);
         assert!(note.is_some() && note != before, "{command}: {note:?}");
     }
-    on(chapters, "playback.next_chapter", &mut cx);
+    on(chapters, "block.playback.next_chapter", &mut cx);
     assert!(noted(chapters, &mut cx).is_some(), "the chapter");
     run(&mut cx, "app.track_switcher.toggle").unwrap();
-    on(block, "subtitles.next_track", &mut cx);
+    on(block, "block.subtitles.next_track", &mut cx);
     assert!(reels(block, &mut cx));
 }
 
@@ -512,7 +512,10 @@ fn a_screenshot_saved_is_unsaid_with_notes_hidden_but_one_failed_is_not(cx: &mut
         });
         let name = block.read_with(cx, |view, _| view.id().to_string());
         TestAppContext::update(cx, |cx| {
-            api::run(Invocation::new("video.take_screenshot").on_block(name), cx)
+            api::run(
+                Invocation::new("block.video.take_screenshot").on_block(name),
+                cx,
+            )
         })
         .unwrap();
     };

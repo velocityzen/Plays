@@ -22,17 +22,21 @@ const HEIGHT_STEP: f32 = 0.01;
 
 pub const COMMANDS: &[Spec] = &[
     Spec::block(
-        "subtitles.next_track",
+        "block.subtitles.next_track",
         "Next Subtitles",
         "Show the file's next subtitles, and none after the last.",
         |player, _, cx| player.next_track(TrackKind::Subtitle, cx),
     )
-    .tells(&["playback.track_changed", "subtitles.on", "subtitles.off"])
+    .tells(&[
+        "block.playback.track_changed",
+        "block.subtitles.on",
+        "block.subtitles.off",
+    ])
     .keywords(&["captions", "language", "track"])
     .setting("next_subtitle_track")
     .keys(on_mac(&["ctrl-cmd-s"], &["ctrl-alt-s"])),
     Spec::block_with(
-        "subtitles.select_track",
+        "block.subtitles.select_track",
         "Pick Subtitles",
         "Show one of the file's subtitles, or none.",
         &[Arg::optional(
@@ -42,15 +46,23 @@ pub const COMMANDS: &[Spec] = &[
         )],
         |args, player, _, cx| select_track(args, TrackKind::Subtitle, player, cx),
     )
-    .tells(&["playback.track_changed", "subtitles.on", "subtitles.off"])
+    .tells(&[
+        "block.playback.track_changed",
+        "block.subtitles.on",
+        "block.subtitles.off",
+    ])
     .keywords(&["captions", "language", "track", "off"]),
     Spec::block(
-        "subtitles.toggle",
+        "block.subtitles.toggle",
         "Show/Hide Subtitles",
         "Hide the subtitles showing, or show the ones hidden.",
         |player, _, cx| player.turn_subtitles(|on| Switch::Toggle.turn(on), cx),
     )
-    .tells(&["subtitles.on", "subtitles.off", "playback.track_changed"])
+    .tells(&[
+        "block.subtitles.on",
+        "block.subtitles.off",
+        "block.playback.track_changed",
+    ])
     .keywords(&["captions", "off", "on"])
     .setting("toggle_subtitles")
     .keys(&["v"])
@@ -58,23 +70,25 @@ pub const COMMANDS: &[Spec] = &[
         target::read_block(target, cx, |player, _| json!(player.shows_subtitles()))
     }),
     Spec::block(
-        "subtitles.on",
+        "block.subtitles.on",
         "Show Subtitles",
         "Show the subtitles hidden, or the file's first, unless some show already.",
         |player, _, cx| player.turn_subtitles(|on| Switch::On.turn(on), cx),
     )
-    .tells(&["subtitles.on", "playback.track_changed"])
-    .keywords(&["captions", "on"]),
+    .tells(&["block.subtitles.on", "block.playback.track_changed"])
+    .keywords(&["captions", "on"])
+    .setting("subtitles.on"),
     Spec::block(
-        "subtitles.off",
+        "block.subtitles.off",
         "Hide Subtitles",
         "Hide the subtitles showing, unless none show.",
         |player, _, cx| player.turn_subtitles(|on| Switch::Off.turn(on), cx),
     )
-    .tells(&["subtitles.off", "playback.track_changed"])
-    .keywords(&["captions", "off", "none"]),
+    .tells(&["block.subtitles.off", "block.playback.track_changed"])
+    .keywords(&["captions", "off", "none"])
+    .setting("subtitles.off"),
     Spec::block(
-        "subtitles.bigger",
+        "block.subtitles.bigger",
         "Bigger Subtitles",
         "Make every file's subtitles bigger.",
         |player, _, cx| change_size(player, SIZE_STEP, cx),
@@ -84,7 +98,7 @@ pub const COMMANDS: &[Spec] = &[
     .setting("bigger_subtitles")
     .keys(&["shift-g"]),
     Spec::block(
-        "subtitles.smaller",
+        "block.subtitles.smaller",
         "Smaller Subtitles",
         "Make every file's subtitles smaller.",
         |player, _, cx| change_size(player, -SIZE_STEP, cx),
@@ -94,7 +108,7 @@ pub const COMMANDS: &[Spec] = &[
     .setting("smaller_subtitles")
     .keys(&["shift-f"]),
     Spec::block(
-        "subtitles.up",
+        "block.subtitles.up",
         "Move Subtitles Up",
         "Show every file's subtitles higher up.",
         |player, _, cx| change_height(player, HEIGHT_STEP, cx),
@@ -104,7 +118,7 @@ pub const COMMANDS: &[Spec] = &[
     .setting("subtitles_up")
     .keys(&["r"]),
     Spec::block(
-        "subtitles.down",
+        "block.subtitles.down",
         "Move Subtitles Down",
         "Show every file's subtitles lower down.",
         |player, _, cx| change_height(player, -HEIGHT_STEP, cx),
@@ -114,7 +128,7 @@ pub const COMMANDS: &[Spec] = &[
     .setting("subtitles_down")
     .keys(&["shift-r", "t"]),
     Spec::block(
-        "subtitles.earlier",
+        "block.subtitles.earlier",
         "Subtitles Earlier",
         "Show the block's subtitles a little earlier.",
         |player, _, cx| player.shift_subtitles(-DELAY_STEP, cx),
@@ -123,7 +137,7 @@ pub const COMMANDS: &[Spec] = &[
     .setting("subtitles_earlier")
     .keys(&["z"]),
     Spec::block(
-        "subtitles.later",
+        "block.subtitles.later",
         "Subtitles Later",
         "Show the block's subtitles a little later.",
         |player, _, cx| player.shift_subtitles(DELAY_STEP, cx),
@@ -132,7 +146,7 @@ pub const COMMANDS: &[Spec] = &[
     .setting("subtitles_later")
     .keys(&["x"]),
     Spec::block(
-        "subtitles.reset_delay",
+        "block.subtitles.reset_delay",
         "Reset Subtitle Delay",
         "Show the block's subtitles at their own times again.",
         |player, _, cx| player.set_subtitle_delay(0.0, cx),
@@ -145,12 +159,12 @@ pub const COMMANDS: &[Spec] = &[
 /// The blocks' events about their subtitles.
 pub const EVENTS: &[EventKind] = &[
     EventKind::block(
-        "subtitles.on",
+        "block.subtitles.on",
         "A block's subtitles show: a subtitle track was picked where none was.",
         &[],
     ),
     EventKind::block(
-        "subtitles.off",
+        "block.subtitles.off",
         "A block's subtitles hid: no subtitle track is picked now.",
         &[],
     ),

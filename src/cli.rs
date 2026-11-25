@@ -1,4 +1,4 @@
-//! The command line: `plays ls`, `plays do playback.play_pause`, `plays
+//! The command line: `plays ls`, `plays do block.playback.play_pause`, `plays
 //! events`. It runs apart from the app, without its UI, so it answers at
 //! once: it asks the Plays running over the socket (`api::socket`), and
 //! starts one if none is, unless told not to (`--no-autostart`) or

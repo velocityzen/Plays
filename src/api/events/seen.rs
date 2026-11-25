@@ -78,7 +78,7 @@ pub struct BlockSeen {
     pub duration: Option<f64>,
     /// The video's frames a second; none for sound alone.
     pub frame_rate: Option<f64>,
-    /// In percent, as `audio.set_volume` takes it.
+    /// In percent, as `block.audio.set_volume` takes it.
     pub volume: f64,
     pub muted: bool,
     /// The tracks picked, numbered from 1 among their kind's, in the order
@@ -368,7 +368,7 @@ fn block_changes(
     }
     if let Some(old) = old {
         let console = ["block.console.on", "block.console.off"];
-        let looping = ["playback.loop.on", "playback.loop.off"];
+        let looping = ["block.playback.loop.on", "block.playback.loop.off"];
         let switches = panels_switched(old.over_video, block.over_video, &BLOCK_PANELS)
             .into_iter()
             .chain(switched(old.console, block.console, console))
@@ -392,16 +392,16 @@ fn block_changes(
     if let Some(opened) = &block.opened
         && file.is_none_or(|old| old.opened.is_none())
     {
-        tell("playback.opened", opened.clone());
+        tell("block.playback.opened", opened.clone());
     }
     if let Some(error) = &block.failed
         && file.is_none_or(|old| old.failed.is_none())
     {
         // Once it has opened, it couldn't play on.
         let kind = if block.opened.is_some() {
-            "playback.failed"
+            "block.playback.failed"
         } else {
-            "playback.open_failed"
+            "block.playback.open_failed"
         };
         tell(kind, json!({"error": error}));
     }
@@ -419,7 +419,7 @@ fn block_changes(
 }
 
 /// How the file `block` has open plays now, against `old` (none if it just
-/// opened, which starts out paused, as its `playback.opened` says the rest).
+/// opened, which starts out paused, as its `block.playback.opened` says the rest).
 fn playing_changes(
     old: Option<&BlockSeen>,
     block: &BlockSeen,
@@ -432,41 +432,48 @@ fn playing_changes(
     };
     let old = old.unwrap_or(&opened);
     if old.seeks != block.seeks {
-        tell("playback.seeked", block.playhead(block.sought));
+        tell("block.playback.seeked", block.playhead(block.sought));
     }
     if block.ended && !old.ended {
-        tell("playback.ended", block.playhead(block.position));
+        tell("block.playback.ended", block.playhead(block.position));
     } else if old.playing != block.playing {
         let kind = if block.playing {
-            "playback.playing"
+            "block.playback.playing"
         } else {
-            "playback.paused"
+            "block.playback.paused"
         };
         tell(kind, block.playhead(block.position));
     }
     if old.volume != block.volume {
-        tell("audio.volume_changed", json!({"volume": block.volume}));
+        tell(
+            "block.audio.volume_changed",
+            json!({"volume": block.volume}),
+        );
     }
-    if let Some(kind) = switched(old.muted, block.muted, ["audio.mute.on", "audio.mute.off"]) {
+    if let Some(kind) = switched(
+        old.muted,
+        block.muted,
+        ["block.audio.mute.on", "block.audio.mute.off"],
+    ) {
         tell(kind, json!({}));
     }
     for ((kind, was), track) in TRACKS.iter().zip(old.tracks).zip(block.tracks) {
         if was != track {
             tell(
-                "playback.track_changed",
+                "block.playback.track_changed",
                 json!({"kind": kind, "track": track}),
             );
         }
     }
     let [.., subtitles_were] = old.tracks;
     let [.., subtitles] = block.tracks;
-    let shown = ["subtitles.on", "subtitles.off"];
+    let shown = ["block.subtitles.on", "block.subtitles.off"];
     if let Some(kind) = switched(subtitles_were.is_some(), subtitles.is_some(), shown) {
         tell(kind, json!({}));
     }
     if old.chapter != block.chapter {
         tell(
-            "playback.chapter_changed",
+            "block.playback.chapter_changed",
             json!({"chapter": block.chapter}),
         );
     }

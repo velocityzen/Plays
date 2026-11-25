@@ -112,19 +112,19 @@ fn the_scripts_the_scripts_guide_names_do_as_it_says(cx: &mut TestAppContext) {
     let (clip, other) = ("tests/fixtures/clip.mp4", "tests/fixtures/clip-one-key.mp4");
     open(&mut cx, &path, window, &[clip, other], 2);
     // Paused, so each stays where it's sought.
-    plays(&mut cx, &path, &["do", "playback.pause_all"]);
+    plays(&mut cx, &path, &["do", "app.playback.pause"]);
     let volumes = "local v = {} for _, b in ipairs(plays.block.ls()) do \
                    v[#v + 1] = plays.block.inspect{block_id = b.id}.volume end return v";
 
     plays(
         &mut cx,
         &path,
-        &["-b", "1", "do", "audio.set_volume", "volume=50"],
+        &["-b", "1", "do", "block.audio.set_volume", "volume=50"],
     );
     plays(
         &mut cx,
         &path,
-        &["-b", "2", "do", "audio.set_volume", "volume=95"],
+        &["-b", "2", "do", "block.audio.set_volume", "volume=95"],
     );
     let louder = folder.script(SCRIPTS, "louder.lua");
     let ran = plays(&mut cx, &path, &["do", &louder]);
@@ -188,7 +188,7 @@ fn the_scripts_the_scripts_guide_names_do_as_it_says(cx: &mut TestAppContext) {
         "{ran:?}"
     );
 
-    plays(&mut cx, &path, &["do", "playback.play_all"]);
+    plays(&mut cx, &path, &["do", "app.playback.play"]);
     let playing = "local p = {} for _, b in ipairs(plays.block.ls()) do \
                    p[#p + 1] = plays.block.inspect{block_id = b.id}.playing end return p";
     assert_eq!(returned(&mut cx, &path, playing), json!([true, true, true]));
@@ -209,8 +209,8 @@ fn the_scripts_the_events_guide_names_do_as_it_says(cx: &mut TestAppContext) {
     open(&mut cx, &path, window, &[clip, other], 2);
     let playing = "local p = {} for _, b in ipairs(plays.block.ls()) do p[#p + 1] = b.playing end \
                    return p";
-    plays(&mut cx, &path, &["-b", "1", "do", "playback.play"]);
-    plays(&mut cx, &path, &["-b", "2", "do", "playback.pause"]);
+    plays(&mut cx, &path, &["-b", "1", "do", "block.playback.play"]);
+    plays(&mut cx, &path, &["-b", "2", "do", "block.playback.pause"]);
     assert_eq!(returned(&mut cx, &path, playing), json!([true, false]));
 
     // The second plays, once the script listens: the first pauses.
@@ -221,7 +221,7 @@ fn the_scripts_the_events_guide_names_do_as_it_says(cx: &mut TestAppContext) {
         &["do", "--for", "1.5", &solo],
         |cx, time| {
             if time == 10 {
-                plays(cx, &path, &["-b", "2", "do", "playback.play"]);
+                plays(cx, &path, &["-b", "2", "do", "block.playback.play"]);
             }
             cx.run_until_parked();
             std::thread::sleep(Duration::from_millis(20));
@@ -303,7 +303,7 @@ fn the_cue_the_events_guide_sets_pauses_the_block_at_its_frame(cx: &mut TestAppC
     let (path, window, mut cx) = serving("lua-guide-cue", cx);
     let folder = Folder::new("lua-guide-cue");
     playing_the_clip(&mut cx, &path, window);
-    plays(&mut cx, &path, &["do", "playback.seek", "time=0"]);
+    plays(&mut cx, &path, &["do", "block.playback.seek", "time=0"]);
     let stop_at = folder.script(EVENTS, "stop-at.lua");
     let ran = plays_while(
         &mut cx,

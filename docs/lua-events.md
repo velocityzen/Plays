@@ -5,10 +5,10 @@ its type, once its first run is over ([lua.md](lua.md)).
 
 ```lua
 -- solo.lua: as a block plays, the others in its window pause
-plays.on("playback.playing", function(ctx, event)
+plays.on("block.playback.playing", function(ctx, event)
   for _, block in ipairs(plays.block.ls()) do
     if block.id ~= ctx.block_id then
-      plays.playback.pause{block_id = block.id}
+      plays.block.playback.pause{block_id = block.id}
     end
   end
 end)
@@ -32,11 +32,11 @@ plays do solo.lua   # listening: 1 handler; Ctrl-C to stop
 ## Events
 
 - Every event in [commands.md](commands.md#events), by its type, as
-  `playback.ended` or `window.closed`, and the fields of its payload.
+  `block.playback.ended` or `window.closed`, and the fields of its payload.
 - A feature's `.on` and `.off`, as `window.full_screen.on`: told as it
   turns on or off, whatever turned it, a command, a click or Settings.
 - Types aren't checked: a handler for one misspelled never runs.
-- `playback.position`, where a file is as it plays, is heard once a wait
+- `block.playback.position`, where a file is as it plays, is heard once a wait
   or a handler is for it, at most once a second.
 - Cues, a block reaching a time or a frame, by their names (see
   [Cues](#cues)).
@@ -48,7 +48,7 @@ plays do solo.lua   # listening: 1 handler; Ctrl-C to stop
 -- stop-at.lua: the block plays on to the frame `frame` names, and pauses
 local cue = ("block.%s.position@%df"):format(plays.block_id, plays.args.frame)
 plays.on(cue, function(ctx, event)
-  plays.playback.pause()
+  plays.block.playback.pause()
   plays.log(("paused at frame %d, %.3fs"):format(event.frame, event.time))
 end)
 ```
@@ -64,7 +64,7 @@ plays -b 2 do stop-at.lua frame=345
 - Heard once, in whatever window, as the block plays on to it or past it,
   or lands on it, within a frame: a seek, a step, the next loop. Not a
   seek past it. Set past it, once the block is back before it, playing on.
-- Its payload: `playback.position`'s, told as the block ticks there, not
+- Its payload: `block.playback.position`'s, told as the block ticks there, not
   once a second.
 - A handler for one runs once, then is gone; as its block closes, it's
   gone unrun, said on stderr. A wait for one fails as its block closes.
@@ -82,7 +82,7 @@ plays -b 2 do stop-at.lua frame=345
 
 ```lua
 -- failed.lua: at the first file that fails, why, and exit status 1
-plays.on("playback.failed", function(ctx, event)
+plays.on("block.playback.failed", function(ctx, event)
   plays.log(event.block_title .. ": " .. event.error)
   plays.stop(1)
 end)
@@ -126,7 +126,7 @@ end)
 ```lua
 -- opened.lua: each file opened, a line in the file `to` names
 local log = assert(io.open(plays.args.to, "a"))
-plays.on("playback.opened", function(ctx, event)
+plays.on("block.playback.opened", function(ctx, event)
   log:write(os.date("%Y-%m-%d %H:%M:%S "), event.file or event.url, "\n")
   log:flush()
 end)
@@ -134,7 +134,7 @@ end)
 
 ```lua
 -- ended.lua: on macOS, a notification as each file ends
-plays.on("playback.ended", function(ctx, event)
+plays.on("block.playback.ended", function(ctx, event)
   plays.exec{"osascript", "-e", "on run argv",
     "-e", 'display notification (item 1 of argv) with title "Plays"',
     "-e", "end run", event.block_title}

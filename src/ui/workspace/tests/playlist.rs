@@ -288,7 +288,7 @@ fn previous_and_next_go_as_far_as_its_playlist(cx: &mut TestAppContext) {
     assert_eq!(sent(&mut cx, "previous"), [], "none before the first");
     assert_eq!(
         sent(&mut cx, "next"),
-        [Invocation::new("playback.next_file")
+        [Invocation::new("block.playback.next_file")
             .with_args(Value::Null)
             .on_block(name.clone())]
     );
@@ -299,7 +299,7 @@ fn previous_and_next_go_as_far_as_its_playlist(cx: &mut TestAppContext) {
     plays(&block, &mut cx);
     assert_eq!(sent(&mut cx, "next"), [], "none after the last");
     let previous = || {
-        Invocation::new("playback.previous_file")
+        Invocation::new("block.playback.previous_file")
             .with_args(Value::Null)
             .on_block(name.clone())
     };
@@ -319,7 +319,7 @@ fn previous_and_next_go_as_far_as_its_playlist(cx: &mut TestAppContext) {
     );
     assert_eq!(
         sent(&mut cx, "next"),
-        [Invocation::new("playback.next_file")
+        [Invocation::new("block.playback.next_file")
             .with_args(Value::Null)
             .on_block(name.clone())]
     );

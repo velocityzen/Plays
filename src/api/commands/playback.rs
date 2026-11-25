@@ -18,17 +18,17 @@ use crate::ui::workspace::all;
 
 pub const COMMANDS: &[Spec] = &[
     Spec::block(
-        "playback.play_pause",
+        "block.playback.play_pause",
         "Play/Pause",
         "Pause the block if it plays, else play it.",
         |player, _, cx| player.play_pause(cx),
     )
-    .tells(&["playback.playing", "playback.paused"])
+    .tells(&["block.playback.playing", "block.playback.paused"])
     .keywords(&["play", "pause", "resume", "stop"])
     .setting("play_pause")
     .keys(&["space", "p"]),
     Spec::block(
-        "playback.play",
+        "block.playback.play",
         "Play",
         "Play the block, unless it plays already; from the start if it played to its end.",
         |player, _, cx| {
@@ -36,10 +36,11 @@ pub const COMMANDS: &[Spec] = &[
             cx.notify();
         },
     )
-    .tells(&["playback.playing"])
-    .keywords(&["resume", "start", "unpause"]),
+    .tells(&["block.playback.playing"])
+    .keywords(&["resume", "start", "unpause"])
+    .setting("playback.play"),
     Spec::block(
-        "playback.pause",
+        "block.playback.pause",
         "Pause",
         "Pause the block, unless it's paused already.",
         |player, _, cx| {
@@ -47,10 +48,11 @@ pub const COMMANDS: &[Spec] = &[
             cx.notify();
         },
     )
-    .tells(&["playback.paused"])
-    .keywords(&["stop", "hold"]),
+    .tells(&["block.playback.paused"])
+    .keywords(&["stop", "hold"])
+    .setting("playback.pause"),
     Spec::block_with(
-        "playback.seek",
+        "block.playback.seek",
         "Seek To",
         "Play from a time in the file, here or on the device it's cast to.",
         &[Arg::required(
@@ -68,13 +70,13 @@ pub const COMMANDS: &[Spec] = &[
         },
     )
     .tells(&[
-        "playback.seeked",
-        "playback.ended",
-        "playback.chapter_changed",
+        "block.playback.seeked",
+        "block.playback.ended",
+        "block.playback.chapter_changed",
     ])
     .keywords(&["jump", "position", "time", "go to", "scrub"]),
     Spec::block(
-        "playback.seek_forward",
+        "block.playback.seek_forward",
         "Seek Forward",
         "Skip ahead by the seek step set in Settings.",
         |player, _, cx| {
@@ -83,15 +85,15 @@ pub const COMMANDS: &[Spec] = &[
         },
     )
     .tells(&[
-        "playback.seeked",
-        "playback.ended",
-        "playback.chapter_changed",
+        "block.playback.seeked",
+        "block.playback.ended",
+        "block.playback.chapter_changed",
     ])
     .keywords(&["skip", "forward", "jump"])
     .setting("seek_forward")
     .keys(&["right"]),
     Spec::block(
-        "playback.seek_backward",
+        "block.playback.seek_backward",
         "Seek Backward",
         "Skip back by the seek step set in Settings.",
         |player, _, cx| {
@@ -99,52 +101,52 @@ pub const COMMANDS: &[Spec] = &[
             player.seek_by(-step, cx);
         },
     )
-    .tells(&["playback.seeked", "playback.chapter_changed"])
+    .tells(&["block.playback.seeked", "block.playback.chapter_changed"])
     .keywords(&["skip", "back", "rewind", "jump"])
     .setting("seek_backward")
     .keys(&["left"]),
     Spec::block(
-        "playback.next_frame",
+        "block.playback.next_frame",
         "Next Frame",
         "Pause and show the next frame.",
         |player, _, cx| player.step_frame(1.0, cx),
     )
-    .tells(&["playback.paused", "playback.seeked"])
+    .tells(&["block.playback.paused", "block.playback.seeked"])
     .keywords(&["step"])
     .setting("next_frame")
     .keys(&["alt-right", ".", ">"]),
     Spec::block(
-        "playback.previous_frame",
+        "block.playback.previous_frame",
         "Previous Frame",
         "Pause and show the frame before.",
         |player, _, cx| player.step_frame(-1.0, cx),
     )
-    .tells(&["playback.paused", "playback.seeked"])
+    .tells(&["block.playback.paused", "block.playback.seeked"])
     .keywords(&["step", "back"])
     .setting("previous_frame")
     .keys(&["alt-left", ",", "<"]),
     Spec::block(
-        "playback.next_chapter",
+        "block.playback.next_chapter",
         "Next Chapter",
         "Play from the start of the next chapter.",
         |player, _, cx| player.next_chapter(cx),
     )
-    .tells(&["playback.seeked", "playback.chapter_changed"])
+    .tells(&["block.playback.seeked", "block.playback.chapter_changed"])
     .keywords(&["skip"])
     .setting("next_chapter")
     .keys(&["pagedown"]),
     Spec::block(
-        "playback.previous_chapter",
+        "block.playback.previous_chapter",
         "Previous Chapter",
         "Play from the start of this chapter, or of the one before near its start.",
         |player, _, cx| player.previous_chapter(cx),
     )
-    .tells(&["playback.seeked", "playback.chapter_changed"])
+    .tells(&["block.playback.seeked", "block.playback.chapter_changed"])
     .keywords(&["back"])
     .setting("previous_chapter")
     .keys(&["pageup"]),
     Spec::block_with(
-        "playback.go_to_chapter",
+        "block.playback.go_to_chapter",
         "Go to Chapter",
         "Play from the start of a chapter.",
         &[Arg::required(
@@ -161,7 +163,7 @@ pub const COMMANDS: &[Spec] = &[
             done()
         },
     )
-    .tells(&["playback.seeked", "playback.chapter_changed"])
+    .tells(&["block.playback.seeked", "block.playback.chapter_changed"])
     .keywords(&["chapters", "jump", "skip"])
     // The chapter it's in, from 1.
     .state(|target, cx| {
@@ -172,37 +174,37 @@ pub const COMMANDS: &[Spec] = &[
         })
     }),
     Spec::block(
-        "playback.restart",
+        "block.playback.restart",
         "Restart",
         "Play from the start.",
         |player, _, cx| player.restart(cx),
     )
-    .tells(&["playback.seeked", "playback.chapter_changed"])
+    .tells(&["block.playback.seeked", "block.playback.chapter_changed"])
     .keywords(&["beginning", "rewind"])
     .setting("restart")
     .keys(&["home"]),
     Spec::block(
-        "playback.previous_file",
+        "block.playback.previous_file",
         "Previous File",
         "Play the file before this one in its playlist, or else its folder, instead.",
         |player, _, cx| player.open_neighbor(-1, cx),
     )
-    .tells(&["playback.opened", "playback.playing"])
+    .tells(&["block.playback.opened", "block.playback.playing"])
     .keywords(&["folder", "episode", "back"])
     .setting("previous_file")
     .keys(&["secondary-left"]),
     Spec::block(
-        "playback.next_file",
+        "block.playback.next_file",
         "Next File",
         "Play the file after this one in its playlist, or else its folder, instead.",
         |player, _, cx| player.open_neighbor(1, cx),
     )
-    .tells(&["playback.opened", "playback.playing"])
+    .tells(&["block.playback.opened", "block.playback.playing"])
     .keywords(&["folder", "episode", "skip"])
     .setting("next_file")
     .keys(&["secondary-right"]),
     Spec::block_with(
-        "playback.play_file",
+        "block.playback.play_file",
         "Play File Instead",
         "Play another file in the block instead, one in its folder say, at the same volume, \
          muted and looping as this one is, and playing if it is.",
@@ -217,133 +219,39 @@ pub const COMMANDS: &[Spec] = &[
             done()
         },
     )
-    .tells(&["playback.opened", "playback.playing"])
+    .tells(&["block.playback.opened", "block.playback.playing"])
     .keywords(&["open", "folder", "episode", "switch", "replace"]),
     Spec::block(
-        "playback.loop.toggle",
+        "block.playback.loop.toggle",
         "Loop",
         "Play the file again from the start at its end, or stop at its end.",
         |player, _, cx| player.turn_loop(|on| Switch::Toggle.turn(on), cx),
     )
-    .tells(&["playback.loop.on", "playback.loop.off"])
+    .tells(&["block.playback.loop.on", "block.playback.loop.off"])
     .keywords(&["repeat"])
     .setting("loop")
     .keys(&["secondary-shift-l"])
     .state(|target, cx| target::read_block(target, cx, |player, _| json!(player.is_looping()))),
     Spec::block(
-        "playback.loop.on",
+        "block.playback.loop.on",
         "Start Looping",
         "Play the file again from the start at its end, unless it does already.",
         |player, _, cx| player.turn_loop(|on| Switch::On.turn(on), cx),
     )
-    .tells(&["playback.loop.on"])
-    .keywords(&["repeat", "loop"]),
+    .tells(&["block.playback.loop.on"])
+    .keywords(&["repeat", "loop"])
+    .setting("playback.loop.on"),
     Spec::block(
-        "playback.loop.off",
+        "block.playback.loop.off",
         "Stop Looping",
         "Stop the file at its end, unless it does already.",
         |player, _, cx| player.turn_loop(|on| Switch::Off.turn(on), cx),
     )
-    .tells(&["playback.loop.off"])
-    .keywords(&["repeat", "loop", "once"]),
-    Spec::every_block(
-        "playback.play_pause_all",
-        "Play/Pause All",
-        "Pause every file in every window if any plays, else play them all.",
-        all::toggle,
-    )
-    .tells(&["playback.playing", "playback.paused"])
-    .keywords(&["every", "play", "pause"])
-    .setting("play_pause_all")
-    .keys(&["shift-space"]),
-    Spec::every_block(
-        "playback.play_all",
-        "Play All",
-        "Play every file in every window.",
-        all::play,
-    )
-    .tells(&["playback.playing"])
-    .keywords(&["every", "resume"]),
-    Spec::every_block(
-        "playback.pause_all",
-        "Pause All",
-        "Pause every file in every window.",
-        all::pause,
-    )
-    .tells(&["playback.paused"])
-    .keywords(&["every", "stop"]),
-    Spec::blocks(
-        "playback.play_window",
-        "Play Window",
-        "Play every file in the window.",
-        |workspace, _, cx| workspace.set_playing(true, cx),
-    )
-    .tells(&["playback.playing"])
-    .keywords(&["every", "all", "resume"]),
-    Spec::blocks(
-        "playback.pause_window",
-        "Pause Window",
-        "Pause every file in the window.",
-        |workspace, _, cx| workspace.set_playing(false, cx),
-    )
-    .tells(&["playback.paused"])
-    .keywords(&["every", "all", "stop"]),
-    Spec::every_block(
-        "playback.restart_all",
-        "Restart All",
-        "Play every file in every window from the start.",
-        all::restart,
-    )
-    .tells(&["playback.seeked", "playback.chapter_changed"])
-    .keywords(&["every", "beginning", "rewind"])
-    .setting("restart_all")
-    .keys(&["shift-home"]),
-    Spec::every_block(
-        "playback.seek_forward_all",
-        "Seek All Forward",
-        "Skip every file in every window ahead by the seek step.",
-        |cx| all::seek(1.0, cx),
-    )
-    .tells(&[
-        "playback.seeked",
-        "playback.ended",
-        "playback.chapter_changed",
-    ])
-    .keywords(&["every", "skip", "jump"])
-    .setting("seek_forward_all")
-    .keys(&["shift-right"]),
-    Spec::every_block(
-        "playback.seek_backward_all",
-        "Seek All Backward",
-        "Skip every file in every window back by the seek step.",
-        |cx| all::seek(-1.0, cx),
-    )
-    .tells(&["playback.seeked", "playback.chapter_changed"])
-    .keywords(&["every", "rewind", "jump"])
-    .setting("seek_backward_all")
-    .keys(&["shift-left"]),
-    Spec::every_block(
-        "playback.next_frame_all",
-        "Next Frame on All",
-        "Pause every file in every window and show its next frame.",
-        |cx| all::step_frame(1.0, cx),
-    )
-    .tells(&["playback.paused", "playback.seeked"])
-    .keywords(&["every", "step"])
-    .setting("next_frame_all")
-    .keys(&["alt-shift-right"]),
-    Spec::every_block(
-        "playback.previous_frame_all",
-        "Previous Frame on All",
-        "Pause every file in every window and show the frame before.",
-        |cx| all::step_frame(-1.0, cx),
-    )
-    .tells(&["playback.paused", "playback.seeked"])
-    .keywords(&["every", "step", "back"])
-    .setting("previous_frame_all")
-    .keys(&["alt-shift-left"]),
+    .tells(&["block.playback.loop.off"])
+    .keywords(&["repeat", "loop", "once"])
+    .setting("playback.loop.off"),
     Spec::custom(
-        "playback.sync_all",
+        "block.playback.sync_all",
         "Sync All to This Block",
         "Bring every file in every window to where the block is, playing or paused as \
          it is.",
@@ -354,10 +262,114 @@ pub const COMMANDS: &[Spec] = &[
             Ok(Value::Null)
         },
     )
-    .tells(&["playback.seeked", "playback.playing", "playback.paused"])
+    .tells(&[
+        "block.playback.seeked",
+        "block.playback.playing",
+        "block.playback.paused",
+    ])
     .keywords(&["every", "align", "same time"])
     .setting("sync_all")
     .keys(&["shift-s"]),
+    Spec::blocks(
+        "window.playback.play",
+        "Play Window",
+        "Play every file in the window.",
+        |workspace, _, cx| workspace.set_playing(true, cx),
+    )
+    .tells(&["block.playback.playing"])
+    .keywords(&["every", "all", "resume"])
+    .setting("playback.play_window"),
+    Spec::blocks(
+        "window.playback.pause",
+        "Pause Window",
+        "Pause every file in the window.",
+        |workspace, _, cx| workspace.set_playing(false, cx),
+    )
+    .tells(&["block.playback.paused"])
+    .keywords(&["every", "all", "stop"])
+    .setting("playback.pause_window"),
+    Spec::every_block(
+        "app.playback.play_pause",
+        "Play/Pause All",
+        "Pause every file in every window if any plays, else play them all.",
+        all::toggle,
+    )
+    .tells(&["block.playback.playing", "block.playback.paused"])
+    .keywords(&["every", "play", "pause"])
+    .setting("play_pause_all")
+    .keys(&["shift-space"]),
+    Spec::every_block(
+        "app.playback.play",
+        "Play All",
+        "Play every file in every window.",
+        all::play,
+    )
+    .tells(&["block.playback.playing"])
+    .keywords(&["every", "resume"])
+    .setting("playback.play_all"),
+    Spec::every_block(
+        "app.playback.pause",
+        "Pause All",
+        "Pause every file in every window.",
+        all::pause,
+    )
+    .tells(&["block.playback.paused"])
+    .keywords(&["every", "stop"])
+    .setting("playback.pause_all"),
+    Spec::every_block(
+        "app.playback.restart",
+        "Restart All",
+        "Play every file in every window from the start.",
+        all::restart,
+    )
+    .tells(&["block.playback.seeked", "block.playback.chapter_changed"])
+    .keywords(&["every", "beginning", "rewind"])
+    .setting("restart_all")
+    .keys(&["shift-home"]),
+    Spec::every_block(
+        "app.playback.seek_forward",
+        "Seek All Forward",
+        "Skip every file in every window ahead by the seek step.",
+        |cx| all::seek(1.0, cx),
+    )
+    .tells(&[
+        "block.playback.seeked",
+        "block.playback.ended",
+        "block.playback.chapter_changed",
+    ])
+    .keywords(&["every", "skip", "jump"])
+    .setting("seek_forward_all")
+    .keys(&["shift-right"]),
+    Spec::every_block(
+        "app.playback.seek_backward",
+        "Seek All Backward",
+        "Skip every file in every window back by the seek step.",
+        |cx| all::seek(-1.0, cx),
+    )
+    .tells(&["block.playback.seeked", "block.playback.chapter_changed"])
+    .keywords(&["every", "rewind", "jump"])
+    .setting("seek_backward_all")
+    .keys(&["shift-left"]),
+    Spec::every_block(
+        "app.playback.next_frame",
+        "Next Frame on All",
+        "Pause every file in every window and show its next frame.",
+        |cx| all::step_frame(1.0, cx),
+    )
+    .tells(&["block.playback.paused", "block.playback.seeked"])
+    .keywords(&["every", "step"])
+    .setting("next_frame_all")
+    .keys(&["alt-shift-right"]),
+    Spec::every_block(
+        "app.playback.previous_frame",
+        "Previous Frame on All",
+        "Pause every file in every window and show the frame before.",
+        |cx| all::step_frame(-1.0, cx),
+    )
+    .tells(&["block.playback.paused", "block.playback.seeked"])
+    .keywords(&["every", "step", "back"])
+    .setting("previous_frame_all")
+    .keys(&["alt-shift-left"]),
 ];
 
 /// What opens a file, and plays it, other than a command: a playlist
@@ -381,17 +393,17 @@ const PLAYHEAD: &[EventField] = &[
 /// How files play: the blocks' events about them.
 pub const EVENTS: &[EventKind] = &[
     EventKind::block(
-        "playback.loop.on",
+        "block.playback.loop.on",
         "A block's file is set to play again from the start at its end.",
         &[],
     ),
     EventKind::block(
-        "playback.loop.off",
+        "block.playback.loop.off",
         "A block's file is set to stop at its end.",
         &[],
     ),
     EventKind::block(
-        "playback.opened",
+        "block.playback.opened",
         "A file opened in a block, paused at its start.",
         &[
             EventField::new(
@@ -408,38 +420,38 @@ pub const EVENTS: &[EventKind] = &[
     )
     .causes(&[super::DROPPED, NEXT]),
     EventKind::block(
-        "playback.open_failed",
+        "block.playback.open_failed",
         "A file couldn't be opened.",
         &[EventField::new("error", "Why.")],
     )
     .causes(&["a file Plays can't play or a stream it can't reach"]),
     EventKind::block(
-        "playback.failed",
+        "block.playback.failed",
         "A file stopped playing on an error.",
         &[EventField::new("error", "Why.")],
     )
     .causes(&["a file that's damaged or a stream that went"]),
     EventKind::block(
-        "playback.playing",
+        "block.playback.playing",
         "A file began playing: told once it moves, not as it's set to play while what it \
          plays from isn't there yet, as just after it opens or a seek.",
         PLAYHEAD,
     )
     .causes(&["a file opening while Autoplay is on", NEXT]),
-    EventKind::block("playback.paused", "A file paused.", PLAYHEAD),
+    EventKind::block("block.playback.paused", "A file paused.", PLAYHEAD),
     EventKind::block(
-        "playback.seeked",
+        "block.playback.seeked",
         "A file was sought to another time, here or on the device it's cast to: where it went.",
         PLAYHEAD,
     ),
     EventKind::block(
-        "playback.ended",
+        "block.playback.ended",
         "A file played to its end, and stopped there.",
         PLAYHEAD,
     )
     .causes(&["a file playing to its end"]),
     EventKind::block(
-        "playback.position",
+        "block.playback.position",
         "Where a file is as it plays: told only to those who ask for positions, at most once \
          a second, and only once it has moved.",
         &[
@@ -461,7 +473,7 @@ pub const EVENTS: &[EventKind] = &[
     )
     .causes(&["a file playing"]),
     EventKind::block(
-        "playback.chapter_changed",
+        "block.playback.chapter_changed",
         "A file is in another chapter.",
         &[EventField::new(
             "chapter",
@@ -470,7 +482,7 @@ pub const EVENTS: &[EventKind] = &[
     )
     .causes(&["a file playing into its next chapter"]),
     EventKind::block(
-        "playback.track_changed",
+        "block.playback.track_changed",
         "Another of a file's tracks plays, or none of its kind.",
         &[
             EventField::new("kind", "The track's: video, audio or subtitles."),
@@ -505,5 +517,5 @@ fn seek_step(cx: &App) -> f64 {
 
 /// Play the block in front from the start of chapter `number`, from 1.
 pub fn go_to_chapter(number: usize) -> Run {
-    Run::with("playback.go_to_chapter", json!({"number": number}))
+    Run::with("block.playback.go_to_chapter", json!({"number": number}))
 }

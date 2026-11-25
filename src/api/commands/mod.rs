@@ -44,9 +44,9 @@ pub const EVENTS: [(&str, &[EventKind]); 9] = [
     ("app", app::EVENTS),
     ("window", window::EVENTS),
     ("block", block::EVENTS),
-    ("playback", playback::EVENTS),
-    ("audio", audio::EVENTS),
-    ("subtitles", subtitles::EVENTS),
+    ("block.playback", playback::EVENTS),
+    ("block.audio", audio::EVENTS),
+    ("block.subtitles", subtitles::EVENTS),
     ("cast", cast::EVENTS),
     ("output", output::EVENTS),
     ("app.settings", settings::EVENTS),
@@ -58,11 +58,14 @@ const DROPPED: &str =
 
 /// The namespaces, in the order Settings → Hotkeys lists their commands,
 /// each with its title there.
-pub const NAMESPACES: [(&str, &str); 11] = [
-    ("playback", "Playback"),
-    ("audio", "Audio"),
-    ("subtitles", "Subtitles"),
-    ("video", "Video"),
+pub const NAMESPACES: [(&str, &str); 14] = [
+    ("block.playback", "Playback"),
+    ("window.playback", "Playback in a window"),
+    ("app.playback", "Playback in every window"),
+    ("block.audio", "Audio"),
+    ("app.audio", "Audio in every window"),
+    ("block.subtitles", "Subtitles"),
+    ("block.video", "Video"),
     ("window", "Windows"),
     ("block", "Blocks in a window"),
     ("cast", "Casting"),

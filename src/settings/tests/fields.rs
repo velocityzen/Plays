@@ -107,8 +107,8 @@ fn takes_what_the_window_offers() {
             name: "Desk".into(),
         })
     );
-    let keys = set("hotkeys", json!({"playback.play_pause": ["cmd-p"]})).hotkeys;
-    assert_eq!(keys.keys("playback.play_pause"), ["cmd-p"]);
+    let keys = set("hotkeys", json!({"block.playback.play_pause": ["cmd-p"]})).hotkeys;
+    assert_eq!(keys.keys("block.playback.play_pause"), ["cmd-p"]);
     let looking = set("casting.look_with.Chromecast", json!(false)).casting;
     assert!(!looking.looks_with("Chromecast"));
     assert!(looking.looks_with("DLNA"), "the others left be");

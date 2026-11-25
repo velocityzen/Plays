@@ -294,7 +294,7 @@ fn set_up(lua: &Lua, folder: Option<&Path>) -> mlua::Result<()> {
     Ok(())
 }
 
-/// Each command, under `plays` by its id, as `plays.playback.seek`: a
+/// Each command, under `plays` by its id, as `plays.block.playback.seek`: a
 /// table, as a namespace may be within it, that runs it when called.
 fn add_commands(lua: &Lua, plays: &Table, command: &Function) -> mlua::Result<()> {
     for spec in api::all() {

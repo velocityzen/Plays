@@ -174,11 +174,13 @@ fn choices(
     on: &mut On,
 ) -> Option<(&'static str, Vec<Choice>)> {
     let listed = match (spec.id, arg.name) {
-        ("audio.select_track", "number") => ("Audio track", tracks("audio", None, on)),
-        ("video.select_track", "number") => ("Video track", tracks("video", None, on)),
-        ("subtitles.select_track", "number") => ("Subtitles", tracks("subtitles", Some("Off"), on)),
-        ("playback.go_to_chapter", "number") => ("Chapter", chapters(on)),
-        ("playback.play_file", "path") => ("File", folder_files(on)),
+        ("block.audio.select_track", "number") => ("Audio track", tracks("audio", None, on)),
+        ("block.video.select_track", "number") => ("Video track", tracks("video", None, on)),
+        ("block.subtitles.select_track", "number") => {
+            ("Subtitles", tracks("subtitles", Some("Off"), on))
+        }
+        ("block.playback.go_to_chapter", "number") => ("Chapter", chapters(on)),
+        ("block.playback.play_file", "path") => ("File", folder_files(on)),
         ("window.move", "position") => ("Where", window_places(on)),
         ("window.show_on_display", "display") => ("Display", displays(on)),
         ("block.move", "position") => ("Where", block_places(on)),
@@ -194,8 +196,8 @@ fn choices(
         (_, name) => match arg.kind {
             Kind::Choice(words) => {
                 let none = (!arg.required).then_some(match spec.id {
-                    "video.set_aspect_ratio" => "Original",
-                    "video.set_crop" => "No Crop",
+                    "block.video.set_aspect_ratio" => "Original",
+                    "block.video.set_crop" => "No Crop",
                     _ => "None",
                 });
                 ("Pick one", words_of(spec, name, words(), none, on))
@@ -525,7 +527,7 @@ fn typed(
     cx: &App,
 ) -> Option<(String, Read)> {
     match (spec.id, arg.name) {
-        ("playback.seek", "time") => Some((
+        ("block.playback.seek", "time") => Some((
             "A time, such as 1:23:45 or 90".to_owned(),
             Rc::new(move |typed| {
                 let seconds = seconds(typed.trim())

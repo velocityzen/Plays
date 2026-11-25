@@ -24,11 +24,11 @@ fn a_table_lines_up_its_columns() {
 fn keys_line_up_by_the_characters_shown_not_their_bytes() {
     let rows = [
         vec!["⇧⌘O".into(), "app.open".into()],
-        vec!["Space".into(), "playback.play_pause".into()],
+        vec!["Space".into(), "block.playback.play_pause".into()],
     ];
     assert_eq!(
         printed(|out| table(out, &["KEYS", "COMMAND"], &rows)),
-        "KEYS   COMMAND\n⇧⌘O    app.open\nSpace  playback.play_pause\n"
+        "KEYS   COMMAND\n⇧⌘O    app.open\nSpace  block.playback.play_pause\n"
     );
 }
 
@@ -50,11 +50,11 @@ fn results_print_as_text_or_json() {
 fn events_print_a_line_each() {
     let payload = json!({"window_id": "1a", "block_id": "2b", "position": 1.5});
     assert_eq!(
-        printed(|out| event(out, "playback.paused", &payload, false)),
-        "playback.paused window_id=1a block_id=2b position=1.5\n"
+        printed(|out| event(out, "block.playback.paused", &payload, false)),
+        "block.playback.paused window_id=1a block_id=2b position=1.5\n"
     );
     assert_eq!(
-        printed(|out| event(out, "playback.paused", &payload, true)),
-        "{\"type\":\"playback.paused\",\"payload\":{\"window_id\":\"1a\",\"block_id\":\"2b\",\"position\":1.5}}\n"
+        printed(|out| event(out, "block.playback.paused", &payload, true)),
+        "{\"type\":\"block.playback.paused\",\"payload\":{\"window_id\":\"1a\",\"block_id\":\"2b\",\"position\":1.5}}\n"
     );
 }

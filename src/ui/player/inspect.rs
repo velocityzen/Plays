@@ -80,7 +80,7 @@ impl PlayerView {
             "frame_rate": info.as_deref().and_then(|info| info.frame_rate),
             "ended": self.playback.has_ended(),
             "buffering": self.playback.is_buffering(),
-            // In percent, as `audio.set_volume` takes it.
+            // In percent, as `block.audio.set_volume` takes it.
             "volume": (f64::from(player.volume()) * 100.0).round(),
             "muted": player.is_muted(),
             "looping": player.is_looping(),
