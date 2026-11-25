@@ -133,6 +133,25 @@ fn a_feed_signed_again_is_taken_for_longer_its_releases_as_they_were() {
     assert_eq!(feed::release_lines(&signed), feed::release_lines(&text));
 }
 
+#[test]
+fn a_feed_signed_with_a_new_key_has_each_line_signed_with_it() {
+    let (old, new) = (key(), key());
+    let text = add(
+        Some(&new_feed(&old, 30)),
+        &release("0.2.0"),
+        None,
+        &old,
+        NOW,
+        30,
+    )
+    .unwrap();
+    let signed = again(&text, &new, NOW, 30).unwrap();
+    assert_eq!(versions(&signed, &new, NOW), ["0.2.0", "0.1.0"]);
+    assert!(read(&signed, &old.keys().unwrap(), NOW).is_err());
+    let added = add(Some(&text), &release("0.3.0"), None, &new, NOW, 30).unwrap();
+    assert_eq!(versions(&added, &new, NOW), ["0.3.0", "0.2.0", "0.1.0"]);
+}
+
 /// In `scratch`, beside `installs`' update files: the delta from 0.1.0
 /// to 0.2.0, and 0.2.0's notes.
 fn release_files(scratch: &Scratch) {

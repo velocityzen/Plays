@@ -3,8 +3,8 @@ use std::collections::BTreeMap;
 use minisign::KeyPair;
 
 use super::*;
-use crate::feed::tests::{key, keys, lines_of, sign, version};
-use crate::feed::{Download, header_line, join};
+use crate::feed::tests::{header_signed_for, key, keys, lines_of, version};
+use crate::feed::{Download, Header, join};
 use crate::support::{Answer, Scratch, Server, binary};
 
 const PLATFORM: &str = "test-arm";
@@ -126,9 +126,16 @@ impl Setup {
             )]),
         };
         let releases: Vec<Release> = newer.into_iter().chain([latest, earlier]).collect();
-        let lines = lines_of(&releases);
-        let header = header_line("plays", now(), now() + 3_600, &lines[0]).unwrap();
-        let feed = join(&sign(key, &header), &header, &lines);
+        let header = Header {
+            app: "plays".into(),
+            latest: releases[0].version.clone(),
+            published: now(),
+            expires: now() + 3_600,
+        };
+        let feed = join(
+            &header_signed_for("plays", key, &header),
+            &lines_of(key, &releases),
+        );
         self.server.set("feed.jsonl", Answer::Ok(feed.into_bytes()));
     }
 

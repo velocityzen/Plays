@@ -84,8 +84,9 @@ enum Command {
         #[arg(long, default_value_t = DAYS)]
         days: u64,
     },
-    /// Sign FEED again, its releases as they are, to be taken for DAYS
-    /// more.
+    /// Sign FEED's header again, to be taken for DAYS more. The releases'
+    /// lines stay as they are, but those another key signed, which are
+    /// signed with KEY.
     Sign {
         feed: PathBuf,
         #[arg(long)]

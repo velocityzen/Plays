@@ -66,8 +66,9 @@ updater verify feed.jsonl --key ~/plays-release-keys/updates.pub
   each release's whole updates. A Plays with no delta from its version
   downloads the whole update.
 - `feed`: makes the feed if there's none (`--app plays`), then puts the
-  release first and signs it. It refuses a version that isn't newer than
-  the latest.
+  release first and signs it and the header. The other releases' lines
+  stay as they are. It refuses a version that isn't newer than the
+  latest.
 - `--notes`: a Markdown file. About shows the notes of every release
   since the running one.
 - The feed names each update file as it's named, beside the feed or under
@@ -142,6 +143,7 @@ updater sign feed.jsonl --key ~/plays-release-keys/updates.key
 
 - Plays refuses a feed past its expiry, so a stale mirror can't hold it on
   an old release.
+- `sign` signs the header again; the releases' lines stay as they are.
 - `feed` and `sign` take `--days`; the default is 30.
 - Sign it again and upload it before then.
 - `updater verify --at-least 14` fails when the feed has fewer than 14
@@ -152,8 +154,8 @@ updater sign feed.jsonl --key ~/plays-release-keys/updates.key
 1. `keygen` into another folder.
 2. Add the new public key to `keys`, beside the old, and release that
    build with the feed still signed with the old key.
-3. Once that build is out, sign with the new key, and take the old key out
-   of `keys`.
+3. Once that build is out, `sign` with the new key, which signs the
+   lines the old key signed again, and take the old key out of `keys`.
 
 ## What Plays does
 
@@ -162,7 +164,7 @@ updater sign feed.jsonl --key ~/plays-release-keys/updates.key
   Updates… checks now.
 - It reads the feed as it comes, and stops at the running version.
 - It takes the feed only if:
-  - it's signed with one of `keys`
+  - each line is signed with one of `keys`, for `plays`
   - it names `plays`
   - it hasn't expired
   - it came over HTTPS (HTTP only from this machine)
@@ -215,9 +217,13 @@ script/try-updates tests/fixtures/clip.mp4
 
 | Line | What it is |
 | --- | --- |
-| 1 | `{"signature": …}`: minisign's signature of line 2 |
-| 2 | The header: `app`, `latest`, `published`, `expires` (seconds since 1970), and `first`, line 3's SHA-256 |
-| 3… | A release each, newest first: `version`, `published`, `notes`, `downloads` by platform, and `next`, the next line's SHA-256 (`null` for the last) |
+| 1 | `{"signature": …, "header": …}`: `app`, `latest`, `published`, `expires` (seconds since 1970) |
+| 2… | `{"signature": …, "release": …}`, newest first: `version`, `published`, `notes`, `downloads` by platform |
+
+- Each `signature` is minisign's, of the record's JSON as it is in the
+  line, its trusted comment the app.
+- The first release is the header's `latest`, and each after is older. A
+  release left out hides only its notes.
 
 - An update file is `UPDATER1`, its header's length, the header as JSON,
   then zstd frames. Each file is kept, patched from the installed one, or

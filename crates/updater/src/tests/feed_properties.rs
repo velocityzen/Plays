@@ -1,4 +1,5 @@
 use std::io::Cursor;
+use std::ops::Range;
 
 use hegel::TestCase;
 use hegel::generators as gs;
@@ -46,6 +47,19 @@ fn the_releases_read_are_those_newer_than_the_running_one(tc: TestCase) {
     }
 }
 
+/// Where each signature's untrusted comment is in the feed `text`: from
+/// where the signature starts to the end of its first line, which minisign
+/// doesn't sign.
+fn untrusted_comments(text: &str) -> Vec<Range<usize>> {
+    let opening = "\"signature\":\"";
+    text.match_indices(opening)
+        .map(|(at, _)| {
+            let start = at + opening.len();
+            start..start + text[start..].find("\\n").expect("a signature's lines")
+        })
+        .collect()
+}
+
 #[hegel::test]
 fn any_byte_changed_in_what_is_read_is_refused(tc: TestCase) {
     let versions = tc.draw(versions());
@@ -54,16 +68,16 @@ fn any_byte_changed_in_what_is_read_is_refused(tc: TestCase) {
         .iter()
         .map(|version| release(&version.to_string()))
         .collect();
-    let mut text = feed(&key, &releases).into_bytes();
-    // Past the signature's line, whose untrusted comment isn't signed, and
-    // older than every release, so each line is read.
-    let start = text.iter().position(|&byte| byte == b'\n').unwrap() + 1;
-    let at = tc.draw(
-        gs::integers::<usize>()
-            .min_value(start)
-            .max_value(text.len() - 2),
-    );
+    let text = feed(&key, &releases);
+    // Any byte but those of an untrusted comment, and the last newline; as
+    // it's older than every release, each line is read.
+    let unsigned = untrusted_comments(&text);
+    let signed: Vec<usize> = (0..text.len() - 1)
+        .filter(|at| !unsigned.iter().any(|comment| comment.contains(at)))
+        .collect();
+    let at = signed[tc.draw(gs::integers::<usize>().max_value(signed.len() - 1))];
     let byte = tc.draw(gs::integers::<u8>());
+    let mut text = text.into_bytes();
     if text[at] == byte {
         return;
     }

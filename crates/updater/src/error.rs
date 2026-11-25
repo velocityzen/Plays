@@ -15,7 +15,7 @@ pub enum Error {
     Insecure(String),
     /// More came than the feed, or the bounds for a feed, allow.
     TooBig { url: String, limit: u64 },
-    /// The feed's signature doesn't hold, or no key the app has made it.
+    /// A signature in the feed doesn't hold, or no key the app has made it.
     Signature(String),
     /// The feed isn't one, or isn't this app's: why.
     Feed(String),
@@ -79,7 +79,7 @@ impl fmt::Display for Error {
             Self::Network { url, message } => write!(f, "{url}: {message}"),
             Self::Insecure(url) => write!(f, "{url} isn't HTTPS"),
             Self::TooBig { url, limit } => write!(f, "{url} is over {limit} bytes"),
-            Self::Signature(why) => write!(f, "the feed's signature doesn't hold: {why}"),
+            Self::Signature(why) => write!(f, "a signature in the feed doesn't hold: {why}"),
             Self::Feed(why) => write!(f, "the feed isn't one: {why}"),
             Self::Expired => write!(f, "the feed is out of date"),
             Self::Mismatch(what) => write!(f, "{what} isn't what the feed says"),

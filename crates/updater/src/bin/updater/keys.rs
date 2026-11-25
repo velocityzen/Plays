@@ -58,17 +58,24 @@ pub(crate) fn read(path: &Path) -> Result<Key> {
 }
 
 impl Key {
-    /// minisign's signature of `text`.
-    pub(crate) fn sign(&self, text: &str) -> Result<String> {
+    /// minisign's signature of `text`, its trusted comment `app`.
+    pub(crate) fn sign(&self, text: &str, app: &str) -> Result<String> {
         minisign::sign(
             Some(&self.public),
             &self.secret,
             Cursor::new(text),
-            None,
+            Some(app),
             None,
         )
         .map(minisign::SignatureBox::into_string)
         .map_err(|err| format!("can't sign it: {err}"))
+    }
+
+    /// Whether `signature`, as minisign writes it, is this key's.
+    pub(crate) fn made(&self, signature: &str) -> Result<bool> {
+        let signature = minisign::SignatureBox::from_string(signature)
+            .map_err(|err| format!("a signature in the feed isn't one: {err}"))?;
+        Ok(signature.keynum() == self.public.keynum())
     }
 
     /// Its public key, as the app has it.

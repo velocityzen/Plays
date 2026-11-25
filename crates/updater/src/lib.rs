@@ -2,7 +2,7 @@
 //! the app beyond its name, version, feed and keys.
 //!
 //! - `feed`: the releases, newest first, read as they come down to the
-//!   running version; one minisign signature covers them all
+//!   running version; each line signed with minisign on its own
 //! - `fetch`: HTTPS in bounds; downloads hashed as they come
 //! - `package`: update files, whole or a delta from a version, file by
 //!   file, each checked as it's written

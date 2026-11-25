@@ -158,27 +158,46 @@ pub(crate) fn add(
             (app.to_owned(), Vec::new())
         }
     };
-    let first = feed::release_line(release, lines.first().map(String::as_str));
+    let first = feed::release_line(release, |text| key.sign(text, &app))?;
     let lines: Vec<String> = std::iter::once(first).chain(lines).collect();
-    signed(&app, &lines, key, now, days)
+    signed(&app, lines, key, now, days)
 }
 
-/// The feed `text` signed again with `key` at `now`, for `days`, its
-/// releases as they are.
+/// The feed `text` signed again with `key` at `now`, for `days`.
 pub(crate) fn again(text: &str, key: &Key, now: u64, days: u64) -> Result<String> {
     let header = header(text)?;
     let lines = feed::release_lines(text);
     if lines.is_empty() {
         return Err("the feed has no releases".into());
     }
-    signed(&header.app, &lines, key, now, days)
+    signed(&header.app, lines, key, now, days)
 }
 
-/// The feed of `lines`, signed, once it reads back as `app`'s.
-fn signed(app: &str, lines: &[String], key: &Key, now: u64, days: u64) -> Result<String> {
-    let expires = now + days.max(1) * DAY;
-    let header = feed::header_line(app, now, expires, &lines[0]).map_err(|err| err.to_string())?;
-    let text = feed::join(&key.sign(&header)?, &header, lines);
+/// The feed of `lines`, its header signed with `key`, once it reads back
+/// as `app`'s. A line another key signed is signed with `key`, as when
+/// it's new; the others are kept as they are.
+fn signed(app: &str, lines: Vec<String>, key: &Key, now: u64, days: u64) -> Result<String> {
+    let lines = lines
+        .into_iter()
+        .map(|line| {
+            let (signature, release) =
+                feed::release_record(&line).map_err(|err| err.to_string())?;
+            if key.made(&signature)? {
+                Ok(line)
+            } else {
+                feed::release_line(&release, |text| key.sign(text, app))
+            }
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let latest = feed::releases(&lines[..1]).map_err(|err| err.to_string())?;
+    let header = Header {
+        app: app.to_owned(),
+        latest: latest[0].version.clone(),
+        published: now,
+        expires: now + days.max(1) * DAY,
+    };
+    let header = feed::header_line(&header, |text| key.sign(text, app))?;
+    let text = feed::join(&header, &lines);
     read(&text, &key.keys()?, now)?;
     Ok(text)
 }
@@ -195,8 +214,7 @@ fn read(text: &str, keys: &Keys, now: u64) -> Result<Vec<Release>> {
 
 /// The feed `text`'s header, unchecked.
 fn header(text: &str) -> Result<Header> {
-    let line = text.lines().nth(1).ok_or("the feed has no header")?;
-    serde_json::from_str(line).map_err(|err| format!("the feed's header isn't one: {err}"))
+    feed::header(text).map_err(|err| err.to_string())
 }
 
 /// Sign the feed at `path` again with the secret key at `key`, for `days`.

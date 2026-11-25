@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::convert::Infallible;
 use std::io::{self, BufReader, Cursor, Read};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -44,32 +45,56 @@ pub(crate) fn release(version: &str) -> Release {
     }
 }
 
-/// The releases' lines, each naming the one after it.
-pub(crate) fn lines_of(releases: &[Release]) -> Vec<String> {
-    let mut lines: Vec<String> = Vec::new();
-    for release in releases.iter().rev() {
-        let line = release_line(release, lines.first().map(String::as_str));
-        lines.insert(0, line);
+/// minisign's signature of `text` with `key`, its trusted comment `app`.
+pub(crate) fn sign_for(app: &str, key: &KeyPair, text: &str) -> String {
+    minisign::sign(Some(&key.pk), &key.sk, Cursor::new(text), Some(app), None)
+        .expect("signed")
+        .into_string()
+}
+
+/// `release`'s line, signed with `key` for `app`.
+pub(crate) fn release_signed_for(app: &str, key: &KeyPair, release: &Release) -> String {
+    release_line(release, |text| {
+        Ok::<_, Infallible>(sign_for(app, key, text))
+    })
+    .unwrap()
+}
+
+/// The releases' lines, each signed with `key`.
+pub(crate) fn lines_of(key: &KeyPair, releases: &[Release]) -> Vec<String> {
+    releases
+        .iter()
+        .map(|release| release_signed_for(APP, key, release))
+        .collect()
+}
+
+/// `app`'s header, `latest` its latest, expiring at `expires`.
+pub(crate) fn header_of(app: &str, latest: &str, expires: u64) -> Header {
+    Header {
+        app: app.to_owned(),
+        latest: version(latest),
+        published: NOW - 60,
+        expires,
     }
-    lines
+}
+
+/// `header`'s line, signed with `key` for `app`.
+pub(crate) fn header_signed_for(app: &str, key: &KeyPair, header: &Header) -> String {
+    header_line(header, |text| Ok::<_, Infallible>(sign_for(app, key, text))).unwrap()
 }
 
 /// The feed of `releases`, newest first, signed with `key`, expiring at
 /// `expires`.
 pub(crate) fn feed_expiring(key: &KeyPair, releases: &[Release], expires: u64) -> String {
-    let lines = lines_of(releases);
-    let header = header_line(APP, NOW - 60, expires, &lines[0]).expect("a header");
-    join(&sign(key, &header), &header, &lines)
+    let header = header_of(APP, &releases[0].version.to_string(), expires);
+    join(
+        &header_signed_for(APP, key, &header),
+        &lines_of(key, releases),
+    )
 }
 
 pub(crate) fn feed(key: &KeyPair, releases: &[Release]) -> String {
     feed_expiring(key, releases, EXPIRES)
-}
-
-pub(crate) fn sign(key: &KeyPair, text: &str) -> String {
-    minisign::sign(Some(&key.pk), &key.sk, Cursor::new(text), None, None)
-        .expect("signed")
-        .into_string()
 }
 
 fn read_text(text: &str, keys: &Keys, running: &str) -> Result<Option<Feed>> {
@@ -139,12 +164,10 @@ fn is_none_when_the_running_version_is_the_latest_or_newer() {
 #[test]
 fn reads_no_further_than_the_header_when_up_to_date() {
     let key = key();
-    let lines = lines_of(&[release("0.3.0")]);
-    let header = header_line(APP, NOW, EXPIRES, &lines[0]).unwrap();
     // The header, and nothing after it but what isn't a feed.
-    let text = format!(
-        "{}\n{header}\n",
-        serde_json::json!({"signature": sign(&key, &header)})
+    let text = join(
+        &header_signed_for(APP, &key, &header_of(APP, "0.3.0", EXPIRES)),
+        &[],
     );
     let past = Arc::new(AtomicUsize::new(0));
     let read = read(
@@ -166,7 +189,7 @@ fn reads_no_further_than_the_running_version() {
         &[release("0.3.0"), release("0.2.0"), release("0.1.0")],
     );
     // Up to 0.2.0's line, then nothing that's the feed.
-    let cut = text.lines().take(4).collect::<Vec<_>>().join("\n") + "\n";
+    let cut = text.lines().take(3).collect::<Vec<_>>().join("\n") + "\n";
     let past = Arc::new(AtomicUsize::new(0));
     let read = read(
         reading(&cut, past.clone()),
@@ -218,11 +241,27 @@ fn isnt_taken_with_its_header_changed() {
 #[test]
 fn isnt_taken_for_another_app() {
     let key = key();
-    let lines = lines_of(&[release("0.2.0")]);
-    let header = header_line("other", NOW, EXPIRES, &lines[0]).unwrap();
-    let text = join(&sign(&key, &header), &header, &lines);
+    let lines = lines_of(&key, &[release("0.2.0")]);
+    let header = header_of("other", "0.2.0", EXPIRES);
+    let text = join(&header_signed_for("other", &key, &header), &lines);
+    let read = read_text(&text, &keys(&key), "0.1.0");
+    assert!(matches!(read, Err(Error::Feed(why)) if why == "the header is signed for other"));
+
+    let text = join(&header_signed_for(APP, &key, &header), &lines);
     let read = read_text(&text, &keys(&key), "0.1.0");
     assert!(matches!(read, Err(Error::Feed(why)) if why == "it's other's"));
+}
+
+#[test]
+fn isnt_taken_with_another_apps_release_signed_with_the_same_key() {
+    let key = key();
+    let mut lines = lines_of(&key, &[release("0.3.0"), release("0.2.0")]);
+    lines[1] = release_signed_for("other", &key, &release("0.2.0"));
+    let header = header_signed_for(APP, &key, &header_of(APP, "0.3.0", EXPIRES));
+    let read = read_text(&join(&header, &lines), &keys(&key), "0.1.0");
+    assert!(
+        matches!(read, Err(Error::Feed(why)) if why == "the release before 0.3.0 is signed for other")
+    );
 }
 
 #[test]
@@ -242,48 +281,53 @@ fn isnt_taken_with_a_release_changed() {
     let changed = text.replacen("Plays-0.2.0.update", "Plays-0.2.1.update", 1);
     let read = read_text(&changed, &keys(&key), "0.1.0");
     assert!(
-        matches!(read, Err(Error::Feed(why)) if why == "the release before 0.3.0 isn't the one it names")
+        matches!(read, Err(Error::Signature(why)) if why.starts_with("the release before 0.3.0: "))
     );
 }
 
 #[test]
-fn isnt_taken_with_a_release_left_out_or_put_in() {
+fn isnt_taken_with_a_release_put_in_unsigned() {
+    let (key, other) = (self::key(), self::key());
+    let text = feed(&key, &[release("0.3.0"), release("0.1.0")]);
+    let mut lines: Vec<String> = text.lines().map(str::to_owned).collect();
+    lines.insert(2, release_signed_for(APP, &other, &release("0.2.0")));
+    let read = read_text(&lines.join("\n"), &keys(&key), "0.0.1");
+    assert!(
+        matches!(read, Err(Error::Signature(why)) if why.starts_with("the release before 0.3.0: "))
+    );
+}
+
+#[test]
+fn a_release_left_out_is_read_without() {
     let key = key();
     let text = feed(
         &key,
         &[release("0.3.0"), release("0.2.0"), release("0.1.0")],
     );
     let mut lines: Vec<&str> = text.lines().collect();
-    lines.remove(3);
-    let left_out = lines.join("\n");
-    assert!(matches!(
-        read_text(&left_out, &keys(&key), "0.0.1"),
-        Err(Error::Feed(_))
-    ));
-
-    let mut lines: Vec<String> = text.lines().map(str::to_owned).collect();
-    lines.insert(3, release_line(&release("0.2.5"), Some(&lines[3])));
-    assert!(matches!(
-        read_text(&lines.join("\n"), &keys(&key), "0.0.1"),
-        Err(Error::Feed(_))
-    ));
+    lines.remove(2);
+    let feed = read_text(&lines.join("\n"), &keys(&key), "0.0.1")
+        .unwrap()
+        .unwrap();
+    assert_eq!(versions(&feed), ["0.3.0", "0.1.0"]);
 }
 
 #[test]
-fn isnt_taken_cut_short() {
+fn isnt_taken_with_no_release_or_one_cut_short() {
     let key = key();
     let text = feed(&key, &[release("0.3.0"), release("0.2.0")]);
-    let cut = text.lines().take(3).collect::<Vec<_>>().join("\n");
-    let read = read_text(&cut, &keys(&key), "0.1.0");
-    assert!(
-        matches!(read, Err(Error::Feed(why)) if why == "it ends before the release before 0.3.0")
-    );
+    let header = text.lines().next().unwrap();
+    let read = read_text(header, &keys(&key), "0.1.0");
+    assert!(matches!(read, Err(Error::Feed(why)) if why == "it ends before the latest release"));
+
+    let cut = &text[..text.rfind("\"}}").unwrap()];
+    let read = read_text(cut, &keys(&key), "0.1.0");
+    assert!(matches!(read, Err(Error::Feed(why)) if why.starts_with("the release before 0.3.0: ")));
 }
 
 #[test]
 fn isnt_taken_out_of_order() {
     let key = key();
-    // Each line names the next, but 0.2.0 comes before 0.3.0.
     let text = feed(
         &key,
         &[release("0.4.0"), release("0.2.0"), release("0.3.0")],
@@ -295,16 +339,10 @@ fn isnt_taken_out_of_order() {
 #[test]
 fn isnt_taken_when_the_latest_isnt_the_headers() {
     let key = key();
-    let lines = lines_of(&[release("0.2.0")]);
-    let mut header: Header =
-        serde_json::from_str(&header_line(APP, NOW, EXPIRES, &lines[0]).unwrap()).unwrap();
-    header.latest = version("0.3.0");
-    let header = serde_json::to_string(&header).unwrap();
-    let text = join(&sign(&key, &header), &header, &lines);
-    assert!(matches!(
-        read_text(&text, &keys(&key), "0.1.0"),
-        Err(Error::Feed(_))
-    ));
+    let header = header_signed_for(APP, &key, &header_of(APP, "0.3.0", EXPIRES));
+    let text = join(&header, &lines_of(&key, &[release("0.2.0")]));
+    let read = read_text(&text, &keys(&key), "0.1.0");
+    assert!(matches!(read, Err(Error::Feed(why)) if why == "the latest release is 0.2.0"));
 }
 
 #[test]
@@ -331,13 +369,28 @@ fn isnt_taken_with_a_sha256_that_isnt_one() {
 #[test]
 fn isnt_taken_empty_or_unsigned() {
     let key = key();
+    let read = read_text("", &keys(&key), "0.1.0");
+    assert!(matches!(read, Err(Error::Feed(why)) if why == "it's empty"));
+
+    let header = serde_json::to_string(&header_of(APP, "0.2.0", EXPIRES)).unwrap();
+    let release = lines_of(&key, &[release("0.2.0")]).remove(0);
+    let unsigned = format!("{{\"signature\":\"\",\"header\":{header}}}\n{release}\n");
+    let read = read_text(&unsigned, &keys(&key), "0.1.0");
+    assert!(matches!(read, Err(Error::Signature(why)) if why.starts_with("the header: ")));
+
+    let bare = format!("{header}\n{release}\n");
     assert!(matches!(
-        read_text("", &keys(&key), "0.1.0"),
+        read_text(&bare, &keys(&key), "0.1.0"),
         Err(Error::Feed(_))
     ));
-    let text = feed(&key, &[release("0.2.0")]);
-    let unsigned = text.lines().skip(1).collect::<Vec<_>>().join("\n");
-    assert!(read_text(&unsigned, &keys(&key), "0.1.0").is_err());
+}
+
+#[test]
+fn isnt_taken_with_a_release_where_the_header_goes() {
+    let key = key();
+    let lines = lines_of(&key, &[release("0.2.0")]);
+    let read = read_text(&join(&lines[0], &lines), &keys(&key), "0.1.0");
+    assert!(matches!(read, Err(Error::Feed(why)) if why == "the header: the line has no header"));
 }
 
 #[test]
@@ -345,13 +398,15 @@ fn a_release_goes_before_the_others_leaving_their_lines_as_they_are() {
     let key = key();
     let text = feed(&key, &[release("0.2.0"), release("0.1.0")]);
     let old = release_lines(&text);
-    let mut lines = vec![release_line(&release("0.3.0"), Some(&old[0]))];
+    let mut lines = lines_of(&key, &[release("0.3.0")]);
     lines.extend(old.iter().cloned());
-    let header = header_line(APP, NOW, EXPIRES, &lines[0]).unwrap();
-    let text = join(&sign(&key, &header), &header, &lines);
+    let header = header_signed_for(APP, &key, &header_of(APP, "0.3.0", EXPIRES));
+    let text = join(&header, &lines);
     let feed = read_text(&text, &keys(&key), "0.0.1").unwrap().unwrap();
     assert_eq!(versions(&feed), ["0.3.0", "0.2.0", "0.1.0"]);
+    assert_eq!(release_lines(&text)[1..], old[..]);
     assert_eq!(releases(&lines).unwrap(), feed.releases);
+    assert_eq!(self::header(&text).unwrap(), feed.header);
 }
 
 #[test]
