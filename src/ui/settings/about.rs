@@ -1,8 +1,8 @@
-//! About: the app's version and license; where updating is, with what
-//! can be done about it, and once an update's found, what's new in it;
-//! and what the app is built with: FFmpeg, dav1d, GPUI and Lua, from
-//! `resources/attributions.json` (which `script/attributions` writes), each
-//! opening to its license.
+//! About: the app's version, repository, copyright and license; where
+//! updating is, with what can be done about it, and once an update's found,
+//! what's new in it; and what the app is built with: FFmpeg, dav1d, GPUI and
+//! Lua, from `resources/attributions.json` (which `script/attributions`
+//! writes), each opening to its license.
 
 use std::ffi::CStr;
 use std::sync::LazyLock;
@@ -16,15 +16,13 @@ use super::form::{group, row, set};
 use super::{Pane, SettingsView};
 use crate::app::updates::{self, Found, State};
 use crate::settings::Settings;
-use crate::ui::about;
+use crate::ui::about::{self, LICENSE};
 use crate::ui::components::{Button, ComponentSize, Icon, Sizable, Switch};
 use crate::ui::markdown;
 use crate::ui::sentence::capitalized;
 use crate::ui::theme::settings::{ABOUT_COLOR, CREDIT_LICENSE_MAX_WIDTH};
 use crate::ui::theme::text::TextStyle;
 use crate::ui::theme::{Theme, controls, radius};
-
-const LICENSE: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/LICENSE"));
 
 /// The pane's name, which Check for Updates opens Settings at.
 pub const NAME: &str = "About";
@@ -289,7 +287,7 @@ fn credit(library: &'static Credit, texts: &'static [String]) -> Entry {
     }
 }
 
-/// The app's name, version and what it is.
+/// The app's name, version, what it is, its repository and its copyright.
 fn app(theme: &Theme) -> AnyElement {
     div()
         .flex()
@@ -304,6 +302,17 @@ fn app(theme: &Theme) -> AnyElement {
             about::release_date()
         )))
         .child(div().pt_1().text_sm().child(env!("CARGO_PKG_DESCRIPTION")))
+        .child(
+            div()
+                .pt_1()
+                .child(about::repository_link("settings-repository")),
+        )
+        .child(
+            div()
+                .text_xs()
+                .text_color(theme.text_muted)
+                .child(about::copyright()),
+        )
         .into_any_element()
 }
 

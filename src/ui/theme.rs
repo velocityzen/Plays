@@ -607,7 +607,7 @@ pub mod console {
 pub mod about {
     use gpui::{Pixels, Size, px, size};
 
-    pub const WINDOW_SIZE: Size<Pixels> = size(px(280.), px(320.));
+    pub const WINDOW_SIZE: Size<Pixels> = size(px(280.), px(360.));
     /// The app icon, as the system's own About windows show it.
     pub const ICON: Pixels = px(128.);
     /// The icon's pixels, taken from the app bundle's, for Retina screens.

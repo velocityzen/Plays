@@ -139,6 +139,8 @@ script/install-linux
 - Settings → About credits FFmpeg, dav1d, GPUI and Lua, with their license
   texts, from `resources/attributions.json`, which `script/attributions`
   writes (`script/bundle-macos` runs it).
+- Both About views show the copyright, from `LICENSE`, and link to
+  `repository` in `Cargo.toml`.
 
 ## Tests
 

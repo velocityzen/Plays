@@ -21,7 +21,7 @@ use crate::cast::{AppPairings, Casting, Looking, Protocol, Shows, Target};
 use crate::files::Folder;
 use crate::media::output::DeviceInfo;
 use crate::settings::{AudioDevice, MusicMode, PanelLook, Settings, Visualizer};
-use crate::ui::about::AboutView;
+use crate::ui::about::{self, AboutView, REPOSITORY};
 use crate::ui::displays;
 use crate::ui::testing::{self, click, open_settings, press, shows, wait_until};
 use crate::ui::theme::layout::SETTINGS_WINDOW_SIZE;
@@ -157,6 +157,50 @@ fn about_opens_in_the_middle_wherever_it_was_left(cx: &mut TestAppContext) {
     close(&mut about);
     let mut about = open_about(&mut cx);
     assert_eq!(bounds_of(&mut about), middle, "back in the middle");
+}
+
+/// That `window` shows the link to the app's repository, then its
+/// copyright on the line below, within it, and that the link tagged `link`
+/// opens the repository.
+fn says_the_copyright_and_links_to_the_repository(
+    window: &mut VisualTestContext,
+    link: &'static str,
+) {
+    let height = window.update(|window, _| window.viewport_size().height);
+    let painted = testing::painted(window);
+    let [repository, copyright] = ["github.com/velocityzen/Plays", about::copyright().as_str()]
+        .map(|said| {
+            let bounds = painted
+                .iter()
+                .find(|(text, _)| text == said)
+                .map(|(_, bounds)| *bounds);
+            assert!(
+                bounds.is_some_and(|bounds| bounds.bottom() <= height),
+                "{said}: {painted:?}"
+            );
+            bounds.unwrap()
+        });
+    assert!(
+        repository.bottom() <= copyright.origin.y,
+        "the link, then the copyright below it: {repository:?}, {copyright:?}"
+    );
+    click(window, link);
+    assert_eq!(window.opened_url().as_deref(), Some(REPOSITORY));
+}
+
+#[gpui::test]
+fn about_says_the_copyright_and_links_to_the_repository(cx: &mut TestAppContext) {
+    let (_, mut cx) = testing::start(cx);
+    let mut about = open_about(&mut cx);
+    says_the_copyright_and_links_to_the_repository(&mut about, "about-repository");
+}
+
+#[gpui::test]
+fn settings_about_says_the_copyright_and_links_to_the_repository(cx: &mut TestAppContext) {
+    let (_, mut cx) = testing::start(cx);
+    let mut settings = open_settings(&mut cx);
+    click(&mut settings, "pane-About");
+    says_the_copyright_and_links_to_the_repository(&mut settings, "settings-repository");
 }
 
 fn autoplay(cx: &mut VisualTestContext) -> bool {

@@ -1,5 +1,6 @@
-//! The About window: the app's icon, name, version and the day it was
-//! built, in a small window of its own, as macOS apps have it.
+//! The About window: the app's icon, name, version, the day it was built,
+//! a link to its repository and its copyright, in a small window of its
+//! own, as macOS apps have it.
 
 use std::sync::Arc;
 
@@ -10,6 +11,7 @@ use gpui::{
 };
 
 use super::APP_ID;
+use super::components::{Button, Sizable};
 use super::displays;
 use super::theme::Theme;
 use super::theme::about::{ICON, ICON_BOTTOM, ICON_GLYPH, ICON_RADIUS, ICON_TOP, WINDOW_SIZE};
@@ -32,6 +34,12 @@ const MONTHS: [&str; 12] = [
     "December",
 ];
 
+/// The app's license, as `LICENSE` has it.
+pub const LICENSE: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/LICENSE"));
+
+/// The app's repository, `Cargo.toml`'s.
+pub const REPOSITORY: &str = env!("CARGO_PKG_REPOSITORY");
+
 /// "Version 0.1.0".
 pub fn version() -> &'static str {
     concat!("Version ", env!("CARGO_PKG_VERSION"))
@@ -40,6 +48,31 @@ pub fn version() -> &'static str {
 /// The day the app was built, as "18 November 2026".
 pub fn release_date() -> String {
     spell_date(env!("PLAYS_BUILD_DATE"))
+}
+
+/// "© 2026 2dubs LLC", from the license's copyright line.
+pub fn copyright() -> String {
+    copyright_in(LICENSE).unwrap_or_default()
+}
+
+/// The copyright `license` says, as "© 2026 2dubs LLC".
+fn copyright_in(license: &str) -> Option<String> {
+    license.lines().find_map(|line| {
+        let holder = line.trim().strip_prefix("Copyright (c) ")?;
+        Some(format!("© {holder}"))
+    })
+}
+
+/// The link to the app's repository, which opens it in the browser:
+/// "github.com/velocityzen/Plays".
+pub fn repository_link(id: &'static str) -> Button {
+    let shown = REPOSITORY
+        .trim_start_matches("https://")
+        .trim_end_matches('/');
+    Button::new(id, shown)
+        .link()
+        .small()
+        .on_click(|_, _, cx| cx.open_url(REPOSITORY))
 }
 
 /// "2026-11-18" as "18 November 2026"; as it is if it isn't a date.
@@ -140,6 +173,13 @@ impl Render for AboutView {
                     .text_sm()
                     .text_color(theme.text_muted)
                     .child(release_date()),
+            )
+            .child(div().pt_3().child(repository_link("about-repository")))
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(theme.text_muted)
+                    .child(copyright()),
             )
     }
 }
