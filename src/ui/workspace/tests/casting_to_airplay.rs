@@ -72,55 +72,55 @@ fn paired_before_as(cx: &mut VisualTestContext, tv: &FakeReceiver, device: &airp
     tv.state().pin_shown = false;
 }
 
-/// What it was told to play, in order.
-fn plays(tv: &FakeReceiver) -> Vec<Dictionary> {
-    tv.state()
-        .requests("POST", "/play")
-        .into_iter()
-        .map(|play| play.dictionary())
-        .collect()
+/// What it was told to play, and at what rate.
+#[derive(Debug)]
+struct Play {
+    url: String,
+    start: f64,
+    rate: f64,
+}
+
+/// What it was told to play, in order, once each was set going.
+fn plays(tv: &FakeReceiver) -> Vec<Play> {
+    let state = tv.state();
+    let mut items = state.items.iter();
+    let mut given = None;
+    let mut plays = Vec::new();
+    for command in &state.commands {
+        match kind(command) {
+            "insertPlayQueueItem" => given = items.next(),
+            "setRate" => {
+                if let Some(item) = given.take() {
+                    let rate = command.get("rate").and_then(Value::as_real);
+                    plays.push(Play {
+                        url: item.url.clone(),
+                        start: item.start,
+                        rate: rate.unwrap_or(f64::NAN),
+                    });
+                }
+            }
+            _ => {}
+        }
+    }
+    plays
 }
 
 /// The last of those.
-fn last_play(tv: &FakeReceiver) -> Dictionary {
+fn last_play(tv: &FakeReceiver) -> Play {
     plays(tv).pop().expect("told to play")
 }
 
-fn number(play: &Dictionary, key: &str) -> f64 {
-    play.get(key).and_then(Value::as_real).unwrap_or(f64::NAN)
-}
-
-fn url(play: &Dictionary) -> String {
-    play.get("Content-Location")
+/// What `command` is.
+fn kind(command: &Dictionary) -> &str {
+    command
+        .get("type")
         .and_then(Value::as_string)
         .unwrap_or_default()
-        .to_owned()
 }
 
 /// The rates it was set to, in order.
 fn rates(tv: &FakeReceiver) -> Vec<f64> {
-    tv.state()
-        .requests("POST", "/rate")
-        .into_iter()
-        .filter_map(|rate| rate.query("value"))
-        .collect()
-}
-
-/// Whether it was asked what it's doing twice since it was last told to
-/// play, so the first answer, saying what it plays, was heard: until then,
-/// saying nothing is loading, not the end.
-fn seen_playing(tv: &FakeReceiver) -> bool {
-    let state = tv.state();
-    let play = state
-        .requests
-        .iter()
-        .rposition(|request| request.path() == "/play")
-        .unwrap_or(0);
-    state.requests[play..]
-        .iter()
-        .filter(|request| request.path() == "/playback-info")
-        .count()
-        >= 2
+    tv.state().rates.clone()
 }
 
 /// Pick the TV from the block's cast menu.
@@ -314,14 +314,14 @@ fn a_paired_tv_plays_the_front_block_from_where_it_is_with_subtitles_in_the_play
     let play = last_play(&tv);
     // It played on a little before it was cast.
     let here = view.read_with(&cx, |view, _| view.player().position());
-    let start = number(&play, "Start-Position-Seconds");
+    let start = play.start;
     assert!(
         start >= 1.0 && (start - here).abs() < 0.01,
         "from where the block was: {start} against {here}"
     );
-    assert_eq!(number(&play, "rate"), 1.0, "playing, as the block was");
+    assert_eq!(play.rate, 1.0, "playing, as the block was");
 
-    let url = url(&play);
+    let url = play.url;
     assert!(url.ends_with("master.m3u8"), "always HLS: {url}");
     let (status, master) = get(&url);
     assert_eq!(status, 200);
@@ -352,9 +352,9 @@ fn a_paired_tv_plays_the_front_block_from_where_it_is_with_subtitles_in_the_play
         plays(&tv).len() == 2
     });
     let again = last_play(&tv);
-    assert_eq!(self::url(&again), format!("{url}?1"));
-    assert_eq!(number(&again, "Start-Position-Seconds"), 1.5);
-    assert_eq!(number(&again, "rate"), 1.0);
+    assert_eq!(again.url, format!("{url}?1"));
+    assert_eq!(again.start, 1.5);
+    assert_eq!(again.rate, 1.0);
     let (_, master) = get(&url);
     assert!(
         !String::from_utf8(master).unwrap().contains("SUBTITLES"),
@@ -369,11 +369,7 @@ fn the_blocks_controls_reach_it_and_its_status_moves_the_bar(cx: &mut TestAppCon
     paired_before(&mut cx, &tv);
     let view = block(window, &cx);
     cast(&mut cx, &tv);
-    assert_eq!(
-        number(&last_play(&tv), "rate"),
-        0.0,
-        "paused, as the block was"
-    );
+    assert_eq!(last_play(&tv).rate, 0.0, "paused, as the block was");
     wait(&mut cx, "the block to say where it plays", |cx| {
         shows(cx, "play-here")
     });
@@ -383,10 +379,7 @@ fn the_blocks_controls_reach_it_and_its_status_moves_the_bar(cx: &mut TestAppCon
     // Back, as forward goes past the end of so short a clip.
     press(&mut cx, "left");
     wait(&mut cx, "it to seek", |_| {
-        tv.state()
-            .requests("POST", "/scrub")
-            .last()
-            .is_some_and(|scrub| scrub.query("position") == Some(0.0))
+        tv.state().seeks.last() == Some(&0.0)
     });
     press(&mut cx, "m");
     wait(&mut cx, "it to mute", |_| tv.state().volume_db <= -144.0);
@@ -411,8 +404,7 @@ fn the_blocks_controls_reach_it_and_its_status_moves_the_bar(cx: &mut TestAppCon
     });
     assert!(!view.read_with(&cx, |view, _| view.is_playing()));
 
-    // Played to the end, it says nothing of what it played.
-    assert!(seen_playing(&tv));
+    // Played to the end, it stops.
     tv.state().playback = Dictionary::new();
     wait(&mut cx, "the bar to show the end", |cx| {
         view.read_with(cx, |view, _| {
@@ -434,12 +426,8 @@ fn the_blocks_controls_reach_it_and_its_status_moves_the_bar(cx: &mut TestAppCon
         plays(&tv).len() == 2
     });
     let again = last_play(&tv);
-    assert_eq!(
-        number(&again, "Start-Position-Seconds"),
-        1.0,
-        "from where it was sent"
-    );
-    assert_eq!(number(&again, "rate"), 1.0);
+    assert_eq!(again.start, 1.0, "from where it was sent");
+    assert_eq!(again.rate, 1.0);
     wait(&mut cx, "it to be turned down again", |_| {
         // Each starts at full volume.
         let state = tv.state();
@@ -447,16 +435,16 @@ fn the_blocks_controls_reach_it_and_its_status_moves_the_bar(cx: &mut TestAppCon
             .requests
             .iter()
             .rposition(|request| request.method == "SET_PARAMETER");
-        let play = state
-            .requests
-            .iter()
-            .rposition(|request| request.path() == "/play");
-        volume > play
+        let given = state.requests.iter().rposition(|request| {
+            request
+                .command()
+                .is_some_and(|command| kind(&command) == "insertPlayQueueItem")
+        });
+        volume > given
     });
     let db = tv.state().volume_db;
     assert!(db > -30.0 && db < 0.0, "as it was: {db} dB");
 
-    wait(&mut cx, "it to be seen playing", |_| seen_playing(&tv));
     tv.state().playback = Dictionary::new();
     wait(&mut cx, "the bar to show the end", |cx| {
         view.read_with(cx, |view, _| (view.position() - 2.0).abs() < 1e-9)
@@ -465,11 +453,7 @@ fn the_blocks_controls_reach_it_and_its_status_moves_the_bar(cx: &mut TestAppCon
     wait(&mut cx, "it to be told to play again", |_| {
         plays(&tv).len() == 3
     });
-    assert_eq!(
-        number(&last_play(&tv), "Start-Position-Seconds"),
-        0.0,
-        "from the start"
-    );
+    assert_eq!(last_play(&tv).start, 0.0, "from the start");
 }
 
 #[gpui::test]
@@ -508,7 +492,8 @@ fn a_tv_that_forgot_this_computer_asks_for_its_pin_again(cx: &mut TestAppContext
 }
 
 /// A TV that can't play what it was told to says so in what it's doing:
-/// the cast ends saying it can't, rather than loading for good.
+/// the cast ends saying it can't, rather than loading for good, and it's
+/// stopped.
 #[gpui::test]
 fn a_tv_that_cant_play_it_ends_the_cast_saying_so(cx: &mut TestAppContext) {
     let tv = tv();
@@ -534,6 +519,58 @@ fn a_tv_that_cant_play_it_ends_the_cast_saying_so(cx: &mut TestAppContext) {
         noted.as_deref(),
         Some(format!("Can't play on {}: it can't play this", tv.device().name).as_str())
     );
+    assert_eq!(tv.state().requests("POST", "/stop").len(), 1);
+}
+
+/// A TV that never gets what it was given says nothing of why, and shows
+/// a spinner: the cast ends once it's had long enough, saying so, and it's
+/// stopped, which takes it back to where it was. The block plays on from
+/// where it was sent.
+#[gpui::test]
+fn a_tv_that_never_starts_playing_it_is_stopped_and_the_cast_ends_saying_so(
+    cx: &mut TestAppContext,
+) {
+    let tv = tv();
+    tv.state().never_ready = true;
+    let (window, mut cx) = start(cx, &tv, "clip.mp4", false);
+    paired_before(&mut cx, &tv);
+    let view = block(window, &cx);
+    view.update(&mut cx, |view, _| view.seek(1.0));
+    cast(&mut cx, &tv);
+    wait(&mut cx, "the block to say where it plays", |cx| {
+        shows(cx, "play-here")
+    });
+    assert!(tv.state().requests("POST", "/stop").is_empty(), "not yet");
+    let start = last_play(&tv).start;
+    assert!(start >= 1.0, "from where the block was: {start}");
+    assert!(
+        view.read_with(&cx, |view, _| (view.position() - start).abs() < 1e-9),
+        "where it was told to start, while it loads"
+    );
+    // Sent on while it loads, that's where it is.
+    let sent = start + 0.5;
+    view.update(&mut cx, |view, _| view.seek(sent));
+    wait(&mut cx, "it to seek", |_| {
+        tv.state().seeks.last() == Some(&sent)
+    });
+
+    wait(&mut cx, "the cast to end", |cx| {
+        view.read_with(cx, |view, _| view.casting().is_none())
+    });
+    let noted = view.read_with(&cx, |view, _| view.noted());
+    assert_eq!(
+        noted.as_deref(),
+        Some(
+            format!(
+                "Can't play on {}: it didn't start playing",
+                tv.device().name
+            )
+            .as_str()
+        )
+    );
+    assert_eq!(tv.state().requests("POST", "/stop").len(), 1);
+    let here = view.read_with(&cx, |view, _| view.player().position());
+    assert!((here - sent).abs() < 0.1, "here, from {here}, not {sent}");
 }
 
 /// Cast block `at` to `device` (`cast.to`), as its menu does.
@@ -591,4 +628,36 @@ fn a_tv_forgotten_is_cast_to_no_longer(cx: &mut TestAppContext) {
     let kept = pairings(&mut cx).paired();
     assert_eq!(kept.len(), 1);
     assert_eq!(kept[0].1, "Den TV");
+}
+
+/// A TV told with `/play` that says nothing of what it's doing, as tvOS 18
+/// and later, which play nothing so told: the cast ends once it's had long
+/// enough, and it's stopped.
+#[gpui::test]
+fn a_tv_that_says_nothing_of_what_it_was_told_to_play_is_stopped(cx: &mut TestAppContext) {
+    let tv = tv();
+    tv.state().no_queue = true;
+    tv.state().refuse_playback_info = true;
+    let (window, mut cx) = start(cx, &tv, "clip.mp4", true);
+    paired_before(&mut cx, &tv);
+    let view = block(window, &cx);
+    pick(&mut cx);
+    wait(&mut cx, "it to be told to play", |_| {
+        !tv.state().requests("POST", "/play").is_empty()
+    });
+    wait(&mut cx, "the cast to end", |cx| {
+        view.read_with(cx, |view, _| view.casting().is_none())
+    });
+    let noted = view.read_with(&cx, |view, _| view.noted());
+    assert_eq!(
+        noted.as_deref(),
+        Some(
+            format!(
+                "Can't play on {}: it didn't start playing",
+                tv.device().name
+            )
+            .as_str()
+        )
+    );
+    assert_eq!(tv.state().requests("POST", "/stop").len(), 1);
 }

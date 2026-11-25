@@ -2,11 +2,13 @@
 //! and encrypted; with AirPlay 2, the session set up on it, the event
 //! connection the receiver talks back on, and feedback every two seconds
 //! that keeps it all alive, which AirPlay 1 has in OPTIONS instead. Also
-//! the answers to the receiver's clock requests.
+//! the answers to the receiver's clock requests, and commands: property
+//! lists in a property list, as both sides send them.
 
 use std::io::Write;
 use std::net::{Shutdown, SocketAddr, TcpStream, UdpSocket};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
@@ -16,7 +18,7 @@ use network::lock;
 use plist::{Dictionary, Value};
 
 use crate::channel::{Keys, Sealed};
-use crate::connection::{Connection, Request};
+use crate::connection::{Connection, REPLY_TIMEOUT, Request};
 use crate::device::{Device, Pairing};
 use crate::error::{Error, Result};
 use crate::message::{Message, Reader};
@@ -94,6 +96,13 @@ pub(crate) struct Control {
     /// To unblock the event thread.
     event_stream: Option<TcpStream>,
     pub events: UnboundedSender<Event>,
+    /// Who the session is to the receiver: SETUP's `sessionUUID`, which
+    /// each command says too.
+    pub session_uuid: String,
+    /// The receiver's answers to commands that ask, from the event thread,
+    /// which takes `answer_to`.
+    answers: Receiver<Dictionary>,
+    answer_to: Option<mpsc::Sender<Dictionary>>,
 }
 
 impl Control {
@@ -117,6 +126,7 @@ impl Control {
         let timing = UdpSocket::bind((connection.local, 0))?;
         let timing_port = timing.local_addr()?.port();
         let (events, receiver) = unbounded();
+        let (answer_to, answers) = mpsc::channel();
         let control = Self {
             remote: connection.remote,
             control_stream: connection.tcp().and_then(|tcp| tcp.try_clone().ok()),
@@ -132,6 +142,9 @@ impl Control {
             gone: Arc::default(),
             event_stream: None,
             events,
+            session_uuid: session_uuid(),
+            answers,
+            answer_to: Some(answer_to),
         };
         Ok((control, receiver))
     }
@@ -170,7 +183,7 @@ impl Control {
         };
         put("deviceID", sender.id.clone().into());
         put("macAddress", sender.id.clone().into());
-        put("sessionUUID", session_uuid().into());
+        put("sessionUUID", self.session_uuid.clone().into());
         put(
             "timingPort",
             Value::Integer(u64::from(self.timing_port).into()),
@@ -222,10 +235,37 @@ impl Control {
         self.event_stream = Some(stream.try_clone()?);
         let (stop, gone) = (Arc::clone(&self.stop), Arc::clone(&self.gone));
         let events = self.events.clone();
+        let answers = self.answer_to.take();
         self.threads.push(spawn("airplay events", move || {
-            answer_events(Sealed::new(stream, keys), &stop, &gone, &events);
+            let listening = Listening {
+                stop: &stop,
+                gone: &gone,
+                events: &events,
+                answers: answers.as_ref(),
+            };
+            answer_events(Sealed::new(stream, keys), &listening);
         })?);
         Ok(())
+    }
+
+    /// The receiver's answer, on the event connection, to the command that
+    /// asked with `id`; waited for as long as an answer is.
+    pub fn answer(&self, id: u64) -> Result<Dictionary> {
+        let deadline = Instant::now() + REPLY_TIMEOUT;
+        loop {
+            let left = deadline.saturating_duration_since(Instant::now());
+            match self.answers.recv_timeout(left) {
+                Ok(answer) if unsigned(answer.get("messageID")) == Some(id) => return Ok(answer),
+                // To a command given up on.
+                Ok(_) => {}
+                Err(RecvTimeoutError::Timeout) => {
+                    return Err(Error::protocol("no answer on the event connection"));
+                }
+                Err(RecvTimeoutError::Disconnected) => {
+                    return Err(Error::protocol("no event connection to answer on"));
+                }
+            }
+        }
     }
 
     /// Send `ask` every two seconds, as feedback (AirPlay 2) or OPTIONS
@@ -345,17 +385,65 @@ fn answer_timing(socket: UdpSocket, stop: Arc<AtomicBool>) -> impl FnOnce() + Se
     }
 }
 
+/// A command, as it goes in a request's body: a property list, in one.
+pub(crate) fn command_body(command: Dictionary) -> Value {
+    let mut data = Vec::new();
+    plist::to_writer_binary(&mut data, &Value::Dictionary(command))
+        .expect("a property list writes");
+    let mut params = Dictionary::new();
+    params.insert("data".into(), Value::Data(data));
+    let mut body = Dictionary::new();
+    body.insert("params".into(), Value::Dictionary(params));
+    Value::Dictionary(body)
+}
+
+/// The command in a request's body, if it holds one.
+pub(crate) fn command_in(body: &[u8]) -> Option<Dictionary> {
+    let body = Value::from_reader(std::io::Cursor::new(body)).ok()?;
+    let data = body
+        .as_dictionary()?
+        .get("params")?
+        .as_dictionary()?
+        .get("data")?
+        .as_data()?;
+    Value::from_reader(std::io::Cursor::new(data))
+        .ok()?
+        .into_dictionary()
+}
+
+/// What the event thread tells: whether the session was stopped, and that
+/// the receiver went, and answers to commands.
+struct Listening<'a> {
+    stop: &'a AtomicBool,
+    gone: &'a AtomicBool,
+    events: &'a UnboundedSender<Event>,
+    answers: Option<&'a mpsc::Sender<Dictionary>>,
+}
+
 /// Answer what the receiver sends on the event connection, until it
-/// closes it or we stop.
-fn answer_events(
-    mut stream: Sealed<TcpStream>,
-    stop: &AtomicBool,
-    gone: &AtomicBool,
-    events: &UnboundedSender<Event>,
-) {
+/// closes it or we stop: commands that say what it does, and answers to
+/// ours, which go to whoever asked.
+fn answer_events(mut stream: Sealed<TcpStream>, listening: &Listening<'_>) {
     let mut reader = Reader::default();
     while let Ok(Some(request)) = reader.read(&mut stream) {
-        log::debug!("airplay: the receiver says {}", request.start);
+        match command_in(&request.body) {
+            Some(command) if command.get("kind").and_then(Value::as_string) == Some("response") => {
+                if let Some(answers) = listening.answers {
+                    let _ = answers.send(command);
+                }
+            }
+            Some(command)
+                if command.get("type").and_then(Value::as_string) == Some("playbackState") =>
+            {
+                let state = command.get("name").and_then(Value::as_string);
+                log::debug!(
+                    "airplay: the receiver is {}",
+                    state.unwrap_or("in another state")
+                );
+            }
+            Some(command) => log::trace!("airplay: the receiver says {command:?}"),
+            None => log::debug!("airplay: the receiver says {}", request.start),
+        }
         let mut headers = vec![("Content-Length".to_owned(), "0".to_owned())];
         if let Some(cseq) = request.header("CSeq") {
             headers.push(("CSeq".to_owned(), cseq.to_owned()));
@@ -369,9 +457,9 @@ fn answer_events(
             break;
         }
     }
-    if !stop.load(Ordering::Relaxed) {
+    if !listening.stop.load(Ordering::Relaxed) {
         log::info!("airplay: the receiver closed the event connection");
-        went(gone, events);
+        went(listening.gone, listening.events);
     }
 }
 

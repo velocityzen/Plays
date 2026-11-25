@@ -382,7 +382,7 @@ fn cast_to(cx: &mut VisualTestContext, tv: &FakeReceiver) {
     click(cx, "cast");
     click(cx, "cast-0");
     wait(cx, "the TV to be told to play", |_| {
-        !tv.state().requests("POST", "/play").is_empty()
+        !tv.state().items.is_empty()
     });
 }
 

@@ -8,7 +8,7 @@ use futures_channel::mpsc::UnboundedReceiver;
 
 use crate::audio::LATENCY;
 use crate::connection::REPLY_TIMEOUT;
-use crate::fake::{FakeReceiver, Kind};
+use crate::fake::{self, FakeReceiver, Kind};
 use crate::rtp::{CHANNELS, FRAMES_PER_PACKET};
 use crate::*;
 
@@ -146,8 +146,42 @@ fn a_tv_that_cant_play_the_url_says_why() {
     session.stop();
 }
 
+/// The SETUPs it was sent: the session's, then the stream's.
+fn setups(fake: &FakeReceiver) -> Vec<plist::Dictionary> {
+    fake.state()
+        .requests
+        .iter()
+        .filter(|request| request.method == "SETUP")
+        .map(fake::Received::dictionary)
+        .collect()
+}
+
+/// Commands go encrypted on the remote-control stream it was asked for,
+/// naming the session and the stream.
+fn commands_go_on_the_stream(fake: &FakeReceiver) {
+    let setups = setups(fake);
+    let stream = setups[1]["streams"].as_array().unwrap()[0]
+        .as_dictionary()
+        .unwrap()
+        .clone();
+    assert_eq!(stream["type"].as_unsigned_integer(), Some(130));
+    assert_eq!(
+        stream["clientTypeUUID"].as_string(),
+        Some("A6B27562-B43A-4F2D-B75F-82391E250194")
+    );
+    let state = fake.state();
+    let command = state.requests("POST", "/command")[0];
+    assert!(command.sealed, "it's said encrypted");
+    assert_eq!(command.header("X-Apple-StreamID"), Some("1"));
+    assert_eq!(
+        command.header("X-Apple-Session-ID"),
+        setups[0]["sessionUUID"].as_string(),
+        "the session's"
+    );
+}
+
 #[test]
-fn a_tv_plays_a_url_and_is_driven_while_it_does() {
+fn a_tv_plays_a_url_queued_and_is_driven_while_it_does() {
     let fake = FakeReceiver::start(Kind::Tv { pin: PIN });
     let credentials = pair(&fake);
     let (mut session, _events) =
@@ -175,25 +209,152 @@ fn a_tv_plays_a_url_and_is_driven_while_it_does() {
         fake.wait_for(|state| state.event_reply == Some(200)),
         "it answers the TV"
     );
+    let first = {
+        let state = fake.state();
+        assert_eq!(
+            state.items,
+            [fake::Item {
+                url: url.into(),
+                start: 12.0
+            }]
+        );
+        assert_eq!(state.rates, [1.0, 0.0, 1.0]);
+        assert_eq!(state.seeks, [30.5]);
+        assert_eq!(state.volume_db, -6.0);
+        assert!(
+            state.requests("POST", "/play").is_empty(),
+            "it'd play nothing"
+        );
+        assert!(
+            state.commands.iter().any(|command| {
+                command["type"].as_string() == Some("setProperty")
+                    && command["property"].as_string() == Some("actionAtItemEnd")
+                    && command["value"].as_signed_integer() == Some(1)
+            }),
+            "paused at the end, not gone"
+        );
+        let item = state.commands[0]["item"].as_dictionary().unwrap();
+        item["uuid"].as_string().unwrap().to_owned()
+    };
+    commands_go_on_the_stream(&fake);
+
+    // Given again, the one before goes, and it plays the new one.
+    session.play(url, 5.0, false).unwrap();
+    assert_eq!(
+        session.playback_info().unwrap(),
+        PlaybackInfo {
+            state: PlaybackState::Paused,
+            position: 5.0,
+            duration: Some(60.0),
+        }
+    );
+    let removed: Vec<_> = fake
+        .state()
+        .commands
+        .iter()
+        .filter(|command| command["type"].as_string() == Some("removePlayQueueItem"))
+        .map(|command| command["item"].as_dictionary().unwrap()["uuid"].clone())
+        .collect();
+    assert_eq!(removed, [plist::Value::String(first)]);
+    session.seek(6.0).unwrap();
+    assert_eq!(
+        session.playback_info().unwrap().position,
+        6.0,
+        "the new one"
+    );
+
+    // Played to the end, it stops.
+    fake.state()
+        .playback
+        .insert("playbackState".into(), "stopped".into());
+    assert_eq!(session.playback_info().unwrap().state, PlaybackState::Ended);
+    session.stop();
+    let state = fake.state();
+    assert_eq!(state.requests("POST", "/stop").len(), 1);
+    assert!(
+        state
+            .requests
+            .iter()
+            .any(|request| request.method == "TEARDOWN")
+    );
+}
+
+/// What it says to a command given up on isn't taken for the answer to the
+/// next.
+#[test]
+fn an_answer_to_another_command_isnt_taken_for_this_ones() {
+    let fake = FakeReceiver::start(Kind::Tv { pin: PIN });
+    let credentials = pair(&fake);
+    let (mut session, _events) =
+        VideoSession::connect(&fake.device(), Some(&credentials), &sender()).unwrap();
+    session
+        .play("http://192.0.2.1:8080/stream/master.m3u8", 0.0, true)
+        .unwrap();
+    let mut info = plist::Dictionary::new();
+    info.insert("playbackState".into(), "stopped".into());
+    let mut late = plist::Dictionary::new();
+    late.insert("kind".into(), "response".into());
+    late.insert("messageID".into(), plist::Value::Integer(99.into()));
+    late.insert("info".into(), plist::Value::Dictionary(info));
+    fake.say(late);
+    assert_eq!(
+        session.playback_info().unwrap().state,
+        PlaybackState::Playing
+    );
+    session.stop();
+}
+
+#[test]
+fn a_tv_without_the_queue_is_told_with_play_and_driven_while_it_plays() {
+    let fake = FakeReceiver::start(Kind::Tv { pin: PIN });
+    fake.state().no_queue = true;
+    let credentials = pair(&fake);
+    let sender = sender();
+    let (mut session, _events) =
+        VideoSession::connect(&fake.device(), Some(&credentials), &sender).unwrap();
+    let url = "http://192.0.2.1:8080/stream/master.m3u8";
+    session.play(url, 12.0, true).unwrap();
+    assert_eq!(
+        session.playback_info().unwrap(),
+        PlaybackInfo {
+            state: PlaybackState::Playing,
+            position: 12.0,
+            duration: Some(60.0),
+        }
+    );
+    session.pause().unwrap();
+    assert_eq!(
+        session.playback_info().unwrap().state,
+        PlaybackState::Paused
+    );
+    session.seek(30.5).unwrap();
+    assert_eq!(session.playback_info().unwrap().position, 30.5);
+    session.resume().unwrap();
     {
         let state = fake.state();
+        assert!(state.commands.is_empty());
         let play = state.requests("POST", "/play")[0];
         assert!(play.sealed, "it's said encrypted");
         let body = play.dictionary();
         assert_eq!(body["Content-Location"].as_string(), Some(url));
         assert_eq!(body["Start-Position-Seconds"].as_real(), Some(12.0));
+        assert_eq!(
+            body["SenderMACAddress"].as_string(),
+            Some(sender.id.as_str())
+        );
         assert!(play.header("X-Apple-Session-ID").is_some());
-        let rates: Vec<_> = state
-            .requests("POST", "/rate")
-            .iter()
-            .map(|rate| rate.query("value"))
-            .collect();
-        assert_eq!(rates, [Some(1.0), Some(0.0), Some(1.0)]);
+        assert_eq!(
+            state
+                .requests("POST", "/rate")
+                .iter()
+                .map(|rate| rate.query("value"))
+                .collect::<Vec<_>>(),
+            [Some(1.0), Some(0.0), Some(1.0)]
+        );
         assert_eq!(
             state.requests("POST", "/scrub")[0].query("position"),
             Some(30.5)
         );
-        assert_eq!(state.volume_db, -6.0);
     }
 
     // The TV saying nothing once it played is the end.
@@ -215,27 +376,22 @@ fn a_receiver_knows_the_sender_by_its_id() {
     let fake = FakeReceiver::start(Kind::Tv { pin: PIN });
     let credentials = pair(&fake);
     let sender = sender();
-    let (mut session, _events) =
+    let (session, _events) =
         VideoSession::connect(&fake.device(), Some(&credentials), &sender).unwrap();
-    session
-        .play("http://192.0.2.1:8080/video.mp4", 0.0, true)
-        .unwrap();
-    {
-        let state = fake.state();
-        let setup = state
-            .requests
-            .iter()
-            .find(|request| request.method == "SETUP")
-            .expect("a SETUP")
-            .dictionary();
-        assert_eq!(setup["deviceID"].as_string(), Some(sender.id.as_str()));
-        assert_eq!(setup["macAddress"].as_string(), Some(sender.id.as_str()));
-        let play = state.requests("POST", "/play")[0].dictionary();
-        assert_eq!(
-            play["SenderMACAddress"].as_string(),
-            Some(sender.id.as_str())
-        );
-    }
+    let setups = setups(&fake);
+    assert_eq!(setups[0]["deviceID"].as_string(), Some(sender.id.as_str()));
+    assert_eq!(
+        setups[0]["macAddress"].as_string(),
+        Some(sender.id.as_str())
+    );
+    let stream = setups[1]["streams"].as_array().unwrap()[0]
+        .as_dictionary()
+        .unwrap()
+        .clone();
+    assert_eq!(
+        stream["channelID"].as_string(),
+        Some(format!("{}-RCS-1", sender.id).as_str())
+    );
     session.stop();
 }
 
@@ -383,7 +539,7 @@ fn a_late_answer_isnt_taken_for_the_next_requests() {
     let credentials = pair(&fake);
     let (mut session, mut events) =
         VideoSession::connect(&fake.device(), Some(&credentials), &sender()).unwrap();
-    fake.state().slow = Some(("/scrub", REPLY_TIMEOUT * 2));
+    fake.state().slow = Some(("/command", REPLY_TIMEOUT * 2));
     assert!(session.seek(30.0).is_err());
     fake.state().slow = None;
     let asked = Instant::now();

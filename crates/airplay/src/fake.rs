@@ -2,11 +2,14 @@
 //! PIN, an AirPlay 2 speaker open to everyone, or an AirPlay 1 speaker,
 //! plain or encrypted. It pairs, encrypts, answers as a receiver does,
 //! keeps every request, and turns the sound it's sent back into samples.
+//! The TV queues what it's told to play on a remote-control stream, as
+//! tvOS does, or, refusing the stream, is told with `/play`.
 
 use std::collections::{BTreeMap, HashMap};
-use std::io::{Read, Write};
+use std::io::Write;
 use std::net::{Ipv4Addr, Shutdown, SocketAddr, TcpListener, TcpStream, UdpSocket};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -22,6 +25,8 @@ use crate::message::{Message, Reader};
 use crate::pairing::receiver::{Accessory, Outcome};
 use crate::rsa::PrivateKey;
 use crate::rtp::{self, receiver};
+use crate::session::{command_body, command_in, unsigned};
+use crate::video::{seconds, time};
 
 /// How often its threads look up to see if it's gone.
 const POLL: Duration = Duration::from_millis(20);
@@ -112,6 +117,19 @@ impl Received {
             .and_then(Value::into_dictionary)
             .unwrap_or_default()
     }
+
+    /// The command it carries, if it's one for the remote-control stream.
+    pub fn command(&self) -> Option<Dictionary> {
+        command_in(&self.body)
+    }
+}
+
+/// What it was told to play.
+#[derive(Clone, PartialEq, Debug)]
+pub struct Item {
+    pub url: String,
+    /// Where it starts, in seconds.
+    pub start: f64,
 }
 
 /// An audio packet it took.
@@ -126,7 +144,27 @@ pub struct State {
     pub requests: Vec<Received>,
     /// Whether it showed its PIN.
     pub pin_shown: bool,
-    /// What `/playback-info` answers.
+    /// What it was told to play, in order: with `/play`, or queued.
+    pub items: Vec<Item>,
+    /// The rates it was set to, and where it was sent, in order.
+    pub rates: Vec<f64>,
+    pub seeks: Vec<f64>,
+    /// How many times it was asked what it's doing since it was last told
+    /// what to play.
+    pub asked: usize,
+    /// The commands it was sent on its remote-control stream.
+    pub commands: Vec<Dictionary>,
+    /// Whether it refuses a remote-control stream, as a TV told what to
+    /// play with `/play` does.
+    pub no_queue: bool,
+    /// Whether what it's given never comes, as when it can't fetch it: it
+    /// says it isn't ready to play it, and nothing of why.
+    pub never_ready: bool,
+    /// Whether it answers `/playback-info` with 500, as tvOS 18 and later
+    /// do, playing nothing it was told to with `/play`.
+    pub refuse_playback_info: bool,
+    /// What it's doing with what plays, as `/playback-info` answers it, and
+    /// the queue says it: empty once it went.
     pub playback: Dictionary,
     /// How long what it's told to play is, in seconds.
     pub duration: f64,
@@ -164,6 +202,8 @@ pub struct State {
     resends: Option<(SocketAddr, Arc<UdpSocket>)>,
     /// How AirPlay 1's ANNOUNCE said sound comes.
     announced: Encryption,
+    /// Its queue: each item's id, and where it starts. The first plays.
+    queue: Vec<(String, f64)>,
 }
 
 impl State {
@@ -193,6 +233,8 @@ struct Shared {
     streams: Mutex<Vec<TcpStream>>,
     /// The event connection, once the sender's on it.
     events: Mutex<Option<TcpStream>>,
+    /// What to say on it.
+    outbox: Mutex<Option<mpsc::Sender<Dictionary>>>,
 }
 
 impl Shared {
@@ -237,6 +279,14 @@ impl FakeReceiver {
             state: Mutex::new(State {
                 requests: Vec::new(),
                 pin_shown: false,
+                items: Vec::new(),
+                rates: Vec::new(),
+                seeks: Vec::new(),
+                asked: 0,
+                commands: Vec::new(),
+                no_queue: false,
+                never_ready: false,
+                refuse_playback_info: false,
                 playback: Dictionary::new(),
                 duration: 60.0,
                 volume_db: -15.0,
@@ -256,11 +306,13 @@ impl FakeReceiver {
                 clock: None,
                 resends: None,
                 announced: Encryption::None,
+                queue: Vec::new(),
             }),
             accessory: Mutex::new(Accessory::new(id(kind), pin)),
             gone: AtomicBool::new(false),
             streams: Mutex::default(),
             events: Mutex::default(),
+            outbox: Mutex::default(),
         });
         let accepting = Arc::clone(&shared);
         thread::spawn(move || {
@@ -357,6 +409,13 @@ impl FakeReceiver {
         self.shared.gone.store(true, Ordering::Relaxed);
         for stream in lock(&self.shared.streams).drain(..) {
             let _ = stream.shutdown(Shutdown::Both);
+        }
+    }
+
+    /// Say `command` on the event connection, once the sender's on it.
+    pub fn say(&self, command: Dictionary) {
+        if let Some(outbox) = lock(&self.shared.outbox).as_ref() {
+            let _ = outbox.send(command);
         }
     }
 
@@ -547,37 +606,10 @@ fn answer(shared: &Arc<Shared>, request: &Received, secret: Option<&[u8]>) -> Re
                 format!("volume: {db:.6}\r\n").into_bytes(),
             )
         }
-        ("POST", "/play") => {
-            let body = request.dictionary();
-            let mut state = shared.state();
-            let mut playback = Dictionary::new();
-            playback.insert("duration".into(), state.duration.into());
-            let start = body.get("Start-Position-Seconds").cloned();
-            playback.insert("position".into(), start.unwrap_or(0.0.into()));
-            let rate = body.get("rate").cloned();
-            playback.insert("rate".into(), rate.unwrap_or(1.0.into()));
-            playback.insert("readyToPlay".into(), true.into());
-            state.playback = playback;
-            Reply::ok()
+        ("POST", "/play" | "/rate" | "/scrub" | "/stop") | ("GET", "/playback-info") => {
+            told(shared, request)
         }
-        ("POST", "/rate") => {
-            let rate = request.query("value").unwrap_or(0.0);
-            shared.state().playback.insert("rate".into(), rate.into());
-            Reply::ok()
-        }
-        ("POST", "/scrub") => {
-            let position = request.query("position").unwrap_or(0.0);
-            shared
-                .state()
-                .playback
-                .insert("position".into(), position.into());
-            Reply::ok()
-        }
-        ("POST", "/stop") => {
-            shared.state().playback = Dictionary::new();
-            Reply::ok()
-        }
-        ("GET", "/playback-info") => Reply::ok().plist(shared.state().playback.clone()),
+        ("POST", "/command") => command(shared, request),
         ("POST", "/feedback") if shared.state().refuse_feedback => Reply::status(500),
         ("RECORD", _) if shared.state().refuse_record => Reply::status(453),
         ("RECORD" | "FLUSH" | "TEARDOWN" | "OPTIONS", _)
@@ -649,12 +681,26 @@ fn setup(shared: &Arc<Shared>, request: &Received, secret: Option<&[u8]>) -> Rep
             .and_then(Value::as_unsigned_integer)
             .and_then(|port| u16::try_from(port).ok())
     };
-    if let Some(stream) = body
+    let stream = body
         .get("streams")
         .and_then(Value::as_array)
         .and_then(|streams| streams.first())
-        .and_then(Value::as_dictionary)
-    {
+        .and_then(Value::as_dictionary);
+    if stream.is_some_and(|stream| unsigned(stream.get("type")) == Some(130)) {
+        if !matches!(shared.kind, Kind::Tv { .. }) || shared.state().no_queue {
+            return Reply::status(400);
+        }
+        let mut answer = Dictionary::new();
+        answer.insert("type".into(), int(130));
+        answer.insert("streamID".into(), int(1));
+        let mut streams = Dictionary::new();
+        streams.insert(
+            "streams".into(),
+            Value::Array(vec![Value::Dictionary(answer)]),
+        );
+        return Reply::ok().plist(streams);
+    }
+    if let Some(stream) = stream {
         let key = stream
             .get("shk")
             .and_then(Value::as_data)
@@ -684,6 +730,184 @@ fn setup(shared: &Arc<Shared>, request: &Received, secret: Option<&[u8]>) -> Rep
     Reply::ok().plist(answer)
 }
 
+/// What it's doing with an item it was just given, from `start`.
+fn ready(start: f64, duration: f64, rate: f64) -> Dictionary {
+    let mut playback = Dictionary::new();
+    playback.insert("duration".into(), duration.into());
+    playback.insert("position".into(), start.into());
+    playback.insert("rate".into(), rate.into());
+    playback.insert("readyToPlay".into(), true.into());
+    playback
+}
+
+/// What a TV is told without the queue: what to play with `/play`, driven
+/// with `/rate`, `/scrub` and `/stop`, and asked what it's doing with
+/// `/playback-info`.
+fn told(shared: &Shared, request: &Received) -> Reply {
+    match (request.method.as_str(), request.path()) {
+        ("POST", "/play") => {
+            let body = request.dictionary();
+            let mut state = shared.state();
+            let url = body.get("Content-Location").and_then(Value::as_string);
+            let start = body
+                .get("Start-Position-Seconds")
+                .and_then(Value::as_real)
+                .unwrap_or(0.0);
+            let item = Item {
+                url: url.unwrap_or_default().to_owned(),
+                start,
+            };
+            state.items.push(item);
+            state.asked = 0;
+            let rate = body.get("rate").and_then(Value::as_real).unwrap_or(1.0);
+            state.playback = ready(start, state.duration, rate);
+            Reply::ok()
+        }
+        ("POST", "/rate") => {
+            let rate = request.query("value").unwrap_or(0.0);
+            let mut state = shared.state();
+            state.rates.push(rate);
+            state.playback.insert("rate".into(), rate.into());
+            Reply::ok()
+        }
+        ("POST", "/scrub") => {
+            let position = request.query("position").unwrap_or(0.0);
+            let mut state = shared.state();
+            state.seeks.push(position);
+            state.playback.insert("position".into(), position.into());
+            Reply::ok()
+        }
+        ("POST", "/stop") => {
+            shared.state().playback = Dictionary::new();
+            Reply::ok()
+        }
+        ("GET", "/playback-info") => {
+            let mut state = shared.state();
+            state.asked += 1;
+            if state.refuse_playback_info {
+                return Reply::status(500);
+            }
+            Reply::ok().plist(state.playback.clone())
+        }
+        _ => Reply::status(404),
+    }
+}
+
+/// A command on the remote-control stream: what to play and how, and
+/// what it's doing, which it answers on the event connection.
+fn command(shared: &Shared, request: &Received) -> Reply {
+    let Some(command) = command_in(&request.body) else {
+        return Reply::status(400);
+    };
+    let string = |value: Option<&Value>| value.and_then(Value::as_string).map(str::to_owned);
+    let named = |key: &str| {
+        let item = command.get(key).and_then(Value::as_dictionary);
+        string(item.and_then(|item| item.get("uuid")))
+    };
+    let mut state = shared.state();
+    state.commands.push(command.clone());
+    match string(command.get("type")).unwrap_or_default().as_str() {
+        "insertPlayQueueItem" => {
+            let item = command.get("item").and_then(Value::as_dictionary);
+            let field = |key: &str| item.and_then(|item| item.get(key));
+            let start = seconds(field("Start-Position")).unwrap_or(0.0);
+            let url = string(field("Content-Location")).unwrap_or_default();
+            state.items.push(Item { url, start });
+            state.asked = 0;
+            state
+                .queue
+                .push((string(field("uuid")).unwrap_or_default(), start));
+            if state.queue.len() == 1 {
+                state.playback = ready(start, state.duration, 0.0);
+            }
+        }
+        "removePlayQueueItem" => {
+            let at = named("item")
+                .and_then(|uuid| state.queue.iter().position(|(queued, _)| *queued == uuid));
+            if let Some(at) = at {
+                state.queue.remove(at);
+                if at == 0 {
+                    let rate = state.playback.get("rate").and_then(Value::as_real);
+                    state.playback = match state.queue.first() {
+                        Some(&(_, start)) => ready(start, state.duration, rate.unwrap_or(0.0)),
+                        None => Dictionary::new(),
+                    };
+                }
+            }
+        }
+        "setRate" => {
+            let rate = command.get("rate").and_then(Value::as_real).unwrap_or(0.0);
+            state.rates.push(rate);
+            state.playback.insert("rate".into(), rate.into());
+        }
+        // Only the item playing goes anywhere.
+        "seek" if named("item") == state.queue.first().map(|(uuid, _)| uuid.clone()) => {
+            if let Some(time) = seconds(command.get("time")) {
+                state.seeks.push(time);
+                state.playback.insert("position".into(), time.into());
+            }
+        }
+        "playbackInfo" => {
+            state.asked += 1;
+            let mut answer = Dictionary::new();
+            answer.insert("type".into(), "playbackInfo".into());
+            answer.insert("kind".into(), "response".into());
+            if let Some(id) = command.get("messageID") {
+                answer.insert("messageID".into(), id.clone());
+            }
+            answer.insert("info".into(), Value::Dictionary(queue_info(&state)));
+            drop(state);
+            if let Some(outbox) = lock(&shared.outbox).as_ref() {
+                let _ = outbox.send(answer);
+            }
+        }
+        _ => {}
+    }
+    Reply::ok()
+}
+
+/// What it's doing, as the queue says it: what `/playback-info` would,
+/// in its terms.
+fn queue_info(state: &State) -> Dictionary {
+    let playback = &state.playback;
+    let mut info = Dictionary::new();
+    if let Some((uuid, _)) = state.queue.first() {
+        let mut item = Dictionary::new();
+        item.insert("uuid".into(), uuid.clone().into());
+        info.insert("item".into(), Value::Dictionary(item));
+    }
+    if playback.is_empty() {
+        info.insert("playbackState".into(), "stopped".into());
+        return info;
+    }
+    for key in ["error", "playbackBufferEmpty"] {
+        if let Some(value) = playback.get(key) {
+            info.insert(key.into(), value.clone());
+        }
+    }
+    let ready = playback.get("readyToPlay").and_then(Value::as_boolean);
+    let ready = ready.unwrap_or(false) && !state.never_ready;
+    info.insert("readyToPlay".into(), ready.into());
+    // Till it's ready, it says no more, as tvOS does.
+    if !ready {
+        return info;
+    }
+    for key in ["position", "duration"] {
+        if let Some(seconds) = playback.get(key).and_then(Value::as_real) {
+            info.insert(key.into(), time(seconds));
+        }
+    }
+    let rate = playback.get("rate").and_then(Value::as_real).unwrap_or(0.0);
+    info.insert("rate".into(), rate.into());
+    let said = if rate > 0.0 { "playing" } else { "paused" };
+    let said = playback
+        .get("playbackState")
+        .cloned()
+        .unwrap_or(said.into());
+    info.insert("playbackState".into(), said);
+    info
+}
+
 /// Ask the sender's clock the time, and keep where it is and the answer.
 fn ask_the_time(shared: &Shared, to: SocketAddr) {
     shared.state().clock = Some(to);
@@ -706,12 +930,15 @@ fn time_at(to: SocketAddr, wait: Duration) -> Option<(u64, Vec<u8>)> {
     Some((sent, answer[..n].to_vec()))
 }
 
-/// Listen for the event connection; once the sender's on it, say something
-/// and keep the status of its answer.
+/// Listen for the event connection; once the sender's on it, say something,
+/// then what it's given to, keeping the status of the sender's last answer,
+/// until either side closes it.
 fn talk_back(shared: &Arc<Shared>, keys: Keys) -> u16 {
     let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("a port for events");
     let port = listener.local_addr().expect("the event port").port();
     let _ = listener.set_nonblocking(true);
+    let (outbox, to_say) = mpsc::channel();
+    *lock(&shared.outbox) = Some(outbox);
     let shared = Arc::clone(shared);
     thread::spawn(move || {
         let deadline = Instant::now() + Duration::from_secs(5);
@@ -725,25 +952,84 @@ fn talk_back(shared: &Arc<Shared>, keys: Keys) -> u16 {
         let _ = stream.set_nonblocking(false);
         shared.keep(&stream);
         *lock(&shared.events) = stream.try_clone().ok();
-        let mut sealed = Sealed::new(stream, keys);
-        let request = Message {
-            start: "POST /command RTSP/1.0".into(),
-            headers: vec![
-                ("CSeq".into(), "1".into()),
-                ("Content-Length".into(), "0".into()),
-            ],
-            body: Vec::new(),
+        let Ok(watch) = stream.try_clone() else {
+            return;
         };
-        if sealed.write_all(&request.encode()).is_ok()
-            && let Ok(Some(answer)) = Reader::default().read(&mut sealed)
-        {
-            shared.state().event_reply = Some(answer.status());
-            // Hold it open until one side goes.
-            let _ = sealed.read_to_end(&mut Vec::new());
+        let mut events = Events {
+            sealed: Sealed::new(stream, keys),
+            watch,
+            reader: Reader::default(),
+            cseq: 0,
+        };
+        let mut open = events.say(None).is_some_and(|status| {
+            shared.state().event_reply = Some(status);
+            true
+        });
+        while open && !shared.gone() {
+            open = match to_say.recv_timeout(POLL) {
+                Ok(command) => events.say(Some(command)).is_some_and(|status| {
+                    shared.state().event_reply = Some(status);
+                    true
+                }),
+                Err(RecvTimeoutError::Timeout | RecvTimeoutError::Disconnected) => {
+                    events.still_open()
+                }
+            };
         }
         shared.state().events_closed = true;
     });
     port
+}
+
+/// The event connection, from the receiver's side.
+struct Events {
+    sealed: Sealed<TcpStream>,
+    /// To see if the sender closed it.
+    watch: TcpStream,
+    reader: Reader,
+    cseq: u32,
+}
+
+impl Events {
+    /// Say `command`, or nothing, as receivers do at first, and wait for
+    /// the sender's answer: its status.
+    fn say(&mut self, command: Option<Dictionary>) -> Option<u16> {
+        self.cseq += 1;
+        let mut body = Vec::new();
+        if let Some(command) = command {
+            plist::to_writer_binary(&mut body, &command_body(command)).ok()?;
+        }
+        let message = Message {
+            start: "POST /command RTSP/1.0".into(),
+            headers: vec![
+                ("CSeq".into(), self.cseq.to_string()),
+                (
+                    "Content-Type".into(),
+                    "application/x-apple-binary-plist".into(),
+                ),
+                ("Content-Length".into(), body.len().to_string()),
+            ],
+            body,
+        };
+        self.watch
+            .set_read_timeout(Some(Duration::from_secs(2)))
+            .ok()?;
+        self.sealed.write_all(&message.encode()).ok()?;
+        Some(self.reader.read(&mut self.sealed).ok()??.status())
+    }
+
+    /// Whether the sender has it open still: nothing to read, rather than
+    /// its end.
+    fn still_open(&self) -> bool {
+        let _ = self.watch.set_read_timeout(Some(POLL));
+        match self.watch.peek(&mut [0]) {
+            Ok(n) => n > 0,
+            Err(err) => matches!(
+                err.kind(),
+                std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+            ),
+        }
+    }
 }
 
 /// An audio packet's sequence number, RTP time and samples.

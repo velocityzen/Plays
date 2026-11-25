@@ -2,7 +2,9 @@
 //! TVs, and TVs with AirPlay built in. They're told to play a URL, as
 //! iPhones tell them, and driven while they do. One that wants it is paired
 //! with the PIN it shows, the first time: what that leaves is kept
-//! (`Pairings`), and verified on each connection after.
+//! (`Pairings`), and verified on each connection after. One that hasn't
+//! started playing what it was given within `START_LIMIT`, or can't play
+//! it, is stopped, which takes it back to where it was.
 //!
 //! What one plays goes by its model: an Apple TV 4K HEVC and HDR, as Apple
 //! lists. Everything goes as HLS, so subtitles go in its playlist, which
@@ -10,6 +12,7 @@
 //! media again from where it is, as it reads the playlist only once.
 
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use ::airplay::{Browser, Event, PinPairing, PlaybackInfo, PlaybackState, VideoSession};
 use futures::channel::mpsc::UnboundedReceiver;
@@ -21,6 +24,10 @@ use super::target::{
 };
 
 pub const KIND: &str = "AirPlay";
+
+/// How long a receiver has to start playing what it was given: one that
+/// can't get it says nothing of why, and shows a spinner till stopped.
+const START_LIMIT: Duration = Duration::from_secs(if cfg!(test) { 2 } else { 30 });
 
 const FULL_HD: (u32, u32) = (1920, 1080);
 const UHD: (u32, u32) = (3840, 2160);
@@ -271,6 +278,8 @@ struct AirPlaySession {
     info: PlaybackInfo,
     /// Whether it was told to play.
     playing: bool,
+    /// Since when it was given what it hasn't started playing yet.
+    waiting: Option<Instant>,
     /// Whether it played to the end, after which it has nothing to play
     /// and is given the media again to play it.
     finished: bool,
@@ -297,6 +306,7 @@ impl AirPlaySession {
                 duration: None,
             },
             playing: false,
+            waiting: None,
             finished: false,
             start_over: None,
             volume: 1.0,
@@ -339,6 +349,7 @@ impl AirPlaySession {
             .play(&url, start, play)
             .map_err(|err| failed(&err))?;
         self.playing = play;
+        self.waiting = Some(Instant::now());
         self.finished = false;
         self.start_over = None;
         self.info = PlaybackInfo {
@@ -361,13 +372,24 @@ impl AirPlaySession {
             .map_err(|err| failed(&err))
     }
 
-    /// Ask what it's doing now.
+    /// Ask what it's doing now. Till it starts playing what it was given,
+    /// it's where it was told to start.
     fn ask(&mut self) -> Result<(), Error> {
-        let info = self
-            .session()?
-            .playback_info()
-            .map_err(|err| failed(&err))?;
+        let info = match self.session()?.playback_info() {
+            Ok(info) => info,
+            Err(err) => return Err(self.end_if_stuck(failed(&err))),
+        };
+        if info.state != PlaybackState::Loading {
+            self.waiting = None;
+        } else if self.waited_too_long() {
+            return Err(self.end(Error::NotStarted));
+        }
+        let position = match self.waiting {
+            Some(_) => self.info.position,
+            None => info.position,
+        };
         self.info = PlaybackInfo {
+            position,
             duration: info.duration.or(self.info.duration),
             ..info
         };
@@ -375,6 +397,35 @@ impl AirPlaySession {
             self.finished = true;
         }
         Ok(())
+    }
+
+    /// Whether it's had more than `START_LIMIT` to start playing.
+    fn waited_too_long(&self) -> bool {
+        self.waiting
+            .is_some_and(|since| since.elapsed() >= START_LIMIT)
+    }
+
+    /// `err`, ending the session when it leaves the receiver stuck on what
+    /// it was given: what it can't play, or, past `START_LIMIT`, can't say
+    /// it's doing.
+    fn end_if_stuck(&mut self, err: Error) -> Error {
+        match err {
+            Error::Unplayable => self.end(err),
+            Error::Failed(why) if self.waited_too_long() => {
+                log::warn!("airplay: no word of it playing: {why}");
+                self.end(Error::NotStarted)
+            }
+            err => err,
+        }
+    }
+
+    /// Stop it, and why.
+    fn end(&mut self, why: Error) -> Error {
+        log::info!("airplay: stopping it: {why}");
+        if let Some(session) = self.session.take() {
+            session.stop();
+        }
+        why
     }
 }
 
@@ -415,7 +466,11 @@ impl Session for AirPlaySession {
             self.start_over = Some(time);
             return Ok(());
         }
-        self.session()?.seek(time).map_err(|err| failed(&err))
+        self.session()?.seek(time).map_err(|err| failed(&err))?;
+        if self.waiting.is_some() {
+            self.info.position = time;
+        }
+        Ok(())
     }
 
     fn set_volume(&mut self, volume: f32, muted: bool) -> Result<(), Error> {

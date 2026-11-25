@@ -84,6 +84,8 @@ pub enum Error {
     Stopped,
     /// It couldn't play the media.
     Unplayable,
+    /// It didn't start playing the media in time, saying nothing of why.
+    NotStarted,
     /// It needs to be paired with the PIN it shows first (`Target::pair`).
     NeedsPin,
     /// It refused, or said something unexpected.
@@ -97,6 +99,7 @@ impl fmt::Display for Error {
             Self::Replaced => f.write_str("it plays something else now"),
             Self::Stopped => f.write_str("it was stopped there"),
             Self::Unplayable => f.write_str("it can't play this"),
+            Self::NotStarted => f.write_str("it didn't start playing"),
             Self::NeedsPin => f.write_str("it needs to be paired with the PIN it shows"),
             Self::Failed(why) => f.write_str(why),
         }
