@@ -101,19 +101,34 @@ plays.wait("playback.ended", {block_id = plays.block_id})
 plays.playback.next_file()
 ```
 
+```lua
+-- each file opened, or why not, heard from before it was asked to open
+local mark = plays.mark()
+plays.app.open{urls = {"/films/a.mkv", "/films/b.mkv"}}
+plays.window.set_ui{visible = {}}
+for _ = 1, 2 do
+  local event, kind = plays.wait({"playback.opened", "playback.open_failed"}, nil, 10, mark)
+  print(kind, event and event.block_id)
+end
+```
+
 - `plays.sleep(seconds)`: waits that long.
 - `plays.wait(event, filter, timeout)`: the payload of the next event of
   that type whose fields equal the filter's, numbers by their values. A
   function filter matches when it returns true. Events and their fields
   are in [commands.md](commands.md#events).
+- A list of types: whichever comes first, its payload, then its type.
 - A cue's, `block.<block>.position@120.5s` or `…@345f`: the block
-  reaching that time or frame ([lua-events.md](lua-events.md#cues)).
+  reaching that time or frame ([lua-events.md](lua-events.md#cues)); nil
+  and why if the block closes first, and there's nothing else to wait for.
 - nil and "timeout" once `timeout` seconds are up; nil and why if Plays
   goes. No timeout waits on.
 - What it hears: what happens from the start of the last call before it,
   what that call does too; in a handler, the last in it. With none, from
   the wait's start, or in a handler from its event. Each event once, in
   order, those it passes over gone, for handlers too.
+- `plays.mark()`: now, for a wait given it, `plays.wait(event, filter,
+  timeout, mark)`, to hear from, not from the last call.
 - Everything's events; with `-w`, that window's.
 
 ## Timers

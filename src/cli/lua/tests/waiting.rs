@@ -81,6 +81,53 @@ fn a_wait_hears_nothing_from_before_the_call_before_it(cx: &mut TestAppContext) 
 }
 
 #[gpui::test]
+fn a_wait_for_a_list_hears_whichever_comes_first_and_says_which(cx: &mut TestAppContext) {
+    let (path, _, mut cx) = serving("lua-wait-list", cx);
+    let heard = returned(
+        &mut cx,
+        &path,
+        r#"
+        local types = {"window.closed", "window.label_changed"}
+        plays.window.rename{label = "Attic"}
+        local heard, kind = plays.wait(types, nil, 5)
+        plays.window.rename{label = "Den"}
+        local handed = select('#', plays.wait(types, {label = "Den"}, 5))
+        local _, why = plays.wait(types, nil, 0)
+        return {label = heard.label, kind = kind, handed = handed, why = why}
+        "#,
+    );
+    assert_eq!(
+        heard,
+        json!({"label": "Attic", "kind": "window.label_changed", "handed": 2, "why": "timeout"})
+    );
+}
+
+#[gpui::test]
+fn a_wait_from_a_mark_hears_what_came_after_it_though_calls_came_between(cx: &mut TestAppContext) {
+    let (path, _, mut cx) = serving("lua-wait-mark", cx);
+    let heard = returned(
+        &mut cx,
+        &path,
+        r#"
+        plays.window.rename{label = "Before"}
+        local mark = plays.mark()
+        plays.window.rename{label = "Attic"}
+        plays.window.rename{label = "Den"}
+        plays.window.ls()
+        local first = plays.wait("window.label_changed", nil, 5, mark)
+        local second = plays.wait("window.label_changed", nil, 5, mark)
+        local _, none = plays.wait("window.label_changed", nil, 0.2, mark)
+        return {labels = {first.label, second.label}, none = none, mark = math.type(mark)}
+        "#,
+    );
+    assert_eq!(
+        heard,
+        json!({"labels": ["Attic", "Den"], "none": "timeout", "mark": "integer"}),
+        "each once, from the mark on"
+    );
+}
+
+#[gpui::test]
 fn a_wait_hears_the_event_its_filter_matches(cx: &mut TestAppContext) {
     let (path, _, mut cx) = serving("lua-wait-filter", cx);
     let heard = returned(
@@ -215,6 +262,38 @@ fn a_wait_for_a_cue_hears_its_block_reach_it_once(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn a_wait_for_a_cue_ends_as_its_block_closes_unless_it_waits_for_more(cx: &mut TestAppContext) {
+    let (path, window, mut cx) = serving("lua-wait-cue-closed", cx);
+    for (kinds, said) in [
+        ("cue", "the block closed before CUE"),
+        ("{cue, 'window.label_changed'}", "timeout"),
+    ] {
+        playing_the_clip(&mut cx, &path, window);
+        let code = format!(
+            r#"
+            local cue = "block." .. plays.block_id .. ".position@100s"
+            local _, why = plays.wait({kinds}, nil, 2)
+            return (why:gsub(cue, "CUE"))
+            "#
+        );
+        let ran = plays_while(
+            &mut cx,
+            &path,
+            &["--json", "do", "-e", &code],
+            |cx, time| {
+                if time == 10 {
+                    plays(cx, &path, &["do", "block.close"]);
+                }
+                cx.run_until_parked();
+                std::thread::sleep(Duration::from_millis(20));
+            },
+        );
+        assert_eq!((ran.status, ran.err.as_str()), (0, ""), "{ran:?}");
+        assert_eq!(ran.json(), json!(said), "{kinds}");
+    }
+}
+
+#[gpui::test]
 fn a_wait_says_so_when_plays_goes(cx: &mut TestAppContext) {
     let (path, _, mut cx) = serving("lua-wait-quit", cx);
     TestAppContext::update(&cx, api::record);
@@ -266,6 +345,14 @@ fn a_wait_says_what_it_cant_wait_for(cx: &mut TestAppContext) {
         (
             r#"plays.wait("window.label_changed", 5)"#,
             "plays: plays.wait's filter is a table or a function",
+        ),
+        (
+            r#"plays.wait({})"#,
+            "plays: plays.wait waits for an event's type, or a list of them",
+        ),
+        (
+            r#"plays.wait(5)"#,
+            "plays: plays.wait waits for an event's type, or a list of them",
         ),
     ] {
         let ran = plays(&mut cx, &path, &["do", "-e", code]);

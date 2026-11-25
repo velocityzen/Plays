@@ -4,7 +4,7 @@
 use std::cell::RefCell;
 use std::time::{Duration, Instant};
 
-use mlua::{Function, Lua, LuaSerdeExt, Value as LuaValue};
+use mlua::{Function, IntoLuaMulti, Lua, LuaSerdeExt, MultiValue, Value as LuaValue};
 use serde_json::{Map, Value};
 
 use super::Answer;
@@ -24,63 +24,123 @@ pub fn sleep(seconds: f64) -> mlua::Result<()> {
     Ok(())
 }
 
-/// `plays.wait`: the next event of type `kind` that `filter`, if given,
-/// matches, waiting at most `timeout` seconds, if given; or, for a cue, its
-/// block reaching it, which fails as the block closes first. Its payload,
-/// or nil and why not.
+/// `plays.mark`: where a wait given it hears from, now; or nil and why
+/// not.
+pub fn mark(inbox: &RefCell<Inbox>) -> Answer {
+    Answer(match inbox.borrow_mut().mark() {
+        Ok(mark) => Ok(LuaValue::Integer(i64::try_from(mark).unwrap_or(i64::MAX))),
+        Err(failure) => Err(failure.to_string()),
+    })
+}
+
+/// What a wait hands back: the event's payload, and its type if it was
+/// one of a list; or nil and why not.
+pub struct Waited {
+    heard: Result<(LuaValue, String), String>,
+    listed: bool,
+}
+
+impl IntoLuaMulti for Waited {
+    fn into_lua_multi(self, lua: &Lua) -> mlua::Result<MultiValue> {
+        match self.heard {
+            Ok((event, kind)) if self.listed => (event, kind).into_lua_multi(lua),
+            Ok((event, _)) => event.into_lua_multi(lua),
+            Err(why) => (LuaValue::Nil, why).into_lua_multi(lua),
+        }
+    }
+}
+
+/// `plays.wait`: the next event of type `kinds`, or of any type in a list
+/// of them, that `filter`, if given, matches, waiting at most `timeout`
+/// seconds, if given, and heard from `mark`, if given; or, for a cue, its
+/// block reaching it, which fails as the block closes first, with no
+/// other type to wait for.
 pub fn wait(
     lua: &Lua,
     inbox: &RefCell<Inbox>,
-    (kind, filter, timeout): (String, LuaValue, Option<f64>),
-) -> mlua::Result<Answer> {
+    (kinds, filter, timeout, mark): (LuaValue, LuaValue, Option<f64>, Option<u64>),
+) -> mlua::Result<Waited> {
+    let (kinds, listed) = read_kinds(lua, kinds)?;
     let by = match timeout {
         Some(seconds) => Some(after(duration("plays.wait can't wait", seconds)?)),
         None => None,
     };
     let filter = Filter::read(lua, filter)?;
-    let mut block = None;
-    if is_cue(&kind) {
-        match inbox.borrow_mut().cue(&kind) {
-            Ok(id) => block = Some(id),
-            Err(failure) => return Ok(Answer(Err(failure.to_string()))),
+    let failed = |why: String| {
+        Ok(Waited {
+            heard: Err(why),
+            listed,
+        })
+    };
+    let mut cued = Vec::new();
+    for kind in kinds.iter().filter(|kind| is_cue(kind)) {
+        match inbox.borrow_mut().cue(kind) {
+            Ok(block) => cued.push((kind.clone(), block)),
+            Err(failure) => return failed(failure.to_string()),
         }
     }
-    if kind == POSITION
+    if kinds.iter().any(|kind| kind == POSITION)
         && let Err(failure) = inbox.borrow_mut().hear_positions()
     {
-        return Ok(Answer(Err(failure.to_string())));
+        return failed(failure.to_string());
     }
-    inbox.borrow_mut().pass_over_told();
-    heard(lua, inbox, (&kind, block.as_deref()), &filter, by)
+    inbox.borrow_mut().pass_over_told(mark);
+    let heard = heard(lua, inbox, (&kinds, &cued), &filter, by)?;
+    Ok(Waited { heard, listed })
 }
 
-/// The next event of type `kind` that `filter` matches, heard by `by`;
-/// none once the block `cued`, if given, has closed.
+/// The types a wait is for, given as one or a list, and whether a list.
+fn read_kinds(lua: &Lua, given: LuaValue) -> mlua::Result<(Vec<String>, bool)> {
+    let wrong = || mlua::Error::runtime("plays.wait waits for an event's type, or a list of them");
+    match given {
+        LuaValue::String(kind) => Ok((vec![kind.to_str()?.to_owned()], false)),
+        LuaValue::Table(_) => match lua.from_value::<Vec<String>>(given) {
+            Ok(kinds) if !kinds.is_empty() => Ok((kinds, true)),
+            _ => Err(wrong()),
+        },
+        _ => Err(wrong()),
+    }
+}
+
+/// The next event of a type in `kinds` that `filter` matches, heard by
+/// `by`, with its type; none once each cue in `kinds` has had its block
+/// close, as `cued` says them, if they're all there is.
 fn heard(
     lua: &Lua,
     inbox: &RefCell<Inbox>,
-    (kind, cued): (&str, Option<&str>),
+    (kinds, cued): (&[String], &[(String, String)]),
     filter: &Filter,
     by: Option<Instant>,
-) -> mlua::Result<Answer> {
+) -> mlua::Result<Result<(LuaValue, String), String>> {
+    let mut waiting: Vec<&String> = kinds.iter().collect();
     loop {
         // Not borrowed as the filter runs, which may call Plays.
         let next = inbox.borrow_mut().next(by);
-        let payload = match next {
-            Ok(Some((heard, payload))) if heard == kind => payload,
-            Ok(Some((heard, payload))) => {
-                if heard == "block.closed" && cued.is_some_and(|block| payload["block_id"] == block)
-                {
-                    return Ok(Answer(Err(format!("the block closed before {kind}"))));
-                }
-                continue;
-            }
-            Ok(None) => return Ok(Answer(Err(TIMEOUT.into()))),
-            Err(failure) => return Ok(Answer(Err(failure.to_string()))),
+        let (kind, payload) = match next {
+            Ok(Some(event)) => event,
+            Ok(None) => return Ok(Err(TIMEOUT.into())),
+            Err(failure) => return Ok(Err(failure.to_string())),
         };
-        let event = super::to_lua(lua, &payload)?;
-        if filter.matches(&payload, &event)? {
-            return Ok(Answer(Ok(event)));
+        if kinds.contains(&kind) {
+            let event = super::to_lua(lua, &payload)?;
+            if filter.matches(&payload, &event)? {
+                return Ok(Ok((event, kind)));
+            }
+        }
+        if kind == "block.closed" {
+            let closed = |cue: &&String| {
+                cued.iter()
+                    .any(|(of, block)| of == *cue && payload["block_id"] == **block)
+            };
+            if waiting.iter().any(closed) {
+                waiting.retain(|cue| !closed(cue));
+                if waiting.is_empty() {
+                    return Ok(Err(format!(
+                        "the block closed before {}",
+                        kinds.join(" or ")
+                    )));
+                }
+            }
         }
     }
 }

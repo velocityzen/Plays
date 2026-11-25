@@ -144,6 +144,10 @@ pub fn run(session: &mut Session, script: Script, args: Value, listening: Listen
         )?;
         let wait = scope.create_function(|lua, args| waiting::wait(lua, &inbox, args))?;
         plays.set("wait", wait)?;
+        plays.set(
+            "mark",
+            scope.create_function(|_, ()| Ok(waiting::mark(&inbox)))?,
+        )?;
         exec::add(&lua, &plays, scope, &programs, &inbox)?;
         json::add(&lua, &plays)?;
         folders::add(&lua, &plays)?;
