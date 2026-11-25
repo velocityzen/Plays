@@ -184,13 +184,8 @@ fn the_scripts_the_events_guide_names_do_as_it_says(cx: &mut TestAppContext) {
     open(&mut cx, &path, window, &[clip, other], 2);
     let playing = "local p = {} for _, b in ipairs(plays.block.ls()) do p[#p + 1] = b.playing end \
                    return p";
-    let first = returned(&mut cx, &path, playing);
-    if first[0] == false {
-        plays(&mut cx, &path, &["-b", "1", "do", "playback.play_pause"]);
-    }
-    if first[1] == true {
-        plays(&mut cx, &path, &["-b", "2", "do", "playback.play_pause"]);
-    }
+    plays(&mut cx, &path, &["-b", "1", "do", "playback.play"]);
+    plays(&mut cx, &path, &["-b", "2", "do", "playback.pause"]);
     assert_eq!(returned(&mut cx, &path, playing), json!([true, false]));
 
     // The second plays, once the script listens: the first pauses.
@@ -201,7 +196,7 @@ fn the_scripts_the_events_guide_names_do_as_it_says(cx: &mut TestAppContext) {
         &["do", "--for", "1.5", &solo],
         |cx, time| {
             if time == 10 {
-                plays(cx, &path, &["-b", "2", "do", "playback.play_pause"]);
+                plays(cx, &path, &["-b", "2", "do", "playback.play"]);
             }
             cx.run_until_parked();
             std::thread::sleep(Duration::from_millis(20));

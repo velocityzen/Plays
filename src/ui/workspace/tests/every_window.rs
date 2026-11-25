@@ -1,6 +1,6 @@
 //! The "all" commands, run in one window, reach every block in every
 //! window, so a block popped out onto another display stays with the
-//! others. Closing all is a window's own.
+//! others. Closing all is a window's own, as are Play and Pause Window.
 
 use gpui::{Entity, TestAppContext, VisualTestContext, WindowHandle};
 use serde_json::Value;
@@ -170,4 +170,47 @@ fn closing_all_is_a_windows_own_and_the_rest_take_no_window(cx: &mut TestAppCont
             .unwrap()
     };
     assert_eq!((blocks(front, &cx), blocks(back, &cx)), (0, 1));
+}
+
+#[gpui::test]
+fn play_and_pause_set_a_block_or_a_window_as_asked_whatever_it_was(cx: &mut TestAppContext) {
+    let (front, back, mut cx) = two_windows(cx);
+    let windows = [front, back];
+    let block = view(front, &cx).read_with(&cx, |view, _| view.id().to_string());
+    let window = |window: WindowHandle<Workspace>, cx: &VisualTestContext| {
+        window
+            .read_with(cx, |workspace, _| workspace.id().to_string())
+            .unwrap()
+    };
+
+    // Twice each: the second finds it so already, and leaves it.
+    for _ in 0..2 {
+        run(
+            &mut cx,
+            Invocation::new("playback.play").on_block(block.clone()),
+        )
+        .unwrap();
+        assert_eq!(playing(&windows, &cx), [true, false]);
+    }
+    for _ in 0..2 {
+        run(
+            &mut cx,
+            Invocation::new("playback.pause").on_block(block.clone()),
+        )
+        .unwrap();
+        assert_eq!(playing(&windows, &cx), [false, false]);
+    }
+
+    // A window's blocks, not the other's.
+    for _ in 0..2 {
+        let play = Invocation::new("playback.play_window").in_window(window(back, &cx));
+        run(&mut cx, play).unwrap();
+        assert_eq!(playing(&windows, &cx), [false, true]);
+    }
+    run(&mut cx, Invocation::new("playback.play")).unwrap();
+    for _ in 0..2 {
+        let pause = Invocation::new("playback.pause_window").in_window(window(back, &cx));
+        run(&mut cx, pause).unwrap();
+        assert_eq!(playing(&windows, &cx), [true, false]);
+    }
 }

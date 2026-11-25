@@ -269,6 +269,10 @@ fn playback_ways(plan: &Plan) -> Option<Vec<Way>> {
         | "playback.next_frame_all"
         | "playback.previous_frame_all" => vec![way(vec![playing()], vec![it()])],
         "playback.pause_all" => vec![way(vec![command("playback.play_all")], vec![it()])],
+        "playback.pause" => vec![way(vec![playing()], vec![it(), it()])],
+        "playback.pause_window" => {
+            vec![way(vec![command("playback.play_window")], vec![it(), it()])]
+        }
         // Paused, and playing on, as it was.
         "playback.previous_file" | "playback.next_file" => {
             vec![

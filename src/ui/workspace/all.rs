@@ -2,7 +2,7 @@
 //! block popped out onto another display stays with the others, whether it
 //! plays here or on a device it casts to.
 
-use gpui::{App, Entity, WindowId};
+use gpui::{App, Context, Entity, WindowId};
 
 use super::Workspace;
 use crate::app::player_windows;
@@ -15,6 +15,20 @@ impl Workspace {
         self.blocks
             .iter()
             .any(|block| block.view.read(cx).is_playing())
+    }
+
+    /// Play every block in this window, or pause them all (`false`).
+    pub fn set_playing(&mut self, playing: bool, cx: &mut Context<Self>) {
+        for block in &self.blocks {
+            block.view.update(cx, |view, cx| {
+                if playing {
+                    view.play();
+                } else {
+                    view.pause();
+                }
+                cx.notify();
+            });
+        }
     }
 
     /// Whether it ticks often: something in it plays, or it's on its way

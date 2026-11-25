@@ -27,6 +27,28 @@ pub const COMMANDS: &[Spec] = &[
     .keywords(&["play", "pause", "resume", "stop"])
     .setting("play_pause")
     .keys(&["space", "p"]),
+    Spec::block(
+        "playback.play",
+        "Play",
+        "Play the block, unless it plays already; from the start if it played to its end.",
+        |player, _, cx| {
+            player.play();
+            cx.notify();
+        },
+    )
+    .tells(&["playback.playing"])
+    .keywords(&["resume", "start", "unpause"]),
+    Spec::block(
+        "playback.pause",
+        "Pause",
+        "Pause the block, unless it's paused already.",
+        |player, _, cx| {
+            player.pause();
+            cx.notify();
+        },
+    )
+    .tells(&["playback.paused"])
+    .keywords(&["stop", "hold"]),
     Spec::block_with(
         "playback.seek",
         "Seek To",
@@ -235,6 +257,22 @@ pub const COMMANDS: &[Spec] = &[
     )
     .tells(&["playback.paused"])
     .keywords(&["every", "stop"]),
+    Spec::blocks(
+        "playback.play_window",
+        "Play Window",
+        "Play every file in the window.",
+        |workspace, _, cx| workspace.set_playing(true, cx),
+    )
+    .tells(&["playback.playing"])
+    .keywords(&["every", "all", "resume"]),
+    Spec::blocks(
+        "playback.pause_window",
+        "Pause Window",
+        "Pause every file in the window.",
+        |workspace, _, cx| workspace.set_playing(false, cx),
+    )
+    .tells(&["playback.paused"])
+    .keywords(&["every", "all", "stop"]),
     Spec::every_block(
         "playback.restart_all",
         "Restart All",

@@ -582,6 +582,20 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 - Keys: Space, P
 - Tells: `playback.playing`, `playback.paused`.
 
+### Play
+
+`playback.play`: Play the block, unless it plays already; from the start if it played to its end.
+
+- Acts on a block.
+- Tells: `playback.playing`.
+
+### Pause
+
+`playback.pause`: Pause the block, unless it's paused already.
+
+- Acts on a block.
+- Tells: `playback.paused`.
+
 ### Seek To
 
 `playback.seek`: Play from a time in the file, here or on the device it's cast to.
@@ -708,6 +722,20 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 `playback.pause_all`: Pause every file in every window.
 
 - Acts on every block in every window.
+- Tells: `playback.paused`.
+
+### Play Window
+
+`playback.play_window`: Play every file in the window.
+
+- Acts on every block in a window.
+- Tells: `playback.playing`.
+
+### Pause Window
+
+`playback.pause_window`: Pause every file in the window.
+
+- Acts on every block in a window.
 - Tells: `playback.paused`.
 
 ### Restart All
@@ -1419,7 +1447,7 @@ A file began playing.
   - `position`: How far through the file it is, from 0 to 1; none while its duration isn't known, as a live stream's.
   - `time`: Where it is, in seconds.
   - `frame`: The number of the frame showing then, from 0; none for sound alone.
-- Follows: `playback.play_pause`, `playback.previous_file`, `playback.next_file`, `playback.play_file`, `playback.play_pause_all`, `playback.play_all`, `playback.sync_all`, a file opening while Autoplay is on, or a playlist going on to its next file, once one plays to its end.
+- Follows: `playback.play_pause`, `playback.play`, `playback.previous_file`, `playback.next_file`, `playback.play_file`, `playback.play_pause_all`, `playback.play_all`, `playback.play_window`, `playback.sync_all`, a file opening while Autoplay is on, or a playlist going on to its next file, once one plays to its end.
 
 ### playback.paused
 
@@ -1431,7 +1459,7 @@ A file paused.
   - `position`: How far through the file it is, from 0 to 1; none while its duration isn't known, as a live stream's.
   - `time`: Where it is, in seconds.
   - `frame`: The number of the frame showing then, from 0; none for sound alone.
-- Follows: `playback.play_pause`, `playback.next_frame`, `playback.previous_frame`, `playback.play_pause_all`, `playback.pause_all`, `playback.next_frame_all`, `playback.previous_frame_all`, or `playback.sync_all`.
+- Follows: `playback.play_pause`, `playback.pause`, `playback.next_frame`, `playback.previous_frame`, `playback.play_pause_all`, `playback.pause_all`, `playback.pause_window`, `playback.next_frame_all`, `playback.previous_frame_all`, or `playback.sync_all`.
 
 ### playback.seeked
 

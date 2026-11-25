@@ -7,8 +7,8 @@ its type, once its first run is over ([lua.md](lua.md)).
 -- solo.lua: as a block plays, the others in its window pause
 plays.on("playback.playing", function(ctx, event)
   for _, block in ipairs(plays.block.ls()) do
-    if block.id ~= ctx.block_id and block.playing then
-      plays.playback.play_pause{block_id = block.id}
+    if block.id ~= ctx.block_id then
+      plays.playback.pause{block_id = block.id}
     end
   end
 end)
@@ -46,7 +46,7 @@ plays do solo.lua   # listening: 1 handler; Ctrl-C to stop
 -- stop-at.lua: the block plays on to the frame `frame` names, and pauses
 local cue = ("block.%s.position@%df"):format(plays.block_id, plays.args.frame)
 plays.on(cue, function(ctx, event)
-  plays.playback.play_pause()
+  plays.playback.pause()
   plays.log(("paused at frame %d, %.3fs"):format(event.frame, event.time))
 end)
 ```
