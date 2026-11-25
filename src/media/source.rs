@@ -59,6 +59,13 @@ fn is(entry: &DirEntry, listed: fn(&FileType) -> bool, followed: fn(&Path) -> bo
 #[cfg(test)]
 pub(crate) static FOLLOWED: std::sync::Mutex<Vec<PathBuf>> = std::sync::Mutex::new(Vec::new());
 
+/// Whether `path` is a video file or a sound file, by its name; `None` if
+/// Plays doesn't open its format.
+pub fn kind_of(path: &Path) -> Option<file_types::Kind> {
+    let extension = path.extension()?.to_str()?;
+    file_types::format_of(extension).map(|format| format.kind)
+}
+
 /// A file of a format Plays opens (`file_types::FORMATS`), and not hidden.
 fn is_media(path: &Path) -> bool {
     let hidden = path

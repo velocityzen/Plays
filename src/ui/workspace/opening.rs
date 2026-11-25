@@ -10,7 +10,7 @@ use serde_json::json;
 
 use super::Workspace;
 use crate::media::Source;
-use crate::media::source::media_in;
+use crate::media::source::{kind_of, media_in};
 use crate::recents;
 use crate::settings::{Settings, SeveralFiles};
 use crate::ui::open_url::{OpenUrlDialog, OpenUrlEvent};
@@ -22,6 +22,12 @@ pub struct Opening {
     /// Whether each plays from the moment it opens: as Settings →
     /// Playback say if `None`.
     pub autoplay: Option<bool>,
+    /// Several files in a block each, or in one playing them in turn: as
+    /// Settings → Playback say if `None`.
+    pub several_files: Option<SeveralFiles>,
+    /// Only a folder's video files, or only its sound files: all its
+    /// media files if `None`.
+    pub kind: Option<file_types::Kind>,
 }
 
 impl Workspace {
@@ -36,9 +42,9 @@ impl Workspace {
         self.open_as(sources, Opening::default(), cx);
     }
 
-    /// Open `sources` as `open_sources` does, playing as `opening` says.
+    /// Open `sources` as `open_sources` does, but as `opening` says.
     pub fn open_as(&mut self, sources: Vec<Source>, opening: Opening, cx: &mut Context<Self>) {
-        let listing = cx.background_spawn(async move { expand_folders(sources) });
+        let listing = cx.background_spawn(async move { expand_folders(sources, opening.kind) });
         cx.spawn(async move |this, cx| {
             let sources = listing.await;
             this.update(cx, |this, cx| this.add_players(sources, opening, cx))
@@ -54,7 +60,8 @@ impl Workspace {
             return;
         };
         let settings = cx.global::<Settings>();
-        let in_turn = settings.several_files == SeveralFiles::Playlist;
+        let in_turn =
+            opening.several_files.unwrap_or(settings.several_files) == SeveralFiles::Playlist;
         let autoplay = opening.autoplay.unwrap_or(settings.autoplay);
         let (blocks, playlist) = if in_turn {
             (vec![first.clone()], sources)
@@ -131,15 +138,17 @@ impl Workspace {
     }
 }
 
-/// Replace folders with the media files directly inside them. Looks at
-/// the disk, so not for the UI thread.
-fn expand_folders(sources: Vec<Source>) -> Vec<Source> {
+/// Replace folders with the media files directly inside them, only those
+/// of `kind` if there is one. Looks at the disk, so not for the UI thread.
+fn expand_folders(sources: Vec<Source>, kind: Option<file_types::Kind>) -> Vec<Source> {
     sources
         .into_iter()
         .flat_map(|source| match source {
-            Source::File(path) if path.is_dir() => {
-                media_in(&path).into_iter().map(Source::File).collect()
-            }
+            Source::File(path) if path.is_dir() => media_in(&path)
+                .into_iter()
+                .filter(|file| kind.is_none_or(|kind| kind_of(file) == Some(kind)))
+                .map(Source::File)
+                .collect(),
             source => vec![source],
         })
         .collect()

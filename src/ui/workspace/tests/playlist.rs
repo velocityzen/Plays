@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use gpui::{Entity, TestAppContext, VisualTestContext, WindowHandle};
-use serde_json::Value;
+use serde_json::{Value, json};
 
 use super::open;
 use crate::api::{self, Invocation};
@@ -322,5 +322,53 @@ fn previous_and_next_go_as_far_as_its_playlist(cx: &mut TestAppContext) {
         [Invocation::new("playback.next_file")
             .with_args(Value::Null)
             .on_block(name.clone())]
+    );
+}
+
+#[gpui::test]
+fn open_takes_a_folder_s_videos_or_sound_files_together_or_in_turn_whatever_settings_say(
+    cx: &mut TestAppContext,
+) {
+    let (window, mut cx) = testing::start(cx);
+    let folder = fixture("");
+    let open = |kind: &str, several: &str, cx: &mut VisualTestContext| {
+        let invocation = Invocation::new("app.open").with_args(json!({
+            "urls": [folder],
+            "kind": kind,
+            "several_files": several,
+        }));
+        TestAppContext::update(cx, |cx| api::run(invocation, cx)).unwrap();
+    };
+    let opened = |count: usize, cx: &mut VisualTestContext| {
+        let all = wait_until(cx, |cx| {
+            window
+                .read_with(cx, |workspace, _| workspace.players().len() == count)
+                .unwrap()
+        });
+        assert!(all, "{count} blocks didn't open in {OPEN_WAIT:?}");
+        window
+            .read_with(cx, |workspace, _| workspace.players())
+            .unwrap()
+    };
+
+    in_turn(&mut cx);
+    open("audio", "together", &mut cx);
+    let blocks = opened(3, &mut cx);
+    let names: Vec<String> = blocks.iter().map(|block| at(block, &cx).0).collect();
+    assert_eq!(names, ["tone.m4a", "tune.flac", "western-tags.wav"]);
+    assert!(
+        blocks.iter().all(|block| at(block, &cx).1.is_none()),
+        "each in a block of its own, Settings saying in turn"
+    );
+
+    cx.update(|_, cx| Settings::update(cx, false, |s| s.several_files = SeveralFiles::Together));
+    open("video", "playlist", &mut cx);
+    let block = opened(4, &mut cx).pop().expect("the videos' block");
+    plays(&block, &mut cx);
+    let videos = media_in(&folder).len() - names.len();
+    let counter = format!("1 of {videos}");
+    assert_eq!(
+        at(&block, &cx),
+        playing("clip-chapters.mkv", Some(&counter))
     );
 }

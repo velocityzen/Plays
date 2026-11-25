@@ -897,6 +897,10 @@ fn every_argument_is_picked_from_a_list_but_times_volumes_paths_and_names(cx: &m
         ["window.rename", "block.rename"],
         "these ask for a name themselves"
     );
+    let open = api::find("app.open").unwrap();
+    let urls = serde_json::from_value(json!({"urls": ["/a.mkv"]})).unwrap();
+    let then = TestAppContext::update(&cx, |cx| asking::next(open, &["urls"], &urls, &here, cx));
+    assert!(then.is_none(), "it opens as Settings say");
 }
 
 #[gpui::test]

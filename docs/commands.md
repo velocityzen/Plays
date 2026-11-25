@@ -19,6 +19,8 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 - Arguments:
   - `urls` (a list of text): Each a file's or folder's full path, a file:// URL, or a stream's URL.
   - `autoplay` (true or false, optional): Whether each plays as it opens, or opens paused: as Settings say if not given.
+  - `several_files` (one of together, playlist, optional): Several, or a folder's, each in a block of its own (together), or in one playing them one after another (playlist): as Settings say if not given.
+  - `kind` (one of video, audio, optional): Only the video files in folders, or only the sound files: all their media files if not given.
 - Hands back: {window}: the id of the window they open in.
 - Tells: `window.created`, `window.active_changed`, `block.created`, `window.layout_changed`, `block.active_changed`, `playback.opened`.
 

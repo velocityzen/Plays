@@ -189,6 +189,8 @@ fn choices(
         ("app.settings.get" | "app.settings.reset", "key") => ("Setting", settings(true, on.cx)),
         ("app.settings.set", "key") => ("Setting", settings(false, on.cx)),
         ("app.settings.set", "value") => ("Value", setting_values(args, on)?),
+        // Opened as Settings say: the palette asks only what to open.
+        ("app.open", _) => return None,
         (_, name) => match arg.kind {
             Kind::Choice(words) => {
                 let none = (!arg.required).then_some(match spec.id {

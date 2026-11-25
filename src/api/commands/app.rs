@@ -15,7 +15,7 @@ use crate::api::target::{self, Target};
 use crate::app::{AudioEngine, updates};
 use crate::media::Source;
 use crate::recents;
-use crate::settings::{OverVideo, Panel, Settings};
+use crate::settings::{OverVideo, Panel, Settings, SeveralFiles};
 use crate::ui::about::{self, AboutView};
 use crate::ui::sentence::capitalized;
 use crate::ui::settings::{ABOUT, DEFAULT_PLAYER, SettingsView, ffmpeg_version};
@@ -55,6 +55,18 @@ pub const COMMANDS: &[Spec] = &[
                 "autoplay",
                 Kind::Toggle,
                 "Whether each plays as it opens, or opens paused: as Settings say if not given.",
+            ),
+            Arg::optional(
+                "several_files",
+                Kind::Choice(|| vec!["together", "playlist"]),
+                "Several, or a folder's, each in a block of its own (together), or in one \
+                 playing them one after another (playlist): as Settings say if not given.",
+            ),
+            Arg::optional(
+                "kind",
+                Kind::Choice(|| vec!["video", "audio"]),
+                "Only the video files in folders, or only the sound files: all their media \
+                 files if not given.",
             ),
         ],
         open,
@@ -332,13 +344,37 @@ fn debug_info(cx: &App) -> Result<String, Error> {
 struct Open {
     urls: Vec<String>,
     autoplay: Option<bool>,
+    several_files: Option<SeveralFiles>,
+    kind: Option<MediaKind>,
+}
+
+/// Video or sound, as `app.open`'s `kind` says it.
+#[derive(Clone, Copy, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum MediaKind {
+    Video,
+    Audio,
+}
+
+impl From<MediaKind> for file_types::Kind {
+    fn from(kind: MediaKind) -> Self {
+        match kind {
+            MediaKind::Video => Self::Video,
+            MediaKind::Audio => Self::Audio,
+        }
+    }
 }
 
 /// Open what `args` list in the window `target` names, or the one in
 /// front, bringing it to the front, or in a new window with none open.
 /// Hands back the window's id.
 fn open(args: Args, target: &Target, cx: &mut App) -> Outcome {
-    let Open { urls, autoplay } = args.read()?;
+    let Open {
+        urls,
+        autoplay,
+        several_files,
+        kind,
+    } = args.read()?;
     let sources = urls
         .iter()
         .map(|url| source(url).map_err(|why| Error::bad_args(args.command, why)))
@@ -352,7 +388,12 @@ fn open(args: Args, target: &Target, cx: &mut App) -> Outcome {
     window
         .update(cx, |workspace, window, cx| {
             window.activate_window();
-            workspace.open_as(sources, Opening { autoplay }, cx);
+            let opening = Opening {
+                autoplay,
+                several_files,
+                kind: kind.map(Into::into),
+            };
+            workspace.open_as(sources, opening, cx);
         })
         .map_err(|_| Error::failed("the window has closed"))?;
     Ok(json!({"window": target::read(window, cx)?.id().to_string()}))
