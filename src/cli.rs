@@ -506,7 +506,8 @@ fn given_arguments(command: &str, pairs: &[String], json: Option<&str>) -> Resul
 
 /// `pairs`, each `KEY=VALUE`, as `command`'s arguments: each value as its
 /// argument takes it, text as given, numbers and the rest read as JSON.
-/// A key given again, or one taking a list, makes a list.
+/// A key given again, or one taking a list, makes a list; one taking a
+/// list of words takes them apart at commas, and none from `KEY=`.
 fn arguments(command: &str, pairs: &[String]) -> Result<Value, Stop> {
     if pairs.is_empty() {
         return Ok(Value::Null);
@@ -520,6 +521,17 @@ fn arguments(command: &str, pairs: &[String]) -> Result<Value, Stop> {
         let kind = spec
             .and_then(|spec| spec.args.iter().find(|arg| arg.name == key))
             .map(|arg| &arg.kind);
+        if let Some(Kind::Choices(_)) = kind {
+            let words = text
+                .split(',')
+                .map(str::trim)
+                .filter(|word| !word.is_empty());
+            let listed = args.entry(key).or_insert_with(|| json!([]));
+            if let Value::Array(listed) = listed {
+                listed.extend(words.map(Value::from));
+            }
+            continue;
+        }
         let value = typed(kind, text);
         match args.get_mut(key) {
             Some(Value::Array(values)) => values.push(value),
@@ -539,7 +551,7 @@ fn arguments(command: &str, pairs: &[String]) -> Result<Value, Stop> {
 /// as JSON if it is some, as given if not.
 fn typed(kind: Option<&Kind>, text: &str) -> Value {
     match kind {
-        Some(Kind::Text | Kind::Texts | Kind::Choice(_)) => text.into(),
+        Some(Kind::Text | Kind::Texts | Kind::Choice(_) | Kind::Choices(_)) => text.into(),
         _ => serde_json::from_str(text).unwrap_or_else(|_| text.into()),
     }
 }

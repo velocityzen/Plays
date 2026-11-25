@@ -123,17 +123,28 @@ impl OverVideo {
         notes: false,
     };
 
+    /// The panels, by their keys here.
+    pub const PANELS: [&'static str; 4] = ["controls", "top_bar", "track_switcher", "notes"];
+
     /// The panels shown, by their keys here.
     pub fn visible(self) -> Vec<&'static str> {
-        [
-            ("controls", self.controls),
-            ("top_bar", self.top_bar),
-            ("track_switcher", self.track_switcher),
-            ("notes", self.notes),
-        ]
-        .into_iter()
-        .filter_map(|(panel, shown)| shown.then_some(panel))
-        .collect()
+        Self::PANELS
+            .into_iter()
+            .zip([self.controls, self.top_bar, self.track_switcher, self.notes])
+            .filter_map(|(panel, shown)| shown.then_some(panel))
+            .collect()
+    }
+
+    /// The panels `visible` names, by their keys here, shown, and the rest
+    /// hidden.
+    pub fn showing(visible: &[impl AsRef<str>]) -> Self {
+        let shows = |panel| visible.iter().any(|name| name.as_ref() == panel);
+        Self {
+            controls: shows("controls"),
+            top_bar: shows("top_bar"),
+            track_switcher: shows("track_switcher"),
+            notes: shows("notes"),
+        }
     }
 
     /// With `panel` turned on, or off.

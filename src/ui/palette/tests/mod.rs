@@ -966,6 +966,21 @@ fn lists_offer_what_there_is_with_what_is_picked_now(cx: &mut TestAppContext) {
     assert!(ratios[0].current, "none set");
     assert!(labels(&ratios).contains(&"16:9".to_owned()));
 
+    let panels = choices("block.set_ui", &mut cx);
+    assert_eq!(
+        labels(&panels),
+        [
+            "None",
+            "All",
+            "Only Controls",
+            "Only Top Bar",
+            "Only Track Switcher",
+            "Only Notes"
+        ]
+    );
+    assert_eq!(panels[0].args["visible"], json!([]));
+    assert!(panels[1].current, "each shows");
+
     let windows = choices("block.move_to_window", &mut cx);
     assert!(windows.is_empty(), "no other window to move to");
     let places = choices("window.move", &mut cx);

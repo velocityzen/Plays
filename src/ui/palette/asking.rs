@@ -198,6 +198,7 @@ fn choices(
                 });
                 ("Pick one", words_of(spec, name, words(), none, on))
             }
+            Kind::Choices(words) => ("Pick", lists_of(spec, name, words(), on)),
             _ => return None,
         },
     };
@@ -476,6 +477,43 @@ fn words_of(
     off.into_iter().chain(listed).collect()
 }
 
+/// Lists of `words` to pick from for the argument `name`, as `spec` takes
+/// them: none, all of them, and each alone; the one it has now picked.
+fn lists_of(spec: &Spec, name: &str, words: Vec<&'static str>, on: &mut On) -> Vec<Choice> {
+    let now = on.state(spec.id);
+    let list = |label: String, listed: Vec<&'static str>| {
+        let current = now == json!(listed);
+        let mut args = Map::new();
+        args.insert(name.to_owned(), json!(listed));
+        Choice::new(label, Value::Object(args)).current(current)
+    };
+    let mut lists = vec![
+        list("None".to_owned(), Vec::new()),
+        list("All".to_owned(), words.clone()),
+    ];
+    if words.len() > 1 {
+        lists.extend(
+            words
+                .iter()
+                .map(|&word| list(format!("Only {}", titled(word)), vec![word])),
+        );
+    }
+    lists
+}
+
+/// A word as a label: `top_bar` as Top Bar.
+fn titled(word: &str) -> String {
+    word.split('_')
+        .map(|part| {
+            let mut chars = part.chars();
+            chars.next().map_or_else(String::new, |first| {
+                first.to_uppercase().chain(chars).collect()
+            })
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 /// For one typed that's read otherwise than its kind says, what the
 /// field says and how it's read: a time, a path, a setting's number.
 fn typed(
@@ -566,6 +604,12 @@ fn read_typed(arg: &Arg, typed: &str) -> Result<Value, String> {
             _ => return Err("Type a number".to_owned()),
         },
         Kind::Texts => json!([typed]),
+        Kind::Choices(_) => json!(
+            typed
+                .split([',', ' '])
+                .filter(|word| !word.is_empty())
+                .collect::<Vec<_>>()
+        ),
         Kind::Any => serde_json::from_str(typed).unwrap_or_else(|_| json!(typed)),
         Kind::Text | Kind::Choice(_) => json!(typed),
     };

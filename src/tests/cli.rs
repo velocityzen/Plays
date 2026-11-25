@@ -573,6 +573,19 @@ fn arguments_are_typed_as_their_commands_take_them() {
         "as given, if it isn't"
     );
     assert_eq!(
+        args(
+            "window.set_ui",
+            &["visible=controls,notes", "visible=top_bar"]
+        ),
+        json!({"visible": ["controls", "notes", "top_bar"]}),
+        "a list of words, apart at commas"
+    );
+    assert_eq!(
+        args("window.set_ui", &["visible="]),
+        json!({"visible": []}),
+        "none"
+    );
+    assert_eq!(
         args("no.such", &["a=1", "a=x"]),
         json!({"a": [1, "x"]}),
         "again, a list"

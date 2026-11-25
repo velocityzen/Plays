@@ -37,9 +37,10 @@ pub const COMMANDS: &[Spec] = &[
         "Say all about the window: where it is, how it shows and its blocks.",
         Scope::Window,
         "{id, label, title, number, front, blocks: [as block.ls], bounds: {x, y, width, height}, \
-         display, full_screen, on_top}: as window.ls says, its blocks as block.ls lists \
-         them, where it is in points, the id of the display it's on, and whether it's \
-         full screen and floats on top.",
+         display, full_screen, on_top, visible}: as window.ls says, its blocks as block.ls \
+         lists them, where it is in points, the id of the display it's on, whether it's \
+         full screen and floats on top, and the panels over the video it shows in blocks \
+         opened in it, of controls, top_bar, track_switcher and notes.",
         inspect,
     )
     .keywords(&["info", "details", "describe"]),
@@ -319,6 +320,25 @@ pub const COMMANDS: &[Spec] = &[
     )
     .tells(TELLS_UI)
     .keywords(&["hide", "interface", "ui", "panels", "clean"]),
+    Spec::window_with(
+        "window.set_ui",
+        "Show Panels in Window",
+        "Show the panels named over the video in each block in the window, and those \
+         opened in it, and hide the rest.",
+        &[PANELS_SHOWN],
+        |args, workspace, _, cx| {
+            let ShowPanels { visible } = args.read()?;
+            workspace.show_over_video(OverVideo::showing(&visible), cx);
+            done()
+        },
+    )
+    .tells(TELLS_UI)
+    .keywords(&["hide", "interface", "ui", "panels", "clean", "show"])
+    .state(|target, cx| {
+        target::in_window(target, cx, |workspace, _, _| {
+            Ok(json!(workspace.over_video().visible()))
+        })
+    }),
     Spec::window(
         "window.toggle_controls",
         "Show Controls in Window",
@@ -364,6 +384,19 @@ pub const COMMANDS: &[Spec] = &[
 
 /// What a change to the panels over the video in a window tells.
 const TELLS_UI: &[&str] = &["window.ui_changed", "block.ui_changed"];
+
+/// The panels over the video `window.set_ui` and `block.set_ui` show.
+pub const PANELS_SHOWN: Arg = Arg::required(
+    "visible",
+    Kind::Choices(|| OverVideo::PANELS.to_vec()),
+    "The panels to show; those not named hide.",
+);
+
+#[derive(Deserialize)]
+pub struct ShowPanels {
+    #[serde(deserialize_with = "crate::api::args::words")]
+    pub visible: Vec<String>,
+}
 
 /// The windows' events.
 pub const EVENTS: &[EventKind] = &[

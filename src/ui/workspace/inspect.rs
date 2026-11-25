@@ -26,7 +26,8 @@ impl Workspace {
 
     /// All `window.inspect` says of it: its summary; where it is, in
     /// points, and on which display; whether it's full screen and floats
-    /// on top; and its blocks, as `block.ls` says.
+    /// on top; the panels over the video it shows in blocks opened in it;
+    /// and its blocks, as `block.ls` says.
     pub fn inspect(
         &self,
         number: usize,
@@ -49,6 +50,7 @@ impl Workspace {
             ("display".into(), json!(displays::of(window, cx))),
             ("full_screen".into(), json!(window.is_fullscreen())),
             ("on_top".into(), json!(self.on_top)),
+            ("visible".into(), json!(self.over_video.visible())),
             ("blocks".into(), Value::from(self.blocks_listed(cx))),
         ]);
         inspected

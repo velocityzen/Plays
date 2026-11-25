@@ -196,6 +196,7 @@ fn window_ways(plan: &Plan) -> Option<Vec<Way>> {
         ],
         "window.focus" => Plan::twice(plan.back()),
         "window.rename" => Plan::twice(plan.with(json!({"label": "Den"}))),
+        "window.set_ui" => Plan::twice(plan.with(json!({"visible": []}))),
         "window.back" | "window.recent" => vec![way(vec![command("window.next")], vec![plan.it()])],
         "window.move" => Plan::twice(plan.with(json!({"position": 1}))),
         "window.exit_full_screen" => {
@@ -234,6 +235,7 @@ fn block_ways(plan: &Plan) -> Option<Vec<Way>> {
         "block.rename" => Plan::twice(plan.with(json!({"label": "Low"}))),
         "block.move" => Plan::twice(plan.with(json!({"position": 2}))),
         "block.move_to_window" => Plan::twice(plan.with(json!({"window": plan.world.back}))),
+        "block.set_ui" => Plan::twice(plan.with(json!({"visible": ["notes"]}))),
         _ => return None,
     })
 }

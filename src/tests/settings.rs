@@ -296,3 +296,27 @@ fn a_broken_file_is_kept_aside_and_saved_over_whole(cx: &mut TestAppContext) {
     assert_eq!(Settings::load(&folder).master_volume, 0.75);
     assert_eq!(kept_aside(&path).as_deref(), Some(half));
 }
+
+#[test]
+fn panels_shown_by_name_are_those_named_whatever_the_order() {
+    for bits in 0..16_u8 {
+        let over_video = OverVideo {
+            controls: bits & 1 != 0,
+            top_bar: bits & 2 != 0,
+            track_switcher: bits & 4 != 0,
+            notes: bits & 8 != 0,
+        };
+        let mut visible = over_video.visible();
+        assert_eq!(OverVideo::showing(&visible), over_video, "{visible:?}");
+        visible.reverse();
+        assert_eq!(OverVideo::showing(&visible), over_video, "{visible:?}");
+    }
+    assert_eq!(
+        OverVideo::showing(&["notes", "bars"]),
+        OverVideo {
+            notes: true,
+            ..OverVideo::NONE
+        },
+        "what it doesn't know passed over"
+    );
+}

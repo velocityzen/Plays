@@ -27,6 +27,8 @@ pub enum Kind {
     Texts,
     /// One of these words.
     Choice(fn() -> Vec<&'static str>),
+    /// A list of these words, none too.
+    Choices(fn() -> Vec<&'static str>),
     /// Any value, null too, which the command checks itself.
     Any,
 }
@@ -80,6 +82,10 @@ impl Arg {
                 fields.insert("type".into(), "choice".into());
                 fields.insert("choices".into(), choices().into());
             }
+            Kind::Choices(choices) => {
+                fields.insert("type".into(), "choices".into());
+                fields.insert("choices".into(), choices().into());
+            }
             Kind::Any => {
                 fields.insert("type".into(), "any".into());
             }
@@ -124,6 +130,25 @@ impl Arg {
                     _ => Err(format!("{name} is one of {}", choices.join(", "))),
                 }
             }
+            (Kind::Choices(choices), value) => {
+                let choices = choices();
+                let listed = match value {
+                    Value::Array(items) => items
+                        .iter()
+                        .all(|item| item.as_str().is_some_and(|word| choices.contains(&word))),
+                    // Lua's empty table.
+                    Value::Object(fields) => fields.is_empty(),
+                    _ => false,
+                };
+                if listed {
+                    Ok(())
+                } else {
+                    Err(format!(
+                        "{name} is a list of any of {}, none too",
+                        choices.join(", ")
+                    ))
+                }
+            }
         }
     }
 }
@@ -165,6 +190,22 @@ pub fn check(command: &str, takes: &[Arg], args: &Value) -> Result<(), Error> {
         }
     }
     Ok(())
+}
+
+/// A list of words, as `Kind::Choices` takes it, for a command's own type
+/// to read with `#[serde(deserialize_with = "args::words")]`: an empty
+/// object, Lua's empty table, is none.
+pub fn words<'de, D: serde::Deserializer<'de>>(given: D) -> Result<Vec<String>, D::Error> {
+    #[derive(serde::Deserialize)]
+    #[serde(untagged)]
+    enum Words {
+        Listed(Vec<String>),
+        Empty {},
+    }
+    Ok(match serde::Deserialize::deserialize(given)? {
+        Words::Listed(words) => words,
+        Words::Empty {} => Vec::new(),
+    })
 }
 
 /// `args`, checked already, as `T`.

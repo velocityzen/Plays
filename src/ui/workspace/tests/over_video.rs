@@ -579,3 +579,94 @@ fn a_mouse_resting_over_the_picture_fades_the_controls(cx: &mut TestAppContext) 
     cx.run_until_parked();
     assert!(resting(&cx));
 }
+
+#[gpui::test]
+fn set_ui_shows_just_the_panels_named_and_inspect_says_which(cx: &mut TestAppContext) {
+    let (window, mut cx) = testing::start(cx);
+    open(window, &mut cx, &["clip.mp4", "tone.m4a"], false);
+    let blocks = window
+        .read_with(&cx, |workspace, _| workspace.players())
+        .unwrap();
+    let name = window
+        .read_with(&cx, |workspace, _| workspace.id().to_string())
+        .unwrap();
+    let set = |cx: &mut VisualTestContext, invocation: Invocation| {
+        let done = TestAppContext::update(cx, |cx| api::run(invocation, cx));
+        cx.run_until_parked();
+        done.unwrap()
+    };
+    let notes = OverVideo {
+        notes: true,
+        ..OverVideo::NONE
+    };
+
+    // The first block's controls hidden of its own: the window's set shows
+    // the same in each, whatever each showed.
+    on_block(&blocks[0], "block.toggle_controls", &mut cx);
+    let window_set = |visible: Value| {
+        Invocation::new("window.set_ui")
+            .with_args(json!({ "visible": visible }))
+            .in_window(name.clone())
+    };
+    set(&mut cx, window_set(json!(["notes"])));
+    assert_eq!(in_window(window, &cx), notes);
+    for block in &blocks {
+        assert_eq!(in_block(block, &cx), notes);
+    }
+    set(&mut cx, window_set(json!(OverVideo::PANELS)));
+    for block in &blocks {
+        assert_eq!(
+            in_block(block, &cx),
+            OverVideo::default(),
+            "each, the first too"
+        );
+    }
+    // None, and again none: as asked, not flipped.
+    for _ in 0..2 {
+        set(&mut cx, window_set(json!([])));
+        assert_eq!(in_window(window, &cx), OverVideo::NONE);
+        assert_eq!(in_block(&blocks[1], &cx), OverVideo::NONE);
+    }
+
+    // A block's, the other's left as it is.
+    let block_name = blocks[0].read_with(&cx, |view, _| view.id().to_string());
+    let block_set = Invocation::new("block.set_ui")
+        .with_args(json!({"visible": ["top_bar", "controls"]}))
+        .on_block(block_name.clone());
+    set(&mut cx, block_set);
+    let bars = OverVideo {
+        controls: true,
+        top_bar: true,
+        ..OverVideo::NONE
+    };
+    assert_eq!(in_block(&blocks[0], &cx), bars);
+    assert_eq!(in_block(&blocks[1], &cx), OverVideo::NONE);
+
+    // As inspect says, and the commands' state.
+    let inspected = set(
+        &mut cx,
+        Invocation::new("block.inspect").on_block(block_name.clone()),
+    );
+    assert_eq!(inspected["visible"], json!(["controls", "top_bar"]));
+    let inspected = set(
+        &mut cx,
+        Invocation::new("window.inspect").in_window(name.clone()),
+    );
+    assert_eq!(inspected["visible"], json!([]));
+    let state = |command: &str, target: Target, cx: &mut VisualTestContext| {
+        TestAppContext::update(cx, |cx| api::state(command, &target, cx)).unwrap()
+    };
+    let target = Target {
+        window: None,
+        block: Some(block_name),
+    };
+    assert_eq!(
+        state("block.set_ui", target, &mut cx),
+        json!(["controls", "top_bar"])
+    );
+    let target = Target {
+        window: Some(name),
+        block: None,
+    };
+    assert_eq!(state("window.set_ui", target, &mut cx), json!([]));
+}

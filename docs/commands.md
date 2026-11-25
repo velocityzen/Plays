@@ -122,7 +122,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 `window.inspect`: Say all about the window: where it is, how it shows and its blocks.
 
 - Acts on a player window.
-- Hands back: {id, label, title, number, front, blocks: [as block.ls], bounds: {x, y, width, height}, display, full_screen, on_top}: as window.ls says, its blocks as block.ls lists them, where it is in points, the id of the display it's on, and whether it's full screen and floats on top.
+- Hands back: {id, label, title, number, front, blocks: [as block.ls], bounds: {x, y, width, height}, display, full_screen, on_top, visible}: as window.ls says, its blocks as block.ls lists them, where it is in points, the id of the display it's on, whether it's full screen and floats on top, and the panels over the video it shows in blocks opened in it, of controls, top_bar, track_switcher and notes.
 
 ### New Window
 
@@ -296,6 +296,15 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 - Acts on a player window.
 - Tells: `window.ui_changed`, `block.ui_changed`.
 
+### Show Panels in Window
+
+`window.set_ui`: Show the panels named over the video in each block in the window, and those opened in it, and hide the rest.
+
+- Acts on a player window.
+- Arguments:
+  - `visible` (a list of any of controls, top_bar, track_switcher, notes, none too): The panels to show; those not named hide.
+- Tells: `window.ui_changed`, `block.ui_changed`.
+
 ### Show Controls in Window
 
 `window.toggle_controls`: Show the seek bar and buttons at the bottom of each block in the window, and those opened in it, or hide them.
@@ -338,7 +347,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 `block.inspect`: Say all about the block: what it plays, where it is, and how it's set to play.
 
 - Acts on a block.
-- Hands back: {as block.ls, window, window_title, position, duration, frame_rate, ended, volume, muted, looping, tracks: {video, audio, subtitles: [{number, label, language, title, codec, format, default, forced, hearing_impaired, file}]}, picked: {video, audio, subtitles}, delays: {audio, subtitles}, picture: {turns, mirrored, aspect_ratio, crop}, chapter, chapters: [{number, name, start, end}], casting: {id, kind, name} or null, output: {id, name} or null}: its window's id and title, times in seconds (duration null for a live stream), frames a second (null for sound alone), volume from 0 to 100, tracks and chapters numbered from 1, the tracks picked and the chapter by number or null, delays in seconds, quarter turns clockwise, and the output it plays through of its own.
+- Hands back: {as block.ls, window, window_title, position, duration, frame_rate, ended, volume, muted, looping, tracks: {video, audio, subtitles: [{number, label, language, title, codec, format, default, forced, hearing_impaired, file}]}, picked: {video, audio, subtitles}, delays: {audio, subtitles}, picture: {turns, mirrored, aspect_ratio, crop}, chapter, chapters: [{number, name, start, end}], casting: {id, kind, name} or null, output: {id, name} or null, visible}: its window's id and title, times in seconds (duration null for a live stream), frames a second (null for sound alone), volume from 0 to 100, tracks and chapters numbered from 1, the tracks picked and the chapter by number or null, delays in seconds, quarter turns clockwise, the output it plays through of its own, and the panels over its video it shows, of controls, top_bar, track_switcher and notes.
 
 ### Go to Block
 
@@ -535,6 +544,15 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 `block.toggle_ui`: Hide every panel over the block's video while any shows, else show them all.
 
 - Acts on a block.
+- Tells: `block.ui_changed`.
+
+### Show Panels
+
+`block.set_ui`: Show the panels named over the block's video, and hide the rest.
+
+- Acts on a block.
+- Arguments:
+  - `visible` (a list of any of controls, top_bar, track_switcher, notes, none too): The panels to show; those not named hide.
 - Tells: `block.ui_changed`.
 
 ### Show Controls
@@ -1316,7 +1334,7 @@ The panels shown over the video in a window's blocks, and those opened in it, ch
 - Payload:
   - `window_id`, `window_title`: its window's.
   - `visible`: Those shown, of `controls`, `top_bar`, `track_switcher` and `notes`.
-- Follows: `app.toggle_ui`, `app.toggle_controls`, `app.toggle_top_bar`, `app.toggle_track_switcher`, `app.toggle_notes`, `window.toggle_ui`, `window.toggle_controls`, `window.toggle_top_bar`, `window.toggle_track_switcher`, `window.toggle_notes`, `app.settings.set`, `app.settings.reset`, `app.settings.reload`, or Settings turning a panel over the video on or off, importing a settings file or resetting every setting.
+- Follows: `app.toggle_ui`, `app.toggle_controls`, `app.toggle_top_bar`, `app.toggle_track_switcher`, `app.toggle_notes`, `window.toggle_ui`, `window.set_ui`, `window.toggle_controls`, `window.toggle_top_bar`, `window.toggle_track_switcher`, `window.toggle_notes`, `app.settings.set`, `app.settings.reset`, `app.settings.reload`, or Settings turning a panel over the video on or off, importing a settings file or resetting every setting.
 
 ### window.layout_changed
 
@@ -1400,7 +1418,7 @@ The panels shown over a block's video changed.
 - Payload:
   - `window_id`, `window_title`, `block_id`, `block_title`: its window's and its block's.
   - `visible`: Those shown, of `controls`, `top_bar`, `track_switcher` and `notes`.
-- Follows: `app.toggle_ui`, `app.toggle_controls`, `app.toggle_top_bar`, `app.toggle_track_switcher`, `app.toggle_notes`, `window.toggle_ui`, `window.toggle_controls`, `window.toggle_top_bar`, `window.toggle_track_switcher`, `window.toggle_notes`, `block.toggle_ui`, `block.toggle_controls`, `block.toggle_top_bar`, `block.toggle_track_switcher`, `block.toggle_notes`, `app.settings.set`, `app.settings.reset`, `app.settings.reload`, or Settings turning a panel over the video on or off, importing a settings file or resetting every setting.
+- Follows: `app.toggle_ui`, `app.toggle_controls`, `app.toggle_top_bar`, `app.toggle_track_switcher`, `app.toggle_notes`, `window.toggle_ui`, `window.set_ui`, `window.toggle_controls`, `window.toggle_top_bar`, `window.toggle_track_switcher`, `window.toggle_notes`, `block.toggle_ui`, `block.set_ui`, `block.toggle_controls`, `block.toggle_top_bar`, `block.toggle_track_switcher`, `block.toggle_notes`, `app.settings.set`, `app.settings.reset`, `app.settings.reload`, or Settings turning a panel over the video on or off, importing a settings file or resetting every setting.
 
 ## playback
 

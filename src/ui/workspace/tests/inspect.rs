@@ -95,6 +95,7 @@ fn window_ls_and_inspect_say_what_each_window_is(cx: &mut TestAppContext) {
             "display": display,
             "full_screen": false,
             "on_top": false,
+            "visible": ["controls", "top_bar", "track_switcher", "notes"],
         })
     );
     let other = query(
@@ -313,8 +314,8 @@ fn block_inspect_says_how_a_block_plays(cx: &mut TestAppContext) {
         "picture": {"turns": 1, "mirrored": true, "aspect_ratio": "4:3", "crop": "16:9"},
         "chapter": null,
         "chapters": [],
-        "casting": null,
-        "output": null,
+        "casting": null, "output": null,
+        "visible": ["controls", "top_bar", "track_switcher", "notes"],
     });
     assert_eq!(
         on_block(&mut cx, "block.inspect", Value::Null, "Subs"),

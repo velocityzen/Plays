@@ -68,6 +68,19 @@ fn what_is_typed_is_read_as_its_kind_says_and_checked() {
         read_typed(arg(Kind::Texts, true), "/a b"),
         Ok(json!(["/a b"]))
     );
+    let panels = arg(Kind::Choices(|| vec!["bars", "notes"]), true);
+    assert_eq!(
+        read_typed(panels, "notes, bars"),
+        Ok(json!(["notes", "bars"]))
+    );
+    assert_eq!(
+        read_typed(panels, "notes bars"),
+        Ok(json!(["notes", "bars"]))
+    );
+    assert_eq!(
+        read_typed(panels, "reel"),
+        Err("Level is a list of any of bars, notes, none too".to_owned())
+    );
     assert_eq!(read_typed(arg(Kind::Any, true), "0.5"), Ok(json!(0.5)));
     assert_eq!(read_typed(arg(Kind::Any, true), "dark"), Ok(json!("dark")));
 }

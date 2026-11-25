@@ -122,6 +122,50 @@ fn takes_numbers_and_lists_of_text() {
 }
 
 #[test]
+fn takes_lists_of_words_none_too() {
+    let takes = [Arg::required(
+        "visible",
+        Kind::Choices(|| vec!["controls", "notes"]),
+        "Which.",
+    )];
+    let checked = |args: Value| check("go", &takes, &args);
+    for visible in [json!(["notes", "controls"]), json!(["notes"]), json!([])] {
+        assert_eq!(checked(json!({ "visible": visible })), Ok(()), "{visible}");
+    }
+    assert_eq!(
+        checked(json!({"visible": {}})),
+        Ok(()),
+        "none, as Lua's empty table is"
+    );
+    for visible in [
+        json!(["notes", "bars"]),
+        json!("notes"),
+        json!({"notes": true}),
+        json!([1]),
+    ] {
+        assert_eq!(
+            checked(json!({ "visible": visible })),
+            bad("visible is a list of any of controls, notes, none too"),
+            "{visible}"
+        );
+    }
+    assert_eq!(
+        takes[0].describe(),
+        json!({"name": "visible", "type": "choices", "choices": ["controls", "notes"], "required": true, "description": "Which."})
+    );
+
+    #[derive(Deserialize)]
+    struct Visible {
+        #[serde(deserialize_with = "words")]
+        visible: Vec<String>,
+    }
+    let read = |args: Value| read::<Visible>("go", &args).unwrap().visible;
+    assert_eq!(read(json!({"visible": ["notes"]})), ["notes"]);
+    assert_eq!(read(json!({"visible": {}})), [] as [String; 0]);
+    assert_eq!(read(json!({"visible": []})), [] as [String; 0]);
+}
+
+#[test]
 fn takes_any_value_null_too_for_the_command_to_check() {
     let takes = [Arg::required("value", Kind::Any, "What to set.")];
     let checked = |args: Value| check("go", &takes, &args);

@@ -22,6 +22,18 @@ impl Workspace {
         self.follow_over_video(old, shown, cx);
     }
 
+    /// Show the panels `shown` has, and hide the others, in it and each of
+    /// its blocks, whatever each showed.
+    pub fn show_over_video(&mut self, shown: OverVideo, cx: &mut Context<Self>) {
+        self.over_video = shown;
+        for block in &self.blocks {
+            block
+                .view
+                .update(cx, |view, cx| view.set_over_video(shown, cx));
+        }
+        cx.notify();
+    }
+
     /// Show or hide the panels `old` and `new` tell apart as `new` has
     /// them, in it and each of its blocks.
     fn follow_over_video(&mut self, old: OverVideo, new: OverVideo, cx: &mut Context<Self>) {
