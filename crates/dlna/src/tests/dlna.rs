@@ -423,6 +423,28 @@ fn without_events_it_is_asked() {
     drop(session);
 }
 
+/// A speaker that starts playing somewhere else while it's asked what it
+/// does and where it is, whichever answer that comes after, is said to
+/// play there, and never where it was.
+#[test]
+fn starting_between_two_questions_is_heard_where_it_starts() {
+    for after in ["GetTransportInfo", "GetPositionInfo"] {
+        let fake = FakeRenderer::start(Renderer::Speaker);
+        let (session, mut events) = Session::connect(&fake.device()).unwrap();
+        session.load(&film()).unwrap();
+        fake.state().plays_after = Some((after.into(), 30.0));
+        let playing = status(&mut events, |status| {
+            status.state == TransportState::Playing
+        });
+        assert_eq!(
+            playing.and_then(|status| status.position),
+            Some(30.0),
+            "starting after {after}"
+        );
+        drop(session);
+    }
+}
+
 /// A TV that takes subscriptions but whose events never come, as when a
 /// firewall stops them, is asked what it does instead.
 #[test]
@@ -472,17 +494,27 @@ fn a_position_is_heard_when_it_first_comes_and_polls_can_come_often() {
     assert_eq!(session.status().position_at, Some(heard));
 
     // Where it said it was, halfway between the asking and the answer:
-    // it's then asked what it's doing, which takes as long again, so the
-    // status comes one and a half answers after that.
+    // after it got the question, and, asked last, half an answer before
+    // the status comes.
     let answer_after = Duration::from_millis(200);
-    fake.state().answer_after = answer_after;
-    fake.state().position = 20.0;
+    let calls = {
+        let mut state = fake.state();
+        state.answer_after = answer_after;
+        state.position = 20.0;
+        state.calls.len()
+    };
     let heard = status(&mut events, |status| status.position == Some(20.0))
         .and_then(|status| status.position_at)
         .expect("when it was heard");
     let since = heard.elapsed();
+    let asked_at = fake.state().calls[calls..]
+        .iter()
+        .find(|call| call.action == "GetPositionInfo")
+        .map(|call| call.at)
+        .expect("asked where it is");
+    assert!(heard > asked_at, "heard when it was asked");
     assert!(
-        since >= answer_after * 5 / 4,
+        since >= answer_after * 2 / 5,
         "heard {since:?} ago, not when the answer came"
     );
     fake.state().answer_after = Duration::ZERO;

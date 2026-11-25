@@ -88,6 +88,9 @@ pub struct State {
     pub rel_time: bool,
     /// Whether it refuses another URI while it plays.
     pub locked_while_playing: bool,
+    /// Once it has answered the action, it plays from the position, as
+    /// one that starts somewhere between two questions.
+    pub plays_after: Option<(String, f64)>,
     /// How long it takes to answer an action, after it's done it.
     pub answer_after: Duration,
     /// How long it takes to answer a renewal, after it's counted it.
@@ -231,6 +234,7 @@ impl FakeRenderer {
             refuse: Vec::new(),
             rel_time: kind == Kind::Tv,
             locked_while_playing: false,
+            plays_after: None,
             answer_after: Duration::ZERO,
             renew_after: Duration::ZERO,
             silent: false,
@@ -603,6 +607,10 @@ fn control(service: &'static str, shared: &Shared, message: &Message) -> Reply {
         Ok(answer) => answer,
         Err(fault) => return fault,
     };
+    if let Some((_, position)) = state.plays_after.take_if(|(after, _)| *after == action) {
+        state.transport = "PLAYING".into();
+        state.position = position;
+    }
     let out: Vec<(&str, &str)> = out
         .iter()
         .map(|(name, value)| (*name, value.as_str()))

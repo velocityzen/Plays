@@ -308,13 +308,24 @@ impl Inner {
                 .any(|subscription| subscription.of == of)
     }
 
-    /// Ask where it is, and what it's doing when that doesn't come as
-    /// events.
-    fn poll(&self, polls: u32) -> Result<Option<Ended>> {
+    /// Where it says it is, and when it was there: halfway between the
+    /// asking and the answer.
+    fn position_heard(&self, timeout: Duration) -> Result<(Position, Instant)> {
         let asked = Instant::now();
-        let position = self.position(POLL_ANSWER)?;
-        // It said where it was halfway between the asking and the answer.
-        let heard = asked + asked.elapsed() / 2;
+        let position = self.position(timeout)?;
+        Ok((position, asked + asked.elapsed() / 2))
+    }
+
+    /// Ask what it's doing when that doesn't come as events, then where it
+    /// is: one that starts playing somewhere between the two isn't said to
+    /// play where it was before.
+    fn poll(&self, polls: u32) -> Result<Option<Ended>> {
+        let state = if self.evented(Evented::AvTransport) {
+            None
+        } else {
+            Some(self.transport_state(POLL_ANSWER)?)
+        };
+        let (position, heard) = self.position_heard(POLL_ANSWER)?;
         let suspect = std::mem::take(&mut self.state().suspect)
             || position
                 .track_uri
@@ -323,11 +334,6 @@ impl Inner {
         if suspect && self.replaced() {
             return Ok(Some(Ended::Replaced));
         }
-        let state = if self.evented(Evented::AvTransport) {
-            None
-        } else {
-            Some(self.transport_state(POLL_ANSWER)?)
-        };
         self.update(|status| {
             status.heard_at(position.position, heard);
             if position.duration.is_some() {
