@@ -54,10 +54,12 @@ fn connected() -> Vec<DeviceInfo> {
     let mut all = vec![DeviceInfo {
         id: "coreaudio:Speakers".into(),
         name: HERE.into(),
+        bluetooth: false,
     }];
     all.extend(CONNECTED.lock().unwrap().iter().map(|id| DeviceInfo {
         id: id.clone(),
         name: name_of(id).into(),
+        bluetooth: true,
     }));
     all
 }

@@ -272,6 +272,7 @@ fn block_inspect_says_how_a_block_plays(cx: &mut TestAppContext) {
         let desk = DeviceInfo {
             id: "desk".into(),
             name: "Desk".into(),
+            bluetooth: false,
         };
         AudioEngine::set_devices(vec![desk], cx);
     });
@@ -339,6 +340,7 @@ fn output_display_and_cast_ls_list_whats_there(cx: &mut TestAppContext) {
         let device = |id: &str, name: &str| DeviceInfo {
             id: id.into(),
             name: name.into(),
+            bluetooth: false,
         };
         let outputs = vec![
             device("desk", "Desk"),

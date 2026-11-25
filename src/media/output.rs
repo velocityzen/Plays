@@ -11,7 +11,10 @@ use std::time::{Duration, Instant};
 use airplay::{AudioStream, Event as ReceiverEvent};
 use anyhow::{Context as _, Result, anyhow};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use cpal::{DeviceId, ErrorKind, FromSample, Sample as _, SampleFormat, SizedSample};
+use cpal::{
+    DeviceDescription, DeviceId, ErrorKind, FromSample, InterfaceType, Sample as _, SampleFormat,
+    SizedSample,
+};
 use futures::channel::mpsc::UnboundedReceiver;
 
 use super::audio::{Mixer, SOURCE_CHANNELS};
@@ -28,6 +31,9 @@ const MOST_CALLBACK_FRAMES: usize = 8192;
 const SPEAKER_RATE: u32 = 44_100;
 /// Frames in each packet sent to an AirPlay speaker, mixed at a time.
 const SPEAKER_FRAMES: usize = 352;
+/// What the ALSA names of BlueALSA's outputs, Bluetooth devices', start
+/// with: `bluealsa`, `bluealsa:DEV=…,PROFILE=a2dp`.
+const BLUEALSA: &str = "bluealsa";
 
 /// An output device, as the system names it.
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -36,6 +42,8 @@ pub struct DeviceInfo {
     /// `DeviceId` as text).
     pub id: String,
     pub name: String,
+    /// It's connected by Bluetooth.
+    pub bluetooth: bool,
 }
 
 /// A mixer for an output, at `master_volume`, made before the output so
@@ -51,10 +59,14 @@ pub fn devices() -> Vec<DeviceInfo> {
         Ok(devices) => devices
             .filter(can_play)
             .filter_map(|device| {
-                let id = device.id().ok()?.to_string();
+                let id = device.id().ok()?;
+                let description = device.description().ok();
                 Some(DeviceInfo {
-                    id,
-                    name: name(&device),
+                    name: description
+                        .as_ref()
+                        .map_or_else(|| device.to_string(), |d| d.name().to_owned()),
+                    bluetooth: is_bluetooth(&id, description.as_ref()),
+                    id: id.to_string(),
                 })
             })
             .collect(),
@@ -63,6 +75,29 @@ pub fn devices() -> Vec<DeviceInfo> {
             Vec::new()
         }
     }
+}
+
+/// Whether device `id`, described so, is connected by Bluetooth: as macOS
+/// says, which cpal doesn't ask, or as cpal describes it elsewhere.
+fn is_bluetooth(id: &DeviceId, description: Option<&DeviceDescription>) -> bool {
+    #[cfg(target_os = "macos")]
+    if core_audio::is_bluetooth(id.id()) {
+        return true;
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = id;
+    description.is_some_and(described_bluetooth)
+}
+
+/// Whether a device described so is connected by Bluetooth: on Windows, by
+/// the bus its endpoint is on; on Linux, a BlueALSA output. Those PipeWire
+/// and PulseAudio play through are behind their one ALSA output, so there's
+/// no telling.
+fn described_bluetooth(description: &DeviceDescription) -> bool {
+    description.interface_type() == InterfaceType::Bluetooth
+        || description
+            .driver()
+            .is_some_and(|driver| driver.starts_with(BLUEALSA))
 }
 
 /// Whether `device` has a format to play in, as ALSA lists plugins that
@@ -148,6 +183,11 @@ mod core_audio {
     const STREAMS: u32 = u32::from_be_bytes(*b"stm#");
     /// `kAudioStreamPropertyLatency`, 'ltnc'.
     const LATENCY: u32 = u32::from_be_bytes(*b"ltnc");
+    /// `kAudioDevicePropertyTransportType`, 'tran'.
+    const TRANSPORT_TYPE: u32 = u32::from_be_bytes(*b"tran");
+    /// `kAudioDeviceTransportTypeBluetooth` and
+    /// `kAudioDeviceTransportTypeBluetoothLE`, 'blue' and 'blea'.
+    const BLUETOOTH: [u32; 2] = [u32::from_be_bytes(*b"blue"), u32::from_be_bytes(*b"blea")];
 
     #[repr(C)]
     struct PropertyAddress {
@@ -183,9 +223,8 @@ mod core_audio {
         ) -> i32;
     }
 
-    /// The most latency, in frames, of the output streams of the device
-    /// whose UID is `uid`; 0 if it can't be read.
-    pub fn stream_latency(uid: &str) -> u32 {
+    /// The AudioObjectID of the device whose UID is `uid`, if there's one.
+    fn device(uid: &str) -> Option<u32> {
         use core_foundation::base::TCFType;
         use core_foundation::string::CFString;
 
@@ -210,9 +249,42 @@ mod core_audio {
                 (&raw mut device).cast(),
             )
         };
-        if status != 0 || device == 0 {
+        (status == 0 && device != 0).then_some(device)
+    }
+
+    /// Whether the device whose UID is `uid` is connected by Bluetooth,
+    /// Classic or LE; not if it can't be read.
+    pub fn is_bluetooth(uid: &str) -> bool {
+        let Some(device) = device(uid) else {
+            return false;
+        };
+        let address = PropertyAddress {
+            selector: TRANSPORT_TYPE,
+            scope: SCOPE_GLOBAL,
+            element: ELEMENT_MAIN,
+        };
+        let mut transport = 0u32;
+        let mut size = size_of::<u32>() as u32;
+        // SAFETY: the answer is a UInt32, which `transport` holds.
+        let status = unsafe {
+            AudioObjectGetPropertyData(
+                device,
+                &address,
+                0,
+                std::ptr::null(),
+                &mut size,
+                (&raw mut transport).cast(),
+            )
+        };
+        status == 0 && BLUETOOTH.contains(&transport)
+    }
+
+    /// The most latency, in frames, of the output streams of the device
+    /// whose UID is `uid`; 0 if it can't be read.
+    pub fn stream_latency(uid: &str) -> u32 {
+        let Some(device) = device(uid) else {
             return 0;
-        }
+        };
 
         let address = PropertyAddress {
             selector: STREAMS,

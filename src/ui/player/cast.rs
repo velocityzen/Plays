@@ -38,6 +38,9 @@ use crate::ui::theme::motion::{CAST_POLL, NEXT_CAST_POLL};
 use crate::ui::theme::player::{CAST_MENU_WIDTH, ERROR_MAX_WIDTH, PIP_ICON, TRACK_MENU_OFFSET};
 use crate::ui::theme::text::TextStyle;
 
+/// What a Bluetooth output says it is.
+const BLUETOOTH: &str = "Bluetooth";
+
 /// A block's cast.
 pub(super) struct Cast {
     pub(super) link: Link,
@@ -602,7 +605,7 @@ impl PlayerView {
             );
             // As the devices say theirs: a speaker also cast to, with DLNA
             // say, is told apart.
-            if let Some(kind) = output_kind(&output.id) {
+            if let Some(kind) = says(&output) {
                 row = row.detail(
                     div()
                         .debug_selector(move || format!("sound-{i}-kind"))
@@ -662,6 +665,13 @@ impl Choices {
             && self.sound.is_empty()
             && self.outputs.is_empty()
     }
+}
+
+/// What `output` says it is, on the right of its row: the protocol it's
+/// reached by, or Bluetooth. This computer's others, built in or wired,
+/// say nothing.
+fn says(output: &DeviceInfo) -> Option<&'static str> {
+    output_kind(&output.id).or(output.bluetooth.then_some(BLUETOOTH))
 }
 
 /// Whether output `id` is the device `cast`, as an AirPlay TV is both.

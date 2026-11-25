@@ -50,6 +50,7 @@ fn connected(outputs: &[(&str, &str)], cx: &mut VisualTestContext) {
         .map(|&(id, name)| DeviceInfo {
             id: id.into(),
             name: name.into(),
+            bluetooth: false,
         })
         .collect();
     cx.update(|_, cx| AudioEngine::set_devices(devices, cx));
@@ -134,6 +135,36 @@ fn a_blocks_menu_says_where_its_picture_and_its_sound_play(cx: &mut TestAppConte
     assert!(checked(&mut cx, "cast-1") && checked(&mut cx, "cast-here"));
     assert!(!checked(&mut cx, "sound-1") && !checked(&mut cx, "sound-0"));
     assert!(!shows(&mut cx, "sound-cast"), "listed once");
+}
+
+#[gpui::test]
+fn a_bluetooth_output_says_so_on_a_blocks_menu(cx: &mut TestAppContext) {
+    let (window, mut cx) = testing::start(cx);
+    open(window, &mut cx, &["tone.m4a"], false);
+    let output = |id: &str, name: &str, bluetooth| DeviceInfo {
+        id: id.into(),
+        name: name.into(),
+        bluetooth,
+    };
+    let devices = vec![
+        output("coreaudio:BuiltInSpeakerDevice", "Speakers", false),
+        output("coreaudio:00-00-5E-00-53-01:output", "Radio", true),
+    ];
+    cx.update(|_, cx| AudioEngine::set_devices(devices, cx));
+    click(&mut cx, "cast");
+    // What's written on the row tagged `row`.
+    let says = |cx: &mut VisualTestContext, row: &'static str| {
+        let row = find(cx, row);
+        painted(cx)
+            .into_iter()
+            .filter(|(_, bounds)| row.contains(&bounds.center()))
+            .map(|(text, _)| text.to_string())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(says(&mut cx, "sound-1"), ["Radio", "Bluetooth"]);
+    assert!(shows(&mut cx, "sound-1-kind"));
+    assert_eq!(says(&mut cx, "sound-0"), ["Speakers"], "built in, nothing");
+    assert!(!shows(&mut cx, "sound-0-kind"));
 }
 
 #[gpui::test]
@@ -383,6 +414,7 @@ fn a_window_sent_to_a_display_plays_through_its_speakers_until_it_comes_back(
         let device = |id: &str, name: &str| DeviceInfo {
             id: id.into(),
             name: name.into(),
+            bluetooth: false,
         };
         let devices = vec![
             device("desk", "Desk"),
@@ -465,6 +497,7 @@ fn outputs(names: &[&str]) -> Vec<DeviceInfo> {
         .map(|(index, name)| DeviceInfo {
             id: format!("output-{index}"),
             name: (*name).to_owned(),
+            bluetooth: false,
         })
         .collect()
 }

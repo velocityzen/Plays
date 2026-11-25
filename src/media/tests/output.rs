@@ -151,6 +151,39 @@ fn no_stream_latency_for_a_device_not_there() {
     assert_eq!(core_audio::stream_latency("no-such-device"), 0);
 }
 
+#[test]
+#[cfg(target_os = "macos")]
+fn a_device_not_there_is_not_bluetooth() {
+    assert!(!core_audio::is_bluetooth("no-such-device"));
+}
+
+#[test]
+fn bluetooth_as_windows_and_alsa_describe_it() {
+    let described = |interface, driver: &str| {
+        let description = cpal::DeviceDescriptionBuilder::new("Radio")
+            .interface_type(interface)
+            .driver(driver)
+            .build();
+        described_bluetooth(&description)
+    };
+    assert!(described(InterfaceType::Bluetooth, "wasapi"), "Windows");
+    assert!(
+        described(
+            InterfaceType::Unknown,
+            "bluealsa:DEV=00:00:5E:00:53:01,PROFILE=a2dp"
+        ),
+        "BlueALSA"
+    );
+    assert!(described(InterfaceType::Unknown, "bluealsa"));
+    assert!(!described(InterfaceType::BuiltIn, "wasapi"));
+    assert!(!described(InterfaceType::Usb, "wasapi"));
+    assert!(!described(InterfaceType::Unknown, "hw:CARD=PCH,DEV=0"));
+    assert!(
+        !described(InterfaceType::Unknown, "pipewire"),
+        "whatever's behind it"
+    );
+}
+
 /// Needs the machine's own audio outputs: `cargo test -- --ignored`.
 #[test]
 #[ignore = "plays through this machine's audio outputs"]

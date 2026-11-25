@@ -175,6 +175,7 @@ impl Speakers {
             .map(|receiver| DeviceInfo {
                 id: format!("{PREFIX}{}", receiver.id),
                 name: receiver.name,
+                bluetooth: false,
             })
             .collect()
     }

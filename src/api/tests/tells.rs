@@ -523,6 +523,7 @@ fn check(namespace: &str, cx: &mut TestAppContext) {
             vec![DeviceInfo {
                 id: "speakers".into(),
                 name: "Speakers".into(),
+                bluetooth: false,
             }],
             cx,
         );

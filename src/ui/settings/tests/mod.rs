@@ -533,6 +533,7 @@ fn casting_lists_a_speaker_found_with_airplay_and_another_protocol_with_each(
         let phantom = DeviceInfo {
             id: "airplay:ph".into(),
             name: "Phantom".into(),
+            bluetooth: false,
         };
         AudioEngine::set_devices(vec![phantom], cx);
     });

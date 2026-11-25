@@ -517,6 +517,7 @@ fn outputs_devices_and_casts_are_told_as_found_and_started(cx: &mut TestAppConte
             vec![DeviceInfo {
                 id: "speakers".into(),
                 name: "Speakers".into(),
+                bluetooth: false,
             }],
             cx,
         );

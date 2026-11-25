@@ -51,6 +51,7 @@ pub fn not_connected(paired: &[Paired], outputs: &[DeviceInfo]) -> Vec<DeviceInf
         .map(|device| DeviceInfo {
             id: output_id(&device.address),
             name: device.name.clone(),
+            bluetooth: true,
         })
         .filter(|device| !outputs.iter().any(|output| output.id == device.id))
         .collect()

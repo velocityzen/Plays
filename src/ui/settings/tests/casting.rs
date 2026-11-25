@@ -14,6 +14,7 @@ fn output(id: &str, name: &str) -> DeviceInfo {
     DeviceInfo {
         id: id.into(),
         name: name.into(),
+        bluetooth: false,
     }
 }
 

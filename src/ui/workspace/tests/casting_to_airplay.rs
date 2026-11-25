@@ -149,10 +149,12 @@ fn a_tv_cast_to_is_checked_for_the_sound_as_the_output_it_is_too(cx: &mut TestAp
         DeviceInfo {
             id: "desk".into(),
             name: "Desk".into(),
+            bluetooth: false,
         },
         DeviceInfo {
             id: format!("airplay:{}", found.id),
             name: found.name,
+            bluetooth: false,
         },
     ];
     cx.update(|_, cx| AudioEngine::set_devices(outputs, cx));

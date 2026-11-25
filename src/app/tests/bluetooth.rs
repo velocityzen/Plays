@@ -32,10 +32,12 @@ fn lists_those_not_connected() {
         DeviceInfo {
             id: "coreaudio:BuiltInSpeakerDevice".into(),
             name: "MacBook Pro Speakers".into(),
+            bluetooth: false,
         },
         DeviceInfo {
             id: "coreaudio:00-00-5E-00-53-02:output".into(),
             name: "Pods".into(),
+            bluetooth: true,
         },
     ];
     assert_eq!(
@@ -43,6 +45,7 @@ fn lists_those_not_connected() {
         [DeviceInfo {
             id: "coreaudio:00-00-5E-00-53-01:output".into(),
             name: "Radio".into(),
+            bluetooth: true,
         }]
     );
 }
