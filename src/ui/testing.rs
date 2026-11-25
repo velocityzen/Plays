@@ -84,6 +84,22 @@ fn draw(cx: &mut VisualTestContext) {
     cx.run_until_parked();
 }
 
+/// Whether every block in `window` set to play has started, `count` of
+/// them: ticking each, as the window does while it doesn't draw, which
+/// the test platform does only when asked. One set to play starts once
+/// what it plays from is there.
+pub fn all_started(window: WindowHandle<Workspace>, count: usize, cx: &mut TestAppContext) -> bool {
+    window
+        .update(cx, |workspace, _, cx| {
+            let players = workspace.players();
+            for view in &players {
+                view.update(cx, |view, cx| view.background_tick(cx));
+            }
+            players.len() == count && players.iter().all(|view| view.read(cx).has_started())
+        })
+        .unwrap()
+}
+
 /// Where the element tagged `selector` is drawn.
 pub fn find(cx: &mut VisualTestContext, selector: &'static str) -> Bounds<Pixels> {
     draw(cx);

@@ -17,7 +17,7 @@ use serde_json::{Value, json};
 use super::*;
 use crate::api::events::cues;
 use crate::api::socket::tests::{serving, socket, talk};
-use crate::ui::testing::{fixture, wait_until};
+use crate::ui::testing::{self, fixture, wait_until};
 use crate::ui::theme::layout::WINDOW_SIZE;
 use crate::ui::workspace::Workspace;
 
@@ -902,14 +902,15 @@ fn events_hear_every_window_and_block_unless_one_is_named(cx: &mut TestAppContex
     let (path, window, mut cx) = serving("cli-events-all", cx);
     let playing = move |cx: &mut TestAppContext, playing: bool| {
         let now = wait_until(cx, |cx| {
-            window
-                .read_with(cx, |workspace, cx| {
-                    workspace.players().first().is_some_and(|view| {
-                        let view = view.read(cx);
-                        view.player().is_known() && view.is_playing() == playing
+            playing == testing::all_started(window, 1, cx)
+                && window
+                    .read_with(cx, |workspace, cx| {
+                        workspace.players().first().is_some_and(|view| {
+                            let view = view.read(cx);
+                            view.player().is_known() && view.is_playing() == playing
+                        })
                     })
-                })
-                .unwrap()
+                    .unwrap()
         });
         assert!(now, "playing: {playing}");
         // What changed is told now, as the app does every `LOOK_EVERY`.
@@ -1031,18 +1032,7 @@ fn files_dropped_are_heard_each_opened_then_playing(cx: &mut TestAppContext) {
             let listens = wait_until(cx, |cx| cx.update(api::events::listeners) == 1);
             assert!(listens, "it listens");
             drop_files(window, cx, &files);
-            let playing = wait_until(cx, |cx| {
-                window
-                    .read_with(cx, |workspace, cx| {
-                        let players = workspace.players();
-                        players.len() == files.len()
-                            && players.iter().all(|view| {
-                                let view = view.read(cx);
-                                view.player().is_known() && view.is_playing()
-                            })
-                    })
-                    .unwrap()
-            });
+            let playing = wait_until(cx, |cx| testing::all_started(window, files.len(), cx));
             assert!(playing, "each file dropped plays");
             // What changed is told now, as the app does every `LOOK_EVERY`.
             cx.update(api::events::look);

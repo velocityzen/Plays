@@ -347,7 +347,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 `block.inspect`: Say all about the block: what it plays, where it is, and how it's set to play.
 
 - Acts on a block.
-- Hands back: {as block.ls, window, window_title, position, duration, frame_rate, ended, volume, muted, looping, tracks: {video, audio, subtitles: [{number, label, language, title, codec, format, default, forced, hearing_impaired, file}]}, picked: {video, audio, subtitles}, delays: {audio, subtitles}, picture: {turns, mirrored, aspect_ratio, crop}, chapter, chapters: [{number, name, start, end}], casting: {id, kind, name} or null, output: {id, name} or null, visible}: its window's id and title, times in seconds (duration null for a live stream), frames a second (null for sound alone), volume from 0 to 100, tracks and chapters numbered from 1, the tracks picked and the chapter by number or null, delays in seconds, quarter turns clockwise, the output it plays through of its own, and the panels over its video it shows, of controls, top_bar, track_switcher and notes.
+- Hands back: {as block.ls, window, window_title, position, duration, frame_rate, ended, buffering, volume, muted, looping, tracks: {video, audio, subtitles: [{number, label, language, title, codec, format, default, forced, hearing_impaired, file}]}, picked: {video, audio, subtitles}, delays: {audio, subtitles}, picture: {turns, mirrored, aspect_ratio, crop}, chapter, chapters: [{number, name, start, end}], casting: {id, kind, name} or null, output: {id, name} or null, visible}: its window's id and title, times in seconds (duration null for a live stream), frames a second (null for sound alone), whether it waits for data to play from (just opened or sought, or a stream run dry), volume from 0 to 100, tracks and chapters numbered from 1, the tracks picked and the chapter by number or null, delays in seconds, quarter turns clockwise, the output it plays through of its own, and the panels over its video it shows, of controls, top_bar, track_switcher and notes.
 
 ### Go to Block
 
@@ -1457,7 +1457,7 @@ A file stopped playing on an error.
 
 ### playback.playing
 
-A file began playing.
+A file began playing: told once it moves, not as it's set to play while what it plays from isn't there yet, as just after it opens or a seek.
 
 - Heard by those listening to its window's events.
 - Payload:

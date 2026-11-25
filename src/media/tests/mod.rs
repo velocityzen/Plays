@@ -55,6 +55,52 @@ fn a_decoder_thread_failing_says_so_and_stops_waiting() {
     assert!(!player.tick().animate, "nothing more to draw");
 }
 
+/// Set to play as it opens, a player starts once what it plays from is
+/// there, its clock moving from then; a seek then doesn't take that back,
+/// and a pause does: played again, it waits for where it was sought to.
+#[test]
+fn a_player_starts_once_it_moves_and_a_seek_doesnt_take_that_back() {
+    let fixtures = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    let mixer = Mixer::detached(48_000);
+    let mut player = Player::open(
+        Source::File(fixtures.join("clip.mp4")),
+        Some(mixer.clone()),
+        options(true, false),
+    );
+    assert!(
+        player.is_playing() && !player.has_started(),
+        "nothing there yet"
+    );
+    let moving = |player: &mut Player| {
+        wait_until(Duration::from_secs(5), || {
+            player.tick();
+            !player.is_buffering()
+        })
+    };
+    assert!(moving(&mut player));
+    assert!(player.has_started());
+
+    player.seek(1.0);
+    assert!(
+        player.is_buffering() && player.has_started(),
+        "still started"
+    );
+    player.pause();
+    assert!(!player.has_started());
+    player.play();
+    assert!(!player.has_started(), "waits for 1 s");
+    assert!(moving(&mut player));
+    assert!(player.has_started());
+    let at = player.position();
+    std::thread::sleep(Duration::from_millis(100));
+    player.tick();
+    assert!(
+        player.position() > at,
+        "moving: {at} s, then {} s",
+        player.position()
+    );
+}
+
 /// A paused player with its queues full lets its decode thread sleep,
 /// rather than look for something to do hundreds of times a second.
 #[test]

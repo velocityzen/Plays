@@ -44,7 +44,8 @@ impl PlayerView {
     }
 
     /// All `block.inspect` says of it: its summary; where it is, how long
-    /// it is, its video's frame rate and whether it ended; its volume (in
+    /// it is, its video's frame rate, whether it ended and whether it waits
+    /// for data to play from; its volume (in
     /// percent), mute and loop; its tracks (numbered from 1 within each
     /// kind) and those picked; the delays and picture adjustments; its
     /// chapters (from 1) and the one it's in; the device it casts to; the
@@ -78,6 +79,7 @@ impl PlayerView {
             "duration": self.duration(),
             "frame_rate": info.as_deref().and_then(|info| info.frame_rate),
             "ended": self.playback.has_ended(),
+            "buffering": self.playback.is_buffering(),
             // In percent, as `audio.set_volume` takes it.
             "volume": (f64::from(player.volume()) * 100.0).round(),
             "muted": player.is_muted(),
@@ -154,7 +156,7 @@ impl PlayerView {
             opening: self.playback.openings(),
             opened,
             failed: player.error(),
-            playing: self.is_playing(),
+            playing: self.has_started(),
             ended: self.has_ended(),
             seeks,
             sought,

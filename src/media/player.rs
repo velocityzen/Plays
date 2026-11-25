@@ -71,6 +71,9 @@ pub struct Player {
     playing: bool,
     /// Waiting for data after opening, seeking or a network stall; the clock is held.
     buffering: bool,
+    /// It's playing, and has moved since it was set to: what it plays from
+    /// was there. A seek or a stall after doesn't take it back.
+    started: bool,
     /// The last seek is a scrub: whatever it has decoded shows.
     scrubbing: bool,
     buffering_since: Instant,
@@ -214,6 +217,7 @@ impl Player {
             current: None,
             playing: options.autoplay,
             buffering: true,
+            started: false,
             scrubbing: false,
             buffering_since: Instant::now(),
             ended: false,
@@ -376,11 +380,25 @@ impl Player {
         }
         self.playing = true;
         self.apply_running();
+        self.note_started();
     }
 
     pub fn pause(&mut self) {
         self.playing = false;
         self.apply_running();
+        self.note_started();
+    }
+
+    /// It's playing, and has moved since it was set to: not just set to
+    /// play while what it plays from isn't there yet.
+    pub fn has_started(&self) -> bool {
+        self.started
+    }
+
+    /// Note whether it has started, as it's set to play or not, and as it
+    /// waits for data or not.
+    fn note_started(&mut self) {
+        self.started = self.playing && (self.started || !self.buffering);
     }
 
     /// Seek to exactly `time`.
@@ -703,6 +721,7 @@ impl Player {
             }
         }
 
+        self.note_started();
         tick.animate = self.playing || self.buffering || self.scrubbing;
         tick
     }

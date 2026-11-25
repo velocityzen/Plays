@@ -289,7 +289,7 @@ fn block_inspect_says_how_a_block_plays(cx: &mut TestAppContext) {
         "position": 1.0,
         "duration": 2.021,
         "frame_rate": 25.0,
-        "ended": false,
+        "ended": false, "buffering": true, // sought, and not ticked since
         "volume": 50.0,
         "muted": true,
         "looping": true,

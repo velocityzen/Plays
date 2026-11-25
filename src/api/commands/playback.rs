@@ -394,8 +394,13 @@ pub const EVENTS: &[EventKind] = &[
         &[EventField::new("error", "Why.")],
     )
     .causes(&["a file that's damaged or a stream that went"]),
-    EventKind::block("playback.playing", "A file began playing.", PLAYHEAD)
-        .causes(&["a file opening while Autoplay is on", NEXT]),
+    EventKind::block(
+        "playback.playing",
+        "A file began playing: told once it moves, not as it's set to play while what it \
+         plays from isn't there yet, as just after it opens or a seek.",
+        PLAYHEAD,
+    )
+    .causes(&["a file opening while Autoplay is on", NEXT]),
     EventKind::block("playback.paused", "A file paused.", PLAYHEAD),
     EventKind::block(
         "playback.seeked",

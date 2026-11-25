@@ -66,6 +66,7 @@ pub struct BlockSeen {
     pub opened: Option<Value>,
     /// Why it couldn't open, or play on.
     pub failed: Option<String>,
+    /// It plays, and has moved since it was set to.
     pub playing: bool,
     /// Played to its end, and stopped there.
     pub ended: bool,

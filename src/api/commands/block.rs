@@ -39,13 +39,14 @@ pub const COMMANDS: &[Spec] = &[
         "Say all about the block: what it plays, where it is, and how it's set to play.",
         Scope::Block,
         "{as block.ls, window, window_title, position, duration, frame_rate, ended, \
-         volume, muted, looping, tracks: {video, audio, subtitles: [{number, label, \
+         buffering, volume, muted, looping, tracks: {video, audio, subtitles: [{number, label, \
          language, title, codec, format, default, forced, hearing_impaired, file}]}, \
          picked: {video, audio, subtitles}, delays: {audio, subtitles}, picture: {turns, \
          mirrored, aspect_ratio, crop}, chapter, chapters: [{number, name, start, end}], \
          casting: {id, kind, name} or null, output: {id, name} or null, visible}: its \
          window's id and title, times in seconds (duration null for a live stream), frames \
-         a second (null for sound alone), volume from 0 to 100, tracks and chapters \
+         a second (null for sound alone), whether it waits for data to play from (just \
+         opened or sought, or a stream run dry), volume from 0 to 100, tracks and chapters \
          numbered from 1, the tracks picked and the chapter by number or null, delays in \
          seconds, quarter turns clockwise, the output it plays through of its own, and \
          the panels over its video it shows, of controls, top_bar, track_switcher and \

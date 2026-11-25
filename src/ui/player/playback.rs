@@ -116,6 +116,21 @@ impl Playback {
         }
     }
 
+    /// Whether it plays and has moved since it was set to, here or on the
+    /// device it casts to, which says only whether it plays.
+    pub fn has_started(&self) -> bool {
+        match &self.cast {
+            Some(cast) => cast.link.is_playing(),
+            None => self.player.has_started(),
+        }
+    }
+
+    /// Whether it waits here for data before it plays on: just opened or
+    /// sought, or a stream run dry. Never while it casts.
+    pub fn is_buffering(&self) -> bool {
+        self.cast.is_none() && self.player.is_buffering()
+    }
+
     /// Where it is, here or on the device it casts to.
     pub fn position(&self) -> f64 {
         match &self.cast {
@@ -479,6 +494,12 @@ impl PlayerView {
     /// Whether it plays, here or on the device it casts to.
     pub fn is_playing(&self) -> bool {
         self.playback.is_playing()
+    }
+
+    /// Whether it plays and has moved since it was set to, as events tell
+    /// it playing.
+    pub fn has_started(&self) -> bool {
+        self.playback.has_started()
     }
 
     /// Where it is, here or on the device it casts to.

@@ -295,6 +295,43 @@ fn a_block_maximized_is_told_as_the_layout_changes(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn a_file_set_to_play_is_told_playing_once_it_moves_where_it_is_then(cx: &mut TestAppContext) {
+    let (window, mut cx) = testing::start(cx);
+    open(window, &mut cx, &["clip.mp4"], false);
+    let w = window_id(window, &cx);
+    let mut heard = listen(&mut cx, Scope::Window(w), false);
+    // Sought, and set to play: nothing to play from yet, as it isn't
+    // ticked till asked.
+    run(
+        &mut cx,
+        Invocation::new("playback.seek").with_args(json!({"time": 1.0})),
+    );
+    run(&mut cx, Invocation::new("playback.play"));
+    look(&mut cx);
+    assert_eq!(kinds(&mut heard), ["playback.seeked"]);
+    let inspected = run(&mut cx, Invocation::new("block.inspect"));
+    assert_eq!(
+        (&inspected["playing"], &inspected["buffering"]),
+        (&json!(true), &json!(true)),
+        "set to play, and waiting"
+    );
+
+    let started = wait_until(&mut cx, |cx| testing::all_started(window, 1, cx));
+    assert!(started, "it moved");
+    look(&mut cx);
+    let told = told(&mut heard);
+    assert_eq!(
+        told.iter().map(|event| event.kind).collect::<Vec<_>>(),
+        ["playback.playing"]
+    );
+    let time = told[0].payload["time"].as_f64().unwrap();
+    assert!(
+        (1.0..1.1).contains(&time),
+        "from where it was sought: {time}"
+    );
+}
+
+#[gpui::test]
 fn how_a_file_plays_is_told_for_its_controls_and_commands(cx: &mut TestAppContext) {
     let (window, mut cx) = testing::start(cx);
     open(window, &mut cx, &["clip-chapters.mkv"], true);

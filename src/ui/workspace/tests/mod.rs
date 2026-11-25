@@ -77,15 +77,16 @@ pub(super) fn open(
         .update(cx, |workspace, _, cx| workspace.open_paths(paths, cx))
         .unwrap();
     let ready = wait_until(cx, |cx| {
-        window
+        let known = window
             .read_with(cx, |workspace, cx| {
                 workspace.blocks.len() == files.len()
-                    && workspace.blocks.iter().all(|block| {
-                        let player = block.view.read(cx).player();
-                        player.is_known() && (!playing || player.is_playing())
-                    })
+                    && workspace
+                        .blocks
+                        .iter()
+                        .all(|block| block.view.read(cx).player().is_known())
             })
-            .unwrap()
+            .unwrap();
+        known && (!playing || testing::all_started(window, files.len(), cx))
     });
     assert!(ready, "{files:?} didn't open (and play) in {OPEN_WAIT:?}");
 }
