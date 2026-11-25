@@ -41,7 +41,13 @@ use metal::{
 use objc::{self, msg_send, sel, sel_impl};
 use parking_lot::Mutex;
 
-use std::{cell::Cell, ffi::c_void, mem, ptr, sync::Arc};
+use std::{
+    cell::Cell,
+    ffi::c_void,
+    mem, ptr,
+    sync::{Arc, mpsc},
+    time::Duration,
+};
 
 // Exported to metal
 pub(crate) type PointF = crate::Point<f32>;
@@ -57,6 +63,10 @@ const PATH_SAMPLE_COUNT: u32 = 4;
 /// be brighter than SDR white. Everything else draws exactly as it did in
 /// 8-bit sRGB. See PLAYS.md.
 const DRAWABLE_FORMAT: MTLPixelFormat = MTLPixelFormat::RGBA16Float;
+/// Plays: how long a frame waits for a drawable before it's left out, the
+/// screen not having let one go: three frames at 60 Hz. While the screen
+/// takes frames, one comes within a frame.
+const DRAWABLE_WAIT: Duration = Duration::from_millis(50);
 /// Plays: what's under backdrops is kept in half floats, as the drawable is.
 const BACKDROP_LEVEL_FORMAT: MTLPixelFormat = MTLPixelFormat::RGBA16Float;
 /// Plays: frames without an HDR surface before EDR is turned off again, so a
@@ -164,6 +174,85 @@ pub(crate) struct MetalRenderer {
     path_intermediate_texture: Option<metal::Texture>,
     path_intermediate_msaa_texture: Option<metal::Texture>,
     path_sample_count: u32,
+    /// Plays: asks for drawables off the main thread.
+    drawables: DrawableAsker,
+}
+
+/// Plays: asks the layer for drawables on a thread of its own. With every
+/// drawable holding a frame the screen hasn't taken, `nextDrawable` blocks
+/// until it takes one: up to a second for a window just gone under
+/// another, before macOS says it's covered and gpui stops drawing it.
+/// Asked on the main thread, that held up all else the app does there.
+struct DrawableAsker<D = metal::MetalDrawable> {
+    ask: Arc<dyn Fn() -> Option<D> + Send + Sync>,
+    asks: mpsc::Sender<()>,
+    answers: mpsc::Receiver<Option<D>>,
+    /// Whether an earlier frame's ask is unanswered.
+    asked: bool,
+}
+
+/// Plays: no drawable came in time for the frame.
+struct Late;
+
+impl DrawableAsker {
+    fn for_layer(layer: metal::MetalLayer) -> Self {
+        Self::new(move || {
+            objc::rc::autoreleasepool(|| layer.next_drawable().map(ToOwned::to_owned))
+        })
+    }
+}
+
+impl<D: Send + 'static> DrawableAsker<D> {
+    /// One asking with `ask`, which may block until there's one to give.
+    fn new(ask: impl Fn() -> Option<D> + Send + Sync + 'static) -> Self {
+        let ask = Arc::new(ask);
+        let (asks, asked) = mpsc::channel::<()>();
+        let (answer, answers) = mpsc::channel();
+        let asking = ask.clone();
+        let started = std::thread::Builder::new()
+            .name("drawables".into())
+            .spawn(move || {
+                for () in asked {
+                    if answer.send(asking()).is_err() {
+                        break;
+                    }
+                }
+            });
+        // Without it, the main thread asks, as gpui did.
+        if let Err(error) = started {
+            log::error!("failed to start asking for drawables: {error}");
+        }
+        Self {
+            ask,
+            asks,
+            answers,
+            asked: false,
+        }
+    }
+
+    /// A drawable for this frame, or none, the layer failing to make one;
+    /// or `Late`, the screen letting none go in `DRAWABLE_WAIT`, or since
+    /// an earlier frame asked.
+    fn next(&mut self) -> Result<Option<D>, Late> {
+        if self.asked {
+            // That frame's answer is let go: it may be for another size.
+            match self.answers.try_recv() {
+                Err(mpsc::TryRecvError::Empty) => return Err(Late),
+                _ => self.asked = false,
+            }
+        }
+        if self.asks.send(()).is_err() {
+            return Ok((self.ask)());
+        }
+        match self.answers.recv_timeout(DRAWABLE_WAIT) {
+            Ok(drawable) => Ok(drawable),
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                self.asked = true;
+                Err(Late)
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => Ok((self.ask)()),
+        }
+    }
 }
 
 #[repr(C)]
@@ -347,6 +436,7 @@ impl MetalRenderer {
 
         Self {
             device,
+            drawables: DrawableAsker::for_layer(layer.clone()),
             layer,
             presents_with_transaction: false,
             command_queue,
@@ -449,7 +539,9 @@ impl MetalRenderer {
         // nothing to do
     }
 
-    pub fn draw(&mut self, scene: &Scene) {
+    /// Draw `scene`, or leave it out, handing back false, as the screen
+    /// hasn't let a drawable go for it (Plays).
+    pub fn draw(&mut self, scene: &Scene) -> bool {
         self.edr_headroom = self.read_edr_headroom();
         let has_hdr = scene.surfaces.iter().any(|s| is_hdr(&s.image_buffer));
         self.update_edr(has_hdr);
@@ -459,14 +551,16 @@ impl MetalRenderer {
             (viewport_size.width.ceil() as i32).into(),
             (viewport_size.height.ceil() as i32).into(),
         );
-        let drawable = if let Some(drawable) = layer.next_drawable() {
-            drawable
-        } else {
-            log::error!(
-                "failed to retrieve next drawable, drawable size: {:?}",
-                viewport_size
-            );
-            return;
+        let drawable = match self.drawables.next() {
+            Ok(Some(drawable)) => drawable,
+            Ok(None) => {
+                log::error!(
+                    "failed to retrieve next drawable, drawable size: {:?}",
+                    viewport_size
+                );
+                return true;
+            }
+            Err(Late) => return false,
         };
 
         loop {
@@ -496,10 +590,10 @@ impl MetalRenderer {
                         command_buffer.wait_until_scheduled();
                         drawable.present();
                     } else {
-                        command_buffer.present_drawable(drawable);
+                        command_buffer.present_drawable(&drawable);
                         command_buffer.commit();
                     }
-                    return;
+                    return true;
                 }
                 Err(err) => {
                     log::error!(
@@ -520,6 +614,7 @@ impl MetalRenderer {
                 }
             }
         }
+        true
     }
 
     /// The current EDR headroom of the screen the window is on: how many
@@ -2192,5 +2287,72 @@ fn half_to_f32(bits: u16) -> f32 {
         0 => mantissa * 2f32.powi(-24),
         31 => f32::INFINITY,
         _ => (1.0 + mantissa / 1024.0) * 2f32.powi(exponent - 15),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Instant;
+
+    /// Plays: a screen letting the drawables `free` names go, one an ask,
+    /// holding asks until then.
+    fn screen() -> (mpsc::Sender<u32>, DrawableAsker<u32>) {
+        let (free, freed) = mpsc::channel();
+        let freed = Mutex::new(freed);
+        (free, DrawableAsker::new(move || freed.lock().recv().ok()))
+    }
+
+    /// Plays: the next drawable, waiting out frames that are late.
+    fn answered(drawables: &mut DrawableAsker<u32>) -> Option<u32> {
+        let given_up = Instant::now() + Duration::from_secs(1);
+        loop {
+            if let Ok(drawable) = drawables.next() {
+                return drawable;
+            }
+            assert!(Instant::now() < given_up, "no drawable");
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    }
+
+    /// Plays: while the screen takes no frames, a frame waits for a
+    /// drawable no longer than `DRAWABLE_WAIT`, and those after it not at
+    /// all, until one comes.
+    #[test]
+    fn frames_are_late_rather_than_wait_for_the_screen() {
+        let (free, mut drawables) = screen();
+        free.send(1).unwrap();
+        assert_eq!(drawables.next().ok(), Some(Some(1)));
+
+        let asked = Instant::now();
+        assert!(drawables.next().is_err());
+        let waited = asked.elapsed();
+        assert!(waited >= DRAWABLE_WAIT && waited < DRAWABLE_WAIT * 4);
+        let asked = Instant::now();
+        assert!(drawables.next().is_err());
+        assert!(asked.elapsed() < DRAWABLE_WAIT / 2);
+    }
+
+    /// Plays: a drawable that comes after its frame was left out is let
+    /// go, and the next frame gets one of its own.
+    #[test]
+    fn a_drawable_for_a_frame_left_out_is_let_go() {
+        let (free, mut drawables) = screen();
+        assert!(drawables.next().is_err());
+        free.send(1).unwrap();
+        free.send(2).unwrap();
+        assert_eq!(answered(&mut drawables), Some(2));
+    }
+
+    /// Plays: the thread asking ends with the renderer.
+    #[test]
+    fn asking_ends_with_the_renderer() {
+        let (free, drawables) = screen();
+        drop(drawables);
+        let given_up = Instant::now() + Duration::from_secs(1);
+        while free.send(0).is_ok() {
+            assert!(Instant::now() < given_up, "still asking");
+            std::thread::sleep(Duration::from_millis(1));
+        }
     }
 }

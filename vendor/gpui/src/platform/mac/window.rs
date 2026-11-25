@@ -422,6 +422,9 @@ struct MacWindowState {
     // it covers its display.
     fullscreen_style: crate::FullscreenStyle,
     covering: Option<Covering>,
+    // Plays: the renderer left the last frame out, no drawable coming in
+    // time: the next step presents it again.
+    frame_left_out: bool,
     move_tab_to_new_window_callback: Option<Box<dyn FnMut()>>,
     merge_all_windows_callback: Option<Box<dyn FnMut()>>,
     select_next_tab_callback: Option<Box<dyn FnMut()>>,
@@ -735,6 +738,7 @@ impl MacWindow {
                 on_top: false,
                 fullscreen_style: Default::default(),
                 covering: None,
+                frame_left_out: false,
                 move_tab_to_new_window_callback: None,
                 merge_all_windows_callback: None,
                 select_next_tab_callback: None,
@@ -1555,6 +1559,12 @@ impl PlatformWindow for MacWindow {
 
     fn draw(&self, scene: &crate::Scene) {
         let mut this = self.0.lock();
+        // Plays: one left out is presented again on the next step.
+        #[cfg(not(feature = "macos-blade"))]
+        {
+            this.frame_left_out = !this.renderer.draw(scene);
+        }
+        #[cfg(feature = "macos-blade")]
         this.renderer.draw(scene);
     }
 
@@ -2418,8 +2428,13 @@ unsafe extern "C" fn step(view: *mut c_void) {
     let mut lock = window_state.lock();
 
     if let Some(mut callback) = lock.request_frame_callback.take() {
+        // Plays: a frame the renderer left out is presented again.
+        let options = RequestFrameOptions {
+            require_presentation: lock.frame_left_out,
+            ..Default::default()
+        };
         drop(lock);
-        callback(Default::default());
+        callback(options);
         window_state.lock().request_frame_callback = Some(callback);
     }
 }

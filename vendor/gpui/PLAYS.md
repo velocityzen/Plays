@@ -340,6 +340,18 @@ window with the mouse while its button is down, as its title bar does
 (`performWindowDragWithEvent` with the event being handled, once it is
 done); the test window has nowhere to move, where it panicked.
 
+`src/platform/mac/metal_renderer.rs` and `src/platform/mac/window.rs`: the
+renderer asks the layer for drawables on a thread of its own, and a frame
+waits for one at most 50 ms. With every drawable holding a frame the
+screen hasn't taken, `nextDrawable` blocks until it takes one: up to a
+second for a window just gone under another, before macOS says it is
+covered and gpui stops drawing it, as Plays' window does when it pauses
+and floats only while playing. A frame with no drawable in time is left
+out, as are those after it until one comes, and the window's next step
+presents it again (`require_presentation`). A drawable that comes after
+its frame was left out is let go and asked for again, as it may be for
+another size. Its tests are gpui's own, which cargo doesn't run.
+
 `src/window.rs` and `src/app.rs`: a platform window can still call once
 its window has closed (macOS closes its own on the run loop's next turn).
 The window's callbacks then do nothing (`update_from_platform`) rather than
