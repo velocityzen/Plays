@@ -21,10 +21,11 @@ pub const COMMANDS: &[Spec] = &[
         "List Blocks",
         "List the blocks in the window, in the grid's order.",
         Scope::Window,
-        "[{id, label, title, file, url, playing, number, front}]: each block's id and label \
-         (or null), its file's name, the file's path or the stream's URL (without a user, \
-         password or query; the other null), whether it plays, its place from 1, and \
-         whether keys go to it.",
+        "[{id, label, title, file, url, playing, opened, error, number, front}]: each \
+         block's id and label (or null), its file's name, the file's path or the stream's \
+         URL (without a user, password or query; the other null), whether it plays, \
+         whether its file has opened, why it couldn't open or play on (or null: still \
+         opening, if it hasn't opened), its place from 1, and whether keys go to it.",
         |_, target, cx| {
             let window = target::window(target, cx)?;
             Ok(Value::from(target::read(window, cx)?.blocks_listed(cx)))

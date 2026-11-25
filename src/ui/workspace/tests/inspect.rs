@@ -11,6 +11,7 @@ use crate::api::{self, Invocation};
 use crate::app::AudioEngine;
 use crate::cast::fake::FakeTarget;
 use crate::cast::{Casting, Shows};
+use crate::files;
 use crate::media::Source;
 use crate::media::output::DeviceInfo;
 use crate::ui::displays::{self, DisplayInfo};
@@ -163,6 +164,8 @@ fn block_ls_says_what_each_block_is(cx: &mut TestAppContext) {
                 "file": path("clip-chapters.mkv"),
                 "url": null,
                 "playing": false,
+                "opened": true,
+                "error": null,
                 "number": 1,
                 "front": true,
             },
@@ -173,11 +176,61 @@ fn block_ls_says_what_each_block_is(cx: &mut TestAppContext) {
                 "file": path("clip-subs.mkv"),
                 "url": null,
                 "playing": false,
+                "opened": true,
+                "error": null,
                 "number": 2,
                 "front": false,
             },
         ])
     );
+}
+
+#[gpui::test]
+fn block_ls_says_whether_a_blocks_file_opened_is_opening_or_couldnt(cx: &mut TestAppContext) {
+    let (window, mut cx) = testing::start(cx);
+    let folder = files::test_folder("inspect-opening");
+    std::fs::create_dir_all(&folder).unwrap();
+    let broken = folder.join("broken.mp4");
+    std::fs::write(&broken, b"not a video, nor anything else").unwrap();
+    // Opening it waits for something to write to it.
+    let waiting = folder.join("waiting.mp4");
+    let made = std::process::Command::new("mkfifo")
+        .arg(&waiting)
+        .status()
+        .unwrap();
+    assert!(made.success());
+    window
+        .update(&mut cx, |workspace, _, cx| {
+            workspace.open_paths(vec![fixture("clip.mp4"), broken, waiting.clone()], cx);
+        })
+        .unwrap();
+    let state = |cx: &mut TestAppContext| -> Vec<(Value, Value)> {
+        let listed = cx.update(|cx| api::run(Invocation::new("block.ls"), cx));
+        listed
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|block| (block["opened"].clone(), block["error"].clone()))
+            .collect()
+    };
+    let settled = wait_until(&mut cx, |cx| {
+        let state = state(cx);
+        state.len() == 3 && state[0].0 == true && !state[1].1.is_null()
+    });
+    let listed = state(&mut cx);
+    assert!(settled, "{listed:?}");
+    assert_eq!(listed[2], (json!(false), Value::Null), "still opening");
+    assert!(
+        listed[1].0 == false && listed[1].1.as_str().is_some_and(|why| !why.is_empty()),
+        "couldn't, and why: {listed:?}"
+    );
+    assert_eq!(listed[0], (json!(true), Value::Null));
+
+    // Nothing written: it can't open either.
+    drop(std::fs::File::create(&waiting).unwrap());
+    let failed = wait_until(&mut cx, |cx| !state(cx)[2].1.is_null());
+    assert!(failed, "{:?}", state(&mut cx));
 }
 
 #[gpui::test]
@@ -227,6 +280,7 @@ fn block_inspect_says_how_a_block_plays(cx: &mut TestAppContext) {
         "file": path("clip-subs.mkv"),
         "url": null,
         "playing": false,
+        "opened": true, "error": null,
         "number": 2,
         "front": false,
         "window": id(window, &cx),

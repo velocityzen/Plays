@@ -18,9 +18,11 @@ const KINDS: [(TrackKind, &str); 3] = [
 
 impl PlayerView {
     /// Its id and label, its file's name, the file's path or the stream's
-    /// URL, and whether it plays.
+    /// URL, whether it plays, whether the file has opened, and why it
+    /// couldn't, or couldn't play on.
     pub fn summary(&self) -> Map<String, Value> {
-        let (file, url) = match self.player().source() {
+        let player = self.player();
+        let (file, url) = match player.source() {
             Source::File(path) => (Some(path.display().to_string()), None),
             // As shown: without a user, password or query.
             source @ Source::Url(_) => (None, Some(source.to_string())),
@@ -32,6 +34,8 @@ impl PlayerView {
             "file": file,
             "url": url,
             "playing": self.is_playing(),
+            "opened": player.is_known(),
+            "error": player.error(),
         });
         let Value::Object(summary) = summary else {
             unreachable!("an object")

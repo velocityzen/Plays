@@ -331,7 +331,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 `block.ls`: List the blocks in the window, in the grid's order.
 
 - Acts on a player window.
-- Hands back: [{id, label, title, file, url, playing, number, front}]: each block's id and label (or null), its file's name, the file's path or the stream's URL (without a user, password or query; the other null), whether it plays, its place from 1, and whether keys go to it.
+- Hands back: [{id, label, title, file, url, playing, opened, error, number, front}]: each block's id and label (or null), its file's name, the file's path or the stream's URL (without a user, password or query; the other null), whether it plays, whether its file has opened, why it couldn't open or play on (or null: still opening, if it hasn't opened), its place from 1, and whether keys go to it.
 
 ### Inspect Block
 

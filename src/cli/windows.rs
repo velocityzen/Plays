@@ -35,7 +35,7 @@ pub fn ls(session: &mut Session) -> Done {
                 block["number"],
                 show::text(&block["id"]),
                 name(block),
-                playing(block)
+                state(block)
             );
             writeln!(session.out, "{}", line.trim_end())?;
         }
@@ -140,7 +140,7 @@ pub fn block(session: &mut Session, block: Block) -> Done {
                         block["number"].to_string(),
                         show::text(&block["id"]),
                         name(block),
-                        playing(block).to_owned(),
+                        state(block).to_owned(),
                     ]
                 })
                 .collect();
@@ -306,9 +306,14 @@ fn name(block: &Value) -> String {
     }
 }
 
-/// Whether a block plays.
-fn playing(block: &Value) -> &'static str {
-    if block["playing"] == true {
+/// What a block is doing: opening its file, stopped on an error, playing
+/// or paused.
+fn state(block: &Value) -> &'static str {
+    if !block["error"].is_null() {
+        "failed"
+    } else if block["opened"] == false {
+        "opening"
+    } else if block["playing"] == true {
         "playing"
     } else {
         "paused"
