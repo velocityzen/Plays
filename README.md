@@ -237,34 +237,58 @@ mkdir ($nu.user-autoload-dirs | first); plays completions nushell | save -f ($nu
 
 ## Limitations
 
-- On Linux, frames decoded on the GPU are copied back to memory to be
-  drawn. Lower the decode limit in Settings for many large videos.
+- No playback speed. Playlist files (`.m3u`, `.pls`) aren't read.
+- Live streams can't be seeked or screenshotted, and one paused goes on
+  from where it paused, not the live edge.
+- Picture adjustments and delays aren't kept when a file opens again.
 - HDR goes brighter than SDR white only on macOS, decoded by
   VideoToolbox. HDR metadata isn't used, and Dolby Vision profile 7's
   enhancement layer is ignored.
-- No playback speed. Playlist files (`.m3u`, `.pls`) aren't read.
 - ASS styling is used only for italics, bold and placement.
-- Picture adjustments and delays aren't kept when a file opens again.
-- A paused live stream goes on from where it paused, not the live edge,
-  and can't be screenshotted.
-- Picture in Picture ignores crop, aspect ratio and gamma.
-- On Wayland, windows can't float on top or be placed, and on GNOME they
-  have no resize handles.
+- Picture in Picture ignores crop, aspect ratio and gamma, can't show
+  Dolby Vision, and on macOS 12 doesn't rotate or flip.
+- On Linux, frames decoded on the GPU are copied back to memory to be
+  drawn. Lower Settings → Video → Resolution limit for many large videos.
 - On Linux, ALSA names a TV's HDMI output after the sound card, so a window
   sent to a TV keeps its sound.
+- On Wayland, windows can't float on top or be placed, full screen on
+  another display is up to the compositor, and other displays aren't
+  blacked out. On GNOME, windows have no resize handles.
+- Plays doesn't update itself run from where it was built (`target/`),
+  on a Mac from where it was downloaded, or installed by a package
+  manager, Flatpak or Snap.
 - Casting re-encodes video only with a hardware encoder. While a block
   casts, delays, picture adjustments and frame steps don't apply.
+- Cast subtitles keep italics and bold but not placement; picture
+  subtitles (PGS, VobSub, DVB) go only where the video is re-encoded.
 - AirPlay speakers with a password, AirPlay 1 speakers with FairPlay or
-  MFi, and HomePods that let only their home play to them can't be played
-  through. Several speakers aren't played through as a group.
-- AirPlay, Chromecast and Bluetooth headphones have been tested with
-  pretend devices only, not real ones.
+  MFi, and speakers and TVs that let only their home play to them can't be
+  played through. Several speakers aren't played through as a group.
 - A Chromecast's certificate isn't checked against Google's.
 - DLNA devices are found over IPv4 only, and their subtitles depend on the
   TV.
 - The cast stream server listens on every interface, so the firewall may
   ask about it, and on macOS 15 and later looking for devices asks to use
   the local network.
+
+### Casting hardware checklist
+
+Tested with pretend devices; checked with real ones (✅), not yet (⬜), or
+not on that system (—):
+
+| Device | macOS | Linux |
+| --- | --- | --- |
+| Bluetooth headphones | ✅ | ⬜ |
+| AirPlay 2 speaker | ✅ | ⬜ |
+| AirPlay 1 speaker, such as an AirPort Express | ⬜ | ⬜ |
+| Apple TV | ✅ | ⬜ |
+| TV of another make with AirPlay | ⬜ | ⬜ |
+| Chromecast | ⬜ | ⬜ |
+| Google TV | ⬜ | ⬜ |
+| Nest speaker or display | ⬜ | ⬜ |
+| DLNA speaker | ✅ | ⬜ |
+| DLNA TV | ⬜ | ⬜ |
+| A TV's speakers, for a window sent to it | ⬜ | — |
 
 ## Working on Plays
 
