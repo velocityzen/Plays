@@ -15,19 +15,36 @@ fn format(extension: &str) -> &'static Format {
 #[test]
 fn what_came_of_it_reads_as_sentences() {
     let made = Made {
-        set: vec![format("mkv"), format("webm"), format("flac")],
-        not_set: vec![(format("mp3"), "VLC still opens them".to_owned())],
+        set: vec![format("mkv"), format("webm"), format("mp4")],
+        not_set: vec![(format("m4v"), "VLC still opens them".to_owned())],
     };
     assert_eq!(
         made.says(),
-        "Plays opens Matroska video, WebM video and FLAC audio now. \
-         Not MP3 audio: VLC still opens them."
+        "Plays opens 3 of the 4 formats picked now. \
+         Not MPEG-4 video (.m4v): VLC still opens them."
     );
+    let all = Made {
+        set: vec![format("mkv"), format("flac")],
+        not_set: Vec::new(),
+    };
+    assert_eq!(all.says(), "Plays opens the 2 formats picked now.");
     let one = Made {
         set: vec![format("mkv")],
         not_set: Vec::new(),
     };
-    assert_eq!(one.says(), "Plays opens Matroska video now.");
+    assert_eq!(one.says(), "Plays opens the format picked now.");
+    let none = Made {
+        set: Vec::new(),
+        not_set: vec![
+            (format("mp3"), "VLC still opens them".to_owned()),
+            (format("flac"), "macOS didn't change it".to_owned()),
+        ],
+    };
+    assert_eq!(
+        none.says(),
+        "Not MP3 audio (.mp3): VLC still opens them. \
+         Not FLAC audio (.flac): macOS didn't change it."
+    );
     assert_eq!(Made::default().says(), "");
 }
 

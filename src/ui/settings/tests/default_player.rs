@@ -113,7 +113,7 @@ fn the_formats_picked_and_only_they_are_asked_for(cx: &mut TestAppContext) {
     let shown = text(&mut window);
     assert!(
         shown.contains(
-            "Plays opens Matroska video and FLAC audio now. Not MP3 audio: VLC still opens them."
+            "Plays opens 2 of the 3 formats picked now. Not MP3 audio (.mp3): VLC still opens them."
         ),
         "{shown}"
     );
@@ -164,12 +164,12 @@ fn default_player_reads_again_each_time_it_shows(cx: &mut TestAppContext) {
     click(&mut window, "default-player-mkv");
     assert!(text(&mut window).contains(".mkv · VLC opens them"));
 
-    // Matroska is IINA's now, as Finder could have made it meanwhile.
+    // Matroska is mpv's now, as Finder could have made it meanwhile.
     click(&mut window, "pane-Playback");
-    APPS.with_borrow_mut(|apps| apps[0].app = Some("IINA".to_owned()));
+    APPS.with_borrow_mut(|apps| apps[0].app = Some("mpv".to_owned()));
     click(&mut window, "pane-Default Player");
     let shown = text(&mut window);
-    assert!(shown.contains(".mkv · IINA opens them"), "{shown}");
+    assert!(shown.contains(".mkv · mpv opens them"), "{shown}");
     click(&mut window, "default-player-use");
     assert!(
         ASKED.with_borrow(Vec::is_empty),

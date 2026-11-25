@@ -7,6 +7,7 @@
 use std::ffi::c_void;
 use std::path::Path;
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 use block::ConcreteBlock;
 use core_foundation::base::TCFType;
@@ -26,6 +27,11 @@ pub const BUNDLE_ID: &str = "com.2dubs.plays";
 
 /// Every role an app can have for a type: viewer, editor and so on.
 const ALL_ROLES: u32 = 0xFFFF_FFFF;
+
+/// How long LaunchServices may take to say Plays opens a type, once macOS
+/// said it does, and how often it's asked meanwhile.
+const CATCH_UP: Duration = Duration::from_secs(2);
+const CATCH_UP_POLL: Duration = Duration::from_millis(100);
 
 /// The app that shows macOS's own prompts, such as whether Plays may open
 /// a type.
@@ -162,7 +168,8 @@ pub fn read(cx: &mut App) -> Task<Openers> {
 
 /// Make Plays open `formats`, a type at a time, waiting for the user to
 /// answer macOS about each before asking about the next; then what each
-/// opens in now says what came of it.
+/// opens in now says what came of it, once LaunchServices has caught up
+/// with a type answered Use.
 pub fn make(formats: Vec<&'static Format>, cx: &mut App) -> Task<Made> {
     if cfg!(test) {
         panic!("a test would change the apps this Mac opens files with");
@@ -176,15 +183,21 @@ pub fn make(formats: Vec<&'static Format>, cx: &mut App) -> Task<Made> {
                 made.not_set.push((format, why));
                 continue;
             }
+            let mut used = false;
             for id in types
                 .iter()
                 .filter(|id| handler(id).as_deref() != Some(BUNDLE_ID))
             {
                 if let Ok(Some(answered)) = cx.update(|_| ask(id)) {
-                    answered.await.ok();
+                    used |= answered.await.unwrap_or(false);
                 }
             }
-            let now = opener(format);
+            let mut now = opener(format);
+            let since = Instant::now();
+            while used && !now.plays && since.elapsed() < CATCH_UP {
+                cx.background_executor().timer(CATCH_UP_POLL).await;
+                now = opener(format);
+            }
             if now.plays {
                 made.set.push(format);
             } else {
@@ -200,10 +213,11 @@ pub fn make(formats: Vec<&'static Format>, cx: &mut App) -> Task<Made> {
 }
 
 /// Ask macOS for Plays, this bundle, to open files of the type `id`. What
-/// it returns hears once macOS has done, from 26.4 once the user answered;
-/// nothing when it's done already, as it is before macOS 12.
+/// it returns hears once macOS has done, from 26.4 once the user answered,
+/// whether it did (Use, not Keep); nothing when it's done already, as it is
+/// before macOS 12.
 #[allow(unexpected_cfgs)]
-fn ask(id: &str) -> Option<oneshot::Receiver<()>> {
+fn ask(id: &str) -> Option<oneshot::Receiver<bool>> {
     let id = CFString::new(id);
     let set = sel!(setDefaultApplicationAtURL:toOpenContentType:completionHandler:);
     // SAFETY: AppKit calls on the main thread, where `make` runs, each
@@ -231,9 +245,9 @@ fn ask(id: &str) -> Option<oneshot::Receiver<()>> {
         }
         let (done, answered) = oneshot::channel();
         let done = Mutex::new(Some(done));
-        let callback = ConcreteBlock::new(move |_error: *mut Object| {
+        let callback = ConcreteBlock::new(move |error: *mut Object| {
             if let Some(done) = done.lock().ok().and_then(|mut done| done.take()) {
-                done.send(()).ok();
+                done.send(error.is_null()).ok();
             }
         })
         .copy();

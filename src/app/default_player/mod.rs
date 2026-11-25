@@ -47,27 +47,31 @@ pub struct Made {
 }
 
 impl Made {
-    /// What it came to, for Settings: the formats Plays opens now, then
-    /// each it doesn't, and why.
+    /// What it came to, for Settings: how many of the formats picked Plays
+    /// opens now, then each it doesn't, by its extension too, as two may
+    /// share a name, and why. The pane lists each format with its app, so
+    /// those set go unnamed.
     pub fn says(&self) -> String {
+        let (set, picked) = (self.set.len(), self.set.len() + self.not_set.len());
         let mut said = Vec::new();
-        if !self.set.is_empty() {
-            let names: Vec<&str> = self.set.iter().map(|format| format.name).collect();
-            said.push(format!("Plays opens {} now.", listed(&names)));
+        match set {
+            0 => {}
+            1 if picked == 1 => said.push("Plays opens the format picked now.".to_owned()),
+            set if set == picked => {
+                said.push(format!("Plays opens the {picked} formats picked now."));
+            }
+            set => said.push(format!(
+                "Plays opens {set} of the {picked} formats picked now."
+            )),
         }
         for (format, why) in &self.not_set {
-            said.push(format!("Not {}: {why}.", format.name));
+            said.push(format!(
+                "Not {} (.{}): {why}.",
+                format.name,
+                format.extension()
+            ));
         }
         said.join(" ")
-    }
-}
-
-/// `names` as a sentence lists them: `a`, `a and b`, `a, b and c`.
-fn listed(names: &[&str]) -> String {
-    match names {
-        [] => String::new(),
-        [one] => (*one).to_owned(),
-        [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
     }
 }
 
