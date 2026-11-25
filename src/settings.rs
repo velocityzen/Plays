@@ -561,6 +561,9 @@ pub struct Settings {
     /// changes, over the socket. Off until turned on in Settings: a command
     /// line can't turn it on, as it's refused.
     pub command_line_control: bool,
+    /// Check for updates a minute after starting and once a day, and
+    /// download what's found.
+    pub check_for_updates: bool,
 }
 
 /// The gamma the settings offer.
@@ -603,6 +606,7 @@ impl Default for Settings {
             screenshots: ScreenshotSettings::default(),
             hotkeys: Hotkeys::default(),
             command_line_control: false,
+            check_for_updates: true,
         }
     }
 }

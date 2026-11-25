@@ -447,6 +447,12 @@ const FIELDS: &[Field] = &[
         "Command Line",
         Kind::Toggle,
     ),
+    Field::new(
+        "check_for_updates",
+        "Check for updates automatically",
+        "About",
+        Kind::Toggle,
+    ),
 ];
 
 /// Where the settings of which protocols look for devices are.

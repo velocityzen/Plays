@@ -1,0 +1,180 @@
+# A tag VERSION pushed releases its commit for every OS. Run by hand
+# (Actions → Release → Run workflow, on the commit to release), it takes the
+# tag and the OS the release is for, or all, as a fix for one OS is. Either
+# builds each of the OS's platforms, makes their update files
+# (script/release-files) and publishes a GitHub release of them, its notes
+# the committed release.md. No key is here: the feed that points Plays at
+# the release is signed and pushed with script/feed add VERSION.
+name: Release
+
+on:
+  push:
+    tags: ["[0-9]+.[0-9]+.[0-9]+"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: The version to release, as Cargo.toml has it, such as 0.2.1
+        required: true
+        type: string
+      os:
+        description: The OS it's for; one alone for a fix for it
+        required: true
+        type: choice
+        options: [all, macos, linux]
+        default: all
+
+permissions: {}
+
+concurrency:
+  group: release
+
+env:
+  # Every platform Plays is released for, and how it's built.
+  PLATFORMS: >-
+    [
+      {"os": "macos", "platform": "macos-aarch64", "runner": "macos-26", "install": "target/release/Plays.app"},
+      {"os": "linux", "platform": "linux-x86_64", "runner": "ubuntu-24.04", "install": "target/release/plays"},
+      {"os": "linux", "platform": "linux-aarch64", "runner": "ubuntu-24.04-arm", "install": "target/release/plays"}
+    ]
+
+jobs:
+  check:
+    name: Tag, version, notes and platforms
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      matrix: ${{ steps.release.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: release
+        name: The tag is Cargo.toml's version, not released yet, with notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          # Run by hand, the inputs; else the tag pushed, for every OS.
+          TAG: ${{ inputs.tag || github.ref_name }}
+          OS: ${{ inputs.os || 'all' }}
+        run: |
+          if ! grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' <<<"$TAG"; then
+            echo "::error::$TAG isn't a version, such as 0.2.1"
+            exit 1
+          fi
+          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
+          if [ "$version" != "$TAG" ]; then
+            echo "::error::$TAG isn't Cargo.toml's version, $version"
+            exit 1
+          fi
+          if [ ! -f release.md ]; then
+            echo "::error::there's no release.md, the release's notes"
+            exit 1
+          fi
+          if ! grep -q '[^[:space:]]' release.md; then
+            echo "::error::release.md, the release's notes, is empty"
+            exit 1
+          fi
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "::error::$TAG is released already"
+            exit 1
+          fi
+          # A tag there already is to be on the commit built.
+          if object=$(gh api "repos/$GH_REPO/git/ref/tags/$TAG" --jq '.object.type + " " + .object.sha' 2>/dev/null); then
+            read -r type sha <<<"$object"
+            if [ "$type" = tag ]; then
+              sha=$(gh api "repos/$GH_REPO/git/tags/$sha" --jq .object.sha)
+            fi
+            if [ "$sha" != "$GITHUB_SHA" ]; then
+              echo "::error::the tag $TAG is on $sha, not $GITHUB_SHA, the commit run on"
+              exit 1
+            fi
+          fi
+          matrix=$(jq -c --arg os "$OS" '{include: map(select($os == "all" or .os == $os))}' <<<"$PLATFORMS")
+          if [ "$(jq '.include | length' <<<"$matrix")" -eq 0 ]; then
+            echo "::error::there's no platform for $OS"
+            exit 1
+          fi
+          echo "matrix=$matrix" >>"$GITHUB_OUTPUT"
+
+  build:
+    name: ${{ matrix.platform }}
+    needs: check
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    strategy:
+      matrix: ${{ fromJSON(needs.check.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Rust
+        run: rustup toolchain install stable --profile minimal && rustup default stable
+      - name: What FFmpeg is built with (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ninja pkgconf
+      - name: What Plays is built with (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config clang libclang-dev nasm ninja-build python3 \
+            libssl-dev zlib1g-dev libva-dev libvdpau-dev libx11-dev libffmpeg-nvenc-dev \
+            libasound2-dev libfontconfig-dev libfreetype-dev libxkbcommon-dev libxkbcommon-x11-dev \
+            libwayland-dev libx11-xcb-dev libxcb1-dev
+      # bundle-macos compiles the icon with Xcode 26's actool.
+      - name: Build (macOS)
+        if: runner.os == 'macOS'
+        run: script/bundle-macos
+      - name: Build (Linux)
+        if: runner.os == 'Linux'
+        run: script/build-ffmpeg && cargo build --release
+      - name: Update files
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PLATFORM: ${{ matrix.platform }}
+          INSTALL: ${{ matrix.install }}
+        run: script/release-files "$PLATFORM" "$INSTALL" dist
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: files-${{ matrix.platform }}
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    name: Publish
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      # To tag the commit, make the release and upload its files.
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: files-*
+          path: dist
+          merge-multiple: true
+      # A release for one OS isn't marked the latest, so the latest has an
+      # install for each: Plays updates from it.
+      - name: The release, published
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          # Run by hand, the inputs; else the tag pushed, for every OS.
+          TAG: ${{ inputs.tag || github.ref_name }}
+          OS: ${{ inputs.os || 'all' }}
+        run: |
+          title="Plays $TAG"
+          latest=true
+          case $OS in
+          all) ;;
+          macos) title="$title, for macOS" latest=false ;;
+          linux) title="$title, for Linux" latest=false ;;
+          *) title="$title, for $OS" latest=false ;;
+          esac
+          gh release create "$TAG" dist/* --target "$GITHUB_SHA" --latest="$latest" \
+            --title "$title" --notes-file release.md

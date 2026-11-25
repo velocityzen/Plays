@@ -123,11 +123,13 @@ on its own. Clippy lints in the root `Cargo.toml` apply to all.
 | `crates/ffmpeg-safe` | Sound reads of what ffmpeg-next reads unsoundly: channel layouts, tags |
 | `crates/completions` | Shell completion scripts for a clap command line |
 | `crates/file-types` | The formats Plays opens, and what macOS and Linux are told of them, with an icon each |
+| `crates/updater` | An app updating itself: a signed feed, whole and delta update files, swapping one in; and `updater`, which makes a release |
 | `vendor/block` | block 0.1.6, patched for what a future Rust rejects |
 | `vendor/gpui` | gpui 0.2.2, patched |
 | `vendor/xattr` | xattr 0.2.3, patched to build on Linux |
-| `script/` | FFmpeg build, macOS bundle, Linux install, credits, file types, fixtures, smoke runs, checks, gpui upgrades |
-| `resources/` | Credits (`attributions.json`), macOS `Info.plist` and document types, Linux `.desktop` and app icon, file icons |
+| `script/` | FFmpeg build, macOS bundle, Linux install, credits, file types, fixtures, smoke runs, checks, gpui upgrades, release files, the update feed |
+| `.github/workflows` | Releases, from a tag or run by hand for one OS; a weekly check that the update feed holds |
+| `resources/` | Credits (`attributions.json`), the update feed (`updates.json`), macOS `Info.plist` and document types, Linux `.desktop` and app icon, file icons |
 | `assets/` | App icon and UI icons |
 | `tests/fixtures` | Small media files for tests |
 
@@ -138,7 +140,7 @@ Inside `src/`:
 | `main.rs` | Starts the app, runs the command line, or hands files to the running Plays |
 | `api/` | Every command by name, its events, and the command line's socket |
 | `cli.rs`, `cli/` | The `plays` command line |
-| `app/` | Startup, menus, keymap, audio outputs (AirPlay, Bluetooth), the default player, staying awake, smoke runs |
+| `app/` | Startup, menus, keymap, audio outputs (AirPlay, Bluetooth), the default player, updates, staying awake, smoke runs |
 | `media/` | Playback engine: decoding, mixers, clocks, subtitles, HDR |
 | `ui/` | gpui views: windows, blocks, Settings, Picture in Picture, components, theme |
 | `cast/` | Casting blocks to TVs and speakers |
@@ -377,6 +379,9 @@ flowchart TB
 - `src/app/default_player/`: the app each format opens in, and Plays made
   it: LaunchServices and NSWorkspace on macOS (`mac.rs`), `xdg-mime` on
   Linux (`xdg.rs`); `System` stands in for them in tests
+- `src/app/updates/`: checking daily, downloading in the background and
+  swapping in on restart or quit, from the feed `resources/updates.json`
+  names (`feed.rs`); `Source` stands in for it in tests
 - `src/app/smoke.rs`: scripted runs of the real app (see
   [CONTRIBUTING.md](CONTRIBUTING.md#smoke-runs))
 - `src/hotkeys.rs`: every command's keys, bound in the context their
@@ -405,6 +410,7 @@ flowchart TB
 - `src/ui/framing.rs`, `screenshot.rs`: a block's picture, and saving it
 - `src/ui/components/`, `theme.rs`: `RenderOnce` components, and the theme
 - `src/ui/gallery.rs`: debug-only Component Gallery
+- `src/ui/markdown.rs`: Markdown drawn, for release notes
 
 ## Threads and saved state
 

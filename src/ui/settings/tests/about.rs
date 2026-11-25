@@ -79,3 +79,51 @@ fn ffmpeg_is_credited_as_it_runs_whatever_it_was_built_with() {
     assert_ne!(entry.version.as_ref(), "1.0");
     assert_eq!(entry.license.as_ref(), ffmpeg::util::license());
 }
+
+#[test]
+fn where_updating_is_is_said_with_what_comes_next() {
+    let found = Found {
+        version: updater::Version::new(9, 0, 0),
+        releases: Vec::new(),
+        size: 12_345_678,
+    };
+    let version = updates::version();
+    let says = |state: State| said(&state);
+    assert_eq!(
+        says(State::Off(
+            "this build of Plays doesn't update itself".into()
+        )),
+        (
+            "Plays doesn't update itself here".into(),
+            Some("This build of Plays doesn't update itself".into())
+        )
+    );
+    assert_eq!(
+        says(State::UpToDate),
+        (format!("Plays {version} is up to date"), None)
+    );
+    assert_eq!(
+        says(State::Downloading {
+            found: found.clone(),
+            done: 2_500_000
+        }),
+        (
+            "Downloading Plays 9.0.0…".into(),
+            Some("2.5 MB of 12.3 MB".into())
+        )
+    );
+    assert_eq!(
+        says(State::Ready(found.clone())).0,
+        "Plays 9.0.0 is ready to install"
+    );
+    assert_eq!(says(State::Installed(found)).0, "Plays 9.0.0 is installed");
+    assert_eq!(
+        says(State::Failed(
+            "can't update: the feed is out of date".into()
+        )),
+        (
+            "Plays couldn't update".into(),
+            Some("Can't update: the feed is out of date".into())
+        )
+    );
+}

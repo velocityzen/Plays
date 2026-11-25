@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+# Make a release's files for one platform in OUT, at the version in
+# Cargo.toml:
+#
+#   script/release-files macos-aarch64 target/release/Plays.app dist
+#
+# - Plays-VERSION-PLATFORM.update: the whole update of the install at
+#   INSTALL, an app bundle or a binary
+# - Plays-FROM-to-VERSION-PLATFORM.update: a delta to it from each of the
+#   latest earlier releases on GitHub with a whole update for PLATFORM,
+#   DELTAS of them (3 if unset)
+# - Plays-VERSION-PLATFORM.zip (an app) or .tar.gz (a binary): the install,
+#   as it's downloaded the first time
+#
+# The release workflow (.github/workflows/release.yml) runs it for each
+# platform. Needs gh, to download earlier releases' whole updates.
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+
+if [ $# -ne 3 ]; then
+    echo "usage: script/release-files PLATFORM INSTALL OUT" >&2
+    exit 2
+fi
+platform=$1
+install=$2
+out=$3
+deltas=${DELTAS:-3}
+version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
+
+cargo build -q --release -p updater --features release
+updater=$PWD/target/release/updater
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+mkdir -p "$out"
+
+whole=$out/Plays-$version-$platform.update
+"$updater" pack --version "$version" "$install" "$whole"
+
+# Whether version $1 comes before $2.
+before() {
+    [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n 1)" = "$1" ]
+}
+
+# The releases before this one, newest first, each tagged with its
+# version; pre-releases left out. A release for other platforms alone has
+# no whole update for this one, so no delta is made from it.
+tags=$(gh release list --exclude-drafts --exclude-pre-releases --limit 100 \
+    --json tagName --jq '.[].tagName')
+earlier=$(printf '%s\n' "$tags" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V -r || true)
+
+made=0
+for from in $earlier; do
+    if [ "$made" -ge "$deltas" ]; then
+        break
+    fi
+    if ! before "$from" "$version"; then
+        continue
+    fi
+    name=Plays-$from-$platform.update
+    if ! gh release download "$from" --pattern "$name" --dir "$work"; then
+        echo "$from has no $name, so no delta from it"
+        continue
+    fi
+    "$updater" delta "$work/$name" "$whole" "$out/Plays-$from-to-$version-$platform.update"
+    made=$((made + 1))
+done
+
+if [ -d "$install" ]; then
+    ditto -c -k --keepParent "$install" "$out/Plays-$version-$platform.zip"
+else
+    tar -czf "$out/Plays-$version-$platform.tar.gz" -C "$(dirname "$install")" "$(basename "$install")"
+fi
+ls -l "$out"

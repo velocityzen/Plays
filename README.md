@@ -89,6 +89,7 @@ GPU-accelerated UI framework.
 - The `plays` command line
 - Settings in a JSON file you can export, import and reset
 - Plays as the default player, for the formats you pick in Settings
+- Updates itself from a signed feed, downloading only what changed where it can
 - A menu bar on macOS, a toolbar on Linux
 
 ## Getting Plays

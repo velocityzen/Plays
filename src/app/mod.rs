@@ -12,6 +12,7 @@ mod menus;
 #[cfg(feature = "smoke")]
 pub mod smoke;
 mod speakers;
+pub mod updates;
 mod windows;
 
 use std::sync::Arc;
@@ -64,6 +65,7 @@ pub fn run(
     cx.set_global(Folder::app());
     set_up(cx, settings, AudioEngine::start, cast::protocols);
     awake::watch(cx);
+    updates::start(cx);
     blackout::watch(cx);
     displays::watch(cx);
 

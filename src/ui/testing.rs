@@ -11,8 +11,8 @@ use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 use gpui::{
-    Bounds, Modifiers, MouseButton, MouseDownEvent, MouseUpEvent, Pixels, Point, SharedString,
-    TestAppContext, VisualTestContext, WindowHandle, point,
+    Bounds, Modifiers, MouseButton, MouseDownEvent, MouseUpEvent, Pixels, Point, ScrollDelta,
+    ScrollWheelEvent, SharedString, TestAppContext, VisualTestContext, WindowHandle, point, px,
 };
 
 use crate::app;
@@ -111,6 +111,36 @@ pub fn checked(cx: &mut VisualTestContext, selector: &'static str) -> bool {
         let middle = bounds.center().y;
         text == "✓" && row.origin.y <= middle && middle <= row.bottom()
     })
+}
+
+/// Scroll what's under the element tagged `selector` with the wheel, a
+/// little at a time, until all of it is in the window.
+pub fn scroll_to(cx: &mut VisualTestContext, selector: &'static str) {
+    let height = cx.update(|window, _| window.viewport_size().height);
+    for _ in 0..50 {
+        let bounds = find(cx, selector);
+        if bounds.bottom() <= height {
+            return;
+        }
+        cx.simulate_event(ScrollWheelEvent {
+            position: point(bounds.center().x, height / 2.0),
+            delta: ScrollDelta::Pixels(point(px(0.0), px(-40.0))),
+            ..ScrollWheelEvent::default()
+        });
+        cx.run_until_parked();
+    }
+    panic!("{selector:?} doesn't scroll into the window");
+}
+
+/// Scroll what's in the middle of the window back to its top.
+pub fn scroll_to_top(cx: &mut VisualTestContext) {
+    let size = cx.update(|window, _| window.viewport_size());
+    cx.simulate_event(ScrollWheelEvent {
+        position: point(size.width / 2.0, size.height / 2.0),
+        delta: ScrollDelta::Pixels(point(px(0.0), size.height * 100.0)),
+        ..ScrollWheelEvent::default()
+    });
+    cx.run_until_parked();
 }
 
 /// Move the mouse to the middle of the element tagged `selector`.

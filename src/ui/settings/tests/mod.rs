@@ -14,6 +14,7 @@ use parking_lot::Mutex;
 
 use crate::api::commands::output;
 use crate::app::AudioEngine;
+use crate::app::updates::{self, Found, Source};
 use crate::cast::fake::{FakeTarget, KIND};
 use crate::cast::target::{Device, Error, Session};
 use crate::cast::{AppPairings, Casting, Looking, Protocol, Shows, Target};
@@ -710,6 +711,68 @@ fn a_protocol_that_cant_look_says_why_and_tries_again_when_turned_on(cx: &mut Te
     assert_eq!(looking(&mut cx), [Looking::On]);
 }
 
+/// A feed with Plays 9.0.0, which downloads and installs at once.
+struct Newer;
+
+impl Source for Newer {
+    fn check(&self) -> Result<Option<Found>, String> {
+        let release = updater::Release {
+            version: updater::Version::new(9, 0, 0),
+            published: 0,
+            notes: "- Plays **more**.".into(),
+            downloads: Default::default(),
+        };
+        Ok(Some(Found {
+            version: release.version.clone(),
+            releases: vec![release],
+            size: 2_000_000,
+        }))
+    }
+
+    fn download(
+        &self,
+        progress: &mut dyn FnMut(u64, u64),
+        _: &std::sync::atomic::AtomicBool,
+    ) -> Result<(), String> {
+        progress(2_000_000, 2_000_000);
+        Ok(())
+    }
+
+    fn install(&self) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn installed_at(&self) -> std::path::PathBuf {
+        "/Applications/Plays.app".into()
+    }
+}
+
+#[gpui::test]
+fn about_says_where_updating_is_and_whats_new_in_an_update_ready(cx: &mut TestAppContext) {
+    let (_, mut cx) = testing::start(cx);
+    let mut settings = open_settings(&mut cx);
+    click(&mut settings, "pane-About");
+    // Off in tests, with nothing to check.
+    assert!(!shows(&mut settings, "updates-check"));
+    assert!(shows(&mut settings, "check-for-updates"));
+
+    settings.update(|_, cx| updates::start_with(Ok(Arc::new(Newer)), |_| {}, cx));
+    settings.run_until_parked();
+    assert!(!shows(&mut settings, "release-notes"));
+    click(&mut settings, "updates-check");
+    settings.run_until_parked();
+    assert!(shows(&mut settings, "updates-restart"));
+    assert!(!shows(&mut settings, "updates-check"));
+    assert!(shows(&mut settings, "release-notes"));
+    let painted = testing::painted(&mut settings);
+    for said in ["Plays 9.0.0 is ready to install", "Plays more."] {
+        assert!(
+            painted.iter().any(|(text, _)| text.contains(said)),
+            "{said}: {painted:?}"
+        );
+    }
+}
+
 #[gpui::test]
 fn about_credits_what_plays_is_built_with_each_opening_to_its_license(cx: &mut TestAppContext) {
     let (_, mut cx) = testing::start(cx);
@@ -728,10 +791,12 @@ fn about_credits_what_plays_is_built_with_each_opening_to_its_license(cx: &mut T
     assert!(!shows(&mut settings, "credit-texts"));
     let top = |cx: &mut VisualTestContext, selector| testing::find(cx, selector).origin.y;
 
-    // GPUI's license opens under it.
+    // GPUI's license opens under it, below where updating is.
+    testing::scroll_to(&mut settings, "credit-library GPUI");
     click(&mut settings, "credit-library GPUI");
     assert!(top(&mut settings, "credit-texts") > top(&mut settings, "credit-library GPUI"));
     // Plays' own in its place, one at a time.
+    testing::scroll_to_top(&mut settings);
     click(&mut settings, "credit-plays");
     let texts = top(&mut settings, "credit-texts");
     assert!(texts > top(&mut settings, "credit-plays"));
@@ -743,6 +808,7 @@ fn about_credits_what_plays_is_built_with_each_opening_to_its_license(cx: &mut T
     );
 
     // Closed on leaving the pane.
+    testing::scroll_to(&mut settings, "credit-library dav1d");
     click(&mut settings, "credit-library dav1d");
     assert!(shows(&mut settings, "credit-texts"));
     click(&mut settings, "pane-Playback");

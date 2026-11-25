@@ -72,6 +72,10 @@ encoding_rs = "0.8"
 dlna = { path = "crates/dlna" }
 chromecast = { path = "crates/chromecast" }
 airplay = { path = "crates/airplay" }
+# Plays updating itself: the signed feed, deltas, and swapping one in.
+updater = { path = "crates/updater" }
+# Release notes, which are Markdown, for About.
+pulldown-cmark = { version = "0.13", default-features = false }
 
 # The same CoreFoundation and CoreVideo bindings gpui uses, to hand it
 # hardware-decoded frames to draw (`gpui::surface`).

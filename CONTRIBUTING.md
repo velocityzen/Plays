@@ -112,6 +112,22 @@ script/install-linux
 - The windows' app_id, `plays`, names the desktop file, as Wayland
   requires for their icon
 
+### Releasing an update
+
+- `resources/updates.json` names the feed and the public keys it's signed
+  with; with no feed, Plays doesn't update itself
+- `cargo run -p updater --features release -- --help`: `keygen` once; for
+  each release, `pack` each platform's install, `delta` from earlier
+  releases' whole updates, then `feed`, which puts it first and signs it;
+  upload the update files beside the feed
+- A feed is taken for 30 days (`--days`), 90 from `script/feed`: `sign` it
+  again before then; the Feed workflow fails once 14 are left
+- On GitHub: a tag (the version) pushed releases its commit for every OS,
+  or Actions → Release, run by hand with the tag and the OS, or all; its
+  notes are `release.md`;
+  `script/feed add VERSION` signs the feed here and pushes it to `gh-pages`
+- [docs/updates.md](docs/updates.md): each step, with its commands
+
 ### Licenses
 
 - Plays is MIT (`LICENSE`), built with FFmpeg (LGPL 2.1 or later) and
@@ -199,7 +215,7 @@ mod tests;
 - `src/ui/workspace/tests/`: whole windows, a file per feature
 - `src/ui/settings/tests/`: Settings' panes, settings as commands, About
 - `src/ui/palette/tests/`: the command palette, Go to…, Change Shortcut
-- `src/app/tests/`: menus, the keymap, windows, audio devices, speakers, Bluetooth
+- `src/app/tests/`: menus, the keymap, windows, audio devices, speakers, Bluetooth, updates
 - `src/settings/tests/`: each setting's key and the values it takes
 - `src/tests/`: the settings, progress, recents and hotkeys files; the command line
 - `src/cli/tests/`: shell completions, `events` and `wait`, tables, Lua scripts

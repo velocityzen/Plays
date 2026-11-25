@@ -23,12 +23,16 @@ use crate::ui::theme::layout::WINDOW_SIZE;
 use crate::ui::workspace::Workspace;
 
 /// Commands not run here, and why. They say they tell nothing.
-const NOT_RUN: [(&str, &str); 2] = [
+const NOT_RUN: [(&str, &str); 3] = [
     (
         "window.open_files",
         "it asks for files, as the test platform can't",
     ),
     ("cli.install", "it links plays into /usr/local/bin"),
+    (
+        "app.restart_to_update",
+        "it installs an update downloaded, and starts Plays again",
+    ),
 ];
 
 /// Whether the command `id` telling `kind` can be heard here.

@@ -20,7 +20,7 @@ mod subtitles;
 mod tests;
 mod video;
 
-pub use about::ffmpeg_version;
+pub use about::{NAME as ABOUT, ffmpeg_version};
 pub use default_player::NAME as DEFAULT_PLAYER;
 pub use subtitles::installed_fonts;
 

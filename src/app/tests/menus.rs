@@ -59,7 +59,7 @@ fn the_plays_menu_installs_the_command_line_tool_after_settings(cx: &mut TestApp
         .into_iter()
         .map(|(name, _)| name)
         .collect();
-    let mut expected = vec!["About Plays", "Settings…"];
+    let mut expected = vec!["About Plays", "Check for Updates…", "Settings…"];
     // Elsewhere Plays is installed where the system keeps programs.
     if cfg!(target_os = "macos") {
         expected.push("Install Command Line Tool");

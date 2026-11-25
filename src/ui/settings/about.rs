@@ -1,25 +1,33 @@
-//! About: the app's version and license, and what it is built with: FFmpeg,
-//! dav1d, GPUI and Lua, from `resources/attributions.json` (which
-//! `script/attributions` writes), each opening to its license.
+//! About: the app's version and license; where updating is, with what
+//! can be done about it, and once an update's found, what's new in it;
+//! and what the app is built with: FFmpeg, dav1d, GPUI and Lua, from
+//! `resources/attributions.json` (which `script/attributions` writes), each
+//! opening to its license.
 
 use std::ffi::CStr;
 use std::sync::LazyLock;
 
 use ffmpeg_next as ffmpeg;
 use gpui::prelude::*;
-use gpui::{AnyElement, Context, Div, SharedString, Window, div};
+use gpui::{AnyElement, Context, Div, FontWeight, SharedString, Window, div};
 use serde::Deserialize;
 
-use super::form::group;
+use super::form::{group, row, set};
 use super::{Pane, SettingsView};
+use crate::app::updates::{self, Found, State};
 use crate::settings::Settings;
 use crate::ui::about;
-use crate::ui::components::{Button, ComponentSize, Icon, Sizable};
+use crate::ui::components::{Button, ComponentSize, Icon, Sizable, Switch};
+use crate::ui::markdown;
+use crate::ui::sentence::capitalized;
 use crate::ui::theme::settings::{ABOUT_COLOR, CREDIT_LICENSE_MAX_WIDTH};
 use crate::ui::theme::text::TextStyle;
 use crate::ui::theme::{Theme, controls, radius};
 
 const LICENSE: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/LICENSE"));
+
+/// The pane's name, which Check for Updates opens Settings at.
+pub const NAME: &str = "About";
 
 /// What `script/attributions` writes.
 #[derive(Deserialize)]
@@ -299,6 +307,111 @@ fn app(theme: &Theme) -> AnyElement {
         .into_any_element()
 }
 
+/// Where updating is, as its row says it: what's happening, and more on
+/// it.
+fn said(state: &State) -> (String, Option<String>) {
+    let version = updates::version();
+    match state {
+        State::Off(why) => (
+            "Plays doesn't update itself here".into(),
+            Some(capitalized(why)),
+        ),
+        State::Idle => (
+            format!("Plays {version}"),
+            Some("Not checked for updates yet.".into()),
+        ),
+        State::Checking => ("Checking for updates…".into(), None),
+        State::UpToDate => (format!("Plays {version} is up to date"), None),
+        State::Downloading { found, done } => (
+            format!("Downloading Plays {}…", found.version),
+            Some(format!("{} of {}", megabytes(*done), megabytes(found.size))),
+        ),
+        State::Ready(found) => (
+            format!("Plays {} is ready to install", found.version),
+            Some("It's installed as Plays restarts, or when it quits.".into()),
+        ),
+        State::Installed(found) => (
+            format!("Plays {} is installed", found.version),
+            Some("It runs once Plays starts again.".into()),
+        ),
+        State::Failed(why) => ("Plays couldn't update".into(), Some(capitalized(why))),
+    }
+}
+
+fn megabytes(bytes: u64) -> String {
+    format!("{:.1} MB", bytes as f64 / 1e6)
+}
+
+/// Where updating is, with the button for what can be done next.
+fn status_row(state: &State, theme: &Theme) -> AnyElement {
+    let (label, hint) = said(state);
+    let control = match state {
+        State::Off(_) => div().into_any_element(),
+        State::Ready(_) | State::Installed(_) => {
+            Button::new("updates-restart", "Restart to Update")
+                .on_click(|_, _, cx| {
+                    if let Err(why) = updates::restart(cx) {
+                        log::warn!("{why}");
+                    }
+                })
+                .into_any_element()
+        }
+        _ => Button::new("updates-check", "Check Now")
+            .disabled(matches!(state, State::Checking | State::Downloading { .. }))
+            .on_click(|_, _, cx| updates::check(cx))
+            .into_any_element(),
+    };
+    row(label, hint.map(SharedString::from), theme, control)
+}
+
+/// Whether Plays checks by itself.
+fn automatic_row(s: &Settings, state: &State, theme: &Theme) -> AnyElement {
+    row(
+        "Check for updates automatically",
+        Some(
+            "A minute after Plays starts, then once a day. An update found downloads by \
+             itself."
+                .into(),
+        ),
+        theme,
+        Switch::new("check-for-updates", s.check_for_updates)
+            .disabled(matches!(state, State::Off(_)))
+            .on_toggle(|&on, _, cx| set("check_for_updates", on, cx)),
+    )
+}
+
+/// What's new since this version: each release's notes, newest first.
+fn whats_new(found: &Found, theme: &Theme) -> AnyElement {
+    div()
+        .debug_selector(|| "release-notes".into())
+        .flex()
+        .flex_col()
+        .gap_4()
+        .px_3()
+        .py_3()
+        .children(found.releases.iter().map(|release| {
+            let version = release.version.to_string();
+            let blocks = markdown::parse(&release.notes);
+            div()
+                .flex()
+                .flex_col()
+                .gap_1()
+                .child(
+                    div()
+                        .text_xs()
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_color(theme.text_muted)
+                        .child(format!("Plays {version}")),
+                )
+                .child(markdown::render(
+                    &blocks,
+                    &format!("notes-{version}"),
+                    theme,
+                ))
+        }))
+        .into_any_element()
+}
+
 /// The version of the FFmpeg the app runs with, which is built into it.
 pub fn ffmpeg_version() -> SharedString {
     // SAFETY: av_version_info returns a static, NUL-terminated string.
@@ -310,7 +423,7 @@ pub(super) struct AboutPane;
 
 impl Pane for AboutPane {
     fn name(&self) -> &'static str {
-        "About"
+        NAME
     }
 
     fn icon(&self) -> &'static str {
@@ -324,19 +437,34 @@ impl Pane for AboutPane {
     fn content(
         &self,
         view: &mut SettingsView,
-        _: &Settings,
+        s: &Settings,
         theme: &Theme,
         _: &mut Window,
         cx: &mut Context<SettingsView>,
     ) -> Vec<AnyElement> {
+        let state = updates::state(cx);
         let open = view.license.clone();
-        let mut row = |entry: &Entry| entry.render(open.as_ref() == Some(&entry.key), theme, cx);
-        let license = row(&license());
-        let built_with = built_with().iter().map(&mut row).collect();
-        vec![
+        let mut credit_row =
+            |entry: &Entry| entry.render(open.as_ref() == Some(&entry.key), theme, cx);
+        let license = credit_row(&license());
+        let built_with = built_with().iter().map(&mut credit_row).collect();
+        let mut groups = vec![
             group(None, theme, vec![app(theme), license]),
-            group(Some("Built with"), theme, built_with),
-        ]
+            group(
+                Some("Updates"),
+                theme,
+                vec![status_row(&state, theme), automatic_row(s, &state, theme)],
+            ),
+        ];
+        if let Some(found) = state.found() {
+            groups.push(group(
+                Some("What's new"),
+                theme,
+                vec![whats_new(found, theme)],
+            ));
+        }
+        groups.push(group(Some("Built with"), theme, built_with));
+        groups
     }
 
     fn leave(&self, view: &mut SettingsView) {

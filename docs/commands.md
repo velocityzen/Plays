@@ -39,6 +39,18 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 - Acts on the app.
 
+### Check for Updates…
+
+`app.check_for_updates`: Open Settings at About, and check for a newer Plays: one found downloads in the background, to install as Plays restarts or quits.
+
+- Acts on the app.
+
+### Restart to Update
+
+`app.restart_to_update`: Install the update downloaded, and start Plays again to run it.
+
+- Acts on the app.
+
 ### Copy Version Info
 
 `app.copy_version_info`: Copy Plays' version and the day it was built.

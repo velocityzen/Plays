@@ -1,0 +1,40 @@
+[package]
+name = "updater"
+version = "0.1.0"
+edition = "2024"
+description = "An app updating itself: a feed signed with minisign, checked for a newer version; the update downloaded, as a delta from the installed version where the feed has one; and swapped in where the app is installed. With the `release` feature, `updater` makes a release's keys, update files and signed feed"
+license = "MIT"
+publish = false
+
+[lints]
+workspace = true
+
+[features]
+# `updater`, the tool that makes a release: keys, update files, the feed
+# and its signature.
+release = ["dep:clap", "dep:minisign"]
+
+[[bin]]
+name = "updater"
+path = "src/bin/updater/main.rs"
+required-features = ["release"]
+
+[dependencies]
+log = "0.4"
+minisign-verify = "0.2"
+semver = { version = "1", features = ["serde"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+ureq = { version = "3", default-features = false, features = ["rustls", "platform-verifier"] }
+url = "2.5.9"
+zstd = "0.13"
+clap = { version = "4", features = ["derive"], optional = true }
+minisign = { version = "0.7", optional = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+libc = "0.2"
+
+[dev-dependencies]
+hegeltest = "0.54"
+minisign = "0.7"

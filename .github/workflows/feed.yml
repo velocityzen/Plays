@@ -1,0 +1,24 @@
+# Once a week, whether the feed Plays checks holds, with the keys Plays is
+# built with, for 14 days more at least. When it fails, sign the feed again
+# here: script/feed sign.
+name: Feed
+
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  check:
+    name: Taken for 14 days more
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: The feed, checked
+        run: script/feed check 14

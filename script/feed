@@ -1,0 +1,155 @@
+#!/usr/bin/env bash
+# The update feed Plays checks, on the gh-pages branch GitHub Pages serves,
+# signed here, with the secret key that never leaves this machine:
+#
+#   script/feed add 0.2.0   # release 0.2.0's update files and notes, put first
+#   script/feed sign        # signed again, its releases as they are
+#   script/feed check [14]  # the published feed, taken for 14 days more?
+#
+# add and sign check the feed with the keys in resources/updates.json,
+# which Plays is built with, then push it to gh-pages once you say so.
+# check reads the feed resources/updates.json names; the Feed workflow
+# (.github/workflows/feed.yml) runs it once a week.
+#
+# UPDATER_KEY: the secret key (~/plays-release-keys/updates.key if
+# unset); its password is asked for, or taken from UPDATER_PASSWORD.
+# FEED_DAYS: how many days a feed signed is taken for (90 if unset).
+# REMOTE: the remote gh-pages is on (origin if unset).
+# Needs gh (add), curl (check) and python3.
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+
+key=${UPDATER_KEY:-$HOME/plays-release-keys/updates.key}
+days=${FEED_DAYS:-90}
+remote=${REMOTE:-origin}
+branch=gh-pages
+path=feed.jsonl
+
+usage() {
+    echo "usage: script/feed add VERSION | script/feed sign | script/feed check [DAYS]" >&2
+    exit 2
+}
+
+[ $# -ge 1 ] || usage
+command=$1
+shift
+
+cargo build -q --release -p updater --features release
+updater=$PWD/target/release/updater
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+feed=$work/feed.jsonl
+
+# The keys Plays is built with, each in a file, as --key arguments.
+keys=()
+while IFS= read -r file; do
+    keys+=(--key "$file")
+done < <(python3 -c '
+import json, pathlib, sys
+for n, key in enumerate(json.load(open("resources/updates.json"))["keys"]):
+    file = pathlib.Path(sys.argv[1]) / f"key-{n}.pub"
+    file.write_text(key.strip() + "\n")
+    print(file)
+' "$work")
+if [ ${#keys[@]} -eq 0 ]; then
+    echo "resources/updates.json has no keys, so Plays takes no feed" >&2
+    exit 1
+fi
+
+if [ "$command" = check ]; then
+    [ $# -le 1 ] || usage
+    url=$(python3 -c 'import json; print(json.load(open("resources/updates.json"))["feed"] or "")')
+    if [ -z "$url" ]; then
+        echo "resources/updates.json names no feed, so there's none to check"
+        exit 0
+    fi
+    curl --fail --silent --show-error --location --output "$feed" "$url"
+    "$updater" verify "$feed" "${keys[@]}" --at-least "${1:-14}"
+    exit 0
+fi
+
+# The feed as it's published, if it is: base, the commit it's in.
+base=
+if git ls-remote --exit-code --heads "$remote" "$branch" >/dev/null; then
+    git fetch -q "$remote" "$branch"
+    base=$(git rev-parse FETCH_HEAD)
+else
+    status=$?
+    # 2: there's no such branch yet.
+    [ $status -eq 2 ] || exit $status
+fi
+if [ -n "$base" ] && git cat-file -e "$base:$path" 2>/dev/null; then
+    git show "$base:$path" >"$feed"
+fi
+
+case $command in
+add)
+    [ $# -eq 1 ] || usage
+    version=$1
+    tag=$version
+    if [ "$(gh release view "$tag" --json isDraft --jq .isDraft)" != false ]; then
+        echo "$tag is a draft: publish it first, so Plays can download its files" >&2
+        exit 1
+    fi
+    # The notes as released: the release.md the release was made from.
+    notes=$work/notes.md
+    gh release view "$tag" --json body --jq .body >"$notes"
+    repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
+    mkdir "$work/files"
+    gh release download "$tag" --pattern '*.update' --dir "$work/files"
+    files=()
+    for file in "$work"/files/*.update; do
+        name=$(basename "$file" .update)
+        case $name in
+        Plays-*-to-"$version"-*) files+=(--delta "${name#*-to-"$version"-}=$file") ;;
+        Plays-"$version"-*) files+=(--update "${name#Plays-"$version"-}=$file") ;;
+        *) echo "$name.update isn't $version's, so it's left out" >&2 ;;
+        esac
+    done
+    if [ ! -f "$feed" ]; then
+        files+=(--app plays)
+    fi
+    "$updater" feed "$feed" --notes "$notes" --key "$key" --days "$days" \
+        --url "https://github.com/$repo/releases/download/$tag" ${files[@]+"${files[@]}"}
+    message="Plays $version"
+    ;;
+sign)
+    [ $# -eq 0 ] || usage
+    if [ ! -f "$feed" ]; then
+        echo "there's no $path on $remote's $branch to sign" >&2
+        exit 1
+    fi
+    "$updater" sign "$feed" --key "$key" --days "$days"
+    message="The feed signed again, for $days days"
+    ;;
+*)
+    usage
+    ;;
+esac
+
+"$updater" verify "$feed" "${keys[@]}"
+
+# The commit: gh-pages as it was, with the feed in it. Pages serves it as
+# it is, not through Jekyll.
+blob=$(git hash-object -w "$feed")
+export GIT_INDEX_FILE=$work/index
+parents=()
+if [ -n "$base" ]; then
+    git read-tree "$base"
+    parents=(-p "$base")
+else
+    git read-tree --empty
+    git update-index --add --cacheinfo "100644,$(git hash-object -w /dev/null),.nojekyll"
+fi
+git update-index --add --cacheinfo "100644,$blob,$path"
+tree=$(git write-tree)
+unset GIT_INDEX_FILE
+commit=$(git commit-tree "$tree" ${parents[@]+"${parents[@]}"} -m "$message")
+
+read -r -p "Push it to $remote's $branch? [y/N] " answer
+if [ "$answer" != y ]; then
+    echo "Not pushed."
+    exit 0
+fi
+git push "$remote" "$commit:refs/heads/$branch"

@@ -4,7 +4,7 @@ use std::path::Path;
 
 use gpui::{App, ClipboardItem};
 use serde::Deserialize;
-use serde_json::json;
+use serde_json::{Value, json};
 
 use super::{output, settings, window};
 use crate::api::Error;
@@ -12,12 +12,13 @@ use crate::api::args::{Arg, Kind};
 use crate::api::events::{EventField, EventKind};
 use crate::api::registry::{Args, Outcome, Scope, Spec};
 use crate::api::target::{self, Target};
-use crate::app::AudioEngine;
+use crate::app::{AudioEngine, updates};
 use crate::media::Source;
 use crate::recents;
 use crate::settings::{OverVideo, Panel, Settings};
 use crate::ui::about::{self, AboutView};
-use crate::ui::settings::{DEFAULT_PLAYER, SettingsView, ffmpeg_version};
+use crate::ui::sentence::capitalized;
+use crate::ui::settings::{ABOUT, DEFAULT_PLAYER, SettingsView, ffmpeg_version};
 use crate::ui::theme::layout::WINDOW_SIZE;
 use crate::ui::workspace::Workspace;
 
@@ -89,6 +90,28 @@ pub const COMMANDS: &[Spec] = &[
         "formats",
         "associations",
     ]),
+    Spec::app(
+        "app.check_for_updates",
+        "Check for Updates…",
+        "Open Settings at About, and check for a newer Plays: one found downloads in the \
+         background, to install as Plays restarts or quits.",
+        |cx| {
+            SettingsView::open_at(ABOUT, cx);
+            updates::check(cx);
+        },
+    )
+    .keywords(&["update", "upgrade", "new version", "download"]),
+    Spec::app_with(
+        "app.restart_to_update",
+        "Restart to Update",
+        "Install the update downloaded, and start Plays again to run it.",
+        &[],
+        |_, cx| {
+            updates::restart(cx).map_err(|why| Error::failed(capitalized(&why)))?;
+            Ok(Value::Null)
+        },
+    )
+    .keywords(&["update", "upgrade", "install", "relaunch"]),
     Spec::app_with(
         "app.copy_version_info",
         "Copy Version Info",
