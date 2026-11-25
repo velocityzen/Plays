@@ -216,6 +216,7 @@ fn kind(arg: &Arg) -> String {
         Kind::Number { min, max: None } => format!("a number, at least {min}"),
         Kind::Text => "text".to_owned(),
         Kind::Texts => "a list of text".to_owned(),
+        Kind::Toggle => "true or false".to_owned(),
         Kind::Choice(choices) => format!("one of {}", choices().join(", ")),
         Kind::Choices(choices) => format!("a list of any of {}, none too", choices().join(", ")),
         Kind::Any => "any value".to_owned(),

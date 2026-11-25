@@ -248,7 +248,15 @@ fn wanted(source: &Source, cx: &App) -> Wanted {
 }
 
 impl PlayerView {
-    pub fn new(source: Source, mixer: Option<Arc<Mixer>>, graveyard: Graveyard, cx: &App) -> Self {
+    /// A block for `source`, playing from the moment it opens if
+    /// `autoplay`.
+    pub fn new(
+        source: Source,
+        autoplay: bool,
+        mixer: Option<Arc<Mixer>>,
+        graveyard: Graveyard,
+        cx: &App,
+    ) -> Self {
         let title = source.name().into();
         let settings = cx.global::<Settings>();
         let wanted = wanted(&source, cx);
@@ -257,7 +265,7 @@ impl PlayerView {
             source,
             mixer,
             PlayerOptions {
-                autoplay: settings.autoplay,
+                autoplay,
                 looping: settings.loop_by_default,
                 volume: settings.default_volume(),
                 max_short_side: settings.max_resolution.short_side(),

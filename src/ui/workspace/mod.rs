@@ -34,6 +34,7 @@ use gpui::{
     KeyDownEvent, Pixels, Size, Subscription, TitlebarOptions, Window, WindowBounds, WindowHandle,
     WindowOptions, black, div, px,
 };
+pub use opening::Opening;
 use serde_json::json;
 
 use super::APP_ID;

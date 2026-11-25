@@ -16,6 +16,14 @@ use crate::settings::{Settings, SeveralFiles};
 use crate::ui::open_url::{OpenUrlDialog, OpenUrlEvent};
 use crate::ui::player::PlayerView;
 
+/// How what's opened plays, where not as Settings say.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Opening {
+    /// Whether each plays from the moment it opens: as Settings →
+    /// Playback say if `None`.
+    pub autoplay: Option<bool>,
+}
+
 impl Workspace {
     pub fn open_paths(&mut self, paths: Vec<PathBuf>, cx: &mut Context<Self>) {
         self.open_sources(paths.into_iter().map(Source::File).collect(), cx);
@@ -25,22 +33,29 @@ impl Workspace {
     /// folder, and what is in it, is found in the background (it may be on
     /// a network drive), then the blocks open in the order given.
     pub fn open_sources(&mut self, sources: Vec<Source>, cx: &mut Context<Self>) {
+        self.open_as(sources, Opening::default(), cx);
+    }
+
+    /// Open `sources` as `open_sources` does, playing as `opening` says.
+    pub fn open_as(&mut self, sources: Vec<Source>, opening: Opening, cx: &mut Context<Self>) {
         let listing = cx.background_spawn(async move { expand_folders(sources) });
         cx.spawn(async move |this, cx| {
             let sources = listing.await;
-            this.update(cx, |this, cx| this.add_players(sources, cx))
+            this.update(cx, |this, cx| this.add_players(sources, opening, cx))
                 .ok();
         })
         .detach();
     }
 
     /// A block for each of `sources`, or one playing them one after
-    /// another, as Settings → Playback say.
-    fn add_players(&mut self, sources: Vec<Source>, cx: &mut Context<Self>) {
+    /// another, as Settings → Playback say, unless `opening` says else.
+    fn add_players(&mut self, sources: Vec<Source>, opening: Opening, cx: &mut Context<Self>) {
         let Some(first) = sources.first() else {
             return;
         };
-        let in_turn = cx.global::<Settings>().several_files == SeveralFiles::Playlist;
+        let settings = cx.global::<Settings>();
+        let in_turn = settings.several_files == SeveralFiles::Playlist;
+        let autoplay = opening.autoplay.unwrap_or(settings.autoplay);
         let (blocks, playlist) = if in_turn {
             (vec![first.clone()], sources)
         } else {
@@ -58,7 +73,7 @@ impl Workspace {
             let mixer = mixer.clone();
             let playlist = playlist.clone();
             let view = cx.new(|cx| {
-                let mut view = PlayerView::new(source, mixer, graveyard, cx);
+                let mut view = PlayerView::new(source, autoplay, mixer, graveyard, cx);
                 view.set_over_video(shown, cx);
                 view.set_playlist(playlist, cx);
                 view.resume(cx);

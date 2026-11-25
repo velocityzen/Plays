@@ -20,7 +20,7 @@ use crate::ui::about::{self, AboutView};
 use crate::ui::sentence::capitalized;
 use crate::ui::settings::{ABOUT, DEFAULT_PLAYER, SettingsView, ffmpeg_version};
 use crate::ui::theme::layout::WINDOW_SIZE;
-use crate::ui::workspace::Workspace;
+use crate::ui::workspace::{Opening, Workspace};
 
 pub const COMMANDS: &[Spec] = &[
     Spec::query(
@@ -45,11 +45,18 @@ pub const COMMANDS: &[Spec] = &[
          the one in front, or a new one if none is open: each in a block, or one after \
          another in one, as Settings say.",
         Scope::Window,
-        &[Arg::required(
-            "urls",
-            Kind::Texts,
-            "Each a file's or folder's full path, a file:// URL, or a stream's URL.",
-        )],
+        &[
+            Arg::required(
+                "urls",
+                Kind::Texts,
+                "Each a file's or folder's full path, a file:// URL, or a stream's URL.",
+            ),
+            Arg::optional(
+                "autoplay",
+                Kind::Toggle,
+                "Whether each plays as it opens, or opens paused: as Settings say if not given.",
+            ),
+        ],
         open,
     )
     .tells(&[
@@ -324,13 +331,14 @@ fn debug_info(cx: &App) -> Result<String, Error> {
 #[derive(Deserialize)]
 struct Open {
     urls: Vec<String>,
+    autoplay: Option<bool>,
 }
 
 /// Open what `args` list in the window `target` names, or the one in
 /// front, bringing it to the front, or in a new window with none open.
 /// Hands back the window's id.
 fn open(args: Args, target: &Target, cx: &mut App) -> Outcome {
-    let Open { urls } = args.read()?;
+    let Open { urls, autoplay } = args.read()?;
     let sources = urls
         .iter()
         .map(|url| source(url).map_err(|why| Error::bad_args(args.command, why)))
@@ -344,7 +352,7 @@ fn open(args: Args, target: &Target, cx: &mut App) -> Outcome {
     window
         .update(cx, |workspace, window, cx| {
             window.activate_window();
-            workspace.open_sources(sources, cx);
+            workspace.open_as(sources, Opening { autoplay }, cx);
         })
         .map_err(|_| Error::failed("the window has closed"))?;
     Ok(json!({"window": target::read(window, cx)?.id().to_string()}))

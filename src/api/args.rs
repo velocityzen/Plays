@@ -25,6 +25,8 @@ pub enum Kind {
     Text,
     /// A list of text, at least one.
     Texts,
+    /// true or false.
+    Toggle,
     /// One of these words.
     Choice(fn() -> Vec<&'static str>),
     /// A list of these words, none too.
@@ -78,6 +80,9 @@ impl Arg {
             Kind::Texts => {
                 fields.insert("type".into(), "texts".into());
             }
+            Kind::Toggle => {
+                fields.insert("type".into(), "toggle".into());
+            }
             Kind::Choice(choices) => {
                 fields.insert("type".into(), "choice".into());
                 fields.insert("choices".into(), choices().into());
@@ -122,6 +127,8 @@ impl Arg {
                 Ok(())
             }
             (Kind::Texts, _) => Err(format!("{name} is a list of text, at least one")),
+            (Kind::Toggle, Value::Bool(_)) => Ok(()),
+            (Kind::Toggle, _) => Err(format!("{name} is true or false")),
             (Kind::Any, _) => Ok(()),
             (Kind::Choice(choices), value) => {
                 let choices = choices();

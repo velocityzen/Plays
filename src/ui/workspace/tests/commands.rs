@@ -12,6 +12,7 @@ use super::open;
 use crate::api::{self, Error, Invocation};
 use crate::media::tracks::TrackKind;
 use crate::recents;
+use crate::settings::Settings;
 use crate::ui::player::PlayerView;
 use crate::ui::testing::{self, find, fixture, hover, wait_until};
 use crate::ui::theme::layout::WINDOW_SIZE;
@@ -437,4 +438,45 @@ fn open_with_no_window_open_opens_one(cx: &mut TestAppContext) {
             .unwrap()
     });
     assert!(open, "the file opens in it");
+}
+
+#[gpui::test]
+fn open_plays_each_as_it_opens_or_opens_it_paused_whatever_settings_say(cx: &mut TestAppContext) {
+    let (window, mut cx) = testing::start(cx);
+    let clip = fixture("clip.mp4").display().to_string();
+    for (autoplay, settings_say, count) in [(false, true, 1), (true, false, 2)] {
+        cx.update(|_, cx| Settings::update(cx, false, |s| s.autoplay = settings_say));
+        let open =
+            Invocation::new("app.open").with_args(json!({"urls": [clip], "autoplay": autoplay}));
+        run(&mut cx, open).unwrap();
+        let opened = wait_until(&mut cx, |cx| {
+            window
+                .update(cx, |workspace, _, cx| {
+                    let players = workspace.players();
+                    let last = players.last().filter(|_| players.len() == count);
+                    last.is_some_and(|view| {
+                        view.update(cx, |view, cx| {
+                            view.background_tick(cx);
+                            view.player().is_known() && view.has_started() == autoplay
+                        })
+                    })
+                })
+                .unwrap()
+        });
+        assert!(
+            opened,
+            "autoplay {autoplay}, Settings {settings_say}: it opens"
+        );
+        let last = blocks(window, &cx).pop().expect("the block opened");
+        let playing = last.read_with(&cx, |view, _| view.is_playing());
+        assert_eq!(playing, autoplay, "Settings say {settings_say}");
+    }
+    let wrong = run(
+        &mut cx,
+        Invocation::new("app.open").with_args(json!({"urls": [clip], "autoplay": "no"})),
+    );
+    assert_eq!(
+        wrong,
+        Err(Error::bad_args("app.open", "autoplay is true or false"))
+    );
 }

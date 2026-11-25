@@ -122,6 +122,27 @@ fn takes_numbers_and_lists_of_text() {
 }
 
 #[test]
+fn takes_true_or_false() {
+    let takes = [Arg::optional("autoplay", Kind::Toggle, "Whether.")];
+    let checked = |args: Value| check("go", &takes, &args);
+    for autoplay in [json!(true), json!(false), Value::Null] {
+        assert_eq!(
+            checked(json!({ "autoplay": autoplay })),
+            Ok(()),
+            "{autoplay}"
+        );
+    }
+    for autoplay in [json!("true"), json!(1), json!([])] {
+        assert_eq!(
+            checked(json!({ "autoplay": autoplay })),
+            bad("autoplay is true or false"),
+            "{autoplay}"
+        );
+    }
+    assert_eq!(takes[0].describe()["type"], "toggle");
+}
+
+#[test]
 fn takes_lists_of_words_none_too() {
     let takes = [Arg::required(
         "visible",

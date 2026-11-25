@@ -563,6 +563,11 @@ fn arguments_are_typed_as_their_commands_take_them() {
         json!({"urls": ["a.mkv", "b.mkv"]})
     );
     assert_eq!(
+        args("app.open", &["urls=a.mkv", "autoplay=false"]),
+        json!({"urls": ["a.mkv"], "autoplay": false}),
+        "true or false"
+    );
+    assert_eq!(
         args("app.settings.set", &["key=subtitles.size", "value=30"]),
         json!({"key": "subtitles.size", "value": 30}),
         "any value read as JSON"

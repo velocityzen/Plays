@@ -604,6 +604,11 @@ fn read_typed(arg: &Arg, typed: &str) -> Result<Value, String> {
             _ => return Err("Type a number".to_owned()),
         },
         Kind::Texts => json!([typed]),
+        Kind::Toggle => match typed.to_lowercase().as_str() {
+            "true" | "on" | "yes" => json!(true),
+            "false" | "off" | "no" => json!(false),
+            _ => return Err("Type true or false".to_owned()),
+        },
         Kind::Choices(_) => json!(
             typed
                 .split([',', ' '])

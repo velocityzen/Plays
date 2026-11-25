@@ -81,6 +81,13 @@ fn what_is_typed_is_read_as_its_kind_says_and_checked() {
         read_typed(panels, "reel"),
         Err("Level is a list of any of bars, notes, none too".to_owned())
     );
+    let toggle = arg(Kind::Toggle, true);
+    assert_eq!(read_typed(toggle, "Off"), Ok(json!(false)));
+    assert_eq!(read_typed(toggle, "true"), Ok(json!(true)));
+    assert_eq!(
+        read_typed(toggle, "maybe"),
+        Err("Type true or false".to_owned())
+    );
     assert_eq!(read_typed(arg(Kind::Any, true), "0.5"), Ok(json!(0.5)));
     assert_eq!(read_typed(arg(Kind::Any, true), "dark"), Ok(json!("dark")));
 }
