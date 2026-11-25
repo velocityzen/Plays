@@ -274,10 +274,13 @@ impl TransportState {
 #[derive(Clone, PartialEq, Debug)]
 pub struct Status {
     pub state: TransportState,
+    /// When it was first heard doing `state`.
+    pub state_at: Option<Instant>,
     /// Seconds in, when it says.
     pub position: Option<f64>,
-    /// When it was first heard to be at `position`. Renderers move their
-    /// position on about once a second, so it was truest then.
+    /// When it was first heard to be at `position` since it was heard
+    /// doing `state`. Renderers move their position on about once a
+    /// second, so it was truest then.
     pub position_at: Option<Instant>,
     /// Seconds, when it knows.
     pub duration: Option<f64>,
@@ -287,6 +290,7 @@ impl Default for Status {
     fn default() -> Self {
         Self {
             state: TransportState::NoMedia,
+            state_at: None,
             position: None,
             position_at: None,
             duration: None,
@@ -295,9 +299,27 @@ impl Default for Status {
 }
 
 impl Status {
-    /// Be at `position`, heard `at`: it's news only if it moved.
+    /// Whether where it is, where it says, was heard since it was heard
+    /// doing what it does: an event may say it plays before it's asked
+    /// where, and it may have started somewhere else.
+    pub fn placed_since_state(&self) -> bool {
+        self.position.is_none() || self.position_at >= self.state_at
+    }
+
+    /// Be doing `state`, heard `at`; whether that's news.
+    pub(crate) fn doing(&mut self, state: TransportState, at: Instant) -> bool {
+        let news = state != self.state;
+        if news {
+            self.state = state;
+            self.state_at = Some(at);
+        }
+        news
+    }
+
+    /// Be at `position`, heard `at`: it's news if it moved, or wasn't
+    /// heard there since it began doing what it does.
     pub(crate) fn heard_at(&mut self, position: Option<f64>, at: Instant) {
-        if position != self.position {
+        if position != self.position || !self.placed_since_state() {
             self.position = position;
             self.position_at = position.map(|_| at);
         }

@@ -174,3 +174,21 @@ fn transport_states() {
         TransportState::Other("RECORDING".into())
     );
 }
+
+#[test]
+fn where_it_is_counts_once_heard_since_it_began_doing_what_it_does() {
+    let start = std::time::Instant::now();
+    let then = |ms| start + std::time::Duration::from_millis(ms);
+    let mut status = Status::default();
+    assert!(status.doing(TransportState::Stopped, then(0)));
+    assert!(status.placed_since_state(), "where it doesn't say");
+    status.heard_at(Some(10.0), then(1));
+    assert!(status.doing(TransportState::Playing, then(2)));
+    assert!(!status.doing(TransportState::Playing, then(3)), "no news");
+    assert_eq!(status.state_at, Some(then(2)));
+    assert!(!status.placed_since_state(), "heard there before it played");
+    status.heard_at(Some(10.0), then(4));
+    assert!(status.placed_since_state(), "heard there since");
+    status.heard_at(Some(10.0), then(5));
+    assert_eq!(status.position_at, Some(then(4)), "first heard there");
+}

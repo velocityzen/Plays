@@ -2,8 +2,8 @@
 //! then played, paused, sought and its volume set, each a SOAP action that
 //! waits for its answer. What it does comes from its events, through GENA
 //! subscriptions to a listener of the session's own, and from asking where
-//! it is every second, which also tells when it's gone; both are told over
-//! a channel.
+//! it is every second and when an event says it does something else, which
+//! also tells when it's gone; both are told over a channel.
 
 use std::io;
 use std::net::{IpAddr, SocketAddr, TcpListener};
@@ -105,10 +105,11 @@ struct State {
     /// The URLs given it here, so what it plays can be told from what
     /// something else gave it.
     loaded: Vec<String>,
-    /// Counts loads begun and ended, and those under way, so an answer
-    /// can be known to be from before one or during one.
-    loads: u64,
-    loading: u32,
+    /// Counts what it was sent from here, loads and seeks, begun and
+    /// ended, and those under way, so an answer can be known to be from
+    /// before one or during one.
+    sends: u64,
+    sending: u32,
     /// An event said it plays something not given it here; it's asked on
     /// the next poll.
     suspect: bool,
@@ -131,6 +132,8 @@ struct Inner {
     ended: AtomicBool,
     /// How often it's asked where it is, in milliseconds.
     poll_every: AtomicU64,
+    /// Wakes the polling thread, which stops once it's gone.
+    polling: Mutex<Option<mpsc::Sender<()>>>,
 }
 
 /// A path no other session has.
@@ -168,6 +171,13 @@ fn subscribed_for(timeout: Option<&str>) -> Duration {
 impl Inner {
     fn state(&self) -> MutexGuard<'_, State> {
         lock(&self.state)
+    }
+
+    /// Have it asked where it is at once.
+    fn wake(&self) {
+        if let Some(polling) = &*lock(&self.polling) {
+            let _ = polling.send(());
+        }
     }
 
     fn rendering_control(&self) -> Result<&Service> {
@@ -272,16 +282,30 @@ impl Inner {
         !uri.is_empty() && !state.loaded.is_empty() && !state.loaded.iter().any(|ours| ours == uri)
     }
 
-    /// Where loads are: none while one is under way.
+    /// Where sends are: none while one is under way.
     fn mark(&self) -> Option<u64> {
         let state = self.state();
-        (state.loading == 0).then_some(state.loads)
+        (state.sending == 0).then_some(state.sends)
+    }
+
+    /// Send it somewhere with `send`, counted.
+    fn send<T>(&self, send: impl FnOnce() -> T) -> T {
+        {
+            let mut state = self.state();
+            state.sends += 1;
+            state.sending += 1;
+        }
+        let sent = send();
+        let mut state = self.state();
+        state.sending -= 1;
+        state.sends += 1;
+        sent
     }
 
     /// Whether something else gave it what it plays: what it's set to play,
-    /// asked afresh, isn't ours, with no load of ours in between. What it
-    /// says it plays may lag behind what it was given, or be news from
-    /// before a load.
+    /// asked afresh, isn't ours, with nothing sent from here in between.
+    /// What it says it plays may lag behind what it was given, or be news
+    /// from before a load.
     fn replaced(&self) -> bool {
         let Some(mark) = self.mark() else {
             return false;
@@ -318,14 +342,18 @@ impl Inner {
 
     /// Ask what it's doing when that doesn't come as events, then where it
     /// is: one that starts playing somewhere between the two isn't said to
-    /// play where it was before.
+    /// play where it was before. Where it is, asked before it was sent
+    /// somewhere or while it was, may be where it was.
     fn poll(&self, polls: u32) -> Result<Option<Ended>> {
+        let mark = self.mark();
         let state = if self.evented(Evented::AvTransport) {
             None
         } else {
-            Some(self.transport_state(POLL_ANSWER)?)
+            let state = self.transport_state(POLL_ANSWER)?;
+            Some((state, Instant::now()))
         };
         let (position, heard) = self.position_heard(POLL_ANSWER)?;
+        let since_sent = mark.is_some() && self.mark() == mark;
         let suspect = std::mem::take(&mut self.state().suspect)
             || position
                 .track_uri
@@ -335,12 +363,14 @@ impl Inner {
             return Ok(Some(Ended::Replaced));
         }
         self.update(|status| {
-            status.heard_at(position.position, heard);
+            if let Some((state, at)) = state {
+                status.doing(state, at);
+            }
+            if since_sent {
+                status.heard_at(position.position, heard);
+            }
             if position.duration.is_some() {
                 status.duration = position.duration;
-            }
-            if let Some(state) = state {
-                status.state = state;
             }
         });
         if polls.is_multiple_of(VOLUME_EVERY)
@@ -388,17 +418,23 @@ impl Inner {
                     .and_then(media::seconds)
                     .filter(|duration| *duration > 0.0);
                 let position = value("RelativeTimePosition").and_then(media::seconds);
+                let now = Instant::now();
+                let mut began = false;
                 self.update(|status| {
                     if let Some(state) = state {
-                        status.state = state;
+                        began = status.doing(state, now);
                     }
                     if duration.is_some() {
                         status.duration = duration;
                     }
                     if position.is_some() {
-                        status.heard_at(position, Instant::now());
+                        status.heard_at(position, now);
                     }
                 });
+                // Asked where it is now, which events seldom say.
+                if began {
+                    self.wake();
+                }
             }
             Evented::RenderingControl => {
                 let level = value("Volume").and_then(|level| level.parse::<f32>().ok());
@@ -647,8 +683,6 @@ fn poll(inner: &Inner, wake: &mpsc::Receiver<()>) {
 pub struct Session {
     inner: Arc<Inner>,
     closing: Arc<AtomicBool>,
-    /// Wakes the polling thread, which stops once it's dropped.
-    polling: Option<mpsc::Sender<()>>,
     listener: Option<JoinHandle<()>>,
     poller: Option<JoinHandle<()>>,
 }
@@ -668,6 +702,7 @@ impl Session {
         let listener = TcpListener::bind((http::local_address_towards(remote)?, 0))?;
         let listening = listener.local_addr()?;
         let (events, receiver) = unbounded();
+        let (polling, wake) = mpsc::channel();
         let inner = Arc::new(Inner {
             device: device.clone(),
             state: Mutex::default(),
@@ -675,6 +710,7 @@ impl Session {
             callback: format!("http://{listening}/{}", token()),
             ended: AtomicBool::new(false),
             poll_every: AtomicU64::new(POLL.as_millis() as u64),
+            polling: Mutex::new(Some(polling)),
         });
         let closing = Arc::new(AtomicBool::new(false));
         let listened = Arc::clone(&inner);
@@ -695,7 +731,6 @@ impl Session {
                 Err(err) => log::info!("dlna: no events from {}, polling: {err}", of.path()),
             }
         }
-        let (polling, wake) = mpsc::channel();
         let polled = Arc::clone(&inner);
         let poller = thread::Builder::new()
             .name("dlna poll".into())
@@ -713,7 +748,6 @@ impl Session {
             Self {
                 inner,
                 closing,
-                polling: Some(polling),
                 listener: Some(listener),
                 poller: Some(poller),
             },
@@ -732,24 +766,13 @@ impl Session {
         self.inner
             .poll_every
             .store(every.as_millis() as u64, Ordering::Relaxed);
-        if let Some(polling) = &self.polling {
-            let _ = polling.send(());
-        }
+        self.inner.wake();
     }
 
     /// Give it `media` to play, as play then plays.
     pub fn load(&self, media: &Media) -> Result<()> {
-        {
-            let mut state = self.inner.state();
-            state.loaded.push(media.url.trim().to_owned());
-            state.loads += 1;
-            state.loading += 1;
-        }
-        let loaded = self.set_uri(media);
-        let mut state = self.inner.state();
-        state.loading -= 1;
-        state.loads += 1;
-        loaded
+        self.inner.state().loaded.push(media.url.trim().to_owned());
+        self.inner.send(|| self.set_uri(media))
     }
 
     fn set_uri(&self, media: &Media) -> Result<()> {
@@ -784,19 +807,18 @@ impl Session {
     /// Go to `position` seconds in.
     pub fn seek(&self, position: f64) -> Result<()> {
         let target = media::clock(position);
-        match self
-            .inner
-            .transport("Seek", &[("Unit", "REL_TIME"), ("Target", &target)])
-        {
+        let seek = |unit| {
+            self.inner
+                .transport("Seek", &[("Unit", unit), ("Target", &target)])
+                .map(drop)
+        };
+        self.inner.send(|| match seek("REL_TIME") {
             Err(Error::Upnp {
                 fault: Fault::SeekModeNotSupported,
                 ..
-            }) => self
-                .inner
-                .transport("Seek", &[("Unit", "ABS_TIME"), ("Target", &target)])
-                .map(drop),
-            done => done.map(drop),
-        }
+            }) => seek("ABS_TIME"),
+            done => done,
+        })
     }
 
     /// Where it is now, as it says.
@@ -863,7 +885,7 @@ impl Drop for Session {
     fn drop(&mut self) {
         self.inner.ended.store(true, Ordering::Relaxed);
         self.closing.store(true, Ordering::Relaxed);
-        drop(self.polling.take());
+        drop(lock(&self.inner.polling).take());
         // A renewal under way puts its subscription back when answered, so
         // the polling thread is done before they're ended.
         if let Some(poller) = self.poller.take() {

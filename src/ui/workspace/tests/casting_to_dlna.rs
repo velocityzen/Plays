@@ -490,4 +490,19 @@ fn a_tv_that_wont_seek_while_stopped_goes_there_once_it_plays(cx: &mut TestAppCo
     wait(&mut cx, "the TV to go there", |_| {
         tv.state().position == 1.0
     });
+    // Held there, as it stays, through a status or two.
+    let held = std::time::Instant::now() + std::time::Duration::from_millis(1500);
+    while std::time::Instant::now() < held {
+        let at = view.read_with(&cx, |view, _| view.position());
+        assert!(
+            (1.0..1.05).contains(&at),
+            "the bar at {at}, not where the TV is"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    // Of the clip's two seconds.
+    tv.state().position = 1.5;
+    wait(&mut cx, "the bar to move on with the TV", |cx| {
+        view.read_with(cx, |view, _| view.position()) > 1.5
+    });
 }

@@ -268,10 +268,12 @@ fn loading_while_it_plays_stops_it_first_when_it_must() {
     next.url = "http://192.0.2.1:8080/cast/next".into();
     session.load(&next).unwrap();
     let state = fake.state();
+    // Asked where it is among them, as it may be.
     let actions: Vec<&str> = state
         .calls
         .iter()
         .map(|call| call.action.as_str())
+        .filter(|action| !action.starts_with("Get"))
         .collect();
     assert!(
         actions.ends_with(&["SetAVTransportURI", "Stop", "SetAVTransportURI"]),
@@ -442,6 +444,45 @@ fn starting_between_two_questions_is_heard_where_it_starts() {
             "starting after {after}"
         );
         drop(session);
+    }
+}
+
+/// What it's heard to do goes with where it was heard to be since: a TV
+/// whose events say it plays, and not where, is asked where at once, even
+/// asked seldom; a speaker is asked what it does, then where.
+#[test]
+fn what_it_does_goes_with_where_it_was_heard_since() {
+    for renderer in [Renderer::Tv, Renderer::Speaker] {
+        // Somewhere new, and where it was.
+        for at in [30.0, 0.0] {
+            let fake = FakeRenderer::start(renderer);
+            let (session, mut events) = Session::connect(&fake.device()).unwrap();
+            if renderer == Renderer::Tv {
+                session.poll_every(Some(Duration::from_secs(60)));
+            }
+            session.load(&film()).unwrap();
+            let heard_since = |status: &Status| status.position_at >= status.state_at;
+            let stopped = status(&mut events, |status| {
+                status.state == TransportState::Stopped && heard_since(status)
+            });
+            assert_eq!(stopped.and_then(|status| status.position), Some(0.0));
+            fake.state().plays_after = Some(("Play".into(), at));
+            session.play().unwrap();
+            // A speaker is asked what it does, then where: both come at once.
+            let asked = renderer == Renderer::Speaker;
+            let playing = status(&mut events, |status| {
+                status.state == TransportState::Playing && (asked || heard_since(status))
+            })
+            .expect("playing");
+            assert!(heard_since(&playing), "{renderer:?} heard where it plays");
+            assert_eq!(playing.position, Some(at), "{renderer:?} starting at {at}");
+            let stopping = Instant::now();
+            drop(session);
+            assert!(
+                stopping.elapsed() < Duration::from_secs(5),
+                "stopped at once"
+            );
+        }
     }
 }
 

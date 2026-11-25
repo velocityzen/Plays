@@ -286,3 +286,171 @@ fn the_blocks_volume_scales_the_renderers() {
     loudness.heard(at(0.401, false));
     assert!((loudness.full - 0.8).abs() < 1e-6, "as it was set");
 }
+
+/// A session with `renderer`, as casting to it starts one.
+fn session_with(renderer: &dlna::fake::FakeRenderer) -> Box<dyn Session> {
+    let target = DlnaTarget::start_at(renderer.search_at());
+    let deadline = Instant::now() + std::time::Duration::from_secs(5);
+    let device = loop {
+        if let Some(device) = target.devices().into_iter().next() {
+            break device;
+        }
+        assert!(Instant::now() < deadline, "the renderer to be found");
+        thread::sleep(std::time::Duration::from_millis(10));
+    };
+    target.connect(&device).expect("a session")
+}
+
+/// A clip to play from `start`.
+fn clip(start: f64, autoplay: bool) -> Load {
+    Load {
+        url: "http://192.0.2.1:8080/cast/clip.mp4".into(),
+        mime: "video/mp4".into(),
+        protocol_info: "http-get:*:video/mp4:*".into(),
+        title: "Clip".into(),
+        duration: Some(60.0),
+        live: false,
+        segments: None,
+        start,
+        autoplay,
+        volume: 1.0,
+        muted: false,
+        subtitles: None,
+        picture_here: false,
+        starts_at_url: false,
+    }
+}
+
+/// The first status `wanted` picks, asked for as often as can be.
+fn status_until(session: &mut dyn Session, what: &str, wanted: impl Fn(&Status) -> bool) -> Status {
+    let deadline = Instant::now() + std::time::Duration::from_secs(5);
+    loop {
+        let status = session.status().expect("a status");
+        if wanted(&status) {
+            return status;
+        }
+        assert!(Instant::now() < deadline, "{what}: {status:?}");
+        thread::sleep(std::time::Duration::from_millis(5));
+    }
+}
+
+/// Whether `status` was heard where it says, no sooner than `sent`.
+fn heard_since(status: &Status, sent: Instant) -> bool {
+    status
+        .at
+        .inspect(|&at| {
+            assert!(at >= sent, "heard there before it was sent: {status:?}");
+        })
+        .is_some()
+}
+
+/// A TV that starts playing somewhere new, saying so by event, isn't heard
+/// playing where it was before.
+#[test]
+fn a_tv_that_plays_from_elsewhere_is_heard_playing_only_there() {
+    use dlna::fake::{FakeRenderer, Kind as Renderer};
+    let tv = FakeRenderer::start(Renderer::Tv);
+    let mut session = session_with(&tv);
+    let asked = tv.state().received("GetPositionInfo").len();
+    session.load(&clip(0.0, false)).unwrap();
+    assert!(tv.wait_for(|state| state.received("GetPositionInfo").len() > asked));
+    {
+        let mut state = tv.state();
+        state.plays_after = Some(("Play".into(), 30.0));
+        // Slow to say where, once it's said it plays.
+        state.answer_after = std::time::Duration::from_millis(300);
+    }
+    session.play().unwrap();
+    let playing = status_until(&mut *session, "playing", |status| {
+        status.state == State::Playing
+    });
+    assert_eq!(playing.position, 30.0);
+}
+
+/// A TV that won't seek till it plays is sent there once it does: till
+/// it's heard since, it's where it was sent, not where it was.
+#[test]
+fn a_tv_sent_somewhere_once_it_plays_is_there_till_heard_since() {
+    use dlna::fake::{FakeRenderer, Kind as Renderer};
+    let tv = FakeRenderer::start(Renderer::Tv);
+    tv.state().refuse.push(("Seek".into(), 711));
+    let mut session = session_with(&tv);
+    session.load(&clip(1.0, true)).unwrap();
+    assert!(tv.wait_for(|state| state.transport == "PLAYING"));
+    let cleared = Instant::now();
+    tv.state().refuse.clear();
+    let heard = status_until(&mut *session, "heard there", |status| {
+        assert_eq!(status.position, 1.0, "where it was sent: {status:?}");
+        heard_since(status, cleared)
+    });
+    assert_eq!(heard.state, State::Playing);
+    assert_eq!(tv.state().position, 1.0, "it went");
+}
+
+/// A TV sent somewhere, sought or given media, while it's being asked
+/// where it is isn't heard where it was: the answer may be from before.
+#[test]
+fn a_tv_sent_somewhere_as_its_asked_where_it_is_is_where_it_was_sent() {
+    use dlna::fake::{FakeRenderer, Kind as Renderer};
+    for sought in [true, false] {
+        let tv = FakeRenderer::start(Renderer::Tv);
+        let mut session = session_with(&tv);
+        session.load(&clip(0.0, true)).unwrap();
+        status_until(&mut *session, "playing", |status| {
+            status.state == State::Playing
+        });
+        let asked = {
+            let mut state = tv.state();
+            state.position = 5.0;
+            state.answer_after = std::time::Duration::from_millis(300);
+            state.received("GetPositionInfo").len()
+        };
+        assert!(tv.wait_for(|state| state.received("GetPositionInfo").len() > asked));
+        let sent = Instant::now();
+        let there = if sought {
+            session.seek(20.0).unwrap();
+            20.0
+        } else {
+            session.load(&clip(0.0, true)).unwrap();
+            0.0
+        };
+        tv.state().answer_after = std::time::Duration::ZERO;
+        status_until(&mut *session, "heard there, playing", |status| {
+            assert_eq!(status.position, there, "where it was sent: {status:?}");
+            heard_since(status, sent) && status.state == State::Playing
+        });
+    }
+}
+
+/// Subtitles changed once it's sought give it the media again from where
+/// it was sought, before it's heard there.
+#[test]
+fn subtitles_changed_once_sought_go_from_there() {
+    use dlna::fake::{FakeRenderer, Kind as Renderer};
+    let tv = FakeRenderer::start(Renderer::Tv);
+    let mut session = session_with(&tv);
+    session.load(&clip(0.0, true)).unwrap();
+    status_until(&mut *session, "playing", |status| {
+        status.state == State::Playing
+    });
+    session.seek(20.0).unwrap();
+    let subtitles = Subtitles {
+        source: stream_server::SubtitleSource::Track(0),
+        webvtt_url: "http://192.0.2.1:8080/cast/subs.vtt".into(),
+        srt_url: "http://192.0.2.1:8080/cast/subs.srt".into(),
+        language: None,
+        name: "English".into(),
+        style: crate::settings::SubtitleStyle::default(),
+    };
+    session.set_subtitles(Some(&subtitles)).unwrap();
+    let state = tv.state();
+    let given = state
+        .calls
+        .iter()
+        .rposition(|call| call.action == "SetAVTransportURI")
+        .unwrap();
+    let seek = state.calls[given..]
+        .iter()
+        .find(|call| call.action == "Seek");
+    assert_eq!(seek.and_then(|seek| seek.arg("Target")), Some("0:00:20"));
+}

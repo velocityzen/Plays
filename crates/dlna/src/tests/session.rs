@@ -41,6 +41,7 @@ fn the_events_listener_stops_without_being_woken() {
         callback: format!("http://127.0.0.1:1/{}", token()),
         ended: AtomicBool::new(false),
         poll_every: AtomicU64::new(POLL.as_millis() as u64),
+        polling: Mutex::new(None),
     });
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let closing = Arc::new(AtomicBool::new(false));

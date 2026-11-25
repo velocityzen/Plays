@@ -224,7 +224,7 @@ impl Target for DlnaTarget {
             capabilities,
             media: None,
             starts_at_url: false,
-            given: (0.0, Instant::now()),
+            sent: (0.0, Instant::now()),
             playing: false,
             played: false,
             finished: false,
@@ -485,9 +485,9 @@ struct DlnaSession {
     media: Option<Media>,
     /// It's given what starts at its URL (`Load::starts_at_url`).
     starts_at_url: bool,
-    /// Where in the media what it was last given starts, and when it was
-    /// given: what it said before then is of what it played before.
-    given: (f64, Instant),
+    /// Where in the media it was last sent, given media or told to seek,
+    /// and when: where it said it was before then, it was before.
+    sent: (f64, Instant),
     /// Whether it was told to play.
     playing: bool,
     /// Whether it has played what it was given, so that stopping is the
@@ -554,9 +554,10 @@ impl DlnaSession {
         } else {
             media.clone()
         };
+        let at = Instant::now();
         let loaded = self.session()?.load(&given);
         loaded.map_err(|err| self.failed(err))?;
-        self.given = (if self.starts_at_url { start } else { 0.0 }, Instant::now());
+        self.sent = (if self.starts_at_url { start } else { 0.0 }, at);
         self.media = Some(media);
         self.playing = false;
         if start > 0.0 && !self.starts_at_url {
@@ -573,9 +574,13 @@ impl DlnaSession {
         let Some(time) = self.pending_seek else {
             return Ok(());
         };
+        let at = Instant::now();
         let sought = self.session()?.seek(time);
         match sought {
-            Ok(()) => self.pending_seek = None,
+            Ok(()) => {
+                self.pending_seek = None;
+                self.sent = (time, at);
+            }
             // Still on its way, likely.
             Err(::dlna::Error::Upnp { .. }) if self.tries + 1 < CATCH_UP_TRIES => self.tries += 1,
             Err(err) => {
@@ -584,6 +589,21 @@ impl DlnaSession {
             }
         }
         Ok(())
+    }
+
+    /// Where it is in the media, as `status` says, and whether it was heard
+    /// there since it was last sent somewhere: till then, it's where it was
+    /// sent.
+    fn place(&self, status: &::dlna::Status) -> (f64, bool) {
+        let (sent, sent_at) = self.sent;
+        let heard = status.position_at.is_some_and(|at| at >= sent_at);
+        let position = status.position.filter(|_| heard);
+        let place = match self.starts_at_url {
+            // It says where it is in what it was given, which starts there.
+            true => sent + position.unwrap_or(0.0),
+            false => position.unwrap_or(sent),
+        };
+        (place, heard)
     }
 }
 
@@ -675,10 +695,12 @@ impl Session for DlnaSession {
                 TransportState::Stopped | TransportState::NoMedia | TransportState::Transitioning
             );
         self.finished = false;
+        let at = Instant::now();
         let sought = self.session()?.seek(time);
         match sought {
             Ok(()) => {
                 self.pending_seek = None;
+                self.sent = (time, at);
                 Ok(())
             }
             // Many won't before they play, each refusing its own way
@@ -728,7 +750,7 @@ impl Session for DlnaSession {
         media.subtitles = subtitles;
         self.hear();
         let status = self.session()?.status();
-        let position = self.pending_seek.or(status.position).unwrap_or(0.0);
+        let position = self.pending_seek.unwrap_or(self.place(&status).0);
         let playing = self.playing && !self.finished;
         self.give(media, playing, position)
     }
@@ -761,33 +783,30 @@ impl Session for DlnaSession {
                 .filter(|duration| *duration > 0.0)
                 .or(media_duration),
         };
-        let (start, given_at) = self.given;
-        let since_given = status.position_at.is_some_and(|at| at >= given_at);
-        let said = match self.starts_at_url {
-            // Till it says otherwise, it's where it was given it from.
-            true => Some(start + status.position.filter(|_| since_given).unwrap_or(0.0)),
-            false => status.position,
-        };
+        let (said, heard_there) = self.place(&status);
         let state = if self.finished {
             State::Ended
         } else {
             match status.state {
-                TransportState::Playing => State::Playing,
+                TransportState::Playing if status.placed_since_state() => State::Playing,
+                // Getting going, or said by event to play and yet to be
+                // heard where.
+                TransportState::Playing | TransportState::Transitioning => State::Buffering,
                 TransportState::Paused => State::Paused,
-                TransportState::Transitioning => State::Buffering,
                 _ if self.playing => State::Buffering,
                 _ => State::Paused,
             }
         };
         let position = match state {
-            State::Ended => duration.or(said),
-            _ => self.pending_seek.or(said),
+            State::Ended => duration.unwrap_or(said),
+            _ => self.pending_seek.unwrap_or(said),
         };
-        // Where it was heard to be, not where it's to go or has ended.
-        let heard = state != State::Ended && self.pending_seek.is_none();
+        // Where it was heard to be, not where it's to go, was sent or has
+        // ended.
+        let heard = state != State::Ended && self.pending_seek.is_none() && heard_there;
         Ok(Status {
             state,
-            position: position.unwrap_or(0.0),
+            position,
             at: status.position_at.filter(|_| heard),
             duration,
         })
