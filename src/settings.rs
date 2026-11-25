@@ -130,9 +130,19 @@ impl OverVideo {
     pub fn visible(self) -> Vec<&'static str> {
         Self::PANELS
             .into_iter()
-            .zip([self.controls, self.top_bar, self.track_switcher, self.notes])
+            .zip(self.shown())
             .filter_map(|(panel, shown)| shown.then_some(panel))
             .collect()
+    }
+
+    /// Whether each panel shows, in the order of `PANELS`.
+    pub fn shown(self) -> [bool; 4] {
+        [self.controls, self.top_bar, self.track_switcher, self.notes]
+    }
+
+    /// Whether any panel shows: all of them are on, as one.
+    pub fn any(self) -> bool {
+        self != Self::NONE
     }
 
     /// The panels `visible` names, by their keys here, shown, and the rest
@@ -147,21 +157,19 @@ impl OverVideo {
         }
     }
 
-    /// With `panel` turned on, or off.
+    /// With `panel` shown as `turn` has it, given whether it shows; or,
+    /// for none, each panel shown, or each hidden, as `turn` has them,
+    /// given whether any shows.
     #[must_use]
-    pub fn toggled(mut self, panel: Panel) -> Self {
-        let shown = panel(&mut self);
-        *shown = !*shown;
-        self
-    }
-
-    /// Each panel hidden while any shows, else each shown.
-    #[must_use]
-    pub fn all_toggled(self) -> Self {
-        if self == Self::NONE {
-            Self::default()
-        } else {
-            Self::NONE
+    pub fn switched(mut self, panel: Option<Panel>, turn: impl FnOnce(bool) -> bool) -> Self {
+        match panel {
+            Some(panel) => {
+                let shown = panel(&mut self);
+                *shown = turn(*shown);
+                self
+            }
+            None if turn(self.any()) => Self::default(),
+            None => Self::NONE,
         }
     }
 
@@ -228,9 +236,14 @@ pub enum FloatOnTop {
 }
 
 impl FloatOnTop {
-    /// `mode` turned on, or off if it already is, as its menu item does.
-    pub fn toggled(self, mode: Self) -> Self {
-        if self == mode { Self::Off } else { mode }
+    /// `mode` turned on, or off, as `turn` has it, given whether it's on:
+    /// off, only if it's the one on.
+    pub fn switched(self, mode: Self, turn: impl FnOnce(bool) -> bool) -> Self {
+        match (self == mode, turn(self == mode)) {
+            (_, true) => mode,
+            (true, false) => Self::Off,
+            (false, false) => self,
+        }
     }
 }
 

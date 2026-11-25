@@ -116,7 +116,7 @@ fn a_block_opened_renamed_and_its_window_full_screen_are_told_once_in_order(
         &mut cx,
         Invocation::new("window.rename").with_args(json!({"label": "news"})),
     );
-    run(&mut cx, Invocation::new("window.toggle_full_screen"));
+    run(&mut cx, Invocation::new("window.full_screen.toggle"));
     let said: Vec<(&str, Value)> = told(&mut all)
         .into_iter()
         .map(|event| (event.kind, event.payload))
@@ -149,11 +149,11 @@ fn a_block_opened_renamed_and_its_window_full_screen_are_told_once_in_order(
             ),
             (
                 "app.command_run",
-                json!({"command": "window.toggle_full_screen", "source": "ui"})
+                json!({"command": "window.full_screen.toggle", "source": "ui"})
             ),
             (
-                "window.full_screen_changed",
-                json!({"window_id": w, "window_title": "news", "full_screen": true})
+                "window.full_screen.on",
+                json!({"window_id": w, "window_title": "news"})
             ),
         ]
     );
@@ -167,10 +167,10 @@ fn a_block_opened_renamed_and_its_window_full_screen_are_told_once_in_order(
         ],
         "the app's: commands, and windows' names"
     );
-    run(&mut cx, Invocation::new("window.toggle_full_screen"));
+    run(&mut cx, Invocation::new("window.full_screen.toggle"));
     assert_eq!(
         kinds(&mut all),
-        ["app.command_run", "window.full_screen_changed"]
+        ["app.command_run", "window.full_screen.off"]
     );
     assert_eq!(kinds(&mut app), ["app.command_run"]);
 }
@@ -399,15 +399,18 @@ fn how_a_file_plays_is_told_for_its_controls_and_commands(cx: &mut TestAppContex
         &mut cx,
         Invocation::new("audio.set_volume").with_args(json!({"volume": 40})),
     );
-    run(&mut cx, Invocation::new("audio.toggle_mute"));
+    run(&mut cx, Invocation::new("audio.mute.toggle"));
     let volumes: Vec<Value> = told(&mut heard)
         .into_iter()
-        .map(|event| {
-            assert_eq!(event.kind, "audio.volume_changed");
-            json!([event.payload["volume"], event.payload["muted"]])
-        })
+        .map(|event| json!([event.kind, event.payload["volume"]]))
         .collect();
-    assert_eq!(volumes, [json!([40.0, false]), json!([40.0, true])]);
+    assert_eq!(
+        volumes,
+        [
+            json!(["audio.volume_changed", 40.0]),
+            json!(["audio.mute.on", null]),
+        ]
+    );
 
     run(
         &mut cx,

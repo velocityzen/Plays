@@ -65,7 +65,7 @@ impl PlayerView {
                             .overlay()
                             .selected(self.pip.is_some())
                             .on_click(cx.listener(|this, _, _, cx| {
-                                this.send("block.toggle_picture_in_picture", Value::Null, cx);
+                                this.send("block.picture_in_picture.toggle", Value::Null, cx);
                             })),
                     )
                 },

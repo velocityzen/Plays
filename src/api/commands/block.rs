@@ -5,8 +5,8 @@ use gpui::{App, Context, Entity};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use super::done;
 use super::window::{PANELS_SHOWN, ShowPanels};
+use super::{Switch, done, panels};
 use crate::api::args::{Arg, Kind};
 use crate::api::events::{EventField, EventKind};
 use crate::api::registry::{Args, Outcome, Reach, Scope, Spec, on_mac};
@@ -226,7 +226,7 @@ pub const COMMANDS: &[Spec] = &[
         Scope::Block,
         zoom,
     )
-    .tells(&["window.full_screen_changed", "window.layout_changed"])
+    .tells(&["window.full_screen.on", "window.layout_changed"])
     .keywords(&["expand", "enlarge", "full", "restore"])
     .keys(&["secondary-shift-enter"]),
     Spec::custom_with(
@@ -316,25 +316,67 @@ pub const COMMANDS: &[Spec] = &[
     .keywords(&["clipboard", "position", "timestamp"])
     .returns("The time copied, such as 1:23:45."),
     Spec::block(
-        "block.toggle_picture_in_picture",
+        "block.picture_in_picture.toggle",
         "Picture in Picture",
         "Play the block in a small window floating above every app's, or in its block again.",
-        |player, window, cx| player.toggle_picture_in_picture(window, cx),
+        |player, window, cx| {
+            player.turn_picture_in_picture(|on| Switch::Toggle.turn(on), window, cx);
+        },
     )
-    .tells(&["block.picture_in_picture_changed"])
+    .tells(&[
+        "block.picture_in_picture.on",
+        "block.picture_in_picture.off",
+    ])
     .keywords(&["pip", "float", "mini player"])
     .setting("picture_in_picture")
     .keys(on_mac(&["ctrl-cmd-p"], &[]))
     // macOS's.
     .only_if(|| cfg!(target_os = "macos")),
     Spec::block(
-        "block.toggle_ui",
+        "block.picture_in_picture.on",
+        "Enter Picture in Picture",
+        "Play the block in a small window floating above every app's, unless it does already.",
+        |player, window, cx| player.turn_picture_in_picture(|on| Switch::On.turn(on), window, cx),
+    )
+    .tells(&["block.picture_in_picture.on"])
+    .keywords(&["pip", "float", "mini player"])
+    .only_if(|| cfg!(target_os = "macos")),
+    Spec::block(
+        "block.picture_in_picture.off",
+        "Exit Picture in Picture",
+        "Play the block in its block again, unless it does already.",
+        |player, window, cx| {
+            player.turn_picture_in_picture(|on| Switch::Off.turn(on), window, cx);
+        },
+    )
+    .tells(&["block.picture_in_picture.off"])
+    .keywords(&["pip", "float", "mini player", "close"])
+    .only_if(|| cfg!(target_os = "macos")),
+    Spec::block(
+        "block.ui.toggle",
         "Show/Hide All",
         "Hide every panel over the block's video while any shows, else show them all.",
-        |player, _, cx| change_over_video(player, OverVideo::all_toggled, cx),
+        |player, _, cx| switch_panel(Switch::Toggle, None, player, cx),
     )
-    .tells(&["block.ui_changed"])
-    .keywords(&["hide", "interface", "ui", "panels", "clean"]),
+    .tells(TELLS_ALL)
+    .keywords(&["hide", "interface", "ui", "panels", "clean"])
+    .setting("block.toggle_ui"),
+    Spec::block(
+        "block.ui.on",
+        "Show All",
+        "Show every panel over the block's video.",
+        |player, _, cx| switch_panel(Switch::On, None, player, cx),
+    )
+    .tells(TELLS_ALL_ON)
+    .keywords(&["interface", "ui", "panels"]),
+    Spec::block(
+        "block.ui.off",
+        "Hide All",
+        "Hide every panel over the block's video.",
+        |player, _, cx| switch_panel(Switch::Off, None, player, cx),
+    )
+    .tells(TELLS_ALL_OFF)
+    .keywords(&["interface", "ui", "panels", "clean"]),
     Spec::block_with(
         "block.set_ui",
         "Show Panels",
@@ -346,58 +388,154 @@ pub const COMMANDS: &[Spec] = &[
             done()
         },
     )
-    .tells(&["block.ui_changed"])
+    .tells(&[
+        "block.controls.off",
+        "block.top_bar.off",
+        "block.track_switcher.off",
+    ])
     .keywords(&["hide", "interface", "ui", "panels", "clean", "show"])
     .state(|target, cx| {
         target::read_block(target, cx, |player, _| json!(player.over_video().visible()))
     }),
     Spec::block(
-        "block.toggle_controls",
-        "Show Controls",
+        "block.controls.toggle",
+        "Show/Hide Controls",
         "Show the seek bar and buttons at the bottom of the block, or hide them.",
-        |player, _, cx| toggle_panel(player, |panel| &mut panel.controls, cx),
+        |player, _, cx| switch_panel(Switch::Toggle, Some(panels::controls), player, cx),
     )
-    .tells(&["block.ui_changed"])
+    .tells(&["block.controls.on", "block.controls.off"])
     .keywords(&["hide", "player controls", "seek bar", "bottom bar"])
+    .setting("block.toggle_controls")
     .state(|target, cx| shown_in_block(target, cx, |shown| shown.controls)),
     Spec::block(
-        "block.toggle_top_bar",
-        "Show Top Bar",
-        "Show the file's name and buttons at the top of the block, or hide them.",
-        |player, _, cx| toggle_panel(player, |panel| &mut panel.top_bar, cx),
+        "block.controls.on",
+        "Show Controls",
+        "Show the seek bar and buttons at the bottom of the block, unless they show already.",
+        |player, _, cx| switch_panel(Switch::On, Some(panels::controls), player, cx),
     )
-    .tells(&["block.ui_changed"])
+    .tells(&["block.controls.on"])
+    .keywords(&["player controls", "seek bar", "bottom bar"]),
+    Spec::block(
+        "block.controls.off",
+        "Hide Controls",
+        "Hide the seek bar and buttons at the bottom of the block, unless they're hidden \
+         already.",
+        |player, _, cx| switch_panel(Switch::Off, Some(panels::controls), player, cx),
+    )
+    .tells(&["block.controls.off"])
+    .keywords(&["player controls", "seek bar", "bottom bar"]),
+    Spec::block(
+        "block.top_bar.toggle",
+        "Show/Hide Top Bar",
+        "Show the file's name and buttons at the top of the block, or hide them.",
+        |player, _, cx| switch_panel(Switch::Toggle, Some(panels::top_bar), player, cx),
+    )
+    .tells(&["block.top_bar.on", "block.top_bar.off"])
     .keywords(&["hide", "header", "title", "buttons"])
+    .setting("block.toggle_top_bar")
     .state(|target, cx| shown_in_block(target, cx, |shown| shown.top_bar)),
     Spec::block(
-        "block.toggle_track_switcher",
-        "Show Track Switcher",
+        "block.top_bar.on",
+        "Show Top Bar",
+        "Show the file's name and buttons at the top of the block, unless they show already.",
+        |player, _, cx| switch_panel(Switch::On, Some(panels::top_bar), player, cx),
+    )
+    .tells(&["block.top_bar.on"])
+    .keywords(&["header", "title", "buttons"]),
+    Spec::block(
+        "block.top_bar.off",
+        "Hide Top Bar",
+        "Hide the file's name and buttons at the top of the block, unless they're hidden \
+         already.",
+        |player, _, cx| switch_panel(Switch::Off, Some(panels::top_bar), player, cx),
+    )
+    .tells(&["block.top_bar.off"])
+    .keywords(&["header", "title", "buttons"]),
+    Spec::block(
+        "block.track_switcher.toggle",
+        "Show/Hide Track Switcher",
         "Show the reel of tracks a shortcut rolls to the audio, video or subtitles \
          picked, over the block, or switch without it.",
-        |player, _, cx| toggle_panel(player, |panel| &mut panel.track_switcher, cx),
+        |player, _, cx| switch_panel(Switch::Toggle, Some(panels::track_switcher), player, cx),
     )
-    .tells(&["block.ui_changed"])
+    .tells(&["block.track_switcher.on", "block.track_switcher.off"])
     .keywords(&["hide", "reel", "streams", "audio track", "subtitle track"])
+    .setting("block.toggle_track_switcher")
     .state(|target, cx| shown_in_block(target, cx, |shown| shown.track_switcher)),
     Spec::block(
-        "block.toggle_notes",
-        "Show Notes",
+        "block.track_switcher.on",
+        "Show Track Switcher",
+        "Show the reel of tracks a shortcut rolls to the audio, video or subtitles \
+         picked, over the block, unless it shows already.",
+        |player, _, cx| switch_panel(Switch::On, Some(panels::track_switcher), player, cx),
+    )
+    .tells(&["block.track_switcher.on"])
+    .keywords(&["reel", "streams", "audio track", "subtitle track"]),
+    Spec::block(
+        "block.track_switcher.off",
+        "Hide Track Switcher",
+        "Switch tracks over the block without the reel, unless it's hidden already.",
+        |player, _, cx| switch_panel(Switch::Off, Some(panels::track_switcher), player, cx),
+    )
+    .tells(&["block.track_switcher.off"])
+    .keywords(&["reel", "streams", "audio track", "subtitle track"]),
+    Spec::block(
+        "block.notes.toggle",
+        "Show/Hide Notes",
         "Show notes on what a shortcut changed, like the volume, over the block, or \
          not. Notes on what's wrong still show.",
-        |player, _, cx| toggle_panel(player, |panel| &mut panel.notes, cx),
+        |player, _, cx| switch_panel(Switch::Toggle, Some(panels::notes), player, cx),
     )
-    .tells(&["block.ui_changed"])
+    .tells(&["block.notes.on", "block.notes.off"])
     .keywords(&["hide", "osd", "on-screen display", "volume", "messages"])
+    .setting("block.toggle_notes")
     .state(|target, cx| shown_in_block(target, cx, |shown| shown.notes)),
     Spec::block(
-        "block.toggle_console",
+        "block.notes.on",
+        "Show Notes",
+        "Show notes on what a shortcut changed, like the volume, over the block, unless \
+         they show already.",
+        |player, _, cx| switch_panel(Switch::On, Some(panels::notes), player, cx),
+    )
+    .tells(&["block.notes.on"])
+    .keywords(&["osd", "on-screen display", "volume", "messages"]),
+    Spec::block(
+        "block.notes.off",
+        "Hide Notes",
+        "Hide notes on what a shortcut changed over the block, unless they're hidden \
+         already. Notes on what's wrong still show.",
+        |player, _, cx| switch_panel(Switch::Off, Some(panels::notes), player, cx),
+    )
+    .tells(&["block.notes.off"])
+    .keywords(&["osd", "on-screen display", "volume", "messages"]),
+    Spec::block(
+        "block.console.toggle",
         "Show/Hide Console",
         "Show what the block's file is and how it plays, over its picture, or hide it.",
-        |player, _, cx| player.toggle_console(cx),
+        |player, _, cx| player.turn_console(|on| Switch::Toggle.turn(on), cx),
     )
+    .tells(&["block.console.on", "block.console.off"])
     .keywords(&["info", "stats", "codec", "debug"])
     .setting("console")
-    .keys(&["~", "`"]),
+    .keys(&["~", "`"])
+    .state(|target, cx| target::read_block(target, cx, |player, _| json!(player.shows_console()))),
+    Spec::block(
+        "block.console.on",
+        "Show Console",
+        "Show what the block's file is and how it plays, over its picture, unless it \
+         shows already.",
+        |player, _, cx| player.turn_console(|on| Switch::On.turn(on), cx),
+    )
+    .tells(&["block.console.on"])
+    .keywords(&["info", "stats", "codec", "debug"]),
+    Spec::block(
+        "block.console.off",
+        "Hide Console",
+        "Hide what the block's file is and how it plays, unless it's hidden already.",
+        |player, _, cx| player.turn_console(|on| Switch::Off.turn(on), cx),
+    )
+    .tells(&["block.console.off"])
+    .keywords(&["info", "stats", "codec", "debug"]),
 ];
 
 /// The blocks' events.
@@ -439,19 +577,80 @@ pub const EVENTS: &[EventKind] = &[
     )
     .causes(&["a click on a block or the mouse going to one"]),
     EventKind::block(
-        "block.picture_in_picture_changed",
-        "A block began playing in a small window floating above every app's, or in its block \
-         again.",
-        &[EventField::new(
-            "picture_in_picture",
-            "Whether it plays in the small window now.",
-        )],
+        "block.picture_in_picture.on",
+        "A block began playing in a small window floating above every app's.",
+        &[],
+    ),
+    EventKind::block(
+        "block.picture_in_picture.off",
+        "A block plays in its block again, not in the small window.",
+        &[],
     )
     .causes(&["the small window's own buttons"]),
     EventKind::block(
-        "block.ui_changed",
-        "The panels shown over a block's video changed.",
-        &[EventField::new("visible", super::VISIBLE)],
+        "block.console.on",
+        "What a block's file is and how it plays showed over its picture.",
+        &[],
+    ),
+    EventKind::block(
+        "block.console.off",
+        "What a block's file is and how it plays hid.",
+        &[],
+    ),
+    EventKind::block(
+        "block.ui.on",
+        "A panel showed over a block's video, where none did.",
+        &[],
+    )
+    .causes(&[super::PANELS_SET]),
+    EventKind::block("block.ui.off", "Every panel over a block's video hid.", &[])
+        .causes(&[super::PANELS_SET]),
+    EventKind::block(
+        "block.controls.on",
+        "The seek bar and buttons at the bottom of a block showed.",
+        &[],
+    )
+    .causes(&[super::PANELS_SET]),
+    EventKind::block(
+        "block.controls.off",
+        "The seek bar and buttons at the bottom of a block hid.",
+        &[],
+    )
+    .causes(&[super::PANELS_SET]),
+    EventKind::block(
+        "block.top_bar.on",
+        "The file's name and buttons at the top of a block showed.",
+        &[],
+    )
+    .causes(&[super::PANELS_SET]),
+    EventKind::block(
+        "block.top_bar.off",
+        "The file's name and buttons at the top of a block hid.",
+        &[],
+    )
+    .causes(&[super::PANELS_SET]),
+    EventKind::block(
+        "block.track_switcher.on",
+        "A block shows the reel of tracks as a shortcut rolls to one.",
+        &[],
+    )
+    .causes(&[super::PANELS_SET]),
+    EventKind::block(
+        "block.track_switcher.off",
+        "A block switches tracks without the reel.",
+        &[],
+    )
+    .causes(&[super::PANELS_SET]),
+    EventKind::block(
+        "block.notes.on",
+        "A block shows notes on what a shortcut changed.",
+        &[],
+    )
+    .causes(&[super::PANELS_SET]),
+    EventKind::block(
+        "block.notes.off",
+        "A block shows no notes on what a shortcut changed; notes on what's wrong still show.",
+        &[],
     )
     .causes(&[super::PANELS_SET]),
 ];
@@ -627,18 +826,47 @@ fn closed() -> Error {
     Error::failed("the window has closed")
 }
 
-/// Turn the panel `panel` picks on, or off, in `player`.
-fn toggle_panel(player: &mut PlayerView, panel: Panel, cx: &mut Context<PlayerView>) {
-    change_over_video(player, |shown| shown.toggled(panel), cx);
-}
+/// What every panel over a block's video showing or hiding tells.
+pub const TELLS_ALL: &[&str] = &[
+    "block.ui.on",
+    "block.ui.off",
+    "block.controls.on",
+    "block.controls.off",
+    "block.top_bar.on",
+    "block.top_bar.off",
+    "block.track_switcher.on",
+    "block.track_switcher.off",
+    "block.notes.on",
+    "block.notes.off",
+];
 
-/// Change the panels over the video `player` shows with `change`.
-fn change_over_video(
+/// What every panel over a block's video showing tells.
+pub const TELLS_ALL_ON: &[&str] = &[
+    "block.ui.on",
+    "block.controls.on",
+    "block.top_bar.on",
+    "block.track_switcher.on",
+    "block.notes.on",
+];
+
+/// What every panel over a block's video hiding tells.
+pub const TELLS_ALL_OFF: &[&str] = &[
+    "block.ui.off",
+    "block.controls.off",
+    "block.top_bar.off",
+    "block.track_switcher.off",
+    "block.notes.off",
+];
+
+/// Show the panel `panel` picks over `player`'s video, or hide it, as
+/// `switch` says; with none, every panel.
+fn switch_panel(
+    switch: Switch,
+    panel: Option<Panel>,
     player: &mut PlayerView,
-    change: impl FnOnce(OverVideo) -> OverVideo,
     cx: &mut Context<PlayerView>,
 ) {
-    let shown = change(player.over_video());
+    let shown = player.over_video().switched(panel, |on| switch.turn(on));
     player.set_over_video(shown, cx);
 }
 

@@ -77,38 +77,108 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 ### Show/Hide All in Every Window
 
-`app.toggle_ui`: Hide every panel over the video in every window while Settings show any, else show them all.
+`app.ui.toggle`: Hide every panel over the video in every window while Settings show any, else show them all.
 
 - Acts on the app.
-- Tells: `app.settings.changed`, `app.ui_changed`, `window.ui_changed`, `block.ui_changed`.
+- Tells: `app.settings.changed`, `app.ui.on`, `app.ui.off`, `app.controls.on`, `app.controls.off`, `app.top_bar.on`, `app.top_bar.off`, `app.track_switcher.on`, `app.track_switcher.off`, `app.notes.on`, `app.notes.off`, `window.ui.on`, `window.ui.off`, `window.controls.on`, `window.controls.off`, `window.top_bar.on`, `window.top_bar.off`, `window.track_switcher.on`, `window.track_switcher.off`, `window.notes.on`, `window.notes.off`, `block.ui.on`, `block.ui.off`, `block.controls.on`, `block.controls.off`, `block.top_bar.on`, `block.top_bar.off`, `block.track_switcher.on`, `block.track_switcher.off`, `block.notes.on`, `block.notes.off`.
+
+### Show All in Every Window
+
+`app.ui.on`: Show every panel over the video in every window, and those opened later.
+
+- Acts on the app.
+- Tells: `app.settings.changed`, `app.ui.on`, `app.controls.on`, `app.top_bar.on`, `app.track_switcher.on`, `app.notes.on`, `window.ui.on`, `window.controls.on`, `window.top_bar.on`, `window.track_switcher.on`, `window.notes.on`, `block.ui.on`, `block.controls.on`, `block.top_bar.on`, `block.track_switcher.on`, `block.notes.on`.
+
+### Hide All in Every Window
+
+`app.ui.off`: Hide every panel over the video in every window, and those opened later.
+
+- Acts on the app.
+- Tells: `app.settings.changed`, `app.ui.off`, `app.controls.off`, `app.top_bar.off`, `app.track_switcher.off`, `app.notes.off`, `window.ui.off`, `window.controls.off`, `window.top_bar.off`, `window.track_switcher.off`, `window.notes.off`, `block.ui.off`, `block.controls.off`, `block.top_bar.off`, `block.track_switcher.off`, `block.notes.off`.
+
+### Show/Hide Controls in Every Window
+
+`app.controls.toggle`: Show the seek bar and buttons at the bottom of every block in every window, and those opened later, or hide them, as Settings → Appearance does.
+
+- Acts on the app.
+- Tells: `app.settings.changed`, `app.controls.on`, `app.controls.off`, `window.controls.on`, `window.controls.off`, `block.controls.on`, `block.controls.off`.
 
 ### Show Controls in Every Window
 
-`app.toggle_controls`: Show the seek bar and buttons at the bottom of every block in every window, and those opened later, or hide them, as Settings → Appearance does.
+`app.controls.on`: Show the seek bar and buttons at the bottom of every block in every window, and those opened later, as Settings → Appearance does.
 
 - Acts on the app.
-- Tells: `app.settings.changed`, `app.ui_changed`, `window.ui_changed`, `block.ui_changed`.
+- Tells: `app.settings.changed`, `app.controls.on`, `window.controls.on`, `block.controls.on`.
+
+### Hide Controls in Every Window
+
+`app.controls.off`: Hide the seek bar and buttons at the bottom of every block in every window, and those opened later, as Settings → Appearance does.
+
+- Acts on the app.
+- Tells: `app.settings.changed`, `app.controls.off`, `window.controls.off`, `block.controls.off`.
+
+### Show/Hide Top Bar in Every Window
+
+`app.top_bar.toggle`: Show the file's name and buttons at the top of every block in every window, and those opened later, or hide them, as Settings → Appearance does.
+
+- Acts on the app.
+- Tells: `app.settings.changed`, `app.top_bar.on`, `app.top_bar.off`, `window.top_bar.on`, `window.top_bar.off`, `block.top_bar.on`, `block.top_bar.off`.
 
 ### Show Top Bar in Every Window
 
-`app.toggle_top_bar`: Show the file's name and buttons at the top of every block in every window, and those opened later, or hide them, as Settings → Appearance does.
+`app.top_bar.on`: Show the file's name and buttons at the top of every block in every window, and those opened later, as Settings → Appearance does.
 
 - Acts on the app.
-- Tells: `app.settings.changed`, `app.ui_changed`, `window.ui_changed`, `block.ui_changed`.
+- Tells: `app.settings.changed`, `app.top_bar.on`, `window.top_bar.on`, `block.top_bar.on`.
+
+### Hide Top Bar in Every Window
+
+`app.top_bar.off`: Hide the file's name and buttons at the top of every block in every window, and those opened later, as Settings → Appearance does.
+
+- Acts on the app.
+- Tells: `app.settings.changed`, `app.top_bar.off`, `window.top_bar.off`, `block.top_bar.off`.
+
+### Show/Hide Track Switcher in Every Window
+
+`app.track_switcher.toggle`: Show the reel of tracks a shortcut rolls to the audio, video or subtitles picked, over every block in every window, and those opened later, or switch without it, as Settings → Appearance does.
+
+- Acts on the app.
+- Tells: `app.settings.changed`, `app.track_switcher.on`, `app.track_switcher.off`, `window.track_switcher.on`, `window.track_switcher.off`, `block.track_switcher.on`, `block.track_switcher.off`.
 
 ### Show Track Switcher in Every Window
 
-`app.toggle_track_switcher`: Show the reel of tracks a shortcut rolls to the audio, video or subtitles picked, over every block in every window, and those opened later, or switch without it, as Settings → Appearance does.
+`app.track_switcher.on`: Show the reel of tracks a shortcut rolls to the audio, video or subtitles picked, over every block in every window, and those opened later, as Settings → Appearance does.
 
 - Acts on the app.
-- Tells: `app.settings.changed`, `app.ui_changed`, `window.ui_changed`, `block.ui_changed`.
+- Tells: `app.settings.changed`, `app.track_switcher.on`, `window.track_switcher.on`, `block.track_switcher.on`.
+
+### Hide Track Switcher in Every Window
+
+`app.track_switcher.off`: Switch tracks without the reel in every block in every window, and those opened later, as Settings → Appearance does.
+
+- Acts on the app.
+- Tells: `app.settings.changed`, `app.track_switcher.off`, `window.track_switcher.off`, `block.track_switcher.off`.
+
+### Show/Hide Notes in Every Window
+
+`app.notes.toggle`: Show notes on what a shortcut changed, like the volume, over every block in every window, and those opened later, or not, as Settings → Appearance does. Notes on what's wrong still show.
+
+- Acts on the app.
+- Tells: `app.settings.changed`, `app.notes.on`, `app.notes.off`, `window.notes.on`, `window.notes.off`, `block.notes.on`, `block.notes.off`.
 
 ### Show Notes in Every Window
 
-`app.toggle_notes`: Show notes on what a shortcut changed, like the volume, over every block in every window, and those opened later, or not, as Settings → Appearance does. Notes on what's wrong still show.
+`app.notes.on`: Show notes on what a shortcut changed, like the volume, over every block in every window, and those opened later, as Settings → Appearance does.
 
 - Acts on the app.
-- Tells: `app.settings.changed`, `app.ui_changed`, `window.ui_changed`, `block.ui_changed`.
+- Tells: `app.settings.changed`, `app.notes.on`, `window.notes.on`, `block.notes.on`.
+
+### Hide Notes in Every Window
+
+`app.notes.off`: Hide notes on what a shortcut changed over every block in every window, and those opened later, as Settings → Appearance does. Notes on what's wrong still show.
+
+- Acts on the app.
+- Tells: `app.settings.changed`, `app.notes.off`, `window.notes.off`, `block.notes.off`.
 
 ### Quit Plays
 
@@ -255,19 +325,26 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 ### Full Screen
 
-`window.toggle_full_screen`: Show the window full screen, or as it was again.
+`window.full_screen.toggle`: Show the window full screen, or as it was again.
 
 - Acts on a player window.
 - Keys: ⌃⌘F, F
-- Tells: `window.full_screen_changed`.
+- Tells: `window.full_screen.on`, `window.full_screen.off`.
+
+### Enter Full Screen
+
+`window.full_screen.on`: Show the window full screen, unless it is already.
+
+- Acts on a player window.
+- Tells: `window.full_screen.on`.
 
 ### Exit Full Screen
 
-`window.exit_full_screen`: Show the window as it was before it was full screen.
+`window.full_screen.off`: Show the window as it was before it was full screen.
 
 - Acts on a player window.
 - Keys: ⎋
-- Tells: `window.full_screen_changed`.
+- Tells: `window.full_screen.off`.
 
 ### Match Video Size
 
@@ -278,17 +355,45 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 ### Float on Top
 
-`window.toggle_float_on_top`: Keep player windows above other apps' windows, or stop.
+`window.float_on_top.toggle`: Keep player windows above other apps' windows, or stop.
 
 - Acts on the app.
-- Tells: `app.settings.changed`.
+- Tells: `app.settings.changed`, `window.float_on_top.on`, `window.float_on_top.off`.
+
+### Start Floating on Top
+
+`window.float_on_top.on`: Keep player windows above other apps' windows, unless they are already.
+
+- Acts on the app.
+- Tells: `app.settings.changed`, `window.float_on_top.on`.
+
+### Stop Floating on Top
+
+`window.float_on_top.off`: Stop keeping player windows above other apps' windows, unless they float on top while playing.
+
+- Acts on the app.
+- Tells: `app.settings.changed`, `window.float_on_top.off`.
 
 ### Float on Top While Playing
 
-`window.toggle_float_on_top_while_playing`: Keep player windows above other apps' windows while a file in them plays, or stop.
+`window.float_on_top_while_playing.toggle`: Keep player windows above other apps' windows while a file in them plays, or stop.
 
 - Acts on the app.
-- Tells: `app.settings.changed`.
+- Tells: `app.settings.changed`, `window.float_on_top_while_playing.on`, `window.float_on_top_while_playing.off`.
+
+### Start Floating on Top While Playing
+
+`window.float_on_top_while_playing.on`: Keep player windows above other apps' windows while a file in them plays, unless they are already.
+
+- Acts on the app.
+- Tells: `app.settings.changed`, `window.float_on_top_while_playing.on`.
+
+### Stop Floating on Top While Playing
+
+`window.float_on_top_while_playing.off`: Stop keeping player windows above other apps' windows while a file in them plays, unless they float on top always.
+
+- Acts on the app.
+- Tells: `app.settings.changed`, `window.float_on_top_while_playing.off`.
 
 ### Show on Display
 
@@ -297,14 +402,28 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 - Acts on a player window.
 - Arguments:
   - `display` (a whole number, at least 0): The display's id.
-- Tells: `window.full_screen_changed`.
+- Tells: `window.full_screen.on`.
 
 ### Show/Hide All in Window
 
-`window.toggle_ui`: Hide every panel over the video in each block in the window while the window shows any, else show them all.
+`window.ui.toggle`: Hide every panel over the video in each block in the window while the window shows any, else show them all.
 
 - Acts on a player window.
-- Tells: `window.ui_changed`, `block.ui_changed`.
+- Tells: `window.ui.on`, `window.ui.off`, `window.controls.on`, `window.controls.off`, `window.top_bar.on`, `window.top_bar.off`, `window.track_switcher.on`, `window.track_switcher.off`, `window.notes.on`, `window.notes.off`, `block.ui.on`, `block.ui.off`, `block.controls.on`, `block.controls.off`, `block.top_bar.on`, `block.top_bar.off`, `block.track_switcher.on`, `block.track_switcher.off`, `block.notes.on`, `block.notes.off`.
+
+### Show All in Window
+
+`window.ui.on`: Show every panel over the video in each block in the window, and those opened in it.
+
+- Acts on a player window.
+- Tells: `window.ui.on`, `window.controls.on`, `window.top_bar.on`, `window.track_switcher.on`, `window.notes.on`, `block.ui.on`, `block.controls.on`, `block.top_bar.on`, `block.track_switcher.on`, `block.notes.on`.
+
+### Hide All in Window
+
+`window.ui.off`: Hide every panel over the video in each block in the window, and those opened in it.
+
+- Acts on a player window.
+- Tells: `window.ui.off`, `window.controls.off`, `window.top_bar.off`, `window.track_switcher.off`, `window.notes.off`, `block.ui.off`, `block.controls.off`, `block.top_bar.off`, `block.track_switcher.off`, `block.notes.off`.
 
 ### Show Panels in Window
 
@@ -313,35 +432,91 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 - Acts on a player window.
 - Arguments:
   - `visible` (a list of any of controls, top_bar, track_switcher, notes, none too): The panels to show; those not named hide.
-- Tells: `window.ui_changed`, `block.ui_changed`.
+- Tells: `window.ui.off`, `window.controls.off`, `window.top_bar.off`, `window.track_switcher.off`, `window.notes.off`, `block.ui.off`, `block.controls.off`, `block.top_bar.off`, `block.track_switcher.off`, `block.notes.off`.
+
+### Show/Hide Controls in Window
+
+`window.controls.toggle`: Show the seek bar and buttons at the bottom of each block in the window, and those opened in it, or hide them.
+
+- Acts on a player window.
+- Tells: `window.controls.on`, `window.controls.off`, `block.controls.on`, `block.controls.off`.
 
 ### Show Controls in Window
 
-`window.toggle_controls`: Show the seek bar and buttons at the bottom of each block in the window, and those opened in it, or hide them.
+`window.controls.on`: Show the seek bar and buttons at the bottom of each block in the window, and those opened in it.
 
 - Acts on a player window.
-- Tells: `window.ui_changed`, `block.ui_changed`.
+- Tells: `window.controls.on`, `block.controls.on`.
+
+### Hide Controls in Window
+
+`window.controls.off`: Hide the seek bar and buttons at the bottom of each block in the window, and those opened in it.
+
+- Acts on a player window.
+- Tells: `window.controls.off`, `block.controls.off`.
+
+### Show/Hide Top Bar in Window
+
+`window.top_bar.toggle`: Show the file's name and buttons at the top of each block in the window, and those opened in it, or hide them.
+
+- Acts on a player window.
+- Tells: `window.top_bar.on`, `window.top_bar.off`, `block.top_bar.on`, `block.top_bar.off`.
 
 ### Show Top Bar in Window
 
-`window.toggle_top_bar`: Show the file's name and buttons at the top of each block in the window, and those opened in it, or hide them.
+`window.top_bar.on`: Show the file's name and buttons at the top of each block in the window, and those opened in it.
 
 - Acts on a player window.
-- Tells: `window.ui_changed`, `block.ui_changed`.
+- Tells: `window.top_bar.on`, `block.top_bar.on`.
+
+### Hide Top Bar in Window
+
+`window.top_bar.off`: Hide the file's name and buttons at the top of each block in the window, and those opened in it.
+
+- Acts on a player window.
+- Tells: `window.top_bar.off`, `block.top_bar.off`.
+
+### Show/Hide Track Switcher in Window
+
+`window.track_switcher.toggle`: Show the reel of tracks a shortcut rolls to the audio, video or subtitles picked, over each block in the window, and those opened in it, or switch without it.
+
+- Acts on a player window.
+- Tells: `window.track_switcher.on`, `window.track_switcher.off`, `block.track_switcher.on`, `block.track_switcher.off`.
 
 ### Show Track Switcher in Window
 
-`window.toggle_track_switcher`: Show the reel of tracks a shortcut rolls to the audio, video or subtitles picked, over each block in the window, and those opened in it, or switch without it.
+`window.track_switcher.on`: Show the reel of tracks a shortcut rolls to the audio, video or subtitles picked, over each block in the window, and those opened in it.
 
 - Acts on a player window.
-- Tells: `window.ui_changed`, `block.ui_changed`.
+- Tells: `window.track_switcher.on`, `block.track_switcher.on`.
+
+### Hide Track Switcher in Window
+
+`window.track_switcher.off`: Switch tracks without the reel in each block in the window, and those opened in it.
+
+- Acts on a player window.
+- Tells: `window.track_switcher.off`, `block.track_switcher.off`.
+
+### Show/Hide Notes in Window
+
+`window.notes.toggle`: Show notes on what a shortcut changed, like the volume, over each block in the window, and those opened in it, or not. Notes on what's wrong still show.
+
+- Acts on a player window.
+- Tells: `window.notes.on`, `window.notes.off`, `block.notes.on`, `block.notes.off`.
 
 ### Show Notes in Window
 
-`window.toggle_notes`: Show notes on what a shortcut changed, like the volume, over each block in the window, and those opened in it, or not. Notes on what's wrong still show.
+`window.notes.on`: Show notes on what a shortcut changed, like the volume, over each block in the window, and those opened in it.
 
 - Acts on a player window.
-- Tells: `window.ui_changed`, `block.ui_changed`.
+- Tells: `window.notes.on`, `block.notes.on`.
+
+### Hide Notes in Window
+
+`window.notes.off`: Hide notes on what a shortcut changed over each block in the window, and those opened in it. Notes on what's wrong still show.
+
+- Acts on a player window.
+- Tells: `window.notes.off`, `block.notes.off`.
 
 ## block
 
@@ -489,7 +664,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 - Acts on a block.
 - Keys: ⇧⌘↩
-- Tells: `window.full_screen_changed`, `window.layout_changed`.
+- Tells: `window.full_screen.on`, `window.layout_changed`.
 
 ### Rename Block…
 
@@ -543,18 +718,46 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 ### Picture in Picture
 
-`block.toggle_picture_in_picture`: Play the block in a small window floating above every app's, or in its block again.
+`block.picture_in_picture.toggle`: Play the block in a small window floating above every app's, or in its block again.
 
 - Acts on a block.
 - Keys: ⌃⌘P
-- Tells: `block.picture_in_picture_changed`.
+- Tells: `block.picture_in_picture.on`, `block.picture_in_picture.off`.
+
+### Enter Picture in Picture
+
+`block.picture_in_picture.on`: Play the block in a small window floating above every app's, unless it does already.
+
+- Acts on a block.
+- Tells: `block.picture_in_picture.on`.
+
+### Exit Picture in Picture
+
+`block.picture_in_picture.off`: Play the block in its block again, unless it does already.
+
+- Acts on a block.
+- Tells: `block.picture_in_picture.off`.
 
 ### Show/Hide All
 
-`block.toggle_ui`: Hide every panel over the block's video while any shows, else show them all.
+`block.ui.toggle`: Hide every panel over the block's video while any shows, else show them all.
 
 - Acts on a block.
-- Tells: `block.ui_changed`.
+- Tells: `block.ui.on`, `block.ui.off`, `block.controls.on`, `block.controls.off`, `block.top_bar.on`, `block.top_bar.off`, `block.track_switcher.on`, `block.track_switcher.off`, `block.notes.on`, `block.notes.off`.
+
+### Show All
+
+`block.ui.on`: Show every panel over the block's video.
+
+- Acts on a block.
+- Tells: `block.ui.on`, `block.controls.on`, `block.top_bar.on`, `block.track_switcher.on`, `block.notes.on`.
+
+### Hide All
+
+`block.ui.off`: Hide every panel over the block's video.
+
+- Acts on a block.
+- Tells: `block.ui.off`, `block.controls.off`, `block.top_bar.off`, `block.track_switcher.off`, `block.notes.off`.
 
 ### Show Panels
 
@@ -563,42 +766,113 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 - Acts on a block.
 - Arguments:
   - `visible` (a list of any of controls, top_bar, track_switcher, notes, none too): The panels to show; those not named hide.
-- Tells: `block.ui_changed`.
+- Tells: `block.controls.off`, `block.top_bar.off`, `block.track_switcher.off`.
+
+### Show/Hide Controls
+
+`block.controls.toggle`: Show the seek bar and buttons at the bottom of the block, or hide them.
+
+- Acts on a block.
+- Tells: `block.controls.on`, `block.controls.off`.
 
 ### Show Controls
 
-`block.toggle_controls`: Show the seek bar and buttons at the bottom of the block, or hide them.
+`block.controls.on`: Show the seek bar and buttons at the bottom of the block, unless they show already.
 
 - Acts on a block.
-- Tells: `block.ui_changed`.
+- Tells: `block.controls.on`.
+
+### Hide Controls
+
+`block.controls.off`: Hide the seek bar and buttons at the bottom of the block, unless they're hidden already.
+
+- Acts on a block.
+- Tells: `block.controls.off`.
+
+### Show/Hide Top Bar
+
+`block.top_bar.toggle`: Show the file's name and buttons at the top of the block, or hide them.
+
+- Acts on a block.
+- Tells: `block.top_bar.on`, `block.top_bar.off`.
 
 ### Show Top Bar
 
-`block.toggle_top_bar`: Show the file's name and buttons at the top of the block, or hide them.
+`block.top_bar.on`: Show the file's name and buttons at the top of the block, unless they show already.
 
 - Acts on a block.
-- Tells: `block.ui_changed`.
+- Tells: `block.top_bar.on`.
+
+### Hide Top Bar
+
+`block.top_bar.off`: Hide the file's name and buttons at the top of the block, unless they're hidden already.
+
+- Acts on a block.
+- Tells: `block.top_bar.off`.
+
+### Show/Hide Track Switcher
+
+`block.track_switcher.toggle`: Show the reel of tracks a shortcut rolls to the audio, video or subtitles picked, over the block, or switch without it.
+
+- Acts on a block.
+- Tells: `block.track_switcher.on`, `block.track_switcher.off`.
 
 ### Show Track Switcher
 
-`block.toggle_track_switcher`: Show the reel of tracks a shortcut rolls to the audio, video or subtitles picked, over the block, or switch without it.
+`block.track_switcher.on`: Show the reel of tracks a shortcut rolls to the audio, video or subtitles picked, over the block, unless it shows already.
 
 - Acts on a block.
-- Tells: `block.ui_changed`.
+- Tells: `block.track_switcher.on`.
+
+### Hide Track Switcher
+
+`block.track_switcher.off`: Switch tracks over the block without the reel, unless it's hidden already.
+
+- Acts on a block.
+- Tells: `block.track_switcher.off`.
+
+### Show/Hide Notes
+
+`block.notes.toggle`: Show notes on what a shortcut changed, like the volume, over the block, or not. Notes on what's wrong still show.
+
+- Acts on a block.
+- Tells: `block.notes.on`, `block.notes.off`.
 
 ### Show Notes
 
-`block.toggle_notes`: Show notes on what a shortcut changed, like the volume, over the block, or not. Notes on what's wrong still show.
+`block.notes.on`: Show notes on what a shortcut changed, like the volume, over the block, unless they show already.
 
 - Acts on a block.
-- Tells: `block.ui_changed`.
+- Tells: `block.notes.on`.
+
+### Hide Notes
+
+`block.notes.off`: Hide notes on what a shortcut changed over the block, unless they're hidden already. Notes on what's wrong still show.
+
+- Acts on a block.
+- Tells: `block.notes.off`.
 
 ### Show/Hide Console
 
-`block.toggle_console`: Show what the block's file is and how it plays, over its picture, or hide it.
+`block.console.toggle`: Show what the block's file is and how it plays, over its picture, or hide it.
 
 - Acts on a block.
 - Keys: ~, `
+- Tells: `block.console.on`, `block.console.off`.
+
+### Show Console
+
+`block.console.on`: Show what the block's file is and how it plays, over its picture, unless it shows already.
+
+- Acts on a block.
+- Tells: `block.console.on`.
+
+### Hide Console
+
+`block.console.off`: Hide what the block's file is and how it plays, unless it's hidden already.
+
+- Acts on a block.
+- Tells: `block.console.off`.
 
 ## playback
 
@@ -725,10 +999,25 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 ### Loop
 
-`playback.toggle_loop`: Play the file again from the start at its end, or stop at its end.
+`playback.loop.toggle`: Play the file again from the start at its end, or stop at its end.
 
 - Acts on a block.
 - Keys: ⇧⌘L
+- Tells: `playback.loop.on`, `playback.loop.off`.
+
+### Start Looping
+
+`playback.loop.on`: Play the file again from the start at its end, unless it does already.
+
+- Acts on a block.
+- Tells: `playback.loop.on`.
+
+### Stop Looping
+
+`playback.loop.off`: Stop the file at its end, unless it does already.
+
+- Acts on a block.
+- Tells: `playback.loop.off`.
 
 ### Play/Pause All
 
@@ -843,11 +1132,25 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 ### Mute/Unmute
 
-`audio.toggle_mute`: Mute the block, or play its sound again.
+`audio.mute.toggle`: Mute the block, or play its sound again.
 
 - Acts on a block.
 - Keys: ⌘/, M
-- Tells: `audio.volume_changed`.
+- Tells: `audio.mute.on`, `audio.mute.off`.
+
+### Mute
+
+`audio.mute.on`: Mute the block, unless it's muted already.
+
+- Acts on a block.
+- Tells: `audio.mute.on`.
+
+### Unmute
+
+`audio.mute.off`: Play the block's sound again, unless it plays already.
+
+- Acts on a block.
+- Tells: `audio.mute.off`.
 
 ### Next Audio Track
 
@@ -905,11 +1208,25 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 ### Mute/Unmute All
 
-`audio.toggle_mute_all`: Mute every file in every window if any plays its sound, else unmute them all.
+`audio.mute_all.toggle`: Mute every file in every window if any plays its sound, else unmute them all.
 
 - Acts on every block in every window.
 - Keys: ⇧M
-- Tells: `audio.volume_changed`.
+- Tells: `audio.mute.on`, `audio.mute.off`.
+
+### Mute All
+
+`audio.mute_all.on`: Mute every file in every window.
+
+- Acts on every block in every window.
+- Tells: `audio.mute.on`.
+
+### Unmute All
+
+`audio.mute_all.off`: Play the sound of every file in every window again.
+
+- Acts on every block in every window.
+- Tells: `audio.mute.off`.
 
 ## subtitles
 
@@ -919,7 +1236,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 - Acts on a block.
 - Keys: ⌃⌘S
-- Tells: `playback.track_changed`.
+- Tells: `playback.track_changed`, `subtitles.on`, `subtitles.off`.
 
 ### Pick Subtitles
 
@@ -928,7 +1245,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 - Acts on a block.
 - Arguments:
   - `number` (a whole number, at least 1, optional): Which, from 1, as the tracks menu lists them; none for no subtitles.
-- Tells: `playback.track_changed`.
+- Tells: `playback.track_changed`, `subtitles.on`, `subtitles.off`.
 
 ### Show/Hide Subtitles
 
@@ -936,7 +1253,21 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 - Acts on a block.
 - Keys: V
-- Tells: `playback.track_changed`.
+- Tells: `subtitles.on`, `subtitles.off`, `playback.track_changed`.
+
+### Show Subtitles
+
+`subtitles.on`: Show the subtitles hidden, or the file's first, unless some show already.
+
+- Acts on a block.
+- Tells: `subtitles.on`, `playback.track_changed`.
+
+### Hide Subtitles
+
+`subtitles.off`: Hide the subtitles showing, unless none show.
+
+- Acts on a block.
+- Tells: `subtitles.off`, `playback.track_changed`.
 
 ### Bigger Subtitles
 
@@ -1195,7 +1526,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
   - `key` (text): The setting's key, its path in the settings file: autoplay, subtitles.size.
   - `value` (any value): What to set it to, as the settings file keeps it: true, 0.5, "dark".
 - Hands back: Its value now.
-- Tells: `app.settings.changed`, `app.settings.keymap_changed`, `app.ui_changed`, `window.ui_changed`, `block.ui_changed`.
+- Tells: `app.settings.changed`, `app.settings.keymap_changed`, `app.notes.off`, `window.notes.off`, `block.notes.off`.
 
 ### Reset Setting
 
@@ -1205,7 +1536,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 - Arguments:
   - `key` (text): The setting's key, its path in the settings file: autoplay, subtitles.size.
 - Hands back: Its value now.
-- Tells: `app.settings.changed`, `app.settings.keymap_changed`, `app.ui_changed`, `window.ui_changed`, `block.ui_changed`.
+- Tells: `app.settings.changed`, `app.settings.keymap_changed`, `app.notes.on`, `window.notes.on`, `block.notes.on`.
 
 ### Show Settings File
 
@@ -1220,7 +1551,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 - Acts on the app.
 - Hands back: [key]: the settings the file changed.
-- Tells: `app.settings.changed`, `app.settings.keymap_changed`, `app.ui_changed`, `window.ui_changed`, `block.ui_changed`.
+- Tells: `app.settings.changed`, `app.settings.keymap_changed`, `app.notes.off`, `window.notes.off`, `block.notes.off`.
 
 ## cli
 
@@ -1269,14 +1600,85 @@ A client went from the socket.
   - `client_id`: The number its `app.client_connected` had.
 - Follows: a client going or being cut off, as when control from the command line is turned off.
 
-### app.ui_changed
+### app.ui.on
 
-The panels shown over the video in every window, as Settings have them, changed.
+A panel showed over the video in every window, as Settings have them, where none did.
 
 - Heard by those listening to the app's events.
-- Payload:
-  - `visible`: Those shown, of `controls`, `top_bar`, `track_switcher` and `notes`.
-- Follows: `app.toggle_ui`, `app.toggle_controls`, `app.toggle_top_bar`, `app.toggle_track_switcher`, `app.toggle_notes`, `app.settings.set`, `app.settings.reset`, `app.settings.reload`, or Settings turning a panel over the video on or off, importing a settings file or resetting every setting.
+- Payload: none.
+- Follows: `app.ui.toggle`, `app.ui.on`, or Settings turning a panel over the video on or off, importing a settings file or resetting every setting.
+
+### app.ui.off
+
+Every panel over the video in every window, as Settings have them, hid.
+
+- Heard by those listening to the app's events.
+- Payload: none.
+- Follows: `app.ui.toggle`, `app.ui.off`, or Settings turning a panel over the video on or off, importing a settings file or resetting every setting.
+
+### app.controls.on
+
+The seek bar and buttons at the bottom of every block, as Settings have them, showed.
+
+- Heard by those listening to the app's events.
+- Payload: none.
+- Follows: `app.ui.toggle`, `app.ui.on`, `app.controls.toggle`, `app.controls.on`, or Settings turning a panel over the video on or off, importing a settings file or resetting every setting.
+
+### app.controls.off
+
+The seek bar and buttons at the bottom of every block, as Settings have them, hid.
+
+- Heard by those listening to the app's events.
+- Payload: none.
+- Follows: `app.ui.toggle`, `app.ui.off`, `app.controls.toggle`, `app.controls.off`, or Settings turning a panel over the video on or off, importing a settings file or resetting every setting.
+
+### app.top_bar.on
+
+The file's name and buttons at the top of every block, as Settings have them, showed.
+
+- Heard by those listening to the app's events.
+- Payload: none.
+- Follows: `app.ui.toggle`, `app.ui.on`, `app.top_bar.toggle`, `app.top_bar.on`, or Settings turning a panel over the video on or off, importing a settings file or resetting every setting.
+
+### app.top_bar.off
+
+The file's name and buttons at the top of every block, as Settings have them, hid.
+
+- Heard by those listening to the app's events.
+- Payload: none.
+- Follows: `app.ui.toggle`, `app.ui.off`, `app.top_bar.toggle`, `app.top_bar.off`, or Settings turning a panel over the video on or off, importing a settings file or resetting every setting.
+
+### app.track_switcher.on
+
+Every block, as Settings have it, shows the reel of tracks as a shortcut rolls to one.
+
+- Heard by those listening to the app's events.
+- Payload: none.
+- Follows: `app.ui.toggle`, `app.ui.on`, `app.track_switcher.toggle`, `app.track_switcher.on`, or Settings turning a panel over the video on or off, importing a settings file or resetting every setting.
+
+### app.track_switcher.off
+
+Every block, as Settings have it, switches tracks without the reel.
+
+- Heard by those listening to the app's events.
+- Payload: none.
+- Follows: `app.ui.toggle`, `app.ui.off`, `app.track_switcher.toggle`, `app.track_switcher.off`, or Settings turning a panel over the video on or off, importing a settings file or resetting every setting.
+
+### app.notes.on
+
+Every block, as Settings have it, shows notes on what a shortcut changed.
+
+- Heard by those listening to the app's events.
+- Payload: none.
+- Follows: `app.ui.toggle`, `app.ui.on`, `app.notes.toggle`, `app.notes.on`, `app.settings.reset`, or Settings turning a panel over the video on or off, importing a settings file or resetting every setting.
+
+### app.notes.off
+
+Every block, as Settings have it, shows no notes on what a shortcut changed.
+
+- Heard by those listening to the app's events.
+- Payload: none.
+- Follows: `app.ui.toggle`, `app.ui.off`, `app.notes.toggle`, `app.notes.off`, `app.settings.set`, `app.settings.reload`, or Settings turning a panel over the video on or off, importing a settings file or resetting every setting.
 
 ### app.quit
 
@@ -1326,25 +1728,145 @@ Another player window came to the front, or none is in front: its `window_id` an
   - `window_id`, `window_title`: its window's.
 - Follows: `app.open`, `app.quit`, `window.new`, `window.close`, `window.focus`, `window.next`, `window.previous`, `window.back`, `window.recent`, `block.focus`, or a click on another window.
 
-### window.full_screen_changed
+### window.full_screen.on
 
-A window went full screen, or came back from it.
-
-- Heard by those listening to its window's events.
-- Payload:
-  - `window_id`, `window_title`: its window's.
-  - `full_screen`: Whether it's full screen now.
-- Follows: `window.toggle_full_screen`, `window.exit_full_screen`, `window.show_on_display`, `block.zoom`, or the window's own full screen button.
-
-### window.ui_changed
-
-The panels shown over the video in a window's blocks, and those opened in it, changed.
+A window went full screen.
 
 - Heard by those listening to its window's events.
 - Payload:
   - `window_id`, `window_title`: its window's.
-  - `visible`: Those shown, of `controls`, `top_bar`, `track_switcher` and `notes`.
-- Follows: `app.toggle_ui`, `app.toggle_controls`, `app.toggle_top_bar`, `app.toggle_track_switcher`, `app.toggle_notes`, `window.toggle_ui`, `window.set_ui`, `window.toggle_controls`, `window.toggle_top_bar`, `window.toggle_track_switcher`, `window.toggle_notes`, `app.settings.set`, `app.settings.reset`, `app.settings.reload`, or Settings turning a panel over the video on or off, importing a settings file or resetting every setting.
+- Follows: `window.full_screen.toggle`, `window.full_screen.on`, `window.show_on_display`, `block.zoom`, or the window's own full screen button.
+
+### window.full_screen.off
+
+A window came back from full screen.
+
+- Heard by those listening to its window's events.
+- Payload:
+  - `window_id`, `window_title`: its window's.
+- Follows: `window.full_screen.toggle`, `window.full_screen.off`, or the window's own full screen button.
+
+### window.float_on_top.on
+
+Player windows began to float above other apps' windows.
+
+- Heard by those listening to the app's events.
+- Payload: none.
+- Follows: `window.float_on_top.toggle`, `window.float_on_top.on`, or Settings → Appearance floating player windows on top, importing a settings file or resetting every setting.
+
+### window.float_on_top.off
+
+Player windows stopped floating above other apps' windows.
+
+- Heard by those listening to the app's events.
+- Payload: none.
+- Follows: `window.float_on_top.toggle`, `window.float_on_top.off`, or Settings → Appearance floating player windows on top, importing a settings file or resetting every setting.
+
+### window.float_on_top_while_playing.on
+
+Player windows began to float above other apps' windows while a file in them plays.
+
+- Heard by those listening to the app's events.
+- Payload: none.
+- Follows: `window.float_on_top_while_playing.toggle`, `window.float_on_top_while_playing.on`, or Settings → Appearance floating player windows on top, importing a settings file or resetting every setting.
+
+### window.float_on_top_while_playing.off
+
+Player windows stopped floating above other apps' windows while a file in them plays.
+
+- Heard by those listening to the app's events.
+- Payload: none.
+- Follows: `window.float_on_top_while_playing.toggle`, `window.float_on_top_while_playing.off`, or Settings → Appearance floating player windows on top, importing a settings file or resetting every setting.
+
+### window.ui.on
+
+A panel showed over the video in a window's blocks, and those opened in it, where none did.
+
+- Heard by those listening to its window's events.
+- Payload:
+  - `window_id`, `window_title`: its window's.
+- Follows: `app.ui.toggle`, `app.ui.on`, `window.ui.toggle`, `window.ui.on`, or Settings turning a panel over the video on or off, importing a settings file or resetting every setting.
+
+### window.ui.off
+
+Every panel over the video in a window's blocks, and those opened in it, hid.
+
+- Heard by those listening to its window's events.
+- Payload:
+  - `window_id`, `window_title`: its window's.
+- Follows: `app.ui.toggle`, `app.ui.off`, `window.ui.toggle`, `window.ui.off`, `window.set_ui`, or Settings turning a panel over the video on or off, importing a settings file or resetting every setting.
+
+### window.controls.on
+
+The seek bar and buttons at the bottom of a window's blocks, and those opened in it, showed.
+
+- Heard by those listening to its window's events.
+- Payload:
+  - `window_id`, `window_title`: its window's.
+- Follows: `app.ui.toggle`, `app.ui.on`, `app.controls.toggle`, `app.controls.on`, `window.ui.toggle`, `window.ui.on`, `window.controls.toggle`, `window.controls.on`, or Settings turning a panel over the video on or off, importing a settings file or resetting every setting.
+
+### window.controls.off
+
+The seek bar and buttons at the bottom of a window's blocks, and those opened in it, hid.
+
+- Heard by those listening to its window's events.
+- Payload:
+  - `window_id`, `window_title`: its window's.
+- Follows: `app.ui.toggle`, `app.ui.off`, `app.controls.toggle`, `app.controls.off`, `window.ui.toggle`, `window.ui.off`, `window.set_ui`, `window.controls.toggle`, `window.controls.off`, or Settings turning a panel over the video on or off, importing a settings file or resetting every setting.
+
+### window.top_bar.on
+
+The file's name and buttons at the top of a window's blocks, and those opened in it, showed.
+
+- Heard by those listening to its window's events.
+- Payload:
+  - `window_id`, `window_title`: its window's.
+- Follows: `app.ui.toggle`, `app.ui.on`, `app.top_bar.toggle`, `app.top_bar.on`, `window.ui.toggle`, `window.ui.on`, `window.top_bar.toggle`, `window.top_bar.on`, or Settings turning a panel over the video on or off, importing a settings file or resetting every setting.
+
+### window.top_bar.off
+
+The file's name and buttons at the top of a window's blocks, and those opened in it, hid.
+
+- Heard by those listening to its window's events.
+- Payload:
+  - `window_id`, `window_title`: its window's.
+- Follows: `app.ui.toggle`, `app.ui.off`, `app.top_bar.toggle`, `app.top_bar.off`, `window.ui.toggle`, `window.ui.off`, `window.set_ui`, `window.top_bar.toggle`, `window.top_bar.off`, or Settings turning a panel over the video on or off, importing a settings file or resetting every setting.
+
+### window.track_switcher.on
+
+A window's blocks, and those opened in it, show the reel of tracks as a shortcut rolls to one.
+
+- Heard by those listening to its window's events.
+- Payload:
+  - `window_id`, `window_title`: its window's.
+- Follows: `app.ui.toggle`, `app.ui.on`, `app.track_switcher.toggle`, `app.track_switcher.on`, `window.ui.toggle`, `window.ui.on`, `window.track_switcher.toggle`, `window.track_switcher.on`, or Settings turning a panel over the video on or off, importing a settings file or resetting every setting.
+
+### window.track_switcher.off
+
+A window's blocks, and those opened in it, switch tracks without the reel.
+
+- Heard by those listening to its window's events.
+- Payload:
+  - `window_id`, `window_title`: its window's.
+- Follows: `app.ui.toggle`, `app.ui.off`, `app.track_switcher.toggle`, `app.track_switcher.off`, `window.ui.toggle`, `window.ui.off`, `window.set_ui`, `window.track_switcher.toggle`, `window.track_switcher.off`, or Settings turning a panel over the video on or off, importing a settings file or resetting every setting.
+
+### window.notes.on
+
+A window's blocks, and those opened in it, show notes on what a shortcut changed.
+
+- Heard by those listening to its window's events.
+- Payload:
+  - `window_id`, `window_title`: its window's.
+- Follows: `app.ui.toggle`, `app.ui.on`, `app.notes.toggle`, `app.notes.on`, `window.ui.toggle`, `window.ui.on`, `window.notes.toggle`, `window.notes.on`, `app.settings.reset`, or Settings turning a panel over the video on or off, importing a settings file or resetting every setting.
+
+### window.notes.off
+
+A window's blocks, and those opened in it, show no notes on what a shortcut changed.
+
+- Heard by those listening to its window's events.
+- Payload:
+  - `window_id`, `window_title`: its window's.
+- Follows: `app.ui.toggle`, `app.ui.off`, `app.notes.toggle`, `app.notes.off`, `window.ui.toggle`, `window.ui.off`, `window.set_ui`, `window.notes.toggle`, `window.notes.off`, `app.settings.set`, `app.settings.reload`, or Settings turning a panel over the video on or off, importing a settings file or resetting every setting.
 
 ### window.layout_changed
 
@@ -1410,27 +1932,151 @@ Keys go to another block in a window, or to none.
   - `block_title`: Its title, as its header shows it; none without a block.
 - Follows: `app.open`, `block.focus`, `block.close`, `block.close_all`, `block.focus.left`, `block.focus.right`, `block.focus.up`, `block.focus.down`, `block.focus.previous`, `block.focus.next`, `block.back`, `block.recent`, `block.move_to_window`, `block.move_to_new_window`, or a click on a block or the mouse going to one.
 
-### block.picture_in_picture_changed
+### block.picture_in_picture.on
 
-A block began playing in a small window floating above every app's, or in its block again.
-
-- Heard by those listening to its window's events.
-- Payload:
-  - `window_id`, `window_title`, `block_id`, `block_title`: its window's and its block's.
-  - `picture_in_picture`: Whether it plays in the small window now.
-- Follows: `block.toggle_picture_in_picture`, or the small window's own buttons.
-
-### block.ui_changed
-
-The panels shown over a block's video changed.
+A block began playing in a small window floating above every app's.
 
 - Heard by those listening to its window's events.
 - Payload:
   - `window_id`, `window_title`, `block_id`, `block_title`: its window's and its block's.
-  - `visible`: Those shown, of `controls`, `top_bar`, `track_switcher` and `notes`.
-- Follows: `app.toggle_ui`, `app.toggle_controls`, `app.toggle_top_bar`, `app.toggle_track_switcher`, `app.toggle_notes`, `window.toggle_ui`, `window.set_ui`, `window.toggle_controls`, `window.toggle_top_bar`, `window.toggle_track_switcher`, `window.toggle_notes`, `block.toggle_ui`, `block.set_ui`, `block.toggle_controls`, `block.toggle_top_bar`, `block.toggle_track_switcher`, `block.toggle_notes`, `app.settings.set`, `app.settings.reset`, `app.settings.reload`, or Settings turning a panel over the video on or off, importing a settings file or resetting every setting.
+- Follows: `block.picture_in_picture.toggle`, or `block.picture_in_picture.on`.
+
+### block.picture_in_picture.off
+
+A block plays in its block again, not in the small window.
+
+- Heard by those listening to its window's events.
+- Payload:
+  - `window_id`, `window_title`, `block_id`, `block_title`: its window's and its block's.
+- Follows: `block.picture_in_picture.toggle`, `block.picture_in_picture.off`, or the small window's own buttons.
+
+### block.console.on
+
+What a block's file is and how it plays showed over its picture.
+
+- Heard by those listening to its window's events.
+- Payload:
+  - `window_id`, `window_title`, `block_id`, `block_title`: its window's and its block's.
+- Follows: `block.console.toggle`, or `block.console.on`.
+
+### block.console.off
+
+What a block's file is and how it plays hid.
+
+- Heard by those listening to its window's events.
+- Payload:
+  - `window_id`, `window_title`, `block_id`, `block_title`: its window's and its block's.
+- Follows: `block.console.toggle`, or `block.console.off`.
+
+### block.ui.on
+
+A panel showed over a block's video, where none did.
+
+- Heard by those listening to its window's events.
+- Payload:
+  - `window_id`, `window_title`, `block_id`, `block_title`: its window's and its block's.
+- Follows: `app.ui.toggle`, `app.ui.on`, `window.ui.toggle`, `window.ui.on`, `block.ui.toggle`, `block.ui.on`, or Settings turning a panel over the video on or off, importing a settings file or resetting every setting.
+
+### block.ui.off
+
+Every panel over a block's video hid.
+
+- Heard by those listening to its window's events.
+- Payload:
+  - `window_id`, `window_title`, `block_id`, `block_title`: its window's and its block's.
+- Follows: `app.ui.toggle`, `app.ui.off`, `window.ui.toggle`, `window.ui.off`, `window.set_ui`, `block.ui.toggle`, `block.ui.off`, or Settings turning a panel over the video on or off, importing a settings file or resetting every setting.
+
+### block.controls.on
+
+The seek bar and buttons at the bottom of a block showed.
+
+- Heard by those listening to its window's events.
+- Payload:
+  - `window_id`, `window_title`, `block_id`, `block_title`: its window's and its block's.
+- Follows: `app.ui.toggle`, `app.ui.on`, `app.controls.toggle`, `app.controls.on`, `window.ui.toggle`, `window.ui.on`, `window.controls.toggle`, `window.controls.on`, `block.ui.toggle`, `block.ui.on`, `block.controls.toggle`, `block.controls.on`, or Settings turning a panel over the video on or off, importing a settings file or resetting every setting.
+
+### block.controls.off
+
+The seek bar and buttons at the bottom of a block hid.
+
+- Heard by those listening to its window's events.
+- Payload:
+  - `window_id`, `window_title`, `block_id`, `block_title`: its window's and its block's.
+- Follows: `app.ui.toggle`, `app.ui.off`, `app.controls.toggle`, `app.controls.off`, `window.ui.toggle`, `window.ui.off`, `window.set_ui`, `window.controls.toggle`, `window.controls.off`, `block.ui.toggle`, `block.ui.off`, `block.set_ui`, `block.controls.toggle`, `block.controls.off`, or Settings turning a panel over the video on or off, importing a settings file or resetting every setting.
+
+### block.top_bar.on
+
+The file's name and buttons at the top of a block showed.
+
+- Heard by those listening to its window's events.
+- Payload:
+  - `window_id`, `window_title`, `block_id`, `block_title`: its window's and its block's.
+- Follows: `app.ui.toggle`, `app.ui.on`, `app.top_bar.toggle`, `app.top_bar.on`, `window.ui.toggle`, `window.ui.on`, `window.top_bar.toggle`, `window.top_bar.on`, `block.ui.toggle`, `block.ui.on`, `block.top_bar.toggle`, `block.top_bar.on`, or Settings turning a panel over the video on or off, importing a settings file or resetting every setting.
+
+### block.top_bar.off
+
+The file's name and buttons at the top of a block hid.
+
+- Heard by those listening to its window's events.
+- Payload:
+  - `window_id`, `window_title`, `block_id`, `block_title`: its window's and its block's.
+- Follows: `app.ui.toggle`, `app.ui.off`, `app.top_bar.toggle`, `app.top_bar.off`, `window.ui.toggle`, `window.ui.off`, `window.set_ui`, `window.top_bar.toggle`, `window.top_bar.off`, `block.ui.toggle`, `block.ui.off`, `block.set_ui`, `block.top_bar.toggle`, `block.top_bar.off`, or Settings turning a panel over the video on or off, importing a settings file or resetting every setting.
+
+### block.track_switcher.on
+
+A block shows the reel of tracks as a shortcut rolls to one.
+
+- Heard by those listening to its window's events.
+- Payload:
+  - `window_id`, `window_title`, `block_id`, `block_title`: its window's and its block's.
+- Follows: `app.ui.toggle`, `app.ui.on`, `app.track_switcher.toggle`, `app.track_switcher.on`, `window.ui.toggle`, `window.ui.on`, `window.track_switcher.toggle`, `window.track_switcher.on`, `block.ui.toggle`, `block.ui.on`, `block.track_switcher.toggle`, `block.track_switcher.on`, or Settings turning a panel over the video on or off, importing a settings file or resetting every setting.
+
+### block.track_switcher.off
+
+A block switches tracks without the reel.
+
+- Heard by those listening to its window's events.
+- Payload:
+  - `window_id`, `window_title`, `block_id`, `block_title`: its window's and its block's.
+- Follows: `app.ui.toggle`, `app.ui.off`, `app.track_switcher.toggle`, `app.track_switcher.off`, `window.ui.toggle`, `window.ui.off`, `window.set_ui`, `window.track_switcher.toggle`, `window.track_switcher.off`, `block.ui.toggle`, `block.ui.off`, `block.set_ui`, `block.track_switcher.toggle`, `block.track_switcher.off`, or Settings turning a panel over the video on or off, importing a settings file or resetting every setting.
+
+### block.notes.on
+
+A block shows notes on what a shortcut changed.
+
+- Heard by those listening to its window's events.
+- Payload:
+  - `window_id`, `window_title`, `block_id`, `block_title`: its window's and its block's.
+- Follows: `app.ui.toggle`, `app.ui.on`, `app.notes.toggle`, `app.notes.on`, `window.ui.toggle`, `window.ui.on`, `window.notes.toggle`, `window.notes.on`, `block.ui.toggle`, `block.ui.on`, `block.notes.toggle`, `block.notes.on`, `app.settings.reset`, or Settings turning a panel over the video on or off, importing a settings file or resetting every setting.
+
+### block.notes.off
+
+A block shows no notes on what a shortcut changed; notes on what's wrong still show.
+
+- Heard by those listening to its window's events.
+- Payload:
+  - `window_id`, `window_title`, `block_id`, `block_title`: its window's and its block's.
+- Follows: `app.ui.toggle`, `app.ui.off`, `app.notes.toggle`, `app.notes.off`, `window.ui.toggle`, `window.ui.off`, `window.set_ui`, `window.notes.toggle`, `window.notes.off`, `block.ui.toggle`, `block.ui.off`, `block.notes.toggle`, `block.notes.off`, `app.settings.set`, `app.settings.reload`, or Settings turning a panel over the video on or off, importing a settings file or resetting every setting.
 
 ## playback
+
+### playback.loop.on
+
+A block's file is set to play again from the start at its end.
+
+- Heard by those listening to its window's events.
+- Payload:
+  - `window_id`, `window_title`, `block_id`, `block_title`: its window's and its block's.
+- Follows: `playback.loop.toggle`, or `playback.loop.on`.
+
+### playback.loop.off
+
+A block's file is set to stop at its end.
+
+- Heard by those listening to its window's events.
+- Payload:
+  - `window_id`, `window_title`, `block_id`, `block_title`: its window's and its block's.
+- Follows: `playback.loop.toggle`, or `playback.loop.off`.
 
 ### playback.opened
 
@@ -1545,20 +2191,57 @@ Another of a file's tracks plays, or none of its kind.
   - `window_id`, `window_title`, `block_id`, `block_title`: its window's and its block's.
   - `kind`: The track's: video, audio or subtitles.
   - `track`: The one playing, from 1 among its kind's, as the tracks menu lists them; none for none.
-- Follows: `audio.next_track`, `audio.select_track`, `subtitles.next_track`, `subtitles.select_track`, `subtitles.toggle`, `video.next_track`, or `video.select_track`.
+- Follows: `audio.next_track`, `audio.select_track`, `subtitles.next_track`, `subtitles.select_track`, `subtitles.toggle`, `subtitles.on`, `subtitles.off`, `video.next_track`, or `video.select_track`.
 
 ## audio
 
 ### audio.volume_changed
 
-A block's volume changed, or it was muted or unmuted.
+A block's volume changed.
 
 - Heard by those listening to its window's events.
 - Payload:
   - `window_id`, `window_title`, `block_id`, `block_title`: its window's and its block's.
   - `volume`: Its volume, in percent, as `audio.set_volume` takes it.
-  - `muted`: Whether it's muted.
-- Follows: `audio.volume_up`, `audio.volume_down`, `audio.set_volume`, `audio.toggle_mute`, `audio.volume_up_all`, `audio.volume_down_all`, or `audio.toggle_mute_all`.
+- Follows: `audio.volume_up`, `audio.volume_down`, `audio.set_volume`, `audio.volume_up_all`, or `audio.volume_down_all`.
+
+### audio.mute.on
+
+A block was muted.
+
+- Heard by those listening to its window's events.
+- Payload:
+  - `window_id`, `window_title`, `block_id`, `block_title`: its window's and its block's.
+- Follows: `audio.mute.toggle`, `audio.mute.on`, `audio.mute_all.toggle`, or `audio.mute_all.on`.
+
+### audio.mute.off
+
+A block was unmuted.
+
+- Heard by those listening to its window's events.
+- Payload:
+  - `window_id`, `window_title`, `block_id`, `block_title`: its window's and its block's.
+- Follows: `audio.mute.toggle`, `audio.mute.off`, `audio.mute_all.toggle`, `audio.mute_all.off`, or its volume turned up.
+
+## subtitles
+
+### subtitles.on
+
+A block's subtitles show: a subtitle track was picked where none was.
+
+- Heard by those listening to its window's events.
+- Payload:
+  - `window_id`, `window_title`, `block_id`, `block_title`: its window's and its block's.
+- Follows: `subtitles.next_track`, `subtitles.select_track`, `subtitles.toggle`, or `subtitles.on`.
+
+### subtitles.off
+
+A block's subtitles hid: no subtitle track is picked now.
+
+- Heard by those listening to its window's events.
+- Payload:
+  - `window_id`, `window_title`, `block_id`, `block_title`: its window's and its block's.
+- Follows: `subtitles.next_track`, `subtitles.select_track`, `subtitles.toggle`, or `subtitles.off`.
 
 ## cast
 
@@ -1620,7 +2303,7 @@ Settings changed.
 - Heard by those listening to the app's events.
 - Payload:
   - `keys`: The keys of those that changed, as `app.settings.get` takes them.
-- Follows: `app.toggle_ui`, `app.toggle_controls`, `app.toggle_top_bar`, `app.toggle_track_switcher`, `app.toggle_notes`, `window.toggle_float_on_top`, `window.toggle_float_on_top_while_playing`, `subtitles.bigger`, `subtitles.smaller`, `subtitles.up`, `subtitles.down`, `output.set_device`, `app.settings.set`, `app.settings.reset`, `app.settings.reload`, or Settings moving a slider, importing a settings file or resetting every setting.
+- Follows: `app.ui.toggle`, `app.ui.on`, `app.ui.off`, `app.controls.toggle`, `app.controls.on`, `app.controls.off`, `app.top_bar.toggle`, `app.top_bar.on`, `app.top_bar.off`, `app.track_switcher.toggle`, `app.track_switcher.on`, `app.track_switcher.off`, `app.notes.toggle`, `app.notes.on`, `app.notes.off`, `window.float_on_top.toggle`, `window.float_on_top.on`, `window.float_on_top.off`, `window.float_on_top_while_playing.toggle`, `window.float_on_top_while_playing.on`, `window.float_on_top_while_playing.off`, `subtitles.bigger`, `subtitles.smaller`, `subtitles.up`, `subtitles.down`, `output.set_device`, `app.settings.set`, `app.settings.reset`, `app.settings.reload`, or Settings moving a slider, importing a settings file or resetting every setting.
 
 ### app.settings.keymap_changed
 

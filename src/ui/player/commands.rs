@@ -134,14 +134,26 @@ impl PlayerView {
         cx.notify();
     }
 
-    pub fn toggle_mute(&mut self, cx: &mut Context<Self>) {
-        let muted = !self.playback.local().is_muted();
+    pub fn is_muted(&self) -> bool {
+        self.playback.local().is_muted()
+    }
+
+    /// Mute the block, or play its sound again, as `turn` has it, given
+    /// whether it's muted; noted either way.
+    pub fn turn_mute(&mut self, turn: impl FnOnce(bool) -> bool, cx: &mut Context<Self>) {
+        let muted = turn(self.is_muted());
         self.set_muted(muted);
         self.note_change(if muted { "Muted" } else { "Unmuted" }, cx);
     }
 
-    pub fn toggle_loop(&mut self, cx: &mut Context<Self>) {
-        let looping = !self.playback.local().is_looping();
+    pub fn is_looping(&self) -> bool {
+        self.playback.local().is_looping()
+    }
+
+    /// Play the file again from the start at its end, or stop there, as
+    /// `turn` has it, given whether it does; noted either way.
+    pub fn turn_loop(&mut self, turn: impl FnOnce(bool) -> bool, cx: &mut Context<Self>) {
+        let looping = turn(self.is_looping());
         self.set_looping(looping);
         self.note_change(if looping { "Loop on" } else { "Loop off" }, cx);
     }
@@ -202,16 +214,29 @@ impl PlayerView {
         true
     }
 
-    /// Hide the subtitles showing, or show the ones hidden (or the first).
-    pub fn toggle_subtitles(&mut self, cx: &mut Context<Self>) {
+    /// Whether a subtitle track shows.
+    pub fn shows_subtitles(&self) -> bool {
+        let info = self.playback.local().info();
+        info.is_some_and(|info| info.subtitle_track.is_some())
+    }
+
+    /// Hide the subtitles showing, or show the ones hidden (or the first),
+    /// as `turn` has it, given whether any show: nothing if they're as
+    /// it has them.
+    pub fn turn_subtitles(&mut self, turn: impl FnOnce(bool) -> bool, cx: &mut Context<Self>) {
         let Some(info) = self.playback.local().info() else {
             return;
         };
-        if let Some(index) = info.subtitle_track {
-            self.hidden_subtitles = Some(index);
-            self.select_track(TrackKind::Subtitle, None, cx);
-            self.note_change("Subtitles hidden", cx);
-            return;
+        let shown = info.subtitle_track;
+        match (shown, turn(shown.is_some())) {
+            (Some(index), false) => {
+                self.hidden_subtitles = Some(index);
+                self.select_track(TrackKind::Subtitle, None, cx);
+                self.note_change("Subtitles hidden", cx);
+                return;
+            }
+            (None, true) => {}
+            _ => return,
         }
         let tracks: Vec<_> = info.tracks(TrackKind::Subtitle).collect();
         let shown = self

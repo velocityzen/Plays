@@ -162,7 +162,7 @@ fn play_file_instead_plays_another_in_the_block_as_this_one_was(cx: &mut TestApp
     let block = blocks(window, &cx)[0].clone();
     block.update(&mut cx, |view, cx| {
         view.set_muted(true);
-        view.toggle_loop(cx);
+        view.turn_loop(|_| true, cx);
     });
     run_on(&mut cx, &block, "audio.set_volume", json!({"volume": 0})).unwrap();
     let opus = fixture("clip-opus.mkv");

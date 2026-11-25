@@ -61,11 +61,12 @@ fn each_event_is_named_in_its_namespace_as_commands_are() {
     for (namespace, kind) in all() {
         let name = kind.name.strip_prefix(namespace);
         let name = name.and_then(|name| name.strip_prefix('.'));
+        let word = |word: &str| {
+            !word.is_empty() && word.chars().all(|c| c.is_ascii_lowercase() || c == '_')
+        };
         assert!(
-            name.is_some_and(
-                |name| !name.is_empty() && name.chars().all(|c| c.is_ascii_lowercase() || c == '_')
-            ),
-            "{} is {namespace}. and lowercase words",
+            name.is_some_and(|name| name.split('.').all(word)),
+            "{} is {namespace}. and lowercase words, by dots",
             kind.name
         );
     }
@@ -132,14 +133,14 @@ fn an_event_fits_only_as_registered() {
         payload
     };
     let volume = |fields: Value| told("audio.volume_changed", payload(fields), false, &[window]);
-    let loud = json!({"volume": 40, "muted": false});
+    let loud = json!({"volume": 40});
     assert_eq!(fits(&volume(loud.clone())), Ok(()));
     assert_eq!(
-        fits(&volume(json!({"volume": 40}))),
-        Err("its payload has no muted".into())
+        fits(&volume(json!({}))),
+        Err("its payload has no volume".into())
     );
     assert_eq!(
-        fits(&volume(json!({"volume": 40, "muted": false, "loud": true}))),
+        fits(&volume(json!({"volume": 40, "loud": true}))),
         Err("its payload has loud".into())
     );
     assert_eq!(

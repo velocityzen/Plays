@@ -33,7 +33,7 @@ fn a_bad_value_costs_only_itself() {
         settings.hotkeys.keys("playback.play_pause"),
         default.hotkeys.keys("playback.play_pause")
     );
-    assert_eq!(settings.hotkeys.keys("playback.toggle_loop"), ["cmd-l"]);
+    assert_eq!(settings.hotkeys.keys("playback.loop.toggle"), ["cmd-l"]);
     assert_eq!(kept_aside(&path).as_deref(), Some(text), "the file kept");
     let Ok(Value::Object(fields)) = serde_json::from_str(text) else {
         panic!("an object");

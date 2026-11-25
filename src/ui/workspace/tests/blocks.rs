@@ -150,7 +150,7 @@ fn back_and_recent_go_to_the_blocks_clicked_or_gone_to_before(cx: &mut TestAppCo
         "clicked just before"
     );
     // Another command, it starts again too.
-    run(&mut cx, Invocation::new("window.toggle_float_on_top")).unwrap();
+    run(&mut cx, Invocation::new("window.float_on_top.toggle")).unwrap();
     assert_eq!(command("block.back", &mut cx), Some(b), "not on to c");
 
     // Those closed are passed over, nothing put in front since.
@@ -209,7 +209,7 @@ fn rename_labels_a_block_its_header_shows_and_names_it_by(cx: &mut TestAppContex
     assert_eq!(title(a, &cx), "Intro", "its header shows it");
     run(
         &mut cx,
-        Invocation::new("audio.toggle_mute").on_block("Intro"),
+        Invocation::new("audio.mute.toggle").on_block("Intro"),
     )
     .unwrap();
     let muted: Vec<bool> = players(window, &cx).iter().map(|p| p.2).collect();

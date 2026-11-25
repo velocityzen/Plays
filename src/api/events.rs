@@ -45,7 +45,7 @@ pub use seen::{BlockSeen, Seen, TRACKS, WindowSeen, playhead};
 use super::commands::{self, cast, output};
 use super::{Id, Invocation, target};
 use crate::hotkeys;
-use crate::settings::{Settings, fields};
+use crate::settings::{FloatOnTop, Settings, fields};
 
 /// How often the app is looked at while anyone listens, for what changed
 /// that no command did: a file opening or ending, a block the mouse goes
@@ -479,8 +479,34 @@ pub fn command_done(cx: &mut App) {
     }
 }
 
-/// Tell which settings changed, by key, which panels show over the video
-/// if those changed, and which commands' keys.
+/// The panels' events of Settings, and so of every window.
+const APP_PANELS: seen::PanelEvents = [
+    ["app.ui.on", "app.ui.off"],
+    ["app.controls.on", "app.controls.off"],
+    ["app.top_bar.on", "app.top_bar.off"],
+    ["app.track_switcher.on", "app.track_switcher.off"],
+    ["app.notes.on", "app.notes.off"],
+];
+
+/// Each way player windows float on top, and the events of it starting
+/// and stopping.
+const FLOATS: [(FloatOnTop, [&str; 2]); 2] = [
+    (
+        FloatOnTop::Always,
+        ["window.float_on_top.on", "window.float_on_top.off"],
+    ),
+    (
+        FloatOnTop::WhilePlaying,
+        [
+            "window.float_on_top_while_playing.on",
+            "window.float_on_top_while_playing.off",
+        ],
+    ),
+];
+
+/// Tell which settings changed, by key; the panels over the video that
+/// showed or hid, and the ways of floating on top that started or stopped;
+/// and which commands' keys changed.
 fn settings_changed(cx: &mut App) {
     if !listened(cx) {
         return;
@@ -496,12 +522,16 @@ fn settings_changed(cx: &mut App) {
             cx,
         );
     }
-    if old.over_video != settings.over_video {
-        let visible = settings.over_video.visible();
-        tell(
-            &Event::app("app.ui_changed", json!({"visible": visible})),
-            cx,
-        );
+    let panels = seen::panels_switched(old.over_video, settings.over_video, &APP_PANELS);
+    let floats = FLOATS.into_iter().filter_map(|(mode, kinds)| {
+        seen::switched(
+            old.float_on_top == mode,
+            settings.float_on_top == mode,
+            kinds,
+        )
+    });
+    for kind in panels.into_iter().chain(floats) {
+        tell(&Event::app(kind, json!({})), cx);
     }
     let commands: Vec<&str> = hotkeys::commands()
         .map(|spec| spec.id)

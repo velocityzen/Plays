@@ -239,7 +239,7 @@ fn back_walks_back_through_the_windows_in_front_and_recent_goes_to_the_last(
     back(&mut cx);
     assert_eq!(front(&cx), Some(d.window_id()), "in front just before");
     // Another command, it starts again too.
-    run(&mut cx, Invocation::new("window.toggle_float_on_top")).unwrap();
+    run(&mut cx, Invocation::new("window.float_on_top.toggle")).unwrap();
     back(&mut cx);
     assert_eq!(front(&cx), Some(a.window_id()), "not on to b");
 

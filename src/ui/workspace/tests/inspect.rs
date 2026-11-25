@@ -110,7 +110,7 @@ fn window_ls_and_inspect_say_what_each_window_is(cx: &mut TestAppContext) {
 
     // Full screen and floating on top show.
     cx.update(|window, _| window.toggle_fullscreen());
-    query(&mut cx, Invocation::new("window.toggle_float_on_top"));
+    query(&mut cx, Invocation::new("window.float_on_top.toggle"));
     let inspected = query(&mut cx, Invocation::new("window.inspect"));
     assert_eq!(inspected["full_screen"], true);
     assert_eq!(inspected["on_top"], true);
@@ -270,9 +270,9 @@ fn block_inspect_says_how_a_block_plays(cx: &mut TestAppContext) {
     for (command, args) in [
         ("block.rename", json!({"label": "Subs"})),
         ("playback.seek", json!({"time": 1.0})),
-        ("playback.toggle_loop", Value::Null),
+        ("playback.loop.toggle", Value::Null),
         ("audio.set_volume", json!({"volume": 50})),
-        ("audio.toggle_mute", Value::Null),
+        ("audio.mute.toggle", Value::Null),
         ("audio.later", Value::Null),
         ("subtitles.earlier", Value::Null),
         ("subtitles.select_track", json!({"number": 1})),

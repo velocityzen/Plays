@@ -88,9 +88,9 @@ pub const COMMANDS: &[Spec] = &[
     .tells(&[
         "app.settings.changed",
         "app.settings.keymap_changed",
-        "app.ui_changed",
-        "window.ui_changed",
-        "block.ui_changed",
+        "app.notes.off",
+        "window.notes.off",
+        "block.notes.off",
     ])
     .keywords(&["preferences", "options"])
     .returns("Its value now."),
@@ -104,9 +104,9 @@ pub const COMMANDS: &[Spec] = &[
     .tells(&[
         "app.settings.changed",
         "app.settings.keymap_changed",
-        "app.ui_changed",
-        "window.ui_changed",
-        "block.ui_changed",
+        "app.notes.on",
+        "window.notes.on",
+        "block.notes.on",
     ])
     .keywords(&["preferences", "options", "default", "restore"])
     .returns("Its value now."),
@@ -130,9 +130,9 @@ pub const COMMANDS: &[Spec] = &[
     .tells(&[
         "app.settings.changed",
         "app.settings.keymap_changed",
-        "app.ui_changed",
-        "window.ui_changed",
-        "block.ui_changed",
+        "app.notes.off",
+        "window.notes.off",
+        "block.notes.off",
     ])
     .keywords(&["preferences", "json", "refresh"])
     .returns("[key]: the settings the file changed."),

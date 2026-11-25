@@ -144,7 +144,7 @@ fn playing_seeking_and_the_sound_of_all_reach_every_window(cx: &mut TestAppConte
             "each turned down: {before:?} to {after:?}"
         );
     }
-    run(&mut cx, Invocation::new("audio.toggle_mute_all")).unwrap();
+    run(&mut cx, Invocation::new("audio.mute_all.toggle")).unwrap();
     assert!(sound(&cx).iter().all(|&(_, muted)| muted), "all muted");
 }
 

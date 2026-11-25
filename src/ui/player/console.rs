@@ -18,8 +18,17 @@ use crate::ui::theme::overlay;
 type Row = (&'static str, String);
 
 impl PlayerView {
-    /// Show the console on this block, or hide it.
-    pub fn toggle_console(&mut self, cx: &mut Context<Self>) {
+    pub fn shows_console(&self) -> bool {
+        self.console.is_some()
+    }
+
+    /// Show the console on this block, or hide it, as `turn` has it, given
+    /// whether it shows.
+    pub fn turn_console(&mut self, turn: impl FnOnce(bool) -> bool, cx: &mut Context<Self>) {
+        let shown = self.shows_console();
+        if turn(shown) == shown {
+            return;
+        }
         self.console = match self.console.take() {
             Some(_) => None,
             // What it shows changes while paused too (reading ahead, say),

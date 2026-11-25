@@ -89,8 +89,51 @@ pub struct BlockSeen {
     /// The device it casts to.
     pub casting: Option<Value>,
     pub picture_in_picture: bool,
+    /// It plays its file again from the start at its end.
+    pub looping: bool,
+    /// It shows what its file is and how it plays, over its picture.
+    pub console: bool,
     /// The panels it shows over its video.
     pub over_video: OverVideo,
+}
+
+/// The events of panels over the video showing or hiding, each `[on,
+/// off]`: of any showing, where none did, or none, then of each panel, in
+/// the order of `OverVideo::PANELS`.
+pub type PanelEvents = [[&'static str; 2]; 5];
+
+/// The panels' events of a window.
+const WINDOW_PANELS: PanelEvents = [
+    ["window.ui.on", "window.ui.off"],
+    ["window.controls.on", "window.controls.off"],
+    ["window.top_bar.on", "window.top_bar.off"],
+    ["window.track_switcher.on", "window.track_switcher.off"],
+    ["window.notes.on", "window.notes.off"],
+];
+
+/// The panels' events of a block.
+const BLOCK_PANELS: PanelEvents = [
+    ["block.ui.on", "block.ui.off"],
+    ["block.controls.on", "block.controls.off"],
+    ["block.top_bar.on", "block.top_bar.off"],
+    ["block.track_switcher.on", "block.track_switcher.off"],
+    ["block.notes.on", "block.notes.off"],
+];
+
+/// Of `kinds`, the events of the panels `new` shows, against `old`.
+pub fn panels_switched(old: OverVideo, new: OverVideo, kinds: &PanelEvents) -> Vec<&'static str> {
+    let shown = old.shown().into_iter().zip(new.shown());
+    std::iter::once((old.any(), new.any()))
+        .chain(shown)
+        .zip(kinds)
+        .filter_map(|((was, is), &kind)| switched(was, is, kind))
+        .collect()
+}
+
+/// Of `[on, off]`, what's told of a feature that `was` on, or not, and
+/// `is`: none if it is as it was.
+pub fn switched(was: bool, is: bool, [on, off]: [&'static str; 2]) -> Option<&'static str> {
+    (was != is).then_some(if is { on } else { off })
 }
 
 impl BlockSeen {
@@ -230,20 +273,12 @@ fn window_changes(
             json!({"label": window.label}),
         ));
     }
-    if before.full_screen != window.full_screen {
-        events.push(Event::window(
-            "window.full_screen_changed",
-            window,
-            json!({"full_screen": window.full_screen}),
-        ));
-    }
-    if before.over_video != window.over_video {
-        events.push(Event::window(
-            "window.ui_changed",
-            window,
-            json!({"visible": window.over_video.visible()}),
-        ));
-    }
+    let full_screen = ["window.full_screen.on", "window.full_screen.off"];
+    let panels = panels_switched(before.over_video, window.over_video, &WINDOW_PANELS);
+    let switches = switched(before.full_screen, window.full_screen, full_screen)
+        .into_iter()
+        .chain(panels);
+    events.extend(switches.map(|kind| Event::window(kind, window, json!({}))));
     let mut olds = Vec::with_capacity(window.blocks.len());
     for block in &window.blocks {
         let old = match was.get(&block.id) {
@@ -331,13 +366,16 @@ fn block_changes(
     {
         tell("block.label_changed", json!({"label": block.label}));
     }
-    if let Some(old) = old
-        && old.over_video != block.over_video
-    {
-        tell(
-            "block.ui_changed",
-            json!({"visible": block.over_video.visible()}),
-        );
+    if let Some(old) = old {
+        let console = ["block.console.on", "block.console.off"];
+        let looping = ["playback.loop.on", "playback.loop.off"];
+        let switches = panels_switched(old.over_video, block.over_video, &BLOCK_PANELS)
+            .into_iter()
+            .chain(switched(old.console, block.console, console))
+            .chain(switched(old.looping, block.looping, looping));
+        for kind in switches {
+            tell(kind, json!({}));
+        }
     }
     // A cast goes on from one file to the next.
     let cast = old.and_then(|old| old.casting.as_ref());
@@ -370,11 +408,13 @@ fn block_changes(
     if block.opened.is_some() {
         playing_changes(file.filter(|old| old.opened.is_some()), block, &mut tell);
     }
-    if old.is_some_and(|old| old.picture_in_picture) != block.picture_in_picture {
-        tell(
-            "block.picture_in_picture_changed",
-            json!({"picture_in_picture": block.picture_in_picture}),
-        );
+    let picture_in_picture = [
+        "block.picture_in_picture.on",
+        "block.picture_in_picture.off",
+    ];
+    let was = old.is_some_and(|old| old.picture_in_picture);
+    if let Some(kind) = switched(was, block.picture_in_picture, picture_in_picture) {
+        tell(kind, json!({}));
     }
 }
 
@@ -404,11 +444,11 @@ fn playing_changes(
         };
         tell(kind, block.playhead(block.position));
     }
-    if (old.volume, old.muted) != (block.volume, block.muted) {
-        tell(
-            "audio.volume_changed",
-            json!({"volume": block.volume, "muted": block.muted}),
-        );
+    if old.volume != block.volume {
+        tell("audio.volume_changed", json!({"volume": block.volume}));
+    }
+    if let Some(kind) = switched(old.muted, block.muted, ["audio.mute.on", "audio.mute.off"]) {
+        tell(kind, json!({}));
     }
     for ((kind, was), track) in TRACKS.iter().zip(old.tracks).zip(block.tracks) {
         if was != track {
@@ -417,6 +457,12 @@ fn playing_changes(
                 json!({"kind": kind, "track": track}),
             );
         }
+    }
+    let [.., subtitles_were] = old.tracks;
+    let [.., subtitles] = block.tracks;
+    let shown = ["subtitles.on", "subtitles.off"];
+    if let Some(kind) = switched(subtitles_were.is_some(), subtitles.is_some(), shown) {
+        tell(kind, json!({}));
     }
     if old.chapter != block.chapter {
         tell(

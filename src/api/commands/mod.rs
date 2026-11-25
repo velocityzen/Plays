@@ -40,12 +40,13 @@ pub const ALL: [&[Spec]; 12] = [
 ];
 
 /// The events of each namespace that has any, in the order of `ALL`.
-pub const EVENTS: [(&str, &[EventKind]); 8] = [
+pub const EVENTS: [(&str, &[EventKind]); 9] = [
     ("app", app::EVENTS),
     ("window", window::EVENTS),
     ("block", block::EVENTS),
     ("playback", playback::EVENTS),
     ("audio", audio::EVENTS),
+    ("subtitles", subtitles::EVENTS),
     ("cast", cast::EVENTS),
     ("output", output::EVENTS),
     ("app.settings", settings::EVENTS),
@@ -76,8 +77,53 @@ pub const NAMESPACES: [(&str, &str); 11] = [
 const PANELS_SET: &str = "Settings turning a panel over the video on or off, importing a \
      settings file or resetting every setting";
 
-/// The panels over the video an event says are shown.
-const VISIBLE: &str = "Those shown, of `controls`, `top_bar`, `track_switcher` and `notes`.";
+/// What a feature's commands do with it: `<feature>.toggle`, `.on` and
+/// `.off`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Switch {
+    /// On if it's off, else off.
+    Toggle,
+    /// On, unless it is already.
+    On,
+    /// Off, unless it is already.
+    Off,
+}
+
+impl Switch {
+    /// Whether it's to be on, given whether it is.
+    pub fn turn(self, on: bool) -> bool {
+        match self {
+            Self::Toggle => !on,
+            Self::On => true,
+            Self::Off => false,
+        }
+    }
+}
+
+/// The panels over the video, each as a `Panel` picks it.
+mod panels {
+    use crate::settings::OverVideo;
+
+    /// The seek bar and the buttons at the bottom.
+    pub fn controls(shown: &mut OverVideo) -> &mut bool {
+        &mut shown.controls
+    }
+
+    /// The file's name and the buttons at the top.
+    pub fn top_bar(shown: &mut OverVideo) -> &mut bool {
+        &mut shown.top_bar
+    }
+
+    /// The reel of tracks a shortcut rolls to.
+    pub fn track_switcher(shown: &mut OverVideo) -> &mut bool {
+        &mut shown.track_switcher
+    }
+
+    /// Notes on what a shortcut changed.
+    pub fn notes(shown: &mut OverVideo) -> &mut bool {
+        &mut shown.notes
+    }
+}
 
 /// Done, with nothing to hand back.
 fn done() -> Outcome {

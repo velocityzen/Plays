@@ -169,6 +169,8 @@ impl PlayerView {
             chapter: self.chapter().map(|at| at + 1),
             casting: self.casting().map(device_json),
             picture_in_picture: self.in_picture_in_picture(),
+            looping: self.is_looping(),
+            console: self.shows_console(),
             over_video: self.over_video(),
         }
     }

@@ -143,7 +143,7 @@ fn its_keys_list_every_command_that_can_run_in_the_window(cx: &mut TestAppContex
     let has = |id: &str| listed.iter().any(|listed| listed == id);
     assert!(has("window.new") && has("app.settings.open") && has("window.open_url"));
     assert!(
-        !has("playback.toggle_loop"),
+        !has("playback.loop.toggle"),
         "an empty window has no file to loop"
     );
     assert!(!has("window.ls"), "a query only reads");
@@ -256,20 +256,20 @@ fn rows_show_what_commands_change_and_run_on_the_window_its_over(cx: &mut TestAp
     cx.update(|_, cx| api::record(cx));
     open_palette(&mut cx);
     assert_eq!(
-        read(window, &cx, |palette| palette.state("playback.toggle_loop")),
+        read(window, &cx, |palette| palette.state("playback.loop.toggle")),
         Some(State::Nothing),
         "a file can loop now"
     );
     type_in(&mut cx, "loop");
     press_and_wait(&mut cx, "enter");
     let here = aimed_at(window, &cx);
-    let mut toggled = Invocation::new("playback.toggle_loop").from(Source::Palette);
+    let mut toggled = Invocation::new("playback.loop.toggle").from(Source::Palette);
     toggled.target = here;
     assert_eq!(ran(&mut cx), [toggled]);
 
     open_palette(&mut cx);
     assert_eq!(
-        read(window, &cx, |palette| palette.state("playback.toggle_loop")),
+        read(window, &cx, |palette| palette.state("playback.loop.toggle")),
         Some(State::On),
         "a check"
     );
@@ -478,7 +478,7 @@ fn commands_run_from_it_lately_come_first_and_are_kept(cx: &mut TestAppContext) 
         type_in(cx, typed);
         press_and_wait(cx, "enter");
     };
-    const FLOAT: &str = "window.toggle_float_on_top";
+    const FLOAT: &str = "window.float_on_top.toggle";
     const COPY: &str = "app.copy_version_info";
     run(&mut cx, "copy version info");
     run(&mut cx, "float on top");

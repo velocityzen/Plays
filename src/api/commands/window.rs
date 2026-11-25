@@ -2,11 +2,11 @@
 //! going from one to another and back, numbering them, closing one or the
 //! others, full screen and the display it's on, and floating them on top.
 
-use gpui::{AnyWindowHandle, App, Context};
+use gpui::{AnyWindowHandle, App, Context, Window};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use super::done;
+use super::{Switch, done, panels};
 use crate::api::args::{Arg, Kind};
 use crate::api::events::{EventField, EventKind};
 use crate::api::registry::{Args, Outcome, Reach, Scope, Spec, on_mac};
@@ -238,12 +238,12 @@ pub const COMMANDS: &[Spec] = &[
     )
     .keywords(&["reorder", "number", "later"]),
     Spec::window(
-        "window.toggle_full_screen",
+        "window.full_screen.toggle",
         "Full Screen",
         "Show the window full screen, or as it was again.",
-        |_, window, _| window.toggle_fullscreen(),
+        |_, window, _| switch_full_screen(Switch::Toggle, window),
     )
-    .tells(&["window.full_screen_changed"])
+    .tells(&["window.full_screen.on", "window.full_screen.off"])
     .keywords(&["enter", "exit", "maximize"])
     .setting("full_screen")
     .keys(on_mac(&["ctrl-cmd-f", "f"], &["f11", "f"]))
@@ -251,16 +251,20 @@ pub const COMMANDS: &[Spec] = &[
         target::in_window(target, cx, |_, window, _| Ok(json!(window.is_fullscreen())))
     }),
     Spec::window(
-        "window.exit_full_screen",
+        "window.full_screen.on",
+        "Enter Full Screen",
+        "Show the window full screen, unless it is already.",
+        |_, window, _| switch_full_screen(Switch::On, window),
+    )
+    .tells(&["window.full_screen.on"])
+    .keywords(&["maximize"]),
+    Spec::window(
+        "window.full_screen.off",
         "Exit Full Screen",
         "Show the window as it was before it was full screen.",
-        |_, window, _| {
-            if window.is_fullscreen() {
-                window.toggle_fullscreen();
-            }
-        },
+        |_, window, _| switch_full_screen(Switch::Off, window),
     )
-    .tells(&["window.full_screen_changed"])
+    .tells(&["window.full_screen.off"])
     .setting("exit_full_screen")
     .keys(&["escape"]),
     Spec::window(
@@ -274,25 +278,74 @@ pub const COMMANDS: &[Spec] = &[
     .setting("match_video_size")
     .keys(&["secondary-alt-0"]),
     Spec::app(
-        "window.toggle_float_on_top",
+        "window.float_on_top.toggle",
         "Float on Top",
         "Keep player windows above other apps' windows, or stop.",
-        |cx| toggle_float_on_top(FloatOnTop::Always, cx),
+        |cx| switch_float_on_top(FloatOnTop::Always, Switch::Toggle, cx),
     )
-    .tells(&["app.settings.changed"])
+    .tells(&[
+        "app.settings.changed",
+        "window.float_on_top.on",
+        "window.float_on_top.off",
+    ])
     .keywords(&["pin", "always on top", "above"])
     .setting("float_on_top")
     .state(|_, cx| Ok(json!(floats(FloatOnTop::Always, cx)))),
     Spec::app(
-        "window.toggle_float_on_top_while_playing",
+        "window.float_on_top.on",
+        "Start Floating on Top",
+        "Keep player windows above other apps' windows, unless they are already.",
+        |cx| switch_float_on_top(FloatOnTop::Always, Switch::On, cx),
+    )
+    .tells(&["app.settings.changed", "window.float_on_top.on"])
+    .keywords(&["pin", "always on top", "above"]),
+    Spec::app(
+        "window.float_on_top.off",
+        "Stop Floating on Top",
+        "Stop keeping player windows above other apps' windows, unless they float on top \
+         while playing.",
+        |cx| switch_float_on_top(FloatOnTop::Always, Switch::Off, cx),
+    )
+    .tells(&["app.settings.changed", "window.float_on_top.off"])
+    .keywords(&["pin", "always on top", "above"]),
+    Spec::app(
+        "window.float_on_top_while_playing.toggle",
         "Float on Top While Playing",
         "Keep player windows above other apps' windows while a file in them plays, or stop.",
-        |cx| toggle_float_on_top(FloatOnTop::WhilePlaying, cx),
+        |cx| switch_float_on_top(FloatOnTop::WhilePlaying, Switch::Toggle, cx),
     )
-    .tells(&["app.settings.changed"])
+    .tells(&[
+        "app.settings.changed",
+        "window.float_on_top_while_playing.on",
+        "window.float_on_top_while_playing.off",
+    ])
     .keywords(&["pin", "always on top", "above"])
     .setting("float_on_top_while_playing")
     .state(|_, cx| Ok(json!(floats(FloatOnTop::WhilePlaying, cx)))),
+    Spec::app(
+        "window.float_on_top_while_playing.on",
+        "Start Floating on Top While Playing",
+        "Keep player windows above other apps' windows while a file in them plays, unless \
+         they are already.",
+        |cx| switch_float_on_top(FloatOnTop::WhilePlaying, Switch::On, cx),
+    )
+    .tells(&[
+        "app.settings.changed",
+        "window.float_on_top_while_playing.on",
+    ])
+    .keywords(&["pin", "always on top", "above"]),
+    Spec::app(
+        "window.float_on_top_while_playing.off",
+        "Stop Floating on Top While Playing",
+        "Stop keeping player windows above other apps' windows while a file in them \
+         plays, unless they float on top always.",
+        |cx| switch_float_on_top(FloatOnTop::WhilePlaying, Switch::Off, cx),
+    )
+    .tells(&[
+        "app.settings.changed",
+        "window.float_on_top_while_playing.off",
+    ])
+    .keywords(&["pin", "always on top", "above"]),
     Spec::window_with(
         "window.show_on_display",
         "Show on Display",
@@ -309,17 +362,36 @@ pub const COMMANDS: &[Spec] = &[
             done()
         },
     )
-    .tells(&["window.full_screen_changed"])
+    .tells(&["window.full_screen.on"])
     .keywords(&["screen", "monitor", "projector", "move"]),
     Spec::window(
-        "window.toggle_ui",
+        "window.ui.toggle",
         "Show/Hide All in Window",
         "Hide every panel over the video in each block in the window while the window \
          shows any, else show them all.",
-        |workspace, _, cx| change_over_video(workspace, OverVideo::all_toggled, cx),
+        |workspace, _, cx| switch_panel(Switch::Toggle, None, workspace, cx),
     )
-    .tells(TELLS_UI)
-    .keywords(&["hide", "interface", "ui", "panels", "clean"]),
+    .tells(TELLS_ALL)
+    .keywords(&["hide", "interface", "ui", "panels", "clean"])
+    .setting("window.toggle_ui"),
+    Spec::window(
+        "window.ui.on",
+        "Show All in Window",
+        "Show every panel over the video in each block in the window, and those opened \
+         in it.",
+        |workspace, _, cx| switch_panel(Switch::On, None, workspace, cx),
+    )
+    .tells(TELLS_ALL_ON)
+    .keywords(&["interface", "ui", "panels"]),
+    Spec::window(
+        "window.ui.off",
+        "Hide All in Window",
+        "Hide every panel over the video in each block in the window, and those opened \
+         in it.",
+        |workspace, _, cx| switch_panel(Switch::Off, None, workspace, cx),
+    )
+    .tells(TELLS_ALL_OFF)
+    .keywords(&["interface", "ui", "panels", "clean"]),
     Spec::window_with(
         "window.set_ui",
         "Show Panels in Window",
@@ -332,7 +404,7 @@ pub const COMMANDS: &[Spec] = &[
             done()
         },
     )
-    .tells(TELLS_UI)
+    .tells(TELLS_ALL_OFF)
     .keywords(&["hide", "interface", "ui", "panels", "clean", "show"])
     .state(|target, cx| {
         target::in_window(target, cx, |workspace, _, _| {
@@ -340,50 +412,197 @@ pub const COMMANDS: &[Spec] = &[
         })
     }),
     Spec::window(
-        "window.toggle_controls",
-        "Show Controls in Window",
+        "window.controls.toggle",
+        "Show/Hide Controls in Window",
         "Show the seek bar and buttons at the bottom of each block in the window, and \
          those opened in it, or hide them.",
-        |workspace, _, cx| toggle_panel(workspace, |panel| &mut panel.controls, cx),
+        |workspace, _, cx| switch_panel(Switch::Toggle, Some(panels::controls), workspace, cx),
     )
-    .tells(TELLS_UI)
+    .tells(&[
+        "window.controls.on",
+        "window.controls.off",
+        "block.controls.on",
+        "block.controls.off",
+    ])
     .keywords(&["hide", "player controls", "seek bar", "bottom bar"])
+    .setting("window.toggle_controls")
     .state(|target, cx| shown_in_window(target, cx, |shown| shown.controls)),
     Spec::window(
-        "window.toggle_top_bar",
-        "Show Top Bar in Window",
+        "window.controls.on",
+        "Show Controls in Window",
+        "Show the seek bar and buttons at the bottom of each block in the window, and \
+         those opened in it.",
+        |workspace, _, cx| switch_panel(Switch::On, Some(panels::controls), workspace, cx),
+    )
+    .tells(&["window.controls.on", "block.controls.on"])
+    .keywords(&["player controls", "seek bar", "bottom bar"]),
+    Spec::window(
+        "window.controls.off",
+        "Hide Controls in Window",
+        "Hide the seek bar and buttons at the bottom of each block in the window, and \
+         those opened in it.",
+        |workspace, _, cx| switch_panel(Switch::Off, Some(panels::controls), workspace, cx),
+    )
+    .tells(&["window.controls.off", "block.controls.off"])
+    .keywords(&["player controls", "seek bar", "bottom bar"]),
+    Spec::window(
+        "window.top_bar.toggle",
+        "Show/Hide Top Bar in Window",
         "Show the file's name and buttons at the top of each block in the window, and \
          those opened in it, or hide them.",
-        |workspace, _, cx| toggle_panel(workspace, |panel| &mut panel.top_bar, cx),
+        |workspace, _, cx| switch_panel(Switch::Toggle, Some(panels::top_bar), workspace, cx),
     )
-    .tells(TELLS_UI)
+    .tells(&[
+        "window.top_bar.on",
+        "window.top_bar.off",
+        "block.top_bar.on",
+        "block.top_bar.off",
+    ])
     .keywords(&["hide", "header", "title", "buttons"])
+    .setting("window.toggle_top_bar")
     .state(|target, cx| shown_in_window(target, cx, |shown| shown.top_bar)),
     Spec::window(
-        "window.toggle_track_switcher",
-        "Show Track Switcher in Window",
+        "window.top_bar.on",
+        "Show Top Bar in Window",
+        "Show the file's name and buttons at the top of each block in the window, and \
+         those opened in it.",
+        |workspace, _, cx| switch_panel(Switch::On, Some(panels::top_bar), workspace, cx),
+    )
+    .tells(&["window.top_bar.on", "block.top_bar.on"])
+    .keywords(&["header", "title", "buttons"]),
+    Spec::window(
+        "window.top_bar.off",
+        "Hide Top Bar in Window",
+        "Hide the file's name and buttons at the top of each block in the window, and \
+         those opened in it.",
+        |workspace, _, cx| switch_panel(Switch::Off, Some(panels::top_bar), workspace, cx),
+    )
+    .tells(&["window.top_bar.off", "block.top_bar.off"])
+    .keywords(&["header", "title", "buttons"]),
+    Spec::window(
+        "window.track_switcher.toggle",
+        "Show/Hide Track Switcher in Window",
         "Show the reel of tracks a shortcut rolls to the audio, video or subtitles \
          picked, over each block in the window, and those opened in it, or switch \
          without it.",
-        |workspace, _, cx| toggle_panel(workspace, |panel| &mut panel.track_switcher, cx),
+        |workspace, _, cx| {
+            switch_panel(Switch::Toggle, Some(panels::track_switcher), workspace, cx)
+        },
     )
-    .tells(TELLS_UI)
+    .tells(&[
+        "window.track_switcher.on",
+        "window.track_switcher.off",
+        "block.track_switcher.on",
+        "block.track_switcher.off",
+    ])
     .keywords(&["hide", "reel", "streams", "audio track", "subtitle track"])
+    .setting("window.toggle_track_switcher")
     .state(|target, cx| shown_in_window(target, cx, |shown| shown.track_switcher)),
     Spec::window(
-        "window.toggle_notes",
-        "Show Notes in Window",
+        "window.track_switcher.on",
+        "Show Track Switcher in Window",
+        "Show the reel of tracks a shortcut rolls to the audio, video or subtitles \
+         picked, over each block in the window, and those opened in it.",
+        |workspace, _, cx| switch_panel(Switch::On, Some(panels::track_switcher), workspace, cx),
+    )
+    .tells(&["window.track_switcher.on", "block.track_switcher.on"])
+    .keywords(&["reel", "streams", "audio track", "subtitle track"]),
+    Spec::window(
+        "window.track_switcher.off",
+        "Hide Track Switcher in Window",
+        "Switch tracks without the reel in each block in the window, and those opened \
+         in it.",
+        |workspace, _, cx| switch_panel(Switch::Off, Some(panels::track_switcher), workspace, cx),
+    )
+    .tells(&["window.track_switcher.off", "block.track_switcher.off"])
+    .keywords(&["reel", "streams", "audio track", "subtitle track"]),
+    Spec::window(
+        "window.notes.toggle",
+        "Show/Hide Notes in Window",
         "Show notes on what a shortcut changed, like the volume, over each block in the \
          window, and those opened in it, or not. Notes on what's wrong still show.",
-        |workspace, _, cx| toggle_panel(workspace, |panel| &mut panel.notes, cx),
+        |workspace, _, cx| switch_panel(Switch::Toggle, Some(panels::notes), workspace, cx),
     )
-    .tells(TELLS_UI)
+    .tells(&[
+        "window.notes.on",
+        "window.notes.off",
+        "block.notes.on",
+        "block.notes.off",
+    ])
     .keywords(&["hide", "osd", "on-screen display", "volume", "messages"])
+    .setting("window.toggle_notes")
     .state(|target, cx| shown_in_window(target, cx, |shown| shown.notes)),
+    Spec::window(
+        "window.notes.on",
+        "Show Notes in Window",
+        "Show notes on what a shortcut changed, like the volume, over each block in the \
+         window, and those opened in it.",
+        |workspace, _, cx| switch_panel(Switch::On, Some(panels::notes), workspace, cx),
+    )
+    .tells(&["window.notes.on", "block.notes.on"])
+    .keywords(&["osd", "on-screen display", "volume", "messages"]),
+    Spec::window(
+        "window.notes.off",
+        "Hide Notes in Window",
+        "Hide notes on what a shortcut changed over each block in the window, and those \
+         opened in it. Notes on what's wrong still show.",
+        |workspace, _, cx| switch_panel(Switch::Off, Some(panels::notes), workspace, cx),
+    )
+    .tells(&["window.notes.off", "block.notes.off"])
+    .keywords(&["osd", "on-screen display", "volume", "messages"]),
 ];
 
-/// What a change to the panels over the video in a window tells.
-const TELLS_UI: &[&str] = &["window.ui_changed", "block.ui_changed"];
+/// What every panel over the video in a window showing or hiding tells.
+const TELLS_ALL: &[&str] = &[
+    "window.ui.on",
+    "window.ui.off",
+    "window.controls.on",
+    "window.controls.off",
+    "window.top_bar.on",
+    "window.top_bar.off",
+    "window.track_switcher.on",
+    "window.track_switcher.off",
+    "window.notes.on",
+    "window.notes.off",
+    "block.ui.on",
+    "block.ui.off",
+    "block.controls.on",
+    "block.controls.off",
+    "block.top_bar.on",
+    "block.top_bar.off",
+    "block.track_switcher.on",
+    "block.track_switcher.off",
+    "block.notes.on",
+    "block.notes.off",
+];
+
+/// What every panel over the video in a window showing tells.
+const TELLS_ALL_ON: &[&str] = &[
+    "window.ui.on",
+    "window.controls.on",
+    "window.top_bar.on",
+    "window.track_switcher.on",
+    "window.notes.on",
+    "block.ui.on",
+    "block.controls.on",
+    "block.top_bar.on",
+    "block.track_switcher.on",
+    "block.notes.on",
+];
+
+/// What every panel over the video in a window hiding tells.
+const TELLS_ALL_OFF: &[&str] = &[
+    "window.ui.off",
+    "window.controls.off",
+    "window.top_bar.off",
+    "window.track_switcher.off",
+    "window.notes.off",
+    "block.ui.off",
+    "block.controls.off",
+    "block.top_bar.off",
+    "block.track_switcher.off",
+    "block.notes.off",
+];
 
 /// The panels over the video `window.set_ui` and `block.set_ui` show.
 pub const PANELS_SHOWN: Arg = Arg::required(
@@ -426,19 +645,96 @@ pub const EVENTS: &[EventKind] = &[
         &[],
     )
     .causes(&["a click on another window"]),
+    EventKind::window("window.full_screen.on", "A window went full screen.", &[])
+        .causes(&["the window's own full screen button"]),
     EventKind::window(
-        "window.full_screen_changed",
-        "A window went full screen, or came back from it.",
-        &[EventField::new(
-            "full_screen",
-            "Whether it's full screen now.",
-        )],
+        "window.full_screen.off",
+        "A window came back from full screen.",
+        &[],
     )
     .causes(&["the window's own full screen button"]),
+    EventKind::app(
+        "window.float_on_top.on",
+        "Player windows began to float above other apps' windows.",
+        &[],
+    )
+    .causes(&[FLOAT_SET]),
+    EventKind::app(
+        "window.float_on_top.off",
+        "Player windows stopped floating above other apps' windows.",
+        &[],
+    )
+    .causes(&[FLOAT_SET]),
+    EventKind::app(
+        "window.float_on_top_while_playing.on",
+        "Player windows began to float above other apps' windows while a file in them plays.",
+        &[],
+    )
+    .causes(&[FLOAT_SET]),
+    EventKind::app(
+        "window.float_on_top_while_playing.off",
+        "Player windows stopped floating above other apps' windows while a file in them plays.",
+        &[],
+    )
+    .causes(&[FLOAT_SET]),
     EventKind::window(
-        "window.ui_changed",
-        "The panels shown over the video in a window's blocks, and those opened in it, changed.",
-        &[EventField::new("visible", super::VISIBLE)],
+        "window.ui.on",
+        "A panel showed over the video in a window's blocks, and those opened in it, where none did.",
+        &[],
+    )
+    .causes(&[super::PANELS_SET]),
+    EventKind::window(
+        "window.ui.off",
+        "Every panel over the video in a window's blocks, and those opened in it, hid.",
+        &[],
+    )
+    .causes(&[super::PANELS_SET]),
+    EventKind::window(
+        "window.controls.on",
+        "The seek bar and buttons at the bottom of a window's blocks, and those opened in it, showed.",
+        &[],
+    )
+    .causes(&[super::PANELS_SET]),
+    EventKind::window(
+        "window.controls.off",
+        "The seek bar and buttons at the bottom of a window's blocks, and those opened in it, hid.",
+        &[],
+    )
+    .causes(&[super::PANELS_SET]),
+    EventKind::window(
+        "window.top_bar.on",
+        "The file's name and buttons at the top of a window's blocks, and those opened in it, showed.",
+        &[],
+    )
+    .causes(&[super::PANELS_SET]),
+    EventKind::window(
+        "window.top_bar.off",
+        "The file's name and buttons at the top of a window's blocks, and those opened in it, hid.",
+        &[],
+    )
+    .causes(&[super::PANELS_SET]),
+    EventKind::window(
+        "window.track_switcher.on",
+        "A window's blocks, and those opened in it, show the reel of tracks as a shortcut rolls to one.",
+        &[],
+    )
+    .causes(&[super::PANELS_SET]),
+    EventKind::window(
+        "window.track_switcher.off",
+        "A window's blocks, and those opened in it, switch tracks without the reel.",
+        &[],
+    )
+    .causes(&[super::PANELS_SET]),
+    EventKind::window(
+        "window.notes.on",
+        "A window's blocks, and those opened in it, show notes on what a shortcut changed.",
+        &[],
+    )
+    .causes(&[super::PANELS_SET]),
+    EventKind::window(
+        "window.notes.off",
+        "A window's blocks, and those opened in it, show no notes on what a shortcut changed.",
+        &[],
     )
     .causes(&[super::PANELS_SET]),
     EventKind::window(
@@ -620,8 +916,25 @@ fn close(_: Args, target: &Target, cx: &mut App) -> Outcome {
     done()
 }
 
-fn toggle_float_on_top(mode: FloatOnTop, cx: &mut App) {
-    Settings::update(cx, true, |s| s.float_on_top = s.float_on_top.toggled(mode));
+/// What floats player windows on top, or stops them, other than a
+/// command: events' cause.
+const FLOAT_SET: &str = "Settings → Appearance floating player windows on top, importing a \
+     settings file or resetting every setting";
+
+/// Show `window` full screen, or as it was, as `switch` says.
+fn switch_full_screen(switch: Switch, window: &mut Window) {
+    let full = window.is_fullscreen();
+    if switch.turn(full) != full {
+        window.toggle_fullscreen();
+    }
+}
+
+/// Float player windows on top as `mode` does, or stop, as `switch` says,
+/// and keep it so.
+fn switch_float_on_top(mode: FloatOnTop, switch: Switch, cx: &mut App) {
+    Settings::update(cx, true, |s| {
+        s.float_on_top = s.float_on_top.switched(mode, |on| switch.turn(on));
+    });
 }
 
 fn floats(mode: FloatOnTop, cx: &App) -> bool {
@@ -647,19 +960,15 @@ pub fn show_on_display(id: u32) -> Run {
     Run::with("window.show_on_display", json!({"display": id}))
 }
 
-/// Turn the panel `panel` picks on, or off, in `workspace`.
-fn toggle_panel(workspace: &mut Workspace, panel: Panel, cx: &mut Context<Workspace>) {
-    change_over_video(workspace, |shown| shown.toggled(panel), cx);
-}
-
-/// Change the panels over the video `workspace` shows with `change`, and so
-/// its blocks'.
-fn change_over_video(
+/// Show the panel `panel` picks over the video in `workspace`, and so in
+/// its blocks, or hide it, as `switch` says; with none, every panel.
+fn switch_panel(
+    switch: Switch,
+    panel: Option<Panel>,
     workspace: &mut Workspace,
-    change: impl FnOnce(OverVideo) -> OverVideo,
     cx: &mut Context<Workspace>,
 ) {
-    let shown = change(workspace.over_video());
+    let shown = workspace.over_video().switched(panel, |on| switch.turn(on));
     workspace.set_over_video(shown, cx);
 }
 

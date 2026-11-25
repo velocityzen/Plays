@@ -502,7 +502,7 @@ async fn cli(cx: &mut AsyncApp) -> Result<(), String> {
         return Err(format!("plays block ls listed {blocks}"));
     }
 
-    succeeds(cx, &["do", "playback.toggle_loop"]).await?;
+    succeeds(cx, &["do", "playback.loop.toggle"]).await?;
     let block = json(&succeeds(cx, &["--json", "block", "inspect"]).await?)?;
     if block["looping"] != false {
         return Err(format!("the block still loops: {block}"));

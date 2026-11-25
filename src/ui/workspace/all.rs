@@ -141,10 +141,12 @@ pub fn change_volume(delta: f32, cx: &mut App) {
     }
 }
 
-/// Mute every block if any plays its sound, else unmute them all.
-pub fn toggle_mute(cx: &mut App) {
-    let mute = views(cx)
+/// Mute every block, or unmute them all, as `turn` has it, given whether
+/// all are muted.
+pub fn turn_mute(turn: impl FnOnce(bool) -> bool, cx: &mut App) {
+    let muted = views(cx)
         .iter()
-        .any(|view| !view.read(cx).player().is_muted());
+        .all(|view| view.read(cx).player().is_muted());
+    let mute = turn(muted);
     for_each(cx, |view| view.set_muted(mute));
 }

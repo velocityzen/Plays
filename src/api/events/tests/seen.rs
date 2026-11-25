@@ -25,6 +25,8 @@ fn block(id: Id) -> BlockSeen {
         chapter: None,
         casting: None,
         picture_in_picture: false,
+        looping: false,
+        console: false,
         over_video: OverVideo::default(),
     }
 }
@@ -188,7 +190,7 @@ fn labels_full_screen_the_layout_and_the_block_keys_go_to_are_told_as_they_chang
         said(&events),
         [
             ("window.label_changed", json!({"label": "news"})),
-            ("window.full_screen_changed", json!({"full_screen": true})),
+            ("window.full_screen.on", json!({})),
             (
                 "window.layout_changed",
                 json!({
@@ -232,14 +234,32 @@ fn the_panels_a_window_and_its_blocks_show_are_told_as_they_change() {
     assert_eq!(
         said(&events),
         [
-            (
-                "window.ui_changed",
-                json!({"visible": ["controls", "top_bar", "track_switcher"]})
-            ),
-            ("block.ui_changed", json!({"visible": ["top_bar"]})),
+            ("window.notes.off", json!({})),
+            ("block.controls.off", json!({})),
+            ("block.track_switcher.off", json!({})),
+            ("block.notes.off", json!({})),
         ]
     );
     assert_eq!(events[1].payload["block_id"], u.to_string(), "its own");
+
+    // None, then one, shown: so all of them are, as one.
+    let mut hidden = after.clone();
+    hidden.windows[0].over_video = OverVideo::NONE;
+    assert_eq!(
+        kinds(&changes(&after, &hidden)),
+        [
+            "window.ui.off",
+            "window.controls.off",
+            "window.top_bar.off",
+            "window.track_switcher.off",
+        ]
+    );
+    let mut one = hidden.clone();
+    one.windows[0].over_video.notes = true;
+    assert_eq!(
+        kinds(&changes(&hidden, &one)),
+        ["window.ui.on", "window.notes.on"]
+    );
     assert!(changes(&after, &after).is_empty());
 
     // One opened in it starts out as it is: its `block.created` says so.
@@ -250,7 +270,7 @@ fn the_panels_a_window_and_its_blocks_show_are_told_as_they_change() {
     });
     let told = changes(&after, &more);
     assert!(
-        !kinds(&told).contains(&"block.ui_changed"),
+        told.iter().all(|event| !event.kind.ends_with(".off")),
         "{:?}",
         kinds(&told)
     );
@@ -434,10 +454,8 @@ fn how_a_file_plays_is_told_once_it_has_opened() {
     assert_eq!(
         said(&block_changes(&paused, &changed)),
         [
-            (
-                "audio.volume_changed",
-                json!({"volume": 50.0, "muted": true})
-            ),
+            ("audio.volume_changed", json!({"volume": 50.0})),
+            ("audio.mute.on", json!({})),
             (
                 "playback.track_changed",
                 json!({"kind": "audio", "track": 2})
@@ -446,10 +464,43 @@ fn how_a_file_plays_is_told_once_it_has_opened() {
                 "playback.track_changed",
                 json!({"kind": "subtitles", "track": 1})
             ),
+            ("subtitles.on", json!({})),
             ("playback.chapter_changed", json!({"chapter": 2})),
         ]
     );
     assert!(block_changes(&changed, &changed).is_empty());
+}
+
+#[test]
+fn muting_and_subtitles_are_told_turning_on_and_off() {
+    let here = opened(block(Id::next()));
+    let mut on = BlockSeen {
+        muted: true,
+        ..here.clone()
+    };
+    on.tracks[2] = Some(2);
+    assert_eq!(
+        kinds(&block_changes(&here, &on)),
+        ["audio.mute.on", "playback.track_changed", "subtitles.on"]
+    );
+    let mut other = on.clone();
+    other.tracks[2] = Some(1);
+    assert_eq!(
+        kinds(&block_changes(&on, &other)),
+        ["playback.track_changed"],
+        "still on"
+    );
+    assert_eq!(
+        said(&block_changes(&other, &here)),
+        [
+            ("audio.mute.off", json!({})),
+            (
+                "playback.track_changed",
+                json!({"kind": "subtitles", "track": null})
+            ),
+            ("subtitles.off", json!({})),
+        ]
+    );
 }
 
 #[test]
@@ -671,17 +722,25 @@ fn casts_and_picture_in_picture_are_told_as_they_start_and_end() {
     };
     assert_eq!(
         said(&block_changes(&here, &pip)),
-        [(
-            "block.picture_in_picture_changed",
-            json!({"picture_in_picture": true})
-        )]
+        [("block.picture_in_picture.on", json!({}))]
     );
     assert_eq!(
         said(&block_changes(&pip, &here)),
-        [(
-            "block.picture_in_picture_changed",
-            json!({"picture_in_picture": false})
-        )]
+        [("block.picture_in_picture.off", json!({}))]
+    );
+
+    let looping = BlockSeen {
+        looping: true,
+        console: true,
+        ..here.clone()
+    };
+    assert_eq!(
+        kinds(&block_changes(&here, &looping)),
+        ["block.console.on", "playback.loop.on"]
+    );
+    assert_eq!(
+        kinds(&block_changes(&looping, &here)),
+        ["block.console.off", "playback.loop.off"]
     );
 }
 

@@ -77,10 +77,7 @@ fn the_panels_settings_show_over_the_video_are_told_as_they_change(cx: &mut Test
                 "app.settings.changed",
                 json!({"keys": ["over_video.notes"]})
             ),
-            (
-                "app.ui_changed",
-                json!({"visible": ["controls", "top_bar", "track_switcher"]})
-            ),
+            ("app.notes.off", json!({})),
         ]
     );
 
@@ -89,7 +86,7 @@ fn the_panels_settings_show_over_the_video_are_told_as_they_change(cx: &mut Test
             .unwrap();
         cx.run_until_parked();
     };
-    run(cx, "app.toggle_ui");
+    run(cx, "app.ui.toggle");
     assert_eq!(
         told(&mut app),
         [
@@ -101,10 +98,13 @@ fn the_panels_settings_show_over_the_video_are_told_as_they_change(cx: &mut Test
                     "over_video.track_switcher",
                 ]})
             ),
-            ("app.ui_changed", json!({"visible": []})),
+            ("app.ui.off", json!({})),
+            ("app.controls.off", json!({})),
+            ("app.top_bar.off", json!({})),
+            ("app.track_switcher.off", json!({})),
         ]
     );
-    run(cx, "app.toggle_top_bar");
+    run(cx, "app.top_bar.toggle");
     assert_eq!(
         told(&mut app),
         [
@@ -112,7 +112,8 @@ fn the_panels_settings_show_over_the_video_are_told_as_they_change(cx: &mut Test
                 "app.settings.changed",
                 json!({"keys": ["over_video.top_bar"]})
             ),
-            ("app.ui_changed", json!({"visible": ["top_bar"]})),
+            ("app.ui.on", json!({})),
+            ("app.top_bar.on", json!({})),
         ]
     );
 }

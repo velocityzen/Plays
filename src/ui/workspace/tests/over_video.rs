@@ -100,10 +100,10 @@ fn settings_show_or_hide_each_panel_in_every_window_and_block(cx: &mut TestAppCo
     assert!(all.controls && all.top_bar && all.track_switcher && all.notes);
     assert_eq!(shown(&mut cx), all, "each shows at first");
     let panels: [(&str, Panel); 4] = [
-        ("app.toggle_controls", |s| &mut s.controls),
-        ("app.toggle_top_bar", |s| &mut s.top_bar),
-        ("app.toggle_track_switcher", |s| &mut s.track_switcher),
-        ("app.toggle_notes", |s| &mut s.notes),
+        ("app.controls.toggle", |s| &mut s.controls),
+        ("app.top_bar.toggle", |s| &mut s.top_bar),
+        ("app.track_switcher.toggle", |s| &mut s.track_switcher),
+        ("app.notes.toggle", |s| &mut s.notes),
     ];
     let state = |command: &str, cx: &mut VisualTestContext| {
         TestAppContext::update(cx, |cx| api::state(command, &Target::default(), cx))
@@ -147,8 +147,8 @@ fn a_block_shows_or_hides_its_own_panels(cx: &mut TestAppContext) {
     let (block, beside) = (&blocks[0], &blocks[1]);
     let all = OverVideo::default();
 
-    on_block(block, "block.toggle_controls", &mut cx);
-    on_block(block, "block.toggle_notes", &mut cx);
+    on_block(block, "block.controls.toggle", &mut cx);
+    on_block(block, "block.notes.toggle", &mut cx);
     let own = OverVideo {
         controls: false,
         notes: false,
@@ -165,19 +165,19 @@ fn a_block_shows_or_hides_its_own_panels(cx: &mut TestAppContext) {
                 block: Some(name),
                 ..Target::default()
             };
-            api::state("block.toggle_controls", &target, cx)
+            api::state("block.controls.toggle", &target, cx)
         })
     };
     assert_eq!(state(block, &mut cx), Ok(json!(false)));
     assert_eq!(state(beside, &mut cx), Ok(json!(true)));
 
-    on_block(block, "block.toggle_ui", &mut cx);
+    on_block(block, "block.ui.toggle", &mut cx);
     assert_eq!(
         in_block(block, &cx),
         OverVideo::NONE,
         "any shown: all hidden"
     );
-    on_block(block, "block.toggle_ui", &mut cx);
+    on_block(block, "block.ui.toggle", &mut cx);
     assert_eq!(in_block(block, &cx), all, "none shown: all shown");
     assert_eq!(in_block(beside, &cx), all);
 }
@@ -197,19 +197,30 @@ fn each_command_shows_or_hides_its_own_panel_in_a_block_and_a_window(cx: &mut Te
     for (name, panel) in panels {
         let mut hidden = all;
         *panel(&mut hidden) = false;
-        let command = format!("block.toggle_{name}");
+        let command = format!("block.{name}.toggle");
         on_block(&block, &command, &mut cx);
         assert_eq!(in_block(&block, &cx), hidden, "{command}");
         assert_eq!(in_window(window, &cx), all, "{command}");
         on_block(&block, &command, &mut cx);
         assert_eq!(in_block(&block, &cx), all, "{command} again");
+        for (switch, shown) in [("off", hidden), ("off", hidden), ("on", all), ("on", all)] {
+            let command = format!("block.{name}.{switch}");
+            on_block(&block, &command, &mut cx);
+            assert_eq!(in_block(&block, &cx), shown, "{command}");
+        }
 
-        let command = format!("window.toggle_{name}");
+        let command = format!("window.{name}.toggle");
         on_window(window, &command, &mut cx);
         assert_eq!(in_window(window, &cx), hidden, "{command}");
         assert_eq!(in_block(&block, &cx), hidden, "{command}");
         on_window(window, &command, &mut cx);
         assert_eq!(in_block(&block, &cx), all, "{command} again");
+        for (switch, shown) in [("off", hidden), ("off", hidden), ("on", all), ("on", all)] {
+            let command = format!("window.{name}.{switch}");
+            on_window(window, &command, &mut cx);
+            assert_eq!(in_window(window, &cx), shown, "{command}");
+            assert_eq!(in_block(&block, &cx), shown, "{command}");
+        }
     }
 }
 
@@ -226,10 +237,10 @@ fn a_window_shows_or_hides_its_blocks_panels_and_those_opened_in_it(cx: &mut Tes
         .unwrap();
     let all = OverVideo::default();
     // One block shows the top bar but not the notes, on its own.
-    on_block(&blocks[1], "block.toggle_top_bar", &mut cx);
-    on_block(&blocks[1], "block.toggle_notes", &mut cx);
+    on_block(&blocks[1], "block.top_bar.toggle", &mut cx);
+    on_block(&blocks[1], "block.notes.toggle", &mut cx);
 
-    on_window(window, "window.toggle_top_bar", &mut cx);
+    on_window(window, "window.top_bar.toggle", &mut cx);
     let hidden = OverVideo {
         top_bar: false,
         ..all
@@ -265,7 +276,7 @@ fn a_window_shows_or_hides_its_blocks_panels_and_those_opened_in_it(cx: &mut Tes
         .unwrap();
     assert_eq!(in_block(&opened, &cx), hidden);
 
-    on_window(window, "window.toggle_ui", &mut cx);
+    on_window(window, "window.ui.toggle", &mut cx);
     assert_eq!(
         in_window(window, &cx),
         OverVideo::NONE,
@@ -274,7 +285,7 @@ fn a_window_shows_or_hides_its_blocks_panels_and_those_opened_in_it(cx: &mut Tes
     for block in [&blocks[0], &blocks[1], &opened] {
         assert_eq!(in_block(block, &cx), OverVideo::NONE);
     }
-    on_window(window, "window.toggle_ui", &mut cx);
+    on_window(window, "window.ui.toggle", &mut cx);
     assert_eq!(in_block(&blocks[1], &cx), all, "none shown: all shown");
     assert_eq!(in_window(other, &cx), all);
 }
@@ -289,11 +300,11 @@ fn every_window_and_block_follows_what_settings_change_and_keeps_the_rest(cx: &m
     let all = OverVideo::default();
     // The window hides the controls, but one block shows them again; the
     // other hides its notes.
-    on_window(window, "window.toggle_controls", &mut cx);
-    on_block(&blocks[0], "block.toggle_controls", &mut cx);
-    on_block(&blocks[1], "block.toggle_notes", &mut cx);
+    on_window(window, "window.controls.toggle", &mut cx);
+    on_block(&blocks[0], "block.controls.toggle", &mut cx);
+    on_block(&blocks[1], "block.notes.toggle", &mut cx);
 
-    run(&mut cx, "app.toggle_controls").unwrap();
+    run(&mut cx, "app.controls.toggle").unwrap();
     let no_controls = OverVideo {
         controls: false,
         ..all
@@ -309,16 +320,16 @@ fn every_window_and_block_follows_what_settings_change_and_keeps_the_rest(cx: &m
         "the notes as they were"
     );
 
-    run(&mut cx, "app.toggle_ui").unwrap();
+    run(&mut cx, "app.ui.toggle").unwrap();
     assert_eq!(shown(&mut cx), OverVideo::NONE, "any shown: all hidden");
     assert_eq!(in_window(window, &cx), OverVideo::NONE);
     assert_eq!(in_block(&blocks[1], &cx), OverVideo::NONE);
-    run(&mut cx, "app.toggle_ui").unwrap();
+    run(&mut cx, "app.ui.toggle").unwrap();
     assert_eq!(shown(&mut cx), all, "none shown: all shown");
     assert_eq!(in_block(&blocks[1], &cx), all);
 
     // A window opened later starts out as Settings have it.
-    run(&mut cx, "app.toggle_track_switcher").unwrap();
+    run(&mut cx, "app.track_switcher.toggle").unwrap();
     let other = open_player(&mut cx, &["clip.mp4"]);
     let switcher_hidden = OverVideo {
         track_switcher: false,
@@ -331,8 +342,8 @@ fn every_window_and_block_follows_what_settings_change_and_keeps_the_rest(cx: &m
     assert_eq!(in_block(&opened, &cx), switcher_hidden);
 
     // What a window has of its own stays as Settings change another.
-    on_window(other, "window.toggle_notes", &mut cx);
-    run(&mut cx, "app.toggle_top_bar").unwrap();
+    on_window(other, "window.notes.toggle", &mut cx);
+    run(&mut cx, "app.top_bar.toggle").unwrap();
     let kept = OverVideo {
         top_bar: false,
         notes: false,
@@ -361,7 +372,7 @@ fn hidden_bars_are_not_drawn_and_the_mouse_is_not_over_them(cx: &mut TestAppCont
 
     hover(&mut cx, "seek");
     assert!(over_bars(&mut cx));
-    run(&mut cx, "block.toggle_controls").unwrap();
+    run(&mut cx, "block.controls.toggle").unwrap();
     assert!(!shows(&mut cx, "seek") && !shows(&mut cx, "volume"));
     assert!(!over_bars(&mut cx), "nor over what isn't there");
     assert_eq!(clearance(&mut cx), px(0.), "nor of what isn't there");
@@ -369,23 +380,23 @@ fn hidden_bars_are_not_drawn_and_the_mouse_is_not_over_them(cx: &mut TestAppCont
 
     hover(&mut cx, "maximize");
     assert!(over_bars(&mut cx));
-    run(&mut cx, "block.toggle_top_bar").unwrap();
+    run(&mut cx, "block.top_bar.toggle").unwrap();
     assert!(!shows(&mut cx, "block-title") && !shows(&mut cx, "maximize"));
     assert!(!over_bars(&mut cx));
 
-    run(&mut cx, "block.toggle_controls").unwrap();
+    run(&mut cx, "block.controls.toggle").unwrap();
     hover(&mut cx, "block-0");
     assert!(shows(&mut cx, "seek") && !shows(&mut cx, "maximize"));
     // The tracks menu goes with the controls, and is closed when they're
     // back.
     click(&mut cx, "tracks");
     assert!(shows(&mut cx, "track-0"), "the menu opens");
-    run(&mut cx, "block.toggle_controls").unwrap();
+    run(&mut cx, "block.controls.toggle").unwrap();
     assert!(!shows(&mut cx, "track-0"));
-    run(&mut cx, "block.toggle_controls").unwrap();
+    run(&mut cx, "block.controls.toggle").unwrap();
     hover(&mut cx, "block-0");
     assert!(shows(&mut cx, "tracks") && !shows(&mut cx, "track-0"));
-    run(&mut cx, "block.toggle_top_bar").unwrap();
+    run(&mut cx, "block.top_bar.toggle").unwrap();
     assert!(shows(&mut cx, "maximize"), "both again");
 }
 
@@ -393,8 +404,8 @@ fn hidden_bars_are_not_drawn_and_the_mouse_is_not_over_them(cx: &mut TestAppCont
 /// each saying so in a note of its own: the subtitles shown, then hidden.
 const CHANGES: [&str; 10] = [
     "audio.volume_up",
-    "audio.toggle_mute",
-    "playback.toggle_loop",
+    "audio.mute.toggle",
+    "playback.loop.toggle",
     "subtitles.toggle",
     "subtitles.toggle",
     "audio.later",
@@ -436,15 +447,15 @@ fn hidden_notes_and_switcher_leave_changes_unsaid_but_not_whats_wrong(cx: &mut T
         cx.run_until_parked();
     };
     let (block, chapters) = (&blocks[0], &blocks[1]);
-    run(&mut cx, "app.toggle_notes").unwrap();
-    run(&mut cx, "app.toggle_track_switcher").unwrap();
+    run(&mut cx, "app.notes.toggle").unwrap();
+    run(&mut cx, "app.track_switcher.toggle").unwrap();
 
-    on(block, "audio.toggle_mute", &mut cx);
+    on(block, "audio.mute.toggle", &mut cx);
     assert!(
         block.read_with(&cx, |view, _| view.player().is_muted()),
         "it changed"
     );
-    on(block, "audio.toggle_mute", &mut cx);
+    on(block, "audio.mute.toggle", &mut cx);
     for command in CHANGES {
         on(block, command, &mut cx);
         assert_eq!(noted(block, &mut cx), None, "{command}: unsaid");
@@ -468,7 +479,7 @@ fn hidden_notes_and_switcher_leave_changes_unsaid_but_not_whats_wrong(cx: &mut T
         "why nothing happened"
     );
 
-    run(&mut cx, "app.toggle_notes").unwrap();
+    run(&mut cx, "app.notes.toggle").unwrap();
     for command in CHANGES {
         let before = noted(block, &mut cx);
         on(block, command, &mut cx);
@@ -477,7 +488,7 @@ fn hidden_notes_and_switcher_leave_changes_unsaid_but_not_whats_wrong(cx: &mut T
     }
     on(chapters, "playback.next_chapter", &mut cx);
     assert!(noted(chapters, &mut cx).is_some(), "the chapter");
-    run(&mut cx, "app.toggle_track_switcher").unwrap();
+    run(&mut cx, "app.track_switcher.toggle").unwrap();
     on(block, "subtitles.next_track", &mut cx);
     assert!(reels(block, &mut cx));
 }
@@ -602,7 +613,7 @@ fn set_ui_shows_just_the_panels_named_and_inspect_says_which(cx: &mut TestAppCon
 
     // The first block's controls hidden of its own: the window's set shows
     // the same in each, whatever each showed.
-    on_block(&blocks[0], "block.toggle_controls", &mut cx);
+    on_block(&blocks[0], "block.controls.toggle", &mut cx);
     let window_set = |visible: Value| {
         Invocation::new("window.set_ui")
             .with_args(json!({ "visible": visible }))

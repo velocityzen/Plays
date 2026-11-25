@@ -3,7 +3,7 @@
 use serde::Deserialize;
 use serde_json::json;
 
-use super::{done, select_track};
+use super::{Switch, done, select_track};
 use crate::api::args::{Arg, Kind};
 use crate::api::events::{EventField, EventKind};
 use crate::api::registry::{Spec, on_mac};
@@ -59,18 +59,32 @@ pub const COMMANDS: &[Spec] = &[
     .tells(&["audio.volume_changed"])
     .keywords(&["loudness", "sound", "level"]),
     Spec::block(
-        "audio.toggle_mute",
+        "audio.mute.toggle",
         "Mute/Unmute",
         "Mute the block, or play its sound again.",
-        |player, _, cx| player.toggle_mute(cx),
+        |player, _, cx| player.turn_mute(|on| Switch::Toggle.turn(on), cx),
     )
-    .tells(&["audio.volume_changed"])
+    .tells(&["audio.mute.on", "audio.mute.off"])
     .keywords(&["silence", "sound"])
     .setting("mute")
     .keys(&["secondary-/", "m"])
-    .state(|target, cx| {
-        target::read_block(target, cx, |player, _| json!(player.player().is_muted()))
-    }),
+    .state(|target, cx| target::read_block(target, cx, |player, _| json!(player.is_muted()))),
+    Spec::block(
+        "audio.mute.on",
+        "Mute",
+        "Mute the block, unless it's muted already.",
+        |player, _, cx| player.turn_mute(|on| Switch::On.turn(on), cx),
+    )
+    .tells(&["audio.mute.on"])
+    .keywords(&["silence", "sound"]),
+    Spec::block(
+        "audio.mute.off",
+        "Unmute",
+        "Play the block's sound again, unless it plays already.",
+        |player, _, cx| player.turn_mute(|on| Switch::Off.turn(on), cx),
+    )
+    .tells(&["audio.mute.off"])
+    .keywords(&["sound", "hear"]),
     Spec::block(
         "audio.next_track",
         "Next Audio Track",
@@ -142,29 +156,47 @@ pub const COMMANDS: &[Spec] = &[
     .setting("volume_down_all")
     .keys(&["shift-down"]),
     Spec::every_block(
-        "audio.toggle_mute_all",
+        "audio.mute_all.toggle",
         "Mute/Unmute All",
         "Mute every file in every window if any plays its sound, else unmute them all.",
-        all::toggle_mute,
+        |cx| all::turn_mute(|on| Switch::Toggle.turn(on), cx),
     )
-    .tells(&["audio.volume_changed"])
+    .tells(&["audio.mute.on", "audio.mute.off"])
     .keywords(&["every", "silence"])
     .setting("mute_all")
     .keys(&["shift-m"]),
+    Spec::every_block(
+        "audio.mute_all.on",
+        "Mute All",
+        "Mute every file in every window.",
+        |cx| all::turn_mute(|on| Switch::On.turn(on), cx),
+    )
+    .tells(&["audio.mute.on"])
+    .keywords(&["every", "silence"]),
+    Spec::every_block(
+        "audio.mute_all.off",
+        "Unmute All",
+        "Play the sound of every file in every window again.",
+        |cx| all::turn_mute(|on| Switch::Off.turn(on), cx),
+    )
+    .tells(&["audio.mute.off"])
+    .keywords(&["every", "sound", "hear"]),
 ];
 
 /// The blocks' events about their sound.
-pub const EVENTS: &[EventKind] = &[EventKind::block(
-    "audio.volume_changed",
-    "A block's volume changed, or it was muted or unmuted.",
-    &[
-        EventField::new(
+pub const EVENTS: &[EventKind] = &[
+    EventKind::block(
+        "audio.volume_changed",
+        "A block's volume changed.",
+        &[EventField::new(
             "volume",
             "Its volume, in percent, as `audio.set_volume` takes it.",
-        ),
-        EventField::new("muted", "Whether it's muted."),
-    ],
-)];
+        )],
+    ),
+    EventKind::block("audio.mute.on", "A block was muted.", &[]),
+    EventKind::block("audio.mute.off", "A block was unmuted.", &[])
+        .causes(&["its volume turned up"]),
+];
 
 #[derive(Deserialize)]
 struct Volume {

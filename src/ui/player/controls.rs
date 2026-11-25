@@ -176,7 +176,7 @@ impl PlayerView {
                         .icon_color(overlay::text_muted())
                         .selected(looping)
                         .on_click(cx.listener(|this, _, _, cx| {
-                            this.send("playback.toggle_loop", Value::Null, cx);
+                            this.send("playback.loop.toggle", Value::Null, cx);
                         })),
                 )
             })
@@ -185,7 +185,7 @@ impl PlayerView {
                     Button::icon("mute", volume_icon)
                         .overlay()
                         .on_click(cx.listener(|this, _, _, cx| {
-                            this.send("audio.toggle_mute", Value::Null, cx);
+                            this.send("audio.mute.toggle", Value::Null, cx);
                         })),
                 )
                 .child(

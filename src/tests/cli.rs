@@ -480,7 +480,7 @@ fn with_control_off_it_says_where_to_turn_it_on(cx: &mut TestAppContext) {
     crate::api::socket::tests::allow_control(&mut cx, false);
     for args in [
         &["ls"][..],
-        &["do", "playback.toggle_loop"],
+        &["do", "playback.loop.toggle"],
         &["do", "-e", "return 1"],
         &["events"],
     ] {

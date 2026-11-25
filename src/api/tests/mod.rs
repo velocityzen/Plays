@@ -352,7 +352,7 @@ fn a_command_aimed_at_a_block_acts_on_it_not_on_the_one_in_front(cx: &mut TestAp
         .ok()
         .unwrap();
     let second_id = id(&second, &mut cx);
-    let toggle_loop = || Invocation::new("playback.toggle_loop");
+    let toggle_loop = || Invocation::new("playback.loop.toggle");
 
     // By id.
     assert_eq!(
@@ -372,7 +372,7 @@ fn a_command_aimed_at_a_block_acts_on_it_not_on_the_one_in_front(cx: &mut TestAp
     run_now(toggle_loop(), &mut cx).unwrap();
     assert!(looping(&first, &mut cx));
     let loops = |target: Target, cx: &mut VisualTestContext| {
-        TestAppContext::update(cx, |cx| state("playback.toggle_loop", &target, cx))
+        TestAppContext::update(cx, |cx| state("playback.loop.toggle", &target, cx))
     };
     let block = |name: &str| Target {
         window: None,
@@ -395,7 +395,7 @@ fn a_command_aimed_at_a_block_acts_on_it_not_on_the_one_in_front(cx: &mut TestAp
     assert_eq!(in_front(&mut cx), Some(front));
 
     // The window by its position, ⌘2's, and the block keys go to in it.
-    let mute = || Invocation::new("audio.toggle_mute");
+    let mute = || Invocation::new("audio.mute.toggle");
     run_now(mute().in_window("2"), &mut cx).unwrap();
     assert!(muted(&other, &mut cx));
     assert!(!muted(&first, &mut cx), "not the window in front's");
@@ -410,7 +410,7 @@ fn a_command_aimed_at_a_block_acts_on_it_not_on_the_one_in_front(cx: &mut TestAp
     run_now(mute().in_window(&back_id).on_block("1"), &mut cx).unwrap();
     assert!(muted(&other, &mut cx));
     assert_eq!(
-        TestAppContext::update(&cx, |cx| state("audio.toggle_mute", &block(&other_id), cx)),
+        TestAppContext::update(&cx, |cx| state("audio.mute.toggle", &block(&other_id), cx)),
         Ok(json!(true))
     );
     assert_eq!(in_front(&mut cx), Some(front), "none brought to the front");
@@ -587,7 +587,7 @@ fn each_kind_of_error_comes_back(cx: &mut TestAppContext) {
         Err(Error::not_found("device", "tv"))
     );
     // Picture in Picture is macOS's.
-    let pip = run_now(Invocation::new("block.toggle_picture_in_picture"), &mut cx);
+    let pip = run_now(Invocation::new("block.picture_in_picture.toggle"), &mut cx);
     if !cfg!(target_os = "macos") {
         assert_eq!(
             pip,
@@ -610,7 +610,7 @@ fn says_what_can_run_and_what_its_state_is(cx: &mut TestAppContext) {
     assert!(can("app.quit", none(), &mut cx));
     assert!(!can("app.quit", named("1"), &mut cx), "it takes none");
     assert!(!can("playback.dance", none(), &mut cx));
-    assert!(can("window.toggle_full_screen", none(), &mut cx));
+    assert!(can("window.full_screen.toggle", none(), &mut cx));
     assert!(can("block.close_all", named("1"), &mut cx));
     let window_id = TestAppContext::update(&cx, |cx| window.read(cx).unwrap().id().to_string());
     let past = past_the_last(&window_id);
@@ -629,7 +629,7 @@ fn says_what_can_run_and_what_its_state_is(cx: &mut TestAppContext) {
         "it takes none"
     );
     assert_eq!(
-        can("block.toggle_picture_in_picture", none(), &mut cx),
+        can("block.picture_in_picture.toggle", none(), &mut cx),
         cfg!(target_os = "macos")
     );
 
@@ -641,14 +641,14 @@ fn says_what_can_run_and_what_its_state_is(cx: &mut TestAppContext) {
         Ok(Value::Null),
         "none to read"
     );
-    assert_eq!(now("window.toggle_float_on_top", &mut cx), Ok(json!(false)));
-    run_now(Invocation::new("window.toggle_float_on_top"), &mut cx).unwrap();
-    assert_eq!(now("window.toggle_float_on_top", &mut cx), Ok(json!(true)));
+    assert_eq!(now("window.float_on_top.toggle", &mut cx), Ok(json!(false)));
+    run_now(Invocation::new("window.float_on_top.toggle"), &mut cx).unwrap();
+    assert_eq!(now("window.float_on_top.toggle", &mut cx), Ok(json!(true)));
     assert_eq!(
-        now("window.toggle_float_on_top_while_playing", &mut cx),
+        now("window.float_on_top_while_playing.toggle", &mut cx),
         Ok(json!(false))
     );
-    run_now(Invocation::new("window.toggle_float_on_top"), &mut cx).unwrap();
+    run_now(Invocation::new("window.float_on_top.toggle"), &mut cx).unwrap();
 
     assert_eq!(now("video.set_crop", &mut cx), Ok(Value::Null));
     run_now(
@@ -680,7 +680,7 @@ fn says_what_can_run_and_what_its_state_is(cx: &mut TestAppContext) {
     assert_eq!(now("output.set_block_device", &mut cx), Ok(Value::Null));
     assert_eq!(now("cast.to", &mut cx), Ok(Value::Null));
     assert_eq!(now("playback.go_to_chapter", &mut cx), Ok(Value::Null));
-    assert_eq!(now("window.toggle_full_screen", &mut cx), Ok(json!(false)));
+    assert_eq!(now("window.full_screen.toggle", &mut cx), Ok(json!(false)));
     assert_eq!(
         TestAppContext::update(&cx, |cx| state("app.quit", &named("1"), cx)),
         Err(Error::bad_args(

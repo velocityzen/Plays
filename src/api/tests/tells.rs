@@ -43,11 +43,26 @@ fn heard_here(id: &str, kind: &str) -> bool {
 }
 
 /// Events commands tell that can't be heard here, and why.
-const NOT_HEARD: [(&str, &str, &str); 4] = [
+const NOT_HEARD: [(&str, &str, &str); 7] = [
     (
-        "block.toggle_picture_in_picture",
-        "block.picture_in_picture_changed",
-        "Picture in Picture is the system's",
+        "block.picture_in_picture.toggle",
+        "block.picture_in_picture.on",
+        PIP,
+    ),
+    (
+        "block.picture_in_picture.toggle",
+        "block.picture_in_picture.off",
+        PIP,
+    ),
+    (
+        "block.picture_in_picture.on",
+        "block.picture_in_picture.on",
+        PIP,
+    ),
+    (
+        "block.picture_in_picture.off",
+        "block.picture_in_picture.off",
+        PIP,
     ),
     (
         "video.next_track",
@@ -65,6 +80,9 @@ const NOT_HEARD: [(&str, &str, &str); 4] = [
         "tests play no sound, so it goes nowhere",
     ),
 ];
+
+/// Why Picture in Picture's events can't be heard here.
+const PIP: &str = "Picture in Picture is the system's";
 
 /// How long nothing new is told before a way of running a command, but
 /// the last, is taken to be done.
@@ -168,9 +186,12 @@ fn four() -> Invocation {
 }
 
 /// The ways `spec` is shown in, in `world`: run twice from it as it is,
-/// unless its namespace says otherwise.
+/// unless it turns a feature on or off, or its namespace says otherwise.
 fn ways(spec: &Spec, world: &World) -> Vec<Way> {
     let plan = Plan { id: spec.id, world };
+    if let Some(ways) = switch_ways(&plan) {
+        return ways;
+    }
     match spec.namespace() {
         "app" | "window" => window_ways(&plan),
         "block" => block_ways(&plan),
@@ -178,6 +199,18 @@ fn ways(spec: &Spec, world: &World) -> Vec<Way> {
         _ => other_ways(&plan),
     }
     .unwrap_or_else(|| Plan::twice(plan.it()))
+}
+
+/// A feature's `.on` run twice from it turned off, and its `.off` from
+/// it turned on: the second run finds nothing left to do.
+fn switch_ways(plan: &Plan) -> Option<Vec<Way>> {
+    let (feature, from) = match plan.id.rsplit_once('.')? {
+        (feature, "on") => (feature, "off"),
+        (feature, "off") => (feature, "on"),
+        _ => return None,
+    };
+    let before = command(&format!("{feature}.{from}"));
+    Some(vec![way(vec![before], vec![plan.it(), plan.it()])])
 }
 
 fn window_ways(plan: &Plan) -> Option<Vec<Way>> {
@@ -199,12 +232,6 @@ fn window_ways(plan: &Plan) -> Option<Vec<Way>> {
         "window.set_ui" => Plan::twice(plan.with(json!({"visible": []}))),
         "window.back" | "window.recent" => vec![way(vec![command("window.next")], vec![plan.it()])],
         "window.move" => Plan::twice(plan.with(json!({"position": 1}))),
-        "window.exit_full_screen" => {
-            vec![way(
-                vec![command("window.toggle_full_screen")],
-                vec![plan.it()],
-            )]
-        }
         "window.show_on_display" => Plan::twice(plan.with(json!({"display": 1}))),
         _ => return None,
     })
@@ -312,9 +339,14 @@ fn other_ways(plan: &Plan) -> Option<Vec<Way>> {
     let device = || json!({"device": plan.world.device});
     Some(match plan.id {
         "audio.set_volume" => Plan::twice(plan.with(json!({"volume": 30}))),
-        "audio.select_track" | "subtitles.select_track" => {
-            Plan::twice(plan.with(json!({"number": 2})))
-        }
+        "audio.select_track" => Plan::twice(plan.with(json!({"number": 2}))),
+        // Shown, then none.
+        "subtitles.select_track" => vec![way(
+            Vec::new(),
+            vec![plan.with(json!({"number": 2})), plan.with(json!({}))],
+        )],
+        // The first, the second, then none after the last.
+        "subtitles.next_track" => vec![way(Vec::new(), vec![plan.it(), plan.it(), plan.it()])],
         "video.select_track" => Plan::twice(plan.with(json!({"number": 1}))),
         "cast.to" | "cast.pair" => Plan::twice(plan.with(device())),
         "cast.stop" => vec![way(

@@ -357,7 +357,7 @@ flowchart TB
 
 - `src/api/`: every command, by name, which every action runs
 - `src/api/commands/`: a file per namespace, each a list of `Spec`s: id
-  (`playback.toggle_loop`), arguments, keys, state, the events it `tells`
+  (`playback.loop.toggle`), arguments, keys, state, the events it `tells`
 - `src/api/registry.rs`, `args.rs`, `target.rs`: find the command, check
   its arguments, find the window and block named, else the one in front
 - `api::run` runs an `Invocation`, answering JSON or an `Error`; keys and

@@ -6,7 +6,7 @@ use gpui::{App, ClipboardItem};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use super::{output, settings, window};
+use super::{Switch, output, panels, settings, window};
 use crate::api::Error;
 use crate::api::args::{Arg, Kind};
 use crate::api::events::{EventField, EventKind};
@@ -15,7 +15,7 @@ use crate::api::target::{self, Target};
 use crate::app::{AudioEngine, updates};
 use crate::media::Source;
 use crate::recents;
-use crate::settings::{OverVideo, Panel, Settings, SeveralFiles};
+use crate::settings::{Panel, Settings, SeveralFiles};
 use crate::ui::about::{self, AboutView};
 use crate::ui::sentence::capitalized;
 use crate::ui::settings::{ABOUT, DEFAULT_PLAYER, SettingsView, ffmpeg_version};
@@ -174,56 +174,223 @@ pub const COMMANDS: &[Spec] = &[
     .keywords(&["developer", "debug", "components", "gallery", "sizes"])
     .developer(),
     Spec::app(
-        "app.toggle_ui",
+        "app.ui.toggle",
         "Show/Hide All in Every Window",
         "Hide every panel over the video in every window while Settings show any, else \
          show them all.",
-        |cx| set_over_video(cx, OverVideo::all_toggled),
+        |cx| switch_panel(Switch::Toggle, None, cx),
     )
-    .tells(TELLS_UI)
-    .keywords(&["hide", "interface", "ui", "panels", "clean"]),
+    .tells(TELLS_ALL)
+    .keywords(&["hide", "interface", "ui", "panels", "clean"])
+    .setting("app.toggle_ui"),
     Spec::app(
-        "app.toggle_controls",
-        "Show Controls in Every Window",
+        "app.ui.on",
+        "Show All in Every Window",
+        "Show every panel over the video in every window, and those opened later.",
+        |cx| switch_panel(Switch::On, None, cx),
+    )
+    .tells(TELLS_ALL_ON)
+    .keywords(&["interface", "ui", "panels"]),
+    Spec::app(
+        "app.ui.off",
+        "Hide All in Every Window",
+        "Hide every panel over the video in every window, and those opened later.",
+        |cx| switch_panel(Switch::Off, None, cx),
+    )
+    .tells(TELLS_ALL_OFF)
+    .keywords(&["interface", "ui", "panels", "clean"]),
+    Spec::app(
+        "app.controls.toggle",
+        "Show/Hide Controls in Every Window",
         "Show the seek bar and buttons at the bottom of every block in every window, \
          and those opened later, or hide them, as Settings → Appearance does.",
-        |cx| toggle_panel(cx, |panel| &mut panel.controls),
+        |cx| switch_panel(Switch::Toggle, Some(panels::controls), cx),
     )
-    .tells(TELLS_UI)
+    .tells(&[
+        "app.settings.changed",
+        "app.controls.on",
+        "app.controls.off",
+        "window.controls.on",
+        "window.controls.off",
+        "block.controls.on",
+        "block.controls.off",
+    ])
     .keywords(&["hide", "player controls", "seek bar", "bottom bar"])
+    .setting("app.toggle_controls")
     .state(|_, cx| Ok(json!(cx.global::<Settings>().over_video.controls))),
     Spec::app(
-        "app.toggle_top_bar",
-        "Show Top Bar in Every Window",
+        "app.controls.on",
+        "Show Controls in Every Window",
+        "Show the seek bar and buttons at the bottom of every block in every window, \
+         and those opened later, as Settings → Appearance does.",
+        |cx| switch_panel(Switch::On, Some(panels::controls), cx),
+    )
+    .tells(&[
+        "app.settings.changed",
+        "app.controls.on",
+        "window.controls.on",
+        "block.controls.on",
+    ])
+    .keywords(&["player controls", "seek bar", "bottom bar"]),
+    Spec::app(
+        "app.controls.off",
+        "Hide Controls in Every Window",
+        "Hide the seek bar and buttons at the bottom of every block in every window, \
+         and those opened later, as Settings → Appearance does.",
+        |cx| switch_panel(Switch::Off, Some(panels::controls), cx),
+    )
+    .tells(&[
+        "app.settings.changed",
+        "app.controls.off",
+        "window.controls.off",
+        "block.controls.off",
+    ])
+    .keywords(&["player controls", "seek bar", "bottom bar"]),
+    Spec::app(
+        "app.top_bar.toggle",
+        "Show/Hide Top Bar in Every Window",
         "Show the file's name and buttons at the top of every block in every window, \
          and those opened later, or hide them, as Settings → Appearance does.",
-        |cx| toggle_panel(cx, |panel| &mut panel.top_bar),
+        |cx| switch_panel(Switch::Toggle, Some(panels::top_bar), cx),
     )
-    .tells(TELLS_UI)
+    .tells(&[
+        "app.settings.changed",
+        "app.top_bar.on",
+        "app.top_bar.off",
+        "window.top_bar.on",
+        "window.top_bar.off",
+        "block.top_bar.on",
+        "block.top_bar.off",
+    ])
     .keywords(&["hide", "header", "title", "buttons"])
+    .setting("app.toggle_top_bar")
     .state(|_, cx| Ok(json!(cx.global::<Settings>().over_video.top_bar))),
     Spec::app(
-        "app.toggle_track_switcher",
-        "Show Track Switcher in Every Window",
+        "app.top_bar.on",
+        "Show Top Bar in Every Window",
+        "Show the file's name and buttons at the top of every block in every window, \
+         and those opened later, as Settings → Appearance does.",
+        |cx| switch_panel(Switch::On, Some(panels::top_bar), cx),
+    )
+    .tells(&[
+        "app.settings.changed",
+        "app.top_bar.on",
+        "window.top_bar.on",
+        "block.top_bar.on",
+    ])
+    .keywords(&["header", "title", "buttons"]),
+    Spec::app(
+        "app.top_bar.off",
+        "Hide Top Bar in Every Window",
+        "Hide the file's name and buttons at the top of every block in every window, \
+         and those opened later, as Settings → Appearance does.",
+        |cx| switch_panel(Switch::Off, Some(panels::top_bar), cx),
+    )
+    .tells(&[
+        "app.settings.changed",
+        "app.top_bar.off",
+        "window.top_bar.off",
+        "block.top_bar.off",
+    ])
+    .keywords(&["header", "title", "buttons"]),
+    Spec::app(
+        "app.track_switcher.toggle",
+        "Show/Hide Track Switcher in Every Window",
         "Show the reel of tracks a shortcut rolls to the audio, video or subtitles \
          picked, over every block in every window, and those opened later, or switch \
          without it, as Settings → Appearance does.",
-        |cx| toggle_panel(cx, |panel| &mut panel.track_switcher),
+        |cx| switch_panel(Switch::Toggle, Some(panels::track_switcher), cx),
     )
-    .tells(TELLS_UI)
+    .tells(&[
+        "app.settings.changed",
+        "app.track_switcher.on",
+        "app.track_switcher.off",
+        "window.track_switcher.on",
+        "window.track_switcher.off",
+        "block.track_switcher.on",
+        "block.track_switcher.off",
+    ])
     .keywords(&["hide", "reel", "streams", "audio track", "subtitle track"])
+    .setting("app.toggle_track_switcher")
     .state(|_, cx| Ok(json!(cx.global::<Settings>().over_video.track_switcher))),
     Spec::app(
-        "app.toggle_notes",
-        "Show Notes in Every Window",
+        "app.track_switcher.on",
+        "Show Track Switcher in Every Window",
+        "Show the reel of tracks a shortcut rolls to the audio, video or subtitles \
+         picked, over every block in every window, and those opened later, as \
+         Settings → Appearance does.",
+        |cx| switch_panel(Switch::On, Some(panels::track_switcher), cx),
+    )
+    .tells(&[
+        "app.settings.changed",
+        "app.track_switcher.on",
+        "window.track_switcher.on",
+        "block.track_switcher.on",
+    ])
+    .keywords(&["reel", "streams", "audio track", "subtitle track"]),
+    Spec::app(
+        "app.track_switcher.off",
+        "Hide Track Switcher in Every Window",
+        "Switch tracks without the reel in every block in every window, and those \
+         opened later, as Settings → Appearance does.",
+        |cx| switch_panel(Switch::Off, Some(panels::track_switcher), cx),
+    )
+    .tells(&[
+        "app.settings.changed",
+        "app.track_switcher.off",
+        "window.track_switcher.off",
+        "block.track_switcher.off",
+    ])
+    .keywords(&["reel", "streams", "audio track", "subtitle track"]),
+    Spec::app(
+        "app.notes.toggle",
+        "Show/Hide Notes in Every Window",
         "Show notes on what a shortcut changed, like the volume, over every block in \
          every window, and those opened later, or not, as Settings → Appearance does. \
          Notes on what's wrong still show.",
-        |cx| toggle_panel(cx, |panel| &mut panel.notes),
+        |cx| switch_panel(Switch::Toggle, Some(panels::notes), cx),
     )
-    .tells(TELLS_UI)
+    .tells(&[
+        "app.settings.changed",
+        "app.notes.on",
+        "app.notes.off",
+        "window.notes.on",
+        "window.notes.off",
+        "block.notes.on",
+        "block.notes.off",
+    ])
     .keywords(&["hide", "osd", "on-screen display", "volume", "messages"])
+    .setting("app.toggle_notes")
     .state(|_, cx| Ok(json!(cx.global::<Settings>().over_video.notes))),
+    Spec::app(
+        "app.notes.on",
+        "Show Notes in Every Window",
+        "Show notes on what a shortcut changed, like the volume, over every block in \
+         every window, and those opened later, as Settings → Appearance does.",
+        |cx| switch_panel(Switch::On, Some(panels::notes), cx),
+    )
+    .tells(&[
+        "app.settings.changed",
+        "app.notes.on",
+        "window.notes.on",
+        "block.notes.on",
+    ])
+    .keywords(&["osd", "on-screen display", "volume", "messages"]),
+    Spec::app(
+        "app.notes.off",
+        "Hide Notes in Every Window",
+        "Hide notes on what a shortcut changed over every block in every window, and \
+         those opened later, as Settings → Appearance does. Notes on what's wrong \
+         still show.",
+        |cx| switch_panel(Switch::Off, Some(panels::notes), cx),
+    )
+    .tells(&[
+        "app.settings.changed",
+        "app.notes.off",
+        "window.notes.off",
+        "block.notes.off",
+    ])
+    .keywords(&["osd", "on-screen display", "volume", "messages"]),
     Spec::app(
         "app.quit",
         "Quit Plays",
@@ -240,12 +407,80 @@ pub const COMMANDS: &[Spec] = &[
     .keys(&["secondary-q"]),
 ];
 
-/// What a change to the panels over the video in every window tells.
-const TELLS_UI: &[&str] = &[
+/// What every panel over the video in every window showing or hiding
+/// tells.
+const TELLS_ALL: &[&str] = &[
     "app.settings.changed",
-    "app.ui_changed",
-    "window.ui_changed",
-    "block.ui_changed",
+    "app.ui.on",
+    "app.ui.off",
+    "app.controls.on",
+    "app.controls.off",
+    "app.top_bar.on",
+    "app.top_bar.off",
+    "app.track_switcher.on",
+    "app.track_switcher.off",
+    "app.notes.on",
+    "app.notes.off",
+    "window.ui.on",
+    "window.ui.off",
+    "window.controls.on",
+    "window.controls.off",
+    "window.top_bar.on",
+    "window.top_bar.off",
+    "window.track_switcher.on",
+    "window.track_switcher.off",
+    "window.notes.on",
+    "window.notes.off",
+    "block.ui.on",
+    "block.ui.off",
+    "block.controls.on",
+    "block.controls.off",
+    "block.top_bar.on",
+    "block.top_bar.off",
+    "block.track_switcher.on",
+    "block.track_switcher.off",
+    "block.notes.on",
+    "block.notes.off",
+];
+
+/// What every panel over the video in every window showing tells.
+const TELLS_ALL_ON: &[&str] = &[
+    "app.settings.changed",
+    "app.ui.on",
+    "app.controls.on",
+    "app.top_bar.on",
+    "app.track_switcher.on",
+    "app.notes.on",
+    "window.ui.on",
+    "window.controls.on",
+    "window.top_bar.on",
+    "window.track_switcher.on",
+    "window.notes.on",
+    "block.ui.on",
+    "block.controls.on",
+    "block.top_bar.on",
+    "block.track_switcher.on",
+    "block.notes.on",
+];
+
+/// What every panel over the video in every window hiding tells.
+const TELLS_ALL_OFF: &[&str] = &[
+    "app.settings.changed",
+    "app.ui.off",
+    "app.controls.off",
+    "app.top_bar.off",
+    "app.track_switcher.off",
+    "app.notes.off",
+    "window.ui.off",
+    "window.controls.off",
+    "window.top_bar.off",
+    "window.track_switcher.off",
+    "window.notes.off",
+    "block.ui.off",
+    "block.controls.off",
+    "block.top_bar.off",
+    "block.track_switcher.off",
+    "block.notes.off",
 ];
 
 /// The app's events.
@@ -289,9 +524,63 @@ pub const EVENTS: &[EventKind] = &[
         "a client going or being cut off, as when control from the command line is turned off",
     ]),
     EventKind::app(
-        "app.ui_changed",
-        "The panels shown over the video in every window, as Settings have them, changed.",
-        &[EventField::new("visible", super::VISIBLE)],
+        "app.ui.on",
+        "A panel showed over the video in every window, as Settings have them, where none did.",
+        &[],
+    )
+    .causes(&[super::PANELS_SET]),
+    EventKind::app(
+        "app.ui.off",
+        "Every panel over the video in every window, as Settings have them, hid.",
+        &[],
+    )
+    .causes(&[super::PANELS_SET]),
+    EventKind::app(
+        "app.controls.on",
+        "The seek bar and buttons at the bottom of every block, as Settings have them, showed.",
+        &[],
+    )
+    .causes(&[super::PANELS_SET]),
+    EventKind::app(
+        "app.controls.off",
+        "The seek bar and buttons at the bottom of every block, as Settings have them, hid.",
+        &[],
+    )
+    .causes(&[super::PANELS_SET]),
+    EventKind::app(
+        "app.top_bar.on",
+        "The file's name and buttons at the top of every block, as Settings have them, showed.",
+        &[],
+    )
+    .causes(&[super::PANELS_SET]),
+    EventKind::app(
+        "app.top_bar.off",
+        "The file's name and buttons at the top of every block, as Settings have them, hid.",
+        &[],
+    )
+    .causes(&[super::PANELS_SET]),
+    EventKind::app(
+        "app.track_switcher.on",
+        "Every block, as Settings have it, shows the reel of tracks as a shortcut rolls to one.",
+        &[],
+    )
+    .causes(&[super::PANELS_SET]),
+    EventKind::app(
+        "app.track_switcher.off",
+        "Every block, as Settings have it, switches tracks without the reel.",
+        &[],
+    )
+    .causes(&[super::PANELS_SET]),
+    EventKind::app(
+        "app.notes.on",
+        "Every block, as Settings have it, shows notes on what a shortcut changed.",
+        &[],
+    )
+    .causes(&[super::PANELS_SET]),
+    EventKind::app(
+        "app.notes.off",
+        "Every block, as Settings have it, shows no notes on what a shortcut changed.",
+        &[],
     )
     .causes(&[super::PANELS_SET]),
     EventKind::to_everyone(
@@ -439,18 +728,11 @@ fn source(url: &str) -> Result<Source, String> {
     Err(format!("{url}: {why}"))
 }
 
-/// Turn the panel `panel` picks on, or off, in Settings, and so in every
-/// window and block, and keep it so.
-fn toggle_panel(cx: &mut App, panel: Panel) {
+/// Show the panel `panel` picks over the video in Settings, and so in
+/// every window and block, or hide it, as `switch` says, and keep it so;
+/// with none, every panel.
+fn switch_panel(switch: Switch, panel: Option<Panel>, cx: &mut App) {
     Settings::update(cx, true, |settings| {
-        settings.over_video = settings.over_video.toggled(panel);
-    });
-}
-
-/// Change the panels over the video Settings show with `change`, and so
-/// every window's and block's, and keep them so.
-fn set_over_video(cx: &mut App, change: fn(OverVideo) -> OverVideo) {
-    Settings::update(cx, true, |settings| {
-        settings.over_video = change(settings.over_video);
+        settings.over_video = settings.over_video.switched(panel, |on| switch.turn(on));
     });
 }

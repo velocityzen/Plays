@@ -85,8 +85,8 @@ fn each_of_a_blocks_controls_sends_its_command_to_it(cx: &mut TestAppContext) {
         ("skip-forward", "playback.seek_forward"),
         ("previous", "playback.previous_file"),
         ("next", "playback.next_file"),
-        ("loop", "playback.toggle_loop"),
-        ("mute", "audio.toggle_mute"),
+        ("loop", "playback.loop.toggle"),
+        ("mute", "audio.mute.toggle"),
         ("maximize", "block.zoom"),
         ("close", "block.close"),
     ] {
@@ -102,7 +102,7 @@ fn each_of_a_blocks_controls_sends_its_command_to_it(cx: &mut TestAppContext) {
         click(&mut cx, "pip");
         assert_eq!(
             sent(&mut cx),
-            [on_block("block.toggle_picture_in_picture", Value::Null)]
+            [on_block("block.picture_in_picture.toggle", Value::Null)]
         );
     }
     double_click(&mut cx, "block-0");

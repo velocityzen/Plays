@@ -679,7 +679,7 @@ fn floats_on_top_always_or_while_playing(cx: &mut TestAppContext) {
 
     // From the Video menu, with Settings floating along so they don't
     // open under the player.
-    cx.dispatch_action(Run::command("window.toggle_float_on_top_while_playing"));
+    cx.dispatch_action(Run::command("window.float_on_top_while_playing.toggle"));
     assert_eq!(
         cx.update(|_, cx| cx.global::<Settings>().float_on_top),
         FloatOnTop::WhilePlaying
@@ -698,10 +698,10 @@ fn floats_on_top_always_or_while_playing(cx: &mut TestAppContext) {
     assert!(paused);
     assert_eq!(on_top(&mut cx), (false, false), "paused");
 
-    cx.dispatch_action(Run::command("window.toggle_float_on_top"));
+    cx.dispatch_action(Run::command("window.float_on_top.toggle"));
     assert_eq!(on_top(&mut cx), (true, true), "always, though paused");
 
-    cx.dispatch_action(Run::command("window.toggle_float_on_top"));
+    cx.dispatch_action(Run::command("window.float_on_top.toggle"));
     assert_eq!(
         cx.update(|_, cx| cx.global::<Settings>().float_on_top),
         FloatOnTop::Off,
@@ -1212,7 +1212,7 @@ fn the_cast_menu_puts_the_window_full_screen_on_a_display(cx: &mut TestAppContex
 fn a_block_alone_expands_to_full_screen_while_it_floats(cx: &mut TestAppContext) {
     let (window, mut cx) = testing::start(cx);
     open(window, &mut cx, &["clip.mp4"], true);
-    cx.dispatch_action(Run::command("window.toggle_float_on_top_while_playing"));
+    cx.dispatch_action(Run::command("window.float_on_top_while_playing.toggle"));
     let full_screen = |cx: &mut VisualTestContext| {
         cx.run_until_parked();
         cx.update(|window, _| window.is_fullscreen())

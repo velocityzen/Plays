@@ -100,7 +100,7 @@ fn binds_each_key_where_its_command_works() {
     assert_eq!(run("space", &elsewhere), None);
     assert_eq!(
         run("secondary-shift-l", &player).as_deref(),
-        Some("playback.toggle_loop")
+        Some("playback.loop.toggle")
     );
     assert_eq!(run("secondary-shift-l", &typing), None);
     assert_eq!(run("space", &empty), None);
@@ -205,7 +205,7 @@ fn a_key_moves_only_among_commands_that_work_where_it_does() {
 #[test]
 fn reads_and_writes_the_settings_file() {
     let mut hotkeys = Hotkeys::default();
-    hotkeys.add("audio.toggle_mute", "shift-x");
+    hotkeys.add("audio.mute.toggle", "shift-x");
     hotkeys.remove("playback.play_pause", "p");
     hotkeys.add("window.open_files", "secondary-shift-k");
     let saved = serde_json::to_value(&hotkeys).unwrap();
@@ -229,11 +229,11 @@ fn reads_and_writes_the_settings_file() {
     )
     .unwrap();
     assert_eq!(read.keys("playback.play_pause"), ["k"]);
-    assert_eq!(read.keys("playback.toggle_loop"), ["cmd-l"]);
+    assert_eq!(read.keys("playback.loop.toggle"), ["cmd-l"]);
     assert_eq!(read.keys("playback.restart"), ["shift-k"]);
     assert_eq!(
-        read.keys("audio.toggle_mute"),
-        Hotkeys::default().keys("audio.toggle_mute")
+        read.keys("audio.mute.toggle"),
+        Hotkeys::default().keys("audio.mute.toggle")
     );
     assert_eq!(read.0.len(), commands().count());
 }

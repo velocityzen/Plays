@@ -2,9 +2,13 @@
 
 use gpui::Context;
 
-use super::select_track;
+use serde_json::json;
+
+use super::{Switch, select_track};
 use crate::api::args::{Arg, Kind};
+use crate::api::events::EventKind;
 use crate::api::registry::{Spec, on_mac};
+use crate::api::target;
 use crate::media::tracks::TrackKind;
 use crate::settings::{SUBTITLE_POSITION_RANGE, SUBTITLE_SIZE_RANGE, Settings, SubtitleStyle};
 use crate::ui::player::PlayerView;
@@ -23,7 +27,7 @@ pub const COMMANDS: &[Spec] = &[
         "Show the file's next subtitles, and none after the last.",
         |player, _, cx| player.next_track(TrackKind::Subtitle, cx),
     )
-    .tells(&["playback.track_changed"])
+    .tells(&["playback.track_changed", "subtitles.on", "subtitles.off"])
     .keywords(&["captions", "language", "track"])
     .setting("next_subtitle_track")
     .keys(on_mac(&["ctrl-cmd-s"], &["ctrl-alt-s"])),
@@ -38,18 +42,37 @@ pub const COMMANDS: &[Spec] = &[
         )],
         |args, player, _, cx| select_track(args, TrackKind::Subtitle, player, cx),
     )
-    .tells(&["playback.track_changed"])
+    .tells(&["playback.track_changed", "subtitles.on", "subtitles.off"])
     .keywords(&["captions", "language", "track", "off"]),
     Spec::block(
         "subtitles.toggle",
         "Show/Hide Subtitles",
         "Hide the subtitles showing, or show the ones hidden.",
-        |player, _, cx| player.toggle_subtitles(cx),
+        |player, _, cx| player.turn_subtitles(|on| Switch::Toggle.turn(on), cx),
     )
-    .tells(&["playback.track_changed"])
+    .tells(&["subtitles.on", "subtitles.off", "playback.track_changed"])
     .keywords(&["captions", "off", "on"])
     .setting("toggle_subtitles")
-    .keys(&["v"]),
+    .keys(&["v"])
+    .state(|target, cx| {
+        target::read_block(target, cx, |player, _| json!(player.shows_subtitles()))
+    }),
+    Spec::block(
+        "subtitles.on",
+        "Show Subtitles",
+        "Show the subtitles hidden, or the file's first, unless some show already.",
+        |player, _, cx| player.turn_subtitles(|on| Switch::On.turn(on), cx),
+    )
+    .tells(&["subtitles.on", "playback.track_changed"])
+    .keywords(&["captions", "on"]),
+    Spec::block(
+        "subtitles.off",
+        "Hide Subtitles",
+        "Hide the subtitles showing, unless none show.",
+        |player, _, cx| player.turn_subtitles(|on| Switch::Off.turn(on), cx),
+    )
+    .tells(&["subtitles.off", "playback.track_changed"])
+    .keywords(&["captions", "off", "none"]),
     Spec::block(
         "subtitles.bigger",
         "Bigger Subtitles",
@@ -117,6 +140,20 @@ pub const COMMANDS: &[Spec] = &[
     .keywords(&["captions", "sync", "offset"])
     .setting("reset_subtitle_delay")
     .keys(&["shift-backspace"]),
+];
+
+/// The blocks' events about their subtitles.
+pub const EVENTS: &[EventKind] = &[
+    EventKind::block(
+        "subtitles.on",
+        "A block's subtitles show: a subtitle track was picked where none was.",
+        &[],
+    ),
+    EventKind::block(
+        "subtitles.off",
+        "A block's subtitles hid: no subtitle track is picked now.",
+        &[],
+    ),
 ];
 
 /// Change how every file's subtitles look, and say so on `player`.

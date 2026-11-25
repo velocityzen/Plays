@@ -61,8 +61,18 @@ impl PlayerView {
         self.pip.as_ref().is_some_and(|session| session.started)
     }
 
-    /// Open Picture in Picture for this block, or close it.
-    pub fn toggle_picture_in_picture(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    /// Open Picture in Picture for this block, or close it, as `turn` has
+    /// it, given whether it's open, or opening.
+    pub fn turn_picture_in_picture(
+        &mut self,
+        turn: impl FnOnce(bool) -> bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let open = self.pip.is_some();
+        if turn(open) == open {
+            return;
+        }
         if self.pip.take().is_some() {
             cx.notify();
             return;

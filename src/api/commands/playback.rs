@@ -7,7 +7,7 @@ use gpui::App;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use super::done;
+use super::{Switch, done};
 use crate::api::args::{Arg, Kind};
 use crate::api::events::{EventField, EventKind};
 use crate::api::registry::{Scope, Spec};
@@ -220,17 +220,32 @@ pub const COMMANDS: &[Spec] = &[
     .tells(&["playback.opened", "playback.playing"])
     .keywords(&["open", "folder", "episode", "switch", "replace"]),
     Spec::block(
-        "playback.toggle_loop",
+        "playback.loop.toggle",
         "Loop",
         "Play the file again from the start at its end, or stop at its end.",
-        |player, _, cx| player.toggle_loop(cx),
+        |player, _, cx| player.turn_loop(|on| Switch::Toggle.turn(on), cx),
     )
+    .tells(&["playback.loop.on", "playback.loop.off"])
     .keywords(&["repeat"])
     .setting("loop")
     .keys(&["secondary-shift-l"])
-    .state(|target, cx| {
-        target::read_block(target, cx, |player, _| json!(player.player().is_looping()))
-    }),
+    .state(|target, cx| target::read_block(target, cx, |player, _| json!(player.is_looping()))),
+    Spec::block(
+        "playback.loop.on",
+        "Start Looping",
+        "Play the file again from the start at its end, unless it does already.",
+        |player, _, cx| player.turn_loop(|on| Switch::On.turn(on), cx),
+    )
+    .tells(&["playback.loop.on"])
+    .keywords(&["repeat", "loop"]),
+    Spec::block(
+        "playback.loop.off",
+        "Stop Looping",
+        "Stop the file at its end, unless it does already.",
+        |player, _, cx| player.turn_loop(|on| Switch::Off.turn(on), cx),
+    )
+    .tells(&["playback.loop.off"])
+    .keywords(&["repeat", "loop", "once"]),
     Spec::every_block(
         "playback.play_pause_all",
         "Play/Pause All",
@@ -365,6 +380,16 @@ const PLAYHEAD: &[EventField] = &[
 
 /// How files play: the blocks' events about them.
 pub const EVENTS: &[EventKind] = &[
+    EventKind::block(
+        "playback.loop.on",
+        "A block's file is set to play again from the start at its end.",
+        &[],
+    ),
+    EventKind::block(
+        "playback.loop.off",
+        "A block's file is set to stop at its end.",
+        &[],
+    ),
     EventKind::block(
         "playback.opened",
         "A file opened in a block, paused at its start.",

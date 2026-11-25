@@ -50,13 +50,13 @@ fn a_handlers_calls_act_on_its_events_window(cx: &mut TestAppContext) {
         plays.on("window.label_changed", function(ctx)
           print(plays.window.inspect().id == ctx.window_id, ctx.window_id ~= plays.window_id)
         end)
-        plays.on("app.ui_changed", function()
+        plays.on("app.ui.off", function()
           print(plays.window.inspect().id == plays.window_id)
           plays.stop()
         end)
         local other = plays.window.new().window
         plays.window.rename{window_id = other, label = "Attic"}
-        plays.app.toggle_ui()
+        plays.app.ui.toggle()
     "#;
     let ran = plays(&mut cx, &path, &["do", "--for", "10", "-e", code]);
     assert_eq!(

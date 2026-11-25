@@ -131,12 +131,12 @@ fn the_video_menu_sizes_the_window_for_its_videos() {
 fn the_interface_menu_shows_or_hides_the_panels_in_the_block_its_window_and_every_window() {
     let mut state = MenuState::default();
     for (command, on) in [
-        ("block.toggle_controls", true),
-        ("block.toggle_top_bar", false),
-        ("block.toggle_track_switcher", true),
-        ("block.toggle_notes", false),
-        ("window.toggle_notes", true),
-        ("app.toggle_top_bar", true),
+        ("block.controls.toggle", true),
+        ("block.top_bar.toggle", false),
+        ("block.track_switcher.toggle", true),
+        ("block.notes.toggle", false),
+        ("window.notes.toggle", true),
+        ("app.top_bar.toggle", true),
     ] {
         state.states.insert(command, json!(on));
     }
@@ -155,20 +155,20 @@ fn the_interface_menu_shows_or_hides_the_panels_in_the_block_its_window_and_ever
         listed(&menu),
         [
             panel("Show/Hide All", false),
-            panel("Show Controls", true),
-            panel("Show Top Bar", false),
-            panel("Show Track Switcher", true),
-            panel("Show Notes", false),
+            panel("Show/Hide Controls", true),
+            panel("Show/Hide Top Bar", false),
+            panel("Show/Hide Track Switcher", true),
+            panel("Show/Hide Notes", false),
             panel("Show/Hide All in Window", false),
-            panel("Show Controls in Window", false),
-            panel("Show Top Bar in Window", false),
-            panel("Show Track Switcher in Window", false),
-            panel("Show Notes in Window", true),
+            panel("Show/Hide Controls in Window", false),
+            panel("Show/Hide Top Bar in Window", false),
+            panel("Show/Hide Track Switcher in Window", false),
+            panel("Show/Hide Notes in Window", true),
             panel("Show/Hide All in Every Window", false),
-            panel("Show Controls in Every Window", false),
-            panel("Show Top Bar in Every Window", true),
-            panel("Show Track Switcher in Every Window", false),
-            panel("Show Notes in Every Window", false),
+            panel("Show/Hide Controls in Every Window", false),
+            panel("Show/Hide Top Bar in Every Window", true),
+            panel("Show/Hide Track Switcher in Every Window", false),
+            panel("Show/Hide Notes in Every Window", false),
         ]
     );
     let video = listed(&video_menu(&state));
@@ -1082,29 +1082,35 @@ fn checks_what_is_on_and_enables_what_can_run(cx: &mut TestAppContext) {
     assert!(opened, "a file to play");
     assert!(enabled("block.close", &mut cx));
     assert_eq!(
-        enabled("block.toggle_picture_in_picture", &mut cx),
+        enabled("block.picture_in_picture.toggle", &mut cx),
         cfg!(target_os = "macos")
     );
 
     assert!(!checked("Loop", &mut cx));
-    cx.dispatch_action(Run::command("playback.toggle_loop"));
+    cx.dispatch_action(Run::command("playback.loop.toggle"));
     cx.run_until_parked();
     assert!(checked("Loop", &mut cx), "at once");
     assert!(!checked("Float on Top", &mut cx));
-    cx.dispatch_action(Run::command("window.toggle_float_on_top"));
+    cx.dispatch_action(Run::command("window.float_on_top.toggle"));
     cx.run_until_parked();
     assert!(checked("Float on Top", &mut cx));
     assert!(!checked("Float on Top While Playing", &mut cx));
-    assert!(checked("Show Notes", &mut cx), "notes show at first");
-    cx.dispatch_action(Run::command("block.toggle_notes"));
+    assert!(checked("Show/Hide Notes", &mut cx), "notes show at first");
+    cx.dispatch_action(Run::command("block.notes.toggle"));
     cx.run_until_parked();
-    assert!(!checked("Show Notes", &mut cx), "in the block in front");
     assert!(
-        checked("Show Notes in Window", &mut cx),
+        !checked("Show/Hide Notes", &mut cx),
+        "in the block in front"
+    );
+    assert!(
+        checked("Show/Hide Notes in Window", &mut cx),
         "but not its window"
     );
-    cx.dispatch_action(Run::command("app.toggle_notes"));
+    cx.dispatch_action(Run::command("app.notes.toggle"));
     cx.run_until_parked();
-    assert!(!checked("Show Notes in Every Window", &mut cx));
-    assert!(!checked("Show Notes in Window", &mut cx), "nor the window");
+    assert!(!checked("Show/Hide Notes in Every Window", &mut cx));
+    assert!(
+        !checked("Show/Hide Notes in Window", &mut cx),
+        "nor the window"
+    );
 }
