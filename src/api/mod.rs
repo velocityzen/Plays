@@ -30,7 +30,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 pub use error::Error;
-pub use registry::{Reach, Scope, Spec, all, find};
+pub use registry::{Reach, Scope, Spec, all, by_id, find};
 pub use target::{Id, Target, front_window, read_block};
 
 use crate::ui::workspace::{self, Workspace};

@@ -693,8 +693,8 @@ fn commands_are_listed_and_described(cx: &mut TestAppContext) {
             said(describe(&mut client, "window.dance").unwrap_err()),
         )
     });
-    let all: Vec<Value> = api::all().map(api::Spec::describe).collect();
-    assert_eq!(commands, Value::from(all));
+    let by_id: Vec<Value> = api::by_id().into_iter().map(api::Spec::describe).collect();
+    assert_eq!(commands, Value::from(by_id), "every command, by id");
     assert_eq!(described, api::find("window.ls").unwrap().describe());
     assert_eq!(none, (1, "no command window.dance".to_owned()));
 }

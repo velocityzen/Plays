@@ -144,7 +144,7 @@ impl Client {
         self.request(Ask::Hello)
     }
 
-    /// Every command, described.
+    /// Every command, described, by id.
     pub fn commands(&mut self) -> Result<Value, Failure> {
         self.request(Ask::Commands)
     }

@@ -169,7 +169,7 @@ pub enum Shell {
 
 #[derive(Debug, Subcommand)]
 pub enum Api {
-    /// Describe every command, as the Plays running has them.
+    /// Describe every command, by id, as the Plays running has them.
     List,
     /// Describe a command: its arguments, keys and what it hands back.
     Describe { command: String },

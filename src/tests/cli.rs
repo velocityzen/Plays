@@ -1459,9 +1459,16 @@ fn the_keymap_lists_the_keys_commands_have_now(cx: &mut TestAppContext) {
 fn the_api_is_listed_described_and_called(cx: &mut TestAppContext) {
     let (path, window, mut cx) = serving("cli-api", cx);
     let ran = plays(&mut cx, &path, &["api", "list"]);
-    assert_eq!(ran.out.lines().count(), api::all().count() + 1, "{ran:?}");
+    let ids: Vec<&str> = api::by_id().into_iter().map(|spec| spec.id).collect();
+    let rows: Vec<&str> = ran
+        .out
+        .lines()
+        .skip(1)
+        .map(|line| line.split_whitespace().next().unwrap())
+        .collect();
+    assert_eq!(rows, ids, "by id: {ran:?}");
     let listed = plays(&mut cx, &path, &["--json", "api", "list"]).json();
-    assert_eq!(listed[0], api::all().next().unwrap().describe());
+    assert_eq!(listed[0], api::by_id()[0].describe());
     let described = plays(&mut cx, &path, &["api", "describe", "block.focus"]).json();
     assert_eq!(described["title"], "Go to Block");
     let ran = plays(&mut cx, &path, &["api", "describe", "block.nope"]);

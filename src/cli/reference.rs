@@ -45,15 +45,14 @@ pub(super) fn actions(
 /// lowercase); every one without it. By id, alphabetically.
 fn found(search: Option<&str>) -> Vec<&'static Spec> {
     let search = search.map(str::to_lowercase);
-    let mut found: Vec<&Spec> = api::all()
+    api::by_id()
+        .into_iter()
         .filter(|spec| {
             search.as_deref().is_none_or(|search| {
                 spec.id.contains(search) || spec.title.to_lowercase().contains(search)
             })
         })
-        .collect();
-    found.sort_unstable_by_key(|spec| spec.id);
-    found
+        .collect()
 }
 
 /// The keys a command starts out with, as menus show them.

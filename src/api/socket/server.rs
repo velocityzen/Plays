@@ -498,7 +498,7 @@ fn answer(id: ClientId, ask: Ask, client: &mut Client, cx: &mut App) -> Result<V
             }
             done
         }
-        Ask::Commands => Ok(api::all().map(Spec::describe).collect()),
+        Ask::Commands => Ok(api::by_id().into_iter().map(Spec::describe).collect()),
         Ask::Describe { command } => api::find(&command)
             .map(Spec::describe)
             .ok_or(Error::NoSuchCommand { command }),

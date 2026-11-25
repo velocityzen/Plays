@@ -437,6 +437,13 @@ pub fn all() -> impl Iterator<Item = &'static Spec> {
     commands::ALL.iter().flat_map(|commands| commands.iter())
 }
 
+/// Every command, by id, alphabetically: as lists of them show them.
+pub fn by_id() -> Vec<&'static Spec> {
+    let mut specs: Vec<&Spec> = all().collect();
+    specs.sort_unstable_by_key(|spec| spec.id);
+    specs
+}
+
 /// The command `id`.
 pub fn find(id: &str) -> Option<&'static Spec> {
     all().find(|spec| spec.id == id)
