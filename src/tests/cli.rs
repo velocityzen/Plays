@@ -288,7 +288,7 @@ fn with_control_off_here_a_plays_answering_is_asked_still(cx: &mut TestAppContex
 }
 
 #[test]
-fn actions_lists_every_command_without_plays() {
+fn actions_lists_every_command_by_id_without_plays() {
     let ran = command_line(None, Unanswered::Fails, &["actions"]);
     assert_eq!(ran.status, 0);
     let lines: Vec<&str> = ran.out.lines().collect();
@@ -297,6 +297,13 @@ fn actions_lists_every_command_without_plays() {
         "{lines:?}"
     );
     assert_eq!(lines.len(), api::all().count() + 1, "a line for each");
+    let listed: Vec<&str> = lines[1..]
+        .iter()
+        .map(|line| line.split_whitespace().next().unwrap())
+        .collect();
+    let mut ids: Vec<&str> = api::all().map(|spec| spec.id).collect();
+    ids.sort_unstable();
+    assert_eq!(listed, ids, "by id, alphabetically");
     let play = lines
         .iter()
         .find(|line| line.starts_with("block.playback.play_pause "))
@@ -307,8 +314,13 @@ fn actions_lists_every_command_without_plays() {
     );
 
     let described = command_line(None, Unanswered::Fails, &["--json", "actions"]).json();
-    assert_eq!(described.as_array().unwrap().len(), api::all().count());
-    assert_eq!(described[0], api::all().next().unwrap().describe());
+    let described: Vec<&str> = described
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|spec| spec["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(described, ids, "as JSON too");
 }
 
 #[test]
@@ -349,8 +361,8 @@ fn actions_lists_those_whose_id_or_title_has_what_is_searched_for() {
     }
     assert_eq!(
         ids(&["actions", "play/pause"]),
-        ["block.playback.play_pause", "app.playback.play_pause"],
-        "in their titles"
+        ["app.playback.play_pause", "block.playback.play_pause"],
+        "in their titles, by id"
     );
 
     let described = command_line(None, Unanswered::Fails, &["--json", "actions", "flip"]).json();

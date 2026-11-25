@@ -15,8 +15,8 @@ use crate::api::events::{EventKind, Heard, kinds};
 use crate::api::{self, Error, Scope, Spec};
 use crate::hotkeys;
 
-/// Print every command, or those whose id or title has `search`: as a
-/// table, JSON, or the command reference.
+/// Print every command, or those whose id or title has `search`, by id:
+/// as a table, JSON, or the command reference.
 pub(super) fn actions(
     out: &mut dyn Write,
     json: bool,
@@ -42,16 +42,18 @@ pub(super) fn actions(
 }
 
 /// The commands whose id or title has `search`, in any case (ids are
-/// lowercase); every one without it.
+/// lowercase); every one without it. By id, alphabetically.
 fn found(search: Option<&str>) -> Vec<&'static Spec> {
     let search = search.map(str::to_lowercase);
-    api::all()
+    let mut found: Vec<&Spec> = api::all()
         .filter(|spec| {
             search.as_deref().is_none_or(|search| {
                 spec.id.contains(search) || spec.title.to_lowercase().contains(search)
             })
         })
-        .collect()
+        .collect();
+    found.sort_unstable_by_key(|spec| spec.id);
+    found
 }
 
 /// The keys a command starts out with, as menus show them.
