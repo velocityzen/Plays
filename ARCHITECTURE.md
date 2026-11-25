@@ -59,7 +59,7 @@ flowchart TB
 
     crates["Protocol crates<br/>crates/chromecast, crates/dlna"]
     server["Stream server<br/>crates/stream-server"]
-    ffmpeg[("FFmpeg, static<br/>build/ffmpeg-9.0.2")]
+    ffmpeg[("FFmpeg, static<br/>build/ffmpeg-9.1")]
     speakers(["Output devices"])
     devices(["TVs and speakers"])
 
@@ -619,7 +619,7 @@ Apple's protocol is unpublished, so an update can break it.
 
 ## Linking FFmpeg
 
-- `script/build-ffmpeg` builds FFmpeg into `build/ffmpeg-9.0.2`, where
+- `script/build-ffmpeg` builds FFmpeg into `build/ffmpeg-9.1`, where
   `.cargo/config.toml` points `FFMPEG_DIR` (see
   [CONTRIBUTING.md](CONTRIBUTING.md#building))
 - ffmpeg-sys-next makes bindings again only when `FFMPEG_DIR` changes, so

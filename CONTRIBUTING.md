@@ -21,8 +21,8 @@ what Plays does, [ARCHITECTURE.md](ARCHITECTURE.md) how it works.
 ## Building
 
 - Rust 1.85+ (edition 2024) and `clang` (bindgen makes FFmpeg's bindings)
-- `script/build-ffmpeg` builds FFmpeg 9.0.2 with dav1d once, from source,
-  as static LGPL libraries in `build/ffmpeg-9.0.2`, the folder
+- `script/build-ffmpeg` builds FFmpeg 9.1 with dav1d once, from source,
+  as static LGPL libraries in `build/ffmpeg-9.1`, the folder
   `.cargo/config.toml` names. A new version is named in both; the script
   stops if they don't match. It builds again only when the script changes,
   or with `--force`, and needs `pkg-config`, `ninja`, `python3`, and

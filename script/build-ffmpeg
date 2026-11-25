@@ -5,7 +5,7 @@
 # needs to repackage and re-encode for TVs and speakers: the MP4, MPEG-TS,
 # ADTS and FLAC muxers, the AAC, AC-3, E-AC-3 and FLAC encoders, and the
 # hardware video encoders (no software one). They go in a folder named for
-# FFmpeg's version, such as build/ffmpeg-9.0.2, where .cargo/config.toml
+# FFmpeg's version, such as build/ffmpeg-9.1, where .cargo/config.toml
 # points the Rust build, and are built again only when this script changes
 # (or with --force). Sources are checked against the checksums below.
 #
@@ -18,8 +18,8 @@
 # builds dav1d and is downloaded here), and nasm on x86_64.
 set -euo pipefail
 
-FFMPEG_VERSION=9.0.2
-FFMPEG_SHA256=8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e
+FFMPEG_VERSION=9.1
+FFMPEG_SHA256=1a4d394ae63d190a526cd052eb4415c156b5c5e2df37efab41a7de0b8fde2433
 DAV1D_VERSION=1.5.5
 DAV1D_SHA256=ca96b1d0ba3f01f55de7231d775892b64994ba061aaeeaaa4f662a390b3abf9e
 MESON_VERSION=1.12.1
