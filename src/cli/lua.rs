@@ -18,11 +18,12 @@ mod handlers;
 mod inbox;
 mod json;
 mod listening;
+mod stopping;
 mod timers;
 mod waiting;
 
 use std::cell::{Cell, RefCell};
-use std::io::{self, Read};
+use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 
 use mlua::serde::SerializeOptions;
@@ -37,6 +38,7 @@ use self::handlers::Handlers;
 use self::inbox::Inbox;
 use self::listening::Listener;
 pub use self::listening::Listening;
+use self::stopping::OnStop;
 use self::timers::Timers;
 use super::{Done, Session, Stop, show};
 use crate::api::socket::Heard;
@@ -115,6 +117,7 @@ pub fn run(session: &mut Session, script: Script, args: Value, listening: Listen
     let handlers = Handlers::default();
     let timers = Timers::default();
     let programs = Programs::default();
+    let on_stop = OnStop::default();
     let session = RefCell::new(session);
     let here = RefCell::new(here);
     let ran = lua.scope(|scope| {
@@ -138,20 +141,15 @@ pub fn run(session: &mut Session, script: Script, args: Value, listening: Listen
         let stops =
             scope.create_function(|lua, status: Option<i64>| stop(lua, status, &stopped))?;
         plays.set("stop", stops)?;
-        plays.set(
-            "sleep",
-            lua.create_function(|_, seconds: f64| waiting::sleep(seconds))?,
-        )?;
-        let wait = scope.create_function(|lua, args| waiting::wait(lua, &inbox, args))?;
-        plays.set("wait", wait)?;
-        plays.set(
-            "mark",
-            scope.create_function(|_, ()| Ok(waiting::mark(&inbox)))?,
-        )?;
+        waiting::add(&lua, &plays, scope, &inbox)?;
         exec::add(&lua, &plays, scope, &programs, &inbox)?;
         json::add(&lua, &plays)?;
         folders::add(&lua, &plays)?;
         plays.set("on", scope.create_function(|_, args| handlers.on(args))?)?;
+        let stops = scope.create_function(|lua, function: Option<Function>| {
+            on_stop.set(lua, function, inbox.borrow().sender())
+        })?;
+        plays.set("on_stop", stops)?;
         let (timers, stopped, session) = (&timers, &stopped, &session);
         let timer = |every| {
             scope
@@ -159,42 +157,96 @@ pub fn run(session: &mut Session, script: Script, args: Value, listening: Listen
         };
         plays.set("after", timer(false)?)?;
         plays.set("every", timer(true)?)?;
-        let log = scope.create_function(|_, values: MultiValue| {
-            let line = line(&tostring, values)?;
-            write_all(&mut *session.borrow_mut().err, &line)
-        })?;
-        plays.set("log", log)?;
-        let print = scope.create_function(|_, values: MultiValue| {
-            let line = line(&tostring, values)?;
-            write_all(&mut *session.borrow_mut().out, &line)
-        })?;
-        lua.globals().set("print", print)?;
+        add_output(&lua, &plays, scope, session, &tostring)?;
         lua.globals().set("plays", plays)?;
-        let returned = lua
+        let script_here = here.borrow().clone();
+        let ran = lua
             .load(&script.code[..])
             .set_name(&script.name)
-            .call::<MultiValue>(())?;
-        programs.top_level_over();
-        let say = |line: &str| writeln!(session.borrow_mut().err, "{line}");
-        let listener = Listener {
+            .call::<MultiValue>(())
+            .map(|returned| {
+                programs.top_level_over();
+                let say = |line: &str| writeln!(session.borrow_mut().err, "{line}");
+                let listener = Listener {
+                    lua: &lua,
+                    handlers: &handlers,
+                    timers,
+                    programs: &programs,
+                    inbox: &inbox,
+                    here: &here,
+                    window: window.as_deref(),
+                    stopped,
+                    say: &say,
+                    listening,
+                };
+                let printed = print_returned(&mut session.borrow_mut(), &lua, returned);
+                printed.and_then(|()| listening::listen(&listener))
+            });
+        let interrupted = stopping::caught();
+        let stopping = Stopping {
             lua: &lua,
-            handlers: &handlers,
-            timers,
-            programs: &programs,
             inbox: &inbox,
             here: &here,
-            window: window.as_deref(),
-            stopped,
-            say: &say,
-            listening,
+            programs: &programs,
         };
-        let printed = print_returned(&mut session.borrow_mut(), &lua, returned);
-        Ok(printed.and_then(|()| listening::listen(&listener)))
+        let on_stop_ran = stopping.run(&on_stop, script_here);
+        Ok((ran, on_stop_ran, interrupted))
     });
-    if let Some(status) = stopped.get() {
+    let (ran, on_stop_ran, interrupted) = ran.map_err(failed)?;
+    let err = &mut *session.borrow_mut().err;
+    ended(ran, on_stop_ran, interrupted, stopped.get(), err)
+}
+
+/// What a script's `plays.on_stop` function runs with.
+struct Stopping<'a> {
+    lua: &'a Lua,
+    inbox: &'a RefCell<Inbox>,
+    here: &'a RefCell<Target>,
+    programs: &'a Programs,
+}
+
+impl Stopping<'_> {
+    /// As the script ends, however it ends but as Plays goes: its
+    /// `plays.on_stop` function run, if it gave one, once, its calls on
+    /// the script's window and block; what that came to.
+    fn run(&self, on_stop: &OnStop, script: Target) -> mlua::Result<()> {
+        let Some(function) = on_stop.take() else {
+            return Ok(());
+        };
+        if self.inbox.borrow().plays_gone() {
+            return Ok(());
+        }
+        stopping::calm(self.lua);
+        self.here.replace(script);
+        self.programs.part(|| function.call::<()>(()))
+    }
+}
+
+/// How a script that `ran` ended: as `plays.stop` said, if it `stopped`;
+/// else failed, if its `plays.on_stop` function did; else as Ctrl-C ends
+/// one, if it was `interrupted`; else as it ran. Its function's failure
+/// is said on `err` where the script's own is what it ends with.
+fn ended(
+    ran: mlua::Result<Done>,
+    on_stop: mlua::Result<()>,
+    interrupted: bool,
+    stopped: Option<u8>,
+    err: &mut dyn Write,
+) -> Done {
+    if let Some(status) = stopped {
         return Err(Stop::Exit(status));
     }
-    ran.map_err(failed)?
+    if let Err(failure) = on_stop {
+        let why = format!("plays.on_stop's function failed: {}", message(&failure));
+        if interrupted || matches!(ran, Ok(Ok(()))) {
+            return Err(Stop::Script(why));
+        }
+        writeln!(err, "plays: {why}")?;
+    }
+    if interrupted {
+        return Err(Stop::Exit(stopping::INTERRUPTED_STATUS));
+    }
+    ran.map_err(|err| Stop::Script(message(&err)))?
 }
 
 /// The ids of the window and block `-w` and `-b` name, else of the window
@@ -280,7 +332,8 @@ impl IntoLuaMulti for Answer {
 
 /// Run the command `id` with `args`, a table or nil: what it hands back,
 /// else nil and why not. A wait after it hears what it does, and nothing
-/// from before.
+/// from before. Once Ctrl-C is caught, none is made, and one made
+/// meanwhile fails.
 fn call(
     lua: &Lua,
     session: &RefCell<&mut Session>,
@@ -289,10 +342,12 @@ fn call(
     args: LuaValue,
     here: &Target,
 ) -> mlua::Result<Answer> {
+    stopping::unless_caught()?;
     let mut args: Value = lua.from_value(args)?;
     let target = target(id, &mut args, here);
     inbox.borrow_mut().hear_from_now();
     let called = session.borrow_mut().call_on(id, args, target);
+    stopping::unless_caught()?;
     match called {
         Ok(value) => Ok(Answer(Ok(to_lua(lua, &value)?))),
         Err(failure) => Ok(Answer(Err(failure.to_string()))),
@@ -350,6 +405,27 @@ fn stop(lua: &Lua, status: Option<i64>, stopped: &Cell<Option<u8>>) -> mlua::Res
         Err(mlua::Error::runtime(STOPPED))
     })?;
     Err(mlua::Error::runtime(STOPPED))
+}
+
+/// `print` and `plays.log`: a line on the session's stdout, or stderr,
+/// added for as long as `scope` is.
+fn add_output<'s, 'env>(
+    lua: &Lua,
+    plays: &Table,
+    scope: &'s mlua::Scope<'s, 'env>,
+    session: &'env RefCell<&mut Session>,
+    tostring: &'env Function,
+) -> mlua::Result<()> {
+    let log = scope.create_function(move |_, values: MultiValue| {
+        let line = line(tostring, values)?;
+        write_all(&mut *session.borrow_mut().err, &line)
+    })?;
+    plays.set("log", log)?;
+    let print = scope.create_function(move |_, values: MultiValue| {
+        let line = line(tostring, values)?;
+        write_all(&mut *session.borrow_mut().out, &line)
+    })?;
+    lua.globals().set("print", print)
 }
 
 /// `values` on a line of their own, as Lua's `print` writes them: each as

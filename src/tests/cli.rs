@@ -1508,14 +1508,10 @@ fn command_line_as_another_process() {
     std::process::exit(main(args).into());
 }
 
-/// How `plays ARGS` exits, and what it prints, run as a process of its
-/// own: this test binary, running only `command_line_as_another_process`.
-fn another_process(
-    cx: &mut TestAppContext,
-    path: &Path,
-    args: &[&str],
-) -> (Option<i32>, String, String) {
-    let mut plays = Command::new(std::env::current_exe().unwrap())
+/// `plays ARGS` started as a process of its own: this test binary,
+/// running only `command_line_as_another_process`.
+fn start_another_process(path: &Path, args: &[&str]) -> std::process::Child {
+    Command::new(std::env::current_exe().unwrap())
         .args([
             "--ignored",
             "--exact",
@@ -1527,7 +1523,17 @@ fn another_process(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .unwrap();
+        .unwrap()
+}
+
+/// How `plays ARGS` exits, and what it prints, run as a process of its
+/// own: this test binary, running only `command_line_as_another_process`.
+fn another_process(
+    cx: &mut TestAppContext,
+    path: &Path,
+    args: &[&str],
+) -> (Option<i32>, String, String) {
+    let mut plays = start_another_process(path, args);
     let mut exited = None;
     assert!(wait_until(cx, |_| {
         exited = plays.try_wait().unwrap();
@@ -1545,6 +1551,77 @@ fn another_process(
         out,
         String::from_utf8(output.stderr).unwrap(),
     )
+}
+
+#[gpui::test]
+fn ctrl_c_stops_a_script_where_it_is_and_runs_its_on_stop_function(cx: &mut TestAppContext) {
+    use std::os::unix::process::ExitStatusExt;
+
+    let (path, window, mut cx) = serving("cli-ctrl-c", cx);
+    let label = |cx: &TestAppContext| {
+        window
+            .read_with(cx, |workspace, _| workspace.label().map(str::to_owned))
+            .unwrap()
+    };
+    // "Went on" if the script went on past where Ctrl-C stopped it, or
+    // if what stopped it landed in its first local.
+    let on_stop = "local went_on plays.on_stop(function() \
+                   plays.window.rename{label = went_on and 'Went on' or 'Stopped'} end)";
+    let ctrl_c = |cx: &mut TestAppContext, code: &str| {
+        let mut plays = start_another_process(&path, &["do", "-e", code]);
+        let waiting = wait_until(cx, |cx| label(cx).as_deref() == Some("Waiting"));
+        if !waiting {
+            plays.kill().ok();
+            let output = plays.wait_with_output().unwrap();
+            panic!(
+                "{code}: it didn't get going: {}{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+        let pid = i32::try_from(plays.id()).unwrap();
+        // SAFETY: kill(2) of the child this test started, which hasn't
+        // been waited for, so its id is still its own.
+        assert_eq!(unsafe { libc::kill(pid, libc::SIGINT) }, 0);
+        let mut exited = None;
+        assert!(wait_until(cx, |_| {
+            exited = plays.try_wait().unwrap();
+            exited.is_some()
+        }));
+        let said = plays.wait_with_output().unwrap().stderr;
+        (exited.unwrap(), String::from_utf8(said).unwrap())
+    };
+    for (stopped, code) in [
+        ("a sleep", "plays.sleep(60) went_on = true"),
+        ("a wait", "plays.wait('window.closed') went_on = true"),
+        (
+            "a timed wait",
+            "plays.wait('window.closed', nil, 60) went_on = true",
+        ),
+        ("a program", "plays.exec{'sleep', '60'} went_on = true"),
+        ("Lua running", "while true do end"),
+        ("listening", "plays.on('window.closed', function() end)"),
+    ] {
+        TestAppContext::update(&cx, |cx| {
+            api::run(
+                api::Invocation::new("window.rename").with_args(json!({"label": "Going"})),
+                cx,
+            )
+        })
+        .unwrap();
+        // On one line: the arguments reach the process a line each.
+        let code = format!("{on_stop} plays.window.rename{{label = 'Waiting'}} {code}");
+        let (exited, said) = ctrl_c(&mut cx, &code);
+        assert_eq!(exited.code(), Some(130), "{stopped}: {exited:?} {said}");
+        assert_eq!(label(&cx).as_deref(), Some("Stopped"), "{stopped}: {said}");
+    }
+
+    // With none to run, it ends at once, as Ctrl-C ends it.
+    let (exited, said) = ctrl_c(
+        &mut cx,
+        "plays.window.rename{label = 'Waiting'} plays.sleep(60)",
+    );
+    assert_eq!(exited.signal(), Some(libc::SIGINT), "{exited:?} {said}");
 }
 
 #[gpui::test]

@@ -5,7 +5,7 @@
 //! inbox (`inbox`) has them; until it stops, `--for` is up, no handler or
 //! timer is left, Plays quits, or the window it hears, with `-w`, closes.
 //! Handlers for cues are left until theirs are reached.
-//! Ctrl-C, which nothing catches, stops it too.
+//! Ctrl-C stops it too (`stopping`).
 
 use std::cell::{Cell, RefCell};
 use std::io;
@@ -18,6 +18,7 @@ use super::exec::{Programs, Ran};
 use super::handlers::Handlers;
 use super::inbox::{Inbox, Next};
 use super::message;
+use super::stopping;
 use super::timers::Timers;
 use super::waiting::POSITION;
 use crate::api::Target;
@@ -70,6 +71,9 @@ pub fn listen(listener: &Listener) -> Done {
     (listener.say)(&format!("{}; Ctrl-C to stop", going(handlers, timers)))?;
     let by = listener.listening.at_most.map(after);
     loop {
+        if stopping::caught() {
+            return Err(Stop::Exit(stopping::INTERRUPTED_STATUS));
+        }
         // Those due by now, each once: one taking longer than its period
         // doesn't keep the rest waiting.
         let now = Instant::now();
@@ -159,6 +163,9 @@ impl Listener<'_> {
     fn ran(&self, what: &str, ran: mlua::Result<()>) -> Done {
         if let Some(status) = self.stopped.get() {
             return Err(Stop::Exit(status));
+        }
+        if stopping::caught() {
+            return Err(Stop::Exit(stopping::INTERRUPTED_STATUS));
         }
         let Err(err) = ran else {
             return Ok(());

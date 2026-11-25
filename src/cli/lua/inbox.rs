@@ -22,6 +22,7 @@ use std::time::Instant;
 use serde_json::Value;
 
 use super::exec::Ran;
+use super::stopping;
 use crate::api::socket::Heard;
 use crate::api::socket::client::{ANSWER_WAIT, Failure, Reading, Said};
 
@@ -31,6 +32,8 @@ pub enum Came {
     Said(Result<Said, Failure>),
     /// What a program did.
     Ran(Ran),
+    /// Ctrl-C, caught (`stopping`): what waits stops waiting.
+    Interrupted,
 }
 
 /// What comes next as a script listens.
@@ -54,6 +57,8 @@ pub struct Inbox {
     connection: Option<Reading>,
     /// Whether the connection closed, so nothing more comes on it.
     closed: bool,
+    /// Whether Plays said it's quitting.
+    quitting: bool,
     /// Whether where files are is heard too.
     positions: bool,
     /// How many events have been taken, or passed over: the next's place
@@ -80,6 +85,7 @@ impl Inbox {
             heard,
             connection: None,
             closed: false,
+            quitting: false,
             positions: false,
             taken: 0,
             call_began: 0,
@@ -199,6 +205,11 @@ impl Inbox {
         }
     }
 
+    /// Whether Plays has gone, or is going, as the events say.
+    pub fn plays_gone(&self) -> bool {
+        self.closed || self.quitting
+    }
+
     /// Pass over those told before `mark`, or else before the last call
     /// began, heard already.
     pub fn pass_over_told(&mut self, mark: Option<u64>) {
@@ -265,14 +276,23 @@ impl Inbox {
     }
 
     /// The next thing come, waiting for it until `by`, if given: none by
-    /// then, though what came before is.
+    /// then, though what came before is; none once Ctrl-C is caught.
     fn receive(&self, by: Option<Instant>) -> Option<Came> {
-        match by {
-            Some(by) => {
-                let left = by.saturating_duration_since(Instant::now());
-                self.receiver.recv_timeout(left).ok()
+        loop {
+            if stopping::caught() {
+                return None;
             }
-            None => self.receiver.recv().ok(),
+            let came = match by {
+                Some(by) => {
+                    let left = by.saturating_duration_since(Instant::now());
+                    self.receiver.recv_timeout(left).ok()
+                }
+                None => self.receiver.recv().ok(),
+            };
+            // Woken by a Ctrl-C a stopping script's function doesn't heed.
+            if !matches!(came, Some(Came::Interrupted)) {
+                return came;
+            }
         }
     }
 
@@ -281,7 +301,11 @@ impl Inbox {
     fn keep(&mut self, came: Came) -> Result<Option<Answered>, Failure> {
         match came {
             Came::Ran(ran) => self.ran.push_back(ran),
-            Came::Said(Ok(Said::Event(kind, payload))) => self.events.push_back((kind, payload)),
+            Came::Interrupted => {}
+            Came::Said(Ok(Said::Event(kind, payload))) => {
+                self.quitting |= kind == "app.quit";
+                self.events.push_back((kind, payload));
+            }
             Came::Said(Ok(Said::Answer(id, answer))) => return Ok(Some(Answered { id, answer })),
             Came::Said(Err(failure)) => {
                 self.closed |= matches!(failure, Failure::Closed | Failure::Unreachable(_));

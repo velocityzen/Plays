@@ -74,6 +74,7 @@ plays -b 2 do stop-at.lua frame=345
   until `plays.stop`, `--for` is up (`90`, `90s`, `10m`, `1.5h`), Ctrl-C
   (exit status 130), or, with no handlers, no timer is left. With
   handlers, until Plays quits or the window `-w` names closes too.
+- `plays.on_stop(fn)` runs as it stops ([lua.md](lua.md#stopping)).
 - Says what it runs on stderr: `listening: 2 handlers, running: 1 timer;
   Ctrl-C to stop`.
 

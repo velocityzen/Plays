@@ -65,7 +65,8 @@ plays do -e 'print(plays.block.inspect().title)'   # talk.mkv
 - What it returns, as JSON (`--json` indented); nothing for nil.
 - `print(...)`: a line on stdout. `plays.log(...)`: a line on stderr.
 - An error: its message, exit status 1. `plays.stop(status)`: ends it at
-  once, with that exit status, 0 if none.
+  once, with that exit status, 0 if none. Ctrl-C: 130
+  ([Stopping](#stopping)).
 - Exit statuses as for other commands: 3 no such script, 4 no Plays to
   ask, 5 control from the command line off, 6 no answer in time.
 
@@ -148,6 +149,24 @@ plays.after(60, function() ticking:cancel() end)
 - Calls in one act on the script's window and block, though a handler
   started it.
 - At most 1,024 going; more stops the script, exit status 1.
+
+## Stopping
+
+```lua
+-- tidy.lua: the window's blocks paused, however the script ends
+plays.on_stop(function()
+  for _, block in ipairs(plays.block.ls()) do plays.playback.pause{block_id = block.id} end
+end)
+```
+
+- `plays.on_stop(fn)`: runs it once as the script ends: at its end,
+  `plays.stop`, an error, `--for` up, or Ctrl-C. Not as Plays quits.
+- The last given runs; nil runs none.
+- With one given, Ctrl-C stops the script where it is, exit status 130,
+  and it runs. A second Ctrl-C, or one with none given, ends the script
+  at once.
+- One failing fails the script, exit status 1, unless `plays.stop` gave
+  one.
 
 ## Programs
 

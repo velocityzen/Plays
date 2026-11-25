@@ -4,11 +4,12 @@
 use std::cell::RefCell;
 use std::time::{Duration, Instant};
 
-use mlua::{Function, IntoLuaMulti, Lua, LuaSerdeExt, MultiValue, Value as LuaValue};
+use mlua::{Function, IntoLuaMulti, Lua, LuaSerdeExt, MultiValue, Scope, Table, Value as LuaValue};
 use serde_json::{Map, Value};
 
 use super::Answer;
 use super::inbox::Inbox;
+use super::stopping::{self, unless_caught};
 use crate::api::events::cues::is_cue;
 use crate::cli::after;
 
@@ -18,15 +19,40 @@ const TIMEOUT: &str = "timeout";
 /// The event told only to those who ask for positions.
 pub const POSITION: &str = "playback.position";
 
+/// `plays.sleep`, `plays.wait` and `plays.mark`, added to `plays`, as
+/// long as `scope` is.
+pub fn add<'s, 'env>(
+    lua: &Lua,
+    plays: &Table,
+    scope: &'s Scope<'s, 'env>,
+    inbox: &'env RefCell<Inbox>,
+) -> mlua::Result<()> {
+    // Each cut short by Ctrl-C fails, not as if it waited.
+    plays.set(
+        "sleep",
+        lua.create_function(|_, seconds: f64| sleep(seconds))?,
+    )?;
+    let waits = scope.create_function(|lua, args| {
+        let waited = wait(lua, inbox, args);
+        unless_caught().and(waited)
+    })?;
+    plays.set("wait", waits)?;
+    let marks = scope.create_function(|_, ()| {
+        let marked = mark(inbox);
+        unless_caught().map(|()| marked)
+    })?;
+    plays.set("mark", marks)
+}
+
 /// `plays.sleep`: wait `seconds`.
-pub fn sleep(seconds: f64) -> mlua::Result<()> {
-    std::thread::sleep(duration("plays.sleep can't sleep", seconds)?);
-    Ok(())
+fn sleep(seconds: f64) -> mlua::Result<()> {
+    stopping::sleep(duration("plays.sleep can't sleep", seconds)?);
+    unless_caught()
 }
 
 /// `plays.mark`: where a wait given it hears from, now; or nil and why
 /// not.
-pub fn mark(inbox: &RefCell<Inbox>) -> Answer {
+fn mark(inbox: &RefCell<Inbox>) -> Answer {
     Answer(match inbox.borrow_mut().mark() {
         Ok(mark) => Ok(LuaValue::Integer(i64::try_from(mark).unwrap_or(i64::MAX))),
         Err(failure) => Err(failure.to_string()),
@@ -35,7 +61,7 @@ pub fn mark(inbox: &RefCell<Inbox>) -> Answer {
 
 /// What a wait hands back: the event's payload, and its type if it was
 /// one of a list; or nil and why not.
-pub struct Waited {
+struct Waited {
     heard: Result<(LuaValue, String), String>,
     listed: bool,
 }
@@ -55,7 +81,7 @@ impl IntoLuaMulti for Waited {
 /// seconds, if given, and heard from `mark`, if given; or, for a cue, its
 /// block reaching it, which fails as the block closes first, with no
 /// other type to wait for.
-pub fn wait(
+fn wait(
     lua: &Lua,
     inbox: &RefCell<Inbox>,
     (kinds, filter, timeout, mark): (LuaValue, LuaValue, Option<f64>, Option<u64>),

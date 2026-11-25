@@ -186,6 +186,18 @@ fn the_scripts_the_scripts_guide_names_do_as_it_says(cx: &mut TestAppContext) {
         json!([videos.path("new.mp4"), videos.path("old.mp4")]),
         "{ran:?}"
     );
+
+    plays(&mut cx, &path, &["do", "playback.play_all"]);
+    let playing = "local p = {} for _, b in ipairs(plays.block.ls()) do \
+                   p[#p + 1] = plays.block.inspect{block_id = b.id}.playing end return p";
+    assert_eq!(returned(&mut cx, &path, playing), json!([true, true, true]));
+    let tidy = folder.script(SCRIPTS, "tidy.lua");
+    let ran = plays(&mut cx, &path, &["do", &tidy]);
+    assert_eq!((ran.status, ran.err.as_str()), (0, ""), "{ran:?}");
+    assert_eq!(
+        returned(&mut cx, &path, playing),
+        json!([false, false, false])
+    );
 }
 
 #[gpui::test]

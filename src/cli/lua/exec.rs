@@ -271,6 +271,7 @@ impl Programs {
         options: Option<Table>,
         inbox: &RefCell<Inbox>,
     ) -> mlua::Result<Result<Rc<Program>, String>> {
+        super::stopping::unless_caught()?;
         let options = Options::read(what, options)?;
         let Some((name, args)) = argv.split_first() else {
             return Err(mlua::Error::runtime(format!(
@@ -335,7 +336,11 @@ impl Programs {
                         call.run(lua)?;
                     }
                 }
-                None => program.let_streams_go(),
+                None => {
+                    // Ctrl-C, or the program let go.
+                    super::stopping::unless_caught()?;
+                    program.let_streams_go();
+                }
             }
         }
         self.forget_done();
