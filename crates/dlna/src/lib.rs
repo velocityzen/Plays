@@ -3,6 +3,8 @@
 //! blocks, on the caller's thread or a session's own; what a browser finds
 //! and what a session says as it goes come over channels.
 
+#![forbid(unsafe_code)]
+
 mod browser;
 mod device;
 mod error;

@@ -3,6 +3,8 @@
 //! it, reading HTTP and RTSP messages within bounds and in time, and, with
 //! the `mdns` feature, finding devices over mDNS.
 
+#![forbid(unsafe_code)]
+
 pub mod http;
 #[cfg(feature = "mdns")]
 pub mod mdns;

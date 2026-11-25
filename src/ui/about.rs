@@ -224,7 +224,9 @@ fn bundle_icon() -> Option<Arc<Image>> {
         } else {
             let length: usize = msg_send![data, length];
             let bytes: *const u8 = msg_send![data, bytes];
-            Some(std::slice::from_raw_parts(bytes, length).to_vec())
+            // Empty data may have no bytes at all, and is no picture.
+            (length > 0 && !bytes.is_null())
+                .then(|| std::slice::from_raw_parts(bytes, length).to_vec())
         };
         let _: () = msg_send![rep, release];
         png?

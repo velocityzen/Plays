@@ -4,6 +4,8 @@
 //! word may take files too, besides its names (`Files`): those ending in a
 //! suffix, and folders to find them in.
 
+#![forbid(unsafe_code)]
+
 mod bash;
 mod fish;
 mod nushell;

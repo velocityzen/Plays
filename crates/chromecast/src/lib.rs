@@ -3,6 +3,8 @@
 //! they do. Everything blocks, on the caller's thread or a session's own;
 //! what a session says as it goes comes over a channel.
 
+#![forbid(unsafe_code)]
+
 mod browser;
 mod channel;
 mod device;

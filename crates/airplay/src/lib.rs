@@ -3,6 +3,8 @@
 //! live sound. Everything blocks, on the caller's thread or the session's
 //! own; what a session says as it goes comes over a channel.
 
+#![forbid(unsafe_code)]
+
 mod audio;
 mod browser;
 mod channel;

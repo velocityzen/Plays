@@ -4,6 +4,8 @@
 //! desktop file (`linux`). `script/file-types` writes those, and an icon
 //! for each format, from `FORMATS`.
 
+#![forbid(unsafe_code)]
+
 pub mod linux;
 pub mod macos;
 

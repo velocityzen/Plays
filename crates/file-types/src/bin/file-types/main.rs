@@ -5,6 +5,8 @@
 //! in `FOLDER` for `iconutil` to make `.icns` of. `script/file-types` and
 //! `script/bundle-macos` run them.
 
+#![forbid(unsafe_code)]
+
 mod icon;
 mod iconset;
 
