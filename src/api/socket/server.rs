@@ -34,7 +34,7 @@ use serde_json::{Value, json};
 
 use super::protocol::{self, Ask, Heard, Request};
 use super::{Claimed, Listener};
-use crate::api::events::{self, Event, Scope};
+use crate::api::events::{self, Event, Scope, cues};
 use crate::api::{self, Error, Invocation, Source, Spec, Target, target};
 use crate::settings::Settings;
 
@@ -207,6 +207,8 @@ impl Client {
 /// The events a client hears, and the task sending each as it's told.
 struct Hearing {
     told: Rc<RefCell<UnboundedReceiver<Event>>>,
+    /// What tells them, the cues it sets among them.
+    to: UnboundedSender<Event>,
     _sending: Task<()>,
 }
 
@@ -225,7 +227,7 @@ impl Hearing {
 fn tell(out: &Out, event: &Event) {
     match serde_json::to_string(event) {
         Ok(line) => out.send(line),
-        Err(err) => log::warn!("can't tell {}: {err}", event.kind),
+        Err(err) => log::warn!("can't tell {}: {err}", event.name()),
     }
 }
 
@@ -505,6 +507,7 @@ fn answer(id: ClientId, ask: Ask, client: &mut Client, cx: &mut App) -> Result<V
             client.hearing = None;
             Ok(Value::Null)
         }
+        Ask::Cue { name } => cue(&name, client, cx),
         Ask::HandOver { urls } => hand_over(urls, cx),
     }
 }
@@ -530,7 +533,12 @@ fn subscribe(
             (Scope::Window(id), json!({"window": id.to_string()}))
         }
     };
-    let told = Rc::new(RefCell::new(events::listen(scope, positions, cx)));
+    let (to, told) = unbounded();
+    events::listen_into(scope, positions, to.clone(), cx);
+    if let Some(hearing) = &client.hearing {
+        cues::hand_over(&hearing.to, &to, cx);
+    }
+    let told = Rc::new(RefCell::new(told));
     let out = client.out.clone();
     let heard = Rc::clone(&told);
     let sending = cx.spawn(async move |_| {
@@ -540,9 +548,21 @@ fn subscribe(
     });
     client.hearing = Some(Hearing {
         told,
+        to,
         _sending: sending,
     });
     Ok(answer)
+}
+
+/// Tell `client` once the block its cue `name` names reaches it, among the
+/// events it hears (`cues::cue`).
+fn cue(name: &str, client: &Client, cx: &mut App) -> Result<Value, Error> {
+    let Some(hearing) = &client.hearing else {
+        return Err(Error::failed(format!(
+            "{name}: subscribe before setting a cue"
+        )));
+    };
+    cues::cue(name, &hearing.to, cx)
 }
 
 /// Open `urls`, handed over by a Plays started with them, as files opened

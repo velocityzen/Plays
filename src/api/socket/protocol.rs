@@ -12,6 +12,12 @@
 //!   events from now on: the app's (`"app"`), one window's (`{"window":
 //!   "2"}`) or, as it is left out, all; with positions, at most once a
 //!   second. `{"method": "unsubscribe"}` hears none.
+//! - `{"method": "cue", "name": "block.3fa9c2d1.position@120.5s"}`, once
+//!   subscribed, hears that block reach that time, or with `…@345f` that
+//!   frame, once, as it does (`events::cues`): an event whose type is the
+//!   cue's name. Its answer is the block's id and its window's: `{"block":
+//!   "3fa9c2d1", "window": "2"}`. The cues set go once it's heard, or as it
+//!   unsubscribes; subscribing again keeps them.
 //! - `{"method": "hello"}` asks which Plays answers: its version and
 //!   process id.
 //! - `{"method": "hand_over", "urls": [...]}` is what a Plays started with
@@ -67,6 +73,8 @@ pub enum Ask {
     },
     /// Hear none.
     Unsubscribe,
+    /// Hear the cue `name`, once, as its block reaches it.
+    Cue { name: String },
     /// Open `urls`, files by their full paths and streams, and come to the
     /// front; with none, bring the window in front forward.
     HandOver {

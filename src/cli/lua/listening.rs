@@ -4,6 +4,7 @@
 //! (`exec`), one at a time, each a part of the script of its own, as its
 //! inbox (`inbox`) has them; until it stops, `--for` is up, no handler or
 //! timer is left, Plays quits, or the window it hears, with `-w`, closes.
+//! Handlers for cues are left until theirs are reached.
 //! Ctrl-C, which nothing catches, stops it too.
 
 use std::cell::{Cell, RefCell};
@@ -20,6 +21,7 @@ use super::message;
 use super::timers::Timers;
 use super::waiting::POSITION;
 use crate::api::Target;
+use crate::api::events::cues::is_cue;
 use crate::cli::{Done, Stop, after, show};
 
 /// How long a script with handlers or timers runs on, and whether one
@@ -61,6 +63,10 @@ pub fn listen(listener: &Listener) -> Done {
     if listener.handlers.hear(POSITION) {
         listener.inbox.borrow_mut().hear_positions()?;
     }
+    for cue in listener.handlers.cues() {
+        let block = listener.inbox.borrow_mut().cue(&cue)?;
+        listener.handlers.cued(&cue, block);
+    }
     (listener.say)(&format!("{}; Ctrl-C to stop", going(handlers, timers)))?;
     let by = listener.listening.at_most.map(after);
     loop {
@@ -72,6 +78,7 @@ pub fn listen(listener: &Listener) -> Done {
             listener.ran("a timer", ran)?;
         }
         let due = listener.timers.next_due();
+        let handlers = listener.handlers.count();
         if by.is_some_and(|by| by <= Instant::now()) || (handlers == 0 && due.is_none()) {
             return Ok(());
         }
@@ -110,15 +117,25 @@ fn going(handlers: usize, timers: usize) -> String {
 }
 
 impl Listener<'_> {
-    /// Run the handlers for the event of type `kind` with `payload`:
-    /// whether listening's over, Plays quitting or the window heard
-    /// closing.
+    /// Run the handlers for the event of type `kind` with `payload`, those
+    /// for a cue once: whether listening's over, Plays quitting or the
+    /// window heard closing. A block closing takes the cues on it, unrun.
     fn hear(&self, kind: &str, payload: &Value) -> Result<bool, Stop> {
-        for handler in self.handlers.for_kind(kind) {
+        let handlers = self.handlers.for_kind(kind);
+        if is_cue(kind) {
+            self.handlers.spend(kind);
+        }
+        for handler in handlers {
             let ran = self
                 .programs
                 .part(|| super::handlers::call(self, payload, &handler));
             self.ran(&format!("a {kind} handler"), ran)?;
+        }
+        if kind == "block.closed" {
+            let block = payload.get("block_id").map(show::text).unwrap_or_default();
+            for cue in self.handlers.block_closed(&block) {
+                (self.say)(&format!("plays: {cue}: the block closed before it"))?;
+            }
         }
         let window = payload.get("window_id").map(show::text);
         let closed = kind == "window.closed" && window.as_deref() == self.window;

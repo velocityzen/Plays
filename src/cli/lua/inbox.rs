@@ -4,8 +4,9 @@
 //!
 //! Events come on a connection of their own, read on a thread of its own
 //! and subscribed at the script's first call or wait, so calls and events
-//! don't wait on each other: everything's, or with `-w` that window's, and
-//! where files are once a wait or a handler is for that. A wait hears what
+//! don't wait on each other: everything's, or with `-w` that window's,
+//! where files are once a wait or a handler is for that, and the cues a
+//! wait or a handler is for, in whatever window. A wait hears what
 //! happens from the start of the last call before it, in a handler the
 //! last in it; with none, from its own start, or in a handler from its
 //! event. Each event once, in order, those a wait passes over gone, for
@@ -115,6 +116,15 @@ impl Inbox {
             self.positions = true;
         }
         Ok(())
+    }
+
+    /// Hear the cue `name` from now on: its block reaching a time or a
+    /// frame, once. The block's id.
+    pub fn cue(&mut self, name: &str) -> Result<String, Failure> {
+        self.connect()?;
+        let id = self.connection()?.cue(name)?;
+        let set = self.answer(&id)?;
+        Ok(set["block"].as_str().unwrap_or_default().to_owned())
     }
 
     /// The connection events come on, subscribed, unless it is already.

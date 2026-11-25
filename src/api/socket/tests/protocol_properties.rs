@@ -13,6 +13,7 @@ fn keys() -> Vec<String> {
     .chain([
         "scope",
         "positions",
+        "name",
         "urls",
         "type",
         "payload",
@@ -45,6 +46,7 @@ fn request(tc: &TestCase) -> Request {
         gs::just(Ask::Commands),
         gs::just(Ask::Unsubscribe),
         gs::text().map(|command| Ask::Describe { command }),
+        gs::text().map(|name| Ask::Cue { name }),
         call,
         gs::vecs(gs::text())
             .max_size(2)

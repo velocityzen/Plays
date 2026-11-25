@@ -106,6 +106,8 @@ plays.playback.next_file()
   that type whose fields equal the filter's, numbers by their values. A
   function filter matches when it returns true. Events and their fields
   are in [commands.md](commands.md#events).
+- A cue's, `block.<block>.position@120.5s` or `…@345f`: the block
+  reaching that time or frame ([lua-events.md](lua-events.md#cues)).
 - nil and "timeout" once `timeout` seconds are up; nil and why if Plays
   goes. No timeout waits on.
 - What it hears: what happens from the start of the last call before it,

@@ -1,18 +1,26 @@
 //! `plays events` and `plays wait`: what changes in Plays, printed as it
-//! does, and waiting for one change, such as a block ending.
+//! does, and waiting for one change, such as a block ending, or a block
+//! reaching a time or a frame (a cue: `events::cues`).
 
 use std::time::Duration;
 
 use serde_json::{Value, json};
 
 use super::{Done, Session, Stop, show};
+use crate::api::events::cues::is_cue;
 use crate::api::events::playhead;
 use crate::api::socket::Heard;
 use crate::api::{Error, Target};
 
-/// Print the events heard, everything's or the window's `-w` names, until
-/// `count` have been, if given, or Plays quits: `app.quit`, the last.
-pub fn events(session: &mut Session, positions: bool, count: Option<usize>) -> Done {
+/// Print the events heard, everything's or the window's `-w` names, and
+/// `cues`, until `count` have been, if given, or Plays quits: `app.quit`,
+/// the last.
+pub fn events(
+    session: &mut Session,
+    positions: bool,
+    count: Option<usize>,
+    cues: &[String],
+) -> Done {
     let heard = session
         .options
         .window
@@ -20,6 +28,9 @@ pub fn events(session: &mut Session, positions: bool, count: Option<usize>) -> D
         .map_or(Heard::All, Heard::Window);
     let json = session.options.json;
     session.client()?.subscribe(heard, positions)?;
+    for cue in cues {
+        session.client()?.cue(cue)?;
+    }
     for _ in 0..count.unwrap_or(usize::MAX) {
         let (kind, payload) = session.client()?.next_event()?;
         show::event(session.out, &kind, &payload, json)?;
@@ -31,9 +42,10 @@ pub fn events(session: &mut Session, positions: bool, count: Option<usize>) -> D
 }
 
 /// Wait for an event of type `kind` from the block `-b` names, or else the
-/// window `-w` names, or from anything, and print it; at most `timeout`
-/// seconds, if given. A block that has ended already has, and one closing
-/// first, or Plays quitting, fails the wait.
+/// window `-w` names, or from anything, or for the cue `kind` from the
+/// block it names, and print it; at most `timeout` seconds, if given. A
+/// block that has ended already has, and one closing first, or Plays
+/// quitting, fails the wait.
 pub fn wait(session: &mut Session, kind: &str, timeout: Option<f64>) -> Done {
     let by = match timeout {
         Some(seconds) => match Duration::try_from_secs_f64(seconds) {
@@ -46,7 +58,16 @@ pub fn wait(session: &mut Session, kind: &str, timeout: Option<f64>) -> Done {
     session
         .client()?
         .subscribe(Heard::All, kind == "playback.position")?;
-    let watched = watched(session)?;
+    let watched = if is_cue(kind) {
+        let set = session.client()?.cue(kind)?;
+        Watched {
+            window: set["window"].clone(),
+            block: set["block"].clone(),
+            state: Value::Null,
+        }
+    } else {
+        watched(session)?
+    };
     if let Some(payload) = watched.already(kind) {
         return Ok(show::event(
             session.out,

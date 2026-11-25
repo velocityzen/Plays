@@ -67,6 +67,13 @@ fn reads_each_request_with_what_it_leaves_out_at_its_default() {
             Ask::Unsubscribe,
         ),
         (
+            r#"{"id": 10, "method": "cue", "name": "block.2.position@345f"}"#,
+            json!(10),
+            Ask::Cue {
+                name: "block.2.position@345f".into(),
+            },
+        ),
+        (
             r#"{"id": 8, "method": "hand_over", "urls": ["/a.mkv"]}"#,
             json!(8),
             Ask::HandOver {

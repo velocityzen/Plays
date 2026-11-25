@@ -116,12 +116,19 @@ pub enum Command {
         /// Stop after this many.
         #[arg(long, value_name = "N")]
         count: Option<usize>,
+        /// A block reaching a time or a frame, once, as it does:
+        /// block.<block>.position@120.5s, or …@345f. Again for more.
+        #[arg(long = "cue", value_name = "CUE")]
+        cues: Vec<String>,
     },
     /// Wait for an event from the block (-b) or window (-w) named, such as
-    /// playback.ended, and print it.
+    /// playback.ended, or for a block to reach a time or a frame, and print
+    /// it.
     Wait {
         /// The event's type, as plays events prints it: playback.ended,
-        /// playback.paused, block.closed…
+        /// playback.paused, block.closed…; or a cue, the block named in it
+        /// reaching a time or a frame: block.<block>.position@120.5s, or
+        /// …@345f.
         event: String,
         /// Give up after this many seconds, with exit status 1.
         // So -1 is read as a time, and refused as one, not as an option.

@@ -460,9 +460,9 @@ impl Player {
         self.shared.waits()
     }
 
-    /// The seek generation, for tests to tell whether something seeked.
-    #[cfg(test)]
-    pub(super) fn serial(&self) -> u64 {
+    /// Counts its seeks: each, a scrub's, a step's and a loop's too, is
+    /// another, as a block's cues see (`api::events::cues`).
+    pub fn serial(&self) -> u64 {
         self.shared.serial()
     }
 

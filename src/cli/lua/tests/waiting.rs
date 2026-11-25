@@ -10,7 +10,7 @@ use serde_json::{Value, json};
 use super::*;
 use crate::api;
 use crate::api::socket::tests::serving;
-use crate::cli::tests::{plays, plays_while};
+use crate::cli::tests::{playing_the_clip, plays, plays_while, step};
 use crate::ui::testing::wait_until;
 
 #[test]
@@ -176,6 +176,42 @@ fn a_wait_for_where_a_file_is_hears_positions(cx: &mut TestAppContext) {
         },
     );
     assert_eq!((ran.status, ran.out.trim()), (0, "true"), "{ran:?}");
+}
+
+#[gpui::test]
+fn a_wait_for_a_cue_hears_its_block_reach_it_once(cx: &mut TestAppContext) {
+    let (path, window, mut cx) = serving("lua-wait-cue", cx);
+    playing_the_clip(&mut cx, &path, window);
+    let ran = plays_while(
+        &mut cx,
+        &path,
+        &[
+            "--json",
+            "do",
+            "-e",
+            r#"
+            plays.playback.seek{time = 0}
+            local cue = "block." .. plays.block_id .. ".position@25f"
+            local heard = plays.wait(cue, nil, 10)
+            local again, why = plays.wait(cue, nil, 0.3)
+            local _, missing = plays.wait("block.Attic.position@1s")
+            local _, wrong = plays.wait("block." .. plays.block_id .. ".position@1")
+            return {frame = heard.frame >= 25, block = heard.block_id == plays.block_id,
+              again = again == nil and why, missing = missing, wrong = wrong}
+            "#,
+        ],
+        |cx, _| step(cx),
+    );
+    assert_eq!((ran.status, ran.err.as_str()), (0, ""), "{ran:?}");
+    let heard = ran.json();
+    let wrong = heard["wrong"].as_str().unwrap();
+    assert!(wrong.contains("end it with s"), "{wrong}");
+    assert_eq!(
+        heard,
+        json!({"frame": true, "block": true, "again": "timeout",
+          "missing": "no block Attic", "wrong": wrong}),
+        "once past it, it waits for it to come again"
+    );
 }
 
 #[gpui::test]

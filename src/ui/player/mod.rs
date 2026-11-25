@@ -44,6 +44,7 @@ use super::framing::{Adjustments, Framing};
 use super::subtitles;
 use super::theme::Theme;
 use super::theme::motion::LEVEL_FALLOFF;
+use crate::api::events::cues;
 use crate::api::{self, Id, Invocation, Run};
 use crate::media::decoder::MediaInfo;
 use crate::media::picking::{Picked, Wanted};
@@ -202,6 +203,31 @@ impl PlayerView {
         self.label
             .clone()
             .map_or_else(|| self.title.clone(), SharedString::from)
+    }
+
+    /// Where it is, as the cues set on it watch it: none until its file
+    /// has opened.
+    pub fn moment(&self) -> Option<cues::Moment> {
+        let player = self.playback.local();
+        if !player.is_known() {
+            return None;
+        }
+        let (seeks, _) = self.playback.seeks();
+        Some(cues::Moment {
+            time: self.position(),
+            moves: [self.playback.openings(), seeks, player.serial()],
+            duration: self.duration(),
+            frame_rate: player.info().and_then(|info| info.frame_rate),
+        })
+    }
+
+    /// Tell the cues set on it those it has reached, as it ticked.
+    fn watch_cues(&self, cx: &mut App) {
+        if cues::watched(self.id, cx)
+            && let Some(now) = self.moment()
+        {
+            cues::see(self.id, now, cx);
+        }
     }
 }
 
@@ -539,6 +565,7 @@ impl PlayerView {
         if advanced || was_playing != self.playback.local().is_playing() {
             cx.notify();
         }
+        self.watch_cues(cx);
         self.follow_playlist(cx);
     }
 
@@ -666,6 +693,7 @@ impl PlayerView {
             panic!("{why}");
         }
         self.take_tick(window);
+        self.watch_cues(cx);
 
         let theme = Theme::get(window, cx);
         let settings = cx.global::<Settings>();

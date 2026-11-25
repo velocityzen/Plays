@@ -9,6 +9,7 @@ mod casting_to_chromecast;
 mod casting_to_dlna;
 mod commands;
 mod controls;
+mod cues;
 mod dragging;
 mod drawing;
 mod events;

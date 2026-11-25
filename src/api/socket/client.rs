@@ -173,6 +173,14 @@ impl Client {
         })
     }
 
+    /// Hear, once subscribed, the cue `name`: its block reaching a time or
+    /// a frame. The block's id and its window's.
+    pub fn cue(&mut self, name: &str) -> Result<Value, Failure> {
+        self.request(Ask::Cue {
+            name: name.to_owned(),
+        })
+    }
+
     /// The next event heard, by type, with its payload, waiting for it as
     /// long as it takes.
     pub fn next_event(&mut self) -> Result<(String, Value), Failure> {
@@ -288,6 +296,15 @@ impl Reading {
         let ask = Ask::Subscribe {
             scope: heard,
             positions,
+        };
+        send(&mut self.writer, &mut self.asked, ask)
+    }
+
+    /// Hear the cue `name`, as `Client::cue` does: the id its answer comes
+    /// with.
+    pub fn cue(&mut self, name: &str) -> Result<Value, Failure> {
+        let ask = Ask::Cue {
+            name: name.to_owned(),
         };
         send(&mut self.writer, &mut self.asked, ask)
     }

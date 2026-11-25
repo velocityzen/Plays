@@ -544,6 +544,9 @@ fn refusals(cx: &mut TestAppContext, path: &Path) -> Vec<(u8, String)> {
             describe,
             subscribe,
             Ask::Unsubscribe,
+            Ask::Cue {
+                name: "block.2.position@1s".into(),
+            },
         ]
         .into_iter()
         .filter_map(|ask| client.request(ask).err().map(said))
@@ -579,7 +582,7 @@ fn with_control_off_the_socket_takes_only_files_handed_over(cx: &mut TestAppCont
         !Settings::default().command_line_control,
         "off until Settings turns it on"
     );
-    assert_eq!(refusals(&mut cx, &path), vec![off(); 6], "all but files");
+    assert_eq!(refusals(&mut cx, &path), vec![off(); 7], "all but files");
     let handing = path.clone();
     let handed = talk(&mut cx, move || {
         let clip = OsString::from("tests/fixtures/clip.mp4");
@@ -1019,6 +1022,81 @@ fn events_reach_those_who_subscribe_as_they_happen(cx: &mut TestAppContext) {
         .filter(|(kind, _)| kinds(&apps).contains(&kind.as_str()))
         .collect();
     assert_eq!(heard_by_both, apps.iter().collect::<Vec<_>>());
+}
+
+#[gpui::test]
+fn a_cue_is_told_once_to_the_client_that_set_it_though_it_subscribes_again(
+    cx: &mut TestAppContext,
+) {
+    let (path, window, mut cx) = serving("cues", cx);
+    let early = path.clone();
+    let unheard = talk(&mut cx, move || {
+        let mut client = Client::connect(&early).unwrap();
+        client.cue("block.2.position@1s").map_err(said)
+    });
+    let (status, why) = unheard.unwrap_err();
+    assert_eq!(status, 1);
+    assert!(why.contains("subscribe before"), "{why}");
+
+    window
+        .update(&mut cx, |workspace, _, cx| {
+            workspace.open_paths(vec![fixture("clip.mp4")], cx);
+        })
+        .unwrap();
+    let opened = wait_until(&mut cx, |cx| {
+        window
+            .read_with(cx, |workspace, cx| {
+                let players = workspace.players();
+                let first = players.first();
+                first.is_some_and(|block| block.read(cx).player().is_playing())
+            })
+            .unwrap()
+    });
+    assert!(opened);
+    let block = window
+        .read_with(&cx, |workspace, cx| workspace.players()[0].read(cx).id())
+        .unwrap()
+        .to_string();
+    let name = format!("block.{block}.position@1s");
+    let (set, hearing) = listening(
+        &mut cx,
+        &path,
+        {
+            let name = name.clone();
+            move |client| {
+                client.subscribe(Heard::App, false).unwrap();
+                let set = client.cue(&name);
+                client.subscribe(Heard::App, false).unwrap();
+                set
+            }
+        },
+        {
+            let name = name.clone();
+            move |client| until(client, &name)
+        },
+    );
+    assert_eq!(set.unwrap()["block"], json!(block));
+    for _ in 0..100 {
+        if hearing.is_finished() {
+            break;
+        }
+        cx.executor().advance_clock(Duration::from_millis(100));
+        cx.run_until_parked();
+        thread::sleep(Duration::from_millis(20));
+    }
+    assert!(
+        wait_until(&mut cx, |_| hearing.is_finished()),
+        "it heard it"
+    );
+    let heard = hearing.join().unwrap();
+    let (kind, payload) = heard.last().unwrap();
+    assert_eq!(kind, &name);
+    assert_eq!(payload["block_id"], json!(block));
+    assert!(payload["time"].as_f64().unwrap() >= 1.0, "{payload}");
+    assert_eq!(
+        kinds(&heard).iter().filter(|&&kind| kind == name).count(),
+        1
+    );
 }
 
 #[gpui::test]

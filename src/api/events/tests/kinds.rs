@@ -108,6 +108,7 @@ fn told(kind: &'static str, payload: Value, app: bool, windows: &[Id]) -> Event 
     Event {
         kind,
         payload,
+        cue: None,
         reach: Reach {
             app,
             windows: windows.to_vec(),

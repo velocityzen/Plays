@@ -15,6 +15,7 @@ use gpui::{ExternalPaths, FileDropEvent, TestAppContext, VisualTestContext, Wind
 use serde_json::{Value, json};
 
 use super::*;
+use crate::api::events::cues;
 use crate::api::socket::tests::{serving, socket, talk};
 use crate::ui::testing::{fixture, wait_until};
 use crate::ui::theme::layout::WINDOW_SIZE;
@@ -1181,6 +1182,92 @@ fn waiting_for_a_block_ends_with_its_event_or_says_why_not(cx: &mut TestAppConte
         ran.failed(),
         (1, "plays: the block closed before its playback.ended")
     );
+}
+
+/// Open the clip in `window`, and wait until it plays.
+pub(super) fn playing_the_clip(
+    cx: &mut TestAppContext,
+    path: &Path,
+    window: WindowHandle<Workspace>,
+) {
+    plays(cx, path, &["open", "tests/fixtures/clip.mp4"]);
+    let playing = wait_until(cx, |cx| {
+        window
+            .read_with(cx, |workspace, cx| {
+                let players = workspace.players();
+                let first = players.first();
+                first.is_some_and(|block| block.read(cx).player().is_playing())
+            })
+            .unwrap()
+    });
+    assert!(playing, "the clip plays");
+}
+
+/// The app's clock moving on a step, as a block plays.
+pub(super) fn step(cx: &mut TestAppContext) {
+    cx.executor()
+        .advance_clock(std::time::Duration::from_millis(100));
+    cx.run_until_parked();
+    thread::sleep(std::time::Duration::from_millis(20));
+}
+
+#[gpui::test]
+fn a_cue_is_heard_as_its_block_reaches_it_and_waited_for(cx: &mut TestAppContext) {
+    let (path, window, mut cx) = serving("cli-cue", cx);
+    playing_the_clip(&mut cx, &path, window);
+    let id = window
+        .read_with(&cx, |workspace, cx| workspace.players()[0].read(cx).id())
+        .unwrap();
+    let block = id.to_string();
+    let cue = format!("block.{block}.position@1s");
+    let from_the_start = ["-b", &block, "do", "playback.seek", "time=0"];
+
+    // Among a window's events, though the block is another's: a window of
+    // its own, where nothing else happens.
+    plays(&mut cx, &path, &["window", "new"]);
+    plays(&mut cx, &path, &from_the_start);
+    let ran = plays_while(
+        &mut cx,
+        &path,
+        &["--json", "-w", "2", "events", "--cue", &cue, "--count", "1"],
+        |cx, _| step(cx),
+    );
+    assert_eq!(ran.status, 0, "{ran:?}");
+    let heard = ran.json();
+    assert_eq!(heard["type"], json!(cue), "{ran:?}");
+    assert_eq!(heard["payload"]["block_id"], json!(block));
+    assert!(heard["payload"]["time"].as_f64().unwrap() >= 1.0, "{ran:?}");
+
+    plays(&mut cx, &path, &from_the_start);
+    let ran = plays_while(
+        &mut cx,
+        &path,
+        &["wait", &cue, "--timeout", "10"],
+        |cx, _| step(cx),
+    );
+    assert_eq!(ran.status, 0, "{ran:?}");
+    assert!(ran.out.starts_with(&format!("{cue} window_id=")), "{ran:?}");
+    assert_eq!(ran.out.lines().count(), 1);
+
+    let ran = plays(&mut cx, &path, &["wait", "block.Attic.position@1s"]);
+    assert_eq!(ran.failed(), (3, "plays: no block Attic"));
+    let ran = plays(
+        &mut cx,
+        &path,
+        &["wait", &format!("block.{block}.position@1")],
+    );
+    assert_eq!(ran.status, 2, "{ran:?}");
+
+    let late = format!("block.{block}.position@60s");
+    let ran = plays_while(&mut cx, &path, &["wait", &late], |cx, time| {
+        if time == 0 {
+            let set = wait_until(cx, |cx| cx.update(|cx| cues::watched(id, cx)));
+            assert!(set, "it set its cue");
+            plays(cx, &path, &["block", "close", &block]);
+        }
+    });
+    let closed = format!("plays: the block closed before its {late}");
+    assert_eq!(ran.failed(), (1, closed.as_str()));
 }
 
 /// As Plays quits, `events` prints each window closing, then `app.quit`, and

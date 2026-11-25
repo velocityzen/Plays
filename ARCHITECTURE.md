@@ -361,7 +361,8 @@ flowchart TB
 - `api::run` runs an `Invocation`, answering JSON or an `Error`; keys and
   menu items send one gpui action, `api::Run`; `api::can_run` enables them
 - `src/api/events.rs`, `events/`: change events, found by `events::look`
-  diffing a `Seen` after each command; `kinds.rs` registers each kind
+  diffing a `Seen` after each command; `kinds.rs` registers each kind;
+  `cues.rs`: a block reaching a time or a frame, watched as it ticks
 - `src/api/socket.rs`, `socket/`: the socket, only this user's, taken as
   Plays starts; JSON a line; requests run on the UI thread; a second Plays
   hands files over, all else refused while Settings has the command line

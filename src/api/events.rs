@@ -22,16 +22,21 @@
 //! as they change. Nothing is looked at while no one listens. As the app
 //! quits (`quit`), each window still open is told closing, then `app.quit`,
 //! which every listener hears, one window's too.
+//!
+//! A listener may set cues too (`cues`): a block reaching a time or a
+//! frame, told to it alone, once, as the block ticks there.
 
+pub mod cues;
 pub mod kinds;
 mod seen;
 
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
+use futures::channel::mpsc::UnboundedSender;
 use gpui::{App, Global};
-use serde::Serialize;
+use serde::ser::{Serialize, SerializeStruct, Serializer};
 use serde_json::{Value, json};
 
 pub use kinds::{EventField, EventKind, Heard};
@@ -50,15 +55,27 @@ pub const LOOK_EVERY: Duration = Duration::from_millis(250);
 /// How often a block's position is told, at most, to those who ask.
 pub const POSITION_EVERY: Duration = Duration::from_secs(1);
 
-/// Something that changed.
-#[derive(Clone, Debug, PartialEq, Serialize)]
+/// The kind of a cue's event, whose type is the cue's name.
+pub const CUE: &str = "cue";
+
+/// Something that changed: `{type, payload}`, as it goes out.
+#[derive(Clone, Debug, PartialEq)]
 pub struct Event {
-    #[serde(rename = "type")]
     pub kind: &'static str,
     pub payload: Value,
+    /// A cue's name, its type: for a `CUE`.
+    cue: Option<Arc<str>>,
     /// Who hears it.
-    #[serde(skip)]
     reach: Reach,
+}
+
+impl Serialize for Event {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut event = serializer.serialize_struct("Event", 2)?;
+        event.serialize_field("type", self.name())?;
+        event.serialize_field("payload", &self.payload)?;
+        event.end()
+    }
 }
 
 /// Who hears an event: those listening to the app's, those listening to
@@ -71,11 +88,28 @@ struct Reach {
 }
 
 impl Event {
+    /// Its type: its kind, or a cue's name.
+    pub fn name(&self) -> &str {
+        self.cue.as_deref().unwrap_or(self.kind)
+    }
+
+    /// The cue `name` reached, with `payload`: told only to the listener
+    /// that set it.
+    fn cue(name: Arc<str>, payload: Value) -> Self {
+        Self {
+            kind: CUE,
+            payload,
+            cue: Some(name),
+            reach: Reach::default(),
+        }
+    }
+
     /// One of the app's.
     fn app(kind: &'static str, payload: Value) -> Self {
         Self {
             kind,
             payload,
+            cue: None,
             reach: Reach {
                 app: true,
                 ..Reach::default()
@@ -88,6 +122,7 @@ impl Event {
         Self {
             kind,
             payload,
+            cue: None,
             reach: Reach {
                 app: true,
                 windows: Vec::new(),
@@ -101,6 +136,7 @@ impl Event {
         Self {
             kind,
             payload: with_ids(payload, window, None),
+            cue: None,
             reach: Reach {
                 windows: vec![window.id],
                 ..Reach::default()
@@ -121,6 +157,7 @@ impl Event {
         Self {
             kind,
             payload: with_ids(payload, window, Some(block)),
+            cue: None,
             reach: Reach {
                 windows: vec![window.id],
                 ..Reach::default()
@@ -203,8 +240,20 @@ pub fn register(cx: &mut App) {
 
 /// Hear `scope`'s events from now on, and, with `positions`, where each
 /// block is as it plays. Dropping what this hands back stops them.
-pub fn listen(scope: Scope, positions: bool, cx: &mut App) -> UnboundedReceiver<Event> {
-    let (sender, receiver) = unbounded();
+#[cfg(test)]
+pub fn listen(
+    scope: Scope,
+    positions: bool,
+    cx: &mut App,
+) -> futures::channel::mpsc::UnboundedReceiver<Event> {
+    let (sender, receiver) = futures::channel::mpsc::unbounded();
+    listen_into(scope, positions, sender, cx);
+    receiver
+}
+
+/// Hear `scope`'s events from now on, as `listen` does, sent to `sender`,
+/// to which the cues it sets are told too (`cues::cue`).
+pub fn listen_into(scope: Scope, positions: bool, sender: UnboundedSender<Event>, cx: &mut App) {
     if !listened(cx) {
         // What changes is told from now on.
         let seen = see(cx);
@@ -221,7 +270,6 @@ pub fn listen(scope: Scope, positions: bool, cx: &mut App) -> UnboundedReceiver<
         positions,
         sender,
     });
-    receiver
 }
 
 /// Whether anyone listens, forgetting those who stopped; when no one does,
@@ -305,6 +353,12 @@ pub fn look(cx: &mut App) {
         tell(&event, cx);
     }
     positions(&seen, cx);
+    let open: Vec<Id> = seen
+        .windows
+        .iter()
+        .flat_map(|window| window.blocks.iter().map(|block| block.id))
+        .collect();
+    cues::forget_closed(&open, cx);
 }
 
 /// What the app is like now.

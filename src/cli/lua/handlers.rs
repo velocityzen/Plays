@@ -1,7 +1,8 @@
 //! `plays.on`: handlers a script registers as it first runs, for events by
 //! their type, each run as one comes once that run is over (`listening`).
 //! One runs at a time, so a wait or a sleep in one holds the others, and a
-//! handler's calls act on its event's window and block.
+//! handler's calls act on its event's window and block. One for a cue runs
+//! once, as it's reached, and is gone; or as its block closes, unrun.
 
 use std::cell::{Cell, RefCell};
 
@@ -11,6 +12,7 @@ use serde_json::Value;
 use super::listening::Listener;
 use super::to_lua;
 use crate::api::Target;
+use crate::api::events::cues::is_cue;
 use crate::cli::show;
 
 /// The handlers a script registers, by the type of event each is for, in
@@ -20,6 +22,8 @@ pub struct Handlers {
     each: RefCell<Vec<(String, Function)>>,
     /// Whether the script's first run is over: none registered then.
     closed: Cell<bool>,
+    /// The cues set for them, and their blocks' ids.
+    cues: RefCell<Vec<(String, String)>>,
 }
 
 impl Handlers {
@@ -41,9 +45,52 @@ impl Handlers {
         self.each.borrow().len()
     }
 
+    /// How many there are, those for cues gone left out.
+    pub fn count(&self) -> usize {
+        self.each.borrow().len()
+    }
+
     /// Whether any is for events of type `kind`.
     pub fn hear(&self, kind: &str) -> bool {
         self.each.borrow().iter().any(|(of, _)| of == kind)
+    }
+
+    /// The types they're for that are cues', each once.
+    pub fn cues(&self) -> Vec<String> {
+        let mut cues: Vec<String> = Vec::new();
+        for (kind, _) in self.each.borrow().iter() {
+            if is_cue(kind) && !cues.contains(kind) {
+                cues.push(kind.clone());
+            }
+        }
+        cues
+    }
+
+    /// The cue `kind` is set, on the block with id `block`.
+    pub fn cued(&self, kind: &str, block: String) {
+        self.cues.borrow_mut().push((kind.to_owned(), block));
+    }
+
+    /// Those for the cue `kind`, which is gone, are too.
+    pub fn spend(&self, kind: &str) {
+        self.each.borrow_mut().retain(|(of, _)| of != kind);
+        self.cues.borrow_mut().retain(|(cue, _)| cue != kind);
+    }
+
+    /// The cues set on the block with id `block`, which closed: gone, as
+    /// are their handlers, unrun.
+    pub fn block_closed(&self, block: &str) -> Vec<String> {
+        let gone: Vec<String> = self
+            .cues
+            .borrow()
+            .iter()
+            .filter(|(_, on)| on == block)
+            .map(|(cue, _)| cue.clone())
+            .collect();
+        for cue in &gone {
+            self.spend(cue);
+        }
+        gone
     }
 
     /// Those for events of type `kind`.

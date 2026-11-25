@@ -260,7 +260,11 @@ impl Session<'_> {
             Command::Window(window) => windows::window(self, window),
             Command::Block(block) => windows::block(self, block),
             Command::Open { paths, new_window } => self.open(&paths, new_window),
-            Command::Events { positions, count } => events::events(self, positions, count),
+            Command::Events {
+                positions,
+                count,
+                cues,
+            } => events::events(self, positions, count, &cues),
             Command::Wait { event, timeout } => events::wait(self, &event, timeout),
             Command::Settings(settings) => self.settings(settings),
             Command::Keymap => self.keymap(),

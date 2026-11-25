@@ -1167,6 +1167,8 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 What changes in Plays, its windows and their blocks, by namespace: `plays events` prints each as it comes, and `plays wait` waits for one. Each is a JSON object, `{type, payload}`. The payload of one about a window starts with `window_id` and `window_title`, as its title bar shows it; of one about a block, with `block_id` and `block_title` too, as its header shows it. A listener hears the app's, one window's, or all of them. Readers ignore events and fields they don't know.
 
+A cue is a block reaching a time or a frame: `block.<block>.position@120.5s`, or `…@345f`, the block by id, label or number. `plays wait` waits for one and `plays events --cue` hears them: each once, the cue its type, with `playback.position`'s payload.
+
 ## app
 
 ### app.command_run

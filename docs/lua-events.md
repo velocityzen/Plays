@@ -36,7 +36,37 @@ plays do solo.lua   # listening: 1 handler; Ctrl-C to stop
 - Types aren't checked: a handler for one misspelled never runs.
 - `playback.position`, where a file is as it plays, is heard once a wait
   or a handler is for it, at most once a second.
+- Cues, a block reaching a time or a frame, by their names (see
+  [Cues](#cues)).
 - Everything's events; with `-w`, that window's.
+
+## Cues
+
+```lua
+-- stop-at.lua: the block plays on to the frame `frame` names, and pauses
+local cue = ("block.%s.position@%df"):format(plays.block_id, plays.args.frame)
+plays.on(cue, function(ctx, event)
+  plays.playback.play_pause()
+  plays.log(("paused at frame %d, %.3fs"):format(event.frame, event.time))
+end)
+```
+
+```bash
+plays -b 2 do stop-at.lua frame=345
+```
+
+- `block.<block>.position@120.5s`, or `…@345f`: a block reaching a time,
+  in seconds, or a frame, from 0, as `frame` counts them. The block by
+  id, label or number, as `-b` names it. Wherever an event's type goes:
+  `plays.wait`, `plays.on`, `plays wait`, `plays events --cue`.
+- Heard once, in whatever window, as the block plays on to it or past it,
+  or lands on it, within a frame: a seek, a step, the next loop. Not a
+  seek past it. Set past it, once the block is back before it, playing on.
+- Its payload: `playback.position`'s, told as the block ticks there, not
+  once a second.
+- A handler for one runs once, then is gone; as its block closes, it's
+  gone unrun, said on stderr. A wait for one fails as its block closes.
+- Refused: a block that isn't there, and a frame in sound alone.
 
 ## Running on
 

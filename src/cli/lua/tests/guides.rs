@@ -11,7 +11,7 @@ use mlua::Lua;
 use serde_json::{Value, json};
 
 use crate::api::socket::tests::serving;
-use crate::cli::tests::{plays, plays_while};
+use crate::cli::tests::{playing_the_clip, plays, plays_while, step};
 use crate::files;
 use crate::ui::testing::{fixture, wait_until};
 use crate::ui::workspace::Workspace;
@@ -241,4 +241,33 @@ fn the_scripts_the_events_guide_names_do_as_it_says(cx: &mut TestAppContext) {
         logged.lines().count() == 1 && logged.trim_end().ends_with(&format!(" {tone}")),
         "{logged:?}"
     );
+}
+
+#[gpui::test]
+fn the_cue_the_events_guide_sets_pauses_the_block_at_its_frame(cx: &mut TestAppContext) {
+    let (path, window, mut cx) = serving("lua-guide-cue", cx);
+    let folder = Folder::new("lua-guide-cue");
+    playing_the_clip(&mut cx, &path, window);
+    plays(&mut cx, &path, &["do", "playback.seek", "time=0"]);
+    let stop_at = folder.script(EVENTS, "stop-at.lua");
+    let ran = plays_while(
+        &mut cx,
+        &path,
+        &["do", "--for", "10", &stop_at, "frame=30"],
+        |cx, _| step(cx),
+    );
+    let (listening, paused) = ran.err.split_once('\n').unwrap_or_default();
+    assert_eq!(
+        (ran.status, listening),
+        (0, "listening: 1 handler; Ctrl-C to stop"),
+        "its one handler run, it ends: {ran:?}"
+    );
+    assert!(paused.starts_with("paused at frame 3"), "{ran:?}");
+    let block = returned(
+        &mut cx,
+        &path,
+        "local b = plays.block.inspect() return {playing = b.playing, position = b.position}",
+    );
+    assert_eq!(block["playing"], json!(false));
+    assert!(block["position"].as_f64().unwrap() >= 1.2, "{block}");
 }

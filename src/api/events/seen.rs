@@ -108,11 +108,16 @@ pub fn playhead(time: f64, duration: Option<f64>, frame_rate: Option<f64>) -> Va
     let position = duration
         .filter(|&duration| duration > 0.0)
         .map(|duration| (time / duration).clamp(0.0, 1.0));
-    // A time before the start counts as the first frame's.
     let frame = frame_rate
         .filter(|&fps| fps > 0.0)
-        .map(|fps| (time * fps + FRAME_SLACK).floor() as u64);
+        .map(|fps| frame_at(time, fps));
     json!({"position": position, "time": time, "frame": frame})
+}
+
+/// The number of the frame showing at `time` seconds, from 0, at `fps`
+/// frames a second: a time before the start counts as the first frame's.
+pub fn frame_at(time: f64, fps: f64) -> u64 {
+    (time * fps + FRAME_SLACK).floor() as u64
 }
 
 /// The events between `old` and `new`, in the order they're told: the

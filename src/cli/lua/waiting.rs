@@ -9,6 +9,7 @@ use serde_json::{Map, Value};
 
 use super::Answer;
 use super::inbox::Inbox;
+use crate::api::events::cues::is_cue;
 use crate::cli::after;
 
 /// What a wait comes back with once its time is up.
@@ -24,8 +25,9 @@ pub fn sleep(seconds: f64) -> mlua::Result<()> {
 }
 
 /// `plays.wait`: the next event of type `kind` that `filter`, if given,
-/// matches, waiting at most `timeout` seconds, if given. Its payload, or
-/// nil and why not.
+/// matches, waiting at most `timeout` seconds, if given; or, for a cue, its
+/// block reaching it, which fails as the block closes first. Its payload,
+/// or nil and why not.
 pub fn wait(
     lua: &Lua,
     inbox: &RefCell<Inbox>,
@@ -36,20 +38,28 @@ pub fn wait(
         None => None,
     };
     let filter = Filter::read(lua, filter)?;
+    let mut block = None;
+    if is_cue(&kind) {
+        match inbox.borrow_mut().cue(&kind) {
+            Ok(id) => block = Some(id),
+            Err(failure) => return Ok(Answer(Err(failure.to_string()))),
+        }
+    }
     if kind == POSITION
         && let Err(failure) = inbox.borrow_mut().hear_positions()
     {
         return Ok(Answer(Err(failure.to_string())));
     }
     inbox.borrow_mut().pass_over_told();
-    heard(lua, inbox, &kind, &filter, by)
+    heard(lua, inbox, (&kind, block.as_deref()), &filter, by)
 }
 
-/// The next event of type `kind` that `filter` matches, heard by `by`.
+/// The next event of type `kind` that `filter` matches, heard by `by`;
+/// none once the block `cued`, if given, has closed.
 fn heard(
     lua: &Lua,
     inbox: &RefCell<Inbox>,
-    kind: &str,
+    (kind, cued): (&str, Option<&str>),
     filter: &Filter,
     by: Option<Instant>,
 ) -> mlua::Result<Answer> {
@@ -58,7 +68,13 @@ fn heard(
         let next = inbox.borrow_mut().next(by);
         let payload = match next {
             Ok(Some((heard, payload))) if heard == kind => payload,
-            Ok(Some(_)) => continue,
+            Ok(Some((heard, payload))) => {
+                if heard == "block.closed" && cued.is_some_and(|block| payload["block_id"] == block)
+                {
+                    return Ok(Answer(Err(format!("the block closed before {kind}"))));
+                }
+                continue;
+            }
             Ok(None) => return Ok(Answer(Err(TIMEOUT.into()))),
             Err(failure) => return Ok(Answer(Err(failure.to_string()))),
         };

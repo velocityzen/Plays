@@ -8,7 +8,7 @@ use gpui::TestAppContext;
 use crate::api;
 use crate::api::socket::tests::serving;
 use crate::cli::show;
-use crate::cli::tests::{plays, plays_while};
+use crate::cli::tests::{playing_the_clip, plays, plays_while, step};
 use crate::ui::testing::wait_until;
 
 /// What stderr says as a script with `count` handlers starts listening.
@@ -93,6 +93,46 @@ fn a_handler_failing_is_said_or_with_fail_fast_ends_the_script(cx: &mut TestAppC
     );
     let said = format!("{}{late}", listening("1 handler"));
     assert_eq!((ran.status, ran.err.as_str()), (1, said.as_str()));
+}
+
+#[gpui::test]
+fn a_handler_for_a_cue_runs_once_and_one_whose_block_closes_never(cx: &mut TestAppContext) {
+    let (path, window, mut cx) = serving("lua-on-cue", cx);
+    playing_the_clip(&mut cx, &path, window);
+    let code = r#"
+        plays.playback.seek{time = 0}
+        local block = plays.block_id
+        plays.on("block." .. block .. ".position@0.5s", function(ctx, event)
+          print("reached", ctx.block_id == block, event.time >= 0.5)
+          plays.block.close{block_id = block}
+        end)
+        plays.on("block." .. block .. ".position@1.5s", function() print("never") end)
+    "#;
+    let ran = plays_while(
+        &mut cx,
+        &path,
+        &["do", "--for", "10", "-e", code],
+        |cx, _| step(cx),
+    );
+    let block = window
+        .read_with(&cx, |workspace, _| workspace.players().len())
+        .unwrap();
+    assert_eq!(block, 0, "closed");
+    let (said, closed) = ran.err.split_once('\n').unwrap_or_default();
+    assert_eq!(
+        (ran.status, ran.out.as_str(), said),
+        (
+            0,
+            "reached\ttrue\ttrue\n",
+            listening("2 handlers").trim_end()
+        ),
+        "{ran:?}"
+    );
+    assert!(
+        closed.starts_with("plays: block.")
+            && closed.ends_with(".position@1.5s: the block closed before it\n"),
+        "no handler left, it ended: {ran:?}"
+    );
 }
 
 #[gpui::test]
