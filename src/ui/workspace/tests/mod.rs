@@ -38,6 +38,7 @@ use crate::api::commands::window::show_on_display;
 use crate::api::{self, Invocation};
 use crate::media::tracks::TrackKind;
 use crate::settings::{FloatOnTop, FullScreen, PanelLook, Settings};
+use crate::ui::components::ComponentSize;
 use crate::ui::pip::PipEvent;
 use crate::ui::player::PlayerView;
 use crate::ui::settings::SettingsView;
@@ -45,6 +46,7 @@ use crate::ui::testing::{
     self, OPEN_WAIT, click, double_click, find, fixture, hover, press, shows, wait_until,
 };
 use crate::ui::theme::backdrop;
+use crate::ui::theme::controls::SLIDER_KNOB;
 use crate::ui::theme::layout::{
     AUDIO_WINDOW_SIZE, BLOCK_GAP, LOGO_MAX, WINDOW_GAP, WINDOW_MIN_SIZE, WINDOW_SIZE,
 };
@@ -455,6 +457,40 @@ fn a_file_with_chapters_goes_from_one_to_the_next_and_marks_them(cx: &mut TestAp
     assert!(!shows(&mut cx, "notch-2"));
     cx.update(|_, cx| Settings::update(cx, false, |s| s.chapter_marks = false));
     assert!(!shows(&mut cx, "notch-0"), "unless Settings say not to");
+}
+
+#[gpui::test]
+fn the_seek_bar_names_the_chapter_under_the_mouse(cx: &mut TestAppContext) {
+    let (window, mut cx) = testing::start(cx);
+    open(window, &mut cx, &["clip-chapters.mkv"], false);
+    let view = window
+        .read_with(&cx, |workspace, _| workspace.blocks[0].view.clone())
+        .unwrap();
+    // Paused, its controls show.
+    view.update(&mut cx, |view, _| view.pause());
+    let duration = view.read_with(&cx, |view, _| view.duration()).unwrap();
+    let bar = find(&mut cx, "seek");
+    // Where the knob would be at `time`: it's inset by half its size.
+    let inset = ComponentSize::Medium.pick(SLIDER_KNOB) / 2.;
+    let at = |time: f64| {
+        let travel = bar.size.width - inset * 2.;
+        point(
+            bar.left() + inset + travel * (time / duration) as f32,
+            bar.center().y,
+        )
+    };
+    let hover_at = |cx: &mut VisualTestContext, time: f64| {
+        cx.simulate_mouse_move(at(time), None, Modifiers::none());
+        cx.run_until_parked();
+    };
+
+    for (time, name) in [(0.4, "Opening"), (1.1, "Middle"), (1.7, "End")] {
+        hover_at(&mut cx, time);
+        assert_eq!(drawn_in(&mut cx, "seek-tip"), [name], "at {time}");
+    }
+    cx.update(|_, cx| Settings::update(cx, false, |s| s.chapter_marks = false));
+    hover_at(&mut cx, 1.1);
+    assert!(!shows(&mut cx, "seek-tip"), "unless Settings say not to");
 }
 
 /// The backdrops the window draws now: where, and how they look.

@@ -503,6 +503,9 @@ pub mod controls {
     pub const METER_HEIGHT: [Pixels; 3] = [px(3.), px(4.), px(6.)];
     /// A notch cut across a slider's track, as where a chapter starts.
     pub const SLIDER_NOTCH: Pixels = px(2.);
+    /// How far above a slider its tip is: over the seek bar, a little above
+    /// the controls' panel.
+    pub const SLIDER_TIP_GAP: Pixels = px(12.);
     /// A switch, and the room around its knob, which fills the rest of its
     /// height.
     pub const SWITCH: [Size<Pixels>; 3] = [

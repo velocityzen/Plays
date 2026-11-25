@@ -3,7 +3,7 @@
 //! forward and the next file, and tracks, loop and volume.
 
 use gpui::prelude::*;
-use gpui::{AnyElement, Context, Corner, Div, Pixels, Window, div, px};
+use gpui::{AnyElement, App, Context, Corner, Div, Pixels, SharedString, Window, div, px};
 use serde_json::{Value, json};
 
 use super::tracks::{close_tracks, has_track_choice};
@@ -62,6 +62,7 @@ impl PlayerView {
             Some(d) if cx.global::<Settings>().chapter_marks => chapters::marks(chapters, d),
             _ => Vec::new(),
         };
+        let tip = self.chapter_tip(duration, cx);
         let play_icon = if self.is_playing() {
             "pause"
         } else if self.has_ended() {
@@ -90,7 +91,7 @@ impl PlayerView {
                     .flex_col()
                     .gap(CONTROLS_GAP)
                     .when(!live, |this| {
-                        this.child(self.render_seek_bar(progress, notches, theme, cx))
+                        this.child(self.render_seek_bar(progress, notches, tip, theme, cx))
                     })
                     .child(
                         div()
@@ -106,11 +107,13 @@ impl PlayerView {
             )
     }
 
-    /// The seek bar, with a notch where each chapter starts.
+    /// The seek bar, with a notch where each chapter starts, and the name
+    /// of the one under the mouse.
     fn render_seek_bar(
         &self,
         progress: f32,
         notches: Vec<f32>,
+        tip: Option<impl Fn(f32) -> Option<SharedString> + 'static>,
         theme: &Theme,
         cx: &mut Context<Self>,
     ) -> Div {
@@ -119,8 +122,23 @@ impl PlayerView {
                 .overlay()
                 .fill(theme.accent)
                 .notches(notches)
+                .when_some(tip, Slider::tip)
                 .on_change(cx.listener(Self::on_seek)),
         )
+    }
+
+    /// The name of the chapter at each point along the seek bar, from 0 to
+    /// 1, while Settings mark them on it.
+    fn chapter_tip(
+        &self,
+        duration: Option<f64>,
+        cx: &App,
+    ) -> Option<impl Fn(f32) -> Option<SharedString> + 'static> {
+        let marked = cx.global::<Settings>().chapter_marks;
+        let duration = duration.filter(|_| marked)?;
+        // The tip keeps what the file holds, so it's had again.
+        let info = self.playback.local().info()?;
+        Some(move |at: f32| chapter_name(&info.chapters, f64::from(at) * duration).map(Into::into))
     }
 
     /// The buttons on the right: casting, tracks, loop, and the volume.
@@ -321,10 +339,16 @@ fn time_label(position: f64, duration: Option<f64>, chapters: &[Chapter]) -> Str
         Some(d) => format!("{} / {}", format_time(position), format_time(d)),
         None => format_time(position),
     };
-    match chapters::at(chapters, position).filter(|_| chapters.len() > 1) {
-        Some(index) => format!("{time} · {}", chapters[index].name(index)),
+    match chapter_name(chapters, position) {
+        Some(name) => format!("{time} · {name}"),
         None => time,
     }
+}
+
+/// The name of the chapter `time` is in, for a file of several.
+fn chapter_name(chapters: &[Chapter], time: f64) -> Option<String> {
+    let index = chapters::at(chapters, time).filter(|_| chapters.len() > 1)?;
+    Some(chapters[index].name(index))
 }
 
 pub fn format_time(seconds: f64) -> String {

@@ -82,7 +82,7 @@ impl Pane for PlaybackPane {
                 ),
                 row(
                     "Show chapters on the seek bar",
-                    Some("Where each part of a file with chapters starts".into()),
+                    Some("Where each chapter starts, and its name under the mouse".into()),
                     theme,
                     Switch::new("chapter-marks", s.chapter_marks)
                         .on_toggle(|&on, _, cx| set("chapter_marks", on, cx)),
