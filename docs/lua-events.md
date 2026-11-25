@@ -33,6 +33,8 @@ plays do solo.lua   # listening: 1 handler; Ctrl-C to stop
 
 - Every event in [commands.md](commands.md#events), by its type, as
   `playback.ended` or `window.closed`, and the fields of its payload.
+- A feature's `.on` and `.off`, as `window.full_screen.on`: told as it
+  turns on or off, whatever turned it, a command, a click or Settings.
 - Types aren't checked: a handler for one misspelled never runs.
 - `playback.position`, where a file is as it plays, is heard once a wait
   or a handler is for it, at most once a second.
@@ -139,7 +141,14 @@ plays.on("playback.ended", function(ctx, event)
 end)
 ```
 
+```lua
+-- clean.lua: nothing over the video while a window is full screen
+plays.on("window.full_screen.on", function() plays.window.ui.off() end)
+plays.on("window.full_screen.off", function() plays.window.ui.on() end)
+```
+
 ```bash
 plays do opened.lua to=$HOME/plays.log --for 8h
 plays do ended.lua
+plays do clean.lua
 ```

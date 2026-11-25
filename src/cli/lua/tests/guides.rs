@@ -13,6 +13,7 @@ use serde_json::{Value, json};
 use crate::api::socket::tests::serving;
 use crate::cli::tests::{playing_the_clip, plays, plays_while, step};
 use crate::files;
+use crate::settings::OverVideo;
 use crate::ui::testing::{self, fixture, wait_until};
 use crate::ui::workspace::Workspace;
 
@@ -260,6 +261,41 @@ fn the_scripts_the_events_guide_names_do_as_it_says(cx: &mut TestAppContext) {
         logged.lines().count() == 1 && logged.trim_end().ends_with(&format!(" {tone}")),
         "{logged:?}"
     );
+}
+
+#[gpui::test]
+fn the_events_guides_clean_script_hides_the_panels_while_the_window_is_full_screen(
+    cx: &mut TestAppContext,
+) {
+    let (path, window, mut cx) = serving("lua-guide-clean", cx);
+    let folder = Folder::new("lua-guide-clean");
+    open(&mut cx, &path, window, &["tests/fixtures/clip.mp4"], 1);
+    let shown = |cx: &mut TestAppContext| {
+        window
+            .read_with(cx, |workspace, _| workspace.over_video())
+            .unwrap()
+    };
+
+    let clean = folder.script(EVENTS, "clean.lua");
+    let mut full_screen = None;
+    let ran = plays_while(&mut cx, &path, &["do", "--for", "2", &clean], |cx, time| {
+        if time == 10 {
+            plays(cx, &path, &["do", "window.full_screen.on"]);
+        }
+        if time == 40 {
+            full_screen = Some(shown(cx));
+            plays(cx, &path, &["do", "window.full_screen.off"]);
+        }
+        cx.run_until_parked();
+        std::thread::sleep(Duration::from_millis(20));
+    });
+    assert_eq!(
+        (ran.status, ran.err.as_str()),
+        (0, "listening: 2 handlers; Ctrl-C to stop\n"),
+        "{ran:?}"
+    );
+    assert_eq!(full_screen, Some(OverVideo::NONE), "none in full screen");
+    assert_eq!(shown(&mut cx), OverVideo::default(), "all once out of it");
 }
 
 #[gpui::test]

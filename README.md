@@ -205,6 +205,7 @@ plays -w Kitchen block ls                 # the window labeled Kitchen
 plays do playback.seek time=90            # any command, by its id
 plays do seek.lua time=90                 # a Lua script; -e CODE, - for stdin
 plays -b 2 do audio.set_volume volume=40  # on the second block
+plays do window.full_screen.on            # each feature: .on, .off, .toggle
 plays wait playback.ended -b 1            # until the first block ends
 plays wait block.1.position@90s           # until it plays to 1:30
 plays events --json                       # every change, a JSON line each

@@ -75,6 +75,7 @@ plays do -e 'print(plays.block.inspect().title)'   # talk.mkv
 ```lua
 plays.playback.seek{time = 90}            -- a command, by its id
 plays.call("playback.seek", {time = 90})  -- the same
+plays.playback.loop.on()                  -- looping, unless it is already
 local block = plays.block.inspect()
 print(block.title, block.position, block.duration)
 ```
@@ -84,6 +85,9 @@ print(block.title, block.position, block.duration)
   `window_id` and `block_id` among its arguments name another, by id,
   label or number.
 - What the command hands back, alone. `plays.null`: null, to send one.
+- Each feature turned on and off, as looping or full screen, has three:
+  `<feature>.toggle`, `.on` and `.off`. `.on` and `.off` leave it as it
+  is if it is already.
 - One that fails hands back nil and why, and the script goes on, or
   `assert` ends it there. `plays.wait`, `plays.exec`, `plays.ls` and
   `plays.json` hand back the same way.

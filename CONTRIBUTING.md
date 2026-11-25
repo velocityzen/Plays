@@ -346,6 +346,9 @@ time); Vulkan can be software (lavapipe). It uses `Xvfb`, `openbox`,
   description that is a sentence, and its arguments named once. Every
   event is registered once, named in its namespace as commands are
   (`playback.ended`), with a sentence for it and each field.
+- Each feature turned on and off has the commands `<feature>.toggle`,
+  `.on` and `.off`, `.on` and `.off` doing nothing if it already is, and
+  the events `<feature>.on` and `.off`, told however it turns.
 - Commands, events, arguments, namespaces and help name only windows and
   blocks, a block being what shows a player.
 - Debug builds have a Developer menu: look over its Component Gallery
