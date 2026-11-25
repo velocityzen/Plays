@@ -222,6 +222,13 @@ fn block_ls_says_whether_a_blocks_file_opened_is_opening_or_couldnt(cx: &mut Tes
     let listed = state(&mut cx);
     assert!(settled, "{listed:?}");
     assert_eq!(listed[2], (json!(false), Value::Null), "still opening");
+    let ids = block_ids(window, &cx);
+    let opening = Invocation::new("block.inspect").on_block(ids[2].clone());
+    let inspected = TestAppContext::update(&cx, |cx| api::run(opening, cx)).unwrap();
+    assert_eq!(
+        inspected["buffering"], true,
+        "waiting for what it plays from"
+    );
     assert!(
         listed[1].0 == false && listed[1].1.as_str().is_some_and(|why| !why.is_empty()),
         "couldn't, and why: {listed:?}"
@@ -232,6 +239,23 @@ fn block_ls_says_whether_a_blocks_file_opened_is_opening_or_couldnt(cx: &mut Tes
     drop(std::fs::File::create(&waiting).unwrap());
     let failed = wait_until(&mut cx, |cx| !state(cx)[2].1.is_null());
     assert!(failed, "{:?}", state(&mut cx));
+}
+
+/// Tick `window`'s blocks, as drawing does, until none is buffering: a
+/// seek has its frame. Whether that was in time.
+fn buffered(window: WindowHandle<Workspace>, cx: &mut TestAppContext) -> bool {
+    wait_until(cx, |cx| {
+        window
+            .update(cx, |workspace, _, cx| {
+                workspace.players().iter().all(|view| {
+                    view.update(cx, |view, cx| {
+                        view.background_tick(cx);
+                        !view.player().is_buffering()
+                    })
+                })
+            })
+            .unwrap()
+    })
 }
 
 #[gpui::test]
@@ -260,6 +284,7 @@ fn block_inspect_says_how_a_block_plays(cx: &mut TestAppContext) {
     ] {
         on_block(&mut cx, command, args, &subs);
     }
+    assert!(buffered(window, &mut cx), "the seek's frame didn't come");
     let track = |codec: &str, format: Option<&str>| {
         json!({
             "number": 1,
@@ -289,7 +314,7 @@ fn block_inspect_says_how_a_block_plays(cx: &mut TestAppContext) {
         "position": 1.0,
         "duration": 2.021,
         "frame_rate": 25.0,
-        "ended": false, "buffering": true, // sought, and not ticked since
+        "ended": false, "buffering": false,
         "volume": 50.0,
         "muted": true,
         "looping": true,
@@ -312,8 +337,7 @@ fn block_inspect_says_how_a_block_plays(cx: &mut TestAppContext) {
         "picked": {"video": 1, "audio": 1, "subtitles": 1},
         "delays": {"audio": 0.05, "subtitles": -0.1},
         "picture": {"turns": 1, "mirrored": true, "aspect_ratio": "4:3", "crop": "16:9"},
-        "chapter": null,
-        "chapters": [],
+        "chapter": null, "chapters": [],
         "casting": null, "output": null,
         "visible": ["controls", "top_bar", "track_switcher", "notes"],
     });
@@ -475,6 +499,30 @@ fn output_display_and_cast_ls_list_whats_there(cx: &mut TestAppContext) {
         query(&mut cx, Invocation::new("app.inspect")),
         json!({"version": env!("CARGO_PKG_VERSION"), "windows": windows, "output": output})
     );
+}
+
+#[gpui::test]
+fn app_formats_says_what_plays_opens_each_video_or_audio(cx: &mut TestAppContext) {
+    let (_, mut cx) = testing::start(cx);
+    let formats = query(&mut cx, Invocation::new("app.formats"));
+    let formats = formats.as_array().expect("a list");
+    assert_eq!(formats.len(), file_types::FORMATS.len());
+    let with = |extension: &str| {
+        formats.iter().find(|format| {
+            format["extensions"]
+                .as_array()
+                .unwrap()
+                .contains(&json!(extension))
+        })
+    };
+    let mkv = with("mkv").expect("mkv");
+    assert_eq!(mkv["kind"], "video");
+    assert!(
+        mkv["name"].as_str().is_some_and(|name| !name.is_empty()),
+        "{mkv}"
+    );
+    assert_eq!(with("flac").expect("flac")["kind"], "audio");
+    assert!(with("srt").is_none(), "subtitles aren't opened alone");
 }
 
 #[gpui::test]

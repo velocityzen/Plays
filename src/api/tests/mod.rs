@@ -98,6 +98,7 @@ fn queries_say_what_they_hand_back_and_take_no_keys() {
         queries,
         [
             "app.inspect",
+            "app.formats",
             "window.ls",
             "window.inspect",
             "block.ls",

@@ -13,7 +13,7 @@ use serde_json::{Value, json};
 use crate::api::socket::tests::serving;
 use crate::cli::tests::{playing_the_clip, plays, plays_while, step};
 use crate::files;
-use crate::ui::testing::{fixture, wait_until};
+use crate::ui::testing::{self, fixture, wait_until};
 use crate::ui::workspace::Workspace;
 
 const SCRIPTS: &str = include_str!("../../../../docs/lua.md");
@@ -57,7 +57,7 @@ impl Folder {
     }
 }
 
-/// Open `files` in the window, waiting till it has `blocks`.
+/// Open `files` in the window, waiting till it has `blocks`, each playing.
 fn open(
     cx: &mut TestAppContext,
     path: &Path,
@@ -74,6 +74,8 @@ fn open(
             == blocks
     });
     assert!(opened, "{files:?} opened");
+    let started = wait_until(cx, |cx| testing::all_started(window, blocks, cx));
+    assert!(started, "{files:?} started");
 }
 
 /// Whether `times` are two, each within a frame of `time`.
@@ -173,6 +175,16 @@ fn the_scripts_the_scripts_guide_names_do_as_it_says(cx: &mut TestAppContext) {
     assert_eq!(
         returned(&mut cx, &path, files)[2],
         json!(videos.path("new.mp4"))
+    );
+
+    let listing = folder.script(SCRIPTS, "videos.lua");
+    fs::copy(fixture("tune.flac"), videos.path("tune.flac")).unwrap();
+    fs::create_dir(videos.path("folder.mkv")).unwrap();
+    let ran = plays(&mut cx, &path, &["--json", "do", &listing, &in_folder]);
+    assert_eq!(
+        ran.json(),
+        json!([videos.path("new.mp4"), videos.path("old.mp4")]),
+        "{ran:?}"
     );
 }
 

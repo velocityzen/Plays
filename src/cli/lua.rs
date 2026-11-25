@@ -2,9 +2,10 @@
 //! a client of the Plays running as the command line is. `plays` holds
 //! what a script is given, calls Plays' commands, waits (`waiting`),
 //! registers handlers (`handlers`), starts timers (`timers`), runs
-//! programs (`exec`) and reads and writes JSON (`json`); what the script
-//! returns is printed as JSON, and then, if it has handlers or timers, it
-//! runs on (`listening`). What it waits for comes to its inbox (`inbox`).
+//! programs (`exec`), lists folders (`folders`) and reads and writes JSON
+//! (`json`); what the script returns is printed as JSON, and then, if it
+//! has handlers or timers, it runs on (`listening`). What it waits for
+//! comes to its inbox (`inbox`).
 //!
 //! JSON and Lua: null is nil, and `plays.null` sends one; an object or a
 //! list is a table, a list from Plays staying one, so a table is a list if
@@ -12,6 +13,7 @@
 //! integers and other numbers floats, both ways.
 
 mod exec;
+mod folders;
 mod handlers;
 mod inbox;
 mod json;
@@ -144,6 +146,7 @@ pub fn run(session: &mut Session, script: Script, args: Value, listening: Listen
         plays.set("wait", wait)?;
         exec::add(&lua, &plays, scope, &programs, &inbox)?;
         json::add(&lua, &plays)?;
+        folders::add(&lua, &plays)?;
         plays.set("on", scope.create_function(|_, args| handlers.on(args))?)?;
         let (timers, stopped, session) = (&timers, &stopped, &session);
         let timer = |every| {

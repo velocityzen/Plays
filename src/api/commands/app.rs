@@ -38,6 +38,16 @@ pub const COMMANDS: &[Spec] = &[
         },
     )
     .keywords(&["info", "version", "about", "status"]),
+    Spec::query(
+        "app.formats",
+        "List Formats",
+        "List the formats Plays opens, video and audio.",
+        Scope::App,
+        "[{name, kind, extensions}]: what each is called, video or audio, and the \
+         extensions of its files, lowercase.",
+        |_, _, _| Ok(formats()),
+    )
+    .keywords(&["formats", "extensions", "file types", "video", "audio"]),
     Spec::custom_with(
         "app.open",
         "Open Paths or URLs",
@@ -338,6 +348,20 @@ fn debug_info(cx: &App) -> Result<String, Error> {
         );
     }
     Ok(lines.join("\n"))
+}
+
+/// The formats Plays opens, as `app.formats` hands them back.
+fn formats() -> Value {
+    file_types::FORMATS
+        .iter()
+        .map(|format| {
+            json!({
+                "name": format.name,
+                "kind": format.kind.name(),
+                "extensions": format.extensions,
+            })
+        })
+        .collect()
 }
 
 #[derive(Deserialize)]

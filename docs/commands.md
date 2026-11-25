@@ -11,6 +11,13 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 - Acts on the app.
 - Hands back: {version, windows: [as window.ls], output: as output.ls}.
 
+### List Formats
+
+`app.formats`: List the formats Plays opens, video and audio.
+
+- Acts on the app.
+- Hands back: [{name, kind, extensions}]: what each is called, video or audio, and the extensions of its files, lowercase.
+
 ### Open Paths or URLs
 
 `app.open`: Play files, the media files in folders, and streams, in the window named, or the one in front, or a new one if none is open: each in a block, or one after another in one, as Settings say.

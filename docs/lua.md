@@ -84,8 +84,8 @@ print(block.title, block.position, block.duration)
   label or number.
 - What the command hands back, alone. `plays.null`: null, to send one.
 - One that fails hands back nil and why, and the script goes on, or
-  `assert` ends it there. `plays.wait`, `plays.exec` and `plays.json`
-  hand back the same way.
+  `assert` ends it there. `plays.wait`, `plays.exec`, `plays.ls` and
+  `plays.json` hand back the same way.
 
 ```lua
 local window, why = plays.window.inspect{window_id = "Kitchen"}
@@ -160,6 +160,30 @@ plays.exec.start({"make"}, {stdout = io.write}):wait()     -- its output as it c
   never at once with other Lua.
 - Stopped as the part of the script that started it ends: its top level,
   a handler or a timer. Detached, as the script ends.
+
+## Folders
+
+```lua
+-- videos.lua: the video files in the folder `folder` names, by name
+local video = {}
+for _, format in ipairs(plays.app.formats()) do
+  for _, extension in ipairs(format.extensions) do video[extension] = format.kind == "video" end
+end
+local found = {}
+for _, entry in ipairs(assert(plays.ls(plays.args.folder))) do
+  local extension = entry.name:match("%.(%w+)$")
+  if entry.type == "file" and extension and video[extension:lower()] then
+    found[#found + 1] = entry.path
+  end
+end
+return found
+```
+
+- `plays.ls(folder)`: everything in it, hidden too, by name: `name`,
+  `path`, its full path, and `type`, `"file"`, `"folder"` or `"other"`, a
+  link's what it points at. nil and why if it can't be read.
+- `plays.app.formats()`: the formats Plays opens, each with its `kind`,
+  `"video"` or `"audio"`, and its `extensions`.
 
 ## JSON and Lua
 
