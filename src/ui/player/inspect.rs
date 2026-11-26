@@ -46,7 +46,7 @@ impl PlayerView {
     /// All `block.inspect` says of it: its summary; where it is, how long
     /// it is, its video's frame rate, whether it ended and whether it waits
     /// for data to play from; its volume (in
-    /// percent), mute and loop; its tracks (numbered from 1 within each
+    /// percent), mute, speed and loop; its tracks (numbered from 1 within each
     /// kind) and those picked; the delays and picture adjustments; its
     /// chapters (from 1) and the one it's in; the device it casts to; the
     /// output it plays through of its own, if any; and the panels it shows
@@ -83,6 +83,7 @@ impl PlayerView {
             // In percent, as `block.audio.set_volume` takes it.
             "volume": (f64::from(player.volume()) * 100.0).round(),
             "muted": player.is_muted(),
+            "speed": player.speed(),
             "looping": player.is_looping(),
             "tracks": KINDS
                 .iter()
@@ -165,6 +166,7 @@ impl PlayerView {
             frame_rate: player.info().and_then(|info| info.frame_rate),
             volume: (f64::from(player.volume()) * 100.0).round(),
             muted: player.is_muted(),
+            speed: player.speed(),
             tracks: TRACKS.map(track),
             chapter: self.chapter().map(|at| at + 1),
             casting: self.casting().map(device_json),

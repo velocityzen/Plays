@@ -61,7 +61,10 @@ impl Playback {
     pub fn reopen(&mut self, source: Source, options: PlayerOptions) {
         self.cast = None;
         self.next_cast = None;
+        let speed = self.player.speed();
         self.player = Player::open(source, self.player.mixer(), options);
+        // As fast as the one before.
+        self.player.set_speed(speed);
         self.openings += 1;
     }
 
@@ -344,6 +347,14 @@ impl Playback {
         }
     }
 
+    /// Play faster or slower here. A device plays at its own speed, so
+    /// while the block casts it stays as it is.
+    pub fn set_speed(&mut self, speed: f64) {
+        if self.casting().is_none() {
+            self.player.set_speed(speed);
+        }
+    }
+
     /// Show subtitles `delay` seconds after their times (negative:
     /// before). As with the sound's, not while the block casts.
     pub fn set_subtitle_delay(&mut self, delay: f64) {
@@ -385,6 +396,8 @@ impl Playback {
     pub fn hand_over(&mut self, cast: Cast) {
         // A device it cast to before lets go, and with it the sound.
         self.let_go_of_cast();
+        // The device plays at its own speed, which a picture here follows.
+        self.player.set_speed(1.0);
         if cast.picture_here {
             self.player.set_sound_elsewhere(true);
         } else {

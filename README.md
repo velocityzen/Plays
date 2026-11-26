@@ -23,6 +23,7 @@ GPU-accelerated UI framework.
   one block
 - Streams: HTTP(S), HLS, DASH, RTMP, RTSP
 - Play/pause, seek, loop, volume and mute in each block
+- Speed from 0.25× to 4×, the sound at its own pitch
 - Frame-accurate scrubbing and frame stepping
 - Hardware decoding: VideoToolbox on macOS; VA-API, NVDEC or VDPAU on Linux
 - Chapters
@@ -32,8 +33,8 @@ GPU-accelerated UI framework.
 - Music Mode for audio files: cover art, title, artist, album and quality,
   over a speaker moving with the sound; the speaker and quality can be off
 - The screen stays awake while video plays
-- Play, pause, seek, step, mute, and change the volume, tracks, subtitles
-  and picture of every block in a window, or in every window, at once
+- Play, pause, seek, step, mute, and change the volume, speed, tracks,
+  subtitles and picture of every block in a window, or in every window, at once
 
 ### Picture
 
@@ -138,6 +139,7 @@ One Plays runs at a time: `plays FILE…` hands files to the one running.
 | Previous/next chapter | `Page Up` `Page Down` |
 | Previous/next file | `⌘←` `⌘→` / `Ctrl+←` `Ctrl+→` |
 | Loop | `⌘⇧L` / `Ctrl+Shift+L` |
+| Slower/faster, normal speed | `[` `]`, `⌫` / `Backspace` |
 | Volume down/up | `↓` `↑` |
 | Mute/unmute | `M`, or `⌘/` / `Ctrl+/` |
 | Next audio, subtitle, video track | `⌃⌘A` `⌃⌘S` `⌃⌘V` / `Ctrl+Alt+A` `S` `V` |
@@ -243,7 +245,6 @@ mkdir ($nu.user-autoload-dirs | first); plays completions nushell | save -f ($nu
 
 ## Limitations
 
-- No playback speed.
 - Live streams can't be seeked or screenshotted, and one paused goes on
   from where it paused, not the live edge.
 - Picture adjustments and delays aren't kept when a file opens again.
@@ -264,7 +265,7 @@ mkdir ($nu.user-autoload-dirs | first); plays completions nushell | save -f ($nu
   on a Mac from where it was downloaded, or installed by a package
   manager, Flatpak or Snap.
 - Casting re-encodes video only with a hardware encoder. While a block
-  casts, delays, picture adjustments and frame steps don't apply.
+  casts, delays, speed, picture adjustments and frame steps don't apply.
 - Cast subtitles keep italics and bold but not placement; picture
   subtitles (PGS, VobSub, DVB) go only where the video is re-encoded.
 - AirPlay speakers with a password, AirPlay 1 speakers with FairPlay or

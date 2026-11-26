@@ -203,7 +203,8 @@ sound heard. No sound, wall time. A gap in the sound plays as silence.
 - `src/media/decoder/shared.rs`: what a player and its threads share; each
   seek starts a generation, and nothing from an earlier one is handed out
 - `src/media/player.rs`: the UI-side handle, ticked as its block draws
-- `src/media/clock.rs`: a per-player wall clock, eased toward the audio
+- `src/media/clock.rs`: a per-player wall clock at the player's speed,
+  eased toward the audio
 
 ## Pictures
 
@@ -249,6 +250,8 @@ flowchart LR
 - `src/media/audio.rs`: a mixer per output; sums players and tells each
   clock what is heard, moved by the audio delay. It runs on the real-time
   thread, so it neither allocates nor waits.
+- `src/media/tempo.rs`: a player faster or slower at the same pitch
+  (WSOLA), in the mixer, made with all the memory it needs
 - `src/media/output.rs`: where a mixer's sound goes: a cpal stream, an
   AirPlay speaker, or nowhere; not `Send`, so each stays on its thread
 - `src/app/audio.rs`: the `AudioEngine`: the app's output, and one per

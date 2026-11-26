@@ -9,6 +9,9 @@
 //! what is queued is converted to the new rate, and decoders resample to it
 //! from then on.
 //!
+//! A player playing faster or slower is heard through its queue's
+//! `Stretch`, at the same pitch, from the moment its speed changes.
+//!
 //! The mixer runs on the output's real-time thread, so it neither allocates
 //! nor frees, and waits for no other thread: what other threads do holding
 //! the locks it takes is short, and a lock held longer than that it goes
@@ -22,6 +25,7 @@ use std::time::{Duration, Instant};
 use parking_lot::{Mutex, MutexGuard};
 
 use super::clock::Clock;
+use super::tempo::Stretch;
 
 /// Channels every source delivers (interleaved L/R).
 pub const SOURCE_CHANNELS: usize = 2;
@@ -119,6 +123,8 @@ pub struct AudioQueue {
     pub buffered_frames: usize,
     /// The sample rate the mixer plays at: every chunk is at it.
     pub rate: u32,
+    /// What's heard faster or slower goes through, at the queue's rate.
+    stretch: Stretch,
 }
 
 impl AudioQueue {
@@ -128,6 +134,7 @@ impl AudioQueue {
             serial: 0,
             buffered_frames: 0,
             rate,
+            stretch: Stretch::new(rate),
         }
     }
 
@@ -136,6 +143,7 @@ impl AudioQueue {
     fn clear(&mut self, serial: u64, fresh: VecDeque<AudioChunk>) -> VecDeque<AudioChunk> {
         self.buffered_frames = 0;
         self.serial = serial;
+        self.stretch.reset();
         std::mem::replace(&mut self.chunks, fresh)
     }
 
@@ -165,6 +173,7 @@ impl AudioQueue {
 
     /// Pass over what plays before `time`, unheard.
     fn skip_to(&mut self, time: f64) {
+        self.stretch.reset();
         let rate = f64::from(self.rate);
         for chunk in self.chunks.iter_mut().filter(|chunk| !chunk.played()) {
             let left = chunk.frames() - chunk.pos;
@@ -188,6 +197,8 @@ impl AudioQueue {
         }
         self.buffered_frames = self.chunks.iter().map(AudioChunk::frames).sum();
         self.rate = rate;
+        // What it held is let go of: a moment of sound.
+        self.stretch = Stretch::new(rate);
     }
 
     /// Seconds still waiting to be played.
@@ -195,13 +206,85 @@ impl AudioQueue {
         self.buffered_frames as f64 / f64::from(self.rate)
     }
 
-    /// Media time of the next frame that will be read.
+    /// Media time of the next frame that will be heard.
     fn read_pts(&self) -> Option<f64> {
-        self.chunks
-            .iter()
-            .find(|chunk| !chunk.played())
-            .map(|chunk| chunk.pts + chunk.pos as f64 / f64::from(self.rate))
+        self.stretch.read_pts().or_else(|| {
+            self.chunks
+                .iter()
+                .find(|chunk| !chunk.played())
+                .map(|chunk| chunk.pts + chunk.pos as f64 / f64::from(self.rate))
+        })
     }
+
+    /// Add what's next into `mix` (interleaved stereo) at `gain`, as it
+    /// is; how many frames it added, and the loudest sample.
+    fn play_into(&mut self, mix: &mut [f32], gain: f32) -> (usize, f32) {
+        let frames = mix.len() / SOURCE_CHANNELS;
+        let mut peak = 0.0f32;
+        let mut written = 0;
+        for chunk in self.chunks.iter_mut().filter(|chunk| !chunk.played()) {
+            if written == frames {
+                break;
+            }
+            let n = (chunk.frames() - chunk.pos).min(frames - written);
+            let src =
+                &chunk.samples[chunk.pos * SOURCE_CHANNELS..(chunk.pos + n) * SOURCE_CHANNELS];
+            let dst = &mut mix[written * SOURCE_CHANNELS..(written + n) * SOURCE_CHANNELS];
+            peak = add(dst, src, gain).max(peak);
+            chunk.pos += n;
+            written += n;
+            self.buffered_frames -= n;
+        }
+        (written, peak)
+    }
+
+    /// As `play_into`, but at `speed`, through the stretch.
+    fn stretch_into(&mut self, mix: &mut [f32], gain: f32, speed: f64) -> (usize, f32) {
+        let frames = mix.len() / SOURCE_CHANNELS;
+        let mut peak = 0.0f32;
+        let mut written = 0;
+        while written < frames {
+            if self.stretch.ready().is_empty() {
+                self.feed_stretch();
+                if !self.stretch.step(speed) {
+                    break;
+                }
+            }
+            let ready = self.stretch.ready();
+            let n = (ready.len() / SOURCE_CHANNELS).min(frames - written);
+            let dst = &mut mix[written * SOURCE_CHANNELS..(written + n) * SOURCE_CHANNELS];
+            peak = add(dst, &ready[..n * SOURCE_CHANNELS], gain).max(peak);
+            self.stretch.take(n);
+            written += n;
+        }
+        (written, peak)
+    }
+
+    /// Feed the stretch what it wants of what's queued.
+    fn feed_stretch(&mut self) {
+        let rate = f64::from(self.rate);
+        for chunk in self.chunks.iter_mut().filter(|chunk| !chunk.played()) {
+            if self.stretch.wants() == 0 {
+                break;
+            }
+            let pts = chunk.pts + chunk.pos as f64 / rate;
+            let taken = self
+                .stretch
+                .feed(pts, &chunk.samples[chunk.pos * SOURCE_CHANNELS..]);
+            chunk.pos += taken;
+            self.buffered_frames -= taken;
+        }
+    }
+}
+
+/// Add `src` into `dst` at `gain`; the loudest of `src`.
+fn add(dst: &mut [f32], src: &[f32], gain: f32) -> f32 {
+    let mut peak = 0.0f32;
+    for (d, s) in dst.iter_mut().zip(src) {
+        peak = peak.max(s.abs());
+        *d += s * gain;
+    }
+    peak
 }
 
 /// One player's connection to the mixer.
@@ -215,6 +298,8 @@ pub struct AudioSource {
     pub playing: AtomicBool,
     pub volume: AtomicF32,
     pub muted: AtomicBool,
+    /// How fast it plays: 1 at its own speed.
+    pub speed: AtomicF32,
     /// How much later than the picture the sound is heard, in seconds
     /// (negative: earlier). The clock, which the picture follows, is kept
     /// that far ahead of what is heard.
@@ -235,6 +320,7 @@ impl AudioSource {
             playing: AtomicBool::new(false),
             volume: AtomicF32::new(volume),
             muted: AtomicBool::new(false),
+            speed: AtomicF32::new(1.0),
             delay: AtomicF32::new(0.0),
             peak: AtomicF32::new(0.0),
             elsewhere: AtomicBool::new(false),
@@ -362,7 +448,6 @@ impl Mixer {
     /// Fill `mix` (interleaved stereo) with the sum of all playing sources.
     pub(crate) fn mix(&self, mix: &mut [f32], latency: f64, now: Instant) {
         mix.fill(0.0);
-        let frames = mix.len() / SOURCE_CHANNELS;
         let master = self.master_volume.load();
 
         let Some(sources) = within_reach(&self.sources) else {
@@ -390,10 +475,12 @@ impl Mixer {
                 source.peak.store(0.0);
                 continue;
             }
+            let speed = f64::from(source.speed.load());
             if let Some(pts) = queue.read_pts() {
                 // What we write now is heard `latency` seconds from now,
-                // and goes with the picture `delay` seconds later.
-                source.clock.sync(pts - latency + delay, now);
+                // as far again on at its speed, and goes with the picture
+                // `delay` seconds later.
+                source.clock.sync(pts - latency * speed + delay, now);
             }
 
             // The meter shows the player's own level, before the master volume.
@@ -403,24 +490,13 @@ impl Mixer {
                 source.volume.load()
             };
             let gain = level_gain * master;
-            let mut peak = 0.0f32;
-            let mut written = 0;
-            for chunk in queue.chunks.iter_mut().filter(|chunk| !chunk.played()) {
-                if written == frames {
-                    break;
-                }
-                let n = (chunk.frames() - chunk.pos).min(frames - written);
-                let src =
-                    &chunk.samples[chunk.pos * SOURCE_CHANNELS..(chunk.pos + n) * SOURCE_CHANNELS];
-                let dst = &mut mix[written * SOURCE_CHANNELS..(written + n) * SOURCE_CHANNELS];
-                for (d, s) in dst.iter_mut().zip(src) {
-                    peak = peak.max(s.abs());
-                    *d += s * gain;
-                }
-                chunk.pos += n;
-                written += n;
-                queue.buffered_frames -= n;
-            }
+            // Once a stretch has some, it plays on through it, at its own
+            // speed too, so what it holds is heard.
+            let (_, peak) = if speed != 1.0 || queue.stretch.is_active() {
+                queue.stretch_into(mix, gain, speed)
+            } else {
+                queue.play_into(mix, gain)
+            };
             source.peak.store(peak * level_gain);
         }
     }

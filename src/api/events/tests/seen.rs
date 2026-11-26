@@ -21,6 +21,7 @@ fn block(id: Id) -> BlockSeen {
         frame_rate: None,
         volume: 100.0,
         muted: false,
+        speed: 1.0,
         tracks: [None; 3],
         chapter: None,
         casting: None,

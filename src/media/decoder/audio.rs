@@ -82,8 +82,16 @@ impl AudioDecoder {
         self.source.sample_rate()
     }
 
+    /// How fast it plays, which it decodes ahead for.
+    fn speed(&self) -> f64 {
+        f64::from(self.source.speed.load())
+    }
+
+    /// Whether there's room for more: as much as plays for as long at its
+    /// speed, faster or not.
     pub(super) fn has_room(&self) -> bool {
-        self.source.queue.lock().buffered_seconds() < AUDIO_QUEUE_SECONDS
+        let ahead = AUDIO_QUEUE_SECONDS * self.speed().max(1.0);
+        self.source.queue.lock().buffered_seconds() < ahead
     }
 
     /// How soon the mixer, playing, makes room for more.
@@ -91,7 +99,9 @@ impl AudioDecoder {
         if !self.source.playing.load(Ordering::Relaxed) {
             return None;
         }
-        let over = self.source.queue.lock().buffered_seconds() - AUDIO_QUEUE_SECONDS;
+        let speed = self.speed();
+        let ahead = AUDIO_QUEUE_SECONDS * speed.max(1.0);
+        let over = (self.source.queue.lock().buffered_seconds() - ahead) / speed;
         Some(Duration::from_secs_f64(over.max(0.0)).max(AUDIO_ROOM_WAIT))
     }
 

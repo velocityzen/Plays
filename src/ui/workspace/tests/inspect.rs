@@ -271,6 +271,7 @@ fn block_inspect_says_how_a_block_plays(cx: &mut TestAppContext) {
         ("block.rename", json!({"label": "Subs"})),
         ("block.playback.seek", json!({"time": 1.0})),
         ("block.playback.loop.toggle", Value::Null),
+        ("block.playback.set_speed", json!({"speed": 1.5})),
         ("block.audio.set_volume", json!({"volume": 50})),
         ("block.audio.mute.toggle", Value::Null),
         ("block.audio.later", Value::Null),
@@ -315,9 +316,7 @@ fn block_inspect_says_how_a_block_plays(cx: &mut TestAppContext) {
         "duration": 2.021,
         "frame_rate": 25.0,
         "ended": false, "buffering": false,
-        "volume": 50.0,
-        "muted": true,
-        "looping": true,
+        "volume": 50.0, "muted": true, "speed": 1.5, "looping": true,
         "tracks": {
             "video": [track("h264", Some("160×120"))],
             "audio": [track("aac", Some("Mono"))],

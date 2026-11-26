@@ -209,6 +209,46 @@ A cue is a block reaching a time or a frame: `block.<block>.position@120.5s`, or
 - Returns: nothing.
 - Events: [`block.playback.loop.off`](#blockplaybackloopoff).
 
+#### Faster
+
+`block.playback.faster`: Play the block at the next speed up, its sound at the same pitch.
+
+- Acts on a block.
+- Keys: ]
+- Arguments: none.
+- Returns: nothing.
+- Events: [`block.playback.speed_changed`](#blockplaybackspeed_changed).
+
+#### Slower
+
+`block.playback.slower`: Play the block at the next speed down, its sound at the same pitch.
+
+- Acts on a block.
+- Keys: [
+- Arguments: none.
+- Returns: nothing.
+- Events: [`block.playback.speed_changed`](#blockplaybackspeed_changed).
+
+#### Normal Speed
+
+`block.playback.normal_speed`: Play the block at its own speed again.
+
+- Acts on a block.
+- Keys: ⌫
+- Arguments: none.
+- Returns: nothing.
+- Events: [`block.playback.speed_changed`](#blockplaybackspeed_changed).
+
+#### Speed
+
+`block.playback.set_speed`: Play the block faster or slower, its sound at the same pitch.
+
+- Acts on a block.
+- Arguments:
+  - `speed` (a number from 0.25 to 4): How fast: 1 at its own speed, 2 twice as fast, 0.5 half.
+- Returns: nothing.
+- Events: [`block.playback.speed_changed`](#blockplaybackspeed_changed).
+
 #### Sync All to This Block
 
 `block.playback.sync_all`: Bring every file in every window to where the block is, playing or paused as it is.
@@ -386,6 +426,43 @@ A cue is a block reaching a time or a frame: `block.<block>.position@120.5s`, or
 - Returns: nothing.
 - Events: [`block.playback.loop.off`](#blockplaybackloopoff).
 
+#### Faster in Window
+
+`window.playback.faster`: Play every file in the window at the next speed up from its own, its sound at the same pitch.
+
+- Acts on every block in a window.
+- Arguments: none.
+- Returns: nothing.
+- Events: [`block.playback.speed_changed`](#blockplaybackspeed_changed).
+
+#### Slower in Window
+
+`window.playback.slower`: Play every file in the window at the next speed down from its own, its sound at the same pitch.
+
+- Acts on every block in a window.
+- Arguments: none.
+- Returns: nothing.
+- Events: [`block.playback.speed_changed`](#blockplaybackspeed_changed).
+
+#### Normal Speed in Window
+
+`window.playback.normal_speed`: Play every file in the window at its own speed again.
+
+- Acts on every block in a window.
+- Arguments: none.
+- Returns: nothing.
+- Events: [`block.playback.speed_changed`](#blockplaybackspeed_changed).
+
+#### Speed in Window
+
+`window.playback.set_speed`: Play every file in the window faster or slower, its sound at the same pitch.
+
+- Acts on every block in a window.
+- Arguments:
+  - `speed` (a number from 0.25 to 4): How fast: 1 at its own speed, 2 twice as fast, 0.5 half.
+- Returns: nothing.
+- Events: [`block.playback.speed_changed`](#blockplaybackspeed_changed).
+
 ### Playback in every window
 
 #### Play/Pause in Every Window
@@ -559,6 +636,43 @@ A cue is a block reaching a time or a frame: `block.<block>.position@120.5s`, or
 - Returns: nothing.
 - Events: [`block.playback.loop.off`](#blockplaybackloopoff).
 
+#### Faster in Every Window
+
+`app.playback.faster`: Play every file in every window at the next speed up from its own, its sound at the same pitch.
+
+- Acts on every block in every window.
+- Arguments: none.
+- Returns: nothing.
+- Events: [`block.playback.speed_changed`](#blockplaybackspeed_changed).
+
+#### Slower in Every Window
+
+`app.playback.slower`: Play every file in every window at the next speed down from its own, its sound at the same pitch.
+
+- Acts on every block in every window.
+- Arguments: none.
+- Returns: nothing.
+- Events: [`block.playback.speed_changed`](#blockplaybackspeed_changed).
+
+#### Normal Speed in Every Window
+
+`app.playback.normal_speed`: Play every file in every window at its own speed again.
+
+- Acts on every block in every window.
+- Arguments: none.
+- Returns: nothing.
+- Events: [`block.playback.speed_changed`](#blockplaybackspeed_changed).
+
+#### Speed in Every Window
+
+`app.playback.set_speed`: Play every file in every window faster or slower, its sound at the same pitch.
+
+- Acts on every block in every window.
+- Arguments:
+  - `speed` (a number from 0.25 to 4): How fast: 1 at its own speed, 2 twice as fast, 0.5 half.
+- Returns: nothing.
+- Events: [`block.playback.speed_changed`](#blockplaybackspeed_changed).
+
 ### Playback events
 
 #### block.playback.loop.on
@@ -672,6 +786,16 @@ Where a file is as it plays: told only to those who ask for positions, at most o
   - `frame`: The number of the frame showing then, from 0; none for sound alone.
   - `duration`: How long it plays, in seconds; none for a live stream.
 - Caused by: a file playing.
+
+#### block.playback.speed_changed
+
+A block's file plays faster or slower.
+
+- Heard by those listening to its window's events.
+- Payload:
+  - `window_id`, `window_title`, `block_id`, `block_title`: its window's and its block's.
+  - `speed`: How fast it plays: 1 at its own speed, as `block.playback.set_speed` takes it.
+- Caused by: [`block.playback.faster`](#faster), [`block.playback.slower`](#slower), [`block.playback.normal_speed`](#normal-speed), [`block.playback.set_speed`](#speed), [`window.playback.faster`](#faster-in-window), [`window.playback.slower`](#slower-in-window), [`window.playback.normal_speed`](#normal-speed-in-window), [`window.playback.set_speed`](#speed-in-window), [`app.playback.faster`](#faster-in-every-window), [`app.playback.slower`](#slower-in-every-window), [`app.playback.normal_speed`](#normal-speed-in-every-window), [`app.playback.set_speed`](#speed-in-every-window), or a cast starting, which plays at its own speed.
 
 #### block.playback.chapter_changed
 

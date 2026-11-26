@@ -26,6 +26,7 @@ use crate::recents;
 use crate::settings::{AudioDevice, Settings};
 use crate::ui::displays::{self, DisplayInfo};
 use crate::ui::framing::{ASPECT_RATIOS, CROPS, Ratio};
+use crate::ui::player::speed::{SPEEDS, speed_text};
 use crate::ui::theme::motion::DISPLAYS_POLL;
 use crate::ui::workspace::Workspace;
 
@@ -187,6 +188,15 @@ fn playback_menu(state: &MenuState) -> Menu {
             "block.playback.play_pause",
             "block.playback.restart",
             "block.playback.loop.toggle",
+        ],
+        state,
+    );
+    menu.push(MenuItem::submenu(speed_menu(
+        state.state("block.playback.set_speed"),
+        state,
+    )));
+    menu.extend(items(
+        &[
             "",
             "block.playback.next_frame",
             "block.playback.previous_frame",
@@ -198,7 +208,7 @@ fn playback_menu(state: &MenuState) -> Menu {
             "block.playback.next_file",
         ],
         state,
-    );
+    ));
     menu.extend(
         chapter_menu(&state.chapters, state.state("block.playback.go_to_chapter"))
             .map(MenuItem::submenu),
@@ -627,6 +637,30 @@ fn aspect_menu(aspect: &Value, state: &MenuState) -> Menu {
                     .checked(*aspect == named(ratio))
             })
             .chain(items(&["", "block.video.next_aspect_ratio"], state))
+            .collect(),
+    }
+}
+
+/// The speeds, the block in front's, `speed`, checked; then Faster,
+/// Slower and Normal Speed.
+fn speed_menu(speed: &Value, state: &MenuState) -> Menu {
+    Menu {
+        name: title("block.playback.set_speed").into(),
+        items: SPEEDS
+            .into_iter()
+            .map(|each| {
+                MenuItem::action(speed_text(each), playback::set_speed(each))
+                    .checked(speed.as_f64() == Some(each))
+            })
+            .chain(items(
+                &[
+                    "",
+                    "block.playback.faster",
+                    "block.playback.slower",
+                    "block.playback.normal_speed",
+                ],
+                state,
+            ))
             .collect(),
     }
 }

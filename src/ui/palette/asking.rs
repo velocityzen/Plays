@@ -21,6 +21,7 @@ use crate::media::tracks;
 use crate::settings::Settings;
 use crate::settings::fields::{self, Field};
 use crate::ui::player::format_time;
+use crate::ui::player::speed::{SPEEDS, speed_text};
 use crate::ui::sentence::capitalized;
 use crate::ui::settings::installed_fonts;
 
@@ -192,6 +193,7 @@ fn choices(
             ("Subtitles", tracks("subtitles", Some("Off"), on))
         }
         ("block.playback.go_to_chapter", "number") => ("Chapter", chapters(on)),
+        ("block.playback.set_speed", "speed") => ("Speed", speeds(spec, on)),
         ("block.playback.play_file", "path") => ("File", folder_files(on)),
         ("window.move", "position") => ("Where", window_places(on)),
         ("window.show_on_display", "display") => ("Display", displays(on)),
@@ -491,6 +493,19 @@ fn words_of(
         Choice::new(word, Value::Object(args)).current(now == word)
     });
     off.into_iter().chain(listed).collect()
+}
+
+/// The speeds the Speed menu lists, as `spec` takes them; the one it
+/// plays at now picked.
+fn speeds(spec: &Spec, on: &mut On) -> Vec<Choice> {
+    let now = on.state(spec.id).as_f64();
+    SPEEDS
+        .into_iter()
+        .map(|speed| {
+            let current = now.is_some_and(|now| (now - speed).abs() < 1e-6);
+            Choice::new(speed_text(speed), json!({ "speed": speed })).current(current)
+        })
+        .collect()
 }
 
 /// Lists of `words` to pick from for the argument `name`, as `spec` takes

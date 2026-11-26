@@ -1,5 +1,6 @@
-//! `playback`: playing a block, its chapters and the files beside it in its
-//! folder; and every block in a window, or in every window, at once.
+//! `playback`: playing a block, its chapters, the files beside it in its
+//! folder, and how fast; and every block in a window, or in every window,
+//! at once.
 
 use std::path::PathBuf;
 
@@ -13,6 +14,7 @@ use crate::api::events::{EventField, EventKind};
 use crate::api::registry::{Args, Outcome, Scope, Spec};
 use crate::api::target;
 use crate::api::{Error, Run};
+use crate::media::tempo::{MAX_SPEED, MIN_SPEED};
 use crate::settings::Settings;
 use crate::ui::player::PlayerView;
 use crate::ui::workspace::all::{self, Players};
@@ -235,6 +237,50 @@ pub const COMMANDS: &[Spec] = &[
     .tells(&["block.playback.loop.off"])
     .keywords(&["repeat", "loop", "once"])
     .setting("playback.loop.off"),
+    Spec::block(
+        "block.playback.faster",
+        "Faster",
+        "Play the block at the next speed up, its sound at the same pitch.",
+        |player, _, cx| player.change_speed(true, cx),
+    )
+    .tells(&["block.playback.speed_changed"])
+    .keywords(&["speed", "fast", "rate", "tempo"])
+    .setting("faster")
+    .keys(&["]"]),
+    Spec::block(
+        "block.playback.slower",
+        "Slower",
+        "Play the block at the next speed down, its sound at the same pitch.",
+        |player, _, cx| player.change_speed(false, cx),
+    )
+    .tells(&["block.playback.speed_changed"])
+    .keywords(&["speed", "slow", "rate", "tempo"])
+    .setting("slower")
+    .keys(&["["]),
+    Spec::block(
+        "block.playback.normal_speed",
+        "Normal Speed",
+        "Play the block at its own speed again.",
+        |player, _, cx| player.set_speed(1.0, cx),
+    )
+    .tells(&["block.playback.speed_changed"])
+    .keywords(&["speed", "reset", "rate", "tempo"])
+    .setting("normal_speed")
+    .keys(&["backspace"]),
+    Spec::block_with(
+        "block.playback.set_speed",
+        "Speed",
+        "Play the block faster or slower, its sound at the same pitch.",
+        SPEED,
+        |args, player, _, cx| {
+            player.set_speed(speed(args)?, cx);
+            done()
+        },
+    )
+    .tells(&["block.playback.speed_changed"])
+    .keywords(&["fast", "slow", "rate", "tempo"])
+    // How fast it plays: 1 at its own speed.
+    .state(|target, cx| target::read_block(target, cx, |player, _| json!(player.speed()))),
     Spec::custom(
         "block.playback.sync_all",
         "Sync All to This Block",
@@ -454,6 +500,39 @@ pub const COMMANDS: &[Spec] = &[
     )
     .tells(&["block.playback.loop.off"])
     .keywords(&["every", "all", "repeat", "loop", "once"]),
+    Spec::blocks(
+        "window.playback.faster",
+        "Faster in Window",
+        "Play every file in the window at the next speed up from its own, its sound at the same pitch.",
+        |players, cx| players.each(cx, |player, cx| player.change_speed(true, cx)),
+    )
+    .tells(&["block.playback.speed_changed"])
+    .keywords(&["every", "all", "speed", "fast", "rate"]),
+    Spec::blocks(
+        "window.playback.slower",
+        "Slower in Window",
+        "Play every file in the window at the next speed down from its own, its sound at the same pitch.",
+        |players, cx| players.each(cx, |player, cx| player.change_speed(false, cx)),
+    )
+    .tells(&["block.playback.speed_changed"])
+    .keywords(&["every", "all", "speed", "slow", "rate"]),
+    Spec::blocks(
+        "window.playback.normal_speed",
+        "Normal Speed in Window",
+        "Play every file in the window at its own speed again.",
+        |players, cx| players.each(cx, |player, cx| player.set_speed(1.0, cx)),
+    )
+    .tells(&["block.playback.speed_changed"])
+    .keywords(&["every", "all", "speed", "reset", "rate"]),
+    Spec::blocks_with(
+        "window.playback.set_speed",
+        "Speed in Window",
+        "Play every file in the window faster or slower, its sound at the same pitch.",
+        SPEED,
+        set_speed_of_each,
+    )
+    .tells(&["block.playback.speed_changed"])
+    .keywords(&["every", "all", "fast", "slow", "rate"]),
     Spec::every_block(
         "app.playback.play_pause",
         "Play/Pause in Every Window",
@@ -665,6 +744,39 @@ pub const COMMANDS: &[Spec] = &[
     )
     .tells(&["block.playback.loop.off"])
     .keywords(&["every", "all", "repeat", "loop", "once"]),
+    Spec::every_block(
+        "app.playback.faster",
+        "Faster in Every Window",
+        "Play every file in every window at the next speed up from its own, its sound at the same pitch.",
+        |players, cx| players.each(cx, |player, cx| player.change_speed(true, cx)),
+    )
+    .tells(&["block.playback.speed_changed"])
+    .keywords(&["every", "all", "speed", "fast", "rate"]),
+    Spec::every_block(
+        "app.playback.slower",
+        "Slower in Every Window",
+        "Play every file in every window at the next speed down from its own, its sound at the same pitch.",
+        |players, cx| players.each(cx, |player, cx| player.change_speed(false, cx)),
+    )
+    .tells(&["block.playback.speed_changed"])
+    .keywords(&["every", "all", "speed", "slow", "rate"]),
+    Spec::every_block(
+        "app.playback.normal_speed",
+        "Normal Speed in Every Window",
+        "Play every file in every window at its own speed again.",
+        |players, cx| players.each(cx, |player, cx| player.set_speed(1.0, cx)),
+    )
+    .tells(&["block.playback.speed_changed"])
+    .keywords(&["every", "all", "speed", "reset", "rate"]),
+    Spec::every_block_with(
+        "app.playback.set_speed",
+        "Speed in Every Window",
+        "Play every file in every window faster or slower, its sound at the same pitch.",
+        SPEED,
+        set_speed_of_each,
+    )
+    .tells(&["block.playback.speed_changed"])
+    .keywords(&["every", "all", "fast", "slow", "rate"]),
 ];
 
 /// What opens a file, and plays it, other than a command: a playlist
@@ -768,6 +880,15 @@ pub const EVENTS: &[EventKind] = &[
     )
     .causes(&["a file playing"]),
     EventKind::block(
+        "block.playback.speed_changed",
+        "A block's file plays faster or slower.",
+        &[EventField::new(
+            "speed",
+            "How fast it plays: 1 at its own speed, as `block.playback.set_speed` takes it.",
+        )],
+    )
+    .causes(&["a cast starting, which plays at its own speed"]),
+    EventKind::block(
         "block.playback.chapter_changed",
         "A file is in another chapter.",
         &[EventField::new(
@@ -800,6 +921,16 @@ const TIME: &[Arg] = &[Arg::required(
     "Seconds from the start; past the end is the end.",
 )];
 
+/// How fast to play.
+const SPEED: &[Arg] = &[Arg::required(
+    "speed",
+    Kind::Number {
+        min: MIN_SPEED,
+        max: Some(MAX_SPEED),
+    },
+    "How fast: 1 at its own speed, 2 twice as fast, 0.5 half.",
+)];
+
 /// A chapter to play from.
 const CHAPTER: &[Arg] = &[Arg::required(
     "number",
@@ -809,6 +940,24 @@ const CHAPTER: &[Arg] = &[Arg::required(
 
 /// A file to play instead.
 const FILE: &[Arg] = &[Arg::required("path", Kind::Text, "The file's full path.")];
+
+#[derive(Deserialize)]
+struct Speed {
+    speed: f64,
+}
+
+/// The speed `args` say.
+fn speed(args: Args) -> Result<f64, Error> {
+    let Speed { speed } = args.read()?;
+    Ok(speed)
+}
+
+/// Play each as fast as `args` say.
+fn set_speed_of_each(args: Args, players: &Players, cx: &mut App) -> Outcome {
+    let speed = speed(args)?;
+    players.each(cx, |player, cx| player.set_speed(speed, cx));
+    done()
+}
 
 #[derive(Deserialize)]
 struct Chapter {
@@ -862,6 +1011,11 @@ fn play_file_in_each(args: Args, players: &Players, cx: &mut App) -> Outcome {
 /// How far the seek commands skip.
 fn seek_step(cx: &App) -> f64 {
     f64::from(cx.global::<Settings>().seek_step_seconds)
+}
+
+/// Play the block in front at `speed`.
+pub fn set_speed(speed: f64) -> Run {
+    Run::with("block.playback.set_speed", json!({"speed": speed}))
 }
 
 /// Play the block in front from the start of chapter `number`, from 1.

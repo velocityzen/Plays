@@ -328,6 +328,12 @@ fn playback_ways(plan: &Plan) -> Option<Vec<Way>> {
             vec![chapters()],
             vec![on_chapters().with_args(json!({"number": 2}))],
         )],
+        "set_speed" => Plan::twice(plan.with(json!({"speed": 1.5}))),
+        // Back from faster; the second run finds it there.
+        "normal_speed" => vec![way(
+            vec![command(&plan.id.replace("normal_speed", "faster"))],
+            vec![it(), it()],
+        )],
         // Paused from playing; then played, last, as what tells it waits
         // for the file to move.
         "play_pause" => vec![

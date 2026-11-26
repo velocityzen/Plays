@@ -4,9 +4,10 @@ use parking_lot::Mutex;
 
 /// Playback clock for a single player.
 ///
-/// It runs on the system clock between updates, and the audio mixer nudges it
-/// toward the position of the samples that are actually being heard. That makes
-/// audio the master when a file has sound and keeps video-only files on wall time.
+/// It runs on the system clock between updates, at the player's speed, and
+/// the audio mixer nudges it toward the position of the samples that are
+/// actually being heard. That makes audio the master when a file has sound
+/// and keeps video-only files on wall time.
 pub struct Clock {
     inner: Mutex<Inner>,
 }
@@ -16,14 +17,21 @@ struct Inner {
     base: f64,
     /// When the clock is running, the instant `base` was recorded at.
     anchor: Option<Instant>,
+    /// Media seconds a second: 1 at the media's own speed.
+    rate: f64,
 }
 
 impl Inner {
     fn now(&self) -> f64 {
         match self.anchor {
-            Some(anchor) => self.base + anchor.elapsed().as_secs_f64(),
+            Some(anchor) => self.at(anchor, Instant::now()),
             None => self.base,
         }
+    }
+
+    /// Media time at `at`, running from `anchor`.
+    fn at(&self, anchor: Instant, at: Instant) -> f64 {
+        self.base + at.saturating_duration_since(anchor).as_secs_f64() * self.rate
     }
 }
 
@@ -38,6 +46,7 @@ impl Clock {
             inner: Mutex::new(Inner {
                 base: 0.0,
                 anchor: None,
+                rate: 1.0,
             }),
         }
     }
@@ -65,6 +74,16 @@ impl Clock {
         inner.anchor = None;
     }
 
+    /// Run at `rate` media seconds a second from now on.
+    pub fn set_rate(&self, rate: f64) {
+        let mut inner = self.inner.lock();
+        inner.base = inner.now();
+        if inner.anchor.is_some() {
+            inner.anchor = Some(Instant::now());
+        }
+        inner.rate = rate;
+    }
+
     pub fn set(&self, time: f64) {
         let mut inner = self.inner.lock();
         inner.base = time;
@@ -81,7 +100,7 @@ impl Clock {
         let Some(anchor) = inner.anchor else {
             return;
         };
-        let current = inner.base + at.saturating_duration_since(anchor).as_secs_f64();
+        let current = inner.at(anchor, at);
         inner.base = current + (time - current) * EASE;
         inner.anchor = Some(at);
     }
@@ -96,7 +115,7 @@ impl Clock {
         let Some(anchor) = inner.anchor else {
             return;
         };
-        let current = inner.base + at.saturating_duration_since(anchor).as_secs_f64();
+        let current = inner.at(anchor, at);
         let drift = time - current;
         inner.base = if drift.abs() > SNAP_THRESHOLD {
             time

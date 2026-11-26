@@ -19,6 +19,7 @@ mod playback;
 mod playlist;
 mod screenshot;
 mod sound;
+pub mod speed;
 mod sync;
 mod tracks;
 mod visualizer;

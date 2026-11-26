@@ -12,6 +12,7 @@ use super::picking::Wanted;
 use super::picture::Picture;
 use super::source::Source;
 use super::subtitles::CueContent;
+use super::tempo::{MAX_SPEED, MIN_SPEED};
 use super::tracks::TrackKind;
 
 /// Network streams start (and resume after running dry) once this many
@@ -82,6 +83,8 @@ pub struct Player {
     looping: bool,
     muted: bool,
     volume: f32,
+    /// How fast it plays: 1 at its own speed.
+    speed: f64,
     stats: Stats,
     recent: Recent,
 }
@@ -224,6 +227,7 @@ impl Player {
             looping: options.looping,
             muted: false,
             volume,
+            speed: 1.0,
         }
     }
 
@@ -577,6 +581,22 @@ impl Player {
     /// up to `MAX_SUBTITLE_DELAY` either way.
     pub fn set_subtitle_delay(&mut self, delay: f64) {
         self.shared.subtitles().delay = delay.clamp(-MAX_SUBTITLE_DELAY, MAX_SUBTITLE_DELAY);
+    }
+
+    /// How fast it plays: 1 at its own speed, 2 twice as fast.
+    pub fn speed(&self) -> f64 {
+        self.speed
+    }
+
+    /// Play at `speed`, from `MIN_SPEED` to `MAX_SPEED`, from now on: the
+    /// picture and the sound with it, which keeps its pitch.
+    pub fn set_speed(&mut self, speed: f64) {
+        let speed = speed.clamp(MIN_SPEED, MAX_SPEED);
+        self.speed = speed;
+        self.shared.clock().set_rate(speed);
+        if let Some(audio) = self.shared.audio() {
+            audio.speed.store(speed as f32);
+        }
     }
 
     pub fn set_volume(&mut self, volume: f32) {

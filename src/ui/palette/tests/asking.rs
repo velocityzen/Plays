@@ -91,3 +91,40 @@ fn what_is_typed_is_read_as_its_kind_says_and_checked() {
     assert_eq!(read_typed(arg(Kind::Any, true), "0.5"), Ok(json!(0.5)));
     assert_eq!(read_typed(arg(Kind::Any, true), "dark"), Ok(json!("dark")));
 }
+
+#[gpui::test]
+fn the_speeds_are_listed_as_the_menu_lists_them_the_one_playing_picked(
+    cx: &mut gpui::TestAppContext,
+) {
+    use crate::ui::palette::tests::{aimed_at, open};
+    use crate::ui::testing;
+
+    let (window, mut cx) = testing::start(cx);
+    open(window, &mut cx, &["clip-subs.mkv"]);
+    let block = window
+        .read_with(&cx, |workspace, _| workspace.players()[0].clone())
+        .unwrap();
+    block.update(&mut cx, |view, cx| view.set_speed(1.5, cx));
+    let here = aimed_at(window, &cx);
+    let spec = api::find("block.playback.set_speed").unwrap();
+    let asked = gpui::TestAppContext::update(&cx, |cx| {
+        next(spec, &[], &Map::new(), &here, cx).map(|question| question.ask)
+    });
+    let Some(Ask::Choose(choices)) = asked else {
+        panic!("set_speed asks from a list");
+    };
+    let labels: Vec<&str> = choices.iter().map(|choice| choice.label.as_ref()).collect();
+    assert_eq!(
+        labels,
+        [
+            "0.25×", "0.5×", "0.75×", "1×", "1.25×", "1.5×", "1.75×", "2×", "3×", "4×"
+        ]
+    );
+    let picked: Vec<&str> = choices
+        .iter()
+        .filter(|choice| choice.current)
+        .map(|choice| choice.label.as_ref())
+        .collect();
+    assert_eq!(picked, ["1.5×"]);
+    assert_eq!(choices[1].args["speed"], json!(0.5));
+}

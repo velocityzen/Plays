@@ -243,3 +243,22 @@ fn a_player_moved_to_another_mixer_plays_at_its_rate() {
     assert_eq!(here.source_count(), 0);
     assert_eq!(there.source_count(), 1);
 }
+
+#[test]
+fn a_player_twice_as_fast_is_heard_through_its_sound_twice_as_fast() {
+    let mixer = Mixer::detached(48_000);
+    let source = playing_in(&mixer);
+    source.speed.store(2.0);
+    // A fiftieth of a second.
+    let mut mix = vec![0.0; 960 * SOURCE_CHANNELS];
+    let seen = allocations(|| mixer.mix(&mut mix, 0.0, Instant::now()));
+    assert_eq!(seen, 0, "the mixer allocated or freed at a speed");
+    assert!(mix.iter().any(|&x| x != 0.0), "it's heard");
+    let heard = source.queue.lock().read_pts().unwrap();
+    assert!((heard - 0.04).abs() < 1e-6, "a twenty-fifth on: {heard}");
+    // Back at its own speed, it plays on from there.
+    source.speed.store(1.0);
+    mixer.mix(&mut mix, 0.0, Instant::now());
+    let heard = source.queue.lock().read_pts().unwrap();
+    assert!((heard - 0.06).abs() < 1e-6, "a fiftieth further: {heard}");
+}

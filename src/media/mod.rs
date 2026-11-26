@@ -19,6 +19,7 @@ pub mod playlist_file;
 pub mod source;
 pub mod still;
 pub mod subtitles;
+pub mod tempo;
 #[cfg(test)]
 #[path = "tests/mod.rs"]
 mod tests;

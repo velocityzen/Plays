@@ -81,6 +81,8 @@ pub struct BlockSeen {
     /// In percent, as `block.audio.set_volume` takes it.
     pub volume: f64,
     pub muted: bool,
+    /// How fast it plays: 1 at its own speed.
+    pub speed: f64,
     /// The tracks picked, numbered from 1 among their kind's, in the order
     /// of `TRACKS`.
     pub tracks: [Option<usize>; 3],
@@ -448,6 +450,12 @@ fn playing_changes(
         tell(
             "block.audio.volume_changed",
             json!({"volume": block.volume}),
+        );
+    }
+    if old.speed != block.speed {
+        tell(
+            "block.playback.speed_changed",
+            json!({"speed": block.speed}),
         );
     }
     if let Some(kind) = switched(
