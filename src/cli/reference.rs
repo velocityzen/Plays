@@ -241,8 +241,8 @@ fn functions(anchors: &mut Anchors) -> Vec<Function> {
 /// The command reference, in Markdown, by function: contents first, then
 /// how commands run and events are heard, then each function's commands,
 /// for a block, a window or every window, with what they act on, their
-/// keys, arguments, what they hand back and the events they tell; and its
-/// events, with who hears them, their payload, and what tells them.
+/// keys, arguments, what they return and the events they cause; and its
+/// events, with who hears them, their payload, and what causes them.
 pub fn reference() -> String {
     let mut anchors = Anchors::default();
     for heading in ["Commands and events", "Contents", "Commands", "Events"] {
@@ -277,14 +277,18 @@ pub fn reference() -> String {
          acts on with `-w` and `-b`; keys run those that have them, and Settings → Hotkeys \
          changes those. The keys here are macOS's: elsewhere Ctrl stands for ⌘, and Alt for \
          ⌥. A command for a window, or for every window, does to each block in it what the \
-         block's does, its title ending in Window, or in Every Window.\n\n\
+         block's does, its title ending in Window, or in Every Window. Each lists its \
+         arguments, given as `KEY=VALUE`; what it returns, as `plays api call` prints it; and \
+         the events it causes.\n\n\
          ## Events\n\n\
          What changes in Plays, its windows and their blocks: `plays events` prints each as \
          it comes, and `plays wait` waits for one. Each is a JSON object, `{type, payload}`. \
          The payload of one about a window starts with `window_id` and `window_title`, as its \
          title bar shows it; of one about a block, with `block_id` and `block_title` too, as \
          its header shows it. A listener hears the app's, one window's, or all of them. \
-         Readers ignore events and fields they don't know.\n\n\
+         Readers ignore events and fields they don't know. An event is heard, not run: it \
+         has a payload, not arguments or a return value. Each lists who hears it, its \
+         payload, and what causes it.\n\n\
          A cue is a block reaching a time or a frame: `block.<block>.position@120.5s`, or \
          `…@345f`, the block by id, label or number. `plays wait` waits for one and \
          `plays events --cue` hears them: each once, the cue its type, with \
@@ -349,15 +353,15 @@ fn event(text: &mut String, kind: &EventKind, anchors: &Anchors) {
         )
         .ok();
     }
-    let mut follows: Vec<String> = commands()
+    let mut causes: Vec<String> = commands()
         .filter(|spec| spec.tells.contains(&kind.name))
         .map(|spec| anchors.link(spec.id))
         .collect();
-    follows.extend(kind.causes.iter().map(|&cause| cause.to_owned()));
-    if let Some(last) = follows.len().checked_sub(1).filter(|&last| last > 0) {
-        follows[last] = format!("or {}", follows[last]);
+    causes.extend(kind.causes.iter().map(|&cause| cause.to_owned()));
+    if let Some(last) = causes.len().checked_sub(1).filter(|&last| last > 0) {
+        causes[last] = format!("or {}", causes[last]);
     }
-    writeln!(text, "- Follows: {}.", follows.join(", ")).ok();
+    writeln!(text, "- Caused by: {}.", causes.join(", ")).ok();
 }
 
 /// One command, in the reference.
@@ -372,7 +376,9 @@ fn command(text: &mut String, spec: &Spec, anchors: &Anchors) {
     if !spec.keys.is_empty() {
         writeln!(text, "- Keys: {}", keys(spec)).ok();
     }
-    if !spec.args.is_empty() {
+    if spec.args.is_empty() {
+        text.push_str("- Arguments: none.\n");
+    } else {
         text.push_str("- Arguments:\n");
         for arg in spec.args {
             writeln!(
@@ -385,12 +391,15 @@ fn command(text: &mut String, spec: &Spec, anchors: &Anchors) {
             .ok();
         }
     }
-    if let Some(returns) = spec.returns {
-        writeln!(text, "- Hands back: {returns}").ok();
-    }
-    if !spec.tells.is_empty() {
-        let tells: Vec<String> = spec.tells.iter().map(|kind| anchors.link(kind)).collect();
-        writeln!(text, "- Tells: {}.", tells.join(", ")).ok();
+    match spec.returns {
+        Some(returns) => writeln!(text, "- Returns: {returns}").ok(),
+        None => writeln!(text, "- Returns: nothing.").ok(),
+    };
+    if spec.tells.is_empty() {
+        text.push_str("- Events: none.\n");
+    } else {
+        let events: Vec<String> = spec.tells.iter().map(|kind| anchors.link(kind)).collect();
+        writeln!(text, "- Events: {}.", events.join(", ")).ok();
     }
 }
 
