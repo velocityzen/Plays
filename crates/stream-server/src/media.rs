@@ -106,6 +106,11 @@ pub struct VideoInfo {
     pub bit_depth: u8,
     pub frame_rate: Option<f64>,
     pub hdr: Option<Hdr>,
+    /// HDR10 or HLG, as a player without Dolby Vision shows the picture: as
+    /// `hdr` is, or Dolby Vision's base layer's, by its colors. None for
+    /// SDR, and for a picture in IPT (Dolby Vision's profiles 5 and 20),
+    /// which only its reshaping makes HDR.
+    pub base_hdr: Option<Hdr>,
     /// Cover art in an audio file, not a video.
     pub picture: bool,
 }
@@ -221,9 +226,10 @@ fn container(name: &str, path: &str) -> Container {
 fn video_info(stream: &ffmpeg::format::stream::Stream) -> VideoInfo {
     let parameters = stream.parameters();
     // SAFETY: the parameters belong to an open stream. They are read through
-    // the pointer, never a reference, and the transfer as the C int it is:
-    // a file can hold numbers the Rust enum has no variant for.
-    let (width, height, format, transfer, dolby_vision, picture) = unsafe {
+    // the pointer, never a reference, and the transfer and color space as
+    // the C ints they are: a file can hold numbers the Rust enums have no
+    // variant for.
+    let (width, height, format, transfer, space, dolby_vision, picture) = unsafe {
         let raw = parameters.as_ptr();
         let dolby_vision = !ffi::av_packet_side_data_get(
             (*raw).coded_side_data,
@@ -237,18 +243,28 @@ fn video_info(stream: &ffmpeg::format::stream::Stream) -> VideoInfo {
             (*raw).height.max(0) as u32,
             (*raw).format,
             (&raw const (*raw).color_trc).cast::<u32>().read(),
+            (&raw const (*raw).color_space).cast::<u32>().read(),
             dolby_vision,
             disposition & ffi::AV_DISPOSITION_ATTACHED_PIC != 0,
         )
     };
+    let pq = transfer == ffi::AVColorTransferCharacteristic::AVCOL_TRC_SMPTE2084 as u32;
+    let hlg = transfer == ffi::AVColorTransferCharacteristic::AVCOL_TRC_ARIB_STD_B67 as u32;
     let hdr = if dolby_vision {
         Some(Hdr::DolbyVision)
-    } else if transfer == ffi::AVColorTransferCharacteristic::AVCOL_TRC_SMPTE2084 as u32 {
+    } else if pq {
         Some(Hdr::Hdr10)
-    } else if transfer == ffi::AVColorTransferCharacteristic::AVCOL_TRC_ARIB_STD_B67 as u32 {
+    } else if hlg {
         Some(Hdr::Hlg)
     } else {
         None
+    };
+    let ipt = space == ffi::AVColorSpace::AVCOL_SPC_IPT_C2 as u32;
+    let base_hdr = match hdr {
+        Some(Hdr::DolbyVision) if pq && !ipt => Some(Hdr::Hdr10),
+        Some(Hdr::DolbyVision) if hlg => Some(Hdr::Hlg),
+        Some(Hdr::DolbyVision) => None,
+        other => other,
     };
     let rate = stream.avg_frame_rate();
     VideoInfo {
@@ -258,6 +274,7 @@ fn video_info(stream: &ffmpeg::format::stream::Stream) -> VideoInfo {
         bit_depth: bit_depth(format),
         frame_rate: (rate.numerator() > 0 && rate.denominator() > 0).then(|| f64::from(rate)),
         hdr,
+        base_hdr,
         picture,
     }
 }

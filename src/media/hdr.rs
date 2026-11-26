@@ -12,8 +12,10 @@
 //! a video that fits under the headroom is left alone.
 //!
 //! gpui's Metal shader for HDR surfaces (`surface_hdr_fragment` in
-//! vendor/gpui) does the same on the GPU, with these same constants. This is
-//! the CPU version, for software decoding and Linux, always for an SDR screen.
+//! vendor/gpui) does the same on the GPU, with these same constants, and
+//! the stream server (`crates/stream-server/src/hdr.rs`) for a device not
+//! given HDR. This is the CPU version, for software decoding and Linux,
+//! always for an SDR screen.
 //! Dolby Vision's profiles 5 and 20 need more before they are HDR like
 //! the rest (`dovi`).
 

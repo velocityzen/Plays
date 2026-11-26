@@ -43,16 +43,17 @@ enum Transfer {
 }
 
 impl Coding {
-    /// An encoding's: 8-bit ones are BT.709, 10-bit ones the source's.
-    pub fn of(colors: &Colors, ten_bit: bool) -> Self {
+    /// An encoding's: the source's colors it keeps (`encode::kept_colors`),
+    /// else SDR's BT.709.
+    pub fn of(kept: Option<&Colors>) -> Self {
         use ffi::AVColorSpace::*;
         use ffi::AVColorTransferCharacteristic::*;
-        let (kr, kb) = match colors.space.filter(|_| ten_bit) {
+        let (kr, kb) = match kept.and_then(|colors| colors.space) {
             Some(AVCOL_SPC_BT2020_NCL | AVCOL_SPC_BT2020_CL) => (0.2627, 0.0593),
             Some(AVCOL_SPC_BT470BG | AVCOL_SPC_SMPTE170M) => (0.299, 0.114),
             _ => (0.2126, 0.0722),
         };
-        let transfer = match colors.transfer.filter(|_| ten_bit) {
+        let transfer = match kept.and_then(|colors| colors.transfer) {
             Some(AVCOL_TRC_SMPTE2084) => Transfer::Pq,
             Some(AVCOL_TRC_ARIB_STD_B67) => Transfer::Hlg,
             _ => Transfer::Sdr,

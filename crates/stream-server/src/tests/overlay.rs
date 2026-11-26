@@ -152,7 +152,7 @@ fn takes_the_frames_colors() {
     };
     let hdr10 = colors(AVCOL_SPC_BT2020_NCL, AVCOL_TRC_SMPTE2084);
     assert_eq!(
-        Coding::of(&hdr10, true),
+        Coding::of(Some(&hdr10)),
         Coding {
             transfer: Transfer::Pq,
             ..bt2020
@@ -160,17 +160,18 @@ fn takes_the_frames_colors() {
     );
     let hlg = colors(AVCOL_SPC_BT2020_NCL, AVCOL_TRC_ARIB_STD_B67);
     assert_eq!(
-        Coding::of(&hlg, true),
+        Coding::of(Some(&hlg)),
         Coding {
             transfer: Transfer::Hlg,
             ..bt2020
         }
     );
     let sd = colors(AVCOL_SPC_SMPTE170M, AVCOL_TRC_BT709);
-    assert_eq!(Coding::of(&sd, true).kr, 0.299);
-    // 8-bit encodings are BT.709 SDR, whatever the source was.
-    assert_eq!(Coding::of(&hdr10, false), SDR);
-    assert_eq!(Coding::of(&Colors::default(), true), SDR);
+    assert_eq!(Coding::of(Some(&sd)).kr, 0.299);
+    // Encodings not keeping the source's colors are BT.709 SDR, whatever
+    // the source was.
+    assert_eq!(Coding::of(None), SDR);
+    assert_eq!(Coding::of(Some(&Colors::default())), SDR);
 }
 
 #[test]

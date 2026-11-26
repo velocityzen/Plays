@@ -102,6 +102,8 @@ What the tests play, made with the `ffmpeg` tool unless they're fixtures
   live; WebVTT renditions; picture subtitles drawn in; turned, cropped and
   gamma
 - MPEG-TS from a time (DLNA), with SubRip
+- HDR10 and HLG for a device not given them, 8-bit or 10-bit: fitted to
+  SDR in BT.709; Dolby Vision as its base layer, HDR10 or HLG
 - Sound alone: ADTS AAC, FLAC, HLS
 - AirPlay sound: 16-bit stereo at 44.1 kHz
 
@@ -116,7 +118,8 @@ Samples too big to commit, in `ignore/`:
   given the base layer alone
 - HEVC Dolby Vision 5, 4K 59.94, E-AC-3 stereo
 - AV1 4K PQ, Dolby Vision 10, DTS-HD MA 7.1
-- AV1 Dolby Vision 10, 3840×1920, E-AC-3 Atmos 5.1, MJPEG cover
+- AV1 Dolby Vision 10, 3840×1920, E-AC-3 Atmos 5.1, MJPEG cover; cast to
+  a DLNA projector listing no codecs, fitted to SDR
 - AV1 8K60 PQ, Opus stereo
 - AAC LC 44.1 kHz stereo (M4A)
 

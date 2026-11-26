@@ -24,6 +24,7 @@ fn with_pictures(codec: VideoCodec) -> MediaInfo {
         bit_depth: 8,
         frame_rate: Some(24.0),
         hdr: None,
+        base_hdr: None,
         picture: false,
     };
     let audio = crate::media::AudioInfo {
@@ -213,4 +214,55 @@ fn delays_the_sound_where_the_media_isnt_sent_as_it_is() {
     };
     let picture = plan(&mp4, &silent).unwrap();
     assert_eq!(picture.audio_delay, 0.0);
+}
+
+/// HDR stays HDR in a re-encoding only as the device shows it, 10-bit:
+/// Dolby Vision as its base layer, HDR10 or HLG, as its reshaping is lost.
+/// Else the plan keeps none, and the picture is fitted to SDR.
+#[test]
+fn keeps_hdr_in_a_re_encoding_only_as_the_device_shows_it() {
+    let media = |hdr, base_hdr| {
+        let mut media = with_pictures(VideoCodec::Av1);
+        if let StreamKind::Video(video) = &mut media.streams[0].kind {
+            video.bit_depth = 10;
+            video.hdr = Some(hdr);
+            video.base_hdr = base_hdr;
+        }
+        media
+    };
+    let device = |hdr: &[Hdr]| Profile {
+        video: vec![VideoCodec::H264, VideoCodec::Hevc],
+        max_bit_depth: 10,
+        hdr: hdr.to_vec(),
+        ..Profile::default()
+    };
+    let kept = |media: &MediaInfo, profile: Profile| {
+        let request = CastRequest::new(Source::File("film.mkv".into()), profile);
+        match plan(media, &request).unwrap().video {
+            Some(VideoPlan::Encode { ten_bit, hdr, .. }) => (ten_bit, hdr),
+            other => panic!("{other:?}"),
+        }
+    };
+
+    let hdr10 = media(Hdr::Hdr10, Some(Hdr::Hdr10));
+    assert_eq!(
+        kept(&hdr10, device(&[Hdr::Hdr10])),
+        (true, Some(Hdr::Hdr10))
+    );
+    assert_eq!(kept(&hdr10, device(&[Hdr::Hlg])), (true, None));
+    assert_eq!(kept(&hdr10, device(&[])), (true, None));
+    assert_eq!(kept(&hdr10, Profile::default()), (false, None));
+
+    let profile_8_1 = media(Hdr::DolbyVision, Some(Hdr::Hdr10));
+    let every = [Hdr::Hdr10, Hdr::Hlg, Hdr::DolbyVision];
+    assert_eq!(kept(&profile_8_1, device(&every)), (true, Some(Hdr::Hdr10)));
+    assert_eq!(
+        kept(&profile_8_1, device(&[Hdr::Hdr10])),
+        (true, Some(Hdr::Hdr10))
+    );
+    let profile_8_4 = media(Hdr::DolbyVision, Some(Hdr::Hlg));
+    assert_eq!(kept(&profile_8_4, device(&[Hdr::Hdr10])), (true, None));
+    assert_eq!(kept(&profile_8_4, device(&every)), (true, Some(Hdr::Hlg)));
+    let profile_5 = media(Hdr::DolbyVision, None);
+    assert_eq!(kept(&profile_5, device(&every)), (true, None));
 }

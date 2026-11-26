@@ -57,7 +57,9 @@ pub enum VideoPlan {
         width: u32,
         height: u32,
         ten_bit: bool,
-        /// Kept, where the device shows it and the encoding is 10-bit.
+        /// Kept, where the device shows it and the encoding is 10-bit:
+        /// HDR10 or HLG, as Dolby Vision's base layer is too, its reshaping
+        /// lost. HDR not kept is fitted to SDR.
         hdr: Option<Hdr>,
         bit_rate: u64,
     },
@@ -476,8 +478,8 @@ fn encoded_video(
     for to in candidates {
         let ten_bit = deep && to == VideoCodec::Hevc && profile.max_bit_depth >= 10;
         let hdr = info
-            .hdr
-            .filter(|hdr| ten_bit && *hdr != Hdr::DolbyVision && profile.hdr.contains(hdr));
+            .base_hdr
+            .filter(|hdr| ten_bit && profile.hdr.contains(hdr));
         if let Some(encoder) = encode::video_encoder(to, width, height, ten_bit) {
             return Ok(VideoPlan::Encode {
                 stream,

@@ -34,6 +34,9 @@
 # clip-odd-colors.mkv  2 s of a flat 10-bit FFV1 picture whose Matroska
 #                colors say primaries 15, transfer 40 and matrix 30,
 #                numbers FFmpeg has no names for
+# clip-hdr10.mkv  2 s of a flat 10-bit FFV1 grey at HDR's reference white
+#                (203 nits, PQ's code 573 in limited range), tagged BT.2020
+#                and PQ, as HDR10 is
 # uncommon-order.mov  0.5 s of 440 Hz on the right only, 8 kHz PCM, its
 #                channels in an order of their own: the right, then the
 #                left; last by name, so the files beside the others stay
@@ -226,6 +229,10 @@ for tag, value in [(b"\x55\xbb", 15), (b"\x55\xba", 40), (b"\x55\xb1", 30)]:
     data[at + 3] = value
 open("clip-odd-colors.mkv", "wb").write(data)
 PY
+
+"${ffmpeg[@]}" -f lavfi -i "color=size=160x120:rate=25:duration=2" \
+    -vf "format=yuv420p10le,geq=lum=573:cb=512:cr=512,setparams=color_primaries=bt2020:color_trc=smpte2084:colorspace=bt2020nc:range=tv" \
+    -c:v ffv1 -g 25 -map_metadata -1 clip-hdr10.mkv
 
 # MOV keeps PCM's channels in the order they're joined in.
 "${ffmpeg[@]}" -f lavfi -i "sine=frequency=440:sample_rate=8000:duration=0.5" \

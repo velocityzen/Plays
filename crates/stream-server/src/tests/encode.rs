@@ -142,3 +142,87 @@ fn encodes_frames_holding_many_of_its_own() {
     let seconds = times.len() as f64 * 1024.0 / 48_000.0;
     assert!((seconds - 0.5).abs() < 0.05, "{seconds} s encoded");
 }
+
+/// A hardware encoder at 32 × 16, 10-bit HEVC or 8-bit H.264, tagged with
+/// `colors`, else BT.709.
+fn video_encoder(ten_bit: bool, colors: Option<Colors>) -> VideoEncoder {
+    crate::init();
+    let codec = if ten_bit {
+        VideoCodec::Hevc
+    } else {
+        VideoCodec::H264
+    };
+    let encoder = super::video_encoder(codec, 32, 16, ten_bit).expect("a hardware encoder");
+    VideoEncoder::open(&VideoSettings {
+        encoder,
+        codec,
+        width: 32,
+        height: 16,
+        ten_bit,
+        bit_rate: 1_000_000,
+        time_base: Rational::new(1, 25),
+        frame_rate: Some(Rational::new(25, 1)),
+        colors,
+        global_header: false,
+    })
+    .expect("the encoder opens")
+}
+
+/// HDR going into an encoding tagged BT.709 is fitted to SDR, at either
+/// depth, so its reference white shows nearly as SDR's white, not as the
+/// dim grey PQ's code for it is taken for BT.709's. An encoding keeping
+/// HDR's colors gets its codes as they are, and IPT (Dolby Vision's
+/// profile 20) is only scaled.
+#[cfg(target_os = "macos")]
+#[test]
+fn fits_hdr_to_sdr_for_an_encoding_tagged_bt709() {
+    use crate::hdr::tests::{grey, luma, pq};
+    use ffmpeg::color::{Space, TransferCharacteristic};
+    let white = pq(203.0);
+    let pq_white = grey(TransferCharacteristic::SMPTE2084, Space::BT2020NCL, white);
+    let mut ipt = pq_white.clone();
+    // SAFETY: the frame is ours, and IPT-C2 a value FFmpeg names.
+    unsafe { (*ipt.as_mut_ptr()).colorspace = ffi::AVColorSpace::AVCOL_SPC_IPT_C2 };
+    let hdr10 = Colors {
+        primaries: Some(ffi::AVColorPrimaries::AVCOL_PRI_BT2020),
+        transfer: Some(ffi::AVColorTransferCharacteristic::AVCOL_TRC_SMPTE2084),
+        space: Some(ffi::AVColorSpace::AVCOL_SPC_BT2020_NCL),
+    };
+
+    for ten_bit in [false, true] {
+        let mut sdr = video_encoder(ten_bit, None);
+        let fitted = sdr.scale(&pq_white).unwrap();
+        assert!(luma(&fitted) > 0.9, "{ten_bit}: {}", luma(&fitted));
+        let scaled = sdr.scale(&ipt).unwrap();
+        assert!((luma(&scaled) - white).abs() < 0.01, "{ten_bit}");
+    }
+    let mut kept = video_encoder(true, Some(hdr10));
+    let scaled = kept.scale(&pq_white).unwrap();
+    assert!((luma(&scaled) - white).abs() < 0.01, "{}", luma(&scaled));
+}
+
+/// A 10-bit encoding keeps the source's colors unless they're HDR the
+/// device isn't given; an 8-bit one never does.
+#[test]
+fn keeps_the_sources_colors_only_as_the_device_shows_them() {
+    use ffi::AVColorTransferCharacteristic::*;
+    let colors = |transfer| Colors {
+        primaries: Some(ffi::AVColorPrimaries::AVCOL_PRI_BT2020),
+        transfer: Some(transfer),
+        space: Some(ffi::AVColorSpace::AVCOL_SPC_BT2020_NCL),
+    };
+    let (pq, hlg, sdr) = (
+        colors(AVCOL_TRC_SMPTE2084),
+        colors(AVCOL_TRC_ARIB_STD_B67),
+        colors(AVCOL_TRC_BT2020_10),
+    );
+    let kept = |colors, ten_bit, hdr| kept_colors(colors, ten_bit, hdr).is_some();
+    assert!(kept(pq, true, Some(Hdr::Hdr10)));
+    assert!(kept(hlg, true, Some(Hdr::Hlg)));
+    assert!(!kept(pq, true, None));
+    assert!(!kept(hlg, true, None));
+    assert!(kept(sdr, true, None));
+    assert!(kept(Colors::default(), true, None));
+    assert!(!kept(pq, false, Some(Hdr::Hdr10)));
+    assert!(!kept(sdr, false, None));
+}

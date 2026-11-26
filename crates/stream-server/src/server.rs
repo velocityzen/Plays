@@ -903,7 +903,7 @@ fn variant(input: &Input, info: &MediaInfo, plan: &Plan) -> Variant {
                 time_base: ffmpeg::Rational::new(1, 90_000),
                 frame_rate: frame_rate
                     .map(|rate| ffmpeg::Rational::new((rate * 1000.0).round() as i32, 1000)),
-                colors: Colors::default(),
+                colors: (*ten_bit).then(Colors::default),
                 global_header: true,
             };
             match VideoEncoder::open(&settings)

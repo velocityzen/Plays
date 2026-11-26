@@ -19,6 +19,7 @@
 
 mod adjust;
 mod encode;
+mod hdr;
 mod http;
 mod job;
 mod media;

@@ -22,7 +22,9 @@ use ffmpeg_next as ffmpeg;
 
 use crate::Error;
 use crate::adjust::{self, Adjustments};
-use crate::encode::{AudioEncoder, AudioSettings, Colors, VideoEncoder, VideoSettings};
+use crate::encode::{
+    AudioEncoder, AudioSettings, Colors, VideoEncoder, VideoSettings, kept_colors,
+};
 use crate::media::{self, MediaInfo, Source};
 use crate::mux::{Format, Muxer, OutStream};
 use crate::overlay::{Coding, Overlay};
@@ -674,17 +676,18 @@ fn video_work(
             width,
             height,
             ten_bit,
+            hdr,
             bit_rate,
             ..
         } => {
             let decoder = open_video_decoder(&parameters, time_base)?;
-            let colors = Colors::of(&parameters);
+            let colors = kept_colors(Colors::of(&parameters), *ten_bit, *hdr);
             let size = media
                 .info
                 .video(*stream)
                 .map_or((*width, *height), |video| (video.width, video.height));
             let overlay = media.plan.subtitles.and_then(|subtitles| {
-                Overlay::open(input, subtitles, size, Coding::of(&colors, *ten_bit))
+                Overlay::open(input, subtitles, size, Coding::of(colors.as_ref()))
                     .inspect_err(|err| log::warn!("the subtitles can't be drawn in: {err}"))
                     .ok()
             });

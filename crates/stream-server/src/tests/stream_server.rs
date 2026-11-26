@@ -985,6 +985,54 @@ fn re_encodes_video_whose_colors_ffmpeg_has_no_names_for() {
     assert_eq!(frames, 50);
 }
 
+/// HDR10 cast to a device that isn't given HDR comes fitted to SDR: tagged
+/// BT.709, its reference white shown nearly white, not as the dim grey
+/// PQ's code for it is taken for BT.709's (143 of 235).
+#[cfg(target_os = "macos")]
+#[test]
+fn fits_hdr_to_sdr_for_a_device_not_given_it() {
+    let server = server();
+    let cast = cast(&server, "clip-hdr10.mkv", hls(Segments::Ts));
+    assert!(
+        matches!(
+            cast.plan().video,
+            Some(VideoPlan::Encode {
+                to: VideoCodec::H264,
+                ten_bit: false,
+                hdr: None,
+                ..
+            })
+        ),
+        "{:?}",
+        cast.plan()
+    );
+    let segment = get(&sibling(&cast.url(), "0.ts"));
+    assert_eq!(segment.status, 200);
+    let path = written(&segment.body, "ts");
+    let mut input = ffmpeg::format::input(&path).expect("the segment opens");
+    let stream = input.streams().best(Type::Video).expect("video");
+    let index = stream.index();
+    let mut decoder = ffmpeg::codec::Context::from_parameters(stream.parameters())
+        .unwrap()
+        .decoder()
+        .video()
+        .unwrap();
+    let mut frame = ffmpeg::frame::Video::empty();
+    let decoded = input
+        .packets()
+        .filter(|(stream, _)| stream.index() == index)
+        .any(|(_, packet)| {
+            decoder.send_packet(&packet).unwrap();
+            decoder.receive_frame(&mut frame).is_ok()
+        });
+    drop(input);
+    let _ = fs::remove_file(&path);
+    assert!(decoded, "a frame");
+    assert_eq!(crate::hdr::Tags::of(&frame), crate::hdr::tests::sdr_tags());
+    let luma = frame.data(0)[frame.stride(0) * 60 + 80];
+    assert!(luma > 210, "{luma}");
+}
+
 /// A read failing partway through a file, as a network share's might: the
 /// segments past it aren't served empty, and are read again when asked for.
 #[test]

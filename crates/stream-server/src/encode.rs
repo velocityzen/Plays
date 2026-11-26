@@ -17,7 +17,8 @@ use ffmpeg_next as ffmpeg;
 use ffmpeg_safe::Layout;
 
 use crate::Error;
-use crate::profile::{AudioCodec, VideoCodec};
+use crate::hdr;
+use crate::profile::{AudioCodec, Hdr, VideoCodec};
 use crate::sync::lock;
 
 /// The hardware encoders to try for a codec, in order.
@@ -58,7 +59,7 @@ pub(crate) fn video_encoder(
             bit_rate: 2_000_000,
             time_base: Rational::new(1, 25),
             frame_rate: Some(Rational::new(25, 1)),
-            colors: Colors::default(),
+            colors: ten_bit.then(Colors::default),
             global_header: true,
         };
         match VideoEncoder::open(&settings) {
@@ -151,6 +152,15 @@ impl Colors {
             space: SPACES.into_iter().find(|&named| named as u32 == space),
         }
     }
+
+    /// Whether these are HDR's, PQ or HLG.
+    pub fn is_hdr(&self) -> bool {
+        use ffi::AVColorTransferCharacteristic::{AVCOL_TRC_ARIB_STD_B67, AVCOL_TRC_SMPTE2084};
+        matches!(
+            self.transfer,
+            Some(AVCOL_TRC_SMPTE2084 | AVCOL_TRC_ARIB_STD_B67)
+        )
+    }
 }
 
 const PRIMARIES: [ffi::AVColorPrimaries; 11] = {
@@ -224,8 +234,10 @@ pub(crate) struct VideoSettings<'a> {
     /// The time base frames' timestamps come in, which packets keep.
     pub time_base: Rational,
     pub frame_rate: Option<Rational>,
-    /// Kept for 10-bit encodings; 8-bit ones are tagged BT.709.
-    pub colors: Colors,
+    /// The source's colors, where the encoding keeps them (see
+    /// [`kept_colors`]). Without, it's tagged BT.709 and HDR frames are
+    /// fitted to SDR for it.
+    pub colors: Option<Colors>,
     /// Parameter sets in the stream's header, as MP4 needs.
     pub global_header: bool,
 }
@@ -241,6 +253,12 @@ pub(crate) struct VideoEncoder {
     width: u32,
     height: u32,
     scaler: Option<Scaler>,
+    /// Whether it's tagged with the source's colors, not BT.709.
+    keeps_colors: bool,
+    /// HDR frames' fitting to SDR, made for the first of them.
+    to_sdr: Option<Box<hdr::ToSdr>>,
+    /// Whether that scaling failed, after which frames are only scaled.
+    to_sdr_failed: bool,
     #[cfg(target_os = "linux")]
     vaapi: Option<vaapi::Frames>,
 }
@@ -270,14 +288,14 @@ impl VideoEncoder {
         context.set_max_b_frames(0);
         // Keyframes come where segments start, when asked for.
         context.set_gop(600);
-        if settings.ten_bit {
-            if let Some(primaries) = settings.colors.primaries {
+        if let Some(colors) = settings.colors {
+            if let Some(primaries) = colors.primaries {
                 context.set_color_primaries(primaries.into());
             }
-            if let Some(transfer) = settings.colors.transfer {
+            if let Some(transfer) = colors.transfer {
                 context.set_color_transfer_characteristic(transfer.into());
             }
-            if let Some(space) = settings.colors.space {
+            if let Some(space) = colors.space {
                 context.set_colorspace(space.into());
             }
         } else {
@@ -333,6 +351,9 @@ impl VideoEncoder {
             width: settings.width,
             height: settings.height,
             scaler: None,
+            keeps_colors: settings.colors.is_some(),
+            to_sdr: None,
+            to_sdr_failed: false,
             #[cfg(target_os = "linux")]
             vaapi,
         })
@@ -357,13 +378,22 @@ impl VideoEncoder {
         self.scale_to(decoded, self.width, self.height)
     }
 
-    /// A decoded frame at `width` × `height`, in the encoder's format.
+    /// A decoded frame at `width` × `height`, in the encoder's format. One
+    /// tagged BT.709 has HDR frames fitted to SDR's BT.709, not only
+    /// scaled.
     pub fn scale_to(
         &mut self,
         decoded: &frame::Video,
         width: u32,
         height: u32,
     ) -> Result<frame::Video, Error> {
+        if !self.keeps_colors
+            && !self.to_sdr_failed
+            && let Some(transfer) = hdr::Transfer::of(decoded)
+            && let Some(frame) = self.fit_to_sdr(decoded, transfer, width, height)
+        {
+            return Ok(frame);
+        }
         let source = (decoded.format(), decoded.width(), decoded.height());
         if self
             .scaler
@@ -388,6 +418,27 @@ impl VideoEncoder {
             .run(decoded, &mut frame)
             .map_err(|err| Error::Encode(format!("scaling: {err}")))?;
         Ok(frame)
+    }
+
+    /// HDR `decoded`, in `transfer`, at `width` × `height`, as SDR in
+    /// BT.709 in the encoder's format; `None`, from then on, where that
+    /// fails.
+    fn fit_to_sdr(
+        &mut self,
+        decoded: &frame::Video,
+        transfer: hdr::Transfer,
+        width: u32,
+        height: u32,
+    ) -> Option<frame::Video> {
+        let to_sdr = self.to_sdr.get_or_insert_with(Box::default);
+        let mut frame = frame::Video::new(self.format, width, height);
+        if let Err(err) = to_sdr.run(decoded, transfer, &mut frame) {
+            log::warn!("HDR video can't be fitted to SDR, so it's only scaled: {err}");
+            self.to_sdr = None;
+            self.to_sdr_failed = true;
+            return None;
+        }
+        Some(frame)
     }
 
     /// Encode a frame [`scale`](Self::scale) gave at `pts` (in the
@@ -420,6 +471,12 @@ impl VideoEncoder {
     pub fn receive(&mut self, packet: &mut Packet) -> bool {
         self.encoder.receive_packet(packet).is_ok()
     }
+}
+
+/// The source's `colors` an encoding keeps: a 10-bit one's, unless they're
+/// HDR the device isn't given (`hdr`), which is fitted to SDR instead.
+pub(crate) fn kept_colors(colors: Colors, ten_bit: bool, hdr: Option<Hdr>) -> Option<Colors> {
+    (ten_bit && (hdr.is_some() || !colors.is_hdr())).then_some(colors)
 }
 
 pub(crate) struct AudioSettings {
