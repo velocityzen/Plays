@@ -481,13 +481,57 @@ fn the_command_reference_is_current() {
         api::find("app.show_components").is_some() && !kept.contains("app.show_components"),
         "but not the commands for working on Plays, which release builds don't have"
     );
-    let play = "### Play/Pause\n\n`block.playback.play_pause`: ";
+    let play = "#### Play/Pause\n\n`block.playback.play_pause`: ";
     assert!(kept.contains(play), "each command under its title");
     assert!(kept.contains("- Keys: Space, P\n"));
     assert!(
         kept.contains("  - `time` (a number, at least 0): "),
         "arguments"
     );
+}
+
+#[test]
+fn the_reference_has_each_command_and_event_once_and_its_links_go_to_headings() {
+    let text = reference::reference();
+    // Each heading's anchor, as GitHub gives it.
+    let mut seen: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    let mut anchors = std::collections::HashSet::new();
+    for line in text.lines().filter(|line| line.starts_with('#')) {
+        let heading = line.trim_start_matches('#').trim_start();
+        let slug: String = heading
+            .to_lowercase()
+            .chars()
+            .filter_map(|c| match c {
+                ' ' => Some('-'),
+                c if c.is_alphanumeric() || c == '-' || c == '_' => Some(c),
+                _ => None,
+            })
+            .collect();
+        let count = seen.entry(slug.clone()).or_insert(0);
+        anchors.insert(if *count == 0 {
+            slug
+        } else {
+            format!("{slug}-{count}")
+        });
+        *count += 1;
+    }
+    let links: Vec<&str> = text
+        .split("](#")
+        .skip(1)
+        .filter_map(|link| link.split(')').next())
+        .collect();
+    assert!(links.len() > 500, "the contents and each event told link");
+    for link in links {
+        assert!(anchors.contains(link), "#{link} goes to no heading");
+    }
+    for spec in api::all().filter(|spec| !spec.developer) {
+        let under = format!("\n`{}`: ", spec.id);
+        assert_eq!(text.matches(&under).count(), 1, "{}", spec.id);
+    }
+    for (_, kind) in crate::api::events::kinds::all() {
+        let heading = format!("\n#### {}\n", kind.name);
+        assert_eq!(text.matches(&heading).count(), 1, "{}", kind.name);
+    }
 }
 
 #[gpui::test]

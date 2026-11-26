@@ -373,8 +373,8 @@ flowchart TB
   hands files over, all else refused while Settings has the command line
   off
 - `src/cli.rs`, `src/cli/`: the command line, a client of that socket;
-  `reference.rs` writes `docs/commands.md`; `lua.rs` runs `plays do`'s
-  Lua scripts ([docs/lua.md](docs/lua.md),
+  `reference.rs` writes `docs/commands.md`, by function; `lua.rs` runs
+  `plays do`'s Lua scripts ([docs/lua.md](docs/lua.md),
   [docs/lua-events.md](docs/lua-events.md))
 - `src/app/mod.rs`, `keymap.rs`, `menus.rs`: startup, keys and menu bar
 - `src/app/windows.rs`, `history.rs`: window numbers and `FocusHistory`

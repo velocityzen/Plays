@@ -1,9 +1,10 @@
 //! `plays actions`: every command, or those a search finds, from the
 //! registry this program has, so Plays needn't be running. As a table of
 //! ids, titles and keys; as JSON, each described; or, with `--markdown`,
-//! the command reference kept in `docs/commands.md`, with every event Plays
-//! tells and what tells it.
+//! the reference kept in `docs/commands.md`: every command and every event
+//! Plays tells, by function.
 
+use std::collections::HashMap;
 use std::fmt::Write as _;
 use std::io::Write;
 
@@ -61,47 +62,245 @@ fn keys(spec: &Spec) -> String {
     shown.join(", ")
 }
 
-/// The command reference, in Markdown: each namespace's commands, with
-/// what they act on, their keys, arguments, what they hand back and the
-/// events they tell; then each namespace's events, with who hears them,
-/// their payload, and what tells them.
-pub fn reference() -> String {
-    let mut text = String::from(
-        "# Commands\n\n\
-         Every command Plays has, by namespace, as `plays actions --markdown` writes \
-         them. A terminal runs one with `plays do ID [KEY=VALUE…]`, naming the window \
-         or block it acts on with `-w` and `-b`; keys run those that have them, and \
-         Settings → Hotkeys changes those. The keys here are macOS's: elsewhere Ctrl \
-         stands for ⌘, and Alt for ⌥. What each tells is in [Events](#events).\n",
-    );
-    let mut namespace = "";
-    for spec in commands() {
-        if spec.namespace() != namespace {
-            namespace = spec.namespace();
-            writeln!(text, "\n## {namespace}").ok();
+/// The functions the reference groups commands and events by, in its
+/// order: each one's title, and the word its parts' headings call it by.
+const FUNCTIONS: [(&str, &str); 13] = [
+    ("Playback", "Playback"),
+    ("Audio", "Audio"),
+    ("Subtitles", "Subtitles"),
+    ("Video", "Video"),
+    ("Interface", "Interface"),
+    ("Blocks", "Block"),
+    ("Windows", "Window"),
+    ("Casting", "Casting"),
+    ("Audio output", "Audio output"),
+    ("Displays", "Display"),
+    ("Settings", "Settings"),
+    ("App", "App"),
+    ("Command line", "Command-line"),
+];
+
+/// Where a function's commands act, as their ids start, from the
+/// narrowest, and what its parts' headings say of each when it has more
+/// than one.
+const SCOPES: [(&str, &str); 3] = [
+    ("block", "in a block"),
+    ("window", "in a window"),
+    ("app", "in every window"),
+];
+
+/// The function a command's or an event's id is of, as `FUNCTIONS` titles
+/// it: as the menus have them.
+fn function(id: &str) -> &'static str {
+    let parts: Vec<&str> = id.split('.').collect();
+    // A feature's, as `playback` is in `window.playback.play`; not a
+    // command's own name, as `close` is in `block.close`.
+    let feature = if parts.len() > 2 { parts[1] } else { "" };
+    match (parts[0], feature) {
+        (_, "playback") => "Playback",
+        (_, "audio") => "Audio",
+        (_, "subtitles") => "Subtitles",
+        (_, "video" | "picture_in_picture" | "console") => "Video",
+        (_, "ui" | "controls" | "top_bar" | "track_switcher" | "notes") => "Interface",
+        ("block", _) => "Blocks",
+        ("window", _) => "Windows",
+        ("cast", _) => "Casting",
+        ("output", _) => "Audio output",
+        ("display", _) => "Displays",
+        ("app", "settings") => "Settings",
+        ("cli", _) => "Command line",
+        _ => "App",
+    }
+}
+
+/// The anchors GitHub gives headings, as they come: lowercase, without
+/// what isn't a letter, a digit, a space, `-` or `_`, a space as `-`; one
+/// met before ends `-1`, `-2`…
+#[derive(Default)]
+struct Anchors {
+    seen: HashMap<String, usize>,
+    /// Each command's, by id, and each event's, by type.
+    of: HashMap<&'static str, String>,
+}
+
+impl Anchors {
+    /// The next heading's.
+    fn next(&mut self, heading: &str) -> String {
+        let slug: String = heading
+            .to_lowercase()
+            .chars()
+            .filter_map(|c| match c {
+                ' ' => Some('-'),
+                c if c.is_alphanumeric() || c == '-' || c == '_' => Some(c),
+                _ => None,
+            })
+            .collect();
+        let seen = self.seen.entry(slug.clone()).or_insert(0);
+        let anchor = if *seen == 0 {
+            slug
+        } else {
+            format!("{slug}-{seen}")
+        };
+        *seen += 1;
+        anchor
+    }
+
+    /// A link to the command `id`, or the event `id`, by its id.
+    fn link(&self, id: &str) -> String {
+        format!("[`{id}`](#{})", self.of[id])
+    }
+}
+
+/// A function's commands that act in one place, or its events.
+struct Part {
+    heading: String,
+    /// What the contents call it: in a block, commands or events.
+    label: &'static str,
+    anchor: String,
+    commands: Vec<&'static Spec>,
+    events: Vec<&'static EventKind>,
+}
+
+struct Function {
+    title: &'static str,
+    anchor: String,
+    parts: Vec<Part>,
+}
+
+/// The reference's functions, with their parts, each command and event's
+/// anchor noted as its heading comes.
+fn functions(anchors: &mut Anchors) -> Vec<Function> {
+    let mut functions = Vec::new();
+    for (title, word) in FUNCTIONS {
+        let commands: Vec<&Spec> = commands()
+            .filter(|spec| function(spec.id) == title)
+            .collect();
+        let events: Vec<&EventKind> = kinds::all()
+            .map(|(_, kind)| kind)
+            .filter(|kind| function(kind.name) == title)
+            .collect();
+        let scope = |spec: &Spec| spec.id.split('.').next().unwrap_or(spec.id);
+        let mut scopes: Vec<&str> = Vec::new();
+        for spec in &commands {
+            if !scopes.contains(&scope(spec)) {
+                scopes.push(scope(spec));
+            }
         }
-        command(&mut text, spec);
+        scopes.sort_by_key(|&at| SCOPES.iter().position(|&(scope, _)| scope == at));
+        let anchor = anchors.next(title);
+        let mut parts = Vec::new();
+        for at in &scopes {
+            let (heading, label) = match SCOPES.iter().find(|&&(scope, _)| scope == *at) {
+                Some(&(_, place)) if scopes.len() > 1 => (format!("{word} {place}"), place),
+                _ => (format!("{word} commands"), "commands"),
+            };
+            let anchor = anchors.next(&heading);
+            let commands: Vec<&Spec> = commands
+                .iter()
+                .copied()
+                .filter(|spec| scope(spec) == *at)
+                .collect();
+            for spec in &commands {
+                let anchor = anchors.next(spec.title);
+                anchors.of.insert(spec.id, anchor);
+            }
+            parts.push(Part {
+                heading,
+                label,
+                anchor,
+                commands,
+                events: Vec::new(),
+            });
+        }
+        if !events.is_empty() {
+            let heading = format!("{word} events");
+            let anchor = anchors.next(&heading);
+            for kind in &events {
+                let anchor = anchors.next(kind.name);
+                anchors.of.insert(kind.name, anchor);
+            }
+            parts.push(Part {
+                heading,
+                label: "events",
+                anchor,
+                commands: Vec::new(),
+                events,
+            });
+        }
+        if !parts.is_empty() {
+            functions.push(Function {
+                title,
+                anchor,
+                parts,
+            });
+        }
+    }
+    functions
+}
+
+/// The command reference, in Markdown, by function: contents first, then
+/// how commands run and events are heard, then each function's commands,
+/// for a block, a window or every window, with what they act on, their
+/// keys, arguments, what they hand back and the events they tell; and its
+/// events, with who hears them, their payload, and what tells them.
+pub fn reference() -> String {
+    let mut anchors = Anchors::default();
+    for heading in ["Commands and events", "Contents", "Commands", "Events"] {
+        anchors.next(heading);
+    }
+    let functions = functions(&mut anchors);
+    let mut text = String::from(
+        "# Commands and events\n\n\
+         Every command Plays has and every event it tells, by what they're about, as \
+         `plays actions --markdown` writes them.\n\n\
+         ## Contents\n\n\
+         - [Commands](#commands) and [Events](#events): running the one, hearing the other\n",
+    );
+    for function in &functions {
+        let parts: Vec<String> = function
+            .parts
+            .iter()
+            .map(|part| format!("[{}](#{})", part.label, part.anchor))
+            .collect();
+        writeln!(
+            text,
+            "- [{}](#{}): {}",
+            function.title,
+            function.anchor,
+            parts.join(", ")
+        )
+        .ok();
     }
     text.push_str(
-        "\n# Events\n\n\
-         What changes in Plays, its windows and their blocks, by namespace: `plays events` \
-         prints each as it comes, and `plays wait` waits for one. Each is a JSON object, \
-         `{type, payload}`. The payload of one about a window starts with `window_id` and \
-         `window_title`, as its title bar shows it; of one about a block, with `block_id` \
-         and `block_title` too, as its header shows it. A listener hears the app's, one \
-         window's, or all of them. Readers ignore events and fields they don't know.\n\n\
+        "\n## Commands\n\n\
+         A terminal runs one with `plays do ID [KEY=VALUE…]`, naming the window or block it \
+         acts on with `-w` and `-b`; keys run those that have them, and Settings → Hotkeys \
+         changes those. The keys here are macOS's: elsewhere Ctrl stands for ⌘, and Alt for \
+         ⌥. A command for a window, or for every window, does to each block in it what the \
+         block's does, its title ending in Window, or in Every Window.\n\n\
+         ## Events\n\n\
+         What changes in Plays, its windows and their blocks: `plays events` prints each as \
+         it comes, and `plays wait` waits for one. Each is a JSON object, `{type, payload}`. \
+         The payload of one about a window starts with `window_id` and `window_title`, as its \
+         title bar shows it; of one about a block, with `block_id` and `block_title` too, as \
+         its header shows it. A listener hears the app's, one window's, or all of them. \
+         Readers ignore events and fields they don't know.\n\n\
          A cue is a block reaching a time or a frame: `block.<block>.position@120.5s`, or \
          `…@345f`, the block by id, label or number. `plays wait` waits for one and \
          `plays events --cue` hears them: each once, the cue its type, with \
          `block.playback.position`'s payload.\n",
     );
-    let mut namespace = "";
-    for (in_namespace, kind) in kinds::all() {
-        if in_namespace != namespace {
-            namespace = in_namespace;
-            writeln!(text, "\n## {namespace}").ok();
+    for function in &functions {
+        writeln!(text, "\n## {}", function.title).ok();
+        for part in &function.parts {
+            writeln!(text, "\n### {}", part.heading).ok();
+            for spec in &part.commands {
+                command(&mut text, spec, &anchors);
+            }
+            for kind in &part.events {
+                event(&mut text, kind, &anchors);
+            }
         }
-        event(&mut text, kind);
     }
     text
 }
@@ -113,8 +312,8 @@ fn commands() -> impl Iterator<Item = &'static Spec> {
 }
 
 /// One event, in the reference.
-fn event(text: &mut String, kind: &EventKind) {
-    writeln!(text, "\n### {}\n\n{}\n", kind.name, kind.description).ok();
+fn event(text: &mut String, kind: &EventKind, anchors: &Anchors) {
+    writeln!(text, "\n#### {}\n\n{}\n", kind.name, kind.description).ok();
     let heard = match kind.heard {
         Heard::App => "those listening to the app's events",
         Heard::AppAndWindow => "those listening to the app's events, and to its window's",
@@ -152,7 +351,7 @@ fn event(text: &mut String, kind: &EventKind) {
     }
     let mut follows: Vec<String> = commands()
         .filter(|spec| spec.tells.contains(&kind.name))
-        .map(|spec| format!("`{}`", spec.id))
+        .map(|spec| anchors.link(spec.id))
         .collect();
     follows.extend(kind.causes.iter().map(|&cause| cause.to_owned()));
     if let Some(last) = follows.len().checked_sub(1).filter(|&last| last > 0) {
@@ -162,10 +361,10 @@ fn event(text: &mut String, kind: &EventKind) {
 }
 
 /// One command, in the reference.
-fn command(text: &mut String, spec: &Spec) {
+fn command(text: &mut String, spec: &Spec, anchors: &Anchors) {
     writeln!(
         text,
-        "\n### {}\n\n`{}`: {}\n",
+        "\n#### {}\n\n`{}`: {}\n",
         spec.title, spec.id, spec.description
     )
     .ok();
@@ -190,7 +389,7 @@ fn command(text: &mut String, spec: &Spec) {
         writeln!(text, "- Hands back: {returns}").ok();
     }
     if !spec.tells.is_empty() {
-        let tells: Vec<String> = spec.tells.iter().map(|kind| format!("`{kind}`")).collect();
+        let tells: Vec<String> = spec.tells.iter().map(|kind| anchors.link(kind)).collect();
         writeln!(text, "- Tells: {}.", tells.join(", ")).ok();
     }
 }
