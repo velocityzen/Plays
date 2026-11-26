@@ -277,8 +277,7 @@ mkdir ($nu.user-autoload-dirs | first); plays completions nushell | save -f ($nu
   MFi, and speakers and TVs that let only their home play to them can't be
   played through. Several speakers aren't played through as a group.
 - A Chromecast's certificate isn't checked against Google's.
-- DLNA devices are found over IPv4 only, and their subtitles depend on the
-  TV.
+- DLNA devices' subtitles depend on the TV.
 - The cast stream server listens on every interface, so the firewall may
   ask about it, and on macOS 15 and later looking for devices asks to use
   the local network.

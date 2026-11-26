@@ -2,7 +2,7 @@
 
 use std::fs;
 use std::io::{ErrorKind, Read, Write};
-use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, TcpStream};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -20,7 +20,8 @@ use crate::{
     Segments, Server, Source, SubtitleSource, VideoCodec, VideoPlan,
 };
 
-const LOCALHOST: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
+/// This computer, as a device: on no port in particular.
+const LOCALHOST: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0);
 
 fn fixture(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -30,7 +31,7 @@ fn fixture(name: &str) -> PathBuf {
 
 /// A server with one-second segments, so the two-second fixtures have two.
 fn server() -> Server {
-    Server::start_with(SocketAddr::new(LOCALHOST, 0), 1.0).expect("the server starts")
+    Server::start_with(LOCALHOST, 1.0).expect("the server starts")
 }
 
 fn cast(server: &Server, name: &str, profile: Profile) -> crate::Cast {
@@ -249,7 +250,7 @@ fn close(a: f64, b: f64) -> bool {
 /// A cast for the device at 127.0.0.2, and its URL as this computer,
 /// which isn't it, reaches it.
 fn cast_elsewhere(server: &Server) -> (crate::Cast, String) {
-    let device = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 2));
+    let device = SocketAddr::from(([127, 0, 0, 2], 0));
     let elsewhere = server
         .add(
             CastRequest::new(Source::File(fixture("clip.mp4")), Profile::default()),
@@ -258,6 +259,48 @@ fn cast_elsewhere(server: &Server) -> (crate::Cast, String) {
         .expect("the fixture casts");
     let url = elsewhere.url().replace("127.0.0.2", "127.0.0.1");
     (elsewhere, url)
+}
+
+/// Served over IPv4 and IPv6 both, each cast to its own device alone.
+#[test]
+fn a_server_on_both_ip_versions_serves_devices_on_either() {
+    let server = Server::start_with((Ipv6Addr::UNSPECIFIED, 0).into(), 1.0).unwrap();
+    let on = |device: SocketAddr| {
+        server
+            .add(
+                CastRequest::new(Source::File(fixture("clip.mp4")), Profile::default()),
+                device,
+            )
+            .unwrap()
+            .url()
+    };
+    let over_ipv4 = on(LOCALHOST);
+    let over_ipv6 = on((Ipv6Addr::LOCALHOST, 0).into());
+    assert!(over_ipv4.starts_with("http://127.0.0.1:"), "{over_ipv4}");
+    assert!(over_ipv6.starts_with("http://[::1]:"), "{over_ipv6}");
+    assert_eq!(get(&over_ipv4).status, 200);
+    assert_eq!(get(&over_ipv6).status, 200);
+    let port = server.port().to_string();
+    let swapped = |url: &str, from: &str, to: &str| url.replacen(from, to, 1);
+    assert_eq!(
+        get(&swapped(
+            &over_ipv4,
+            &format!("127.0.0.1:{port}"),
+            &format!("[::1]:{port}")
+        ))
+        .status,
+        404,
+        "not to the other's device"
+    );
+    assert_eq!(
+        get(&swapped(
+            &over_ipv6,
+            &format!("[::1]:{port}"),
+            &format!("127.0.0.1:{port}")
+        ))
+        .status,
+        404
+    );
 }
 
 #[test]

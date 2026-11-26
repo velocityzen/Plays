@@ -2,7 +2,7 @@
 //! which do as they are told, keep what they were told, and say what the
 //! test has them say.
 
-use std::net::{IpAddr, Ipv4Addr};
+use std::net::Ipv4Addr;
 use std::sync::Arc;
 
 use parking_lot::Mutex;
@@ -54,7 +54,7 @@ impl FakeTarget {
             id: format!("fake-{}", devices.len()),
             name: name.to_owned(),
             shows,
-            address: IpAddr::V4(Ipv4Addr::LOCALHOST),
+            address: (Ipv4Addr::LOCALHOST, 0).into(),
         };
         let screen = Screen {
             calls: Vec::new(),

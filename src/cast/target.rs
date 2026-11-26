@@ -3,7 +3,7 @@
 //! these traits.
 
 use std::fmt;
-use std::net::IpAddr;
+use std::net::SocketAddr;
 use std::time::{Duration, Instant};
 
 use stream_server::{Profile, Segments, SubtitleSource};
@@ -33,9 +33,9 @@ pub struct Device {
     pub id: String,
     pub name: String,
     pub shows: Shows,
-    /// Where it is, for the stream server to give it a URL on the network
-    /// it is on.
-    pub address: IpAddr,
+    /// Where it is, in its zone where it's link-local, for the stream
+    /// server to give it a URL on the network it is on.
+    pub address: SocketAddr,
 }
 
 impl Device {

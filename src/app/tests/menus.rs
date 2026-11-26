@@ -625,7 +625,7 @@ fn tv(id: &str, name: &str) -> Device {
         id: id.into(),
         name: name.into(),
         shows: Shows::Video,
-        address: std::net::Ipv4Addr::LOCALHOST.into(),
+        address: (std::net::Ipv4Addr::LOCALHOST, 0).into(),
     }
 }
 

@@ -162,7 +162,7 @@ fn url_base_wins_over_the_location() {
     );
     assert_eq!(tv.av_transport.events, None, "an empty eventSubURL is none");
     assert_eq!(tv.rendering_control, None);
-    assert_eq!(tv.address(), Some([192, 0, 2, 12].into()));
+    assert_eq!(tv.address(), Some(([192, 0, 2, 12], 52323).into()));
 }
 
 #[test]
@@ -180,18 +180,54 @@ fn an_address_is_where_its_transport_is_and_never_looked_up() {
             .address()
     };
     let location = "http://192.0.2.13/dd.xml";
-    assert_eq!(at(location, "/control"), Some([192, 0, 2, 13].into()));
+    assert_eq!(at(location, "/control"), Some(([192, 0, 2, 13], 80).into()));
     assert_eq!(
         at(
             "http://[2001:db8::1]/dd.xml",
             "http://[2001:db8::1]:8080/control"
         ),
-        Some("2001:db8::1".parse().unwrap())
+        Some("[2001:db8::1]:8080".parse().unwrap())
+    );
+    assert_eq!(
+        at("http://[fe80::1c:2%7]:9197/dd.xml", "/control"),
+        Some("[fe80::1c:2%7]:9197".parse().unwrap()),
+        "in its zone"
     );
     assert_eq!(
         at("http://tv.local/dd.xml", "http://tv.local:8080/control"),
         None
     );
+}
+
+/// A link-local renderer's URLs are reached in the zone its description
+/// was, whether they give none or one of the renderer's own.
+#[test]
+fn a_link_local_renderers_urls_are_in_the_zone_it_was_reached_in() {
+    let description = "<root><device>\
+             <deviceType>urn:schemas-upnp-org:device:MediaRenderer:1</deviceType>\
+             <friendlyName>TV</friendlyName><UDN>uuid:tv</UDN><serviceList><service>\
+             <serviceType>urn:schemas-upnp-org:service:AVTransport:1</serviceType>\
+             <controlURL>/control</controlURL>\
+             <eventSubURL>http://[fe80::1c:2%eth0]:9197/events</eventSubURL></service>\
+             <service><serviceType>urn:schemas-upnp-org:service:RenderingControl:1</serviceType>\
+             <controlURL>http://[fe80::1c:2]:9197/volume</controlURL></service>\
+             <service><serviceType>urn:schemas-upnp-org:service:ConnectionManager:1</serviceType>\
+             <controlURL>http://[fe80::1c:3]:9197/elsewhere</controlURL></service>\
+             </serviceList></device></root>";
+    let tv = Device::from_description(description, "http://[fe80::1c:2%7]:9197/dd.xml").unwrap();
+    assert_eq!(
+        tv.av_transport.control,
+        "http://[fe80::1c:2%7]:9197/control"
+    );
+    assert_eq!(
+        tv.av_transport.events.as_deref(),
+        Some("http://[fe80::1c:2%7]:9197/events")
+    );
+    assert_eq!(
+        tv.rendering_control.unwrap().control,
+        "http://[fe80::1c:2%7]:9197/volume"
+    );
+    assert_eq!(tv.connection_manager, None, "another device's");
 }
 
 #[test]

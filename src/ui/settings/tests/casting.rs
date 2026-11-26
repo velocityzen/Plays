@@ -6,7 +6,7 @@ fn device(kind: &'static str, id: &str, name: &str, shows: Shows) -> Device {
         id: id.into(),
         name: name.into(),
         shows,
-        address: std::net::Ipv4Addr::LOCALHOST.into(),
+        address: (std::net::Ipv4Addr::LOCALHOST, 0).into(),
     }
 }
 

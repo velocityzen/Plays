@@ -219,6 +219,12 @@ pub struct FakeRenderer {
 
 impl FakeRenderer {
     pub fn start(kind: Kind) -> Self {
+        Self::start_at(kind, (Ipv4Addr::LOCALHOST, 0).into())
+    }
+
+    /// One at `at`'s address, in its zone, on ports of its own.
+    pub fn start_at(kind: Kind, mut at: SocketAddr) -> Self {
+        at.set_port(0);
         let state = Arc::new(Mutex::new(State {
             calls: Vec::new(),
             uri: String::new(),
@@ -245,9 +251,9 @@ impl FakeRenderer {
             sink: sink(kind).to_owned(),
             next_sid: 1,
         }));
-        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let listener = TcpListener::bind(at).unwrap();
         let http = listener.local_addr().unwrap();
-        let ssdp = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let ssdp = UdpSocket::bind(at).unwrap();
         ssdp.set_read_timeout(Some(Duration::from_millis(10)))
             .unwrap();
         let ssdp_at = ssdp.local_addr().unwrap();
@@ -305,11 +311,15 @@ impl FakeRenderer {
         }
     }
 
+    /// As it says where it is: without its zone, which is its own.
     fn advert_of(udn: &str, http: SocketAddr) -> Advert {
         Advert {
             udn: udn.to_owned(),
             kind: MEDIA_RENDERER.into(),
-            location: format!("http://{http}/description.xml"),
+            location: format!(
+                "http://{}/description.xml",
+                SocketAddr::new(http.ip(), http.port())
+            ),
             max_age: Duration::from_secs(1800),
         }
     }
@@ -318,7 +328,8 @@ impl FakeRenderer {
         self.kind
     }
 
-    /// Where its description is.
+    /// Where its description is, as it's reached: in its zone where it's
+    /// link-local.
     pub fn location(&self) -> String {
         format!("http://{}/description.xml", self.http)
     }
@@ -350,7 +361,9 @@ impl FakeRenderer {
     }
 
     fn send(&self, datagram: &str, to: SocketAddr) {
-        let socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let mut here = self.http;
+        here.set_port(0);
+        let socket = UdpSocket::bind(here).unwrap();
         socket.send_to(datagram.as_bytes(), to).unwrap();
     }
 

@@ -196,17 +196,97 @@ fn a_description_is_fetched_only_from_where_its_advert_came_from() {
             LOCATION: http://192.0.2.10:9197/dmr\r\nNT: urn:schemas-upnp-org:device:MediaRenderer:1\r\n\
             NTS: ssdp:alive\r\nUSN: uuid:tv::urn:schemas-upnp-org:device:MediaRenderer:1\r\n\r\n";
     let advert = Message::parse(notify).expect("an advert");
-    let tv = IpAddr::V4(Ipv4Addr::new(192, 0, 2, 10));
-    assert!(from_its_device(&advert, tv));
-    assert!(!from_its_device(
-        &advert,
-        IpAddr::V4(Ipv4Addr::new(192, 0, 2, 66))
-    ));
+    let tv = SocketAddr::from(([192, 0, 2, 10], 1900));
+    assert_eq!(from_its_device(advert.clone(), tv), Some(advert.clone()));
+    assert_eq!(
+        from_its_device(advert, SocketAddr::from(([192, 0, 2, 66], 1900))),
+        None
+    );
     let byebye = b"NOTIFY * HTTP/1.1\r\nHOST: 239.255.255.250:1900\r\n\
             NT: urn:schemas-upnp-org:device:MediaRenderer:1\r\nNTS: ssdp:byebye\r\n\
             USN: uuid:tv::urn:schemas-upnp-org:device:MediaRenderer:1\r\n\r\n";
     let byebye = Message::parse(byebye).expect("a goodbye");
-    assert!(from_its_device(&byebye, IpAddr::V4(Ipv4Addr::LOCALHOST)));
+    assert_eq!(
+        from_its_device(byebye.clone(), SocketAddr::from(([127, 0, 0, 1], 1900))),
+        Some(byebye)
+    );
+}
+
+/// A renderer at a link-local address, which it gives without a zone or
+/// with its own, is reached through the interface it was heard on.
+#[test]
+fn a_link_local_renderer_is_reached_in_the_zone_it_was_heard_in() {
+    let heard = |location: &str, from: &str| {
+        let notify = format!(
+            "NOTIFY * HTTP/1.1\r\nHOST: [ff02::c]:1900\r\nLOCATION: {location}\r\n\
+             NT: {MEDIA_RENDERER}\r\nNTS: ssdp:alive\r\nUSN: uuid:tv::{MEDIA_RENDERER}\r\n\r\n"
+        );
+        let message = Message::parse(notify.as_bytes()).expect("an advert");
+        match from_its_device(message, from.parse().unwrap()) {
+            Some(Message::Alive(advert)) => Some(advert.location),
+            _ => None,
+        }
+    };
+    let from = "[fe80::1c:2%7]:1900";
+    let reached = Some("http://[fe80::1c:2%7]:9197/dmr".to_owned());
+    assert_eq!(heard("http://[fe80::1c:2]:9197/dmr", from), reached);
+    assert_eq!(heard("http://[fe80::1c:2%eth0]:9197/dmr", from), reached);
+    assert_eq!(heard("http://[fe80::1c:3]:9197/dmr", from), None);
+    assert_eq!(heard("http://192.0.2.10:9197/dmr", from), None);
+    assert_eq!(
+        heard("http://[2001:db8::5]:9197/dmr", "[2001:db8::5]:1900"),
+        Some("http://[2001:db8::5]:9197/dmr".to_owned()),
+        "where there's no zone to it"
+    );
+}
+
+/// One on IPv4 and IPv6 both is read where it's on IPv4, while it's heard
+/// of there, rather than each time it's heard over the other.
+#[test]
+fn a_renderer_on_both_ip_versions_is_reached_over_ipv4_while_it_is_there() {
+    let mut directory = Directory::default();
+    let now = Instant::now();
+    let v4 = advert("uuid:tv", MEDIA_RENDERER);
+    let v6 = Advert {
+        location: "http://[fe80::1c:2%7]/dmr".into(),
+        ..v4.clone()
+    };
+    let later = |seconds| now + Duration::from_secs(seconds);
+    assert_eq!(directory.alive(&v4, now), Some(v4.location.clone()));
+    directory.described("uuid:tv", &v4.location, Ok(device("TV")));
+    assert_eq!(directory.alive(&v6, later(30)), None, "kept over IPv4");
+    assert_eq!(directory.alive(&v4, later(40)), None);
+    assert_eq!(directory.alive(&v6, later(90)), None, "IPv4's renewed");
+    assert!(directory.expire(later(100)).is_empty(), "heard over IPv6");
+    assert_eq!(
+        directory.alive(&v6, later(100)),
+        Some(v6.location.clone()),
+        "not heard over IPv4 since"
+    );
+    directory.described("uuid:tv", &v6.location, Ok(device("TV")));
+    assert_eq!(
+        directory.alive(&v4, later(110)),
+        Some(v4.location.clone()),
+        "back on IPv4"
+    );
+    assert_eq!(directory.alive(&v6, later(115)), None, "and kept there");
+
+    let failed = Err(crate::Error::protocol("not there"));
+    assert_eq!(directory.described("uuid:tv", &v4.location, failed), None);
+    assert_eq!(
+        directory.alive(&v6, later(120)),
+        Some(v6.location.clone()),
+        "read over IPv6 when it can't be over IPv4"
+    );
+
+    let mut directory = Directory::default();
+    assert_eq!(directory.alive(&v6, now), Some(v6.location.clone()));
+    assert_eq!(directory.alive(&v6, now), None);
+    assert_eq!(
+        directory.alive(&v4, now),
+        Some(v4.location.clone()),
+        "found on IPv6 first"
+    );
 }
 
 #[test]

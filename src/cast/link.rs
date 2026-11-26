@@ -3,7 +3,7 @@
 //! sends it what to do and reads what the device last said, showing what
 //! it asked for until the device has done it.
 
-use std::net::IpAddr;
+use std::net::SocketAddr;
 use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::thread::{self, JoinHandle};
@@ -348,7 +348,7 @@ fn run(
 struct Worker {
     session: Box<dyn Session>,
     server: Arc<Server>,
-    address: IpAddr,
+    address: SocketAddr,
     request: CastRequest,
     cast: Cast,
     subtitles: Option<SubtitleChoice>,

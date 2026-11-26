@@ -1,7 +1,7 @@
 //! A renderer, as its device description says: its name and model, its
 //! icons, and where its services are.
 
-use std::net::IpAddr;
+use std::net::SocketAddr;
 use std::time::Duration;
 
 use crate::error::{Error, Result};
@@ -131,11 +131,18 @@ impl Device {
             })
             .ok_or_else(|| Error::protocol("not a media renderer"))?;
         // Only the device the description came from is asked anything: a
-        // URL to elsewhere, on this computer say, is no URL of its own.
+        // URL to elsewhere, on this computer say, is no URL of its own. It's
+        // reached as the description was, in the zone that has.
         let url = |reference: &str| {
             base.join(reference)
                 .filter(|url| url.same_host(&origin))
-                .map(|url| url.to_string())
+                .map(|url| {
+                    Url {
+                        host: origin.host.clone(),
+                        ..url
+                    }
+                    .to_string()
+                })
         };
         // The renderer's own, or failing that, any device's.
         let find = |name: &str| {
@@ -190,11 +197,14 @@ impl Device {
         ))
     }
 
-    /// Where it is: the address its AVTransport is reached at, where the
-    /// description gives one rather than a host name, which this doesn't
-    /// look up.
-    pub fn address(&self) -> Option<IpAddr> {
-        Url::parse(&self.av_transport.control)?.host.parse().ok()
+    /// Where it is: the address its AVTransport is reached at, in its
+    /// zone where it's link-local, where the description gives one rather
+    /// than a host name, which this doesn't look up.
+    pub fn address(&self) -> Option<SocketAddr> {
+        Url::parse(&self.av_transport.control)?
+            .authority()
+            .parse()
+            .ok()
     }
 
     /// Its biggest icon.

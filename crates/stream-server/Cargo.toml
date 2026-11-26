@@ -21,6 +21,8 @@ ffmpeg-safe = { path = "../ffmpeg-safe" }
 log = "0.4"
 # Connections taken that close for the device however they're let go of.
 network = { path = "../network" }
+# A listener over IPv4 and IPv6 both.
+socket2 = "0.6"
 
 [build-dependencies]
 ffmpeg-link = { path = "../ffmpeg-link" }

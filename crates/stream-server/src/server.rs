@@ -5,7 +5,7 @@
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{self, Read};
-use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener, TcpStream, UdpSocket};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, TcpListener, TcpStream, UdpSocket};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::sync_channel;
@@ -15,6 +15,7 @@ use std::time::{Duration, Instant};
 
 use ffmpeg::format::context::Input;
 use ffmpeg_next as ffmpeg;
+use socket2::{Domain, Protocol, Socket, Type};
 
 use crate::encode::{Colors, VideoEncoder, VideoSettings};
 use crate::http::{self, Body, Request, Response};
@@ -76,11 +77,13 @@ struct Shared {
 }
 
 impl Server {
-    /// Serve on every IPv4 interface, on a port the system picks.
+    /// Serve on every interface, over IPv4 and IPv6, on a port the system
+    /// picks.
     pub fn start() -> Result<Self, Error> {
-        Self::start_on(SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0))
+        Self::start_on(SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), 0))
     }
 
+    /// Serve at `address`: at IPv6's unspecified address, over IPv4 too.
     pub fn start_on(address: SocketAddr) -> Result<Self, Error> {
         Self::start_with(address, SEGMENT)
     }
@@ -88,7 +91,7 @@ impl Server {
     /// With segments about `segment` seconds long.
     pub(crate) fn start_with(address: SocketAddr, segment: f64) -> Result<Self, Error> {
         crate::init();
-        let listener = TcpListener::bind(address)?;
+        let listener = listen(address)?;
         let address = listener.local_addr()?;
         let shared = Arc::new(Shared {
             casts: Mutex::default(),
@@ -120,9 +123,10 @@ impl Server {
         self.address.port()
     }
 
-    /// Get media ready for a device at `device`, and the URL to tell it.
-    /// Opens the source to see what is in it, so it may take a moment.
-    pub fn add(&self, request: CastRequest, device: IpAddr) -> Result<Cast, Error> {
+    /// Get media ready for a device at `device`, in its zone where it's
+    /// link-local (on whatever port), and the URL to tell it. Opens the
+    /// source to see what is in it, so it may take a moment.
+    pub fn add(&self, request: CastRequest, device: SocketAddr) -> Result<Cast, Error> {
         let host = local_address(device, self.address)?;
         let stop = Arc::new(AtomicBool::new(false));
         let mut input = media::open(&request.source, Arc::clone(&stop))?;
@@ -191,7 +195,7 @@ impl Server {
             ),
             file_name: file_name(&media.source),
             token: token.clone(),
-            device,
+            device: device.ip(),
             media,
             output,
             variant,
@@ -235,6 +239,7 @@ impl Drop for Server {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Relaxed);
         // Wake the listener to see it's to stop.
+        // IPv6's unspecified address takes IPv4 too.
         let wake = SocketAddr::new(
             if self.address.ip().is_unspecified() {
                 IpAddr::V4(Ipv4Addr::LOCALHOST)
@@ -757,24 +762,50 @@ fn npt_start(header: &str) -> Option<f64> {
     seconds.is_finite().then_some(seconds)
 }
 
+/// A listener at `address`. At IPv6's unspecified address it's IPv4's
+/// too, or where this computer has no IPv6, IPv4's alone.
+fn listen(address: SocketAddr) -> io::Result<TcpListener> {
+    if address.ip() != IpAddr::V6(Ipv6Addr::UNSPECIFIED) {
+        return TcpListener::bind(address);
+    }
+    let both = || -> io::Result<TcpListener> {
+        let socket = Socket::new(Domain::IPV6, Type::STREAM, Some(Protocol::TCP))?;
+        socket.set_only_v6(false)?;
+        // As the standard library's own listeners are.
+        #[cfg(unix)]
+        socket.set_reuse_address(true)?;
+        socket.bind(&address.into())?;
+        socket.listen(128)?;
+        Ok(socket.into())
+    };
+    both().or_else(|err| {
+        log::info!("serving over IPv4 alone: {err}");
+        TcpListener::bind((Ipv4Addr::UNSPECIFIED, address.port()))
+    })
+}
+
 /// The address the device reaches this computer at: the one a packet to
-/// it goes out from.
-fn local_address(device: IpAddr, listening: SocketAddr) -> Result<IpAddr, Error> {
+/// it goes out from, without the zone it's in, which is this computer's
+/// own.
+fn local_address(device: SocketAddr, listening: SocketAddr) -> Result<IpAddr, Error> {
     if device.is_ipv6() && listening.is_ipv4() {
         return Err(Error::Unsupported(
             "the device has an IPv6 address, and media is served over IPv4".into(),
         ));
     }
-    if device.is_loopback() {
-        return Ok(device);
+    if device.ip().is_loopback() {
+        return Ok(device.ip());
     }
     let any = match device {
-        IpAddr::V4(_) => IpAddr::V4(Ipv4Addr::UNSPECIFIED),
-        IpAddr::V6(_) => IpAddr::V6(std::net::Ipv6Addr::UNSPECIFIED),
+        SocketAddr::V4(_) => IpAddr::V4(Ipv4Addr::UNSPECIFIED),
+        SocketAddr::V6(_) => IpAddr::V6(Ipv6Addr::UNSPECIFIED),
     };
     let socket = UdpSocket::bind(SocketAddr::new(any, 0))?;
-    // Connecting a UDP socket sends nothing; it only picks the route.
-    socket.connect(SocketAddr::new(device, 9))?;
+    // Connecting a UDP socket sends nothing; it only picks the route, which
+    // for a link-local address is its zone's.
+    let mut to = device;
+    to.set_port(9);
+    socket.connect(to)?;
     Ok(socket.local_addr()?.ip())
 }
 

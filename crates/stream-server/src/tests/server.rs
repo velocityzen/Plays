@@ -9,16 +9,50 @@ fn streamed(server: &Server) -> Cast {
         stream: true,
         ..Profile::default()
     };
-    let here = IpAddr::V4(Ipv4Addr::LOCALHOST);
+    let here = SocketAddr::from((Ipv4Addr::LOCALHOST, 0));
     server
         .add(CastRequest::new(Source::File(clip), profile), here)
         .unwrap()
 }
 
+/// Where a device reaches this computer: over its IP version, and for a
+/// link-local address, through its zone.
+#[test]
+fn the_way_back_from_a_device() {
+    let any_v6 = SocketAddr::from((Ipv6Addr::UNSPECIFIED, 0));
+    let any_v4 = SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0));
+    let at = |text: &str| text.parse::<SocketAddr>().unwrap();
+    assert_eq!(
+        local_address(at("[::1]:8009"), any_v6).unwrap(),
+        IpAddr::from(Ipv6Addr::LOCALHOST)
+    );
+    assert_eq!(
+        local_address(at("127.0.0.1:8009"), any_v6).unwrap(),
+        IpAddr::from(Ipv4Addr::LOCALHOST)
+    );
+    assert!(matches!(
+        local_address(at("[::1]:8009"), any_v4),
+        Err(Error::Unsupported(_))
+    ));
+    #[cfg(target_os = "macos")]
+    {
+        // macOS's link-local address on its loopback, `fe80::1%lo0`, on
+        // no port in particular.
+        let link_local = at("[fe80::1%1]:0");
+        assert_eq!(
+            local_address(link_local, any_v6).unwrap(),
+            "fe80::1".parse::<IpAddr>().unwrap()
+        );
+        assert!(
+            local_address(at("[fe80::1]:8009"), any_v6).is_err(),
+            "no way there without its zone"
+        );
+    }
+}
+
 #[test]
 fn a_stream_past_the_most_stops_the_oldest_still_made() {
-    let here = IpAddr::V4(Ipv4Addr::LOCALHOST);
-    let server = Server::start_with(SocketAddr::new(here, 0), 1.0).unwrap();
+    let server = Server::start_with((Ipv4Addr::LOCALHOST, 0).into(), 1.0).unwrap();
     let cast = streamed(&server);
     let state = &cast.state;
     let stopped = |stop: &Arc<AtomicBool>| stop.load(Ordering::Relaxed);

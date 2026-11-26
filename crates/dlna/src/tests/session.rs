@@ -23,6 +23,18 @@ fn how_long_a_subscription_lasts() {
 }
 
 #[test]
+fn a_callback_says_no_zone() {
+    assert_eq!(
+        callback("[fe80::1c:2%7]:4004".parse().unwrap(), "t"),
+        "http://[fe80::1c:2]:4004/t"
+    );
+    assert_eq!(
+        callback("192.0.2.1:4004".parse().unwrap(), "t"),
+        "http://192.0.2.1:4004/t"
+    );
+}
+
+#[test]
 fn tokens_differ() {
     assert_ne!(token(), token());
 }

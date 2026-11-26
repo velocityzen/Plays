@@ -98,7 +98,7 @@ impl Target for AirPlayTarget {
                 Some(Device {
                     kind: KIND,
                     shows: Shows::Video,
-                    address: receiver.addresses.first()?.ip(),
+                    address: *receiver.addresses.first()?,
                     id: receiver.id,
                     name: receiver.name,
                 })

@@ -198,7 +198,7 @@ fn what_menus_and_controls_send_is_what_their_commands_take() {
         id: "living-room".into(),
         name: "Living Room".into(),
         shows: Shows::Video,
-        address: "192.0.2.7".parse().unwrap(),
+        address: "192.0.2.7:8009".parse().unwrap(),
     };
     let headphones = AudioDevice {
         id: "00-00-5e-00-53-01".into(),

@@ -6384,6 +6384,7 @@ dependencies = [
  "hegeltest",
  "log",
  "network",
+ "socket2",
 ]
 
 [[package]]

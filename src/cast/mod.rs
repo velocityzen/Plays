@@ -14,7 +14,7 @@ mod link;
 pub mod pairings;
 pub mod target;
 
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::net::{IpAddr, Ipv6Addr, SocketAddr};
 use std::sync::{Arc, Weak};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
@@ -161,8 +161,8 @@ impl Global for Casting {}
 
 impl Casting {
     /// None of `protocols` looking yet, until `look_as_set`. The stream
-    /// server listens on every interface, as devices are elsewhere on the
-    /// network.
+    /// server listens on every interface, over IPv4 and IPv6, as devices
+    /// are elsewhere on the network.
     pub fn new(protocols: Vec<Protocol>) -> Self {
         let kept = protocols
             .into_iter()
@@ -171,7 +171,7 @@ impl Casting {
                 target: None,
             })
             .collect();
-        Self::serving_on(kept, SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0))
+        Self::serving_on(kept, SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), 0))
     }
 
     /// For tests: these targets, looking already, each a protocol of its
@@ -191,7 +191,7 @@ impl Casting {
                 }
             })
             .collect();
-        Self::serving_on(kept, SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0))
+        Self::serving_on(kept, SocketAddr::from(([127, 0, 0, 1], 0)))
     }
 
     fn serving_on(protocols: Vec<Kept>, address: SocketAddr) -> Self {

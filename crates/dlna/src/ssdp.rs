@@ -1,14 +1,18 @@
 //! SSDP, how UPnP devices are found: a search multicast to the group, which
 //! devices answer, and the NOTIFYs they multicast as they come and go. Each
-//! is a datagram with an HTTP head and no body.
+//! is a datagram with an HTTP head and no body. There's a group for IPv4,
+//! and one for IPv6 on each link.
 
-use std::net::{Ipv4Addr, SocketAddrV4};
+use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
 use std::time::Duration;
 
 use crate::http::Head;
 
 /// SSDP's group and port.
 pub const GROUP: SocketAddrV4 = SocketAddrV4::new(Ipv4Addr::new(239, 255, 255, 250), 1900);
+/// SSDP's IPv6 group on the link, `[ff02::c]:1900`.
+pub const GROUP_V6: SocketAddrV6 =
+    SocketAddrV6::new(Ipv6Addr::new(0xff02, 0, 0, 0, 0, 0, 0, 0xc), 1900, 0, 0);
 
 /// The device type searched for.
 pub const MEDIA_RENDERER: &str = "urn:schemas-upnp-org:device:MediaRenderer:1";
@@ -126,10 +130,11 @@ impl Message {
     }
 }
 
-/// A search for `target`, to be answered within `wait` seconds.
-pub fn search(target: &str, wait: u32) -> String {
+/// A search for `target`, to be answered within `wait` seconds, sent to
+/// `group`.
+pub fn search(target: &str, wait: u32, group: SocketAddr) -> String {
     format!(
-        "M-SEARCH * HTTP/1.1\r\nHOST: {GROUP}\r\nMAN: \"ssdp:discover\"\r\nMX: {wait}\r\nST: {target}\r\nUSER-AGENT: {}\r\n\r\n",
+        "M-SEARCH * HTTP/1.1\r\nHOST: {group}\r\nMAN: \"ssdp:discover\"\r\nMX: {wait}\r\nST: {target}\r\nUSER-AGENT: {}\r\n\r\n",
         crate::http::USER_AGENT
     )
 }

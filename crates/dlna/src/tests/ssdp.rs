@@ -26,13 +26,24 @@ fn what_devices_send_reads_back() {
             kind: MEDIA_RENDERER.into()
         })
     );
-    let search = Message::parse(search(MEDIA_RENDERER, 2).as_bytes()).unwrap();
+    let search = Message::parse(search(MEDIA_RENDERER, 2, GROUP.into()).as_bytes()).unwrap();
     assert!(search.searches_for("urn:schemas-upnp-org:device:MediaRenderer:3"));
     assert!(!search.searches_for("urn:schemas-upnp-org:device:MediaServer:1"));
     assert!(
         Message::parse(b"M-SEARCH * HTTP/1.1\r\nST: ssdp:all\r\n\r\n")
             .unwrap()
             .searches_for("anything")
+    );
+}
+
+#[test]
+fn a_search_over_ipv6_goes_to_its_group() {
+    let search = search(MEDIA_RENDERER, 2, GROUP_V6.into());
+    assert!(search.contains("\r\nHOST: [ff02::c]:1900\r\n"), "{search}");
+    assert!(
+        Message::parse(search.as_bytes())
+            .unwrap()
+            .searches_for(MEDIA_RENDERER)
     );
 }
 

@@ -137,6 +137,13 @@ struct Inner {
 }
 
 /// A path no other session has.
+/// Where a renderer is to send events: to `listening`, without the zone
+/// it's in, which is this computer's own.
+fn callback(listening: SocketAddr, token: &str) -> String {
+    let listening = SocketAddr::new(listening.ip(), listening.port());
+    format!("http://{listening}/{token}")
+}
+
 fn token() -> String {
     static NEXT: AtomicU64 = AtomicU64::new(0);
     let now = SystemTime::now()
@@ -699,12 +706,13 @@ impl Session {
         let control = Url::parse(&device.av_transport.control).ok_or_else(|| {
             Error::protocol(format!("a control URL {:?}", device.av_transport.control))
         })?;
-        let addresses: Vec<IpAddr> = control.addresses()?.iter().map(SocketAddr::ip).collect();
-        let remote = *addresses
+        let reached = control.addresses()?;
+        let remote = *reached
             .first()
             .ok_or_else(|| Error::protocol(format!("no address for {}", control.host)))?;
+        let addresses: Vec<IpAddr> = reached.iter().map(SocketAddr::ip).collect();
         // Events come to the address the renderer is reached from.
-        let listener = TcpListener::bind((http::local_address_towards(remote)?, 0))?;
+        let listener = TcpListener::bind(http::local_address_towards(remote)?)?;
         let listening = listener.local_addr()?;
         let (events, receiver) = unbounded();
         let (polling, wake) = mpsc::channel();
@@ -712,7 +720,7 @@ impl Session {
             device: device.clone(),
             state: Mutex::default(),
             events,
-            callback: format!("http://{listening}/{}", token()),
+            callback: callback(listening, &token()),
             ended: AtomicBool::new(false),
             poll_every: AtomicU64::new(POLL.as_millis() as u64),
             polling: Mutex::new(Some(polling)),

@@ -161,8 +161,10 @@ pub(crate) fn serve(
                 continue;
             }
         };
+        // As an address of its own version, where IPv4's comes to IPv6's
+        // listener.
         match stream.peer_addr() {
-            Ok(peer) if admit(peer.ip()) => {}
+            Ok(peer) if admit(peer.ip().to_canonical()) => {}
             Ok(peer) => {
                 log::debug!("{} isn't let in; closing", peer.ip());
                 continue;
@@ -238,7 +240,7 @@ fn connection(stream: Accepted, handler: &Handler) -> io::Result<()> {
         stream: stream.try_clone()?,
         until: Instant::now(),
     });
-    let peer = stream.peer_addr()?.ip();
+    let peer = stream.peer_addr()?.ip().to_canonical();
     let mut writer = stream;
     loop {
         reader.get_mut().until = Instant::now() + IDLE;

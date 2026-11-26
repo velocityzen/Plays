@@ -1,11 +1,11 @@
-//! Finding renderers: SSDP searches on every interface, and the NOTIFYs
-//! renderers multicast as they come and go. Each renderer found is read
-//! from its description; one that says byebye, or isn't heard from within
-//! the max-age it gave, is dropped.
+//! Finding renderers: SSDP searches on every interface, over IPv4 and
+//! IPv6, and the NOTIFYs renderers multicast as they come and go. Each
+//! renderer found is read from its description; one that says byebye, or
+//! isn't heard from within the max-age it gave, is dropped.
 
 use std::collections::{HashMap, HashSet};
 use std::io;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV6, UdpSocket};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::{Arc, Mutex};
@@ -19,7 +19,7 @@ use socket2::{Domain, Protocol, SockRef, Socket, Type};
 use crate::device::Device;
 use crate::error::Result;
 use crate::http::Url;
-use crate::ssdp::{self, Advert, GROUP, MEDIA_RENDERER, Message};
+use crate::ssdp::{self, Advert, GROUP, GROUP_V6, MEDIA_RENDERER, Message};
 
 /// When to search again: soon after the first, as datagrams get lost, then
 /// now and then for what missed both.
@@ -48,6 +48,9 @@ pub type Found = network::Found<Device>;
 
 struct Entry {
     location: String,
+    /// When `location` lapses, unless it's heard of again: till then it's
+    /// kept over one at an IPv6 address.
+    location_expires: Instant,
     expires: Instant,
     /// Once its description is read.
     device: Option<Device>,
@@ -68,11 +71,25 @@ impl Directory {
         match self.entries.get_mut(&advert.udn) {
             Some(entry) => {
                 entry.expires = entry.expires.max(expires);
-                let moved = advert.is_renderer() && entry.location != advert.location;
-                moved.then(|| {
-                    entry.location.clone_from(&advert.location);
-                    advert.location.clone()
-                })
+                if !advert.is_renderer() {
+                    return None;
+                }
+                if entry.location == advert.location {
+                    entry.location_expires = entry.location_expires.max(expires);
+                    return None;
+                }
+                // A renderer on IPv4 and IPv6 both is reached over IPv4
+                // while it's heard of there, not flipped between them.
+                let kept = !entry.location.is_empty()
+                    && entry.location_expires > now
+                    && over_ipv6(&advert.location)
+                    && !over_ipv6(&entry.location);
+                if kept {
+                    return None;
+                }
+                entry.location.clone_from(&advert.location);
+                entry.location_expires = expires;
+                Some(advert.location.clone())
             }
             None if advert.is_renderer() && full => {
                 log::debug!("dlna: {MOST_KEPT} renderers kept; not {}", advert.udn);
@@ -83,6 +100,7 @@ impl Directory {
                     advert.udn.clone(),
                     Entry {
                         location: advert.location.clone(),
+                        location_expires: expires,
                         expires,
                         device: None,
                     },
@@ -171,29 +189,53 @@ enum Network {
     At(SocketAddr),
 }
 
-/// The IPv4 interfaces that are up, but this computer's own.
-fn interfaces() -> Vec<Ipv4Addr> {
-    let mut interfaces: Vec<Ipv4Addr> = if_addrs::get_if_addrs()
-        .unwrap_or_default()
-        .into_iter()
-        .filter(|interface| !interface.is_loopback() && interface.is_oper_up())
-        .filter_map(|interface| match interface.ip() {
-            std::net::IpAddr::V4(ip) => Some(ip),
-            std::net::IpAddr::V6(_) => None,
-        })
-        .collect();
-    interfaces.sort();
-    interfaces.dedup();
-    interfaces
+/// Whether a description is at an IPv6 address.
+fn over_ipv6(location: &str) -> bool {
+    Url::parse(location).is_some_and(|url| url.host.contains(':'))
 }
 
-/// SSDP's port, shared with whatever else listens on it.
-fn group_listener() -> io::Result<UdpSocket> {
-    let socket = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP))?;
+/// The interfaces that are up, but this computer's own.
+#[derive(Default)]
+struct Interfaces {
+    /// Their IPv4 addresses.
+    v4: Vec<Ipv4Addr>,
+    /// The indexes of those with IPv6.
+    v6: Vec<u32>,
+}
+
+fn interfaces() -> Interfaces {
+    let mut found = Interfaces::default();
+    for interface in if_addrs::get_if_addrs().unwrap_or_default() {
+        if interface.is_loopback() || !interface.is_oper_up() {
+            continue;
+        }
+        match interface.ip() {
+            IpAddr::V4(ip) => found.v4.push(ip),
+            IpAddr::V6(_) => found.v6.extend(interface.index),
+        }
+    }
+    found.v4.sort();
+    found.v4.dedup();
+    found.v6.sort_unstable();
+    found.v6.dedup();
+    found
+}
+
+/// SSDP's port on `any`, IPv4's or IPv6's, shared with whatever else
+/// listens on it.
+fn group_listener(any: IpAddr) -> io::Result<UdpSocket> {
+    let socket = Socket::new(
+        Domain::for_address(SocketAddr::new(any, 0)),
+        Type::DGRAM,
+        Some(Protocol::UDP),
+    )?;
+    if any.is_ipv6() {
+        socket.set_only_v6(true)?;
+    }
     socket.set_reuse_address(true)?;
     #[cfg(unix)]
     socket.set_reuse_port(true)?;
-    socket.bind(&SocketAddr::from((Ipv4Addr::UNSPECIFIED, GROUP.port())).into())?;
+    socket.bind(&SocketAddr::new(any, GROUP.port()).into())?;
     Ok(socket.into())
 }
 
@@ -212,10 +254,15 @@ enum Input {
 struct Browsing {
     network: Network,
     search: UdpSocket,
+    /// Searching over IPv6, when this computer has it.
+    search_v6: Option<UdpSocket>,
     /// SSDP's port, when it could be had.
     listen: Option<UdpSocket>,
+    listen_v6: Option<UdpSocket>,
     /// The interfaces the group was joined on.
     joined: HashSet<Ipv4Addr>,
+    /// The interfaces IPv6's group was joined on, by index.
+    joined_v6: HashSet<u32>,
     directory: Arc<Mutex<Directory>>,
     /// Where the describers take the descriptions to read from.
     describe: mpsc::SyncSender<Described>,
@@ -270,11 +317,11 @@ fn ask_for(directory: &mut Directory, describe: &mpsc::SyncSender<Described>, ad
 
 impl Browsing {
     fn search(&mut self) {
-        let search = ssdp::search(MEDIA_RENDERER, SEARCH_WAIT);
         match self.network {
             Network::Multicast => {
                 let interfaces = interfaces();
-                for interface in &interfaces {
+                let search = ssdp::search(MEDIA_RENDERER, SEARCH_WAIT, GROUP.into());
+                for interface in &interfaces.v4 {
                     if let Some(listen) = &self.listen
                         && !self.joined.contains(interface)
                     {
@@ -292,9 +339,34 @@ impl Browsing {
                         log::debug!("dlna: searching on {interface}: {err}");
                     }
                 }
+                let Some(socket) = &self.search_v6 else {
+                    return;
+                };
+                let search = ssdp::search(MEDIA_RENDERER, SEARCH_WAIT, GROUP_V6.into());
+                for &index in &interfaces.v6 {
+                    if let Some(listen) = &self.listen_v6
+                        && !self.joined_v6.contains(&index)
+                    {
+                        match listen.join_multicast_v6(GROUP_V6.ip(), index) {
+                            Ok(()) => {
+                                self.joined_v6.insert(index);
+                            }
+                            Err(err) => log::debug!("dlna: joining on interface {index}: {err}"),
+                        }
+                    }
+                    let group = SocketAddrV6::new(*GROUP_V6.ip(), GROUP_V6.port(), 0, index);
+                    let sent = SockRef::from(socket)
+                        .set_multicast_if_v6(index)
+                        .and_then(|()| socket.send_to(search.as_bytes(), group));
+                    if let Err(err) = sent {
+                        log::debug!("dlna: searching on interface {index}: {err}");
+                    }
+                }
             }
             #[cfg(any(test, feature = "fake"))]
             Network::At(address) => {
+                // Straight to it, whatever group the search names.
+                let search = ssdp::search(MEDIA_RENDERER, SEARCH_WAIT, GROUP.into());
                 if let Err(err) = self.search.send_to(search.as_bytes(), address) {
                     log::debug!("dlna: searching at {address}: {err}");
                 }
@@ -361,16 +433,27 @@ impl Browsing {
     }
 }
 
-/// Whether `message` came from where it says the device is: a description
+/// `message`, if it came from where it says the device is: a description
 /// is fetched only from the address the advert came from, not wherever it
-/// points.
-fn from_its_device(message: &Message, from: IpAddr) -> bool {
-    match message {
-        Message::Alive(advert) => Url::parse(&advert.location)
-            .and_then(|url| url.host.parse::<IpAddr>().ok())
-            .is_some_and(|host| host == from),
-        _ => true,
+/// points. A device at a link-local IPv6 address is reached through the
+/// interface its advert came in on, which its location then says: the
+/// zone it gives, if any, is its own.
+fn from_its_device(message: Message, from: SocketAddr) -> Option<Message> {
+    let Message::Alive(mut advert) = message else {
+        return Some(message);
+    };
+    let mut url = Url::parse(&advert.location)?;
+    let address = url.host.split('%').next().unwrap_or_default();
+    if address.parse::<IpAddr>().ok()? != from.ip() {
+        return None;
     }
+    if let SocketAddr::V6(from) = from
+        && from.ip().is_unicast_link_local()
+    {
+        url.host = format!("{}%{}", from.ip(), from.scope_id());
+        advert.location = url.to_string();
+    }
+    Some(Message::Alive(advert))
 }
 
 /// Read datagrams off `socket` until `stop`.
@@ -381,10 +464,10 @@ fn hear(socket: &UdpSocket, stop: &AtomicBool, inputs: &mpsc::Sender<Input>) {
             Ok((n, from)) => {
                 if let Some(message) = Message::parse(&buffer[..n]) {
                     log::trace!("dlna: from {from}: {message:?}");
-                    if !from_its_device(&message, from.ip()) {
+                    let Some(message) = from_its_device(message, from) else {
                         log::debug!("dlna: {from} told of a description elsewhere");
                         continue;
-                    }
+                    };
                     if inputs.send(Input::Heard(message)).is_err() {
                         return;
                     }
@@ -436,23 +519,44 @@ impl Browser {
     }
 
     fn start_on(network: Network) -> Result<(Self, UnboundedReceiver<Found>)> {
-        let (search, listen) = match network {
+        let (search, search_v6, listen, listen_v6) = match network {
             Network::Multicast => {
                 let search = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0))?;
                 // As UPnP asks, to cross a router or so.
                 search.set_multicast_ttl_v4(2)?;
-                let listen = group_listener()
-                    .inspect_err(|err| {
-                        log::warn!("dlna: no NOTIFYs, as SSDP's port can't be had: {err}");
-                    })
+                let search_v6 = UdpSocket::bind((Ipv6Addr::UNSPECIFIED, 0))
+                    .inspect_err(|err| log::info!("dlna: not searching over IPv6: {err}"))
                     .ok();
-                (search, listen)
+                let listen = |any: IpAddr| {
+                    group_listener(any)
+                        .inspect_err(|err| {
+                            log::warn!(
+                                "dlna: no NOTIFYs to {any}, as SSDP's port can't be had: {err}"
+                            );
+                        })
+                        .ok()
+                };
+                let listen_v6 = search_v6
+                    .as_ref()
+                    .and_then(|_| listen(Ipv6Addr::UNSPECIFIED.into()));
+                (
+                    search,
+                    search_v6,
+                    listen(Ipv4Addr::UNSPECIFIED.into()),
+                    listen_v6,
+                )
             }
+            // Over the fake's own IP version, from its address.
             #[cfg(any(test, feature = "fake"))]
-            Network::At(_) => (
-                UdpSocket::bind((Ipv4Addr::LOCALHOST, 0))?,
-                Some(UdpSocket::bind((Ipv4Addr::LOCALHOST, 0))?),
-            ),
+            Network::At(mut address) => {
+                address.set_port(0);
+                (
+                    UdpSocket::bind(address)?,
+                    None,
+                    Some(UdpSocket::bind(address)?),
+                    None,
+                )
+            }
         };
         #[cfg(any(test, feature = "fake"))]
         let listening = listen.as_ref().and_then(|listen| listen.local_addr().ok());
@@ -461,7 +565,13 @@ impl Browser {
         let (inputs, received) = mpsc::channel();
         let (found, receiver) = unbounded();
         let mut threads = Vec::new();
-        for socket in [Some(&search), listen.as_ref()].into_iter().flatten() {
+        let sockets = [
+            Some(&search),
+            search_v6.as_ref(),
+            listen.as_ref(),
+            listen_v6.as_ref(),
+        ];
+        for socket in sockets.into_iter().flatten() {
             socket.set_read_timeout(Some(TICK))?;
             let socket = socket.try_clone()?;
             let stop = Arc::clone(&stop);
@@ -475,8 +585,11 @@ impl Browser {
         let browsing = Browsing {
             network,
             search,
+            search_v6,
             listen,
+            listen_v6,
             joined: HashSet::new(),
+            joined_v6: HashSet::new(),
             directory: Arc::clone(&directory),
             describe: describers(&inputs)?,
             found,

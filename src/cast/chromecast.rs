@@ -117,7 +117,7 @@ impl Target for ChromecastTarget {
                 Some(Device {
                     kind: KIND,
                     shows: shows(&device)?,
-                    address: device.addresses.first()?.ip(),
+                    address: *device.addresses.first()?,
                     id: device.id,
                     name: device.name,
                 })

@@ -287,18 +287,38 @@ fn the_blocks_volume_scales_the_renderers() {
     assert!((loudness.full - 0.8).abs() < 1e-6, "as it was set");
 }
 
-/// A session with `renderer`, as casting to it starts one.
-fn session_with(renderer: &dlna::fake::FakeRenderer) -> Box<dyn Session> {
-    let target = DlnaTarget::start_at(renderer.search_at());
+/// The first device `target` finds.
+fn found(target: &DlnaTarget) -> Device {
     let deadline = Instant::now() + std::time::Duration::from_secs(5);
-    let device = loop {
+    loop {
         if let Some(device) = target.devices().into_iter().next() {
-            break device;
+            return device;
         }
         assert!(Instant::now() < deadline, "the renderer to be found");
         thread::sleep(std::time::Duration::from_millis(10));
-    };
-    target.connect(&device).expect("a session")
+    }
+}
+
+/// A session with `renderer`, as casting to it starts one.
+fn session_with(renderer: &dlna::fake::FakeRenderer) -> Box<dyn Session> {
+    let target = DlnaTarget::start_at(renderer.search_at());
+    target.connect(&found(&target)).expect("a session")
+}
+
+#[test]
+fn a_renderer_over_ipv6_is_where_it_was_found() {
+    let at = (std::net::Ipv6Addr::LOCALHOST, 0).into();
+    let renderer = dlna::fake::FakeRenderer::start_at(dlna::fake::Kind::Tv, at);
+    let target = DlnaTarget::start_at(renderer.search_at());
+    let device = found(&target);
+    assert!(
+        renderer
+            .location()
+            .starts_with(&format!("http://{}/", device.address)),
+        "{} at {}",
+        renderer.location(),
+        device.address
+    );
 }
 
 /// A clip to play from `start`.

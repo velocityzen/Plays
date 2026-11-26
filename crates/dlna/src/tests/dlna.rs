@@ -3,7 +3,7 @@
 //! asking, and every way a session ends.
 
 use std::io::{Read, Write};
-use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, TcpStream};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -104,6 +104,58 @@ fn a_renderer_is_found_by_searching_and_lost_when_it_says_byebye() {
         Some(Found::Removed(device))
     );
     assert!(browser.devices().is_empty());
+}
+
+#[test]
+fn a_renderer_over_ipv6_is_found_and_heard_from() {
+    let fake = FakeRenderer::start_at(Renderer::Tv, (Ipv6Addr::LOCALHOST, 0).into());
+    let (browser, mut found) = Browser::start_at(fake.search_at()).unwrap();
+    let Some(Found::Added(device)) = wait_for(&mut found, Duration::from_secs(2), |_| true) else {
+        panic!("found by searching")
+    };
+    assert_eq!(device, fake.device());
+    assert!(
+        device.location.starts_with("http://[::1]:"),
+        "{}",
+        device.location
+    );
+    assert_eq!(
+        device.address().map(|at| at.ip()),
+        Some(Ipv6Addr::LOCALHOST.into())
+    );
+    let listening = browser.listening_at().unwrap();
+    fake.byebye(listening);
+    assert_eq!(
+        wait_for(&mut found, Duration::from_secs(1), |_| true),
+        Some(Found::Removed(device.clone()))
+    );
+    fake.announce(listening);
+    assert_eq!(
+        wait_for(&mut found, Duration::from_secs(2), |_| true),
+        Some(Found::Added(device.clone())),
+        "found by its advert"
+    );
+
+    let (session, mut events) = Session::connect(&device).unwrap();
+    assert!(
+        volume(
+            &mut events,
+            Volume {
+                level: 0.2,
+                muted: false
+            }
+        ),
+        "its events come"
+    );
+    let callback = fake.state().subscribers[0].callback.clone();
+    assert!(callback.starts_with("http://[::1]:"), "{callback}");
+    session.load(&film()).unwrap();
+    session.play().unwrap();
+    assert!(
+        status(&mut events, |status| status.state
+            == TransportState::Playing)
+        .is_some()
+    );
 }
 
 #[test]

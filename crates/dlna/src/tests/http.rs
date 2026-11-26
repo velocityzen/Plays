@@ -1,4 +1,4 @@
-use std::net::TcpListener;
+use std::net::{Ipv6Addr, SocketAddr, TcpListener, ToSocketAddrs};
 use std::thread;
 use std::time::Instant;
 
@@ -92,10 +92,21 @@ fn a_host_is_a_name_or_an_address_and_reads_back_as_written() {
     }
 }
 
-/// A server that answers one request with `answer`, and hands back the
-/// request.
-fn serve_once(answer: &'static [u8]) -> (Url, thread::JoinHandle<Message>) {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+/// This computer's link-local address on its loopback, which macOS gives
+/// it: `fe80::1%lo0`.
+#[cfg(target_os = "macos")]
+fn link_local() -> SocketAddr {
+    ("fe80::1%lo0", 0)
+        .to_socket_addrs()
+        .unwrap()
+        .next()
+        .unwrap()
+}
+
+/// A server at `at` that answers one request with `answer`, and hands
+/// back the request.
+fn serve_once_at(at: SocketAddr, answer: &'static [u8]) -> (Url, thread::JoinHandle<Message>) {
+    let listener = TcpListener::bind(at).unwrap();
     let url = Url::parse(&format!("http://{}/path", listener.local_addr().unwrap())).unwrap();
     let server = thread::spawn(move || {
         let (mut stream, _) = listener.accept().unwrap();
@@ -104,6 +115,10 @@ fn serve_once(answer: &'static [u8]) -> (Url, thread::JoinHandle<Message>) {
         request
     });
     (url, server)
+}
+
+fn serve_once(answer: &'static [u8]) -> (Url, thread::JoinHandle<Message>) {
+    serve_once_at(([127, 0, 0, 1], 0).into(), answer)
 }
 
 #[test]
@@ -163,6 +178,63 @@ fn an_answer_sent_a_byte_at_a_time_takes_no_longer_than_a_whole_one_may() {
 
 #[test]
 fn the_way_to_this_computer() {
-    let local = "127.0.0.1".parse().unwrap();
-    assert_eq!(local_address_towards(local).unwrap(), local);
+    let local = ([127, 0, 0, 1], 0).into();
+    assert_eq!(
+        local_address_towards(([127, 0, 0, 1], 1900).into()).unwrap(),
+        local
+    );
+    assert_eq!(
+        local_address_towards(local).unwrap(),
+        local,
+        "on no port in particular"
+    );
+    let local = (Ipv6Addr::LOCALHOST, 0).into();
+    assert_eq!(
+        local_address_towards((Ipv6Addr::LOCALHOST, 1900).into()).unwrap(),
+        local
+    );
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn the_way_to_a_link_local_address_is_in_its_zone() {
+    let mut there = link_local();
+    there.set_port(1900);
+    assert_eq!(local_address_towards(there).unwrap(), link_local());
+}
+
+#[test]
+fn a_zone_is_this_computers_own() {
+    let url = Url::parse("http://[fe80::1c:2%7]:9197/dmr").unwrap();
+    assert_eq!(url.host, "fe80::1c:2%7");
+    assert_eq!(url.authority(), "[fe80::1c:2%7]:9197");
+    assert_eq!(url.host_header(), "[fe80::1c:2]:9197");
+    let plain = Url::parse("http://192.0.2.7:9197/dmr").unwrap();
+    assert_eq!(plain.host_header(), plain.authority());
+    let elsewhere = |text: &str| Url::parse(text).unwrap();
+    assert!(url.same_host(&elsewhere("http://[fe80::1c:2]/x")));
+    assert!(url.same_host(&elsewhere("http://[FE80::1C:2%eth0]/x")));
+    assert!(!url.same_host(&elsewhere("http://[fe80::1c:3%7]/x")));
+    assert!(!url.same_host(&plain));
+}
+
+/// To a zone, which IPv6's loopback takes and lets be, as a link-local
+/// address can't be had here: macOS's on its loopback carries nothing.
+#[test]
+fn a_request_in_a_zone_goes_there_and_says_no_zone() {
+    let (url, server) = serve_once_at(
+        (Ipv6Addr::LOCALHOST, 0).into(),
+        b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n",
+    );
+    let url = Url {
+        host: "::1%1".into(),
+        ..url
+    };
+    let response = request("GET", &url, &[], &[], Duration::from_secs(2)).unwrap();
+    assert_eq!(response.head.status(), Some(200));
+    let request = server.join().unwrap();
+    assert_eq!(
+        request.header("Host"),
+        Some(format!("[::1]:{}", url.port).as_str())
+    );
 }

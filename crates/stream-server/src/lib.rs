@@ -11,7 +11,7 @@
 //! let server = Server::start()?;
 //! let cast = server.add(
 //!     CastRequest::new(Source::File("movie.mkv".into()), Profile::default()),
-//!     "192.168.1.20".parse().unwrap(),
+//!     "192.168.1.20:0".parse().unwrap(),
 //! )?;
 //! println!("tell the TV to play {} ({})", cast.url(), cast.mime());
 //! # Ok::<(), stream_server::Error>(())

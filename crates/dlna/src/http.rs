@@ -5,7 +5,7 @@
 //! body.
 
 use std::io::{self, Write};
-use std::net::{IpAddr, Ipv6Addr, SocketAddr, TcpStream, ToSocketAddrs, UdpSocket};
+use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, TcpStream, ToSocketAddrs, UdpSocket};
 use std::time::Duration;
 
 pub use network::http::{Deadline, Head, Message};
@@ -143,9 +143,11 @@ impl Url {
         })
     }
 
-    /// Whether it's on the same host as `other`, on whatever port.
+    /// Whether it's on the same host as `other`, on whatever port, and
+    /// in whatever zone: a device gives its own, if any.
     pub fn same_host(&self, other: &Url) -> bool {
-        self.host.eq_ignore_ascii_case(&other.host)
+        let address = |url: &Url| url.host.split('%').next().unwrap_or_default().to_owned();
+        address(self).eq_ignore_ascii_case(&address(other))
     }
 
     /// `host:port`, with brackets for IPv6.
@@ -154,6 +156,19 @@ impl Url {
             format!("[{}]:{}", self.host, self.port)
         } else {
             format!("{}:{}", self.host, self.port)
+        }
+    }
+
+    /// `host:port` as a request's Host header gives it: without the zone,
+    /// which is this computer's own.
+    pub fn host_header(&self) -> String {
+        match self.host.split_once('%') {
+            Some((address, _)) => Self {
+                host: address.to_owned(),
+                ..self.clone()
+            }
+            .authority(),
+            None => self.authority(),
         }
     }
 
@@ -182,7 +197,7 @@ pub fn request(
     let mut request = format!(
         "{method} {} HTTP/1.1\r\nHost: {}\r\nUser-Agent: {USER_AGENT}\r\nConnection: close\r\n",
         url.path,
-        url.authority()
+        url.host_header()
     );
     for (name, value) in headers {
         request.push_str(&format!("{name}: {value}\r\n"));
@@ -227,15 +242,19 @@ pub fn respond(
     stream.flush()
 }
 
-/// The address of this computer that `remote` is reached from.
-pub fn local_address_towards(remote: IpAddr) -> io::Result<IpAddr> {
+/// The address of this computer that `remote` is reached from, with the
+/// zone it's in where it's link-local, on no port.
+pub fn local_address_towards(mut remote: SocketAddr) -> io::Result<SocketAddr> {
     let socket = match remote {
-        IpAddr::V4(_) => UdpSocket::bind("0.0.0.0:0")?,
-        IpAddr::V6(_) => UdpSocket::bind("[::]:0")?,
+        SocketAddr::V4(_) => UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0))?,
+        SocketAddr::V6(_) => UdpSocket::bind((Ipv6Addr::UNSPECIFIED, 0))?,
     };
     // No datagram goes: connecting only picks the route.
-    socket.connect((remote, 9))?;
-    Ok(socket.local_addr()?.ip())
+    remote.set_port(9);
+    socket.connect(remote)?;
+    let mut local = socket.local_addr()?;
+    local.set_port(0);
+    Ok(local)
 }
 
 #[cfg(test)]
