@@ -1,7 +1,8 @@
 //! Subtitles drawn over a block's picture: text centered near its bottom (or
 //! top, or middle, if the cue says), sized to the picture, styled as the
-//! settings say, and lifted above the controls while they show; bitmaps go
-//! where the stream places them on the picture, and turn and crop with it.
+//! settings say (or an ASS or SSA track's script, see [`ass`](super::ass)),
+//! and lifted above the controls while they show; bitmaps go where the
+//! stream places them on the picture, and turn and crop with it.
 
 use std::rc::Rc;
 use std::sync::Arc;
@@ -12,6 +13,7 @@ use gpui::{
     SharedString, TextAlign, TextRun, Window, WrappedLine, canvas, fill, point, px, rgb, size,
 };
 
+use super::ass;
 use super::framing::Framing;
 use super::theme::subtitles::{
     ABOVE_CONTROLS, BACKGROUND_PADDING, BACKGROUND_RADIUS, EDGE_OPACITY, EDGE_WIDTH, FONT_SIZE,
@@ -128,6 +130,8 @@ pub(crate) fn paint(
     let controls_showing = layout.controls_pinned
         || (layout.mouse_in_window && bounds.contains(&window.mouse_position()));
     let place = TextPlace {
+        picture,
+        framing: layout.framing,
         visible,
         area,
         controls_top: controls_showing.then(|| bounds.bottom() - layout.controls_height),
@@ -144,15 +148,9 @@ pub(crate) fn paint(
                 line,
                 area,
                 line_height,
+                align,
             } => {
-                let _ = line.paint(
-                    area.origin,
-                    line_height,
-                    TextAlign::Center,
-                    Some(area),
-                    window,
-                    cx,
-                );
+                let _ = line.paint(area.origin, line_height, align, Some(area), window, cx);
             }
         }
     }
@@ -169,6 +167,11 @@ pub(crate) fn family(style: &SubtitleStyle, default: &SharedString) -> SharedStr
 
 /// Where text subtitles go.
 pub(crate) struct TextPlace {
+    /// Where the whole picture shows, some of it outside the block if it
+    /// covers it.
+    pub picture: Bounds<Pixels>,
+    /// How it shows.
+    pub framing: Option<Framing>,
     /// The part of the picture that shows, which the text is sized by.
     pub visible: Bounds<Pixels>,
     /// Where the text goes.
@@ -186,18 +189,40 @@ pub(crate) enum TextMark {
         radius: Pixels,
         color: Hsla,
     },
-    /// A line of text, wrapped into rows, each centered across `area`.
+    /// A line of text, wrapped into rows, each lined up across `area` as
+    /// `align` says.
     Line {
         line: Rc<WrappedLine>,
         area: Bounds<Pixels>,
         line_height: Pixels,
+        align: TextAlign,
     },
 }
 
 /// Lay out the text of `cues` in `place`, in `style` (clamped) and the
-/// font `family`.
+/// font `family`; an ASS or SSA track's as its script says, unless the
+/// style says not to.
 pub(crate) fn text_marks(
     cues: &[Arc<CueContent>],
+    style: &SubtitleStyle,
+    family: &SharedString,
+    place: &TextPlace,
+    window: &mut Window,
+) -> Vec<TextMark> {
+    let (styled, plain): (Vec<&Text>, Vec<&Text>) = cues
+        .iter()
+        .flat_map(|cue| &cue.texts)
+        .partition(|text| style.file_styles && text.styled.is_some());
+    let mut marks = plain_marks(&plain, style, family, place, window);
+    marks.extend(ass::styled_marks(
+        &styled, style.size, family, place, window,
+    ));
+    marks
+}
+
+/// Lay out `texts` in `place` as `style` says.
+fn plain_marks(
+    texts: &[&Text],
     style: &SubtitleStyle,
     family: &SharedString,
     place: &TextPlace,
@@ -217,9 +242,8 @@ pub(crate) fn text_marks(
     let text_color: Hsla = rgb(style.color.0).into();
     let edge_color = Hsla::from(rgb(style.edge_color.0)).opacity(EDGE_OPACITY);
 
-    let blocks: Vec<Block> = cues
+    let blocks: Vec<Block> = texts
         .iter()
-        .flat_map(|cue| &cue.texts)
         .map(|text| {
             let lines = shape(text, text_color, &metrics, family, style, window);
             let edges = match style.edge {
@@ -268,6 +292,7 @@ pub(crate) fn text_marks(
             size: size(px(metrics.wrap_width), line.size(line_height).height),
         },
         line_height,
+        align: TextAlign::Center,
     };
     for placement in [Placement::Top, Placement::Middle, Placement::Bottom] {
         let blocks: Vec<&Block> = blocks.iter().filter(|b| b.placement == placement).collect();
@@ -324,7 +349,7 @@ fn backgrounds(
 
 /// How wide each row of a wrapped line is, measured as gpui centers them:
 /// from the first glyph of a row to the first glyph of the next.
-fn row_widths(line: &WrappedLine) -> Vec<f32> {
+pub(crate) fn row_widths(line: &WrappedLine) -> Vec<f32> {
     let layout = &line.unwrapped_layout;
     let mut edges = vec![0.0];
     for boundary in line.wrap_boundaries() {

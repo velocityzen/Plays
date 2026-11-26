@@ -51,6 +51,7 @@ GPU-accelerated UI framework.
 
 - Switch audio, subtitle and video tracks
 - Text subtitles (SRT, ASS, WebVTT, MP4 timed text), styled in Settings;
+  ASS and SSA in their own fonts, colors, outlines, places and karaoke;
   bitmap subtitles (PGS, VobSub, DVB)
 - Subtitle files beside the video, in legacy encodings too
 - Preferred audio and subtitle languages
@@ -254,7 +255,10 @@ mkdir ($nu.user-autoload-dirs | first); plays completions nushell | save -f ($nu
 - HDR goes brighter than SDR white only on macOS, decoded by
   VideoToolbox. HDR metadata isn't used, and Dolby Vision profile 7's
   enhancement layer is ignored.
-- ASS styling is used only for italics, bold and placement.
+- ASS and SSA lines don't move, fade, turn, scale, blur or clip
+  (`\move` stays where it starts), keep one size and font per line, and
+  lines placed alike stack rather than dodge each other. Drawings aren't
+  drawn.
 - Picture in Picture ignores crop, aspect ratio and gamma, can't show
   Dolby Vision, and on macOS 12 doesn't rotate or flip.
 - On Linux, frames decoded on the GPU are copied back to memory to be

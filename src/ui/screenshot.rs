@@ -156,10 +156,10 @@ fn write_all(file: File, bytes: &[u8]) -> io::Result<()> {
 
 /// A picture being drawn on: RGB, 16 bits a sample, in sRGB or an HDR
 /// signal.
-struct Canvas {
-    width: usize,
-    height: usize,
-    pixels: Vec<[u16; 3]>,
+pub(crate) struct Canvas {
+    pub(crate) width: usize,
+    pub(crate) height: usize,
+    pub(crate) pixels: Vec<[u16; 3]>,
     hdr: Option<Transfer>,
 }
 
@@ -301,4 +301,4 @@ impl Target for Canvas {
 
 #[cfg(test)]
 #[path = "tests/screenshot.rs"]
-mod tests;
+pub(crate) mod tests;

@@ -184,6 +184,10 @@ them; `TextSystem::rasterize_line_glyph` (`src/text_system.rs`) rasterizes
 one at a scale factor as `Window::paint_glyph` or `paint_emoji` would, into
 a `GlyphRaster` of coverage (or BGRA for emoji) and where it goes.
 
+`TextSystem::font_id` (`src/text_system.rs`) is public, so Plays can tell
+whether a font a subtitle file names is installed: it fails for one that
+isn't, where `resolve_font` falls back to another.
+
 Video frames as Y'CbCr planes on Linux (`src/yuv_frame.rs`, `src/scene.rs`,
 `src/window.rs`, `src/platform/blade/blade_yuv.rs`, `blade_renderer.rs`
 and `shaders.wgsl`):

@@ -354,7 +354,11 @@ pub const SUBTITLE_COLORS: [(Rgb, &str); 8] = [
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct SubtitleStyle {
-    /// A font family; empty for the system's own.
+    /// ASS and SSA subtitles look and go as their files say, rather than
+    /// as the rest of the style does.
+    pub file_styles: bool,
+    /// A font family; empty for the system's own. Also for ASS and SSA
+    /// subtitles in a font that isn't installed.
     pub font: String,
     pub weight: SubtitleWeight,
     /// Relative to the standard size, which is 5% of the picture's height.
@@ -377,6 +381,7 @@ pub const SUBTITLE_POSITION_RANGE: RangeInclusive<f32> = 0.0..=0.4;
 impl Default for SubtitleStyle {
     fn default() -> Self {
         Self {
+            file_styles: true,
             font: String::new(),
             weight: SubtitleWeight::Medium,
             size: 1.0,

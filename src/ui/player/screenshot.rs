@@ -55,7 +55,7 @@ impl PlayerView {
         let style = settings.subtitles.clone();
         let font = Theme::get(window, cx).font;
         let text = self.framing().map_or_else(Vec::new, |framing| {
-            overlay::text_overlay(&cues, &style, &font, framing.size, window)
+            overlay::text_overlay(&cues, &style, &font, framing.size, Some(framing), window)
         });
         let request = Request {
             source: self.playback.local().source().clone(),

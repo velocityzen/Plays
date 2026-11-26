@@ -9,9 +9,10 @@ use std::sync::Arc;
 
 use gpui::{
     Bounds, ContentTransform, FontId, GlyphId, GlyphRaster, Hsla, LineGlyph, Pixels, RenderImage,
-    Rgba, SharedString, TextAlign, TextSystem, Window, point, px, size,
+    Rgba, SharedString, TextSystem, Window, point, px, size,
 };
 
+use super::framing::Framing;
 use super::subtitles::{self, TextMark, TextPlace};
 use super::theme::subtitles::TEXT_HEIGHT;
 use crate::media::subtitles::CueContent;
@@ -28,13 +29,15 @@ pub enum Paint {
     Glyph(LineGlyph),
 }
 
-/// Lay out the text of `cues` for a picture shown at `picture` size, as
-/// on a block showing just that picture, `TEXT_HEIGHT` pixels tall.
+/// Lay out the text of `cues` for a picture shown at `picture` size (as
+/// `framing` shows it, if known), as on a block showing just that
+/// picture, `TEXT_HEIGHT` pixels tall.
 pub fn text_overlay(
     cues: &[Arc<CueContent>],
     style: &SubtitleStyle,
     font: &SharedString,
     picture: (f32, f32),
+    framing: Option<Framing>,
     window: &mut Window,
 ) -> Vec<Paint> {
     let (width, height) = picture;
@@ -47,6 +50,8 @@ pub fn text_overlay(
     };
     let style = style.clamped();
     let place = TextPlace {
+        picture: bounds,
+        framing,
         visible: bounds,
         area: bounds,
         controls_top: None,
@@ -68,8 +73,9 @@ pub fn text_overlay(
                 line,
                 area,
                 line_height,
+                align,
             } => paints.extend(
-                line.glyphs(area.origin, line_height, TextAlign::Center, Some(area))
+                line.glyphs(area.origin, line_height, align, Some(area))
                     .into_iter()
                     .map(Paint::Glyph),
             ),

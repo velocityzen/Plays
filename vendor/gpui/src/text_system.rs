@@ -106,7 +106,11 @@ impl TextSystem {
     }
 
     /// Get the FontId for the configure font family and style.
-    fn font_id(&self, font: &Font) -> Result<FontId> {
+    ///
+    /// Plays: public, to tell whether a font is installed (an error if it
+    /// isn't) without falling back to another, as subtitles naming fonts
+    /// need to.
+    pub fn font_id(&self, font: &Font) -> Result<FontId> {
         fn clone_font_id_result(font_id: &Result<FontId>) -> Result<FontId> {
             match font_id {
                 Ok(font_id) => Ok(*font_id),

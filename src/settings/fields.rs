@@ -282,6 +282,12 @@ const FIELDS: &[Field] = &[
         "Video",
         Kind::Toggle,
     ),
+    Field::new(
+        "subtitles.file_styles",
+        "File's own styles",
+        "Subtitles",
+        Kind::Toggle,
+    ),
     Field::new("subtitles.font", "Font", "Subtitles", Kind::Font),
     Field::new(
         "subtitles.weight",

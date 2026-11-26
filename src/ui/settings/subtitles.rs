@@ -21,7 +21,9 @@ use crate::settings::{
     Rgb, SUBTITLE_COLORS, SUBTITLE_POSITION_RANGE, SUBTITLE_SIZE_RANGE, Settings, SubtitleStyle,
     fields,
 };
-use crate::ui::components::{Button, Card, ComponentSize, MenuRow, Panel, Popover, Segmented};
+use crate::ui::components::{
+    Button, Card, ComponentSize, MenuRow, Panel, Popover, Segmented, Switch,
+};
 use crate::ui::framing::{self, Adjustments, Framing};
 use crate::ui::subtitles;
 use crate::ui::theme::settings::{
@@ -94,6 +96,17 @@ fn text_group(
         Some("Text"),
         theme,
         vec![
+            row(
+                "File's own styles",
+                Some(
+                    "ASS and SSA subtitles in the fonts, colors and places their files \
+                     give them, sized as below"
+                        .into(),
+                ),
+                theme,
+                Switch::new("subtitle-file-styles", style.file_styles)
+                    .on_toggle(|&on, _, cx| set("subtitles.file_styles", on, cx)),
+            ),
             row(
                 "Font",
                 None,

@@ -110,6 +110,20 @@ impl Framing {
         self.orientation
     }
 
+    /// How wide and tall the decoded picture is when what's kept of it
+    /// shows at `shown`: before it's turned, and with what's cropped away.
+    pub fn decoded(&self, shown: Bounds<Pixels>) -> (f32, f32) {
+        let (width, height) = (
+            f32::from(shown.size.width) / self.kept.0,
+            f32::from(shown.size.height) / self.kept.1,
+        );
+        if self.orientation.sideways() {
+            (height, width)
+        } else {
+            (width, height)
+        }
+    }
+
     /// How to sample the decoded picture to draw it in its place.
     pub fn content(&self) -> ContentTransform {
         sampling(self.orientation, self.kept)

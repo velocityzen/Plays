@@ -2,9 +2,11 @@
 //! block draws over the video.
 //!
 //! FFmpeg turns every text format (SRT, WebVTT, MP4 timed text, ASS) into
-//! ASS dialogue lines; only their words, line breaks, italics, bold and
-//! placement (top, middle or bottom) are kept. Bitmap formats (PGS, VobSub,
-//! DVB) become images placed on the picture as fractions of its size.
+//! ASS dialogue lines; of most, only their words, line breaks, italics, bold
+//! and placement (top, middle or bottom) are kept. An ASS or SSA track's
+//! keep how its script draws them too (see [`ass`](super::ass)). Bitmap
+//! formats (PGS, VobSub, DVB) become images placed on the picture as
+//! fractions of its size.
 
 use std::slice;
 use std::sync::Arc;
@@ -14,6 +16,8 @@ use ffmpeg::codec::subtitle::{self as rect, Rect};
 use ffmpeg::{Packet, Rational, codec};
 use ffmpeg_next as ffmpeg;
 use gpui::RenderImage;
+
+use super::ass::{self, Dialogue, Script};
 
 const AV_TIME_BASE: f64 = 1_000_000.0;
 
@@ -40,6 +44,45 @@ impl CueContent {
                 .zip(&other.bitmaps)
                 .all(|(a, b)| a.rect == b.rect && a.image.size(0) == b.image.size(0))
     }
+
+    /// The karaoke syllables in it, if any, and how many are sung
+    /// `since` seconds after it starts.
+    fn sung(&self, since: f64) -> Option<usize> {
+        let mut syllables = self
+            .texts
+            .iter()
+            .flat_map(|text| &text.spans)
+            .filter_map(|span| span.look?.karaoke)
+            .peekable();
+        syllables.peek()?;
+        Some(syllables.filter(|karaoke| karaoke.is_sung(since)).count())
+    }
+
+    /// As it shows `since` seconds after it starts: what isn't sung yet in
+    /// its secondary color, and without its outline if it's to have none
+    /// till then.
+    fn singing(&self, since: f64) -> Self {
+        let mut texts = self.texts.clone();
+        for look in texts
+            .iter_mut()
+            .flat_map(|text| &mut text.spans)
+            .filter_map(|span| span.look.as_mut())
+        {
+            let Some(karaoke) = look.karaoke.take() else {
+                continue;
+            };
+            if !karaoke.is_sung(since) {
+                look.fill = look.secondary;
+                if !karaoke.outlined {
+                    look.outline &= 0xffff_ff00;
+                }
+            }
+        }
+        Self {
+            texts,
+            bitmaps: self.bitmaps.clone(),
+        }
+    }
 }
 
 /// Lines of text, with `\n` between them.
@@ -49,6 +92,8 @@ pub struct Text {
     /// How each part of `text` is styled, in order, covering all of it.
     pub spans: Vec<Span>,
     pub placement: Placement,
+    /// Where and how big an ASS or SSA track's script draws it.
+    pub styled: Option<Styled>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -57,6 +102,59 @@ pub struct Span {
     pub len: usize,
     pub italic: bool,
     pub bold: bool,
+    /// Its colors and lines, as an ASS or SSA track's script has them.
+    pub look: Option<Look>,
+}
+
+/// How a part of a line looks, as its script has it. Colors are
+/// 0xRRGGBBAA.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Look {
+    pub fill: u32,
+    /// The fill of a karaoke syllable until it's sung.
+    pub secondary: u32,
+    /// The outline's, or the box's for a boxed line.
+    pub outline: u32,
+    pub shadow: u32,
+    pub underline: bool,
+    pub strikeout: bool,
+    pub karaoke: Option<Karaoke>,
+}
+
+/// A karaoke syllable: when it's sung, and whether it's outlined before.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Karaoke {
+    /// In milliseconds since its cue started.
+    pub at: u32,
+    pub outlined: bool,
+}
+
+impl Karaoke {
+    fn is_sung(self, since: f64) -> bool {
+        f64::from(self.at) <= since * 1000.0
+    }
+}
+
+/// Where and how big a line is drawn, as its script has it; positions and
+/// sizes are on its canvas.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Styled {
+    /// The script's width and height.
+    pub canvas: (f32, f32),
+    /// As a numeric keypad lays it out: 1 bottom left to 9 top right.
+    pub alignment: u8,
+    /// Left, right, and above or below.
+    pub margins: [f32; 3],
+    /// Where its alignment's point is, from `\pos`.
+    pub position: Option<(f32, f32)>,
+    pub font: Arc<str>,
+    /// How tall its letters are.
+    pub size: f32,
+    pub outline: f32,
+    pub shadow: f32,
+    /// A box behind each row, in its outline color, rather than an
+    /// outline.
+    pub boxed: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -67,6 +165,7 @@ pub enum Placement {
     Top,
 }
 
+#[derive(Clone)]
 pub struct Bitmap {
     pub image: Arc<RenderImage>,
     /// Left, top, width and height, as fractions of the picture's size.
@@ -80,6 +179,36 @@ pub struct Cue {
     pub end: Option<f64>,
     /// `None` for a cue that only clears the screen.
     pub content: Option<Arc<CueContent>>,
+    /// What it showed last, with so many of its karaoke syllables sung.
+    shown: Option<(usize, Arc<CueContent>)>,
+}
+
+impl Cue {
+    pub fn new(start: f64, end: Option<f64>, content: Option<Arc<CueContent>>) -> Self {
+        Self {
+            start,
+            end,
+            content,
+            shown: None,
+        }
+    }
+
+    /// What it shows `since` seconds after it starts: the same, till
+    /// another karaoke syllable is sung.
+    fn shows(&mut self, since: f64) -> Option<Arc<CueContent>> {
+        let content = self.content.as_ref()?;
+        let Some(sung) = content.sung(since) else {
+            return Some(content.clone());
+        };
+        match &self.shown {
+            Some((shown, showing)) if *shown == sung => Some(showing.clone()),
+            _ => {
+                let showing = Arc::new(content.singing(since));
+                self.shown = Some((sung, showing.clone()));
+                Some(showing)
+            }
+        }
+    }
 }
 
 /// Cues are kept this long after they end, and from this far ahead, so
@@ -165,10 +294,10 @@ impl CueQueue {
         self.prune(time);
         let time = self.cue_time(time);
         self.cues
-            .iter()
+            .iter_mut()
             .take_while(|cue| cue.start <= time)
             .filter(|cue| cue.end.is_none_or(|end| end > time))
-            .filter_map(|cue| cue.content.clone())
+            .filter_map(|cue| cue.shows(time - cue.start))
             .collect()
     }
 }
@@ -191,6 +320,8 @@ pub struct SubtitleDecoder {
     /// The picture size bitmaps are placed on when the stream doesn't say:
     /// the video's coded size.
     canvas: Option<(u32, u32)>,
+    /// How an ASS or SSA track's lines are drawn.
+    script: Option<Script>,
 }
 
 impl SubtitleDecoder {
@@ -226,6 +357,7 @@ impl SubtitleDecoder {
         .context("opening the subtitle decoder")?;
         Ok(Self {
             index,
+            script: script(&decoder, parameters.id()),
             decoder,
             time_base: f64::from(time_base),
             canvas,
@@ -265,17 +397,21 @@ impl SubtitleDecoder {
         let mut content = CueContent::default();
         for rect in subtitle.rects() {
             match rect {
-                Rect::Ass(ass) => content.texts.extend(parse_ass(dialogue_text(ass.get()))),
+                Rect::Ass(line) => {
+                    let line = Dialogue::parse(line.get());
+                    let script = self.script.as_ref().map(|script| (script, &line));
+                    content.texts.extend(ass::parse(line.text, script));
+                }
                 Rect::Text(text) => content.texts.extend(parse_plain(text.get())),
                 Rect::Bitmap(bitmap) => content.bitmaps.extend(self.bitmap(&bitmap)),
                 Rect::None(_) => {}
             }
         }
-        Some(Cue {
+        Some(Cue::new(
             start,
-            end: end.filter(|end| *end > start),
-            content: (!content.is_empty()).then(|| Arc::new(content)),
-        })
+            end.filter(|end| *end > start),
+            (!content.is_empty()).then(|| Arc::new(content)),
+        ))
     }
 
     /// The size bitmaps are placed on: the stream's own, else the video's.
@@ -358,88 +494,56 @@ fn pixels(
     Some(pixels)
 }
 
-/// The text of an ASS dialogue line as FFmpeg gives it:
-/// `ReadOrder,Layer,Style,Name,MarginL,MarginR,MarginV,Effect,Text` (older
-/// versions gave the whole `Dialogue:` line, with its times).
-fn dialogue_text(line: &str) -> &str {
-    let fields = if line.starts_with("Dialogue:") { 10 } else { 9 };
-    line.splitn(fields, ',').nth(fields - 1).unwrap_or(line)
-}
-
-#[derive(Clone, Copy, Default, PartialEq)]
-struct Style {
-    italic: bool,
-    bold: bool,
-}
-
-/// ASS dialogue text: override blocks (`{\i1}`) set the style and
-/// placement, `\N` breaks lines, `\h` is a hard space; drawings are skipped.
-pub fn parse_ass(source: &str) -> Option<Text> {
-    let mut chars = Vec::new();
-    let mut style = Style::default();
-    let mut placement = None;
-    let mut drawing = false;
-    let mut rest = source;
-    while let Some(c) = rest.chars().next() {
-        if c == '{'
-            && let Some(close) = rest.find('}')
-        {
-            for tag in rest[1..close].split('\\').skip(1) {
-                let name_len = tag
-                    .find(|c: char| !c.is_ascii_alphabetic())
-                    .unwrap_or(tag.len());
-                let (name, value) = tag.split_at(name_len);
-                let number = value.trim().parse::<u32>().ok();
-                match (name, number) {
-                    ("i", n) => style.italic = n.is_some_and(|n| n != 0),
-                    ("b", n) => style.bold = n.is_some_and(|n| n == 1 || n >= 600),
-                    ("r", _) => style = Style::default(),
-                    ("p", n) => drawing = n.is_some_and(|n| n != 0),
-                    ("an", Some(n)) if placement.is_none() => {
-                        placement = Some(match n {
-                            7..=9 => Placement::Top,
-                            4..=6 => Placement::Middle,
-                            _ => Placement::Bottom,
-                        });
-                    }
-                    ("a", Some(n)) if placement.is_none() => {
-                        placement = Some(match n {
-                            5..=7 => Placement::Top,
-                            9..=11 => Placement::Middle,
-                            _ => Placement::Bottom,
-                        });
-                    }
-                    _ => {}
-                }
-            }
-            rest = &rest[close + 1..];
-            continue;
-        }
-        let (text, len) = match rest.as_bytes() {
-            [b'\\', b'N' | b'n', ..] => ('\n', 2),
-            [b'\\', b'h', ..] => ('\u{a0}', 2),
-            _ => (c, c.len_utf8()),
-        };
-        if !drawing {
-            chars.push((text, style));
-        }
-        rest = &rest[len..];
+/// The script an ASS or SSA track's header sets out. Other formats' are
+/// FFmpeg's own, which say nothing of how a file wants them drawn.
+fn script(decoder: &ffmpeg::decoder::Subtitle, id: codec::Id) -> Option<Script> {
+    if !matches!(id, codec::Id::ASS | codec::Id::SSA) {
+        return None;
     }
-    build_text(chars, placement.unwrap_or_default())
+    // SAFETY: the decoder's context is valid while it is, and its header,
+    // when it has one, `subtitle_header_size` bytes.
+    let header = unsafe {
+        let raw = decoder.as_ptr();
+        let (data, size) = ((*raw).subtitle_header, (*raw).subtitle_header_size);
+        if data.is_null() || size <= 0 {
+            return None;
+        }
+        String::from_utf8_lossy(slice::from_raw_parts(data, size as usize)).into_owned()
+    };
+    Some(Script::parse(&header))
+}
+
+/// How a character of a line looks.
+#[derive(Clone, Copy, Default, PartialEq)]
+pub(super) struct CharStyle {
+    pub italic: bool,
+    pub bold: bool,
+    pub look: Option<Look>,
+}
+
+/// ASS dialogue text, as any text track's reads: override blocks (`{\i1}`)
+/// set the style and placement, `\N` breaks lines, `\h` is a hard space;
+/// drawings are skipped.
+pub fn parse_ass(source: &str) -> Option<Text> {
+    ass::parse(source, None)
 }
 
 /// Plain text, as it is.
 fn parse_plain(source: &str) -> Option<Text> {
-    let chars = source.chars().map(|c| (c, Style::default())).collect();
-    build_text(chars, Placement::Bottom)
+    let chars = source.chars().map(|c| (c, CharStyle::default())).collect();
+    build_text(chars, Placement::Bottom, None)
 }
 
 /// Lines trimmed, blank ones dropped, and runs of one style merged.
-fn build_text(chars: Vec<(char, Style)>, placement: Placement) -> Option<Text> {
-    let mut lines: Vec<&[(char, Style)]> = chars
+pub(super) fn build_text(
+    chars: Vec<(char, CharStyle)>,
+    placement: Placement,
+    styled: Option<Styled>,
+) -> Option<Text> {
+    let mut lines: Vec<&[(char, CharStyle)]> = chars
         .split(|(c, _)| *c == '\n')
         .map(|line| {
-            let blank = |(c, _): &(char, Style)| c.is_whitespace();
+            let blank = |(c, _): &(char, CharStyle)| c.is_whitespace();
             let start = line.iter().position(|c| !blank(c)).unwrap_or(line.len());
             let end = line
                 .iter()
@@ -455,17 +559,24 @@ fn build_text(chars: Vec<(char, Style)>, placement: Placement) -> Option<Text> {
 
     let mut text = String::new();
     let mut spans: Vec<Span> = Vec::new();
-    let mut add = |c: char, style: Style| {
+    let mut add = |c: char, style: CharStyle| {
         text.push(c);
+        let span = Span {
+            len: c.len_utf8(),
+            italic: style.italic,
+            bold: style.bold,
+            look: style.look,
+        };
         match spans.last_mut() {
-            Some(span) if span.italic == style.italic && span.bold == style.bold => {
-                span.len += c.len_utf8();
+            Some(last)
+                if Span {
+                    len: last.len,
+                    ..span
+                } == *last =>
+            {
+                last.len += span.len
             }
-            _ => spans.push(Span {
-                len: c.len_utf8(),
-                italic: style.italic,
-                bold: style.bold,
-            }),
+            _ => spans.push(span),
         }
     };
     for (i, line) in lines.iter().enumerate() {
@@ -481,6 +592,7 @@ fn build_text(chars: Vec<(char, Style)>, placement: Placement) -> Option<Text> {
         text,
         spans,
         placement,
+        styled,
     })
 }
 
@@ -490,4 +602,4 @@ mod tests;
 
 #[cfg(test)]
 #[path = "tests/subtitles_properties.rs"]
-mod properties;
+pub(super) mod properties;

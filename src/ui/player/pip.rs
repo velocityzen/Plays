@@ -252,15 +252,16 @@ impl PlayerView {
         }
         let (width, height) = layout.size;
         let font = Theme::get(window, cx).font;
+        // The window shows the picture turned, but not reshaped or cropped.
+        let framing = Framing::new(layout.picture, layout.orientation, &Adjustments::default());
         let text = overlay::text_overlay(
             &self.cues,
             &layout.style,
             &font,
             (width as f32, height as f32),
+            framing,
             window,
         );
-        // The window shows the picture turned, but not reshaped or cropped.
-        let framing = Framing::new(layout.picture, layout.orientation, &Adjustments::default());
         let bitmaps: Vec<_> = self
             .cues
             .iter()

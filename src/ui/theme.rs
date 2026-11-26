@@ -791,6 +791,19 @@ pub mod subtitles {
     /// The background box's padding either side and corner radius, in em.
     pub const BACKGROUND_PADDING: f32 = 0.3;
     pub const BACKGROUND_RADIUS: f32 = 0.12;
+    /// ASS and SSA lines wrap at least this much of the picture's width,
+    /// whatever their margins.
+    pub const MIN_WRAP: f32 = 0.25;
+    /// An outline is the text drawn around itself in rings this far apart
+    /// at most, in pixels, and no more rings than this.
+    pub const OUTLINE_RING: f32 = 3.;
+    pub const OUTLINE_RINGS: f32 = 3.;
+    /// Underlines and strikethroughs are this thick, in em (at least a
+    /// pixel); underlines this far below the baseline, in descents, and
+    /// strikethroughs this far above it, in ascents.
+    pub const RULE_WIDTH: f32 = 0.06;
+    pub const UNDERLINE_DEPTH: f32 = 0.6;
+    pub const STRIKEOUT_HEIGHT: f32 = 0.3;
     /// Screenshots lay subtitles out as on a block showing just the picture,
     /// this tall: tall enough that the font size isn't held to its least
     /// or most, so it is `FONT_SIZE` of the picture.

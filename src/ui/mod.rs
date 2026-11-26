@@ -1,4 +1,5 @@
 pub mod about;
+mod ass;
 pub mod blackout;
 pub mod components;
 #[cfg(test)]

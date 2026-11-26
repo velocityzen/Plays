@@ -155,3 +155,22 @@ fn cycles_through_ratios() {
     assert_eq!(next_ratio(Some(CROPS[0]), &CROPS), Some(CROPS[1]));
     assert_eq!(next_ratio(Some(CROPS[4]), &CROPS), None);
 }
+
+#[test]
+fn knows_the_decoded_size_from_what_shows_of_it() {
+    let shown = |width: f32, height: f32| Bounds {
+        origin: point(px(10.), px(20.)),
+        size: size(px(width), px(height)),
+    };
+    let plain = framing(Orientation::UPRIGHT, None, None);
+    assert_eq!(plain.decoded(shown(960.0, 540.0)), (960.0, 540.0));
+    // Turned, its width shows down the screen.
+    let turned = framing(Orientation::new(1, false), None, None);
+    assert_eq!(turned.decoded(shown(540.0, 960.0)), (960.0, 540.0));
+    // Cropped to a square, the middle of it shows.
+    let square = ratio("1:1", 1.0);
+    let cropped = framing(Orientation::UPRIGHT, None, Some(square));
+    assert_eq!(cropped.decoded(shown(540.0, 540.0)), (960.0, 540.0));
+    let both = framing(Orientation::new(1, false), None, Some(square));
+    assert_eq!(both.decoded(shown(540.0, 540.0)), (960.0, 540.0));
+}

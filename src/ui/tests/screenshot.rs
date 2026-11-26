@@ -10,9 +10,13 @@ use crate::ui::theme::subtitles::{
 
 /// The picture subtitles are drawn over in these tests: mid grey, so
 /// the white text is lighter and its black outline or box darker.
-const GREY: u16 = 32768;
+pub(crate) const GREY: u16 = 32768;
 
-fn canvas(width: usize, height: usize, pixel: impl Fn(usize, usize) -> [u16; 3]) -> Canvas {
+pub(crate) fn canvas(
+    width: usize,
+    height: usize,
+    pixel: impl Fn(usize, usize) -> [u16; 3],
+) -> Canvas {
     Canvas {
         width,
         height,
@@ -197,11 +201,19 @@ fn subtitled(width: usize, height: usize, text: &str, style: &SubtitleStyle) -> 
                 ..Span::default()
             }],
             placement: Placement::Bottom,
+            styled: None,
         }],
         bitmaps: Vec::new(),
     });
     let paints = cx.add_empty_window().update(|window, _| {
-        overlay::text_overlay(&[cue], style, &font, (width as f32, height as f32), window)
+        overlay::text_overlay(
+            &[cue],
+            style,
+            &font,
+            (width as f32, height as f32),
+            None,
+            window,
+        )
     });
     let mut picture = canvas(width, height, |_, _| [GREY; 3]);
     overlay::draw_text(&mut picture, &paints, &text_system);
@@ -211,7 +223,7 @@ fn subtitled(width: usize, height: usize, text: &str, style: &SubtitleStyle) -> 
 
 /// The pixels `pick` picks, as their left, top, right and bottom
 /// (inclusive), if there are any.
-fn extent(canvas: &Canvas, pick: impl Fn([u16; 3]) -> bool) -> Option<[f32; 4]> {
+pub(crate) fn extent(canvas: &Canvas, pick: impl Fn([u16; 3]) -> bool) -> Option<[f32; 4]> {
     let mut found: Option<[usize; 4]> = None;
     for (i, pixel) in canvas.pixels.iter().enumerate() {
         if pick(*pixel) {

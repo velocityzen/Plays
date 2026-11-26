@@ -274,10 +274,12 @@ flowchart LR
 ## Subtitles
 
 - `src/media/subtitles.rs`: cues; text through FFmpeg's ASS lines, bitmaps
-  as images placed in fractions of the picture
+  as images placed in fractions of the picture; karaoke sung as cues play
+- `src/media/ass.rs`: an ASS or SSA track's header and override tags
 - `src/media/external.rs`: subtitle files beside a video; encoding by
   `chardetng`, converted by FFmpeg's iconv
 - `src/ui/subtitles.rs`: paints a block's cues, and the Settings preview
+- `src/ui/ass.rs`: ASS and SSA lines laid out as their script has them
 - `src/ui/overlay.rs`: subtitles into pixels, for screenshots and Picture
   in Picture
 
