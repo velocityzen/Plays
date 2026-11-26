@@ -8,11 +8,11 @@
 
 use std::ffi::OsString;
 use std::fs;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc;
 use std::thread;
@@ -59,6 +59,66 @@ fn a_tests_folders_are_removed_as_it_ends() {
         let folder = path.parent().unwrap();
         assert!(!folder.exists(), "{} left", folder.display());
     }
+}
+
+/// Another Plays, listening at a socket: this test binary, running only
+/// `listen_as_another_process`. Dropped, it's killed, as one that crashed:
+/// gone without removing its socket. A process of its own, as that Plays
+/// would be: on macOS a socket is made, and only then kept from processes
+/// started after, so one another test starts between the two has it too,
+/// and keeps it listening after this process drops its own.
+struct OtherPlays(Child);
+
+impl OtherPlays {
+    fn listening_at(path: &Path) -> Self {
+        let mut plays = Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--ignored",
+                "--exact",
+                "--nocapture",
+                "api::socket::tests::listen_as_another_process",
+            ])
+            .env("PLAYS_LISTEN", path)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        let said = BufReader::new(plays.stdout.take().unwrap());
+        let listening = said
+            .lines()
+            .map_while(Result::ok)
+            .any(|line| line == LISTENING);
+        let plays = Self(plays);
+        assert!(listening, "the other Plays takes the socket");
+        plays
+    }
+}
+
+impl Drop for OtherPlays {
+    fn drop(&mut self) {
+        self.0.kill().ok();
+        self.0.wait().ok();
+    }
+}
+
+/// What `listen_as_another_process` says once it listens.
+const LISTENING: &str = "listening";
+
+/// Started as another process by `OtherPlays`: takes the socket at
+/// `PLAYS_LISTEN`, says so, and holds it until it's killed, or what
+/// started it goes. Passes by itself.
+#[test]
+#[ignore = "started as another process by OtherPlays"]
+fn listen_as_another_process() {
+    let Some(path) = std::env::var_os("PLAYS_LISTEN") else {
+        return;
+    };
+    let Ok(Claimed::Ours(_listener)) = claim(Path::new(&path)) else {
+        panic!("taking the socket")
+    };
+    println!("{LISTENING}");
+    io::stdin().read_to_end(&mut Vec::new()).ok();
 }
 
 /// The app, with its first window in front, answering on a socket of its
@@ -181,11 +241,8 @@ fn finds_a_plays_answering_there_and_leaves_its_socket_be() {
 #[test]
 fn a_socket_left_by_a_plays_that_crashed_is_taken_over() {
     let path = socket("stale");
-    let Ok(Claimed::Ours(listener)) = claim(&path) else {
-        panic!("taking the socket")
-    };
     // Crashed: gone without removing it.
-    drop(listener);
+    drop(OtherPlays::listening_at(&path));
     assert!(path.exists());
     assert!(UnixStream::connect(&path).is_err(), "no one answers there");
 
@@ -637,9 +694,7 @@ fn a_socket_another_plays_answers_on_is_left_to_it(cx: &mut TestAppContext) {
 fn a_plays_not_listening_says_why_and_tries_again_as_control_is_turned_on(cx: &mut TestAppContext) {
     let (_, mut cx) = testing::start(cx);
     let path = socket("not-listening");
-    let Ok(Claimed::Ours(theirs)) = claim(&path) else {
-        panic!("taking the socket")
-    };
+    let theirs = OtherPlays::listening_at(&path);
     TestAppContext::update(&cx, |cx| serve(path.clone(), None, cx));
     let why = |cx: &VisualTestContext| cx.read(|cx| cx.global::<NotListening>().0.clone());
     assert_eq!(why(&cx).as_deref(), Some("Another Plays answers it."));
@@ -1355,11 +1410,8 @@ fn a_command_with_no_plays_running_and_none_to_start_says_so() {
 #[test]
 fn a_command_with_the_socket_of_a_plays_gone_starts_another() {
     let path = socket("crashed");
-    let Ok(Claimed::Ours(listener)) = claim(&path) else {
-        panic!("taking the socket")
-    };
     // Crashed: gone without removing it.
-    drop(listener);
+    drop(OtherPlays::listening_at(&path));
     let start: &dyn Fn() -> io::Result<()> = &|| Err(io::Error::other("started"));
     let started = client::connect_or_start(&path, Some(start)).map(drop);
     assert_eq!(
