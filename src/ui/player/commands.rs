@@ -214,6 +214,12 @@ impl PlayerView {
         true
     }
 
+    /// Whether the file has subtitles, showing or not.
+    pub fn has_subtitles(&self) -> bool {
+        let info = self.playback.local().info();
+        info.is_some_and(|info| info.tracks(TrackKind::Subtitle).next().is_some())
+    }
+
     /// Whether a subtitle track shows.
     pub fn shows_subtitles(&self) -> bool {
         let info = self.playback.local().info();

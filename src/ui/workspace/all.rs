@@ -2,7 +2,7 @@
 //! every player window, so a block popped out onto another display stays
 //! with the others, whether it plays here or on a device it casts to.
 
-use gpui::{App, Context, Entity, WindowId};
+use gpui::{App, Context, Entity, Window, WindowHandle, WindowId};
 
 use super::Workspace;
 use crate::app::player_windows;
@@ -52,32 +52,56 @@ pub fn playing_elsewhere(window: WindowId, cx: &App) -> bool {
         .any(|view| view.read(cx).is_playing())
 }
 
-/// The players of some blocks, to do the same to them all: those in a
-/// window, or in every player window.
-pub struct Players(Vec<Entity<PlayerView>>);
+/// The players of some blocks, each with its window, to do the same to
+/// them all: those in a window, or in every player window.
+pub struct Players(Vec<(WindowHandle<Workspace>, Entity<PlayerView>)>);
 
 impl Players {
     /// Those in every player window, window by window as ⌘1 to ⌘9 count
     /// them.
     pub fn everywhere(cx: &App) -> Self {
-        Self(views(cx))
+        Self(
+            player_windows(cx)
+                .into_iter()
+                .filter_map(|window| window.downcast::<Workspace>())
+                .flat_map(|window| Self::of(window, cx).0)
+                .collect(),
+        )
     }
 
-    /// Those in `workspace`'s window, in its grid's order.
-    pub fn of(workspace: &Workspace) -> Self {
-        Self(workspace.players())
+    /// Those in `window`, in its grid's order.
+    pub fn of(window: WindowHandle<Workspace>, cx: &App) -> Self {
+        let players = window.read(cx).map(Workspace::players).unwrap_or_default();
+        Self(players.into_iter().map(|player| (window, player)).collect())
     }
 
     /// Do `f` to each.
     pub fn each(&self, cx: &mut App, mut f: impl FnMut(&mut PlayerView, &mut Context<PlayerView>)) {
-        for view in &self.0 {
+        for (_, view) in &self.0 {
             view.update(cx, |view, cx| f(view, cx));
+        }
+    }
+
+    /// Do `f` to each, in its window: for what it draws there, as a
+    /// screenshot's subtitles.
+    pub fn each_in_window(
+        &self,
+        cx: &mut App,
+        mut f: impl FnMut(&mut PlayerView, &mut Window, &mut Context<PlayerView>),
+    ) {
+        for (handle, view) in &self.0 {
+            let done = handle.update(cx, |_, window, cx| {
+                view.update(cx, |view, cx| f(view, window, cx));
+            });
+            if let Err(err) = done {
+                log::warn!("a block's window has gone: {err}");
+            }
         }
     }
 
     /// Whether `f` holds for each: for none, it does.
     fn all(&self, cx: &App, f: impl Fn(&PlayerView) -> bool) -> bool {
-        self.0.iter().all(|view| f(view.read(cx)))
+        self.0.iter().all(|(_, view)| f(view.read(cx)))
     }
 
     /// Play each, or pause each (`false`).
@@ -131,6 +155,13 @@ impl Players {
     pub fn turn_loop(&self, turn: impl FnOnce(bool) -> bool, cx: &mut App) {
         let looping = turn(self.all(cx, PlayerView::is_looping));
         self.each(cx, |view, cx| view.turn_loop(|_| looping, cx));
+    }
+
+    /// Show subtitles in them all, or hide them in all, as `turn` has it,
+    /// given whether every one that has subtitles shows them.
+    pub fn turn_subtitles(&self, turn: impl FnOnce(bool) -> bool, cx: &mut App) {
+        let shown = turn(self.all(cx, |view| !view.has_subtitles() || view.shows_subtitles()));
+        self.each(cx, |view, cx| view.turn_subtitles(|_| shown, cx));
     }
 
     /// Mute them all, or unmute them all, as `turn` has it, given whether

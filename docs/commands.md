@@ -7,8 +7,8 @@ Every command Plays has and every event it tells, by what they're about, as `pla
 - [Commands](#commands) and [Events](#events): running the one, hearing the other
 - [Playback](#playback): [in a block](#playback-in-a-block), [in a window](#playback-in-a-window), [in every window](#playback-in-every-window), [events](#playback-events)
 - [Audio](#audio): [in a block](#audio-in-a-block), [in a window](#audio-in-a-window), [in every window](#audio-in-every-window), [events](#audio-events)
-- [Subtitles](#subtitles): [commands](#subtitles-commands), [events](#subtitles-events)
-- [Video](#video): [commands](#video-commands), [events](#video-events)
+- [Subtitles](#subtitles): [in a block](#subtitles-in-a-block), [in a window](#subtitles-in-a-window), [in every window](#subtitles-in-every-window), [events](#subtitles-events)
+- [Video](#video): [in a block](#video-in-a-block), [in a window](#video-in-a-window), [in every window](#video-in-every-window), [events](#video-events)
 - [Interface](#interface): [in a block](#interface-in-a-block), [in a window](#interface-in-a-window), [in every window](#interface-in-every-window), [events](#interface-events)
 - [Blocks](#blocks): [commands](#block-commands), [events](#block-events)
 - [Windows](#windows): [commands](#window-commands), [events](#window-events)
@@ -591,7 +591,7 @@ Another of a file's tracks plays, or none of its kind.
   - `window_id`, `window_title`, `block_id`, `block_title`: its window's and its block's.
   - `kind`: The track's: video, audio or subtitles.
   - `track`: The one playing, from 1 among its kind's, as the tracks menu lists them; none for none.
-- Follows: [`block.audio.next_track`](#next-audio-track), [`block.audio.select_track`](#pick-audio-track), [`window.audio.next_track`](#next-audio-track-in-window), [`window.audio.select_track`](#pick-audio-track-in-window), [`app.audio.next_track`](#next-audio-track-in-every-window), [`app.audio.select_track`](#pick-audio-track-in-every-window), [`block.subtitles.next_track`](#next-subtitles), [`block.subtitles.select_track`](#pick-subtitles), [`block.subtitles.toggle`](#showhide-subtitles), [`block.subtitles.on`](#blocksubtitleson), [`block.subtitles.off`](#blocksubtitlesoff), [`block.video.next_track`](#next-video-track), or [`block.video.select_track`](#pick-video-track).
+- Follows: [`block.audio.next_track`](#next-audio-track), [`block.audio.select_track`](#pick-audio-track), [`window.audio.next_track`](#next-audio-track-in-window), [`window.audio.select_track`](#pick-audio-track-in-window), [`app.audio.next_track`](#next-audio-track-in-every-window), [`app.audio.select_track`](#pick-audio-track-in-every-window), [`block.subtitles.next_track`](#next-subtitles), [`block.subtitles.select_track`](#pick-subtitles), [`block.subtitles.toggle`](#showhide-subtitles), [`block.subtitles.on`](#blocksubtitleson), [`block.subtitles.off`](#blocksubtitlesoff), [`window.subtitles.next_track`](#next-subtitles-in-window), [`window.subtitles.select_track`](#pick-subtitles-in-window), [`window.subtitles.toggle`](#showhide-subtitles-in-window), [`window.subtitles.on`](#show-subtitles-in-window), [`window.subtitles.off`](#hide-subtitles-in-window), [`app.subtitles.next_track`](#next-subtitles-in-every-window), [`app.subtitles.select_track`](#pick-subtitles-in-every-window), [`app.subtitles.toggle`](#showhide-subtitles-in-every-window), [`app.subtitles.on`](#show-subtitles-in-every-window), [`app.subtitles.off`](#hide-subtitles-in-every-window), [`block.video.next_track`](#next-video-track), [`block.video.select_track`](#pick-video-track), [`window.video.next_track`](#next-video-track-in-window), [`window.video.select_track`](#pick-video-track-in-window), [`app.video.next_track`](#next-video-track-in-every-window), or [`app.video.select_track`](#pick-video-track-in-every-window).
 
 ## Audio
 
@@ -877,7 +877,7 @@ A block was unmuted.
 
 ## Subtitles
 
-### Subtitles commands
+### Subtitles in a block
 
 #### Next Subtitles
 
@@ -971,6 +971,120 @@ A block was unmuted.
 - Acts on a block.
 - Keys: ⇧⌫
 
+### Subtitles in a window
+
+#### Next Subtitles in Window
+
+`window.subtitles.next_track`: Show the next subtitles of every file in the window, and none after the last.
+
+- Acts on every block in a window.
+- Tells: [`block.playback.track_changed`](#blockplaybacktrack_changed), [`block.subtitles.on`](#blocksubtitleson), [`block.subtitles.off`](#blocksubtitlesoff).
+
+#### Pick Subtitles in Window
+
+`window.subtitles.select_track`: Show subtitles of every file in the window that has them, or none.
+
+- Acts on every block in a window.
+- Arguments:
+  - `number` (a whole number, at least 1, optional): Which, from 1, as the tracks menu lists them; none for no subtitles.
+- Tells: [`block.playback.track_changed`](#blockplaybacktrack_changed), [`block.subtitles.on`](#blocksubtitleson), [`block.subtitles.off`](#blocksubtitlesoff).
+
+#### Show/Hide Subtitles in Window
+
+`window.subtitles.toggle`: Hide the subtitles of every file in the window if each that has some shows them, else show them in all.
+
+- Acts on every block in a window.
+- Tells: [`block.subtitles.on`](#blocksubtitleson), [`block.subtitles.off`](#blocksubtitlesoff), [`block.playback.track_changed`](#blockplaybacktrack_changed).
+
+#### Show Subtitles in Window
+
+`window.subtitles.on`: Show the subtitles hidden, or the first, of every file in the window.
+
+- Acts on every block in a window.
+- Tells: [`block.subtitles.on`](#blocksubtitleson), [`block.playback.track_changed`](#blockplaybacktrack_changed).
+
+#### Hide Subtitles in Window
+
+`window.subtitles.off`: Hide the subtitles of every file in the window.
+
+- Acts on every block in a window.
+- Tells: [`block.subtitles.off`](#blocksubtitlesoff), [`block.playback.track_changed`](#blockplaybacktrack_changed).
+
+#### Subtitles Earlier in Window
+
+`window.subtitles.earlier`: Show the subtitles of every file in the window a little earlier.
+
+- Acts on every block in a window.
+
+#### Subtitles Later in Window
+
+`window.subtitles.later`: Show the subtitles of every file in the window a little later.
+
+- Acts on every block in a window.
+
+#### Reset Subtitle Delay in Window
+
+`window.subtitles.reset_delay`: Show the subtitles of every file in the window at their own times again.
+
+- Acts on every block in a window.
+
+### Subtitles in every window
+
+#### Next Subtitles in Every Window
+
+`app.subtitles.next_track`: Show the next subtitles of every file in every window, and none after the last.
+
+- Acts on every block in every window.
+- Tells: [`block.playback.track_changed`](#blockplaybacktrack_changed), [`block.subtitles.on`](#blocksubtitleson), [`block.subtitles.off`](#blocksubtitlesoff).
+
+#### Pick Subtitles in Every Window
+
+`app.subtitles.select_track`: Show subtitles of every file in every window that has them, or none.
+
+- Acts on every block in every window.
+- Arguments:
+  - `number` (a whole number, at least 1, optional): Which, from 1, as the tracks menu lists them; none for no subtitles.
+- Tells: [`block.playback.track_changed`](#blockplaybacktrack_changed), [`block.subtitles.on`](#blocksubtitleson), [`block.subtitles.off`](#blocksubtitlesoff).
+
+#### Show/Hide Subtitles in Every Window
+
+`app.subtitles.toggle`: Hide the subtitles of every file in every window if each that has some shows them, else show them in all.
+
+- Acts on every block in every window.
+- Tells: [`block.subtitles.on`](#blocksubtitleson), [`block.subtitles.off`](#blocksubtitlesoff), [`block.playback.track_changed`](#blockplaybacktrack_changed).
+
+#### Show Subtitles in Every Window
+
+`app.subtitles.on`: Show the subtitles hidden, or the first, of every file in every window.
+
+- Acts on every block in every window.
+- Tells: [`block.subtitles.on`](#blocksubtitleson), [`block.playback.track_changed`](#blockplaybacktrack_changed).
+
+#### Hide Subtitles in Every Window
+
+`app.subtitles.off`: Hide the subtitles of every file in every window.
+
+- Acts on every block in every window.
+- Tells: [`block.subtitles.off`](#blocksubtitlesoff), [`block.playback.track_changed`](#blockplaybacktrack_changed).
+
+#### Subtitles Earlier in Every Window
+
+`app.subtitles.earlier`: Show the subtitles of every file in every window a little earlier.
+
+- Acts on every block in every window.
+
+#### Subtitles Later in Every Window
+
+`app.subtitles.later`: Show the subtitles of every file in every window a little later.
+
+- Acts on every block in every window.
+
+#### Reset Subtitle Delay in Every Window
+
+`app.subtitles.reset_delay`: Show the subtitles of every file in every window at their own times again.
+
+- Acts on every block in every window.
+
 ### Subtitles events
 
 #### block.subtitles.on
@@ -980,7 +1094,7 @@ A block's subtitles show: a subtitle track was picked where none was.
 - Heard by those listening to its window's events.
 - Payload:
   - `window_id`, `window_title`, `block_id`, `block_title`: its window's and its block's.
-- Follows: [`block.subtitles.next_track`](#next-subtitles), [`block.subtitles.select_track`](#pick-subtitles), [`block.subtitles.toggle`](#showhide-subtitles), or [`block.subtitles.on`](#blocksubtitleson).
+- Follows: [`block.subtitles.next_track`](#next-subtitles), [`block.subtitles.select_track`](#pick-subtitles), [`block.subtitles.toggle`](#showhide-subtitles), [`block.subtitles.on`](#blocksubtitleson), [`window.subtitles.next_track`](#next-subtitles-in-window), [`window.subtitles.select_track`](#pick-subtitles-in-window), [`window.subtitles.toggle`](#showhide-subtitles-in-window), [`window.subtitles.on`](#show-subtitles-in-window), [`app.subtitles.next_track`](#next-subtitles-in-every-window), [`app.subtitles.select_track`](#pick-subtitles-in-every-window), [`app.subtitles.toggle`](#showhide-subtitles-in-every-window), or [`app.subtitles.on`](#show-subtitles-in-every-window).
 
 #### block.subtitles.off
 
@@ -989,11 +1103,11 @@ A block's subtitles hid: no subtitle track is picked now.
 - Heard by those listening to its window's events.
 - Payload:
   - `window_id`, `window_title`, `block_id`, `block_title`: its window's and its block's.
-- Follows: [`block.subtitles.next_track`](#next-subtitles), [`block.subtitles.select_track`](#pick-subtitles), [`block.subtitles.toggle`](#showhide-subtitles), or [`block.subtitles.off`](#blocksubtitlesoff).
+- Follows: [`block.subtitles.next_track`](#next-subtitles), [`block.subtitles.select_track`](#pick-subtitles), [`block.subtitles.toggle`](#showhide-subtitles), [`block.subtitles.off`](#blocksubtitlesoff), [`window.subtitles.next_track`](#next-subtitles-in-window), [`window.subtitles.select_track`](#pick-subtitles-in-window), [`window.subtitles.toggle`](#showhide-subtitles-in-window), [`window.subtitles.off`](#hide-subtitles-in-window), [`app.subtitles.next_track`](#next-subtitles-in-every-window), [`app.subtitles.select_track`](#pick-subtitles-in-every-window), [`app.subtitles.toggle`](#showhide-subtitles-in-every-window), or [`app.subtitles.off`](#hide-subtitles-in-every-window).
 
 ## Video
 
-### Video commands
+### Video in a block
 
 #### Picture in Picture
 
@@ -1127,6 +1241,170 @@ A block's subtitles hid: no subtitle track is picked now.
 
 - Acts on a block.
 - Keys: S
+
+### Video in a window
+
+#### Next Video Track in Window
+
+`window.video.next_track`: Show the next video track of every file in the window, the first after the last.
+
+- Acts on every block in a window.
+- Tells: [`block.playback.track_changed`](#blockplaybacktrack_changed).
+
+#### Pick Video Track in Window
+
+`window.video.select_track`: Show a video track of every file in the window that has it.
+
+- Acts on every block in a window.
+- Arguments:
+  - `number` (a whole number, at least 1): Which, from 1, as the tracks menu lists them.
+- Tells: [`block.playback.track_changed`](#blockplaybacktrack_changed).
+
+#### Rotate Right in Window
+
+`window.video.rotate_right`: Turn the picture of every file in the window a quarter turn clockwise.
+
+- Acts on every block in a window.
+
+#### Rotate Left in Window
+
+`window.video.rotate_left`: Turn the picture of every file in the window a quarter turn counterclockwise.
+
+- Acts on every block in a window.
+
+#### Flip Horizontally in Window
+
+`window.video.flip_horizontally`: Mirror the picture of every file in the window left to right.
+
+- Acts on every block in a window.
+
+#### Flip Vertically in Window
+
+`window.video.flip_vertically`: Turn the picture of every file in the window upside down, mirrored.
+
+- Acts on every block in a window.
+
+#### Next Aspect Ratio in Window
+
+`window.video.next_aspect_ratio`: Show the picture of every file in the window at its next aspect ratio, then as the file is.
+
+- Acts on every block in a window.
+
+#### Aspect Ratio in Window
+
+`window.video.set_aspect_ratio`: Show the picture of every file in the window at an aspect ratio, or as the file is.
+
+- Acts on every block in a window.
+- Arguments:
+  - `ratio` (one of 1:1, 4:3, 16:10, 16:9, 1.85:1, 2.35:1, optional): The aspect ratio; none for the file's own.
+
+#### Next Crop in Window
+
+`window.video.next_crop`: Crop the picture of every file in the window to its next shape, then not at all.
+
+- Acts on every block in a window.
+
+#### Crop in Window
+
+`window.video.set_crop`: Crop the picture of every file in the window to a shape, or not at all.
+
+- Acts on every block in a window.
+- Arguments:
+  - `crop` (one of 1:1, 4:3, 16:9, 1.85:1, 2.39:1, optional): The shape; none for no crop.
+
+#### Reset Picture in Window
+
+`window.video.reset_picture`: Show the picture of every file in the window as the file is: not turned, flipped, reshaped or cropped.
+
+- Acts on every block in a window.
+
+#### Take Screenshot in Window
+
+`window.video.take_screenshot`: Save the frame showing in every file in the window as a file, and say where each went.
+
+- Acts on every block in a window.
+
+### Video in every window
+
+#### Next Video Track in Every Window
+
+`app.video.next_track`: Show the next video track of every file in every window, the first after the last.
+
+- Acts on every block in every window.
+- Tells: [`block.playback.track_changed`](#blockplaybacktrack_changed).
+
+#### Pick Video Track in Every Window
+
+`app.video.select_track`: Show a video track of every file in every window that has it.
+
+- Acts on every block in every window.
+- Arguments:
+  - `number` (a whole number, at least 1): Which, from 1, as the tracks menu lists them.
+- Tells: [`block.playback.track_changed`](#blockplaybacktrack_changed).
+
+#### Rotate Right in Every Window
+
+`app.video.rotate_right`: Turn the picture of every file in every window a quarter turn clockwise.
+
+- Acts on every block in every window.
+
+#### Rotate Left in Every Window
+
+`app.video.rotate_left`: Turn the picture of every file in every window a quarter turn counterclockwise.
+
+- Acts on every block in every window.
+
+#### Flip Horizontally in Every Window
+
+`app.video.flip_horizontally`: Mirror the picture of every file in every window left to right.
+
+- Acts on every block in every window.
+
+#### Flip Vertically in Every Window
+
+`app.video.flip_vertically`: Turn the picture of every file in every window upside down, mirrored.
+
+- Acts on every block in every window.
+
+#### Next Aspect Ratio in Every Window
+
+`app.video.next_aspect_ratio`: Show the picture of every file in every window at its next aspect ratio, then as the file is.
+
+- Acts on every block in every window.
+
+#### Aspect Ratio in Every Window
+
+`app.video.set_aspect_ratio`: Show the picture of every file in every window at an aspect ratio, or as the file is.
+
+- Acts on every block in every window.
+- Arguments:
+  - `ratio` (one of 1:1, 4:3, 16:10, 16:9, 1.85:1, 2.35:1, optional): The aspect ratio; none for the file's own.
+
+#### Next Crop in Every Window
+
+`app.video.next_crop`: Crop the picture of every file in every window to its next shape, then not at all.
+
+- Acts on every block in every window.
+
+#### Crop in Every Window
+
+`app.video.set_crop`: Crop the picture of every file in every window to a shape, or not at all.
+
+- Acts on every block in every window.
+- Arguments:
+  - `crop` (one of 1:1, 4:3, 16:9, 1.85:1, 2.39:1, optional): The shape; none for no crop.
+
+#### Reset Picture in Every Window
+
+`app.video.reset_picture`: Show the picture of every file in every window as the file is: not turned, flipped, reshaped or cropped.
+
+- Acts on every block in every window.
+
+#### Take Screenshot in Every Window
+
+`app.video.take_screenshot`: Save the frame showing in every file in every window as a file, and say where each went.
+
+- Acts on every block in every window.
 
 ### Video events
 

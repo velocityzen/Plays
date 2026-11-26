@@ -207,7 +207,7 @@ fn choices(
         ("app.open", _) => return None,
         (_, name) => match arg.kind {
             Kind::Choice(words) => {
-                let none = (!arg.required).then_some(match spec.id {
+                let none = (!arg.required).then_some(match asked_as(spec.id) {
                     "block.video.set_aspect_ratio" => "Original",
                     "block.video.set_crop" => "No Crop",
                     _ => "None",

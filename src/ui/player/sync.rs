@@ -5,7 +5,6 @@
 use gpui::Context;
 
 use super::PlayerView;
-use crate::media::tracks::TrackKind;
 
 impl PlayerView {
     /// Hear the sound `step` seconds later (negative: earlier).
@@ -40,12 +39,7 @@ impl PlayerView {
         if self.no_delays_while_cast(cx) {
             return;
         }
-        let has_subtitles = self
-            .playback
-            .local()
-            .info()
-            .is_some_and(|info| info.tracks(TrackKind::Subtitle).next().is_some());
-        if !has_subtitles {
+        if !self.has_subtitles() {
             self.note("No subtitles", cx);
             return;
         }

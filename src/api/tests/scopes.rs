@@ -23,10 +23,28 @@ const UNLIKE: &[(&str, &str)] = &[(
 )];
 
 /// Commands that the other scopes of their feature haven't, and why.
-const ONLY: &[(&str, &str)] = &[(
-    "block.playback.sync_all",
-    "it brings every block in every window to where one is: to the block's",
-)];
+const ONLY: &[(&str, &str)] = &[
+    (
+        "block.playback.sync_all",
+        "it brings every block in every window to where one is: to the block's",
+    ),
+    (
+        "block.subtitles.bigger",
+        "how subtitles look is a setting every file's follow: it acts on every window",
+    ),
+    (
+        "block.subtitles.smaller",
+        "how subtitles look is a setting every file's follow: it acts on every window",
+    ),
+    (
+        "block.subtitles.up",
+        "how subtitles look is a setting every file's follow: it acts on every window",
+    ),
+    (
+        "block.subtitles.down",
+        "how subtitles look is a setting every file's follow: it acts on every window",
+    ),
+];
 
 /// Every feature's commands: by feature, then scope, then name within the
 /// feature, such as `playback` → `window` → `loop.on`. Commands that are

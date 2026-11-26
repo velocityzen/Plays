@@ -247,7 +247,9 @@ pub fn players(target: &Target, scope: Scope, cx: &App) -> Result<Players, Error
     if scope == Scope::EveryBlock {
         return Ok(Players::everywhere(cx));
     }
-    Ok(Players::of(read(window(target, cx)?, cx)?))
+    let window = window(target, cx)?;
+    read(window, cx)?;
+    Ok(Players::of(window, cx))
 }
 
 /// Run `f` on the block `target` names, or the one keys go to, with its

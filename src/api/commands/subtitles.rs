@@ -1,10 +1,11 @@
-//! `subtitles`: a block's subtitles, and how every file's look.
+//! `subtitles`: a block's subtitles, and how every file's look; and every
+//! block's in a window, or in every window.
 
 use gpui::Context;
 
 use serde_json::json;
 
-use super::{Switch, select_track};
+use super::{Switch, select_track, select_tracks};
 use crate::api::args::{Arg, Kind};
 use crate::api::events::EventKind;
 use crate::api::registry::{Spec, on_mac};
@@ -39,11 +40,7 @@ pub const COMMANDS: &[Spec] = &[
         "block.subtitles.select_track",
         "Pick Subtitles",
         "Show one of the file's subtitles, or none.",
-        &[Arg::optional(
-            "number",
-            Kind::Integer { min: 1 },
-            "Which, from 1, as the tracks menu lists them; none for no subtitles.",
-        )],
+        TRACK,
         |args, player, _, cx| select_track(args, TrackKind::Subtitle, player, cx),
     )
     .tells(&[
@@ -154,7 +151,174 @@ pub const COMMANDS: &[Spec] = &[
     .keywords(&["captions", "sync", "offset"])
     .setting("reset_subtitle_delay")
     .keys(&["shift-backspace"]),
+    Spec::blocks(
+        "window.subtitles.next_track",
+        "Next Subtitles in Window",
+        "Show the next subtitles of every file in the window, and none after the last.",
+        |players, cx| players.each(cx, |player, cx| player.next_track(TrackKind::Subtitle, cx)),
+    )
+    .tells(&[
+        "block.playback.track_changed",
+        "block.subtitles.on",
+        "block.subtitles.off",
+    ])
+    .keywords(&["every", "all", "captions", "language", "track"]),
+    Spec::blocks_with(
+        "window.subtitles.select_track",
+        "Pick Subtitles in Window",
+        "Show subtitles of every file in the window that has them, or none.",
+        TRACK,
+        |args, players, cx| select_tracks(args, TrackKind::Subtitle, players, cx),
+    )
+    .tells(&[
+        "block.playback.track_changed",
+        "block.subtitles.on",
+        "block.subtitles.off",
+    ])
+    .keywords(&["every", "all", "captions", "language", "track", "off"]),
+    Spec::blocks(
+        "window.subtitles.toggle",
+        "Show/Hide Subtitles in Window",
+        "Hide the subtitles of every file in the window if each that has some shows them, else show them in all.",
+        |players, cx| players.turn_subtitles(|on| Switch::Toggle.turn(on), cx),
+    )
+    .tells(&[
+        "block.subtitles.on",
+        "block.subtitles.off",
+        "block.playback.track_changed",
+    ])
+    .keywords(&["every", "all", "captions", "off", "on"]),
+    Spec::blocks(
+        "window.subtitles.on",
+        "Show Subtitles in Window",
+        "Show the subtitles hidden, or the first, of every file in the window.",
+        |players, cx| players.turn_subtitles(|on| Switch::On.turn(on), cx),
+    )
+    .tells(&[
+        "block.subtitles.on",
+        "block.playback.track_changed",
+    ])
+    .keywords(&["every", "all", "captions", "on"]),
+    Spec::blocks(
+        "window.subtitles.off",
+        "Hide Subtitles in Window",
+        "Hide the subtitles of every file in the window.",
+        |players, cx| players.turn_subtitles(|on| Switch::Off.turn(on), cx),
+    )
+    .tells(&[
+        "block.subtitles.off",
+        "block.playback.track_changed",
+    ])
+    .keywords(&["every", "all", "captions", "off", "none"]),
+    Spec::blocks(
+        "window.subtitles.earlier",
+        "Subtitles Earlier in Window",
+        "Show the subtitles of every file in the window a little earlier.",
+        |players, cx| players.each(cx, |player, cx| player.shift_subtitles(-DELAY_STEP, cx)),
+    )
+    .keywords(&["every", "all", "captions", "delay", "sync", "offset"]),
+    Spec::blocks(
+        "window.subtitles.later",
+        "Subtitles Later in Window",
+        "Show the subtitles of every file in the window a little later.",
+        |players, cx| players.each(cx, |player, cx| player.shift_subtitles(DELAY_STEP, cx)),
+    )
+    .keywords(&["every", "all", "captions", "delay", "sync", "offset"]),
+    Spec::blocks(
+        "window.subtitles.reset_delay",
+        "Reset Subtitle Delay in Window",
+        "Show the subtitles of every file in the window at their own times again.",
+        |players, cx| players.each(cx, |player, cx| player.set_subtitle_delay(0.0, cx)),
+    )
+    .keywords(&["every", "all", "captions", "sync", "offset"]),
+    Spec::every_block(
+        "app.subtitles.next_track",
+        "Next Subtitles in Every Window",
+        "Show the next subtitles of every file in every window, and none after the last.",
+        |players, cx| players.each(cx, |player, cx| player.next_track(TrackKind::Subtitle, cx)),
+    )
+    .tells(&[
+        "block.playback.track_changed",
+        "block.subtitles.on",
+        "block.subtitles.off",
+    ])
+    .keywords(&["every", "all", "captions", "language", "track"]),
+    Spec::every_block_with(
+        "app.subtitles.select_track",
+        "Pick Subtitles in Every Window",
+        "Show subtitles of every file in every window that has them, or none.",
+        TRACK,
+        |args, players, cx| select_tracks(args, TrackKind::Subtitle, players, cx),
+    )
+    .tells(&[
+        "block.playback.track_changed",
+        "block.subtitles.on",
+        "block.subtitles.off",
+    ])
+    .keywords(&["every", "all", "captions", "language", "track", "off"]),
+    Spec::every_block(
+        "app.subtitles.toggle",
+        "Show/Hide Subtitles in Every Window",
+        "Hide the subtitles of every file in every window if each that has some shows them, else show them in all.",
+        |players, cx| players.turn_subtitles(|on| Switch::Toggle.turn(on), cx),
+    )
+    .tells(&[
+        "block.subtitles.on",
+        "block.subtitles.off",
+        "block.playback.track_changed",
+    ])
+    .keywords(&["every", "all", "captions", "off", "on"]),
+    Spec::every_block(
+        "app.subtitles.on",
+        "Show Subtitles in Every Window",
+        "Show the subtitles hidden, or the first, of every file in every window.",
+        |players, cx| players.turn_subtitles(|on| Switch::On.turn(on), cx),
+    )
+    .tells(&[
+        "block.subtitles.on",
+        "block.playback.track_changed",
+    ])
+    .keywords(&["every", "all", "captions", "on"]),
+    Spec::every_block(
+        "app.subtitles.off",
+        "Hide Subtitles in Every Window",
+        "Hide the subtitles of every file in every window.",
+        |players, cx| players.turn_subtitles(|on| Switch::Off.turn(on), cx),
+    )
+    .tells(&[
+        "block.subtitles.off",
+        "block.playback.track_changed",
+    ])
+    .keywords(&["every", "all", "captions", "off", "none"]),
+    Spec::every_block(
+        "app.subtitles.earlier",
+        "Subtitles Earlier in Every Window",
+        "Show the subtitles of every file in every window a little earlier.",
+        |players, cx| players.each(cx, |player, cx| player.shift_subtitles(-DELAY_STEP, cx)),
+    )
+    .keywords(&["every", "all", "captions", "delay", "sync", "offset"]),
+    Spec::every_block(
+        "app.subtitles.later",
+        "Subtitles Later in Every Window",
+        "Show the subtitles of every file in every window a little later.",
+        |players, cx| players.each(cx, |player, cx| player.shift_subtitles(DELAY_STEP, cx)),
+    )
+    .keywords(&["every", "all", "captions", "delay", "sync", "offset"]),
+    Spec::every_block(
+        "app.subtitles.reset_delay",
+        "Reset Subtitle Delay in Every Window",
+        "Show the subtitles of every file in every window at their own times again.",
+        |players, cx| players.each(cx, |player, cx| player.set_subtitle_delay(0.0, cx)),
+    )
+    .keywords(&["every", "all", "captions", "sync", "offset"]),
 ];
+
+/// Subtitles to show, or none.
+const TRACK: &[Arg] = &[Arg::optional(
+    "number",
+    Kind::Integer { min: 1 },
+    "Which, from 1, as the tracks menu lists them; none for no subtitles.",
+)];
 
 /// The blocks' events about their subtitles.
 pub const EVENTS: &[EventKind] = &[

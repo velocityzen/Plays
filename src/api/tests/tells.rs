@@ -43,7 +43,7 @@ fn heard_here(id: &str, kind: &str) -> bool {
 }
 
 /// Events commands tell that can't be heard here, and why.
-const NOT_HEARD: [(&str, &str, &str); 7] = [
+const NOT_HEARD: [(&str, &str, &str); 11] = [
     (
         "block.picture_in_picture.toggle",
         "block.picture_in_picture.on",
@@ -67,12 +67,32 @@ const NOT_HEARD: [(&str, &str, &str); 7] = [
     (
         "block.video.next_track",
         "block.playback.track_changed",
-        "no file here has two video tracks",
+        NO_TWO_VIDEO_TRACKS,
     ),
     (
         "block.video.select_track",
         "block.playback.track_changed",
-        "no file here has two video tracks",
+        NO_TWO_VIDEO_TRACKS,
+    ),
+    (
+        "window.video.next_track",
+        "block.playback.track_changed",
+        NO_TWO_VIDEO_TRACKS,
+    ),
+    (
+        "window.video.select_track",
+        "block.playback.track_changed",
+        NO_TWO_VIDEO_TRACKS,
+    ),
+    (
+        "app.video.next_track",
+        "block.playback.track_changed",
+        NO_TWO_VIDEO_TRACKS,
+    ),
+    (
+        "app.video.select_track",
+        "block.playback.track_changed",
+        NO_TWO_VIDEO_TRACKS,
     ),
     (
         "output.set_device",
@@ -80,6 +100,9 @@ const NOT_HEARD: [(&str, &str, &str); 7] = [
         "tests play no sound, so it goes nowhere",
     ),
 ];
+
+/// Why changing a video track can't be heard here.
+const NO_TWO_VIDEO_TRACKS: &str = "no file here has two video tracks";
 
 /// Why Picture in Picture's events can't be heard here.
 const PIP: &str = "Picture in Picture is the system's";
@@ -362,15 +385,21 @@ fn other_ways(plan: &Plan) -> Option<Vec<Way>> {
             Plan::twice(plan.with(json!({"number": 2})))
         }
         // Shown, then none.
-        "block.subtitles.select_track" => vec![way(
+        "block.subtitles.select_track"
+        | "window.subtitles.select_track"
+        | "app.subtitles.select_track" => vec![way(
             Vec::new(),
             vec![plan.with(json!({"number": 2})), plan.with(json!({}))],
         )],
         // The first, the second, then none after the last.
-        "block.subtitles.next_track" => {
+        "block.subtitles.next_track"
+        | "window.subtitles.next_track"
+        | "app.subtitles.next_track" => {
             vec![way(Vec::new(), vec![plan.it(), plan.it(), plan.it()])]
         }
-        "block.video.select_track" => Plan::twice(plan.with(json!({"number": 1}))),
+        "block.video.select_track" | "window.video.select_track" | "app.video.select_track" => {
+            Plan::twice(plan.with(json!({"number": 1})))
+        }
         "cast.to" | "cast.pair" => Plan::twice(plan.with(device())),
         "cast.stop" => vec![way(
             vec![command("cast.to").with_args(device())],
@@ -663,7 +692,11 @@ namespaces! {
     window_audio_commands_tell_what_they_say: "window.audio",
     app_audio_commands_tell_what_they_say: "app.audio",
     block_subtitles_commands_tell_what_they_say: "block.subtitles",
+    window_subtitles_commands_tell_what_they_say: "window.subtitles",
+    app_subtitles_commands_tell_what_they_say: "app.subtitles",
     block_video_commands_tell_what_they_say: "block.video",
+    window_video_commands_tell_what_they_say: "window.video",
+    app_video_commands_tell_what_they_say: "app.video",
     cast_commands_tell_what_they_say: "cast",
     output_commands_tell_what_they_say: "output",
     settings_commands_tell_what_they_say: "app.settings",

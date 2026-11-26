@@ -59,7 +59,7 @@ const DROPPED: &str =
 
 /// The namespaces, in the order Settings → Hotkeys lists their commands,
 /// each with its title there.
-pub const NAMESPACES: [(&str, &str); 15] = [
+pub const NAMESPACES: [(&str, &str); 19] = [
     ("block.playback", "Playback"),
     ("window.playback", "Playback in a window"),
     ("app.playback", "Playback in every window"),
@@ -67,7 +67,11 @@ pub const NAMESPACES: [(&str, &str); 15] = [
     ("window.audio", "Audio in a window"),
     ("app.audio", "Audio in every window"),
     ("block.subtitles", "Subtitles"),
+    ("window.subtitles", "Subtitles in a window"),
+    ("app.subtitles", "Subtitles in every window"),
     ("block.video", "Video"),
+    ("window.video", "Video in a window"),
+    ("app.video", "Video in every window"),
     ("window", "Windows"),
     ("block", "Blocks in a window"),
     ("cast", "Casting"),

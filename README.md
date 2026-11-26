@@ -30,8 +30,8 @@ GPU-accelerated UI framework.
 - Music Mode for audio files: cover art, title, artist, album and quality,
   over a speaker moving with the sound; the speaker and quality can be off
 - The screen stays awake while video plays
-- Play, pause, seek, step, sync, volume and mute every block in every window
-  at once
+- Play, pause, seek, step, mute, and change the volume, tracks, subtitles
+  and picture of every block in a window, or in every window, at once
 
 ### Picture
 

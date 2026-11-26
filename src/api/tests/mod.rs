@@ -19,7 +19,7 @@ mod scopes;
 mod tells;
 
 /// The namespaces command ids start with.
-const NAMESPACES: [&str; 16] = [
+const NAMESPACES: [&str; 20] = [
     "app",
     "window",
     "block",
@@ -30,7 +30,11 @@ const NAMESPACES: [&str; 16] = [
     "window.audio",
     "app.audio",
     "block.subtitles",
+    "window.subtitles",
+    "app.subtitles",
     "block.video",
+    "window.video",
+    "app.video",
     "cast",
     "output",
     "display",
