@@ -414,7 +414,7 @@ fn reshaped(frame: &frame::Video, reshaping: &Reshaping, keep_hdr: bool) -> Resu
     Ok(from_bgra(kept.width, kept.height, &bgra))
 }
 
-/// Dolby Vision profile 5, reshaped into BT.2020 light and then PQ.
+/// Dolby Vision profile 5 or 20, reshaped into BT.2020 light and then PQ.
 fn dolby_vision(frame: &frame::Video, reshaping: &Reshaping) -> Result<Still> {
     // Dolby Vision's samples aren't YCbCr: they are only scaled.
     let (output, width, height) = scale(frame, Pixel::YUV444P16LE, false)?;

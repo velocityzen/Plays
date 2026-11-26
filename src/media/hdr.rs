@@ -14,8 +14,8 @@
 //! gpui's Metal shader for HDR surfaces (`surface_hdr_fragment` in
 //! vendor/gpui) does the same on the GPU, with these same constants. This is
 //! the CPU version, for software decoding and Linux, always for an SDR screen.
-//! Dolby Vision's profile 5 needs more before it is HDR like the rest
-//! (`dovi`).
+//! Dolby Vision's profiles 5 and 20 need more before they are HDR like
+//! the rest (`dovi`).
 
 use anyhow::{Result, ensure};
 use ffmpeg::util::color::TransferCharacteristic;
@@ -221,7 +221,8 @@ pub(super) mod sys {
 /// HLG is always shown as on its nominal display. PQ's HDR10 metadata says:
 /// the brightest pixel of the whole video (MaxCLL), or the peak of the
 /// display it was mastered on, whichever is lower when it gives both.
-/// Dolby Vision profile 5 says in its RPU (`dovi::Reshaping::peak_nits`).
+/// Dolby Vision profiles 5 and 20 say in their RPU
+/// (`dovi::Reshaping::peak_nits`).
 pub fn peak_nits(frame: &frame::Video) -> Option<f32> {
     match Transfer::of(frame)? {
         Transfer::Hlg => Some(HLG_PEAK_NITS),

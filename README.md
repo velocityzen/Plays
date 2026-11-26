@@ -42,8 +42,9 @@ GPU-accelerated UI framework.
 
 ### Picture
 
-- HDR10, HLG and Dolby Vision (profile 5, and profile 7's enhancement
-  layer, too): brighter than SDR white on macOS (EDR), tone mapped elsewhere
+- HDR10, HLG and Dolby Vision (profiles 5 and 20, and profile 7's
+  enhancement layer, too): brighter than SDR white on macOS (EDR), tone
+  mapped elsewhere
 - Rotate, flip, aspect ratio and crop
 - Gamma for SDR and for HDR
 - Fit or fill

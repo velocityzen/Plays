@@ -673,14 +673,14 @@ fn a_streams_configuration_says_which_layers_it_has() {
 
 /// Bits written most significant first, as an RPU's are.
 #[derive(Default)]
-struct Bits {
+pub(crate) struct Bits {
     bytes: Vec<u8>,
     /// Bits taken in the last byte, 0 when it's full or there's none.
     used: u32,
 }
 
 impl Bits {
-    fn put(&mut self, value: u64, bits: u32) {
+    pub(crate) fn put(&mut self, value: u64, bits: u32) {
         for bit in (0..bits).rev() {
             if self.used == 0 {
                 self.bytes.push(0);
@@ -692,7 +692,7 @@ impl Bits {
     }
 
     /// Exp-Golomb, unsigned.
-    fn ue(&mut self, value: u64) {
+    pub(crate) fn ue(&mut self, value: u64) {
         let coded = value + 1;
         let bits = u64::BITS - coded.leading_zeros();
         self.put(0, bits - 1);
@@ -709,16 +709,17 @@ impl Bits {
         });
     }
 
-    /// A coefficient, not under 0, with `DENOM` bits of fraction: its whole
-    /// part, Exp-Golomb, then the fraction.
-    fn coefficient(&mut self, value: u64, signed: bool) {
+    /// A coefficient with `DENOM` bits of fraction: its whole part,
+    /// rounded down, Exp-Golomb, then the fraction. Only a signed one is
+    /// under 0.
+    pub(crate) fn coefficient(&mut self, value: i64, signed: bool) {
         let whole = value >> DENOM;
         if signed {
-            self.se(whole.cast_signed());
+            self.se(whole);
         } else {
-            self.ue(whole);
+            self.ue(whole.try_into().unwrap());
         }
-        self.put(value & ((1 << DENOM) - 1), DENOM);
+        self.put((value & ((1 << DENOM) - 1)).cast_unsigned(), DENOM);
     }
 
     fn align(&mut self) {
@@ -729,7 +730,7 @@ impl Bits {
 }
 
 /// The bits of fraction a test RPU's coefficients have.
-const DENOM: u32 = 23;
+pub(crate) const DENOM: u32 = 23;
 
 /// CRC-32/MPEG-2, which an RPU ends with.
 fn crc32(bytes: &[u8]) -> u32 {
@@ -832,6 +833,11 @@ pub(crate) fn rpu_nal(source_max_pq: u16) -> Vec<u8> {
     bits.put(42, 10);
     // No extension blocks.
     bits.ue(0);
+    rpu_unit(bits)
+}
+
+/// An RPU, `bits` but its end, as an HEVC NAL unit of type 62.
+pub(crate) fn rpu_unit(mut bits: Bits) -> Vec<u8> {
     bits.align();
     let crc = crc32(&bits.bytes);
     let mut payload = vec![0x19];
@@ -867,6 +873,10 @@ fn writes_bits_as_an_rpu_has_them() {
     // 1.5: a whole 1, se 010, then a half in 23 bits.
     assert_eq!(bits.bytes, [0b0101_0000, 0, 0, 0]);
     assert_eq!(bits.used, 26 % 8);
+    let mut bits = Bits::default();
+    bits.coefficient(-(1 << (DENOM - 1)), true);
+    // -0.5: a whole -1, se 011, then a half.
+    assert_eq!(bits.bytes, [0b0111_0000, 0, 0, 0]);
     assert_eq!(crc32(b"123456789"), 0x0376_e6e7, "CRC-32/MPEG-2's check");
 }
 

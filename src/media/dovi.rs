@@ -1,5 +1,6 @@
 //! Dolby Vision without an HDR10 base layer (profile 5, as streaming
-//! services use). Its pictures aren't YCbCr but IPT, the base layer of
+//! services use, and profile 20's stereo MV-HEVC, of which FFmpeg decodes
+//! the first view). Its pictures aren't YCbCr but IPT, the base layer of
 //! Dolby's IPTPQc2, and only look right after the reshaping curves and
 //! matrices that come with every frame in its RPU. FFmpeg parses those into
 //! `AV_FRAME_DATA_DOVI_METADATA`. Shown as YCbCr instead, a picture turns
@@ -18,8 +19,10 @@
 
 use ffmpeg::ffi;
 use ffmpeg::frame;
+use ffmpeg::util::color;
 use ffmpeg_next as ffmpeg;
 
+use super::colors::Colors;
 use super::hdr::{self, ToneMapper};
 use super::picture::bgra_rows;
 
@@ -260,10 +263,13 @@ pub struct Reshaping {
 
 impl Reshaping {
     /// The frame's reshaping if it needs one: it is Dolby Vision and its
-    /// pictures aren't plain HDR (profile 5). Profile 8 and the like carry
-    /// an HDR10 or HLG picture, tagged as such, which is shown as it is.
+    /// pictures are IPT, untagged (profile 5) or tagged IPT-C2 though PQ
+    /// too (profile 20). Profile 8 and the like carry an HDR10 or HLG
+    /// picture, tagged as such, which is shown as it is.
     pub fn of(frame: &frame::Video) -> Option<Self> {
-        if hdr::Transfer::of(frame).is_some() {
+        if Colors::of_frame(frame).space != color::Space::IPT_C2
+            && hdr::Transfer::of(frame).is_some()
+        {
             return None;
         }
         let (header, mapping, color) = rpu(frame)?;

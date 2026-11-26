@@ -235,7 +235,8 @@ A decoded picture reaches gpui in one of three forms
   `PLAYS_GPU_CONVERSION=0` converts on the CPU instead
 - `src/media/hdr.rs`: PQ, HLG and the tone curve; reference white as SDR
   white, the video's peak (MaxCLL, mastering display) at the headroom
-- `src/media/dovi.rs`: Dolby Vision profile 5, reshaped by each frame's RPU
+- `src/media/dovi.rs`: Dolby Vision profiles 5 and 20, reshaped by each
+  frame's RPU
 - `src/media/enhancement.rs`: profile 7's two layers composed into HDR10 on
   the CPU (ETSI GS CCM 001), at the master's peak
 - `src/media/picture.rs`: the forms, and the gamma every player shares

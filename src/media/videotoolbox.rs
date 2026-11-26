@@ -15,8 +15,8 @@
 //! it shows, is drawn from its own: copying an 8K frame takes about as long
 //! as it shows.
 //!
-//! Dolby Vision profile 5 isn't YCbCr, so it must not be converted at all:
-//! its frames are only scaled, into buffers of their own format, and carry
+//! Dolby Vision profiles 5 and 20 aren't YCbCr, so mustn't be converted:
+//! their frames are only scaled, into buffers of their own format, and carry
 //! the frame's reshaping (`dovi`) for gpui's Dolby Vision shader under
 //! [`DOLBY_VISION_ATTACHMENT`].
 //!

@@ -213,6 +213,215 @@ fn the_mastering_displays_peak_is_the_videos() {
     assert!((peak - 4000.0).abs() < 5.0, "{peak}");
 }
 
+/// `profile5`'s RPU as an encoder writes it, an HEVC NAL unit of type 62.
+fn profile5_rpu_unit() -> Vec<u8> {
+    use crate::media::enhancement::tests::{Bits, DENOM, rpu_unit};
+
+    let mut bits = Bits::default();
+    // The header: type 2, format 18, profile 0, level 0, then the sequence:
+    // fixed point, normalized, full range, 10-bit layers, 12-bit master.
+    bits.put(2, 6);
+    bits.put(18, 11);
+    bits.put(0, 4);
+    bits.put(0, 4);
+    for (value, width) in [(1, 1), (0, 1), (0, 2)] {
+        bits.put(value, width);
+    }
+    bits.ue(u64::from(DENOM));
+    bits.put(1, 2);
+    bits.put(1, 1);
+    for depth in [10, 10, 12] {
+        bits.ue(depth - 8);
+    }
+    // No filters, no compression, no residual; metadata, all of it anew.
+    for (value, width) in [(0, 1), (0, 3), (0, 1), (1, 1), (1, 1), (0, 1)] {
+        bits.put(value, width);
+    }
+    // Mapping 0: luma's pivots at 0, 512 and 1023, chroma's at the ends,
+    // each the last plus the next.
+    for _ in 0..3 {
+        bits.ue(0);
+    }
+    bits.ue(1);
+    for pivot in [0, 512, 511] {
+        bits.put(pivot, 10);
+    }
+    for _ in 0..2 {
+        bits.ue(0);
+        bits.put(0, 10);
+        bits.put(1023, 10);
+    }
+    // One partition.
+    bits.ue(0);
+    bits.ue(0);
+    // Polynomials: luma x, then x² / 2 + 1/4; each chroma a line.
+    let pieces: [&[&[i64]]; 3] = [
+        &[&[0, 1 << DENOM], &[1 << (DENOM - 2), 0, 1 << (DENOM - 1)]],
+        &[&[-649_193, 10_699_938]],
+        &[&[-649_193, 10_699_938]],
+    ];
+    for coefficients in pieces.iter().copied().flatten() {
+        let order = coefficients.len() as u64 - 1;
+        bits.ue(0);
+        bits.ue(order - 1);
+        if order == 1 {
+            // Not interpolated.
+            bits.put(0, 1);
+        }
+        for &coefficient in *coefficients {
+            bits.coefficient(coefficient, true);
+        }
+    }
+    // Display management: ids, no scene cut, IPTPQc2's matrices, PQ.
+    for _ in 0..3 {
+        bits.ue(0);
+    }
+    for value in [8192i16, 799, 1681, 8192, -933, 1091, 8192, 267, -5545] {
+        bits.put(u64::from(value.cast_unsigned()), 16);
+    }
+    for offset in [0, 1 << 27, 1 << 27] {
+        bits.put(offset, 32);
+    }
+    for value in [17081i16, -349, -349, -349, 17081, -349, -349, -349, 17081] {
+        bits.put(u64::from(value.cast_unsigned()), 16);
+    }
+    for (value, width) in [
+        (65535, 16),
+        (0, 16),
+        (0, 16),
+        (0, 32),
+        // 12 bits, full range.
+        (12, 5),
+        (0, 2),
+        (0, 2),
+        (1, 2),
+        // 0.005 and 1,000 nits.
+        (62, 12),
+        (3079, 12),
+        (42, 10),
+    ] {
+        bits.put(value, width);
+    }
+    // No extension blocks.
+    bits.ue(0);
+    rpu_unit(bits)
+}
+
+/// Ten frames of Dolby Vision profile 20, with one view: 10-bit HEVC whose
+/// codes are IPT, tagged IPT-C2, PQ and BT.2020 in full range, as such a
+/// file is, each with `profile5`'s RPU. Its left half is
+/// `renders_a_known_frame`'s skin tone, its right half its green.
+fn profile_20_media() -> std::path::PathBuf {
+    use crate::media::tests::made::{kept, made_in, media};
+
+    let ipt = media(
+        "ten-frames-ipt.mp4",
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "color=size=320x180:rate=10:duration=1",
+            "-vf",
+            "format=yuv420p10le,geq=lum='if(lt(X,W/2),432,387)':cb='if(lt(X,W/2),481,365)':cr='if(lt(X,W/2),492,588)'",
+            "-c:v",
+            "libx265",
+            "-x265-params",
+            "log-level=error:bframes=0:lossless=1",
+            "-bsf:v",
+            "hevc_metadata=colour_primaries=9:transfer_characteristics=16:matrix_coefficients=15:video_full_range_flag=1",
+        ],
+    );
+    let recipe = std::fs::read_to_string(ipt.with_added_extension("made")).unwrap();
+    made_in(
+        &kept(),
+        "profile-20.mp4",
+        &format!("{recipe:?} as profile 20, with profile 5's RPU"),
+        |out| as_profile_20(&ipt, out).map_err(|err| err.to_string()),
+    )
+}
+
+/// `from`'s video as Dolby Vision profile 20, each frame with
+/// `profile5_rpu_unit`, into `to`.
+fn as_profile_20(from: &std::path::Path, to: &std::path::Path) -> Result<(), ffmpeg::Error> {
+    use crate::media::tests::{appended, set_dovi_configuration, video_packets};
+
+    let (parameters, from_base, packets) = video_packets(from)?;
+    let rpu = profile5_rpu_unit();
+    let mut output = ffmpeg::format::output(to)?;
+    {
+        let mut stream = output.add_stream(ffmpeg::encoder::find(ffmpeg::codec::Id::None))?;
+        stream.set_parameters(parameters);
+        stream.set_time_base(from_base);
+        // SAFETY: the stream's parameters are valid.
+        unsafe { (*(*stream.as_mut_ptr()).codecpar).codec_tag = 0 };
+        // Profile 20, an RPU and a base layer nothing else shows.
+        set_dovi_configuration(&mut stream, [1, 0, 20, 6, 1, 0, 1, 0, 0]);
+    }
+    // MP4 keeps a Dolby Vision configuration only so.
+    // SAFETY: setting a field of a valid context.
+    unsafe { (*output.as_mut_ptr()).strict_std_compliance = ffi::FF_COMPLIANCE_UNOFFICIAL };
+    output.write_header()?;
+    let to_base = output.stream(0).unwrap().time_base();
+    for packet in &packets {
+        let mut packet = appended(packet, std::slice::from_ref(&rpu));
+        packet.set_stream(0);
+        packet.rescale_ts(from_base, to_base);
+        packet.set_position(-1);
+        packet.write_interleaved(&mut output)?;
+    }
+    output.write_trailer()
+}
+
+/// Profile 20's pictures are IPT, though tagged PQ: played, decoded on the
+/// GPU or in software, they show as profile 5's do.
+#[test]
+fn plays_profile_20_as_ipt() {
+    use crate::media::{still, tests::first_frame};
+
+    let path = profile_20_media();
+    let input = ffmpeg::format::input(&path).unwrap();
+    let configuration =
+        crate::media::enhancement::Configuration::of(&input.stream(0).unwrap().parameters());
+    assert_eq!(configuration.map(|c| c.profile), Some(20));
+    drop(input);
+    for hardware in [true, false] {
+        let shown = still::shown(&first_frame(&path, hardware), false).unwrap();
+        let (width, height) = (shown.width as usize, shown.height as usize);
+        for (x, want) in [(width / 4, [148u8, 123, 107]), (width * 3 / 4, [4, 136, 1])] {
+            let got = shown.pixels[height / 2 * width + x].map(|c| (c / 257) as u8);
+            assert!(
+                want.iter().zip(got).all(|(&a, b)| a.abs_diff(b) <= 2),
+                "hardware {hardware}, at {x}: want {want:?}, got {got:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn reshapes_ipt_however_its_tagged() {
+    use ffmpeg::util::color::{Primaries, Range, Space, TransferCharacteristic};
+
+    let tagged = |space, transfer| {
+        let mut frame = rpu_frame((4, 2), [512; 3], 3079);
+        frame.set_color_range(Range::JPEG);
+        frame.set_color_space(space);
+        frame.set_color_primaries(Primaries::BT2020);
+        frame.set_color_transfer_characteristic(transfer);
+        Reshaping::of(&frame).is_some()
+    };
+    // Profile 5, untagged.
+    assert!(Reshaping::of(&rpu_frame((4, 2), [512; 3], 3079)).is_some());
+    // Profile 20: IPT-C2, though PQ.
+    assert!(tagged(Space::IPT_C2, TransferCharacteristic::SMPTE2084));
+    // Profile 8: HDR10 or HLG, shown as it is.
+    for transfer in [
+        TransferCharacteristic::SMPTE2084,
+        TransferCharacteristic::ARIB_STD_B67,
+    ] {
+        assert!(!tagged(Space::BT2020NCL, transfer), "{transfer:?}");
+    }
+}
+
 #[test]
 fn picks_pieces_between_pivots() {
     let luma = &reshaping().curves[0];

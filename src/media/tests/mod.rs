@@ -2328,24 +2328,11 @@ fn with_enhancement_layer(
         let mut stream = output.add_stream(ffmpeg_next::encoder::find(codec::Id::None))?;
         stream.set_parameters(parameters.clone());
         stream.set_time_base(time_base);
-        // SAFETY: the stream's parameters are valid; FFmpeg makes the side
-        // data as big as asked, owned by them.
-        unsafe {
-            let raw = (*stream.as_mut_ptr()).codecpar;
-            (*raw).codec_tag = 0;
-            if layer {
-                // Profile 7, an RPU and the enhancement layer, no base layer.
-                let record = [1u8, 0, 7, 6, 1, 1, 0, 6, 0];
-                let side = ffi::av_packet_side_data_new(
-                    &mut (*raw).coded_side_data,
-                    &mut (*raw).nb_coded_side_data,
-                    ffi::AVPacketSideDataType::AV_PKT_DATA_DOVI_CONF,
-                    record.len(),
-                    0,
-                );
-                assert!(!side.is_null());
-                std::ptr::copy_nonoverlapping(record.as_ptr(), (*side).data, record.len());
-            }
+        // SAFETY: the stream's parameters are valid.
+        unsafe { (*(*stream.as_mut_ptr()).codecpar).codec_tag = 0 };
+        if layer {
+            // Profile 7, an RPU and the enhancement layer, no base layer.
+            set_dovi_configuration(&mut stream, [1, 0, 7, 6, 1, 1, 0, 6, 0]);
         }
     }
     // MP4 keeps a Dolby Vision configuration only so.
@@ -2440,8 +2427,32 @@ pub(super) fn profile_7_media(layout: Layout) -> PathBuf {
     )
 }
 
+/// Say in `stream`'s parameters that it's Dolby Vision as `record`, the
+/// bytes of an `AVDOVIDecoderConfigurationRecord`, says.
+pub(super) fn set_dovi_configuration(
+    stream: &mut ffmpeg_next::format::stream::StreamMut,
+    record: [u8; 9],
+) {
+    use ffmpeg_next::ffi;
+
+    // SAFETY: the stream's parameters are valid; FFmpeg makes the side
+    // data as big as asked, owned by them.
+    unsafe {
+        let raw = (*stream.as_mut_ptr()).codecpar;
+        let side = ffi::av_packet_side_data_new(
+            &mut (*raw).coded_side_data,
+            &mut (*raw).nb_coded_side_data,
+            ffi::AVPacketSideDataType::AV_PKT_DATA_DOVI_CONF,
+            record.len(),
+            0,
+        );
+        assert!(!side.is_null());
+        std::ptr::copy_nonoverlapping(record.as_ptr(), (*side).data, record.len());
+    }
+}
+
 /// The packets of the video `path` is, and its parameters and time base.
-fn video_packets(
+pub(super) fn video_packets(
     path: &std::path::Path,
 ) -> Result<
     (
@@ -2472,7 +2483,7 @@ fn nal_units(mut data: &[u8]) -> Vec<&[u8]> {
 }
 
 /// `packet` with `units` after its own NAL units, as it was otherwise.
-fn appended(packet: &ffmpeg_next::Packet, units: &[Vec<u8>]) -> ffmpeg_next::Packet {
+pub(super) fn appended(packet: &ffmpeg_next::Packet, units: &[Vec<u8>]) -> ffmpeg_next::Packet {
     let mut data = packet.data().unwrap().to_vec();
     for unit in units {
         data.extend(u32::try_from(unit.len()).unwrap().to_be_bytes());
@@ -2520,22 +2531,10 @@ fn profile_7(
         let mut stream = output.add_stream(ffmpeg_next::encoder::find(codec::Id::None))?;
         stream.set_parameters(parameters.clone());
         stream.set_time_base(time_base);
-        // SAFETY: the stream's parameters are valid; FFmpeg makes the side
-        // data as big as asked, owned by them.
-        unsafe {
-            let raw = (*stream.as_mut_ptr()).codecpar;
-            (*raw).codec_tag = 0;
-            if let Some(record) = record {
-                let side = ffi::av_packet_side_data_new(
-                    &mut (*raw).coded_side_data,
-                    &mut (*raw).nb_coded_side_data,
-                    ffi::AVPacketSideDataType::AV_PKT_DATA_DOVI_CONF,
-                    record.len(),
-                    0,
-                );
-                assert!(!side.is_null());
-                std::ptr::copy_nonoverlapping(record.as_ptr(), (*side).data, record.len());
-            }
+        // SAFETY: the stream's parameters are valid.
+        unsafe { (*(*stream.as_mut_ptr()).codecpar).codec_tag = 0 };
+        if let Some(record) = record {
+            set_dovi_configuration(&mut stream, record);
         }
     }
     // MP4 keeps a Dolby Vision configuration only so.
@@ -3395,16 +3394,16 @@ fn hdr_surface_to_sdr(
     SurfaceRgb { width, height, rgb }
 }
 
-/// Each Dolby Vision profile 5 file, decoded on the GPU or in software,
-/// gives surfaces that carry the frame's reshaping and, through the Dolby
-/// Vision shader's math, show what the CPU's reshaping and tone mapping of
-/// the software one shows. The pictures are saved as PNGs next to the
-/// generated test media.
+/// Each Dolby Vision profile 5 or 20 file, decoded on the GPU or in
+/// software, gives surfaces that carry the frame's reshaping and, through
+/// the Dolby Vision shader's math, show what the CPU's reshaping and tone
+/// mapping of the software one shows. The pictures are saved as PNGs next
+/// to the generated test media.
 #[cfg(target_os = "macos")]
 #[test]
 #[ignore = "needs Dolby Vision files in the folder PLAYS_DOLBY_VISION_SAMPLES names"]
 fn dolby_vision_surfaces_match_software() {
-    for path in dolby_vision_samples(&[5]) {
+    for path in dolby_vision_samples(&[5, 20]) {
         dolby_vision_surfaces_of(&path);
     }
 }

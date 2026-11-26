@@ -52,6 +52,8 @@ What the tests play, made with the `ffmpeg` tool unless they're fixtures
 - Dolby Vision profile 7: base and enhancement layers in one track or two,
   or the layer missing, composed in software and on the GPU
 - Dolby Vision profile 5's reshaping, in code
+- Dolby Vision profile 20: IPT tagged IPT-C2 and PQ, reshaped, decoded on
+  the GPU and in software
 - Tone mapping and PQ/HLG palettes, in code
 
 ## Audio
@@ -110,8 +112,8 @@ Samples too big to commit, in `ignore/`:
 - HEVC Main 10 HLG, 4K60, Dolby Vision 8.4, AAC (MOV)
 - HEVC 4K Dolby Vision 7 FEL: Matroska; MP4 with AC-3 5.1; DTS 5.1
 - HEVC Dolby Vision 8.1, 3840×2014
-- HEVC Dolby Vision 20, 24 fps: shows green and magenta, its IPT not
-  reshaped
+- HEVC Dolby Vision 20 (MV-HEVC), 24 fps: its first view, decoded in
+  software, as VideoToolbox won't take it
 - HEVC Dolby Vision 5, 4K 59.94, E-AC-3 stereo
 - AV1 4K PQ, Dolby Vision 10, DTS-HD MA 7.1
 - AV1 Dolby Vision 10, 3840×1920, E-AC-3 Atmos 5.1, MJPEG cover
