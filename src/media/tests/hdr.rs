@@ -1,7 +1,62 @@
+use std::mem::offset_of;
+
+use ffmpeg::util::format::Pixel;
+
 use super::*;
 
 fn close(a: f32, b: f32, tolerance: f32) -> bool {
     (a - b).abs() <= tolerance
+}
+
+/// A frame encoded with `transfer`, with side data of a MaxCLL and of a
+/// mastering display's peak (`num` / `den` nits, and whether it says), each
+/// if given.
+fn frame_with(
+    transfer: TransferCharacteristic,
+    max_cll: Option<u32>,
+    display: Option<(i32, i32, bool)>,
+) -> frame::Video {
+    let mut frame = frame::Video::new(Pixel::YUV420P10LE, 2, 2);
+    frame.set_color_transfer_characteristic(transfer);
+    let mut side = |kind, size| {
+        // SAFETY: FFmpeg makes side data of the size asked for, or none.
+        let side = unsafe { ffi::av_frame_new_side_data(frame.as_mut_ptr(), kind, size) };
+        assert!(!side.is_null());
+        // SAFETY: as above.
+        unsafe { (*side).data }
+    };
+    if let Some(max_cll) = max_cll {
+        let data = side(
+            ffi::AVFrameSideDataType::AV_FRAME_DATA_CONTENT_LIGHT_LEVEL,
+            size_of::<sys::ContentLightLevel>(),
+        );
+        // SAFETY: the side data is as big as the struct, and aligned.
+        unsafe {
+            data.cast::<sys::ContentLightLevel>()
+                .write(sys::ContentLightLevel {
+                    max_cll,
+                    max_fall: max_cll / 2,
+                });
+        }
+    }
+    if let Some((num, den, has_luminance)) = display {
+        let data = side(
+            ffi::AVFrameSideDataType::AV_FRAME_DATA_MASTERING_DISPLAY_METADATA,
+            size_of::<sys::MasteringDisplay>(),
+        );
+        // SAFETY: as above; all-zero is a valid display otherwise.
+        unsafe {
+            let mut mastering: sys::MasteringDisplay = std::mem::zeroed();
+            mastering.max_luminance = ffi::AVRational { num, den };
+            mastering.min_luminance = ffi::AVRational {
+                num: 50,
+                den: 10_000,
+            };
+            mastering.has_luminance = has_luminance.into();
+            data.cast::<sys::MasteringDisplay>().write(mastering);
+        }
+    }
+    frame
 }
 
 #[test]
@@ -72,23 +127,131 @@ fn encodes_light_back_into_signals() {
 fn tone_curve_is_smooth_and_bounded() {
     for headroom in [1.0, 2.5, 16.0] {
         let knee = KNEE * headroom;
-        assert_eq!(tone_curve(knee * 0.5, headroom), knee * 0.5);
-        assert!(close(tone_curve(knee + 1e-4, headroom), knee + 1e-4, 1e-5));
-        let mut last = 0.0;
-        for i in 1..2000 {
-            let y = tone_curve(i as f32 * 0.05, headroom);
-            // Far above the knee it rounds to the headroom itself.
-            assert!(y >= last && y <= headroom, "{headroom}: {y} after {last}");
-            last = y;
+        for peak in [None, Some(headroom * 0.5), Some(headroom * 1.2), Some(49.3)] {
+            assert_eq!(tone_curve(knee * 0.5, headroom, peak), knee * 0.5);
+            let past = tone_curve(knee + 1e-4, headroom, peak);
+            assert!(close(past, knee + 1e-4, 1e-5), "{headroom}, {peak:?}");
+            let mut last = 0.0;
+            for i in 1..2000 {
+                let y = tone_curve(i as f32 * 0.05, headroom, peak);
+                // Far above the knee it rounds to the headroom itself.
+                assert!(
+                    y >= last && y <= headroom,
+                    "{headroom}, {peak:?}: {y} after {last}"
+                );
+                last = y;
+            }
         }
     }
 }
 
+/// Points on the curve, worked out apart from this code from its
+/// definition: on an SDR screen, and on one with 4 times SDR white's
+/// headroom, for videos mastered at 1,000 and 4,000 nits.
+#[test]
+fn a_known_peak_lands_where_its_curve_goes() {
+    let nits = |nits: f32| nits / REFERENCE_WHITE_NITS;
+    let cases = [
+        (nits(406.0), 1.0, Some(nits(1000.0)), 0.962_066),
+        (nits(812.0), 4.0, Some(nits(1000.0)), 3.634_775),
+        (nits(1000.0), 4.0, Some(nits(1000.0)), 4.0),
+        (nits(2030.0), 4.0, Some(nits(1000.0)), 4.0),
+        (nits(812.0), 4.0, Some(nits(4000.0)), 3.501_792),
+        (nits(1000.0), 4.0, Some(nits(4000.0)), 3.662_793),
+        (nits(2030.0), 4.0, Some(nits(4000.0)), 3.896_95),
+        // One that fits is left alone.
+        (nits(700.0), 4.0, Some(nits(800.0)), nits(700.0)),
+    ];
+    for (x, headroom, peak, expected) in cases {
+        let y = tone_curve(x, headroom, peak);
+        assert!(close(y, expected, 1e-5), "{x} under {headroom}: {y}");
+    }
+    // Without a peak, it never quite gets there.
+    assert!(tone_curve(nits(1000.0), 4.0, None) < 3.86);
+}
+
 #[test]
 fn tone_map_keeps_hue() {
-    let [r, g, b] = tone_map([2.0, 1.0, 0.5], 1.0);
-    assert!(r < 1.0);
-    assert!(close(g / r, 0.5, 1e-6) && close(b / r, 0.25, 1e-6));
+    for peak in [None, Some(4.9)] {
+        let [r, g, b] = tone_map([2.0, 1.0, 0.5], 1.0, peak);
+        assert!(r < 1.0);
+        assert!(close(g / r, 0.5, 1e-6) && close(b / r, 0.25, 1e-6));
+    }
+}
+
+#[test]
+fn mirrors_ffmpegs_layout() {
+    // From offsetof() against libavutil/mastering_display_metadata.h.
+    assert_eq!(offset_of!(sys::MasteringDisplay, white_point), 48);
+    assert_eq!(offset_of!(sys::MasteringDisplay, max_luminance), 72);
+    assert_eq!(offset_of!(sys::MasteringDisplay, has_luminance), 84);
+    assert_eq!(size_of::<sys::MasteringDisplay>(), 88);
+    assert_eq!(offset_of!(sys::ContentLightLevel, max_fall), 4);
+    assert_eq!(size_of::<sys::ContentLightLevel>(), 8);
+}
+
+#[test]
+fn a_pq_videos_peak_is_the_lower_of_what_its_metadata_says() {
+    let thousand = Some((10_000_000, 10_000, true));
+    let cases = [
+        (None, None, None, "nothing said"),
+        (Some(1000), None, Some(1000.0), "MaxCLL"),
+        (
+            None,
+            Some((40_000_000, 10_000, true)),
+            Some(4000.0),
+            "the display",
+        ),
+        (Some(600), thousand, Some(600.0), "MaxCLL under the display"),
+        (
+            Some(2000),
+            thousand,
+            Some(1000.0),
+            "the display under MaxCLL",
+        ),
+        (Some(0), thousand, Some(1000.0), "MaxCLL unsaid"),
+        (
+            None,
+            Some((10_000_000, 10_000, false)),
+            None,
+            "the display's peak unsaid",
+        ),
+        (
+            None,
+            Some((1000, 0, true)),
+            None,
+            "the display's peak over nothing",
+        ),
+        (Some(100), None, None, "under reference white"),
+        (
+            None,
+            Some((200_000_000, 10_000, true)),
+            None,
+            "over PQ's peak",
+        ),
+        (
+            Some(100),
+            thousand,
+            Some(1000.0),
+            "MaxCLL under reference white",
+        ),
+    ];
+    for (max_cll, display, expected, what) in cases {
+        let frame = frame_with(TransferCharacteristic::SMPTE2084, max_cll, display);
+        assert_eq!(peak_nits(&frame), expected, "{what}");
+    }
+    // HLG is shown as on its nominal display, whatever it says; SDR has none.
+    let hlg = frame_with(TransferCharacteristic::ARIB_STD_B67, Some(4000), None);
+    assert_eq!(peak_nits(&hlg), Some(HLG_PEAK_NITS));
+    let sdr = frame_with(TransferCharacteristic::BT709, Some(1000), thousand);
+    assert_eq!(peak_nits(&sdr), None);
+}
+
+#[test]
+fn a_peak_attached_is_found_again() {
+    let mut frame = frame_with(TransferCharacteristic::SMPTE2084, None, None);
+    attach_peak(&mut frame, 812.4).unwrap();
+    assert_eq!(peak_nits(&frame), Some(812.0));
 }
 
 #[test]
@@ -111,6 +274,49 @@ fn maps_hdr_greys_to_sdr() {
         // far below it.
         let [b, ..] = mapper.pixel([u16::MAX; 3]);
         assert!((250..=255).contains(&b), "{transfer:?}: {b}");
+    }
+}
+
+/// Side data shorter than FFmpeg's struct for its kind isn't read past its
+/// end: it says no peak.
+#[test]
+fn side_data_too_short_for_its_kind_says_nothing() {
+    let mut frame = frame_with(TransferCharacteristic::SMPTE2084, None, None);
+    let kind = ffi::AVFrameSideDataType::AV_FRAME_DATA_CONTENT_LIGHT_LEVEL;
+    // SAFETY: FFmpeg makes side data of the size asked for, or none; its
+    // data is aligned for a u32.
+    unsafe {
+        let side = ffi::av_frame_new_side_data(frame.as_mut_ptr(), kind, 4);
+        assert!(!side.is_null());
+        (*side).data.cast::<u32>().write(1000);
+    }
+    assert_eq!(peak_nits(&frame), None);
+}
+
+/// Highlights up to a video's peak stay apart, where without it they'd
+/// all be white: worked out as below, for videos mastered at 300, 1,000
+/// and 4,000 nits.
+#[test]
+fn highlights_stay_apart_up_to_a_known_peak() {
+    let code = |signal: f32| (signal * 65535.0).round() as u16;
+    let cases = [
+        (None, 0.649_86, 255, "390 nits, unknown peak"),
+        (Some(1000.0), 0.580_69, 240, "reference white"),
+        (Some(1000.0), 0.649_86, 250, "390 nits"),
+        (Some(1000.0), 0.696_29, 253, "600 nits"),
+        (Some(1000.0), 0.751_83, 255, "1,000 nits, the peak"),
+        (Some(4000.0), 0.751_83, 253, "1,000 nits, under the peak"),
+        (Some(4000.0), 0.902_57, 255, "4,000 nits, the peak"),
+        (Some(300.0), 0.621_86, 255, "300 nits, a dim master's peak"),
+    ];
+    for (peak, signal, expected, what) in cases {
+        let mut mapper = ToneMapper::new(Transfer::Pq);
+        mapper.set_peak(peak);
+        let [_, g, ..] = mapper.pixel([code(signal); 3]);
+        assert!(
+            g.abs_diff(expected) <= 1,
+            "{what} of {peak:?}: {g}, not {expected}"
+        );
     }
 }
 

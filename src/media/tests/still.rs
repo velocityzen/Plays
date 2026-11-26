@@ -149,7 +149,10 @@ fn levels(still: &Still) -> impl Fn(usize, usize, usize) -> f64 + '_ {
 #[test]
 fn a_surface_is_seen_in_the_colors_it_shows() {
     use crate::media::tests::made::media;
-    use crate::media::tests::{block_differences, converted_first_frame, first_frame, hdr_media};
+    use crate::media::tests::{
+        MASTERED_AT_1000_NITS, block_differences, converted_first_frame, first_frame, hdr_media,
+        hdr_media_in,
+    };
 
     let sdr = |name: &str, source: &str| {
         let args = [
@@ -179,6 +182,17 @@ fn a_surface_is_seen_in_the_colors_it_shows() {
             "hlg",
             hdr_media("hlg.mp4", "arib-std-b67"),
             Some(Transfer::Hlg),
+        ),
+        // Tone mapped to the peak it was mastered for.
+        (
+            "hdr10, mastered",
+            hdr_media_in(
+                "hdr10-mastered.mp4",
+                "smpte2084",
+                false,
+                MASTERED_AT_1000_NITS,
+            ),
+            Some(Transfer::Pq),
         ),
     ];
     for (name, path, transfer) in cases {
@@ -224,8 +238,9 @@ fn dolby_vision_read_back_is_reshaped_and_kept_or_tone_mapped() {
     use crate::media::hdr::{REFERENCE_WHITE_NITS, nits_to_pq, pq_to_nits};
 
     let reshaping = crate::media::dovi::tests::reshaping();
-    // 2 × 2 of one IPT color, ten bits high in sixteen.
-    let (i, pt) = (0.6, 0.45);
+    // 2 × 2 of one IPT color, ten bits high in sixteen: past the knee,
+    // where the peak it was mastered for tells.
+    let (i, pt) = (0.9, 0.45);
     let code = |value: f32| (((value * 1024.0).round() as u16) << 6).to_le_bytes();
     let luma = [code(i); 4].concat();
     let chroma = [code(pt); 2].concat();
@@ -254,6 +269,8 @@ fn dolby_vision_read_back_is_reshaped_and_kept_or_tone_mapped() {
     assert_eq!(shows.hdr, None);
     let mut mapper = ToneMapper::new(Transfer::Pq);
     mapper.set_gamma(crate::media::picture::gamma(true));
+    // To the peak of the display it was mastered on.
+    mapper.set_peak(reshaping.peak_nits());
     let [b, g, r, _] = mapper.output(light.map(|nits| nits / REFERENCE_WHITE_NITS));
     for (c, want) in [r, g, b].into_iter().enumerate() {
         let got = shows.pixels[0][c] / 257;

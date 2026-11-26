@@ -78,6 +78,10 @@ const DOLBY_VISION_ATTACHMENT: &str = "PlaysDolbyVision";
 /// Plays: the pixel buffer attachment (`CFNumber`) with the gamma to draw a
 /// surface with; 1 without it. Plays sets it.
 const GAMMA_ATTACHMENT: &str = "PlaysGamma";
+/// Plays: the pixel buffer attachment (`CFNumber`) with the brightest an HDR
+/// surface's video gets, in nits, which tone mapping reaches the headroom
+/// at; unknown without it. Plays sets it.
+const PEAK_ATTACHMENT: &str = "PlaysPeak";
 
 pub type Context = Arc<Mutex<InstanceBufferPool>>;
 pub type Renderer = MetalRenderer;
@@ -2019,7 +2023,12 @@ fn dolby_vision_params(buffer: &CVPixelBuffer) -> Option<CFData> {
 
 /// Plays: the gamma a surface is drawn with, which Plays attaches to it.
 fn surface_gamma(buffer: &CVPixelBuffer) -> f32 {
-    let key = CFString::from_static_string(GAMMA_ATTACHMENT);
+    attached_number(buffer, GAMMA_ATTACHMENT).unwrap_or(1.)
+}
+
+/// Plays: a positive number Plays attached to a surface as `key`.
+fn attached_number(buffer: &CVPixelBuffer, key: &'static str) -> Option<f32> {
+    let key = CFString::from_static_string(key);
     let value = unsafe {
         CVBufferGetAttachment(
             buffer.as_concrete_TypeRef(),
@@ -2028,13 +2037,12 @@ fn surface_gamma(buffer: &CVPixelBuffer) -> f32 {
         )
     };
     if value.is_null() {
-        return 1.;
+        return None;
     }
     let number = unsafe { CFNumber::wrap_under_get_rule(value as CFNumberRef) };
     number
         .to_f32()
-        .filter(|gamma| gamma.is_finite() && *gamma > 0.)
-        .unwrap_or(1.)
+        .filter(|number| number.is_finite() && *number > 0.)
 }
 
 /// Plays: the size of `DoviParams` in shaders.metal: six rows of matrices,
@@ -2054,7 +2062,9 @@ struct HdrSurfaceParams {
     /// 1 for PQ, 2 for HLG, 0 for anything else (taken as BT.1886 SDR).
     transfer: u32,
     edr_headroom: f32,
-    _padding: [f32; 2],
+    /// The brightest the video gets, in nits; 0 when it isn't known.
+    peak_nits: f32,
+    _padding: f32,
 }
 
 impl HdrSurfaceParams {
@@ -2097,7 +2107,8 @@ impl HdrSurfaceParams {
                 _ => 0,
             },
             edr_headroom,
-            _padding: [0.; 2],
+            peak_nits: attached_number(buffer, PEAK_ATTACHMENT).unwrap_or(0.),
+            _padding: 0.,
         }
     }
 }

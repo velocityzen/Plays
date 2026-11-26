@@ -26,6 +26,9 @@ pub(super) struct YuvParams {
     planar: u32,
     wide: u32,
     chroma_siting: [f32; 4],
+    /// 0 when it isn't known.
+    peak_nits: f32,
+    _padding: [f32; 3],
 }
 
 impl YuvParams {
@@ -54,6 +57,8 @@ impl YuvParams {
             planar: (frame.layout() == YuvLayout::Planar) as u32,
             wide: frame.is_wide() as u32,
             chroma_siting: [color.chroma_siting[0], color.chroma_siting[1], 0., 0.],
+            peak_nits: color.peak_nits.unwrap_or(0.),
+            _padding: [0.; 3],
         }
     }
 }

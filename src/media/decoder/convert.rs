@@ -131,6 +131,10 @@ pub(in crate::media) fn convert_pixels(
         return Ok((width, height, pixels));
     };
     mapper.set_gamma(gamma);
+    mapper.set_peak(match &reshaping {
+        Some(reshaping) => reshaping.peak_nits(),
+        None => hdr::peak_nits(frame),
+    });
     scaler.context.run(frame, &mut scaler.output)?;
     let output = &scaler.output;
     let pixels = match &reshaping {

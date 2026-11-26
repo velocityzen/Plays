@@ -59,7 +59,7 @@ use ffmpeg_next as ffmpeg;
 
 use super::colors::Colors;
 use super::dovi::Reshaping;
-use super::hdr::Transfer;
+use super::hdr::{self, Transfer};
 use super::{picture, still};
 
 /// The pixel buffer attachment (a `CFData` of `dovi::ShaderParams`) that
@@ -69,6 +69,10 @@ pub const DOLBY_VISION_ATTACHMENT: &str = "PlaysDolbyVision";
 /// The pixel buffer attachment (a `CFNumber`) with the gamma vendor/gpui
 /// draws a surface with. Matches `GAMMA_ATTACHMENT` in its metal_renderer.rs.
 pub(super) const GAMMA_ATTACHMENT: &str = "PlaysGamma";
+/// The pixel buffer attachment (a `CFNumber`) with the brightest an HDR
+/// surface's video gets, in nits (`hdr::peak_nits`), which vendor/gpui tone
+/// maps to. Matches `PEAK_ATTACHMENT` in its metal_renderer.rs.
+pub const PEAK_ATTACHMENT: &str = "PlaysPeak";
 
 type VTPixelTransferSessionRef = *mut c_void;
 
@@ -100,6 +104,8 @@ pub struct Surface {
     transfer: Option<Transfer>,
     /// Dolby Vision's reshaping, which gpui's own shader does as it draws.
     reshaping: Option<Arc<Reshaping>>,
+    /// The brightest its video gets, in nits, if anything says.
+    peak_nits: Option<f32>,
 }
 
 // SAFETY: CoreVideo buffers are reference counted thread-safely, and nothing
@@ -238,7 +244,11 @@ impl Surface {
             .context("a pixel buffer has no memory")
             .and_then(|planes| still::frame_of(format, self.size(), &planes, colors));
         buffer.unlock_base_address(kCVPixelBufferLock_ReadOnly);
-        frame
+        let mut frame = frame?;
+        if let Some(nits) = self.peak_nits {
+            hdr::attach_peak(&mut frame, nits)?;
+        }
+        Ok(frame)
     }
 }
 
@@ -473,6 +483,13 @@ impl Converter {
         } else {
             tag_converted(source, &destination, hdr);
         }
+        let peak_nits = match &reshaping {
+            Some(reshaping) => reshaping.peak_nits(),
+            None => hdr::peak_nits(frame),
+        };
+        if let Some(nits) = peak_nits {
+            tag_peak(&destination, nits);
+        }
         static NEXT_ID: AtomicU64 = AtomicU64::new(0);
         Ok(Surface {
             buffer: destination,
@@ -480,6 +497,7 @@ impl Converter {
             hdr,
             transfer,
             reshaping: reshaping.map(Arc::new),
+            peak_nits,
         })
     }
 
@@ -614,6 +632,21 @@ fn tag_dolby_vision(destination: &CVPixelBuffer, reshaping: &Reshaping) {
     }
 }
 
+/// Give an HDR surface its video's peak, for gpui to tone map to.
+fn tag_peak(destination: &CVPixelBuffer, nits: f32) {
+    let key = CFString::from_static_string(PEAK_ATTACHMENT);
+    let peak = CFNumber::from(nits);
+    // SAFETY: the buffer is valid, and nothing reads it yet.
+    unsafe {
+        CVBufferSetAttachment(
+            destination.as_concrete_TypeRef(),
+            key.as_concrete_TypeRef(),
+            peak.as_CFTypeRef(),
+            kCVAttachmentMode_ShouldNotPropagate,
+        );
+    }
+}
+
 /// Describe the frame's colors on its pixel buffer, which is what the transfer
 /// session converts from. Videos that don't say which matrix they use get the
 /// same guess as in software (`decoder::set_colorspace`): BT.709 for HD.
@@ -637,3 +670,7 @@ fn tag_colors(source: CVPixelBufferRef, frame: &frame::Video) {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "tests/videotoolbox.rs"]
+mod tests;

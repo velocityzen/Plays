@@ -42,6 +42,9 @@ pub struct YuvColor {
     pub to_srgb_primaries: [[f32; 4]; 4],
     /// How R'G'B' encodes light.
     pub transfer: YuvTransfer,
+    /// The brightest an HDR video gets, in nits, if it's known: tone
+    /// mapping reaches SDR white there.
+    pub peak_nits: Option<f32>,
     /// Where the first Cb and Cr samples sit, in luma samples from the
     /// frame's top-left corner (the next are 2 further on): `[1., 1.]`
     /// between the first two columns and rows, as in JPEG; `[0.5, 1.]` in
@@ -167,6 +170,7 @@ mod tests {
         ycbcr_to_rgb: [[0.; 4]; 4],
         to_srgb_primaries: [[0.; 4]; 4],
         transfer: YuvTransfer::Sdr,
+        peak_nits: None,
         chroma_siting: [1., 1.],
     };
 

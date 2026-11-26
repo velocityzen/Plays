@@ -1490,6 +1490,8 @@ struct YuvParams {
     // Where the first Cb and Cr samples sit, in luma samples from the
     // top-left corner (xy).
     chroma_siting: vec4<f32>,
+    // The brightest the video gets, in nits; 0 when it isn't known.
+    peak_nits: f32,
 }
 
 var<uniform> yuv_params: YuvParams;
@@ -1597,16 +1599,22 @@ fn yuv_hlg_to_nits(signal: vec3<f32>) -> vec3<f32> {
     return YUV_HLG_PEAK_NITS * pow(max(luma, 0.0), YUV_HLG_GAMMA - 1.0) * scene;
 }
 
-// The brightest channel eases toward SDR white past the knee, and the others
-// scale with it.
-fn yuv_tone_map(rgb: vec3<f32>) -> vec3<f32> {
-    let peak = max(rgb.r, max(rgb.g, rgb.b));
-    if (peak <= YUV_TONE_KNEE) {
+// The brightest channel is rolled off toward SDR white past the knee,
+// reaching it at the video's peak (relative to SDR white) if that's known
+// (above 0), and the others scale with it.
+fn yuv_tone_map(rgb: vec3<f32>, peak: f32) -> vec3<f32> {
+    let brightest = max(rgb.r, max(rgb.g, rgb.b));
+    if (brightest <= YUV_TONE_KNEE) {
         return rgb;
     }
     let room = 1.0 - YUV_TONE_KNEE;
-    let curve = YUV_TONE_KNEE + room * (1.0 - exp(-(peak - YUV_TONE_KNEE) / room));
-    return rgb * (curve / peak);
+    let past = (brightest - YUV_TONE_KNEE) / room;
+    var eased = 1.0 - exp(-past);
+    if (peak > 0.0) {
+        let white = max((peak - YUV_TONE_KNEE) / room, 1.0);
+        eased = min(past * (1.0 + past / (white * white)) / (1.0 + past), 1.0);
+    }
+    return rgb * ((YUV_TONE_KNEE + room * eased) / brightest);
 }
 
 fn yuv_srgb_encode(linear: vec3<f32>) -> vec3<f32> {
@@ -1640,7 +1648,8 @@ fn fs_yuv(input: YuvVarying) -> @location(0) vec4<f32> {
             light = yuv_hlg_to_nits(signal) / YUV_REFERENCE_WHITE_NITS;
         }
         let rgb = (yuv_params.to_srgb_primaries * vec4<f32>(light, 0.0)).rgb;
-        encoded = yuv_srgb_encode(saturate(yuv_tone_map(rgb)));
+        let peak = yuv_params.peak_nits / YUV_REFERENCE_WHITE_NITS;
+        encoded = yuv_srgb_encode(saturate(yuv_tone_map(rgb, peak)));
     }
     return blend_color(vec4<f32>(yuv_apply_gamma(encoded, yuv_params.gamma), 1.0), 1.0);
 }

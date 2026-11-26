@@ -6,7 +6,10 @@
 //! highlights go above it as far as the screen allows. That limit is the
 //! screen's headroom: on macOS its current EDR headroom, on an SDR screen 1.
 //! The tone curve leaves everything below three quarters of the headroom alone
-//! and rolls the rest off smoothly toward it, so nothing clips.
+//! and rolls the rest off smoothly toward it, so nothing clips. How far it
+//! rolls off goes by the video's peak, where its metadata says what that is
+//! (`peak_nits`): up to it, the highlights spread over the room left, and
+//! a video that fits under the headroom is left alone.
 //!
 //! gpui's Metal shader for HDR surfaces (`surface_hdr_fragment` in
 //! vendor/gpui) does the same on the GPU, with these same constants. This is
@@ -14,8 +17,9 @@
 //! Dolby Vision's profile 5 needs more before it is HDR like the rest
 //! (`dovi`).
 
-use ffmpeg::frame;
+use anyhow::{Result, ensure};
 use ffmpeg::util::color::TransferCharacteristic;
+use ffmpeg::{ffi, frame};
 use ffmpeg_next as ffmpeg;
 
 use super::colors::Colors;
@@ -29,6 +33,8 @@ const HLG_PEAK_NITS: f32 = 1000.0;
 const HLG_GAMMA: f32 = 1.2;
 /// Brightness below this share of the headroom is left alone.
 const KNEE: f32 = 0.75;
+/// PQ's peak, which no video is mastered over.
+const PQ_PEAK_NITS: f32 = 10000.0;
 
 const BT2020_TO_BT709: [[f32; 3]; 3] = [
     [1.660_491, -0.587_641, -0.072_850],
@@ -151,26 +157,151 @@ pub fn sdr_to_hdr(srgb: [f32; 3], transfer: Transfer) -> [f32; 3] {
 }
 
 /// Brightness relative to SDR white, fitted under `headroom`: unchanged up
-/// to the knee, then easing toward the headroom without reaching it. The
-/// slope is 1 on both sides of the knee, so there is no visible seam.
-pub fn tone_curve(x: f32, headroom: f32) -> f32 {
+/// to the knee, then rolled off. With the video's `peak` (relative to SDR
+/// white too) it reaches the headroom there, the highlights spread over the
+/// room above the knee (Reinhard's curve with a white point), and a video
+/// whose peak fits under the headroom is left alone; without, it eases
+/// toward the headroom without reaching it. The slope is 1 on both sides of
+/// the knee, so there is no visible seam.
+pub fn tone_curve(x: f32, headroom: f32, peak: Option<f32>) -> f32 {
     let knee = KNEE * headroom;
     if x <= knee {
         return x;
     }
     let room = headroom - knee;
-    knee + room * (1.0 - (-(x - knee) / room).exp())
+    let past = (x - knee) / room;
+    let eased = match peak {
+        Some(peak) => {
+            // How many rooms past the knee the peak is: one if it fits.
+            let white = ((peak - knee) / room).max(1.0);
+            (past * (1.0 + past / (white * white)) / (1.0 + past)).min(1.0)
+        }
+        None => 1.0 - (-past).exp(),
+    };
+    knee + room * eased
 }
 
 /// Fit a color's brightness under `headroom` without shifting its hue: the
 /// brightest channel follows the tone curve and the others scale with it.
-pub fn tone_map(rgb: [f32; 3], headroom: f32) -> [f32; 3] {
-    let peak = rgb[0].max(rgb[1]).max(rgb[2]);
-    if peak <= 0.0 {
+pub fn tone_map(rgb: [f32; 3], headroom: f32, peak: Option<f32>) -> [f32; 3] {
+    let brightest = rgb[0].max(rgb[1]).max(rgb[2]);
+    if brightest <= 0.0 {
         return rgb;
     }
-    let scale = tone_curve(peak, headroom) / peak;
+    let scale = tone_curve(brightest, headroom, peak) / brightest;
     rgb.map(|c| c * scale)
+}
+
+/// FFmpeg's structs in libavutil/mastering_display_metadata.h, which the
+/// bindings don't cover.
+#[allow(dead_code)]
+mod sys {
+    use std::ffi::{c_int, c_uint};
+
+    use ffmpeg_next::ffi::AVRational;
+
+    #[repr(C)]
+    pub struct MasteringDisplay {
+        pub display_primaries: [[AVRational; 2]; 3],
+        pub white_point: [AVRational; 2],
+        pub min_luminance: AVRational,
+        pub max_luminance: AVRational,
+        pub has_primaries: c_int,
+        pub has_luminance: c_int,
+    }
+
+    #[repr(C)]
+    pub struct ContentLightLevel {
+        pub max_cll: c_uint,
+        pub max_fall: c_uint,
+    }
+}
+
+/// The brightest the frame's video gets, in nits, as far as anything says.
+/// HLG is always shown as on its nominal display. PQ's HDR10 metadata says:
+/// the brightest pixel of the whole video (MaxCLL), or the peak of the
+/// display it was mastered on, whichever is lower when it gives both.
+/// Dolby Vision profile 5 says in its RPU (`dovi::Reshaping::peak_nits`).
+pub fn peak_nits(frame: &frame::Video) -> Option<f32> {
+    match Transfer::of(frame)? {
+        Transfer::Hlg => Some(HLG_PEAK_NITS),
+        Transfer::Pq => {
+            // SAFETY: FFmpeg keeps these kinds of side data as these structs.
+            let (light, display) = unsafe {
+                (
+                    side_data::<sys::ContentLightLevel>(
+                        frame,
+                        ffi::AVFrameSideDataType::AV_FRAME_DATA_CONTENT_LIGHT_LEVEL,
+                    ),
+                    side_data::<sys::MasteringDisplay>(
+                        frame,
+                        ffi::AVFrameSideDataType::AV_FRAME_DATA_MASTERING_DISPLAY_METADATA,
+                    ),
+                )
+            };
+            let brightest = light.map(|light| light.max_cll as f32);
+            // Over nothing, a peak is no number, which isn't plausible.
+            let mastered = display
+                .filter(|display| display.has_luminance != 0)
+                .map(|display| display.max_luminance.num as f32 / display.max_luminance.den as f32);
+            [brightest, mastered]
+                .into_iter()
+                .flatten()
+                .filter_map(plausible_peak)
+                .reduce(f32::min)
+        }
+    }
+}
+
+/// `nits` as a video's peak, unless it's under reference white or over
+/// PQ's, which no video is mastered for: then it says nothing.
+pub fn plausible_peak(nits: f32) -> Option<f32> {
+    (REFERENCE_WHITE_NITS..=PQ_PEAK_NITS)
+        .contains(&nits)
+        .then_some(nits)
+}
+
+/// Give a frame read back from the GPU the peak its video showed with, as
+/// its MaxCLL, for `peak_nits` to find again.
+pub fn attach_peak(frame: &mut frame::Video, nits: f32) -> Result<()> {
+    // SAFETY: the side data FFmpeg makes for the frame is as big as asked,
+    // and this kind is `ContentLightLevel`.
+    unsafe {
+        let side = ffi::av_frame_new_side_data(
+            frame.as_mut_ptr(),
+            ffi::AVFrameSideDataType::AV_FRAME_DATA_CONTENT_LIGHT_LEVEL,
+            size_of::<sys::ContentLightLevel>(),
+        );
+        ensure!(
+            !side.is_null() && !(*side).data.is_null(),
+            "no memory for a frame's peak"
+        );
+        (*side)
+            .data
+            .cast::<sys::ContentLightLevel>()
+            .write(sys::ContentLightLevel {
+                max_cll: nits.round() as u32,
+                max_fall: 0,
+            });
+    }
+    Ok(())
+}
+
+/// The frame's side data of `kind`, if it has some as big as a `T`.
+///
+/// # Safety
+///
+/// FFmpeg must keep that kind of side data as a `T`.
+unsafe fn side_data<T>(frame: &frame::Video, kind: ffi::AVFrameSideDataType) -> Option<&T> {
+    // SAFETY: side data stays valid as long as the frame, and FFmpeg
+    // allocates it aligned for any struct.
+    unsafe {
+        let side = ffi::av_frame_get_side_data(frame.as_ptr(), kind);
+        if side.is_null() || (*side).data.is_null() || ((*side).size as usize) < size_of::<T>() {
+            return None;
+        }
+        Some(&*(*side).data.cast::<T>())
+    }
 }
 
 /// sRGB's encoding of linear light in 0..=1.
@@ -207,6 +338,8 @@ pub struct ToneMapper {
     /// Linear light in 0..=1 to an sRGB byte, with `gamma` applied.
     encode: Vec<u8>,
     gamma: f32,
+    /// The brightest pictures get, relative to SDR white, if it's known.
+    peak: Option<f32>,
 }
 
 impl ToneMapper {
@@ -226,6 +359,7 @@ impl ToneMapper {
             decode,
             encode: Self::encode_table(1.0),
             gamma: 1.0,
+            peak: None,
         }
     }
 
@@ -236,6 +370,12 @@ impl ToneMapper {
                 (apply_gamma(signal, gamma) * 255.0).round() as u8
             })
             .collect()
+    }
+
+    /// Fit pictures from now on to their video's peak, in nits
+    /// (`peak_nits`), if it's known.
+    pub fn set_peak(&mut self, nits: Option<f32>) {
+        self.peak = nits.map(|nits| nits / REFERENCE_WHITE_NITS);
     }
 
     /// Apply `gamma` (see `picture::apply_gamma`) to pictures from now on.
@@ -270,7 +410,7 @@ impl ToneMapper {
 
     /// Linear BT.2020 light, relative to SDR white, to a BGRA pixel.
     pub fn output(&self, light: [f32; 3]) -> [u8; 4] {
-        let [r, g, b] = tone_map(bt2020_to_bt709(light), 1.0);
+        let [r, g, b] = tone_map(bt2020_to_bt709(light), 1.0, self.peak);
         let encode = |c: f32| self.encode[(c.clamp(0.0, 1.0) * ENCODE_STEPS as f32 + 0.5) as usize];
         [encode(b), encode(g), encode(r), 255]
     }
@@ -293,3 +433,7 @@ impl ToneMapper {
 #[cfg(test)]
 #[path = "tests/hdr.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "tests/hdr_properties.rs"]
+mod properties;

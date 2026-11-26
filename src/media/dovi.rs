@@ -20,7 +20,7 @@ use ffmpeg::ffi;
 use ffmpeg::frame;
 use ffmpeg_next as ffmpeg;
 
-use super::hdr::ToneMapper;
+use super::hdr::{self, ToneMapper};
 use super::picture::bgra_rows;
 
 /// FFmpeg's `AV_DOVI_MAX_PIECES`.
@@ -98,6 +98,18 @@ mod sys {
         pub ycc_to_rgb_matrix: [AVRational; 9],
         pub ycc_to_rgb_offset: [AVRational; 3],
         pub rgb_to_lms_matrix: [AVRational; 9],
+        pub signal_eotf: u16,
+        pub signal_eotf_param0: u16,
+        pub signal_eotf_param1: u16,
+        pub signal_eotf_param2: u32,
+        pub signal_bit_depth: u8,
+        pub signal_color_space: u8,
+        pub signal_chroma_format: u8,
+        pub signal_full_range_flag: u8,
+        /// The mastering display's black and peak, as 12-bit PQ codes.
+        pub source_min_pq: u16,
+        pub source_max_pq: u16,
+        pub source_diagonal: u16,
     }
 }
 
@@ -174,6 +186,8 @@ pub struct Reshaping {
     ipt_to_lms: [[f32; 4]; 3],
     /// Rows from linear LMS to linear BT.2020 RGB.
     lms_to_rgb: [[f32; 3]; 3],
+    /// The peak of the display it was mastered on, in nits, if it says.
+    peak_nits: Option<f32>,
 }
 
 impl Reshaping {
@@ -181,7 +195,7 @@ impl Reshaping {
     /// pictures aren't plain HDR (profile 5). Profile 8 and the like carry
     /// an HDR10 or HLG picture, tagged as such, which is shown as it is.
     pub fn of(frame: &frame::Video) -> Option<Self> {
-        if super::hdr::Transfer::of(frame).is_some() {
+        if hdr::Transfer::of(frame).is_some() {
             return None;
         }
         // SAFETY: side data stays valid as long as the frame; each struct is
@@ -280,11 +294,19 @@ impl Reshaping {
         let lms_to_rgb = std::array::from_fn(|row| {
             std::array::from_fn(|col| (0..3).map(|k| LMS_TO_BT2020[row][k] * linear[k][col]).sum())
         });
+        let peak = hdr::pq_to_nits(f32::from(color.source_max_pq) / 4095.0);
         Some(Self {
             curves: curves.try_into().ok()?,
             ipt_to_lms,
             lms_to_rgb,
+            peak_nits: hdr::plausible_peak(peak),
         })
+    }
+
+    /// The brightest its video gets, in nits, if it says: the peak of the
+    /// display it was mastered on, which the reshaping leads to.
+    pub fn peak_nits(&self) -> Option<f32> {
+        self.peak_nits
     }
 
     /// PQ-encoded LMS from a pixel's three samples, each its code over

@@ -2306,7 +2306,15 @@ pub(super) fn first_frame(path: &std::path::Path, hardware: bool) -> super::pict
 /// BGRA.
 #[cfg(target_os = "macos")]
 pub(super) fn converted_first_frame(path: &std::path::Path) -> (usize, usize, Vec<u8>) {
-    use super::decoder::{convert_pixels, open_video};
+    let frame = decoded_first_frame(path);
+    let (width, height, bgra) = super::decoder::convert_pixels(&mut None, None, &frame).unwrap();
+    (width as usize, height as usize, bgra)
+}
+
+/// The first frame of `path`, decoded in software.
+#[cfg(target_os = "macos")]
+fn decoded_first_frame(path: &std::path::Path) -> ffmpeg_next::frame::Video {
+    use super::decoder::open_video;
 
     ffmpeg_next::init().unwrap();
     let mut input = ffmpeg_next::format::input(path).unwrap();
@@ -2332,8 +2340,7 @@ pub(super) fn converted_first_frame(path: &std::path::Path) -> (usize, usize, Ve
             }
         }
     }
-    let (width, height, bgra) = convert_pixels(&mut None, None, &frame).unwrap();
-    (width as usize, height as usize, bgra)
+    frame
 }
 
 /// How far apart two pictures of `width` by `height` are, by the averages
@@ -2446,16 +2453,35 @@ fn hdr_surfaces_match_software_tone_mapping() {
     use super::picture::Picture;
 
     let cases = [
-        (hdr_media("hdr10.mp4", "smpte2084"), Transfer::Pq, 16),
-        (hdr_media("hlg.mp4", "arib-std-b67"), Transfer::Hlg, 18),
+        (hdr_media("hdr10.mp4", "smpte2084"), Transfer::Pq, 16, None),
         (
-            hdr_media_in("hdr10-full.mp4", "smpte2084", true),
+            hdr_media("hlg.mp4", "arib-std-b67"),
+            Transfer::Hlg,
+            18,
+            Some(1000.0),
+        ),
+        (
+            hdr_media_in("hdr10-full.mp4", "smpte2084", true, ""),
             Transfer::Pq,
             16,
+            None,
+        ),
+        (
+            hdr_media_in(
+                "hdr10-mastered.mp4",
+                "smpte2084",
+                false,
+                MASTERED_AT_1000_NITS,
+            ),
+            Transfer::Pq,
+            16,
+            Some(1000.0),
         ),
     ];
-    for (path, transfer, code_point) in cases {
+    for (path, transfer, code_point, peak) in cases {
         let name = path.file_name().unwrap().display();
+        let decoded = super::hdr::peak_nits(&decoded_first_frame(&path));
+        assert_eq!(decoded, peak, "{name}: the peak its frames say");
         let (width, height, bgra) = converted_first_frame(&path);
         let software = |x: usize, y: usize, c: usize| f64::from(bgra[(y * width + x) * 4 + 2 - c]);
         for (decoded, hardware) in [("on the GPU", true), ("in software", false)] {
@@ -2483,6 +2509,7 @@ fn hdr_surfaces_match_software_tone_mapping() {
                 Some(code_point),
                 "{name}, {decoded}: transfer function tag"
             );
+            assert_eq!(attached_peak(buffer), peak, "{name}, {decoded}: peak");
 
             let surface = hdr_surface_to_sdr(buffer, transfer);
             assert_eq!(
@@ -2505,15 +2532,23 @@ fn hdr_surfaces_match_software_tone_mapping() {
 /// (`smpte2084` or `arib-std-b67`).
 #[cfg(target_os = "macos")]
 pub(super) fn hdr_media(name: &str, trc: &str) -> PathBuf {
-    hdr_media_in(name, trc, false)
+    hdr_media_in(name, trc, false, "")
 }
 
-/// As `hdr_media`, in full range if `full_range`.
+/// HDR10 metadata for x265: mastered on a 1,000-nit BT.2020 display,
+/// MaxCLL 1,000 and MaxFALL 400.
 #[cfg(target_os = "macos")]
-fn hdr_media_in(name: &str, trc: &str, full_range: bool) -> PathBuf {
+pub(super) const MASTERED_AT_1000_NITS: &str = ":master-display=G(8500,39850)B(6550,2300)R(35400,14600)\
+    WP(15635,16450)L(10000000,50):max-cll=1000,400";
+
+/// As `hdr_media`, in full range if `full_range`, with `metadata` among
+/// x265's parameters.
+#[cfg(target_os = "macos")]
+pub(super) fn hdr_media_in(name: &str, trc: &str, full_range: bool, metadata: &str) -> PathBuf {
     let range = if full_range { "full" } else { "limited" };
     let x265 = format!(
-        "log-level=error:colorprim=bt2020:transfer={trc}:colormatrix=bt2020nc:range={range}"
+        "log-level=error:colorprim=bt2020:transfer={trc}:colormatrix=bt2020nc:range={range}\
+         {metadata}"
     );
     let args = [
         "-f",
@@ -2540,6 +2575,22 @@ fn hdr_media_in(name: &str, trc: &str, full_range: bool) -> PathBuf {
         &x265,
     ];
     media(name, &args)
+}
+
+/// The peak, in nits, a surface carries for gpui to tone map to, as gpui
+/// reads it.
+#[cfg(target_os = "macos")]
+pub(super) fn attached_peak(buffer: &core_video::pixel_buffer::CVPixelBuffer) -> Option<f32> {
+    use core_foundation::number::CFNumber;
+    use core_foundation::string::CFString;
+    use core_video::buffer::TCVBuffer;
+
+    let key = CFString::from_static_string(super::videotoolbox::PEAK_ATTACHMENT);
+    buffer
+        .as_buffer()
+        .get_attachment(&key, None)
+        .and_then(|value| value.downcast::<CFNumber>())
+        .and_then(|number| number.to_f32())
 }
 
 /// RGB (0-255) of a 10-bit HDR surface as gpui's `surface_hdr_fragment`
@@ -2571,6 +2622,7 @@ fn hdr_surface_to_sdr(
         }
     };
     let (luma, chroma) = (plane(0), plane(1));
+    let peak = attached_peak(buffer).map(|nits| nits / REFERENCE_WHITE_NITS);
     let luma_stride = buffer.get_bytes_per_row_of_plane(0) / 2;
     let chroma_stride = buffer.get_bytes_per_row_of_plane(1) / 2;
     // BT.2020, video range; the 10 bits are the top ones of each sample.
@@ -2595,7 +2647,7 @@ fn hdr_surface_to_sdr(
                 Transfer::Hlg => hlg_scene_to_nits(signal.map(hlg_to_scene))
                     .map(|nits| nits / REFERENCE_WHITE_NITS),
             };
-            let mapped = tone_map(bt2020_to_bt709(light), 1.0);
+            let mapped = tone_map(bt2020_to_bt709(light), 1.0, peak);
             rgb.extend(mapped.map(|v| f64::from(srgb_encode(v.clamp(0.0, 1.0))) * 255.0));
         }
     }
@@ -2752,6 +2804,7 @@ fn dovi_surface_to_sdr(
         (samples, stride)
     };
     let ((luma, luma_stride), (chroma, chroma_stride)) = (plane(0), plane(1));
+    let peak = attached_peak(buffer).map(|nits| nits / REFERENCE_WHITE_NITS);
     let mut rgb = Vec::with_capacity(width * height * 3);
     for y in 0..height {
         for x in 0..width {
@@ -2761,7 +2814,7 @@ fn dovi_surface_to_sdr(
             let light = params
                 .light(samples)
                 .map(|nits| nits / REFERENCE_WHITE_NITS);
-            let mapped = tone_map(bt2020_to_bt709(light), 1.0);
+            let mapped = tone_map(bt2020_to_bt709(light), 1.0, peak);
             rgb.extend(mapped.map(|v| f64::from(srgb_encode(v.clamp(0.0, 1.0)) * 255.0)));
         }
     }

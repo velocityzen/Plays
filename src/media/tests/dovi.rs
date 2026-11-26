@@ -42,6 +42,18 @@ fn profile5() -> (
             [17081, -349, -349, -349, 17081, -349, -349, -349, 17081],
             16384,
         ),
+        signal_eotf: 65535,
+        signal_eotf_param0: 0,
+        signal_eotf_param1: 0,
+        signal_eotf_param2: 0,
+        signal_bit_depth: 12,
+        signal_color_space: 0,
+        signal_chroma_format: 0,
+        signal_full_range_flag: 1,
+        // 0.005 and 1,000 nits.
+        source_min_pq: 62,
+        source_max_pq: 3079,
+        source_diagonal: 42,
     };
     (header, mapping, color)
 }
@@ -49,6 +61,56 @@ fn profile5() -> (
 pub(crate) fn reshaping() -> Reshaping {
     let (header, mapping, color) = profile5();
     Reshaping::new(&header, &mapping, &color).unwrap()
+}
+
+/// A profile 5 frame of one color all over, its luma and chroma `codes`
+/// (10-bit), with `profile5`'s RPU as side data, mastered on a display
+/// whose peak is `source_max_pq`.
+pub(crate) fn rpu_frame(size: (u32, u32), codes: [u16; 3], source_max_pq: u16) -> frame::Video {
+    use ffmpeg::util::format::Pixel;
+
+    let (header, mapping, mut color) = profile5();
+    color.source_max_pq = source_max_pq;
+    let mut frame = frame::Video::new(Pixel::P010LE, size.0, size.1);
+    for (plane, codes) in [(0, &codes[..1]), (1, &codes[1..])] {
+        let stride = frame.stride(plane);
+        for row in frame.data_mut(plane).chunks_exact_mut(stride) {
+            for (x, sample) in row.as_chunks_mut::<2>().0.iter_mut().enumerate() {
+                *sample = (codes[x % codes.len()] << 6).to_le_bytes();
+            }
+        }
+    }
+    let after = |offset: usize, len: usize| (offset + len).next_multiple_of(8);
+    let header_offset = after(0, size_of::<sys::Metadata>());
+    let mapping_offset = after(header_offset, size_of::<sys::RpuDataHeader>());
+    let color_offset = after(mapping_offset, size_of::<sys::DataMapping>());
+    let len = color_offset + size_of::<sys::ColorMetadata>();
+    // SAFETY: FFmpeg makes side data `len` bytes long, aligned for any
+    // struct, and each goes within it at a multiple of 8.
+    unsafe {
+        let side = ffi::av_frame_new_side_data(
+            frame.as_mut_ptr(),
+            ffi::AVFrameSideDataType::AV_FRAME_DATA_DOVI_METADATA,
+            len,
+        );
+        assert!(!side.is_null());
+        let data = (*side).data;
+        data.cast::<sys::Metadata>().write(sys::Metadata {
+            header_offset,
+            mapping_offset,
+            color_offset,
+        });
+        data.add(header_offset)
+            .cast::<sys::RpuDataHeader>()
+            .write(header);
+        data.add(mapping_offset)
+            .cast::<sys::DataMapping>()
+            .write(*mapping);
+        data.add(color_offset)
+            .cast::<sys::ColorMetadata>()
+            .write(color);
+    }
+    frame
 }
 
 #[test]
@@ -65,10 +127,27 @@ fn mirrors_ffmpegs_layout() {
     assert_eq!(offset_of!(sys::DataMapping, curves), 8);
     assert_eq!(offset_of!(sys::ColorMetadata, ycc_to_rgb_offset), 76);
     assert_eq!(offset_of!(sys::ColorMetadata, rgb_to_lms_matrix), 100);
+    assert_eq!(offset_of!(sys::ColorMetadata, signal_eotf_param2), 180);
+    assert_eq!(offset_of!(sys::ColorMetadata, source_max_pq), 190);
+    assert_eq!(size_of::<sys::ColorMetadata>(), 196);
     // `DOVI_PARAMS_SIZE` in vendor/gpui's metal_renderer.rs, which is
     // within Metal's limit of 4 KB for bytes set straight on an encoder.
     #[cfg(target_os = "macos")]
     assert_eq!(size_of::<ShaderParams>(), 2928);
+}
+
+#[test]
+fn the_mastering_displays_peak_is_the_videos() {
+    let peak = reshaping().peak_nits().unwrap();
+    assert!((peak - 1000.6).abs() < 0.1, "{peak}");
+    let (header, mapping, mut color) = profile5();
+    color.source_max_pq = 0;
+    let unsaid = Reshaping::new(&header, &mapping, &color).unwrap();
+    assert_eq!(unsaid.peak_nits(), None);
+    // As a frame's RPU says.
+    let frame = rpu_frame((4, 2), [512; 3], 3696);
+    let peak = Reshaping::of(&frame).unwrap().peak_nits().unwrap();
+    assert!((peak - 4000.0).abs() < 5.0, "{peak}");
 }
 
 #[test]

@@ -51,7 +51,11 @@ impl YuvPicture {
                 (plane.as_slice(), (width * channels) as usize * sample_bytes)
             })
             .collect();
-        still::frame_of(format, self.size(), &planes, self.colors)
+        let mut frame = still::frame_of(format, self.size(), &planes, self.colors)?;
+        if let Some(nits) = self.frame.color().peak_nits {
+            hdr::attach_peak(&mut frame, nits)?;
+        }
+        Ok(frame)
     }
 }
 
@@ -225,6 +229,7 @@ fn planes(
             Some(hdr::Transfer::Pq) => YuvTransfer::Pq,
             Some(hdr::Transfer::Hlg) => YuvTransfer::Hlg,
         },
+        peak_nits: hdr::peak_nits(tags),
         chroma_siting,
     };
     let frame = YuvFrame::new(width, height, format.layout, format.wide, planes, color)?;

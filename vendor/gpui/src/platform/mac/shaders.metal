@@ -1010,6 +1010,8 @@ struct HdrSurfaceParams {
   float4x4 to_srgb_primaries;
   uint transfer;
   float edr_headroom;
+  // The brightest the video gets, in nits; 0 when it isn't known.
+  float peak_nits;
 };
 
 // HDR reference white (BT.2408) is shown as SDR white.
@@ -1040,24 +1042,31 @@ float3 hlg_to_nits(float3 signal) {
   return HLG_PEAK_NITS * pow(max(luma, 0.0), HLG_GAMMA - 1.0) * scene;
 }
 
-// Unchanged up to the knee, then easing toward the headroom.
-float tone_curve(float x, float headroom) {
+// Unchanged up to the knee, then rolled off: reaching the headroom at the
+// video's peak (relative to SDR white) if that's known (above 0), easing
+// toward it if not.
+float tone_curve(float x, float headroom, float peak) {
   float knee = TONE_KNEE * headroom;
   if (x <= knee) {
     return x;
   }
   float room = headroom - knee;
-  return knee + room * (1.0 - exp(-(x - knee) / room));
+  float past = (x - knee) / room;
+  if (peak > 0.0) {
+    float white = max((peak - knee) / room, 1.0);
+    return knee + room * min(past * (1.0 + past / (white * white)) / (1.0 + past), 1.0);
+  }
+  return knee + room * (1.0 - exp(-past));
 }
 
 // The brightest channel follows the curve and the others scale with it,
 // which keeps the hue.
-float3 tone_map(float3 rgb, float headroom) {
-  float peak = max(rgb.r, max(rgb.g, rgb.b));
-  if (peak <= 0.0) {
+float3 tone_map(float3 rgb, float headroom, float peak) {
+  float brightest = max(rgb.r, max(rgb.g, rgb.b));
+  if (brightest <= 0.0) {
     return rgb;
   }
-  return rgb * (tone_curve(peak, headroom) / peak);
+  return rgb * (tone_curve(brightest, headroom, peak) / brightest);
 }
 
 // sRGB's curve, extended past 1 and mirrored below 0 as extended sRGB is.
@@ -1078,7 +1087,7 @@ float4 hdr_output(float3 light, constant HdrSurfaceParams *params, float gamma) 
     float encoded = pow(srgb_encode_extended(float3(headroom)).r, gamma);
     headroom = pow((encoded + 0.055) / 1.055, 2.4);
   }
-  rgb = tone_map(rgb, headroom);
+  rgb = tone_map(rgb, headroom, params->peak_nits / REFERENCE_WHITE_NITS);
   // Colors outside sRGB stay negative, which extended sRGB shows on wide
   // gamut screens.
   return float4(apply_gamma(srgb_encode_extended(rgb), gamma), 1.0);

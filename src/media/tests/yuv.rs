@@ -173,3 +173,21 @@ fn a_pictures_planes_read_back_are_its_frame_tagged_as_it_was() {
         (color::Space::SMPTE170M, color::Range::JPEG)
     );
 }
+
+#[test]
+fn an_hdr_pictures_peak_goes_with_it_and_comes_back_read() {
+    let mut converter = YuvConverter::default();
+    let mut frame = frame::Video::new(Pixel::P010LE, 8, 4);
+    frame.set_color_transfer_characteristic(color::TransferCharacteristic::SMPTE2084);
+    hdr::attach_peak(&mut frame, 1000.0).unwrap();
+    // As it is, and scaled down.
+    for max_short_side in [None, Some(2)] {
+        let picture = converter.convert(&frame, max_short_side).unwrap().unwrap();
+        assert_eq!(picture.frame.color().peak_nits, Some(1000.0));
+        let read = picture.read().unwrap();
+        assert_eq!(hdr::peak_nits(&read), Some(1000.0), "{max_short_side:?}");
+    }
+    let sdr = frame::Video::new(Pixel::P010LE, 8, 4);
+    let picture = converter.convert(&sdr, None).unwrap().unwrap();
+    assert_eq!(picture.frame.color().peak_nits, None);
+}

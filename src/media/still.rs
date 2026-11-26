@@ -258,6 +258,7 @@ fn reshaped(frame: &frame::Video, reshaping: &Reshaping, keep_hdr: bool) -> Resu
     }
     let mut mapper = ToneMapper::new(Transfer::Pq);
     mapper.set_gamma(super::picture::gamma(true));
+    mapper.set_peak(reshaping.peak_nits());
     let rgb48: Vec<u8> = kept
         .pixels
         .iter()

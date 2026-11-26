@@ -29,6 +29,9 @@ Cargo.toml. Everything Plays changed is marked "Plays" in the code;
   and matrices exactly as the shader's `DoviParams`, passed with
   `set_fragment_bytes`. The shader turns the samples into BT.2020 light with
   them, then tone maps like `surface_hdr_fragment`.
+- An HDR surface's `PlaysPeak` attachment (a `CFNumber`, nits) is the
+  brightest its video gets: tone mapping reaches the headroom there.
+  Without it, it eases toward the headroom.
 - Every surface is drawn with the gamma in its `PlaysGamma` attachment (a
   `CFNumber`, 1 without it), which Plays sets as it draws. It bends the
   encoded signal between black and SDR white, `signal^(1/gamma)`; for HDR,
@@ -197,7 +200,8 @@ and `shaders.wgsl`):
   16 bits a sample, tightly packed, with a `YuvColor`: the matrix from
   samples to R'G'B' (the YCbCr matrix, range and where 10 bits sit in 16),
   the one from the video's primaries to sRGB's, the transfer (SDR, PQ or
-  HLG), and where its chroma samples sit. Each frame gets an id.
+  HLG), its peak if known, and where its chroma samples sit. Each frame
+  gets an id.
 - `Window::paint_yuv_frame` paints one, with a gamma and a
   `ContentTransform`; on Linux `PaintSurface` carries the frame and gamma
   instead of a `CVPixelBuffer`.
@@ -215,9 +219,10 @@ and `shaders.wgsl`):
   with the even columns for most video, rather than between them), applies
   the matrix, then for HDR decodes PQ or HLG to light, converts BT.2020 to
   sRGB primaries, tone maps it to SDR with reference white (203 nits) on
-  SDR white, and encodes it as sRGB, with the same math as Plays'
-  `src/media/hdr.rs`. Last comes the gamma, `signal^(1/gamma)`. The
-  swapchain isn't sRGB, so the encoded values are written as they are.
+  SDR white and its peak at the top, and encodes it as sRGB, with the same
+  math as Plays' `src/media/hdr.rs`. Last comes the gamma,
+  `signal^(1/gamma)`. The swapchain isn't sRGB, so the encoded values are
+  written as they are.
 
 `src/platform/app_menu.rs` and `src/platform/mac/platform.rs`: a menu
 item for an action can be `checked(true)`, which macOS shows with a check

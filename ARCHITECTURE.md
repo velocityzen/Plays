@@ -229,7 +229,8 @@ A decoded picture reaches gpui in one of three forms
   copied into a 10-bit buffer first
 - `src/media/yuv.rs` (Linux): planes and their matrix;
   `PLAYS_GPU_CONVERSION=0` converts on the CPU instead
-- `src/media/hdr.rs`: PQ, HLG and the tone curve; reference white as SDR white
+- `src/media/hdr.rs`: PQ, HLG and the tone curve; reference white as SDR
+  white, the video's peak (MaxCLL, mastering display) at the headroom
 - `src/media/dovi.rs`: Dolby Vision profile 5, reshaped by each frame's RPU
 - `src/media/picture.rs`: the forms, and the gamma every player shares
 - `src/media/orientation.rs`: the eight turns and mirrors
