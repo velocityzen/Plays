@@ -53,7 +53,7 @@ use crate::media::picking::{Picked, Wanted};
 use crate::media::picture::PictureId;
 use crate::media::subtitles::CueContent;
 use crate::media::{Mixer, Neighbors, Picture, PlayerOptions, Source};
-use crate::progress::{self, Note};
+use crate::progress::{self, Kept, Note};
 use crate::recents;
 use crate::settings::{
     AudioDevice, ControlsVisibility, OverVideo, Settings, SubtitleStyle, VideoFit,
@@ -237,7 +237,7 @@ impl PlayerView {
 /// Settings say to resume files, else in the languages Settings prefer.
 fn wanted(source: &Source, cx: &App) -> Wanted {
     let picked = match source {
-        Source::File(path) => progress::picked(path, cx),
+        Source::File(path) => progress::kept(path, cx).picked,
         Source::Url(_) => Picked::default(),
     };
     let languages = &cx.global::<Settings>().languages;
@@ -485,6 +485,7 @@ impl PlayerView {
         self.release_pictures();
         self.title = source.name().into();
         self.playback.reopen(source, options);
+        self.adjustments = Adjustments::default();
         self.resume(cx);
         self.find_neighbors(cx);
         self.playback.set_muted(muted);
@@ -493,7 +494,6 @@ impl PlayerView {
         self.level = 0.0;
         self.tracks_open = false;
         self.hidden_subtitles = None;
-        self.adjustments = Adjustments::default();
         self.osd = None;
         if let Some(device) = casting {
             self.cast_once_known(device, autoplay, cx);
@@ -579,28 +579,39 @@ impl PlayerView {
         self.follow_playlist(cx);
     }
 
-    /// Where its file is, of how long, once it has opened, and the tracks
-    /// picked in it: to resume it there with them. Only files, not
-    /// streams.
+    /// Where its file is, of how long, once it has opened, and how it's
+    /// set to play (the tracks picked in it, its picture's adjustments and
+    /// its delays): to resume it there, as it was. Only files, not streams.
     pub fn progress(&self) -> Option<Note> {
-        let Source::File(path) = self.playback.local().source() else {
+        let player = self.playback.local();
+        let Source::File(path) = player.source() else {
             return None;
         };
         Some(Note {
             file: path.clone(),
             position: self.position(),
             duration: self.duration()?,
-            picked: self.picked,
+            kept: Kept {
+                picked: self.picked,
+                picture: self.adjustments,
+                audio_delay: player.audio_delay(),
+                subtitle_delay: player.subtitle_delay(),
+            },
         })
     }
 
-    /// Start its file where it was left, if Settings say to and it played
-    /// lately (`progress::KEEP_DAYS`).
+    /// Start its file where it was left, as it was set to play, if Settings
+    /// say to and it played lately (`progress::KEEP_DAYS`). Its tracks are
+    /// picked as it opens (`wanted`).
     pub fn resume(&mut self, cx: &mut Context<Self>) {
         let Source::File(path) = self.playback.local().source() else {
             return;
         };
-        let Some(position) = progress::recall(path, cx) else {
+        let (kept, position) = (progress::kept(path, cx), progress::recall(path, cx));
+        self.adjustments = kept.picture;
+        self.playback.set_audio_delay(kept.audio_delay);
+        self.playback.set_subtitle_delay(kept.subtitle_delay);
+        let Some(position) = position else {
             return;
         };
         self.playback.seek(position);
@@ -962,3 +973,7 @@ fn render_buffering() -> Div {
         .justify_center()
         .child(Panel::note("Buffering…").text_xs())
 }
+
+#[cfg(test)]
+#[path = "tests/mod.rs"]
+mod tests;

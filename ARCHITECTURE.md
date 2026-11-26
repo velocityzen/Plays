@@ -146,7 +146,7 @@ Inside `src/`:
 | `ui/` | gpui views: windows, blocks, Settings, Picture in Picture, components, theme |
 | `cast/` | Casting blocks to TVs and speakers |
 | `settings.rs`, `settings/` | Settings, in `plays/settings.json` |
-| `progress.rs` | Where each file stopped and its tracks, 30 days, in `plays/progress.json` |
+| `progress.rs` | Where each file stopped, its tracks, picture and delays, 30 days, in `plays/progress.json` |
 | `recents.rs` | Recent files and palette commands |
 | `files.rs` | The config folder, and whole-file writes |
 | `hotkeys.rs` | Command shortcuts, changeable in Settings |
@@ -406,7 +406,7 @@ flowchart TB
   `write_soon` writes each file's latest off the UI thread, and what's
   still waiting as the app quits
 - `src/recents.rs`, `src/progress.rs`: recent files; each file's place,
-  tracks; both saved with `write_soon`
+  tracks, picture adjustments and delays; both saved with `write_soon`
 - `src/ui/workspace/`: a window, a file per part: opening, blocks, grid,
   focus, fitting, placing, full screen, sound, the empty window
 - `src/ui/player/`: a block, a file per part; `playback.rs` holds its
@@ -459,7 +459,7 @@ flowchart LR
 
     subgraph disk ["Saved in the config folder"]
         direction LR
-        progress["progress.json<br/>each file's place and tracks<br/>by the background writer"]
+        progress["progress.json<br/>each file's place, tracks,<br/>picture and delays<br/>by the background writer"]
         recents["recent-files.json,<br/>recent-commands.json<br/>by the background writer"]
         settings["settings.json<br/>on the UI thread"]
         places["window.json,<br/>settings-window.json<br/>on the UI thread"]
@@ -473,7 +473,7 @@ flowchart LR
 flowchart LR
     subgraph saving ["Saving, while files play"]
         direction TB
-        block["Block<br/>path, position, picked tracks"]
+        block["Block<br/>path, position, picked tracks,<br/>picture, delays"]
         progress["Progress, a global<br/>a spot per path, kept 30 days"]
         queue["Write queue<br/>each file's latest bytes"]
         writer["Background writer<br/>beside, then renamed over;<br/>at quit, on the UI thread"]
@@ -485,8 +485,8 @@ flowchart LR
     subgraph restoring ["The next launch"]
         direction TB
         load["Progress::load<br/>drops spots over 30 days old"]
-        opens["A block opens the file<br/>progress::picked, progress::recall"]
-        player["Player<br/>opens with those tracks, seeks there"]
+        opens["A block opens the file<br/>progress::kept, progress::recall"]
+        player["Player<br/>opens with those tracks, seeks there,<br/>turned, cropped, delayed as it was"]
         load --> opens --> player
     end
 
@@ -497,8 +497,8 @@ flowchart LR
   queue cross threads; the rest is the UI thread's, in gpui entities and
   globals
 - `src/progress.rs`: files opened from disk only, while Settings → Playback
-  → Resume files is on; one barely begun or nearly over starts again, with
-  its tracks. Which windows and blocks were open isn't kept
+  → Resume files is on; one barely begun or nearly over starts again, as
+  it was set to play. Which windows and blocks were open isn't kept
 
 ## Casting
 

@@ -67,7 +67,7 @@ impl Pane for PlaybackPane {
                     "Resume files where they were left",
                     Some(
                         format!(
-                            "Each opens where it was, for {KEEP_DAYS} days since it last played"
+                            "Each opens where it was and as it was set, for {KEEP_DAYS} days since it last played"
                         )
                         .into(),
                     ),

@@ -24,7 +24,7 @@ fn places_waiting_are_written_as_the_app_quits(cx: &mut TestAppContext) {
             file: Path::new("/videos/movie.mkv").to_owned(),
             position: 600.0,
             duration: 7200.0,
-            picked: Default::default(),
+            kept: Default::default(),
         };
         progress::note([note], true, cx);
     });

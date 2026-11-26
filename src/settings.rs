@@ -549,8 +549,8 @@ pub struct Settings {
     /// Several files opened at once play together or one after another.
     pub several_files: SeveralFiles,
     pub loop_by_default: bool,
-    /// Start a file opened again where it was left, within a while
-    /// (`progress::KEEP_DAYS`).
+    /// Start a file opened again where it was left, as it was set to play,
+    /// within a while (`progress::KEEP_DAYS`).
     pub resume_files: bool,
     pub seek_step_seconds: u32,
     /// Mark where a file's chapters start on its seek bar.

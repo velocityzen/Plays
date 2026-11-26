@@ -31,7 +31,8 @@ GPU-accelerated UI framework.
 - Chapters
 - Previous and next file in the folder or playlist
 - Open Recent
-- Files resume where they were left, with their tracks
+- Files resume where they were left, with their tracks, picture
+  adjustments and delays
 - Music Mode for audio files: cover art, title, artist, album and quality,
   over a speaker moving with the sound; the speaker and quality can be off
 - The screen stays awake while video plays
@@ -250,7 +251,6 @@ mkdir ($nu.user-autoload-dirs | first); plays completions nushell | save -f ($nu
 
 - Live streams but HLS can't be seeked. A live stream's screenshot is the
   picture as it plays, at the size it plays at.
-- Picture adjustments and delays aren't kept when a file opens again.
 - HDR goes brighter than SDR white only on macOS, decoded by
   VideoToolbox. HDR metadata isn't used, and Dolby Vision profile 7's
   enhancement layer is ignored.

@@ -171,7 +171,7 @@ fn a_file_played_instead_opens_with_its_own_tracks(cx: &mut TestAppContext) {
     on(&block, "block.subtitles.select_track", json!({}), &mut cx);
 
     play_instead("clip.mp4", &mut cx);
-    let picked = block.read_with(&cx, |view, _| view.progress().map(|note| note.picked));
+    let picked = block.read_with(&cx, |view, _| view.progress().map(|note| note.kept.picked));
     assert_eq!(picked, Some(Picked::default()), "none picked in this one");
     assert_eq!(
         play_instead("clip-languages.mkv", &mut cx),

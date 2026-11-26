@@ -2,7 +2,9 @@ use gpui::TestAppContext;
 
 use super::*;
 use crate::files;
+use crate::media::Orientation;
 use crate::media::picking::Subtitles;
+use crate::ui::framing::{ASPECT_RATIOS, CROPS};
 
 const DAY: u64 = 24 * 60 * 60;
 
@@ -12,14 +14,17 @@ fn at(file: &Path, position: f64, duration: f64) -> Note {
         file: file.to_owned(),
         position,
         duration,
-        picked: Picked::default(),
+        kept: Kept::default(),
     }
 }
 
 /// `file` at `position` of `duration`, with `picked`.
 fn with(file: &Path, position: f64, duration: f64, picked: Picked) -> Note {
     Note {
-        picked,
+        kept: Kept {
+            picked,
+            ..Kept::default()
+        },
         ..at(file, position, duration)
     }
 }
@@ -88,7 +93,7 @@ fn the_tracks_picked_are_kept_with_the_place_or_without_one() {
     };
     progress.note(&with(file, 600.0, 7200.0, picked), 0);
     assert_eq!(progress.recall(file, 0), Some(600.0));
-    assert_eq!(progress.picked(file, 0), picked);
+    assert_eq!(progress.kept(file, 0).picked, picked);
 
     progress.changed = false;
     progress.note(&with(file, 600.0, 7200.0, picked), DAY);
@@ -99,17 +104,126 @@ fn the_tracks_picked_are_kept_with_the_place_or_without_one() {
     };
     progress.note(&with(file, 600.0, 7200.0, hidden), DAY);
     assert!(progress.changed, "subtitles hidden since");
-    assert_eq!(progress.picked(file, 31 * DAY), hidden, "and played then");
+    assert_eq!(
+        progress.kept(file, 31 * DAY).picked,
+        hidden,
+        "and played then"
+    );
 
     for (position, why) in [(3.0, "barely begun"), (7190.0, "played to its end")] {
         progress.note(&with(file, position, 7200.0, picked), 0);
         assert_eq!(progress.recall(file, 0), None, "{why}: starts over");
-        assert_eq!(progress.picked(file, 0), picked, "{why}: with them");
+        assert_eq!(progress.kept(file, 0).picked, picked, "{why}: with them");
     }
-    assert_eq!(progress.picked(file, 31 * DAY), Picked::default(), "gone");
+    assert_eq!(
+        progress.kept(file, 31 * DAY).picked,
+        Picked::default(),
+        "gone"
+    );
     progress.note(&at(file, 3.0, 7200.0), 0);
     assert!(progress.files.is_empty(), "nothing to keep");
-    assert_eq!(progress.picked(file, 0), Picked::default());
+    assert_eq!(progress.kept(file, 0).picked, Picked::default());
+}
+
+/// Turned, mirrored, at 2.35:1, cropped to 2.39:1 (each a ratio only its
+/// own menu has), the sound a quarter of a second late and subtitles one
+/// and a half early.
+fn adjusted() -> Kept {
+    Kept {
+        picture: Adjustments {
+            orientation: Orientation::new(1, true),
+            aspect: Some(ASPECT_RATIOS[5]),
+            crop: Some(CROPS[4]),
+        },
+        audio_delay: 0.25,
+        subtitle_delay: -1.5,
+        ..Kept::default()
+    }
+}
+
+#[test]
+fn the_picture_and_delays_are_kept_with_the_place_or_without_one() {
+    let mut progress = Progress::default();
+    let file = Path::new("/videos/movie.mkv");
+    let kept = adjusted();
+    progress.note(
+        &Note {
+            kept,
+            ..at(file, 600.0, 7200.0)
+        },
+        0,
+    );
+    assert_eq!(progress.recall(file, 0), Some(600.0));
+    assert_eq!(progress.kept(file, 0), kept);
+
+    progress.note(
+        &Note {
+            kept,
+            ..at(file, 3.0, 7200.0)
+        },
+        0,
+    );
+    assert_eq!(progress.recall(file, 0), None, "barely begun: starts over");
+    assert_eq!(progress.kept(file, 0), kept, "as it was set to play");
+    progress.changed = false;
+    let delayed = Kept {
+        subtitle_delay: 0.0,
+        ..kept
+    };
+    progress.note(
+        &Note {
+            kept: delayed,
+            ..at(file, 3.0, 7200.0)
+        },
+        0,
+    );
+    assert!(progress.changed, "the subtitles set back since");
+    progress.note(&at(file, 3.0, 7200.0), 0);
+    assert!(progress.files.is_empty(), "nothing to keep");
+}
+
+#[test]
+fn the_picture_is_saved_by_the_names_of_its_ratios_and_read_back() {
+    let spot = Spot {
+        position: Some(600.0),
+        played: 5,
+        kept: adjusted(),
+    };
+    let saved = serde_json::to_string(&spot).unwrap();
+    assert_eq!(
+        saved,
+        r#"{"position":600.0,"played":5,"picture":{"turns":1,"mirrored":true,"aspect_ratio":"2.35:1","crop":"2.39:1"},"audio_delay":0.25,"subtitle_delay":-1.5}"#
+    );
+    assert_eq!(serde_json::from_str::<Spot>(&saved).unwrap(), spot);
+    let plain = Spot {
+        position: None,
+        played: 5,
+        kept: Kept::default(),
+    };
+    assert_eq!(serde_json::to_string(&plain).unwrap(), r#"{"played":5}"#);
+
+    // Saved before more than the tracks were kept.
+    let tracks: Spot = serde_json::from_str(r#"{"played":5,"picked":{"audio":1}}"#).unwrap();
+    let picked = Picked {
+        audio: Some(1),
+        subtitles: None,
+    };
+    assert_eq!(
+        tracks.kept,
+        Kept {
+            picked,
+            ..Kept::default()
+        }
+    );
+    // A ratio the menus no longer name is left out.
+    let renamed = r#"{"played":5,"picture":{"turns":2,"aspect_ratio":"4:3","crop":"3:2"}}"#;
+    let renamed: Spot = serde_json::from_str(renamed).unwrap();
+    let picture = Adjustments {
+        orientation: Orientation::new(2, false),
+        aspect: Some(ASPECT_RATIOS[1]),
+        crop: None,
+    };
+    assert_eq!(renamed.kept.picture, picture);
 }
 
 #[test]
@@ -248,12 +362,12 @@ fn the_tracks_picked_are_saved_and_read_back(cx: &mut TestAppContext) {
     };
     cx.update(|cx| {
         note([with(movie, 1.0, 7200.0, picked)], true, cx);
-        assert_eq!(super::picked(movie, cx), picked);
+        assert_eq!(super::kept(movie, cx).picked, picked);
         assert_eq!(recall(movie, cx), None);
     });
     cx.run_until_parked();
     let loaded = Progress::load(&folder);
-    assert_eq!(loaded.picked(movie, now()), picked);
+    assert_eq!(loaded.kept(movie, now()).picked, picked);
 }
 
 #[gpui::test]
@@ -267,9 +381,13 @@ fn no_places_are_kept_when_settings_say_not_to(cx: &mut TestAppContext) {
     };
     cx.update(|cx| {
         note([with(movie, 600.0, 7200.0, picked)], false, cx);
-        assert_eq!(super::picked(movie, cx), picked);
+        assert_eq!(super::kept(movie, cx).picked, picked);
         Settings::update(cx, false, |settings| settings.resume_files = false);
-        assert_eq!(super::picked(movie, cx), Picked::default(), "nor picks");
+        assert_eq!(
+            super::kept(movie, cx).picked,
+            Picked::default(),
+            "nor picks"
+        );
         note([at(movie, 600.0, 7200.0)], true, cx);
         assert_eq!(recall(movie, cx), None);
     });

@@ -1,8 +1,8 @@
 //! Settings → Playback → Resume files where they were left: where each
-//! file was when it last played, and the tracks picked in it, kept for
-//! `KEEP_DAYS` days, so it starts there with them when opened again. A
-//! file barely begun, or played nearly to its end, starts over, with the
-//! tracks picked in it if any. Saved to `progress.json` beside the
+//! file was when it last played, and how it was set to play (`Kept`), kept
+//! for `KEEP_DAYS` days, so it starts there, as it was, when opened again.
+//! A file barely begun, or played nearly to its end, starts over, as it
+//! was set to play. Saved to `progress.json` beside the
 //! settings as blocks close or play another file, every `SAVE_EVERY` while
 //! files are open, and as the app quits: off the UI thread, but as it
 //! quits.
@@ -18,6 +18,7 @@ use serde::{Deserialize, Serialize};
 use crate::files::Folder;
 use crate::media::picking::Picked;
 use crate::settings::Settings;
+use crate::ui::framing::Adjustments;
 
 /// How long a file's place is kept since it last played.
 pub const KEEP_DAYS: u64 = 30;
@@ -30,7 +31,89 @@ const BEGUN: f64 = 10.0;
 /// over.
 const MARGIN: f64 = 0.05;
 
-/// Where a file was, and the tracks picked in it.
+/// How a file was set to play: the tracks picked in it, how its picture
+/// was adjusted, and its delays.
+#[derive(Clone, Copy, PartialEq, Debug, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Kept {
+    #[serde(skip_serializing_if = "Picked::is_empty")]
+    pub picked: Picked,
+    #[serde(with = "picture", skip_serializing_if = "picture::is_plain")]
+    pub picture: Adjustments,
+    /// Seconds the sound is heard after the picture, and subtitles show
+    /// after their times (negative: before).
+    #[serde(skip_serializing_if = "is_zero")]
+    pub audio_delay: f64,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub subtitle_delay: f64,
+}
+
+impl Kept {
+    fn is_empty(&self) -> bool {
+        *self == Self::default()
+    }
+}
+
+fn is_zero(value: &f64) -> bool {
+    *value == 0.0
+}
+
+/// A picture's adjustments as they're saved: turned and mirrored, and the
+/// aspect ratio and crop by the names the menus give them, left out once
+/// the menus give none.
+mod picture {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    use crate::media::Orientation;
+    use crate::ui::framing::{ASPECT_RATIOS, Adjustments, CROPS, Ratio};
+
+    #[derive(Default, Serialize, Deserialize)]
+    #[serde(default)]
+    struct Saved {
+        #[serde(skip_serializing_if = "is_upright")]
+        turns: u8,
+        #[serde(skip_serializing_if = "is_upright")]
+        mirrored: bool,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        aspect_ratio: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        crop: Option<String>,
+    }
+
+    fn is_upright<T: Default + PartialEq>(value: &T) -> bool {
+        *value == T::default()
+    }
+
+    pub fn is_plain(adjustments: &Adjustments) -> bool {
+        *adjustments == Adjustments::default()
+    }
+
+    pub fn serialize<S: Serializer>(adjustments: &Adjustments, to: S) -> Result<S::Ok, S::Error> {
+        let name = |ratio: Option<Ratio>| ratio.map(|ratio| ratio.name.to_owned());
+        Saved {
+            turns: adjustments.orientation.clockwise_turns(),
+            mirrored: adjustments.orientation.is_mirrored(),
+            aspect_ratio: name(adjustments.aspect),
+            crop: name(adjustments.crop),
+        }
+        .serialize(to)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(from: D) -> Result<Adjustments, D::Error> {
+        let saved = Saved::deserialize(from)?;
+        let named = |name: Option<String>, ratios: &[Ratio]| {
+            let name = name?;
+            ratios.iter().find(|ratio| ratio.name == name).copied()
+        };
+        Ok(Adjustments {
+            orientation: Orientation::new(i32::from(saved.turns), saved.mirrored),
+            aspect: named(saved.aspect_ratio, &ASPECT_RATIOS),
+            crop: named(saved.crop, &CROPS),
+        })
+    }
+}
+
+/// Where a file was, and how it was set to play.
 #[derive(Clone, Copy, PartialEq, Debug, Serialize, Deserialize)]
 struct Spot {
     /// Seconds into it, unless it starts over.
@@ -38,8 +121,8 @@ struct Spot {
     position: Option<f64>,
     /// When it last played there, in seconds since 1970.
     played: u64,
-    #[serde(default, skip_serializing_if = "Picked::is_empty")]
-    picked: Picked,
+    #[serde(flatten)]
+    kept: Kept,
 }
 
 /// Where each file was, by its path.
@@ -60,8 +143,7 @@ pub struct Note {
     pub position: f64,
     /// How long it is.
     pub duration: f64,
-    /// The tracks picked in it.
-    pub picked: Picked,
+    pub kept: Kept,
 }
 
 /// The places' file, in the app's folder beside the settings.
@@ -117,7 +199,7 @@ impl Progress {
     fn note(&mut self, note: &Note, now: u64) {
         let key = key(&note.file);
         let position = worth_resuming(note.position, note.duration).then_some(note.position);
-        if position.is_none() && note.picked.is_empty() {
+        if position.is_none() && note.kept.is_empty() {
             self.changed |= self.files.remove(&key).is_some();
             return;
         }
@@ -125,7 +207,7 @@ impl Progress {
         if self
             .files
             .get(&key)
-            .is_some_and(|spot| spot.position == position && spot.picked == note.picked)
+            .is_some_and(|spot| spot.position == position && spot.kept == note.kept)
         {
             return;
         }
@@ -134,7 +216,7 @@ impl Progress {
             Spot {
                 position,
                 played: now,
-                picked: note.picked,
+                kept: note.kept,
             },
         );
         self.changed = true;
@@ -148,9 +230,9 @@ impl Progress {
         self.spot(file, now)?.position
     }
 
-    fn picked(&self, file: &Path, now: u64) -> Picked {
+    fn kept(&self, file: &Path, now: u64) -> Kept {
         self.spot(file, now)
-            .map(|spot| spot.picked)
+            .map(|spot| spot.kept)
             .unwrap_or_default()
     }
 
@@ -201,14 +283,14 @@ pub fn recall(file: &Path, cx: &App) -> Option<f64> {
     cx.try_global::<Progress>()?.recall(file, now())
 }
 
-/// The tracks picked in `file`, if Settings say to resume files and it
+/// How `file` was set to play, if Settings say to resume files and it
 /// played within `KEEP_DAYS`.
-pub fn picked(file: &Path, cx: &App) -> Picked {
+pub fn kept(file: &Path, cx: &App) -> Kept {
     if !cx.global::<Settings>().resume_files {
-        return Picked::default();
+        return Kept::default();
     }
     cx.try_global::<Progress>()
-        .map(|progress| progress.picked(file, now()))
+        .map(|progress| progress.kept(file, now()))
         .unwrap_or_default()
 }
 
