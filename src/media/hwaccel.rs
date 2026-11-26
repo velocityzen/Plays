@@ -4,6 +4,10 @@
 //! On macOS, frames stay on the GPU and are drawn from there (see
 //! `videotoolbox`). Elsewhere, and whenever that isn't possible, they are
 //! copied back to memory and converted like software-decoded frames.
+//!
+//! FFmpeg picks libdav1d for AV1, which decodes only in software; its own
+//! AV1 decoder decodes only on the GPU, and is taken instead where the GPU
+//! can.
 
 use std::collections::HashMap;
 use std::ptr;
@@ -86,6 +90,59 @@ fn supports(codec: &Codec, kind: Kind) -> bool {
         .any(|config| config.device_type == kind && config.methods & method != 0)
 }
 
+/// Another decoder of `default`'s codec, to decode on the GPU with where
+/// `default` (FFmpeg's pick) can't and it can on this machine: FFmpeg's own
+/// AV1 decoder over libdav1d. It decodes nothing without the GPU.
+pub fn instead_of(default: &Codec) -> Option<Codec> {
+    if KINDS.iter().any(|&kind| supports(default, kind)) {
+        return None;
+    }
+    decoders(default.id()).find(|codec| {
+        KINDS.iter().any(|&kind| {
+            supports(codec, kind) && decodes(codec.id(), kind) && device(kind).is_some()
+        })
+    })
+}
+
+/// Every decoder FFmpeg has for `id`, in its order.
+fn decoders(id: codec::Id) -> impl Iterator<Item = Codec> {
+    let id = ffi::AVCodecID::from(id);
+    let mut opaque = ptr::null_mut();
+    // SAFETY: FFmpeg's codecs are static, and it returns null past the
+    // last one.
+    std::iter::from_fn(move || unsafe { ffi::av_codec_iterate(&mut opaque).as_ref() })
+        .filter(move |codec| {
+            // SAFETY: the codec is one of FFmpeg's.
+            codec.id == id && unsafe { ffi::av_codec_is_decoder(*codec) } != 0
+        })
+        // SAFETY: as above.
+        .map(|codec| unsafe { Codec::wrap(codec) })
+}
+
+/// Whether the hardware of `kind` decodes `id`, where it says: on macOS,
+/// VideoToolbox does AV1 only on Apple chips from the M3 on.
+#[cfg(target_os = "macos")]
+fn decodes(id: codec::Id, kind: Kind) -> bool {
+    #[link(name = "VideoToolbox", kind = "framework")]
+    unsafe extern "C" {
+        fn VTIsHardwareDecodeSupported(codec_type: u32) -> u8;
+    }
+    let codec_type = match id {
+        codec::Id::AV1 => u32::from_be_bytes(*b"av01"),
+        _ => return true,
+    };
+    // SAFETY: a plain query.
+    kind != Kind::AV_HWDEVICE_TYPE_VIDEOTOOLBOX
+        || unsafe { VTIsHardwareDecodeSupported(codec_type) } != 0
+}
+
+/// Elsewhere it isn't known before decoding, which falls back to software
+/// at the first error.
+#[cfg(not(target_os = "macos"))]
+fn decodes(_: codec::Id, _: Kind) -> bool {
+    true
+}
+
 /// Give an unopened decoder context a hardware device, if one supports the
 /// codec on this machine. Returns the name of the API.
 ///
@@ -138,3 +195,7 @@ pub fn download(source: &frame::Video, target: &mut frame::Video) -> Result<()> 
     }
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "tests/hwaccel.rs"]
+mod tests;

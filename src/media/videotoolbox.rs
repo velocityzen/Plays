@@ -11,7 +11,9 @@
 //! HDR video (PQ or HLG) goes to 10-bit BT.2020 buffers (`x420`) instead,
 //! tagged with its primaries and transfer function. Plays' copy of gpui
 //! (vendor/gpui) draws those with its HDR shader, brighter than SDR white
-//! where the screen allows.
+//! where the screen allows. A frame already in such a buffer, at the size
+//! it shows, is drawn from its own: copying an 8K frame takes about as long
+//! as it shows.
 //!
 //! Dolby Vision profile 5 isn't YCbCr, so it must not be converted at all:
 //! its frames are only scaled, into buffers of their own format, and carry
@@ -19,9 +21,9 @@
 //! [`DOLBY_VISION_ATTACHMENT`].
 //!
 //! HDR decoded in software goes the same way (`Converter::upload`), to be
-//! as bright: swscale copies each frame into a 10-bit 4:2:0 buffer in its
-//! own range, which the session then converts as it would a VideoToolbox
-//! frame.
+//! as bright: each frame is copied into a 10-bit 4:2:0 buffer in its own
+//! range (by swscale, or, already 10-bit 4:2:0, rows in parallel), which
+//! the session then converts as it would a VideoToolbox frame.
 
 use std::ffi::{c_int, c_void};
 use std::sync::Arc;
@@ -56,6 +58,7 @@ use ffmpeg::software::scaling;
 use ffmpeg::util::color;
 use ffmpeg::util::format::Pixel;
 use ffmpeg_next as ffmpeg;
+use rayon::prelude::*;
 
 use super::colors::Colors;
 use super::dovi::Reshaping;
@@ -94,6 +97,11 @@ unsafe extern "C" {
     static kVTPixelTransferPropertyKey_RealTime: CFStringRef;
 }
 
+#[link(name = "CoreVideo", kind = "framework")]
+unsafe extern "C" {
+    fn CVPixelBufferGetIOSurface(buffer: CVPixelBufferRef) -> *const c_void;
+}
+
 /// A decoded picture in GPU memory, in the format gpui's `surface()` draws.
 #[derive(Clone)]
 pub struct Surface {
@@ -109,7 +117,7 @@ pub struct Surface {
 }
 
 // SAFETY: CoreVideo buffers are reference counted thread-safely, and nothing
-// writes to the pixels after the transfer that fills them. The one thing
+// writes to the pixels once they're decoded, uploaded or transferred. The one thing
 // written later is the gamma attachment, by `for_drawing` alone: on the main
 // thread as it paints, which stops while Picture in Picture hands the buffer
 // to AVKit, and only when the gamma changed.
@@ -262,11 +270,12 @@ pub struct Converter {
     upload: Option<Upload>,
 }
 
-/// Frames decoded in software, copied into pixel buffers for the session:
-/// by swscale, for frames of one format, size and range.
+/// Frames decoded in software, copied into pixel buffers for the session,
+/// for frames of one format, size and range: by swscale, or, for 10-bit
+/// 4:2:0 already, by `to_p010`.
 struct Upload {
     key: (Pixel, u32, u32, bool),
-    context: scaling::Context,
+    context: Option<scaling::Context>,
     pool: CVPixelBufferPool,
 }
 
@@ -362,16 +371,20 @@ impl Converter {
         let key = (frame.format(), frame.width(), frame.height(), full_range);
         if self.upload.as_ref().is_none_or(|upload| upload.key != key) {
             let (format, width, height) = (key.0, key.1, key.2);
-            let context = scaling::Context::get(
-                format,
-                width,
-                height,
-                Pixel::P010LE,
-                width,
-                height,
-                scaling::Flags::BILINEAR,
-            )
-            .context("creating the pixel converter")?;
+            let context = (format != Pixel::YUV420P10LE)
+                .then(|| {
+                    scaling::Context::get(
+                        format,
+                        width,
+                        height,
+                        Pixel::P010LE,
+                        width,
+                        height,
+                        scaling::Flags::BILINEAR,
+                    )
+                })
+                .transpose()
+                .context("creating the pixel converter")?;
             let format = if full_range {
                 kCVPixelFormatType_420YpCbCr10BiPlanarFullRange
             } else {
@@ -409,9 +422,9 @@ impl Converter {
             ];
             if planes[..2].iter().any(|plane| plane.is_null()) {
                 -1
-            } else {
+            } else if let Some(context) = &mut upload.context {
                 ffi::sws_scale(
-                    upload.context.as_mut_ptr(),
+                    context.as_mut_ptr(),
                     (*frame.as_ptr()).data.as_ptr() as *const *const u8,
                     (*frame.as_ptr()).linesize.as_ptr(),
                     0,
@@ -419,6 +432,17 @@ impl Converter {
                     planes.as_ptr(),
                     strides.as_ptr(),
                 )
+            } else {
+                let plane = |index: usize| {
+                    let rows = buffer.get_height_of_plane(index);
+                    let stride = buffer.get_bytes_per_row_of_plane(index);
+                    (
+                        slice::from_raw_parts_mut(planes[index], rows * stride),
+                        stride,
+                    )
+                };
+                to_p010(frame, plane(0), plane(1));
+                frame.height() as c_int
             }
         };
         buffer.unlock_base_address(0);
@@ -463,25 +487,35 @@ impl Converter {
         }
         self.set_hdr(hdr)?;
 
-        let destination = self
-            .pool(width, height, format)?
-            .create_pixel_buffer()
-            .map_err(|status| anyhow!("couldn't get a pixel buffer (error {status})"))?;
-        // SAFETY: both buffers are valid; the frame keeps the source alive.
-        let status = unsafe {
-            VTPixelTransferSessionTransferImage(
-                self.session,
-                source,
-                destination.as_concrete_TypeRef(),
-            )
+        // SAFETY: the frame keeps the source alive, and the surface may
+        // keep it longer: nothing writes to it once decoded or uploaded.
+        let source = unsafe { CVPixelBuffer::wrap_under_get_rule(source) };
+        // An HDR frame as the surface would be is the surface: copying an
+        // 8K frame takes about as long as it shows.
+        let destination = if hdr && as_drawn(&source, format, width, height) {
+            source.clone()
+        } else {
+            let destination = self
+                .pool(width, height, format)?
+                .create_pixel_buffer()
+                .map_err(|status| anyhow!("couldn't get a pixel buffer (error {status})"))?;
+            // SAFETY: both buffers are valid.
+            let status = unsafe {
+                VTPixelTransferSessionTransferImage(
+                    self.session,
+                    source.as_concrete_TypeRef(),
+                    destination.as_concrete_TypeRef(),
+                )
+            };
+            if status != 0 {
+                bail!("converting a frame on the GPU failed (error {status})");
+            }
+            destination
         };
-        if status != 0 {
-            bail!("converting a frame on the GPU failed (error {status})");
-        }
         if let Some(reshaping) = &reshaping {
             tag_dolby_vision(&destination, reshaping);
         } else {
-            tag_converted(source, &destination, hdr);
+            tag_converted(&source, &destination, hdr);
         }
         let peak_nits = match &reshaping {
             Some(reshaping) => reshaping.peak_nits(),
@@ -564,7 +598,7 @@ impl Drop for Converter {
 /// Give a surface the source's color tags (primaries, transfer function and
 /// HDR metadata), with the matrix the session converted to. gpui's HDR
 /// shader reads them; Picture in Picture shows any surface by them.
-fn tag_converted(source: CVPixelBufferRef, destination: &CVPixelBuffer, hdr: bool) {
+fn tag_converted(source: &CVPixelBuffer, destination: &CVPixelBuffer, hdr: bool) {
     let matrix_key = CFString::from(CVImageBufferKeys::YCbCrMatrix);
     let matrix = CFString::from(if hdr {
         CVImageBufferYCbCrMatrix::ITU_R_2020
@@ -573,7 +607,12 @@ fn tag_converted(source: CVPixelBufferRef, destination: &CVPixelBuffer, hdr: boo
     });
     // SAFETY: both buffers are valid, and nothing reads the destination yet.
     unsafe {
-        CVBufferPropagateAttachments(source, destination.as_concrete_TypeRef());
+        if source.as_concrete_TypeRef() != destination.as_concrete_TypeRef() {
+            CVBufferPropagateAttachments(
+                source.as_concrete_TypeRef(),
+                destination.as_concrete_TypeRef(),
+            );
+        }
         CVBufferSetAttachment(
             destination.as_concrete_TypeRef(),
             matrix_key.as_concrete_TypeRef(),
@@ -581,6 +620,73 @@ fn tag_converted(source: CVPixelBufferRef, destination: &CVPixelBuffer, hdr: boo
             kCVAttachmentMode_ShouldPropagate,
         );
     }
+}
+
+/// A 10-bit 4:2:0 frame's planes into P010's `luma` and `chroma`, each a
+/// plane and the bytes a row of it: samples in the high bits of 16, the
+/// two chroma planes interleaved, rows in parallel. As swscale makes them,
+/// which takes one thread longer than an 8K frame lasts.
+fn to_p010(frame: &frame::Video, luma: (&mut [u8], usize), chroma: (&mut [u8], usize)) {
+    let (width, height) = (frame.width() as usize, frame.height() as usize);
+    let (chroma_width, chroma_height) = (width.div_ceil(2), height.div_ceil(2));
+    let high = |sample: &[u8; 2]| (u16::from_le_bytes(*sample) << 6).to_le_bytes();
+    let (y, y_stride) = (frame.data(0), frame.stride(0));
+    luma.0
+        .par_chunks_mut(luma.1)
+        .zip(y.par_chunks(y_stride))
+        .take(height)
+        .for_each(|(out, row)| {
+            let samples = row[..2 * width].as_chunks::<2>().0;
+            for (out, sample) in out[..2 * width]
+                .as_chunks_mut::<2>()
+                .0
+                .iter_mut()
+                .zip(samples)
+            {
+                *out = high(sample);
+            }
+        });
+    let (u, v) = (frame.data(1), frame.data(2));
+    chroma
+        .0
+        .par_chunks_mut(chroma.1)
+        .zip(u.par_chunks(frame.stride(1)))
+        .zip(v.par_chunks(frame.stride(2)))
+        .take(chroma_height)
+        .for_each(|((out, u), v)| {
+            let (u, v) = (
+                u[..2 * chroma_width].as_chunks::<2>().0,
+                v[..2 * chroma_width].as_chunks::<2>().0,
+            );
+            let out = out[..4 * chroma_width].as_chunks_mut::<4>().0;
+            for (out, (u, v)) in out.iter_mut().zip(u.iter().zip(v)) {
+                let ([u0, u1], [v0, v1]) = (high(u), high(v));
+                *out = [u0, u1, v0, v1];
+            }
+        });
+}
+
+/// Whether `buffer` is in `format`, `width` x `height`, BT.2020's matrix
+/// and on an IOSurface: as an HDR surface of it would be.
+fn as_drawn(buffer: &CVPixelBuffer, format: u32, width: u32, height: u32) -> bool {
+    let matrix = CFString::from(CVImageBufferKeys::YCbCrMatrix);
+    let bt2020 = CFString::from(CVImageBufferYCbCrMatrix::ITU_R_2020);
+    // SAFETY: reading a valid buffer.
+    let (actual, on_surface) = unsafe {
+        let raw = buffer.as_concrete_TypeRef();
+        (
+            CVPixelBufferGetPixelFormatType(raw),
+            !CVPixelBufferGetIOSurface(raw).is_null(),
+        )
+    };
+    actual == format
+        && on_surface
+        && (buffer.get_width(), buffer.get_height()) == (width as usize, height as usize)
+        && buffer
+            .as_buffer()
+            .get_attachment(&matrix, None)
+            .and_then(|value| value.downcast::<CFString>())
+            .is_some_and(|value| value == bt2020)
 }
 
 /// Tag a Dolby Vision buffer as BT.2020 PQ. On the source, its matrix is

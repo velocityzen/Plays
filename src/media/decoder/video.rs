@@ -2,6 +2,7 @@
 //! pictures to show.
 
 use std::collections::VecDeque;
+use std::num::NonZero;
 use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -41,6 +42,9 @@ const SCRUB_SHOWS_EVERY: Duration = Duration::from_millis(40);
 /// Consecutive decoding errors after which a hardware decoder is replaced by
 /// a software one.
 const HARDWARE_ERROR_LIMIT: u32 = 8;
+/// Pixels a software decoding thread is given at most, past six threads:
+/// a sixth of 4K.
+const PIXELS_PER_THREAD: usize = 3840 * 2160 / 6;
 /// Frames waiting for their enhancement layer at most, past which the
 /// oldest shows without it: more than its decoder's threads hold back.
 const MOST_WAITING: usize = 12;
@@ -56,8 +60,8 @@ pub(super) struct VideoDecoder {
     pub(super) frame_duration: f64,
     pictures: Pictures,
     decoded: frame::Video,
-    /// The hardware decoding API attached to the decoder, if any.
-    hardware: Option<&'static str>,
+    /// The hardware the decoder decodes on, if any.
+    hardware: Option<Hardware>,
     /// Whether the last frame came from the hardware decoder, as last reported.
     reported: Option<bool>,
     /// Dolby Vision profile 7's enhancement layer, decoded beside it.
@@ -111,17 +115,39 @@ struct Show {
     planes: YuvConverter,
 }
 
+/// The hardware a decoder decodes on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::media) struct Hardware {
+    pub(in crate::media) api: &'static str,
+    /// Whether the decoder decodes only on it (FFmpeg's own AV1 decoder),
+    /// so that its first error has it replaced, not a few.
+    pub(in crate::media) only: bool,
+}
+
 /// Open a decoder for the stream, on the GPU when asked and possible.
 pub(in crate::media) fn open_video(
     parameters: &codec::Parameters,
     hardware: bool,
-) -> Result<(ffmpeg::decoder::Video, Option<&'static str>)> {
+) -> Result<(ffmpeg::decoder::Video, Option<Hardware>)> {
     let mut context = codec::context::Context::from_parameters(parameters.clone())?;
-    let codec = ffmpeg::decoder::find(context.id())
+    let default = ffmpeg::decoder::find(context.id())
         .ok_or_else(|| anyhow!("there is no decoder for {}", codec_name(parameters.id())))?;
+    let instead = hardware.then(|| hwaccel::instead_of(&default)).flatten();
+    let only = instead.is_some();
+    let codec = instead.unwrap_or(default);
     // Several files decode at once, so a few threads each is plenty and
-    // keeps memory down (FFmpeg's default is one per core per decoder).
-    let threads = thread::available_parallelism().map_or(4, |n| n.get().clamp(2, 6));
+    // keeps memory down (FFmpeg's default is one per core per decoder);
+    // a picture bigger than 4K takes more, up to every core, to keep up.
+    // SAFETY: reading the parameters' size.
+    let pixels = unsafe {
+        let parameters = parameters.as_ptr();
+        usize::try_from((*parameters).width).unwrap_or(0)
+            * usize::try_from((*parameters).height).unwrap_or(0)
+    };
+    let threads = threads(
+        thread::available_parallelism().map_or(4, NonZero::get),
+        pixels,
+    );
     // `safe` only exists with older FFmpeg versions, hence the struct update.
     #[allow(clippy::needless_update)]
     let threading = codec::threading::Config {
@@ -139,13 +165,22 @@ pub(in crate::media) fn open_video(
         context.decoder().open_as(codec).and_then(|d| d.video()),
         api,
     ) {
-        (Ok(decoder), _) => Ok((decoder, api)),
+        (Ok(decoder), _) => Ok((decoder, api.map(|api| Hardware { api, only }))),
         (Err(err), Some(api)) => {
             log::info!("{api} couldn't open this video ({err}); decoding in software");
             open_video(parameters, false)
         }
         (Err(err), None) => Err(err).context("opening the video decoder"),
     }
+}
+
+/// Threads to decode a picture of `pixels` with, of `cores`: two to six,
+/// or more for one bigger than 4K.
+fn threads(cores: usize, pixels: usize) -> usize {
+    let few = cores.clamp(2, 6);
+    pixels
+        .div_ceil(PIXELS_PER_THREAD)
+        .clamp(few, cores.max(few))
 }
 
 impl VideoDecoder {
@@ -285,7 +320,18 @@ impl VideoDecoder {
         });
         if let Err(err) = self.decoder.send_packet(packet) {
             log::debug!("video decode error: {err}");
-            self.failed(session);
+            // The decoder in its place starts with the packet this one
+            // failed on: the first one decoded, when the GPU can't.
+            if self.failed(session) {
+                self.decoder.skip_frame(if before_target {
+                    Discard::NonReference
+                } else {
+                    Discard::Default
+                });
+                if let Err(err) = self.decoder.send_packet(packet) {
+                    log::debug!("video decode error: {err}");
+                }
+            }
         }
         self.drain(session);
     }
@@ -303,26 +349,38 @@ impl VideoDecoder {
 
     /// Count a decoding error. A hardware decoder that keeps failing (a driver
     /// that accepts a stream it can't actually decode) is swapped for a
-    /// software one; it picks up again at the next keyframe.
-    fn failed(&mut self, session: &Session) {
-        let Some(api) = self.hardware else {
-            return;
+    /// software one, which picks up again at the next keyframe; one that
+    /// only decodes on the GPU, at once. Says whether it was swapped.
+    fn failed(&mut self, session: &Session) -> bool {
+        let Some(Hardware { api, only }) = self.hardware else {
+            return false;
         };
         self.errors += 1;
-        if self.errors < HARDWARE_ERROR_LIMIT {
-            return;
+        if !only && self.errors < HARDWARE_ERROR_LIMIT {
+            return false;
         }
-        log::warn!(
-            "{}: {api} keeps failing on this video; decoding in software",
-            session.name
-        );
+        if only {
+            log::info!(
+                "{}: {api} can't decode this video; decoding in software",
+                session.name
+            );
+        } else {
+            log::warn!(
+                "{}: {api} keeps failing on this video; decoding in software",
+                session.name
+            );
+        }
         match open_video(&self.parameters, false) {
             Ok((decoder, _)) => {
                 self.decoder = decoder;
                 self.hardware = None;
                 self.errors = 0;
+                true
             }
-            Err(err) => log::warn!("{}: {err:#}", session.name),
+            Err(err) => {
+                log::warn!("{}: {err:#}", session.name);
+                false
+            }
         }
     }
 
@@ -332,8 +390,9 @@ impl VideoDecoder {
             return;
         }
         self.reported = Some(hardware);
-        let api = self.hardware.filter(|_| hardware);
-        match (api, self.hardware) {
+        let api = self.hardware.map(|hardware| hardware.api);
+        let shown = api.filter(|_| hardware);
+        match (shown, api) {
             (Some(api), _) => log::info!("{}: decoding video with {api}", session.name),
             (None, Some(api)) => log::info!(
                 "{}: {api} can't decode this video; decoding in software",
@@ -341,7 +400,7 @@ impl VideoDecoder {
             ),
             (None, None) => {}
         }
-        session.shared.update_info(|info| info.hardware = api);
+        session.shared.update_info(|info| info.hardware = shown);
     }
 
     fn drain(&mut self, session: &Session) {
@@ -625,3 +684,7 @@ fn upload(
         }
     }
 }
+
+#[cfg(test)]
+#[path = "tests/video.rs"]
+mod tests;

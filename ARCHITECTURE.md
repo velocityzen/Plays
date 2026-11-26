@@ -226,10 +226,11 @@ A decoded picture reaches gpui in one of three forms
 
 - On Linux, gpui can't draw DMA-BUFs, so hardware frames are copied back
 - Zero-copy: four 4K H.264 files take about 20% of a core, 100% copied back
-- `src/media/hwaccel.rs`: one hardware device per API; software fallback
+- `src/media/hwaccel.rs`: one hardware device per API; software fallback;
+  FFmpeg's own AV1 decoder over libdav1d where the GPU decodes AV1
 - `src/media/videotoolbox.rs` (macOS): `VTPixelTransferSession` converts
   and scales each frame on the GPU; HDR to 10-bit BT.2020, software HDR
-  copied into a 10-bit buffer first
+  copied into a 10-bit buffer first; HDR already so, at its size, not copied
 - `src/media/yuv.rs` (Linux): planes and their matrix;
   `PLAYS_GPU_CONVERSION=0` converts on the CPU instead
 - `src/media/hdr.rs`: PQ, HLG and the tone curve; reference white as SDR
