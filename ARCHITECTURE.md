@@ -132,6 +132,7 @@ on its own. Clippy lints in the root `Cargo.toml` apply to all.
 | `resources/` | Credits (`attributions.json`), the update feed (`updates.json`), macOS `Info.plist` and document types, Linux `.desktop` and app icon, file icons |
 | `assets/` | App icon and UI icons |
 | `tests/fixtures` | Small media files for tests |
+| `lua/` | Example Lua scripts |
 
 Inside `src/`:
 

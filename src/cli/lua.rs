@@ -493,3 +493,7 @@ mod tests;
 #[cfg(test)]
 #[path = "lua/tests/guides.rs"]
 mod guides;
+
+#[cfg(test)]
+#[path = "lua/tests/examples.rs"]
+mod examples;

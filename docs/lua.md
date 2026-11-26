@@ -3,7 +3,8 @@
 `plays do` runs a Lua 5.4 script, a client of the Plays running, as the
 rest of the command line is: once, top to bottom, and it ends, unless it
 has handlers, `plays.on`, or timers to run on with
-([lua-events.md](lua-events.md)).
+([lua-events.md](lua-events.md)). Examples to run or start from are kept in
+[`lua/`](../lua).
 
 ```lua
 -- louder.lua: every block in the window louder by 10

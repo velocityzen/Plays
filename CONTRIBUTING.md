@@ -225,7 +225,7 @@ mod tests;
 - `src/tests/`: the settings, progress, recents and hotkeys files; the command line
 - `src/cli/tests/`: shell completions, `events` and `wait`, tables, Lua scripts
 - `src/cli/lua/tests/`: a script's sleeps, waits, handlers, timers,
-  programs and JSON; the guides' examples
+  programs and JSON; the guides' examples and those in `lua/`
 - `src/api/tests/`, `src/api/*/tests/`: commands, events, the socket
 - `src/cast/tests/`: each protocol's profiles, AirPlay pairings, the cast link
 - `crates/*/src/tests/`: each crate on its own, protocols against fake devices
@@ -338,6 +338,8 @@ time); Vulkan can be software (lavapipe). It uses `Xvfb`, `openbox`,
 - The formats Plays opens are listed in `crates/file-types`. After changing
   them, run `script/file-types` (needs a Fira font): it writes macOS's
   document types, the desktop file's MIME types and each format's icon.
+- Example Lua scripts are kept in `lua/`, each starting with a comment
+  naming it and saying what it does.
 - After changing a command or an event, write the reference again with
   `cargo run -- actions --markdown > docs/commands.md`. Developer commands,
   in debug builds only, aren't in it.
