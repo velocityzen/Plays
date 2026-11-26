@@ -15,10 +15,11 @@ use crate::ui::testing::{self, fixture};
 use crate::ui::theme::layout::WINDOW_SIZE;
 use crate::ui::workspace::Workspace;
 
+mod scopes;
 mod tells;
 
 /// The namespaces command ids start with.
-const NAMESPACES: [&str; 15] = [
+const NAMESPACES: [&str; 16] = [
     "app",
     "window",
     "block",
@@ -26,6 +27,7 @@ const NAMESPACES: [&str; 15] = [
     "window.playback",
     "app.playback",
     "block.audio",
+    "window.audio",
     "app.audio",
     "block.subtitles",
     "block.video",

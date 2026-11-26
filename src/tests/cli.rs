@@ -361,7 +361,11 @@ fn actions_lists_those_whose_id_or_title_has_what_is_searched_for() {
     }
     assert_eq!(
         ids(&["actions", "play/pause"]),
-        ["app.playback.play_pause", "block.playback.play_pause"],
+        [
+            "app.playback.play_pause",
+            "block.playback.play_pause",
+            "window.playback.play_pause"
+        ],
         "in their titles, by id"
     );
 

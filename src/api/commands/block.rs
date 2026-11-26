@@ -87,11 +87,17 @@ pub const COMMANDS: &[Spec] = &[
     // Typing a URL over the blocks too, but where a key that works anywhere
     // is this one's as well, as Close Window's ⌘W is, that one wins.
     .reach(Reach::Files),
-    Spec::blocks(
+    Spec::custom(
         "block.close_all",
         "Close All Files",
         "Close every file in the window. The window stays, empty.",
-        |workspace, _, cx| workspace.close_all(cx),
+        Scope::Blocks,
+        |_, target, cx| {
+            target::in_window(target, cx, |workspace, _, cx| {
+                workspace.close_all(cx);
+                done()
+            })
+        },
     )
     .tells(&[
         "block.closed",

@@ -165,6 +165,18 @@ fn prompt_for(arg: &Arg) -> &'static str {
     arg.description.trim_end_matches('.')
 }
 
+/// The command whose arguments `id`'s are asked as: a window's, or every
+/// window's, command for its blocks asks as the block's does, from the
+/// block in front.
+fn asked_as(id: &'static str) -> &'static str {
+    match id.split_once('.') {
+        Some(("window" | "app", rest)) if rest.contains('.') => {
+            api::find(&format!("block.{rest}")).map_or(id, |spec| spec.id)
+        }
+        _ => id,
+    }
+}
+
 /// The choices of `arg` of `spec`, and what the field says: a block's
 /// tracks, the displays, and so on; for one of a set of words, those.
 fn choices(
@@ -173,7 +185,7 @@ fn choices(
     args: &Map<String, Value>,
     on: &mut On,
 ) -> Option<(&'static str, Vec<Choice>)> {
-    let listed = match (spec.id, arg.name) {
+    let listed = match (asked_as(spec.id), arg.name) {
         ("block.audio.select_track", "number") => ("Audio track", tracks("audio", None, on)),
         ("block.video.select_track", "number") => ("Video track", tracks("video", None, on)),
         ("block.subtitles.select_track", "number") => {
@@ -526,7 +538,7 @@ fn typed(
     args: &Map<String, Value>,
     cx: &App,
 ) -> Option<(String, Read)> {
-    match (spec.id, arg.name) {
+    match (asked_as(spec.id), arg.name) {
         ("block.playback.seek", "time") => Some((
             "A time, such as 1:23:45 or 90".to_owned(),
             Rc::new(move |typed| {

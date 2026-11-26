@@ -1029,23 +1029,141 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 
 ## window.playback
 
-### Play Window
+### Play/Pause in Window
+
+`window.playback.play_pause`: Pause every file in the window if any plays, else play them all.
+
+- Acts on every block in a window.
+- Tells: `block.playback.playing`, `block.playback.paused`.
+
+### Play in Window
 
 `window.playback.play`: Play every file in the window.
 
 - Acts on every block in a window.
 - Tells: `block.playback.playing`.
 
-### Pause Window
+### Pause in Window
 
 `window.playback.pause`: Pause every file in the window.
 
 - Acts on every block in a window.
 - Tells: `block.playback.paused`.
 
+### Seek To in Window
+
+`window.playback.seek`: Play every file in the window from a time in it.
+
+- Acts on every block in a window.
+- Arguments:
+  - `time` (a number, at least 0): Seconds from the start; past the end is the end.
+- Tells: `block.playback.seeked`, `block.playback.ended`, `block.playback.chapter_changed`.
+
+### Seek Forward in Window
+
+`window.playback.seek_forward`: Skip every file in the window ahead by the seek step.
+
+- Acts on every block in a window.
+- Tells: `block.playback.seeked`, `block.playback.ended`, `block.playback.chapter_changed`.
+
+### Seek Backward in Window
+
+`window.playback.seek_backward`: Skip every file in the window back by the seek step.
+
+- Acts on every block in a window.
+- Tells: `block.playback.seeked`, `block.playback.chapter_changed`.
+
+### Next Frame in Window
+
+`window.playback.next_frame`: Pause every file in the window and show its next frame.
+
+- Acts on every block in a window.
+- Tells: `block.playback.paused`, `block.playback.seeked`.
+
+### Previous Frame in Window
+
+`window.playback.previous_frame`: Pause every file in the window and show the frame before.
+
+- Acts on every block in a window.
+- Tells: `block.playback.paused`, `block.playback.seeked`.
+
+### Next Chapter in Window
+
+`window.playback.next_chapter`: Play every file in the window from the start of its next chapter.
+
+- Acts on every block in a window.
+- Tells: `block.playback.seeked`, `block.playback.chapter_changed`.
+
+### Previous Chapter in Window
+
+`window.playback.previous_chapter`: Play every file in the window from the start of its chapter, or of the one before near its start.
+
+- Acts on every block in a window.
+- Tells: `block.playback.seeked`, `block.playback.chapter_changed`.
+
+### Go to Chapter in Window
+
+`window.playback.go_to_chapter`: Play every file in the window that has a chapter from its start.
+
+- Acts on every block in a window.
+- Arguments:
+  - `number` (a whole number, at least 1): Which chapter, from 1.
+- Tells: `block.playback.seeked`, `block.playback.chapter_changed`.
+
+### Restart in Window
+
+`window.playback.restart`: Play every file in the window from the start.
+
+- Acts on every block in a window.
+- Tells: `block.playback.seeked`, `block.playback.chapter_changed`.
+
+### Previous File in Window
+
+`window.playback.previous_file`: Play the file before each of every file in the window in its playlist, or else its folder, instead.
+
+- Acts on every block in a window.
+- Tells: `block.playback.opened`, `block.playback.playing`.
+
+### Next File in Window
+
+`window.playback.next_file`: Play the file after each of every file in the window in its playlist, or else its folder, instead.
+
+- Acts on every block in a window.
+- Tells: `block.playback.opened`, `block.playback.playing`.
+
+### Play File Instead in Window
+
+`window.playback.play_file`: Play another file instead of every file in the window, each at its volume, muted and looping as it is, and playing if it is.
+
+- Acts on every block in a window.
+- Arguments:
+  - `path` (text): The file's full path.
+- Tells: `block.playback.opened`, `block.playback.playing`.
+
+### Loop in Window
+
+`window.playback.loop.toggle`: Play every file in the window again from the start at its end, unless all do already; else stop them all at their end.
+
+- Acts on every block in a window.
+- Tells: `block.playback.loop.on`, `block.playback.loop.off`.
+
+### Start Looping in Window
+
+`window.playback.loop.on`: Play every file in the window again from the start at its end.
+
+- Acts on every block in a window.
+- Tells: `block.playback.loop.on`.
+
+### Stop Looping in Window
+
+`window.playback.loop.off`: Stop every file in the window at its end.
+
+- Acts on every block in a window.
+- Tells: `block.playback.loop.off`.
+
 ## app.playback
 
-### Play/Pause All
+### Play/Pause in Every Window
 
 `app.playback.play_pause`: Pause every file in every window if any plays, else play them all.
 
@@ -1053,29 +1171,30 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 - Keys: ⇧Space
 - Tells: `block.playback.playing`, `block.playback.paused`.
 
-### Play All
+### Play in Every Window
 
 `app.playback.play`: Play every file in every window.
 
 - Acts on every block in every window.
 - Tells: `block.playback.playing`.
 
-### Pause All
+### Pause in Every Window
 
 `app.playback.pause`: Pause every file in every window.
 
 - Acts on every block in every window.
 - Tells: `block.playback.paused`.
 
-### Restart All
+### Seek To in Every Window
 
-`app.playback.restart`: Play every file in every window from the start.
+`app.playback.seek`: Play every file in every window from a time in it.
 
 - Acts on every block in every window.
-- Keys: ⇧↖
-- Tells: `block.playback.seeked`, `block.playback.chapter_changed`.
+- Arguments:
+  - `time` (a number, at least 0): Seconds from the start; past the end is the end.
+- Tells: `block.playback.seeked`, `block.playback.ended`, `block.playback.chapter_changed`.
 
-### Seek All Forward
+### Seek Forward in Every Window
 
 `app.playback.seek_forward`: Skip every file in every window ahead by the seek step.
 
@@ -1083,7 +1202,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 - Keys: ⇧→
 - Tells: `block.playback.seeked`, `block.playback.ended`, `block.playback.chapter_changed`.
 
-### Seek All Backward
+### Seek Backward in Every Window
 
 `app.playback.seek_backward`: Skip every file in every window back by the seek step.
 
@@ -1091,7 +1210,7 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 - Keys: ⇧←
 - Tells: `block.playback.seeked`, `block.playback.chapter_changed`.
 
-### Next Frame on All
+### Next Frame in Every Window
 
 `app.playback.next_frame`: Pause every file in every window and show its next frame.
 
@@ -1099,13 +1218,88 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 - Keys: ⌥⇧→
 - Tells: `block.playback.paused`, `block.playback.seeked`.
 
-### Previous Frame on All
+### Previous Frame in Every Window
 
 `app.playback.previous_frame`: Pause every file in every window and show the frame before.
 
 - Acts on every block in every window.
 - Keys: ⌥⇧←
 - Tells: `block.playback.paused`, `block.playback.seeked`.
+
+### Next Chapter in Every Window
+
+`app.playback.next_chapter`: Play every file in every window from the start of its next chapter.
+
+- Acts on every block in every window.
+- Tells: `block.playback.seeked`, `block.playback.chapter_changed`.
+
+### Previous Chapter in Every Window
+
+`app.playback.previous_chapter`: Play every file in every window from the start of its chapter, or of the one before near its start.
+
+- Acts on every block in every window.
+- Tells: `block.playback.seeked`, `block.playback.chapter_changed`.
+
+### Go to Chapter in Every Window
+
+`app.playback.go_to_chapter`: Play every file in every window that has a chapter from its start.
+
+- Acts on every block in every window.
+- Arguments:
+  - `number` (a whole number, at least 1): Which chapter, from 1.
+- Tells: `block.playback.seeked`, `block.playback.chapter_changed`.
+
+### Restart in Every Window
+
+`app.playback.restart`: Play every file in every window from the start.
+
+- Acts on every block in every window.
+- Keys: ⇧↖
+- Tells: `block.playback.seeked`, `block.playback.chapter_changed`.
+
+### Previous File in Every Window
+
+`app.playback.previous_file`: Play the file before each of every file in every window in its playlist, or else its folder, instead.
+
+- Acts on every block in every window.
+- Tells: `block.playback.opened`, `block.playback.playing`.
+
+### Next File in Every Window
+
+`app.playback.next_file`: Play the file after each of every file in every window in its playlist, or else its folder, instead.
+
+- Acts on every block in every window.
+- Tells: `block.playback.opened`, `block.playback.playing`.
+
+### Play File Instead in Every Window
+
+`app.playback.play_file`: Play another file instead of every file in every window, each at its volume, muted and looping as it is, and playing if it is.
+
+- Acts on every block in every window.
+- Arguments:
+  - `path` (text): The file's full path.
+- Tells: `block.playback.opened`, `block.playback.playing`.
+
+### Loop in Every Window
+
+`app.playback.loop.toggle`: Play every file in every window again from the start at its end, unless all do already; else stop them all at their end.
+
+- Acts on every block in every window.
+- Tells: `block.playback.loop.on`, `block.playback.loop.off`.
+
+### Start Looping in Every Window
+
+`app.playback.loop.on`: Play every file in every window again from the start at its end.
+
+- Acts on every block in every window.
+- Tells: `block.playback.loop.on`.
+
+### Stop Looping in Every Window
+
+`app.playback.loop.off`: Stop every file in every window at its end.
+
+- Acts on every block in every window.
+- Tells: `block.playback.loop.off`.
 
 ## block.audio
 
@@ -1194,25 +1388,114 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 - Acts on a block.
 - Keys: ⌃⌫
 
+## window.audio
+
+### Volume Up in Window
+
+`window.audio.volume_up`: Turn every file in the window up, each from its own volume, unmuting it.
+
+- Acts on every block in a window.
+- Tells: `block.audio.volume_changed`.
+
+### Volume Down in Window
+
+`window.audio.volume_down`: Turn every file in the window down, each from its own volume.
+
+- Acts on every block in a window.
+- Tells: `block.audio.volume_changed`.
+
+### Set Volume in Window
+
+`window.audio.set_volume`: Set the volume of every file in the window, unmuting them unless it's none.
+
+- Acts on every block in a window.
+- Arguments:
+  - `volume` (a number from 0 to 100): How loud, from 0 to 100.
+- Tells: `block.audio.volume_changed`.
+
+### Mute/Unmute in Window
+
+`window.audio.mute.toggle`: Mute every file in the window if any plays its sound, else unmute them all.
+
+- Acts on every block in a window.
+- Tells: `block.audio.mute.on`, `block.audio.mute.off`.
+
+### Mute in Window
+
+`window.audio.mute.on`: Mute every file in the window.
+
+- Acts on every block in a window.
+- Tells: `block.audio.mute.on`.
+
+### Unmute in Window
+
+`window.audio.mute.off`: Play the sound of every file in the window again.
+
+- Acts on every block in a window.
+- Tells: `block.audio.mute.off`.
+
+### Next Audio Track in Window
+
+`window.audio.next_track`: Play the next audio track of every file in the window, the first after the last.
+
+- Acts on every block in a window.
+- Tells: `block.playback.track_changed`.
+
+### Pick Audio Track in Window
+
+`window.audio.select_track`: Play an audio track of every file in the window that has it.
+
+- Acts on every block in a window.
+- Arguments:
+  - `number` (a whole number, at least 1): Which, from 1, as the tracks menu lists them.
+- Tells: `block.playback.track_changed`.
+
+### Audio Earlier in Window
+
+`window.audio.earlier`: Play the sound of every file in the window a little earlier than its picture.
+
+- Acts on every block in a window.
+
+### Audio Later in Window
+
+`window.audio.later`: Play the sound of every file in the window a little later than its picture.
+
+- Acts on every block in a window.
+
+### Reset Audio Delay in Window
+
+`window.audio.reset_delay`: Play the sound of every file in the window with its picture again.
+
+- Acts on every block in a window.
+
 ## app.audio
 
-### Volume Up on All
+### Volume Up in Every Window
 
-`app.audio.volume_up`: Turn every file's volume in every window up, each from its own.
+`app.audio.volume_up`: Turn every file in every window up, each from its own volume, unmuting it.
 
 - Acts on every block in every window.
 - Keys: ⇧↑
 - Tells: `block.audio.volume_changed`.
 
-### Volume Down on All
+### Volume Down in Every Window
 
-`app.audio.volume_down`: Turn every file's volume in every window down, each from its own.
+`app.audio.volume_down`: Turn every file in every window down, each from its own volume.
 
 - Acts on every block in every window.
 - Keys: ⇧↓
 - Tells: `block.audio.volume_changed`.
 
-### Mute/Unmute All
+### Set Volume in Every Window
+
+`app.audio.set_volume`: Set the volume of every file in every window, unmuting them unless it's none.
+
+- Acts on every block in every window.
+- Arguments:
+  - `volume` (a number from 0 to 100): How loud, from 0 to 100.
+- Tells: `block.audio.volume_changed`.
+
+### Mute/Unmute in Every Window
 
 `app.audio.mute.toggle`: Mute every file in every window if any plays its sound, else unmute them all.
 
@@ -1220,19 +1503,53 @@ Every command Plays has, by namespace, as `plays actions --markdown` writes them
 - Keys: ⇧M
 - Tells: `block.audio.mute.on`, `block.audio.mute.off`.
 
-### Mute All
+### Mute in Every Window
 
 `app.audio.mute.on`: Mute every file in every window.
 
 - Acts on every block in every window.
 - Tells: `block.audio.mute.on`.
 
-### Unmute All
+### Unmute in Every Window
 
 `app.audio.mute.off`: Play the sound of every file in every window again.
 
 - Acts on every block in every window.
 - Tells: `block.audio.mute.off`.
+
+### Next Audio Track in Every Window
+
+`app.audio.next_track`: Play the next audio track of every file in every window, the first after the last.
+
+- Acts on every block in every window.
+- Tells: `block.playback.track_changed`.
+
+### Pick Audio Track in Every Window
+
+`app.audio.select_track`: Play an audio track of every file in every window that has it.
+
+- Acts on every block in every window.
+- Arguments:
+  - `number` (a whole number, at least 1): Which, from 1, as the tracks menu lists them.
+- Tells: `block.playback.track_changed`.
+
+### Audio Earlier in Every Window
+
+`app.audio.earlier`: Play the sound of every file in every window a little earlier than its picture.
+
+- Acts on every block in every window.
+
+### Audio Later in Every Window
+
+`app.audio.later`: Play the sound of every file in every window a little later than its picture.
+
+- Acts on every block in every window.
+
+### Reset Audio Delay in Every Window
+
+`app.audio.reset_delay`: Play the sound of every file in every window with its picture again.
+
+- Acts on every block in every window.
 
 ## block.subtitles
 
@@ -2073,7 +2390,7 @@ A block's file is set to play again from the start at its end.
 - Heard by those listening to its window's events.
 - Payload:
   - `window_id`, `window_title`, `block_id`, `block_title`: its window's and its block's.
-- Follows: `block.playback.loop.toggle`, or `block.playback.loop.on`.
+- Follows: `block.playback.loop.toggle`, `block.playback.loop.on`, `window.playback.loop.toggle`, `window.playback.loop.on`, `app.playback.loop.toggle`, or `app.playback.loop.on`.
 
 ### block.playback.loop.off
 
@@ -2082,7 +2399,7 @@ A block's file is set to stop at its end.
 - Heard by those listening to its window's events.
 - Payload:
   - `window_id`, `window_title`, `block_id`, `block_title`: its window's and its block's.
-- Follows: `block.playback.loop.toggle`, or `block.playback.loop.off`.
+- Follows: `block.playback.loop.toggle`, `block.playback.loop.off`, `window.playback.loop.toggle`, `window.playback.loop.off`, `app.playback.loop.toggle`, or `app.playback.loop.off`.
 
 ### block.playback.opened
 
@@ -2095,7 +2412,7 @@ A file opened in a block, paused at its start.
   - `file`: Its path; none for a stream.
   - `url`: The stream's URL; none for a file.
   - `duration`: How long it plays, in seconds; none for a live stream.
-- Follows: `app.open`, `block.playback.previous_file`, `block.playback.next_file`, `block.playback.play_file`, files dropped on a window or picked when `window.open_files` or `window.open_url` asks, or a playlist going on to its next file, once one plays to its end.
+- Follows: `app.open`, `block.playback.previous_file`, `block.playback.next_file`, `block.playback.play_file`, `window.playback.previous_file`, `window.playback.next_file`, `window.playback.play_file`, `app.playback.previous_file`, `app.playback.next_file`, `app.playback.play_file`, files dropped on a window or picked when `window.open_files` or `window.open_url` asks, or a playlist going on to its next file, once one plays to its end.
 
 ### block.playback.open_failed
 
@@ -2127,7 +2444,7 @@ A file began playing: told once it moves, not as it's set to play while what it 
   - `position`: How far through the file it is, from 0 to 1; none while its duration isn't known, as a live stream's.
   - `time`: Where it is, in seconds.
   - `frame`: The number of the frame showing then, from 0; none for sound alone.
-- Follows: `block.playback.play_pause`, `block.playback.play`, `block.playback.previous_file`, `block.playback.next_file`, `block.playback.play_file`, `block.playback.sync_all`, `window.playback.play`, `app.playback.play_pause`, `app.playback.play`, a file opening while Autoplay is on, or a playlist going on to its next file, once one plays to its end.
+- Follows: `block.playback.play_pause`, `block.playback.play`, `block.playback.previous_file`, `block.playback.next_file`, `block.playback.play_file`, `block.playback.sync_all`, `window.playback.play_pause`, `window.playback.play`, `window.playback.previous_file`, `window.playback.next_file`, `window.playback.play_file`, `app.playback.play_pause`, `app.playback.play`, `app.playback.previous_file`, `app.playback.next_file`, `app.playback.play_file`, a file opening while Autoplay is on, or a playlist going on to its next file, once one plays to its end.
 
 ### block.playback.paused
 
@@ -2139,7 +2456,7 @@ A file paused.
   - `position`: How far through the file it is, from 0 to 1; none while its duration isn't known, as a live stream's.
   - `time`: Where it is, in seconds.
   - `frame`: The number of the frame showing then, from 0; none for sound alone.
-- Follows: `block.playback.play_pause`, `block.playback.pause`, `block.playback.next_frame`, `block.playback.previous_frame`, `block.playback.sync_all`, `window.playback.pause`, `app.playback.play_pause`, `app.playback.pause`, `app.playback.next_frame`, or `app.playback.previous_frame`.
+- Follows: `block.playback.play_pause`, `block.playback.pause`, `block.playback.next_frame`, `block.playback.previous_frame`, `block.playback.sync_all`, `window.playback.play_pause`, `window.playback.pause`, `window.playback.next_frame`, `window.playback.previous_frame`, `app.playback.play_pause`, `app.playback.pause`, `app.playback.next_frame`, or `app.playback.previous_frame`.
 
 ### block.playback.seeked
 
@@ -2151,7 +2468,7 @@ A file was sought to another time, here or on the device it's cast to: where it 
   - `position`: How far through the file it is, from 0 to 1; none while its duration isn't known, as a live stream's.
   - `time`: Where it is, in seconds.
   - `frame`: The number of the frame showing then, from 0; none for sound alone.
-- Follows: `block.playback.seek`, `block.playback.seek_forward`, `block.playback.seek_backward`, `block.playback.next_frame`, `block.playback.previous_frame`, `block.playback.next_chapter`, `block.playback.previous_chapter`, `block.playback.go_to_chapter`, `block.playback.restart`, `block.playback.sync_all`, `app.playback.restart`, `app.playback.seek_forward`, `app.playback.seek_backward`, `app.playback.next_frame`, or `app.playback.previous_frame`.
+- Follows: `block.playback.seek`, `block.playback.seek_forward`, `block.playback.seek_backward`, `block.playback.next_frame`, `block.playback.previous_frame`, `block.playback.next_chapter`, `block.playback.previous_chapter`, `block.playback.go_to_chapter`, `block.playback.restart`, `block.playback.sync_all`, `window.playback.seek`, `window.playback.seek_forward`, `window.playback.seek_backward`, `window.playback.next_frame`, `window.playback.previous_frame`, `window.playback.next_chapter`, `window.playback.previous_chapter`, `window.playback.go_to_chapter`, `window.playback.restart`, `app.playback.seek`, `app.playback.seek_forward`, `app.playback.seek_backward`, `app.playback.next_frame`, `app.playback.previous_frame`, `app.playback.next_chapter`, `app.playback.previous_chapter`, `app.playback.go_to_chapter`, or `app.playback.restart`.
 
 ### block.playback.ended
 
@@ -2163,7 +2480,7 @@ A file played to its end, and stopped there.
   - `position`: How far through the file it is, from 0 to 1; none while its duration isn't known, as a live stream's.
   - `time`: Where it is, in seconds.
   - `frame`: The number of the frame showing then, from 0; none for sound alone.
-- Follows: `block.playback.seek`, `block.playback.seek_forward`, `app.playback.seek_forward`, or a file playing to its end.
+- Follows: `block.playback.seek`, `block.playback.seek_forward`, `window.playback.seek`, `window.playback.seek_forward`, `app.playback.seek`, `app.playback.seek_forward`, or a file playing to its end.
 
 ### block.playback.position
 
@@ -2186,7 +2503,7 @@ A file is in another chapter.
 - Payload:
   - `window_id`, `window_title`, `block_id`, `block_title`: its window's and its block's.
   - `chapter`: The chapter, from 1; none before the first.
-- Follows: `block.playback.seek`, `block.playback.seek_forward`, `block.playback.seek_backward`, `block.playback.next_chapter`, `block.playback.previous_chapter`, `block.playback.go_to_chapter`, `block.playback.restart`, `app.playback.restart`, `app.playback.seek_forward`, `app.playback.seek_backward`, or a file playing into its next chapter.
+- Follows: `block.playback.seek`, `block.playback.seek_forward`, `block.playback.seek_backward`, `block.playback.next_chapter`, `block.playback.previous_chapter`, `block.playback.go_to_chapter`, `block.playback.restart`, `window.playback.seek`, `window.playback.seek_forward`, `window.playback.seek_backward`, `window.playback.next_chapter`, `window.playback.previous_chapter`, `window.playback.go_to_chapter`, `window.playback.restart`, `app.playback.seek`, `app.playback.seek_forward`, `app.playback.seek_backward`, `app.playback.next_chapter`, `app.playback.previous_chapter`, `app.playback.go_to_chapter`, `app.playback.restart`, or a file playing into its next chapter.
 
 ### block.playback.track_changed
 
@@ -2197,7 +2514,7 @@ Another of a file's tracks plays, or none of its kind.
   - `window_id`, `window_title`, `block_id`, `block_title`: its window's and its block's.
   - `kind`: The track's: video, audio or subtitles.
   - `track`: The one playing, from 1 among its kind's, as the tracks menu lists them; none for none.
-- Follows: `block.audio.next_track`, `block.audio.select_track`, `block.subtitles.next_track`, `block.subtitles.select_track`, `block.subtitles.toggle`, `block.subtitles.on`, `block.subtitles.off`, `block.video.next_track`, or `block.video.select_track`.
+- Follows: `block.audio.next_track`, `block.audio.select_track`, `window.audio.next_track`, `window.audio.select_track`, `app.audio.next_track`, `app.audio.select_track`, `block.subtitles.next_track`, `block.subtitles.select_track`, `block.subtitles.toggle`, `block.subtitles.on`, `block.subtitles.off`, `block.video.next_track`, or `block.video.select_track`.
 
 ## block.audio
 
@@ -2209,7 +2526,7 @@ A block's volume changed.
 - Payload:
   - `window_id`, `window_title`, `block_id`, `block_title`: its window's and its block's.
   - `volume`: Its volume, in percent, as `block.audio.set_volume` takes it.
-- Follows: `block.audio.volume_up`, `block.audio.volume_down`, `block.audio.set_volume`, `app.audio.volume_up`, or `app.audio.volume_down`.
+- Follows: `block.audio.volume_up`, `block.audio.volume_down`, `block.audio.set_volume`, `window.audio.volume_up`, `window.audio.volume_down`, `window.audio.set_volume`, `app.audio.volume_up`, `app.audio.volume_down`, or `app.audio.set_volume`.
 
 ### block.audio.mute.on
 
@@ -2218,7 +2535,7 @@ A block was muted.
 - Heard by those listening to its window's events.
 - Payload:
   - `window_id`, `window_title`, `block_id`, `block_title`: its window's and its block's.
-- Follows: `block.audio.mute.toggle`, `block.audio.mute.on`, `app.audio.mute.toggle`, or `app.audio.mute.on`.
+- Follows: `block.audio.mute.toggle`, `block.audio.mute.on`, `window.audio.mute.toggle`, `window.audio.mute.on`, `app.audio.mute.toggle`, or `app.audio.mute.on`.
 
 ### block.audio.mute.off
 
@@ -2227,7 +2544,7 @@ A block was unmuted.
 - Heard by those listening to its window's events.
 - Payload:
   - `window_id`, `window_title`, `block_id`, `block_title`: its window's and its block's.
-- Follows: `block.audio.mute.toggle`, `block.audio.mute.off`, `app.audio.mute.toggle`, `app.audio.mute.off`, or its volume turned up.
+- Follows: `block.audio.mute.toggle`, `block.audio.mute.off`, `window.audio.mute.toggle`, `window.audio.mute.off`, `app.audio.mute.toggle`, `app.audio.mute.off`, or its volume turned up.
 
 ## block.subtitles
 

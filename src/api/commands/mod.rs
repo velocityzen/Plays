@@ -13,7 +13,7 @@ mod subtitles;
 pub mod video;
 pub mod window;
 
-use gpui::Context;
+use gpui::{App, Context};
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -22,6 +22,7 @@ use super::events::EventKind;
 use super::registry::{Args, Outcome, Spec};
 use crate::media::tracks::TrackKind;
 use crate::ui::player::PlayerView;
+use crate::ui::workspace::all::Players;
 
 /// Every namespace's commands.
 pub const ALL: [&[Spec]; 12] = [
@@ -58,11 +59,12 @@ const DROPPED: &str =
 
 /// The namespaces, in the order Settings → Hotkeys lists their commands,
 /// each with its title there.
-pub const NAMESPACES: [(&str, &str); 14] = [
+pub const NAMESPACES: [(&str, &str); 15] = [
     ("block.playback", "Playback"),
     ("window.playback", "Playback in a window"),
     ("app.playback", "Playback in every window"),
     ("block.audio", "Audio"),
+    ("window.audio", "Audio in a window"),
     ("app.audio", "Audio in every window"),
     ("block.subtitles", "Subtitles"),
     ("block.video", "Video"),
@@ -133,6 +135,19 @@ fn done() -> Outcome {
     Ok(Value::Null)
 }
 
+/// A track's number, from 1 as the tracks menu lists them; none for no
+/// subtitles.
+#[derive(Deserialize)]
+struct Track {
+    number: Option<usize>,
+}
+
+/// That a file has no track numbered `number`.
+fn no_track(number: Option<usize>) -> Error {
+    let number = number.map_or_else(|| "off".to_owned(), |number| number.to_string());
+    Error::not_found("track", number)
+}
+
 /// Play the track of `kind` numbered in `args`, from 1 as the tracks menu
 /// lists them; with none, no subtitles.
 fn select_track(
@@ -141,15 +156,20 @@ fn select_track(
     player: &mut PlayerView,
     cx: &mut Context<PlayerView>,
 ) -> Outcome {
-    #[derive(Deserialize)]
-    struct Track {
-        number: Option<usize>,
-    }
     let Track { number } = args.read()?;
     if player.select_track_number(kind, number, cx) {
         done()
     } else {
-        let number = number.map_or_else(|| "off".to_owned(), |number| number.to_string());
-        Err(Error::not_found("track", number))
+        Err(no_track(number))
+    }
+}
+
+/// `select_track` in each block that has the track.
+fn select_tracks(args: Args, kind: TrackKind, players: &Players, cx: &mut App) -> Outcome {
+    let Track { number } = args.read()?;
+    if players.select_track_number(kind, number, cx) {
+        done()
+    } else {
+        Err(no_track(number))
     }
 }

@@ -83,7 +83,7 @@ print(block.title, block.position, block.duration)
 - Every command in [commands.md](commands.md), its arguments a table.
 - An id starts with what it acts on: `block.playback.pause` a block,
   `window.playback.pause` every block in a window, `app.playback.pause`
-  every block in every window.
+  every block in every window; the three have the same commands.
 - On the script's window, or its block, as the command acts on one.
   `window_id` and `block_id` among its arguments name another, by id,
   label or number.

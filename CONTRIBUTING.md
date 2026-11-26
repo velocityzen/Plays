@@ -346,6 +346,10 @@ time); Vulkan can be software (lavapipe). It uses `Xvfb`, `openbox`,
   `window.playback` and `app.playback`.
 - An id starts with what the command acts on: `block.`, `window.` or
   `app.`, every block in every window, without `_all`.
+- A feature with commands under more than one of `block.`, `window.` and
+  `app.` has the same under each, titled X, X in Window and X in Every
+  Window, taking the same arguments; `src/api/tests/scopes.rs` checks,
+  and lists what's left out and why.
 - Every command has its own lower-case id in a namespace, its own title, a
   description that is a sentence, and its arguments named once. Every
   event is registered once, named in its namespace as commands are

@@ -217,6 +217,13 @@ fn run_spec(spec: &Spec, invocation: Invocation, cx: &mut App) -> Result<Value, 
         registry::Run::BlockWith(run) => target::on_block(&target, cx, |player, window, cx| {
             run(args, player, window, cx)
         }),
+        registry::Run::Players(run) => {
+            run(&target::players(&target, spec.scope, cx)?, cx);
+            Ok(Value::Null)
+        }
+        registry::Run::PlayersWith(run) => {
+            run(args, &target::players(&target, spec.scope, cx)?, cx)
+        }
         registry::Run::Custom(run) => run(args, &target, cx),
     }
 }

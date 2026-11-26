@@ -271,47 +271,62 @@ fn playback_ways(plan: &Plan) -> Option<Vec<Way>> {
     let it = || plan.it();
     let third = || plan.on("3");
     let playing = || command("block.playback.play_pause");
-    Some(match plan.id {
-        "block.playback.seek" => vec![
+    // The block's on the file of chapters; the window's and every
+    // window's on it among the others.
+    let on_chapters = || {
+        if plan.id.starts_with("block.") {
+            third()
+        } else {
+            it()
+        }
+    };
+    let name = plan
+        .id
+        .split_once(".playback.")
+        .map_or(plan.id, |(_, name)| name);
+    Some(match name {
+        "seek" => vec![
             way(
                 vec![chapters()],
-                vec![plan.with(json!({"time": 1})).on_block("3")],
+                vec![on_chapters().with_args(json!({"time": 1}))],
             ),
             way(Vec::new(), vec![plan.with(json!({"time": 100}))]),
         ],
-        "block.playback.seek_forward" | "block.playback.next_chapter" => {
-            vec![way(vec![chapters()], vec![third(), third()])]
+        "seek_forward" | "next_chapter" => {
+            vec![way(vec![chapters()], vec![on_chapters(), on_chapters()])]
         }
-        "app.playback.seek_forward" => vec![way(vec![chapters()], vec![it(), it()])],
-        "block.playback.seek_backward"
-        | "block.playback.restart"
-        | "block.playback.previous_chapter" => {
-            vec![way(vec![chapters(), at(1.5).on_block("3")], vec![third()])]
+        "seek_backward" | "restart" | "previous_chapter" => {
+            vec![way(
+                vec![chapters(), at(1.5).on_block("3")],
+                vec![on_chapters()],
+            )]
         }
-        "app.playback.seek_backward" | "app.playback.restart" => {
-            vec![way(vec![chapters(), at(1.5).on_block("3")], vec![it()])]
-        }
-        "block.playback.go_to_chapter" => vec![way(
+        "go_to_chapter" => vec![way(
             vec![chapters()],
-            vec![plan.with(json!({"number": 2})).on_block("3")],
+            vec![on_chapters().with_args(json!({"number": 2}))],
         )],
-        "block.playback.next_frame"
-        | "block.playback.previous_frame"
-        | "app.playback.next_frame"
-        | "app.playback.previous_frame" => vec![way(vec![playing()], vec![it()])],
-        "app.playback.pause" => vec![way(vec![command("app.playback.play")], vec![it()])],
-        "block.playback.pause" => vec![way(vec![playing()], vec![it(), it()])],
-        "window.playback.pause" => {
-            vec![way(vec![command("window.playback.play")], vec![it(), it()])]
+        // Paused from playing; then played, last, as what tells it waits
+        // for the file to move.
+        "play_pause" => vec![
+            way(vec![playing()], vec![it()]),
+            way(Vec::new(), vec![it()]),
+        ],
+        "next_frame" | "previous_frame" => vec![way(vec![playing()], vec![it()])],
+        "pause" if plan.id.starts_with("block.") => {
+            vec![way(vec![playing()], vec![it(), it()])]
         }
+        "pause" => vec![way(
+            vec![command(&plan.id.replace("pause", "play"))],
+            vec![it(), it()],
+        )],
         // Paused, and playing on, as it was.
-        "block.playback.previous_file" | "block.playback.next_file" => {
+        "previous_file" | "next_file" => {
             vec![
                 way(Vec::new(), vec![it()]),
                 way(vec![playing()], vec![it()]),
             ]
         }
-        "block.playback.play_file" => {
+        "play_file" => {
             let file = || plan.with(json!({"path": path("clip-ip.mkv")}));
             vec![
                 way(Vec::new(), vec![file()]),
@@ -319,7 +334,7 @@ fn playback_ways(plan: &Plan) -> Option<Vec<Way>> {
             ]
         }
         // Where keys go, playing, or paused.
-        "block.playback.sync_all" => vec![
+        "sync_all" => vec![
             way(vec![playing()], vec![it()]),
             way(vec![command("app.playback.play"), playing()], vec![it()]),
         ],
@@ -340,8 +355,12 @@ fn hide_notes() -> serde_json::Value {
 fn other_ways(plan: &Plan) -> Option<Vec<Way>> {
     let device = || json!({"device": plan.world.device});
     Some(match plan.id {
-        "block.audio.set_volume" => Plan::twice(plan.with(json!({"volume": 30}))),
-        "block.audio.select_track" => Plan::twice(plan.with(json!({"number": 2}))),
+        "block.audio.set_volume" | "window.audio.set_volume" | "app.audio.set_volume" => {
+            Plan::twice(plan.with(json!({"volume": 30})))
+        }
+        "block.audio.select_track" | "window.audio.select_track" | "app.audio.select_track" => {
+            Plan::twice(plan.with(json!({"number": 2})))
+        }
         // Shown, then none.
         "block.subtitles.select_track" => vec![way(
             Vec::new(),
@@ -451,6 +470,22 @@ fn all_open(cx: &mut TestAppContext) -> bool {
     })
 }
 
+/// Whether every file set to play, in every window, has moved since: a
+/// video moves only as its window draws (`settle`).
+fn all_moved(cx: &mut TestAppContext) -> bool {
+    cx.update(|cx| {
+        cx.windows()
+            .into_iter()
+            .filter_map(|window| window.downcast::<Workspace>())
+            .filter_map(|window| window.read(cx).ok().map(Workspace::players))
+            .flatten()
+            .all(|player| {
+                let player = player.read(cx);
+                !player.is_playing() || player.has_started()
+            })
+    })
+}
+
 /// Run what's left to, wait for the files to open, and draw every
 /// window, which the test platform does only when asked: a block shows a
 /// frame, to step from, only once drawn.
@@ -508,6 +543,13 @@ fn hear(
                 }
                 Step::Do(change) => cx.update(change),
             }
+            settle(cx);
+        }
+        // Listening sees what it hears from as it starts: a file set to play
+        // that hasn't moved yet is seen paused, and pausing it tells nothing.
+        let waiting = Instant::now();
+        while !all_moved(cx) {
+            assert!(waiting.elapsed() < ALL_TOLD, "what plays didn't move");
             settle(cx);
         }
         let mut listener = cx.update(|cx| events::listen(Heard::All, false, cx));
@@ -618,6 +660,7 @@ namespaces! {
     window_playback_commands_tell_what_they_say: "window.playback",
     app_playback_commands_tell_what_they_say: "app.playback",
     block_audio_commands_tell_what_they_say: "block.audio",
+    window_audio_commands_tell_what_they_say: "window.audio",
     app_audio_commands_tell_what_they_say: "app.audio",
     block_subtitles_commands_tell_what_they_say: "block.subtitles",
     block_video_commands_tell_what_they_say: "block.video",

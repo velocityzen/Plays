@@ -290,7 +290,7 @@ fn the_all_commands_run_from_it_aimed_at_no_window_as_they_reach_every_one(
     open(window, &mut cx, &["clip.mp4"]);
     cx.update(|_, cx| api::record(cx));
     open_palette(&mut cx);
-    type_in(&mut cx, "play all");
+    type_in(&mut cx, "play in every window");
     press_and_wait(&mut cx, "enter");
     assert_eq!(
         ran(&mut cx),
@@ -890,7 +890,15 @@ fn every_argument_is_picked_from_a_list_but_times_volumes_paths_and_names(cx: &m
         .collect();
     assert_eq!(
         typed,
-        ["app.open", "block.playback.seek", "block.audio.set_volume"]
+        [
+            "app.open",
+            "block.playback.seek",
+            "window.playback.seek",
+            "app.playback.seek",
+            "block.audio.set_volume",
+            "window.audio.set_volume",
+            "app.audio.set_volume",
+        ]
     );
     let unasked: Vec<&str> = asks
         .iter()

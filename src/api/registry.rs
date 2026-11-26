@@ -11,6 +11,7 @@ use super::target::Target;
 use super::{Error, Source};
 use crate::ui::player::PlayerView;
 use crate::ui::workspace::Workspace;
+use crate::ui::workspace::all::Players;
 
 /// What a command hands back, or why it didn't run.
 pub type Outcome = Result<Value, Error>;
@@ -83,6 +84,8 @@ type WindowFn = fn(&mut Workspace, &mut Window, &mut Context<Workspace>);
 type WindowWithFn = fn(Args, &mut Workspace, &mut Window, &mut Context<Workspace>) -> Outcome;
 type BlockFn = fn(&mut PlayerView, &mut Window, &mut Context<PlayerView>);
 type BlockWithFn = fn(Args, &mut PlayerView, &mut Window, &mut Context<PlayerView>) -> Outcome;
+type PlayersFn = fn(&Players, &mut App);
+type PlayersWithFn = fn(Args, &Players, &mut App) -> Outcome;
 type CustomFn = fn(Args, &Target, &mut App) -> Outcome;
 /// Reads the state of what a command changes, for its target.
 pub type StateFn = fn(&Target, &mut App) -> Outcome;
@@ -97,6 +100,10 @@ pub enum Run {
     WindowWith(WindowWithFn),
     Block(BlockFn),
     BlockWith(BlockWithFn),
+    /// To the players of every block in a window, or in every window, as
+    /// its scope says.
+    Players(PlayersFn),
+    PlayersWith(PlayersWithFn),
     /// Finds what it acts on itself.
     Custom(CustomFn),
 }
@@ -216,24 +223,52 @@ impl Spec {
         Self::new(id, title, description, Scope::Window, Run::WindowWith(run)).args(args)
     }
 
-    /// One for every block in a window.
+    /// One for every block in a window: `run` has their players.
     pub const fn blocks(
         id: &'static str,
         title: &'static str,
         description: &'static str,
-        run: WindowFn,
+        run: PlayersFn,
     ) -> Self {
-        Self::new(id, title, description, Scope::Blocks, Run::Window(run))
+        Self::new(id, title, description, Scope::Blocks, Run::Players(run))
     }
 
-    /// One for every block in every player window.
+    pub const fn blocks_with(
+        id: &'static str,
+        title: &'static str,
+        description: &'static str,
+        args: &'static [Arg],
+        run: PlayersWithFn,
+    ) -> Self {
+        Self::new(id, title, description, Scope::Blocks, Run::PlayersWith(run)).args(args)
+    }
+
+    /// One for every block in every player window: `run` has their
+    /// players.
     pub const fn every_block(
         id: &'static str,
         title: &'static str,
         description: &'static str,
-        run: fn(&mut App),
+        run: PlayersFn,
     ) -> Self {
-        Self::new(id, title, description, Scope::EveryBlock, Run::App(run))
+        Self::new(id, title, description, Scope::EveryBlock, Run::Players(run))
+    }
+
+    pub const fn every_block_with(
+        id: &'static str,
+        title: &'static str,
+        description: &'static str,
+        args: &'static [Arg],
+        run: PlayersWithFn,
+    ) -> Self {
+        Self::new(
+            id,
+            title,
+            description,
+            Scope::EveryBlock,
+            Run::PlayersWith(run),
+        )
+        .args(args)
     }
 
     pub const fn block(

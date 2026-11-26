@@ -1,5 +1,5 @@
 //! `playback`: playing a block, its chapters and the files beside it in its
-//! folder, and every block in a window at once.
+//! folder; and every block in a window, or in every window, at once.
 
 use std::path::PathBuf;
 
@@ -10,11 +10,12 @@ use serde_json::{Value, json};
 use super::{Switch, done};
 use crate::api::args::{Arg, Kind};
 use crate::api::events::{EventField, EventKind};
-use crate::api::registry::{Scope, Spec};
+use crate::api::registry::{Args, Outcome, Scope, Spec};
 use crate::api::target;
 use crate::api::{Error, Run};
 use crate::settings::Settings;
-use crate::ui::workspace::all;
+use crate::ui::player::PlayerView;
+use crate::ui::workspace::all::{self, Players};
 
 pub const COMMANDS: &[Spec] = &[
     Spec::block(
@@ -55,14 +56,7 @@ pub const COMMANDS: &[Spec] = &[
         "block.playback.seek",
         "Seek To",
         "Play from a time in the file, here or on the device it's cast to.",
-        &[Arg::required(
-            "time",
-            Kind::Number {
-                min: 0.0,
-                max: None,
-            },
-            "Seconds from the start; past the end is the end.",
-        )],
+        TIME,
         |args, player, _, cx| {
             let Seek { time } = args.read()?;
             player.seek_to(time, cx);
@@ -149,11 +143,7 @@ pub const COMMANDS: &[Spec] = &[
         "block.playback.go_to_chapter",
         "Go to Chapter",
         "Play from the start of a chapter.",
-        &[Arg::required(
-            "number",
-            Kind::Integer { min: 1 },
-            "Which chapter, from 1.",
-        )],
+        CHAPTER,
         |args, player, _, cx| {
             let Chapter { number } = args.read()?;
             if number > player.chapters().len() {
@@ -208,14 +198,9 @@ pub const COMMANDS: &[Spec] = &[
         "Play File Instead",
         "Play another file in the block instead, one in its folder say, at the same volume, \
          muted and looping as this one is, and playing if it is.",
-        &[Arg::required("path", Kind::Text, "The file's full path.")],
+        FILE,
         |args, player, _, cx| {
-            let PlayFile { path } = args.read()?;
-            if !path.is_absolute() {
-                let why = format!("{}: give a file's full path", path.display());
-                return Err(Error::bad_args(args.command, why));
-            }
-            player.play_instead(path, cx);
+            player.play_instead(file(args)?, cx);
             done()
         },
     )
@@ -271,105 +256,415 @@ pub const COMMANDS: &[Spec] = &[
     .setting("sync_all")
     .keys(&["shift-s"]),
     Spec::blocks(
+        "window.playback.play_pause",
+        "Play/Pause in Window",
+        "Pause every file in the window if any plays, else play them all.",
+        |players, cx| players.play_pause(cx),
+    )
+    .tells(&[
+        "block.playback.playing",
+        "block.playback.paused",
+    ])
+    .keywords(&["every", "all", "play", "pause"]),
+    Spec::blocks(
         "window.playback.play",
-        "Play Window",
+        "Play in Window",
         "Play every file in the window.",
-        |workspace, _, cx| workspace.set_playing(true, cx),
+        |players, cx| players.set_playing(true, cx),
     )
     .tells(&["block.playback.playing"])
     .keywords(&["every", "all", "resume"])
     .setting("playback.play_window"),
     Spec::blocks(
         "window.playback.pause",
-        "Pause Window",
+        "Pause in Window",
         "Pause every file in the window.",
-        |workspace, _, cx| workspace.set_playing(false, cx),
+        |players, cx| players.set_playing(false, cx),
     )
     .tells(&["block.playback.paused"])
     .keywords(&["every", "all", "stop"])
     .setting("playback.pause_window"),
-    Spec::every_block(
-        "app.playback.play_pause",
-        "Play/Pause All",
-        "Pause every file in every window if any plays, else play them all.",
-        all::toggle,
-    )
-    .tells(&["block.playback.playing", "block.playback.paused"])
-    .keywords(&["every", "play", "pause"])
-    .setting("play_pause_all")
-    .keys(&["shift-space"]),
-    Spec::every_block(
-        "app.playback.play",
-        "Play All",
-        "Play every file in every window.",
-        all::play,
-    )
-    .tells(&["block.playback.playing"])
-    .keywords(&["every", "resume"])
-    .setting("playback.play_all"),
-    Spec::every_block(
-        "app.playback.pause",
-        "Pause All",
-        "Pause every file in every window.",
-        all::pause,
-    )
-    .tells(&["block.playback.paused"])
-    .keywords(&["every", "stop"])
-    .setting("playback.pause_all"),
-    Spec::every_block(
-        "app.playback.restart",
-        "Restart All",
-        "Play every file in every window from the start.",
-        all::restart,
-    )
-    .tells(&["block.playback.seeked", "block.playback.chapter_changed"])
-    .keywords(&["every", "beginning", "rewind"])
-    .setting("restart_all")
-    .keys(&["shift-home"]),
-    Spec::every_block(
-        "app.playback.seek_forward",
-        "Seek All Forward",
-        "Skip every file in every window ahead by the seek step.",
-        |cx| all::seek(1.0, cx),
+    Spec::blocks_with(
+        "window.playback.seek",
+        "Seek To in Window",
+        "Play every file in the window from a time in it.",
+        TIME,
+        seek_each,
     )
     .tells(&[
         "block.playback.seeked",
         "block.playback.ended",
         "block.playback.chapter_changed",
     ])
-    .keywords(&["every", "skip", "jump"])
+    .keywords(&["every", "all", "jump", "position", "time"]),
+    Spec::blocks(
+        "window.playback.seek_forward",
+        "Seek Forward in Window",
+        "Skip every file in the window ahead by the seek step.",
+        |players, cx| {
+            let step = seek_step(cx);
+            players.each(cx, |player, cx| player.seek_by(step, cx));
+        },
+    )
+    .tells(&[
+        "block.playback.seeked",
+        "block.playback.ended",
+        "block.playback.chapter_changed",
+    ])
+    .keywords(&["every", "all", "skip", "jump"]),
+    Spec::blocks(
+        "window.playback.seek_backward",
+        "Seek Backward in Window",
+        "Skip every file in the window back by the seek step.",
+        |players, cx| {
+            let step = seek_step(cx);
+            players.each(cx, |player, cx| player.seek_by(-step, cx));
+        },
+    )
+    .tells(&[
+        "block.playback.seeked",
+        "block.playback.chapter_changed",
+    ])
+    .keywords(&["every", "all", "rewind", "jump"]),
+    Spec::blocks(
+        "window.playback.next_frame",
+        "Next Frame in Window",
+        "Pause every file in the window and show its next frame.",
+        |players, cx| players.each(cx, |player, cx| player.step_frame(1.0, cx)),
+    )
+    .tells(&[
+        "block.playback.paused",
+        "block.playback.seeked",
+    ])
+    .keywords(&["every", "all", "step"]),
+    Spec::blocks(
+        "window.playback.previous_frame",
+        "Previous Frame in Window",
+        "Pause every file in the window and show the frame before.",
+        |players, cx| players.each(cx, |player, cx| player.step_frame(-1.0, cx)),
+    )
+    .tells(&[
+        "block.playback.paused",
+        "block.playback.seeked",
+    ])
+    .keywords(&["every", "all", "step", "back"]),
+    Spec::blocks(
+        "window.playback.next_chapter",
+        "Next Chapter in Window",
+        "Play every file in the window from the start of its next chapter.",
+        |players, cx| players.each(cx, PlayerView::next_chapter),
+    )
+    .tells(&[
+        "block.playback.seeked",
+        "block.playback.chapter_changed",
+    ])
+    .keywords(&["every", "all", "skip"]),
+    Spec::blocks(
+        "window.playback.previous_chapter",
+        "Previous Chapter in Window",
+        "Play every file in the window from the start of its chapter, or of the one before near its start.",
+        |players, cx| players.each(cx, PlayerView::previous_chapter),
+    )
+    .tells(&[
+        "block.playback.seeked",
+        "block.playback.chapter_changed",
+    ])
+    .keywords(&["every", "all", "back"]),
+    Spec::blocks_with(
+        "window.playback.go_to_chapter",
+        "Go to Chapter in Window",
+        "Play every file in the window that has a chapter from its start.",
+        CHAPTER,
+        go_to_chapter_in_each,
+    )
+    .tells(&[
+        "block.playback.seeked",
+        "block.playback.chapter_changed",
+    ])
+    .keywords(&["every", "all", "chapters", "jump"]),
+    Spec::blocks(
+        "window.playback.restart",
+        "Restart in Window",
+        "Play every file in the window from the start.",
+        |players, cx| players.each(cx, PlayerView::restart),
+    )
+    .tells(&[
+        "block.playback.seeked",
+        "block.playback.chapter_changed",
+    ])
+    .keywords(&["every", "all", "beginning", "rewind"]),
+    Spec::blocks(
+        "window.playback.previous_file",
+        "Previous File in Window",
+        "Play the file before each of every file in the window in its playlist, or else its folder, instead.",
+        |players, cx| players.each(cx, |player, cx| player.open_neighbor(-1, cx)),
+    )
+    .tells(&[
+        "block.playback.opened",
+        "block.playback.playing",
+    ])
+    .keywords(&["every", "all", "folder", "episode", "back"]),
+    Spec::blocks(
+        "window.playback.next_file",
+        "Next File in Window",
+        "Play the file after each of every file in the window in its playlist, or else its folder, instead.",
+        |players, cx| players.each(cx, |player, cx| player.open_neighbor(1, cx)),
+    )
+    .tells(&[
+        "block.playback.opened",
+        "block.playback.playing",
+    ])
+    .keywords(&["every", "all", "folder", "episode", "skip"]),
+    Spec::blocks_with(
+        "window.playback.play_file",
+        "Play File Instead in Window",
+        "Play another file instead of every file in the window, each at its volume, muted and looping as it is, and playing if it is.",
+        FILE,
+        play_file_in_each,
+    )
+    .tells(&[
+        "block.playback.opened",
+        "block.playback.playing",
+    ])
+    .keywords(&["every", "all", "open", "switch", "replace"]),
+    Spec::blocks(
+        "window.playback.loop.toggle",
+        "Loop in Window",
+        "Play every file in the window again from the start at its end, unless all do already; else stop them all at their end.",
+        |players, cx| players.turn_loop(|on| Switch::Toggle.turn(on), cx),
+    )
+    .tells(&[
+        "block.playback.loop.on",
+        "block.playback.loop.off",
+    ])
+    .keywords(&["every", "all", "repeat"]),
+    Spec::blocks(
+        "window.playback.loop.on",
+        "Start Looping in Window",
+        "Play every file in the window again from the start at its end.",
+        |players, cx| players.turn_loop(|on| Switch::On.turn(on), cx),
+    )
+    .tells(&["block.playback.loop.on"])
+    .keywords(&["every", "all", "repeat", "loop"]),
+    Spec::blocks(
+        "window.playback.loop.off",
+        "Stop Looping in Window",
+        "Stop every file in the window at its end.",
+        |players, cx| players.turn_loop(|on| Switch::Off.turn(on), cx),
+    )
+    .tells(&["block.playback.loop.off"])
+    .keywords(&["every", "all", "repeat", "loop", "once"]),
+    Spec::every_block(
+        "app.playback.play_pause",
+        "Play/Pause in Every Window",
+        "Pause every file in every window if any plays, else play them all.",
+        |players, cx| players.play_pause(cx),
+    )
+    .tells(&[
+        "block.playback.playing",
+        "block.playback.paused",
+    ])
+    .keywords(&["every", "all", "play", "pause"])
+    .setting("play_pause_all")
+    .keys(&["shift-space"]),
+    Spec::every_block(
+        "app.playback.play",
+        "Play in Every Window",
+        "Play every file in every window.",
+        |players, cx| players.set_playing(true, cx),
+    )
+    .tells(&["block.playback.playing"])
+    .keywords(&["every", "all", "resume"])
+    .setting("playback.play_all"),
+    Spec::every_block(
+        "app.playback.pause",
+        "Pause in Every Window",
+        "Pause every file in every window.",
+        |players, cx| players.set_playing(false, cx),
+    )
+    .tells(&["block.playback.paused"])
+    .keywords(&["every", "all", "stop"])
+    .setting("playback.pause_all"),
+    Spec::every_block_with(
+        "app.playback.seek",
+        "Seek To in Every Window",
+        "Play every file in every window from a time in it.",
+        TIME,
+        seek_each,
+    )
+    .tells(&[
+        "block.playback.seeked",
+        "block.playback.ended",
+        "block.playback.chapter_changed",
+    ])
+    .keywords(&["every", "all", "jump", "position", "time"]),
+    Spec::every_block(
+        "app.playback.seek_forward",
+        "Seek Forward in Every Window",
+        "Skip every file in every window ahead by the seek step.",
+        |players, cx| {
+            let step = seek_step(cx);
+            players.each(cx, |player, cx| player.seek_by(step, cx));
+        },
+    )
+    .tells(&[
+        "block.playback.seeked",
+        "block.playback.ended",
+        "block.playback.chapter_changed",
+    ])
+    .keywords(&["every", "all", "skip", "jump"])
     .setting("seek_forward_all")
     .keys(&["shift-right"]),
     Spec::every_block(
         "app.playback.seek_backward",
-        "Seek All Backward",
+        "Seek Backward in Every Window",
         "Skip every file in every window back by the seek step.",
-        |cx| all::seek(-1.0, cx),
+        |players, cx| {
+            let step = seek_step(cx);
+            players.each(cx, |player, cx| player.seek_by(-step, cx));
+        },
     )
-    .tells(&["block.playback.seeked", "block.playback.chapter_changed"])
-    .keywords(&["every", "rewind", "jump"])
+    .tells(&[
+        "block.playback.seeked",
+        "block.playback.chapter_changed",
+    ])
+    .keywords(&["every", "all", "rewind", "jump"])
     .setting("seek_backward_all")
     .keys(&["shift-left"]),
     Spec::every_block(
         "app.playback.next_frame",
-        "Next Frame on All",
+        "Next Frame in Every Window",
         "Pause every file in every window and show its next frame.",
-        |cx| all::step_frame(1.0, cx),
+        |players, cx| players.each(cx, |player, cx| player.step_frame(1.0, cx)),
     )
-    .tells(&["block.playback.paused", "block.playback.seeked"])
-    .keywords(&["every", "step"])
+    .tells(&[
+        "block.playback.paused",
+        "block.playback.seeked",
+    ])
+    .keywords(&["every", "all", "step"])
     .setting("next_frame_all")
     .keys(&["alt-shift-right"]),
     Spec::every_block(
         "app.playback.previous_frame",
-        "Previous Frame on All",
+        "Previous Frame in Every Window",
         "Pause every file in every window and show the frame before.",
-        |cx| all::step_frame(-1.0, cx),
+        |players, cx| players.each(cx, |player, cx| player.step_frame(-1.0, cx)),
     )
-    .tells(&["block.playback.paused", "block.playback.seeked"])
-    .keywords(&["every", "step", "back"])
+    .tells(&[
+        "block.playback.paused",
+        "block.playback.seeked",
+    ])
+    .keywords(&["every", "all", "step", "back"])
     .setting("previous_frame_all")
     .keys(&["alt-shift-left"]),
+    Spec::every_block(
+        "app.playback.next_chapter",
+        "Next Chapter in Every Window",
+        "Play every file in every window from the start of its next chapter.",
+        |players, cx| players.each(cx, PlayerView::next_chapter),
+    )
+    .tells(&[
+        "block.playback.seeked",
+        "block.playback.chapter_changed",
+    ])
+    .keywords(&["every", "all", "skip"]),
+    Spec::every_block(
+        "app.playback.previous_chapter",
+        "Previous Chapter in Every Window",
+        "Play every file in every window from the start of its chapter, or of the one before near its start.",
+        |players, cx| players.each(cx, PlayerView::previous_chapter),
+    )
+    .tells(&[
+        "block.playback.seeked",
+        "block.playback.chapter_changed",
+    ])
+    .keywords(&["every", "all", "back"]),
+    Spec::every_block_with(
+        "app.playback.go_to_chapter",
+        "Go to Chapter in Every Window",
+        "Play every file in every window that has a chapter from its start.",
+        CHAPTER,
+        go_to_chapter_in_each,
+    )
+    .tells(&[
+        "block.playback.seeked",
+        "block.playback.chapter_changed",
+    ])
+    .keywords(&["every", "all", "chapters", "jump"]),
+    Spec::every_block(
+        "app.playback.restart",
+        "Restart in Every Window",
+        "Play every file in every window from the start.",
+        |players, cx| players.each(cx, PlayerView::restart),
+    )
+    .tells(&[
+        "block.playback.seeked",
+        "block.playback.chapter_changed",
+    ])
+    .keywords(&["every", "all", "beginning", "rewind"])
+    .setting("restart_all")
+    .keys(&["shift-home"]),
+    Spec::every_block(
+        "app.playback.previous_file",
+        "Previous File in Every Window",
+        "Play the file before each of every file in every window in its playlist, or else its folder, instead.",
+        |players, cx| players.each(cx, |player, cx| player.open_neighbor(-1, cx)),
+    )
+    .tells(&[
+        "block.playback.opened",
+        "block.playback.playing",
+    ])
+    .keywords(&["every", "all", "folder", "episode", "back"]),
+    Spec::every_block(
+        "app.playback.next_file",
+        "Next File in Every Window",
+        "Play the file after each of every file in every window in its playlist, or else its folder, instead.",
+        |players, cx| players.each(cx, |player, cx| player.open_neighbor(1, cx)),
+    )
+    .tells(&[
+        "block.playback.opened",
+        "block.playback.playing",
+    ])
+    .keywords(&["every", "all", "folder", "episode", "skip"]),
+    Spec::every_block_with(
+        "app.playback.play_file",
+        "Play File Instead in Every Window",
+        "Play another file instead of every file in every window, each at its volume, muted and looping as it is, and playing if it is.",
+        FILE,
+        play_file_in_each,
+    )
+    .tells(&[
+        "block.playback.opened",
+        "block.playback.playing",
+    ])
+    .keywords(&["every", "all", "open", "switch", "replace"]),
+    Spec::every_block(
+        "app.playback.loop.toggle",
+        "Loop in Every Window",
+        "Play every file in every window again from the start at its end, unless all do already; else stop them all at their end.",
+        |players, cx| players.turn_loop(|on| Switch::Toggle.turn(on), cx),
+    )
+    .tells(&[
+        "block.playback.loop.on",
+        "block.playback.loop.off",
+    ])
+    .keywords(&["every", "all", "repeat"]),
+    Spec::every_block(
+        "app.playback.loop.on",
+        "Start Looping in Every Window",
+        "Play every file in every window again from the start at its end.",
+        |players, cx| players.turn_loop(|on| Switch::On.turn(on), cx),
+    )
+    .tells(&["block.playback.loop.on"])
+    .keywords(&["every", "all", "repeat", "loop"]),
+    Spec::every_block(
+        "app.playback.loop.off",
+        "Stop Looping in Every Window",
+        "Stop every file in every window at its end.",
+        |players, cx| players.turn_loop(|on| Switch::Off.turn(on), cx),
+    )
+    .tells(&["block.playback.loop.off"])
+    .keywords(&["every", "all", "repeat", "loop", "once"]),
 ];
 
 /// What opens a file, and plays it, other than a command: a playlist
@@ -495,6 +790,26 @@ pub const EVENTS: &[EventKind] = &[
     ),
 ];
 
+/// A time to play from.
+const TIME: &[Arg] = &[Arg::required(
+    "time",
+    Kind::Number {
+        min: 0.0,
+        max: None,
+    },
+    "Seconds from the start; past the end is the end.",
+)];
+
+/// A chapter to play from.
+const CHAPTER: &[Arg] = &[Arg::required(
+    "number",
+    Kind::Integer { min: 1 },
+    "Which chapter, from 1.",
+)];
+
+/// A file to play instead.
+const FILE: &[Arg] = &[Arg::required("path", Kind::Text, "The file's full path.")];
+
 #[derive(Deserialize)]
 struct Chapter {
     number: usize,
@@ -508,6 +823,40 @@ struct Seek {
 #[derive(Deserialize)]
 struct PlayFile {
     path: PathBuf,
+}
+
+/// The full path of the file `args` name.
+fn file(args: Args) -> Result<PathBuf, Error> {
+    let PlayFile { path } = args.read()?;
+    if !path.is_absolute() {
+        let why = format!("{}: give a file's full path", path.display());
+        return Err(Error::bad_args(args.command, why));
+    }
+    Ok(path)
+}
+
+/// Play each from the time `args` say.
+fn seek_each(args: Args, players: &Players, cx: &mut App) -> Outcome {
+    let Seek { time } = args.read()?;
+    players.each(cx, |player, cx| player.seek_to(time, cx));
+    done()
+}
+
+/// Play each that has the chapter `args` number from its start.
+fn go_to_chapter_in_each(args: Args, players: &Players, cx: &mut App) -> Outcome {
+    let Chapter { number } = args.read()?;
+    if players.go_to_chapter(number - 1, cx) {
+        done()
+    } else {
+        Err(Error::not_found("chapter", number.to_string()))
+    }
+}
+
+/// Play the file `args` name instead of each.
+fn play_file_in_each(args: Args, players: &Players, cx: &mut App) -> Outcome {
+    let path = file(args)?;
+    players.each(cx, |player, cx| player.play_instead(path.clone(), cx));
+    done()
 }
 
 /// How far the seek commands skip.

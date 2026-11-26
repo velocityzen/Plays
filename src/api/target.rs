@@ -14,10 +14,11 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use gpui::{AnyWindowHandle, App, Context, Entity, Window, WindowHandle};
 use serde::{Deserialize, Serialize};
 
-use super::Error;
+use super::{Error, Scope};
 use crate::app::{last_front, player_windows};
 use crate::ui::player::PlayerView;
 use crate::ui::workspace::Workspace;
+use crate::ui::workspace::all::Players;
 
 /// A window's or a block's id: given once, and never to another.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -238,6 +239,15 @@ pub fn in_window<R>(
 ) -> Result<R, Error> {
     let window = window(target, cx)?;
     window.update(cx, f).map_err(|_| closed())?
+}
+
+/// The players a command of `scope` acts on: of every block in every
+/// window, or in the window `target` names, or the one in front.
+pub fn players(target: &Target, scope: Scope, cx: &App) -> Result<Players, Error> {
+    if scope == Scope::EveryBlock {
+        return Ok(Players::everywhere(cx));
+    }
+    Ok(Players::of(read(window(target, cx)?, cx)?))
 }
 
 /// Run `f` on the block `target` names, or the one keys go to, with its

@@ -359,7 +359,8 @@ flowchart TB
 - `src/api/commands/`: a file per namespace, or per group at each scope
   (`playback.rs`: `block.playback`, `window.playback`, `app.playback`),
   each a list of `Spec`s: id (`block.playback.loop.toggle`), arguments,
-  keys, state, the events it `tells`
+  keys, state, the events it `tells`; a window's and every window's
+  commands for blocks get their `Players` (`src/ui/workspace/all.rs`)
 - `src/api/registry.rs`, `args.rs`, `target.rs`: find the command, check
   its arguments, find the window and block named, else the one in front
 - `api::run` runs an `Invocation`, answering JSON or an `Error`; keys and
