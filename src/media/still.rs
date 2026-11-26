@@ -59,7 +59,13 @@ pub fn shown(picture: &Picture, keep_hdr: bool) -> Result<Still> {
     let frame = match picture {
         Picture::Image(image) => return in_memory(image),
         #[cfg(target_os = "macos")]
-        Picture::Surface(surface) => surface.read()?,
+        Picture::Surface(surface) => {
+            let frame = surface.read()?;
+            if let Some(reshaping) = surface.reshaping() {
+                return reshaped(&frame, reshaping, keep_hdr);
+            }
+            frame
+        }
         #[cfg(not(target_os = "macos"))]
         Picture::Yuv(yuv) => yuv.read()?,
     };
@@ -240,6 +246,27 @@ fn hdr(frame: &frame::Video, transfer: Transfer) -> Result<Still> {
         pixels,
         hdr: Some(transfer),
     })
+}
+
+/// Dolby Vision read back as decoded, its reshaping apart: kept, or tone
+/// mapped for an SDR screen as a player shows it.
+#[cfg(target_os = "macos")]
+fn reshaped(frame: &frame::Video, reshaping: &Reshaping, keep_hdr: bool) -> Result<Still> {
+    let kept = dolby_vision(frame, reshaping)?;
+    if keep_hdr {
+        return Ok(kept);
+    }
+    let mut mapper = ToneMapper::new(Transfer::Pq);
+    mapper.set_gamma(super::picture::gamma(true));
+    let rgb48: Vec<u8> = kept
+        .pixels
+        .iter()
+        .flatten()
+        .flat_map(|c| c.to_le_bytes())
+        .collect();
+    let (width, height) = (kept.width as usize, kept.height as usize);
+    let bgra = mapper.run(&rgb48, width * 6, width, height);
+    Ok(from_bgra(kept.width, kept.height, &bgra))
 }
 
 /// Dolby Vision profile 5, reshaped into BT.2020 light and then PQ.

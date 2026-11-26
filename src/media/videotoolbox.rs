@@ -17,8 +17,13 @@
 //! its frames are only scaled, into buffers of their own format, and carry
 //! the frame's reshaping (`dovi`) for gpui's Dolby Vision shader under
 //! [`DOLBY_VISION_ATTACHMENT`].
+//!
+//! HDR decoded in software goes the same way (`Converter::upload`), to be
+//! as bright: swscale copies each frame into a 10-bit 4:2:0 buffer in its
+//! own range, which the session then converts as it would a VideoToolbox
+//! frame.
 
-use std::ffi::c_void;
+use std::ffi::{c_int, c_void};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::{ptr, slice};
@@ -47,6 +52,7 @@ use core_video::pixel_buffer::{
 use core_video::pixel_buffer_pool::CVPixelBufferPool;
 use ffmpeg::ffi;
 use ffmpeg::frame;
+use ffmpeg::software::scaling;
 use ffmpeg::util::color;
 use ffmpeg::util::format::Pixel;
 use ffmpeg_next as ffmpeg;
@@ -166,17 +172,19 @@ impl Surface {
     }
 
     /// Its samples, read back from GPU memory into a frame tagged with the
-    /// colors they're drawn in: for a screenshot of what shows.
+    /// colors they're drawn in: for a screenshot of what shows. Dolby
+    /// Vision's are as decoded, for its reshaping.
     pub fn read(&self) -> Result<frame::Video> {
-        ensure!(
-            self.reshaping.is_none(),
-            "Dolby Vision can't be read back as it shows"
-        );
         let colors = |range, space, primaries, transfer| Colors {
             range,
             space,
             primaries,
             transfer,
+        };
+        let transfer = match self.transfer {
+            Some(Transfer::Pq) => color::TransferCharacteristic::SMPTE2084,
+            Some(Transfer::Hlg) => color::TransferCharacteristic::ARIB_STD_B67,
+            None => color::TransferCharacteristic::Unspecified,
         };
         let buffer = &self.buffer;
         // CoreVideo's names, as they are.
@@ -198,11 +206,17 @@ impl Surface {
                     color::Range::MPEG,
                     color::Space::BT2020NCL,
                     color::Primaries::BT2020,
-                    match self.transfer {
-                        Some(Transfer::Pq) => color::TransferCharacteristic::SMPTE2084,
-                        Some(Transfer::Hlg) => color::TransferCharacteristic::ARIB_STD_B67,
-                        None => color::TransferCharacteristic::Unspecified,
-                    },
+                    transfer,
+                ),
+            ),
+            // Only Dolby Vision, in its own format.
+            kCVPixelFormatType_420YpCbCr10BiPlanarFullRange => (
+                Pixel::P010LE,
+                colors(
+                    color::Range::JPEG,
+                    color::Space::BT2020NCL,
+                    color::Primaries::BT2020,
+                    transfer,
                 ),
             ),
             format => bail!("a surface in pixel format {format:#x}"),
@@ -228,12 +242,22 @@ impl Surface {
     }
 }
 
-/// Converts VideoToolbox frames into surfaces. One per decoder.
+/// Converts VideoToolbox frames into surfaces, or frames decoded in
+/// software. One per decoder.
 pub struct Converter {
     session: VTPixelTransferSessionRef,
     /// What the session is set up for: HDR frames or not.
     hdr: Option<bool>,
     pool: Option<Pool>,
+    upload: Option<Upload>,
+}
+
+/// Frames decoded in software, copied into pixel buffers for the session:
+/// by swscale, for frames of one format, size and range.
+struct Upload {
+    key: (Pixel, u32, u32, bool),
+    context: scaling::Context,
+    pool: CVPixelBufferPool,
 }
 
 struct Pool {
@@ -255,6 +279,7 @@ impl Converter {
             session,
             hdr: None,
             pool: None,
+            upload: None,
         };
         // SAFETY: the key is a VideoToolbox constant.
         unsafe {
@@ -310,6 +335,100 @@ impl Converter {
         if format != ffi::AVPixelFormat::AV_PIX_FMT_VIDEOTOOLBOX as i32 || source.is_null() {
             bail!("not a VideoToolbox frame");
         }
+        self.convert_buffer(frame, source, width, height)
+    }
+
+    /// Convert a frame decoded in software into a `width` x `height`
+    /// surface, as a VideoToolbox frame is: for HDR, to show as bright.
+    pub fn upload(&mut self, frame: &frame::Video, width: u32, height: u32) -> Result<Surface> {
+        let source = self.copy(frame)?;
+        self.convert_buffer(frame, source.as_concrete_TypeRef(), width, height)
+    }
+
+    /// `frame`'s samples in a 10-bit 4:2:0 pixel buffer of its size, in its
+    /// own range: only copied, if it's 10-bit 4:2:0 already.
+    fn copy(&mut self, frame: &frame::Video) -> Result<CVPixelBuffer> {
+        let full_range = Colors::of_frame(frame).range == color::Range::JPEG;
+        let key = (frame.format(), frame.width(), frame.height(), full_range);
+        if self.upload.as_ref().is_none_or(|upload| upload.key != key) {
+            let (format, width, height) = (key.0, key.1, key.2);
+            let context = scaling::Context::get(
+                format,
+                width,
+                height,
+                Pixel::P010LE,
+                width,
+                height,
+                scaling::Flags::BILINEAR,
+            )
+            .context("creating the pixel converter")?;
+            let format = if full_range {
+                kCVPixelFormatType_420YpCbCr10BiPlanarFullRange
+            } else {
+                kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange
+            };
+            self.upload = Some(Upload {
+                key,
+                context,
+                pool: pixel_buffer_pool(width, height, format)?,
+            });
+        }
+        let upload = self.upload.as_mut().expect("made above");
+        let buffer = upload
+            .pool
+            .create_pixel_buffer()
+            .map_err(|status| anyhow!("couldn't get a pixel buffer (error {status})"))?;
+        let strides = [
+            c_int::try_from(buffer.get_bytes_per_row_of_plane(0))?,
+            c_int::try_from(buffer.get_bytes_per_row_of_plane(1))?,
+            0,
+            0,
+        ];
+        let status = buffer.lock_base_address(0);
+        ensure!(status == 0, "couldn't lock a pixel buffer (error {status})");
+        // SAFETY: locked, the buffer's two planes are its rows times the
+        // bytes a row, the luma and chroma planes of P010 at the frame's
+        // size; the context reads `frame`'s planes, as long as their
+        // strides say, for the format and size its key holds it to.
+        let made = unsafe {
+            let planes = [
+                buffer.get_base_address_of_plane(0).cast::<u8>(),
+                buffer.get_base_address_of_plane(1).cast::<u8>(),
+                ptr::null_mut(),
+                ptr::null_mut(),
+            ];
+            if planes[..2].iter().any(|plane| plane.is_null()) {
+                -1
+            } else {
+                ffi::sws_scale(
+                    upload.context.as_mut_ptr(),
+                    (*frame.as_ptr()).data.as_ptr() as *const *const u8,
+                    (*frame.as_ptr()).linesize.as_ptr(),
+                    0,
+                    frame.height() as c_int,
+                    planes.as_ptr(),
+                    strides.as_ptr(),
+                )
+            }
+        };
+        buffer.unlock_base_address(0);
+        ensure!(
+            made == frame.height() as c_int,
+            "copying a frame made {made} rows of {}",
+            frame.height()
+        );
+        Ok(buffer)
+    }
+
+    /// Convert `source`, `frame`'s samples, into a `width` x `height`
+    /// surface.
+    fn convert_buffer(
+        &mut self,
+        frame: &frame::Video,
+        source: CVPixelBufferRef,
+        width: u32,
+        height: u32,
+    ) -> Result<Surface> {
         let reshaping = Reshaping::of(frame);
         let transfer = Transfer::of(frame).filter(|_| reshaping.is_none());
         let hdr = reshaping.is_some() || transfer.is_some();
@@ -372,36 +491,8 @@ impl Converter {
             .as_ref()
             .is_none_or(|p| (p.width, p.height, p.format) != (width, height, format))
         {
-            let number = |n: i64| CFNumber::from(n).as_CFType();
-            let no_properties = CFDictionary::<CFString, CFType>::from_CFType_pairs(&[]);
-            let attributes = CFDictionary::from_CFType_pairs(&[
-                (
-                    CFString::from(CVPixelBufferKeys::PixelFormatType),
-                    number(format.into()),
-                ),
-                (
-                    CFString::from(CVPixelBufferKeys::Width),
-                    number(width.into()),
-                ),
-                (
-                    CFString::from(CVPixelBufferKeys::Height),
-                    number(height.into()),
-                ),
-                // Backed by an IOSurface, so Metal can use it without a copy.
-                (
-                    CFString::from(CVPixelBufferKeys::IOSurfaceProperties),
-                    no_properties.as_CFType(),
-                ),
-                (
-                    CFString::from(CVPixelBufferKeys::MetalCompatibility),
-                    CFBoolean::true_value().as_CFType(),
-                ),
-            ]);
-            let pool = CVPixelBufferPool::new(None, Some(&attributes)).map_err(|status| {
-                anyhow!("couldn't create a pixel buffer pool (error {status})")
-            })?;
             self.pool = Some(Pool {
-                pool,
+                pool: pixel_buffer_pool(width, height, format)?,
                 width,
                 height,
                 format,
@@ -409,6 +500,37 @@ impl Converter {
         }
         Ok(&self.pool.as_ref().expect("pool was just created").pool)
     }
+}
+
+/// Buffers of `width` x `height` pixels in pixel format `format`, backed by
+/// IOSurfaces, so Metal can use them without a copy.
+fn pixel_buffer_pool(width: u32, height: u32, format: u32) -> Result<CVPixelBufferPool> {
+    let number = |n: i64| CFNumber::from(n).as_CFType();
+    let no_properties = CFDictionary::<CFString, CFType>::from_CFType_pairs(&[]);
+    let attributes = CFDictionary::from_CFType_pairs(&[
+        (
+            CFString::from(CVPixelBufferKeys::PixelFormatType),
+            number(format.into()),
+        ),
+        (
+            CFString::from(CVPixelBufferKeys::Width),
+            number(width.into()),
+        ),
+        (
+            CFString::from(CVPixelBufferKeys::Height),
+            number(height.into()),
+        ),
+        (
+            CFString::from(CVPixelBufferKeys::IOSurfaceProperties),
+            no_properties.as_CFType(),
+        ),
+        (
+            CFString::from(CVPixelBufferKeys::MetalCompatibility),
+            CFBoolean::true_value().as_CFType(),
+        ),
+    ]);
+    CVPixelBufferPool::new(None, Some(&attributes))
+        .map_err(|status| anyhow!("couldn't create a pixel buffer pool (error {status})"))
 }
 
 impl Drop for Converter {

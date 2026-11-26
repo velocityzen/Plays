@@ -252,9 +252,8 @@ mkdir ($nu.user-autoload-dirs | first); plays completions nushell | save -f ($nu
 
 - Live streams but HLS can't be seeked. A live stream's screenshot is the
   picture as it plays, at the size it plays at.
-- HDR goes brighter than SDR white only on macOS, decoded by
-  VideoToolbox. HDR metadata isn't used, and Dolby Vision profile 7's
-  enhancement layer is ignored.
+- HDR goes brighter than SDR white only on macOS. HDR metadata isn't
+  used, and Dolby Vision profile 7's enhancement layer is ignored.
 - ASS and SSA lines don't move, fade, turn, scale, blur or clip
   (`\move` stays where it starts), keep one size and font per line, and
   lines placed alike stack rather than dodge each other. Drawings aren't

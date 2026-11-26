@@ -2301,6 +2301,41 @@ pub(super) fn first_frame(path: &std::path::Path, hardware: bool) -> super::pict
     player.frame().unwrap()
 }
 
+/// The first frame of `path` decoded in software and converted on the
+/// CPU, as a picture in memory is, HDR tone mapped: its width, height and
+/// BGRA.
+#[cfg(target_os = "macos")]
+pub(super) fn converted_first_frame(path: &std::path::Path) -> (usize, usize, Vec<u8>) {
+    use super::decoder::{convert_pixels, open_video};
+
+    ffmpeg_next::init().unwrap();
+    let mut input = ffmpeg_next::format::input(path).unwrap();
+    let stream = input
+        .streams()
+        .best(ffmpeg_next::media::Type::Video)
+        .unwrap();
+    let (index, parameters) = (stream.index(), stream.parameters());
+    let (mut decoder, _) = open_video(&parameters, false).unwrap();
+    let mut frame = ffmpeg_next::frame::Video::empty();
+    let mut packets = input.packets();
+    let mut ended = false;
+    while decoder.receive_frame(&mut frame).is_err() {
+        assert!(!ended, "no frame in {}", path.display());
+        match packets.next() {
+            Some((stream, packet)) if stream.index() == index => {
+                decoder.send_packet(&packet).unwrap();
+            }
+            Some(_) => {}
+            None => {
+                decoder.send_eof().unwrap();
+                ended = true;
+            }
+        }
+    }
+    let (width, height, bgra) = convert_pixels(&mut None, None, &frame).unwrap();
+    (width as usize, height as usize, bgra)
+}
+
 /// How far apart two pictures of `width` by `height` are, by the averages
 /// of 8x8 blocks of each channel (0-255) of `a` and `b`: the mean
 /// difference, and the 90th percentile.
@@ -2393,10 +2428,10 @@ fn surface_to_rgb(buffer: &core_video::pixel_buffer::CVPixelBuffer) -> SurfaceRg
     SurfaceRgb { width, height, rgb }
 }
 
-/// HDR video on the GPU becomes 10-bit BT.2020 surfaces tagged with their
-/// transfer function, which Plays' gpui draws with its HDR shader. For an SDR
-/// screen that shader must give the same picture as the CPU's tone mapping of
-/// the same frame decoded in software.
+/// HDR video becomes 10-bit BT.2020 surfaces tagged with their transfer
+/// function, which Plays' gpui draws with its HDR shader, decoded on the
+/// GPU or in software. For an SDR screen that shader must give the same
+/// picture as the CPU's tone mapping of the same frame decoded in software.
 #[cfg(target_os = "macos")]
 #[test]
 fn hdr_surfaces_match_software_tone_mapping() {
@@ -2411,48 +2446,58 @@ fn hdr_surfaces_match_software_tone_mapping() {
     use super::picture::Picture;
 
     let cases = [
-        ("hdr10.mp4", "smpte2084", Transfer::Pq, 16),
-        ("hlg.mp4", "arib-std-b67", Transfer::Hlg, 18),
+        (hdr_media("hdr10.mp4", "smpte2084"), Transfer::Pq, 16),
+        (hdr_media("hlg.mp4", "arib-std-b67"), Transfer::Hlg, 18),
+        (
+            hdr_media_in("hdr10-full.mp4", "smpte2084", true),
+            Transfer::Pq,
+            16,
+        ),
     ];
-    for (name, trc, transfer, code_point) in cases {
-        let path = hdr_media(name, trc);
-        let Picture::Surface(surface) = first_frame(&path, true) else {
-            panic!("{name}: hardware frames should stay on the GPU");
-        };
-        let Picture::Image(image) = first_frame(&path, false) else {
-            panic!("{name}: software frames should be images");
-        };
-
-        let buffer = surface.buffer();
-        assert_eq!(
-            buffer.get_pixel_format(),
-            kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange,
-            "{name}: HDR surfaces should be 10-bit"
-        );
-        // SAFETY: reading a tag of a valid buffer.
-        let tagged = unsafe {
-            let value = CVBufferGetAttachment(
-                buffer.as_concrete_TypeRef(),
-                kCVImageBufferTransferFunctionKey,
-                std::ptr::null_mut(),
-            );
-            (!value.is_null()).then(|| CVTransferFunctionGetIntegerCodePointForString(value.cast()))
-        };
-        assert_eq!(tagged, Some(code_point), "{name}: transfer function tag");
-
-        let surface = hdr_surface_to_sdr(buffer, transfer);
-        let (width, height) = (surface.width, surface.height);
-        let bgra = image.as_bytes(0).unwrap();
-        assert_eq!(bgra.len(), width * height * 4, "{name}: sizes differ");
+    for (path, transfer, code_point) in cases {
+        let name = path.file_name().unwrap().display();
+        let (width, height, bgra) = converted_first_frame(&path);
         let software = |x: usize, y: usize, c: usize| f64::from(bgra[(y * width + x) * 4 + 2 - c]);
+        for (decoded, hardware) in [("on the GPU", true), ("in software", false)] {
+            let Picture::Surface(surface) = first_frame(&path, hardware) else {
+                panic!("{name}: HDR decoded {decoded} should go to the GPU");
+            };
+            let buffer = surface.buffer();
+            assert_eq!(
+                buffer.get_pixel_format(),
+                kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange,
+                "{name}, {decoded}: HDR surfaces should be 10-bit"
+            );
+            // SAFETY: reading a tag of a valid buffer.
+            let tagged = unsafe {
+                let value = CVBufferGetAttachment(
+                    buffer.as_concrete_TypeRef(),
+                    kCVImageBufferTransferFunctionKey,
+                    std::ptr::null_mut(),
+                );
+                (!value.is_null())
+                    .then(|| CVTransferFunctionGetIntegerCodePointForString(value.cast()))
+            };
+            assert_eq!(
+                tagged,
+                Some(code_point),
+                "{name}, {decoded}: transfer function tag"
+            );
 
-        // As in `surfaces_match_software_colors`, compare 8x8 block averages.
-        let (mean, p90) =
-            block_differences(width, height, |x, y, c| surface.get(x, y, c), software);
-        assert!(
-            mean < 1.5 && p90 < 3.0,
-            "{name}: colors differ by {mean:.2} levels on average, {p90:.2} at the 90th percentile"
-        );
+            let surface = hdr_surface_to_sdr(buffer, transfer);
+            assert_eq!(
+                (surface.width, surface.height),
+                (width, height),
+                "{name}, {decoded}: sizes differ"
+            );
+            // As in `surfaces_match_software_colors`, compare 8x8 block averages.
+            let (mean, p90) =
+                block_differences(width, height, |x, y, c| surface.get(x, y, c), software);
+            assert!(
+                mean < 1.5 && p90 < 3.0,
+                "{name}, {decoded}: colors differ by {mean:.2} levels on average, {p90:.2} at the 90th percentile"
+            );
+        }
     }
 }
 
@@ -2460,7 +2505,16 @@ fn hdr_surfaces_match_software_tone_mapping() {
 /// (`smpte2084` or `arib-std-b67`).
 #[cfg(target_os = "macos")]
 pub(super) fn hdr_media(name: &str, trc: &str) -> PathBuf {
-    let x265 = format!("log-level=error:colorprim=bt2020:transfer={trc}:colormatrix=bt2020nc");
+    hdr_media_in(name, trc, false)
+}
+
+/// As `hdr_media`, in full range if `full_range`.
+#[cfg(target_os = "macos")]
+fn hdr_media_in(name: &str, trc: &str, full_range: bool) -> PathBuf {
+    let range = if full_range { "full" } else { "limited" };
+    let x265 = format!(
+        "log-level=error:colorprim=bt2020:transfer={trc}:colormatrix=bt2020nc:range={range}"
+    );
     let args = [
         "-f",
         "lavfi",
@@ -2480,6 +2534,8 @@ pub(super) fn hdr_media(name: &str, trc: &str) -> PathBuf {
         trc,
         "-colorspace",
         "bt2020nc",
+        "-color_range",
+        if full_range { "pc" } else { "tv" },
         "-x265-params",
         &x265,
     ];
@@ -2549,21 +2605,15 @@ fn hdr_surface_to_sdr(
 
 /// Dolby Vision profile 5 can't be made with the ffmpeg tool, so this runs
 /// on a file of your own: `PLAYS_DOLBY_VISION_SAMPLE=path cargo test dolby`.
-/// Its surfaces must carry the frame's reshaping and, through the Dolby
-/// Vision shader's math, show what software decoding shows. Both pictures
-/// are saved as PNGs next to the generated test media.
+/// Decoded on the GPU or in software, its surfaces must carry the frame's
+/// reshaping and, through the Dolby Vision shader's math, show what the
+/// CPU's reshaping and tone mapping of the software one shows. The
+/// pictures are saved as PNGs next to the generated test media.
 #[cfg(target_os = "macos")]
 #[test]
 #[ignore = "needs a Dolby Vision profile 5 file named by PLAYS_DOLBY_VISION_SAMPLE"]
 fn dolby_vision_surfaces_match_software() {
-    use core_foundation::base::TCFType;
-    use core_foundation::data::{CFData, CFDataRef};
-    use core_foundation::string::CFString;
-    use core_video::buffer::CVBufferGetAttachment;
-
-    use super::dovi::ShaderParams;
     use super::picture::Picture;
-    use super::videotoolbox::DOLBY_VISION_ATTACHMENT;
 
     let path = std::env::var_os("PLAYS_DOLBY_VISION_SAMPLE")
         .map(PathBuf::from)
@@ -2597,27 +2647,28 @@ fn dolby_vision_surfaces_match_software() {
         let (Picture::Surface(surface), time) = frame_at(true) else {
             panic!("hardware frames should stay on the GPU");
         };
-        let (Picture::Image(image), _) = frame_at(false) else {
-            panic!("software frames should be images");
+        let (software, _) = frame_at(false);
+        let Picture::Surface(uploaded) = &software else {
+            panic!("software frames should go to the GPU too");
         };
+        let cpu = super::still::shown(&software, false).unwrap();
 
-        let buffer = surface.buffer();
-        let key = CFString::from_static_string(DOLBY_VISION_ATTACHMENT);
-        // SAFETY: reading an attachment of a valid buffer.
-        let params = unsafe {
-            let value = CVBufferGetAttachment(
-                buffer.as_concrete_TypeRef(),
-                key.as_concrete_TypeRef(),
-                std::ptr::null_mut(),
-            );
-            assert!(!value.is_null(), "surfaces should carry the reshaping");
-            ShaderParams::from_bytes(CFData::wrap_under_get_rule(value as CFDataRef).bytes())
-        };
-
-        let gpu = dovi_surface_to_sdr(buffer, &params);
+        let gpu = dovi_surface_to_sdr(surface.buffer(), &dovi_params(surface.buffer()));
+        let from_software = dovi_surface_to_sdr(uploaded.buffer(), &dovi_params(uploaded.buffer()));
         let (width, height) = (gpu.width, gpu.height);
-        let bgra = image.as_bytes(0).unwrap();
-        assert_eq!(bgra.len(), width * height * 4, "sizes differ");
+        assert_eq!(
+            (cpu.width as usize, cpu.height as usize),
+            (width, height),
+            "sizes differ"
+        );
+        let bgra: Vec<u8> = cpu
+            .pixels
+            .iter()
+            .flat_map(|rgb| {
+                let [r, g, b] = rgb.map(|c| (c / 257) as u8);
+                [b, g, r, 255]
+            })
+            .collect();
         let to_png = |name: &str, rgb: &dyn Fn(usize) -> [u8; 3]| {
             let pixels = (0..width * height).flat_map(rgb).collect();
             let png = out_dir.join(format!("dolby-vision-{time}-{name}.png"));
@@ -2632,17 +2683,45 @@ fn dolby_vision_surfaces_match_software() {
         });
         to_png("cpu", &|i| [bgra[i * 4 + 2], bgra[i * 4 + 1], bgra[i * 4]]);
 
-        let (mean, p90) = block_differences(
-            width,
-            height,
-            |x, y, c| gpu.get(x, y, c),
-            |x, y, c| f64::from(bgra[(y * width + x) * 4 + 2 - c]),
+        for (what, surface) in [("on the GPU", &gpu), ("in software", &from_software)] {
+            let (mean, p90) = block_differences(
+                width,
+                height,
+                |x, y, c| surface.get(x, y, c),
+                |x, y, c| f64::from(bgra[(y * width + x) * 4 + 2 - c]),
+            );
+            eprintln!(
+                "{time}s, {what}: {mean:.2} levels apart on average, {p90:.2} at the 90th percentile"
+            );
+            assert!(
+                mean < 1.5 && p90 < 3.0,
+                "{time}s, {what}: colors differ by {mean:.2} levels on average, {p90:.2} at the 90th percentile"
+            );
+        }
+    }
+}
+
+/// The reshaping a Dolby Vision surface carries for gpui's shader.
+#[cfg(target_os = "macos")]
+fn dovi_params(buffer: &core_video::pixel_buffer::CVPixelBuffer) -> super::dovi::ShaderParams {
+    use core_foundation::base::TCFType;
+    use core_foundation::data::{CFData, CFDataRef};
+    use core_foundation::string::CFString;
+    use core_video::buffer::CVBufferGetAttachment;
+
+    use super::dovi::ShaderParams;
+    use super::videotoolbox::DOLBY_VISION_ATTACHMENT;
+
+    let key = CFString::from_static_string(DOLBY_VISION_ATTACHMENT);
+    // SAFETY: reading an attachment of a valid buffer.
+    unsafe {
+        let value = CVBufferGetAttachment(
+            buffer.as_concrete_TypeRef(),
+            key.as_concrete_TypeRef(),
+            std::ptr::null_mut(),
         );
-        eprintln!("{time}s: {mean:.2} levels apart on average, {p90:.2} at the 90th percentile");
-        assert!(
-            mean < 1.5 && p90 < 3.0,
-            "{time}s: colors differ by {mean:.2} levels on average, {p90:.2} at the 90th percentile"
-        );
+        assert!(!value.is_null(), "surfaces should carry the reshaping");
+        ShaderParams::from_bytes(CFData::wrap_under_get_rule(value as CFDataRef).bytes())
     }
 }
 

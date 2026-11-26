@@ -217,15 +217,16 @@ A decoded picture reaches gpui in one of three forms
 
 | Form | Where | How it is drawn |
 | --- | --- | --- |
-| BGRA image | macOS software decoding; on Linux, Dolby Vision and formats other than 8- and 10-bit 4:2:0 | gpui's texture atlas |
-| Surface | macOS hardware decoding, zero-copy | From the `CVPixelBuffer`, with gpui's surface shaders |
+| BGRA image | macOS software decoding of SDR; on Linux, Dolby Vision and formats other than 8- and 10-bit 4:2:0 | gpui's texture atlas |
+| Surface | macOS hardware decoding, zero-copy; HDR decoded in software, copied in | From the `CVPixelBuffer`, with gpui's surface shaders |
 | Y'CbCr planes | Most Linux frames, hardware ones copied back first | Converted and tone mapped by gpui's Vulkan shader |
 
 - On Linux, gpui can't draw DMA-BUFs, so hardware frames are copied back
 - Zero-copy: four 4K H.264 files take about 20% of a core, 100% copied back
 - `src/media/hwaccel.rs`: one hardware device per API; software fallback
 - `src/media/videotoolbox.rs` (macOS): `VTPixelTransferSession` converts
-  and scales each frame on the GPU; HDR to 10-bit BT.2020
+  and scales each frame on the GPU; HDR to 10-bit BT.2020, software HDR
+  copied into a 10-bit buffer first
 - `src/media/yuv.rs` (Linux): planes and their matrix;
   `PLAYS_GPU_CONVERSION=0` converts on the CPU instead
 - `src/media/hdr.rs`: PQ, HLG and the tone curve; reference white as SDR white
@@ -234,8 +235,8 @@ A decoded picture reaches gpui in one of three forms
 - `src/media/orientation.rs`: the eight turns and mirrors
 - `src/ui/player/graveyard.rs`: replaced frames, kept a few display frames
   in case the GPU still reads them, then released (`Window::drop_image`)
-- HDR tone mapping: on macOS, gpui's shader under the EDR headroom, or the
-  CPU for software HDR; on Linux, the GPU, or the CPU for Dolby Vision
+- HDR tone mapping: on macOS, gpui's shader under the EDR headroom; on
+  Linux, the GPU, or the CPU for Dolby Vision
 
 ## Sound
 

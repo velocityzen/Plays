@@ -149,7 +149,7 @@ fn levels(still: &Still) -> impl Fn(usize, usize, usize) -> f64 + '_ {
 #[test]
 fn a_surface_is_seen_in_the_colors_it_shows() {
     use crate::media::tests::made::media;
-    use crate::media::tests::{block_differences, first_frame, hdr_media};
+    use crate::media::tests::{block_differences, converted_first_frame, first_frame, hdr_media};
 
     let sdr = |name: &str, source: &str| {
         let args = [
@@ -184,13 +184,13 @@ fn a_surface_is_seen_in_the_colors_it_shows() {
     for (name, path, transfer) in cases {
         let surface = first_frame(&path, true);
         assert!(matches!(surface, Picture::Surface(_)), "{name}: on the GPU");
-        let Picture::Image(image) = first_frame(&path, false) else {
-            panic!("{name}: software frames should be images");
-        };
+        let (width, height, bgra) = converted_first_frame(&path);
         let shows = shown(&surface, false).unwrap();
-        let (width, height) = (shows.width as usize, shows.height as usize);
-        let bgra = image.as_bytes(0).unwrap();
-        assert_eq!(bgra.len(), width * height * 4, "{name}: sizes differ");
+        assert_eq!(
+            (shows.width as usize, shows.height as usize),
+            (width, height),
+            "{name}: sizes differ"
+        );
         let software = |x: usize, y: usize, c: usize| f64::from(bgra[(y * width + x) * 4 + 2 - c]);
         let kept = shown(&surface, true).unwrap();
         assert_eq!(kept.hdr, transfer, "{name}: HDR kept as it is");
@@ -213,5 +213,50 @@ fn a_surface_is_seen_in_the_colors_it_shows() {
                 "{name}, {what}: colors differ by {mean:.2} levels on average, {p90:.2} at the 90th percentile"
             );
         }
+    }
+}
+
+/// Dolby Vision read back from a surface comes without its RPU, so its
+/// reshaping comes apart: kept as PQ, or tone mapped as a player shows it.
+#[cfg(target_os = "macos")]
+#[test]
+fn dolby_vision_read_back_is_reshaped_and_kept_or_tone_mapped() {
+    use crate::media::hdr::{REFERENCE_WHITE_NITS, nits_to_pq, pq_to_nits};
+
+    let reshaping = crate::media::dovi::tests::reshaping();
+    // 2 × 2 of one IPT color, ten bits high in sixteen.
+    let (i, pt) = (0.6, 0.45);
+    let code = |value: f32| (((value * 1024.0).round() as u16) << 6).to_le_bytes();
+    let luma = [code(i); 4].concat();
+    let chroma = [code(pt); 2].concat();
+    let colors = Colors {
+        range: color::Range::MPEG,
+        space: color::Space::BT2020NCL,
+        primaries: color::Primaries::BT2020,
+        transfer: color::TransferCharacteristic::Unspecified,
+    };
+    let frame = frame_of(Pixel::P010LE, (2, 2), &[(&luma, 4), (&chroma, 4)], colors).unwrap();
+    let signal = |value: f32| f32::from(u16::from_le_bytes(code(value))) / 65536.0;
+    let light = reshaping.lms_to_rgb(
+        reshaping
+            .lms_signal([signal(i), signal(pt), signal(pt)])
+            .map(pq_to_nits),
+    );
+
+    let kept = reshaped(&frame, &reshaping, true).unwrap();
+    assert_eq!(kept.hdr, Some(Transfer::Pq));
+    for (c, nits) in light.iter().enumerate() {
+        let got = f32::from(kept.pixels[0][c]) / 65535.0;
+        assert!((got - nits_to_pq(*nits)).abs() < 1e-3, "{c}: {got}");
+    }
+
+    let shows = reshaped(&frame, &reshaping, false).unwrap();
+    assert_eq!(shows.hdr, None);
+    let mut mapper = ToneMapper::new(Transfer::Pq);
+    mapper.set_gamma(crate::media::picture::gamma(true));
+    let [b, g, r, _] = mapper.output(light.map(|nits| nits / REFERENCE_WHITE_NITS));
+    for (c, want) in [r, g, b].into_iter().enumerate() {
+        let got = shows.pixels[0][c] / 257;
+        assert!(got.abs_diff(u16::from(want)) <= 1, "{c}: {got} for {want}");
     }
 }

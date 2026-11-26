@@ -22,6 +22,8 @@ use crate::media::picture::Picture;
 use crate::media::videotoolbox;
 #[cfg(not(target_os = "macos"))]
 use crate::media::yuv::YuvConverter;
+#[cfg(target_os = "macos")]
+use crate::media::{dovi, hdr};
 
 /// Decoded video kept ahead of the playhead, by memory.
 const VIDEO_QUEUE_BYTES: usize = 32 * 1024 * 1024;
@@ -59,6 +61,10 @@ pub(super) struct VideoDecoder {
     /// that failed, after which frames are copied to memory instead.
     #[cfg(target_os = "macos")]
     surfaces: Option<Result<videotoolbox::Converter, ()>>,
+    /// Turns HDR frames in memory into surfaces too, to show as bright; as
+    /// `surfaces`, `Err` once that failed.
+    #[cfg(target_os = "macos")]
+    uploads: Option<Result<videotoolbox::Converter, ()>>,
     /// Hands frames to gpui as their planes, for the GPU to convert.
     #[cfg(not(target_os = "macos"))]
     planes: YuvConverter,
@@ -137,6 +143,8 @@ impl VideoDecoder {
             reported: None,
             #[cfg(target_os = "macos")]
             surfaces: None,
+            #[cfg(target_os = "macos")]
+            uploads: None,
             #[cfg(not(target_os = "macos"))]
             planes: YuvConverter::default(),
             errors: 0,
@@ -349,6 +357,10 @@ impl VideoDecoder {
         } else {
             &self.decoded
         };
+        #[cfg(target_os = "macos")]
+        if let Some(surface) = upload(&mut self.uploads, frame, self.max_short_side, session) {
+            return Some(Picture::Surface(surface));
+        }
         #[cfg(not(target_os = "macos"))]
         if gpu_conversion() {
             match self.planes.convert(frame, self.max_short_side) {
@@ -400,5 +412,41 @@ impl VideoDecoder {
         convert(&mut self.scaler, self.max_short_side, &self.decoded)
             .inspect_err(|err| log::warn!("cover art conversion failed: {err:#}"))
             .ok()
+    }
+}
+
+/// An HDR frame in memory as a surface, to show as bright as one decoded
+/// on the GPU; `None` for SDR, or if that isn't possible, in which case it
+/// never is again for this video.
+#[cfg(target_os = "macos")]
+fn upload(
+    uploads: &mut Option<Result<videotoolbox::Converter, ()>>,
+    frame: &frame::Video,
+    max_short_side: Option<u32>,
+    session: &Session,
+) -> Option<videotoolbox::Surface> {
+    if hdr::Transfer::of(frame).is_none() && dovi::Reshaping::of(frame).is_none() {
+        return None;
+    }
+    let converter = uploads
+        .get_or_insert_with(|| {
+            videotoolbox::Converter::new()
+                .map_err(|err| log::warn!("{}: {err:#}; tone mapping HDR on the CPU", session.name))
+        })
+        .as_mut()
+        .ok()?;
+    let (width, height) = output_size(
+        frame.width(),
+        frame.height(),
+        frame.aspect_ratio(),
+        max_short_side,
+    );
+    match converter.upload(frame, width, height) {
+        Ok(surface) => Some(surface),
+        Err(err) => {
+            log::warn!("{}: {err:#}; tone mapping HDR on the CPU", session.name);
+            *uploads = Some(Err(()));
+            None
+        }
     }
 }
