@@ -7,12 +7,21 @@ use super::*;
 
 const WAIT: Duration = Duration::from_secs(2);
 
+/// An address that refuses connections: a free port below the system's
+/// ephemeral ones (from 32768 on Linux, 49152 on macOS), so no test
+/// binding port 0 is given it meanwhile.
+fn refusing() -> SocketAddr {
+    (20_000..32_000)
+        .find_map(|port| {
+            let free = TcpListener::bind((Ipv4Addr::LOCALHOST, port)).ok()?;
+            free.local_addr().ok()
+        })
+        .expect("a free port")
+}
+
 #[test]
 fn connects_at_the_first_address_that_takes_it() {
-    let refused = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
-        .unwrap()
-        .local_addr()
-        .unwrap();
+    let refused = refusing();
     let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
     let open = listener.local_addr().unwrap();
     let (stream, address) = connect_first(&[refused, open], WAIT).unwrap();
@@ -23,10 +32,7 @@ fn connects_at_the_first_address_that_takes_it() {
 
 #[test]
 fn with_none_taking_it_the_last_refusal_is_the_error() {
-    let refused = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
-        .unwrap()
-        .local_addr()
-        .unwrap();
+    let refused = refusing();
     let err = connect_first(&[refused], WAIT).unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::ConnectionRefused);
     let err = connect_first(&[], WAIT).unwrap_err();
