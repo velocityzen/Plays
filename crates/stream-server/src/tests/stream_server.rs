@@ -1006,9 +1006,23 @@ fn fits_hdr_to_sdr_for_a_device_not_given_it() {
         "{:?}",
         cast.plan()
     );
-    let segment = get(&sibling(&cast.url(), "0.ts"));
+    let frame = first_frame(&cast, Segments::Ts);
+    assert_eq!(crate::hdr::Tags::of(&frame), crate::hdr::tests::sdr_tags());
+    let luma = frame.data(0)[frame.stride(0) * 60 + 80];
+    assert!(luma > 210, "{luma}");
+}
+
+/// The first picture of `cast`'s first segment of `kind`, decoded.
+fn first_frame(cast: &crate::Cast, kind: Segments) -> ffmpeg::frame::Video {
+    let name = format!("0.{}", crate::playlist::extension(kind));
+    let segment = get(&sibling(&cast.url(), &name));
     assert_eq!(segment.status, 200);
-    let path = written(&segment.body, "ts");
+    let (mut bytes, extension) = match kind {
+        Segments::Fmp4 => (get(&sibling(&cast.url(), "init.mp4")).body, "mp4"),
+        Segments::Ts => (Vec::new(), "ts"),
+    };
+    bytes.extend(segment.body);
+    let path = written(&bytes, extension);
     let mut input = ffmpeg::format::input(&path).expect("the segment opens");
     let stream = input.streams().best(Type::Video).expect("video");
     let index = stream.index();
@@ -1028,9 +1042,90 @@ fn fits_hdr_to_sdr_for_a_device_not_given_it() {
     drop(input);
     let _ = fs::remove_file(&path);
     assert!(decoded, "a frame");
-    assert_eq!(crate::hdr::Tags::of(&frame), crate::hdr::tests::sdr_tags());
-    let luma = frame.data(0)[frame.stride(0) * 60 + 80];
-    assert!(luma > 210, "{luma}");
+    frame
+}
+
+/// Dolby Vision in IPT, profile 20 here, shows green and purple without
+/// its RPU, so a device it's repackaged for gets it reshaped: HDR10 for an
+/// Apple TV 4K, which shows that, SDR for one that doesn't. The picture's
+/// left half is a skin tone, redder than it is blue, and its right half
+/// green; their IPT taken for YCbCr would be green and magenta.
+#[test]
+fn reshapes_dolby_visions_ipt_for_a_device() {
+    use crate::Hdr;
+    use crate::hdr::Tags;
+    let server = server();
+    let apple_tv = Profile {
+        video: vec![VideoCodec::H264, VideoCodec::Hevc],
+        max_bit_depth: 10,
+        hdr: vec![Hdr::Hdr10, Hdr::Hlg, Hdr::DolbyVision],
+        ..hls(Segments::Fmp4)
+    };
+    for (profile, kind, hdr) in [
+        (apple_tv, Segments::Fmp4, Some(Hdr::Hdr10)),
+        (hls(Segments::Ts), Segments::Ts, None),
+    ] {
+        let cast = cast(&server, "clip-dv-ipt.mp4", profile);
+        let plan = &cast.plan().video;
+        assert!(
+            matches!(plan, Some(VideoPlan::Encode { hdr: planned, .. }) if *planned == hdr),
+            "{plan:?}"
+        );
+        let frame = first_frame(&cast, kind);
+        let tags = Tags::of(&frame);
+        if hdr.is_some() {
+            assert_eq!(
+                tags,
+                Tags {
+                    primaries: ffi::AVColorPrimaries::AVCOL_PRI_BT2020 as u32,
+                    transfer: ffi::AVColorTransferCharacteristic::AVCOL_TRC_SMPTE2084 as u32,
+                    space: ffi::AVColorSpace::AVCOL_SPC_BT2020_NCL as u32,
+                    range: ffi::AVColorRange::AVCOL_RANGE_MPEG as u32,
+                }
+            );
+        } else {
+            assert_eq!(tags, crate::hdr::tests::sdr_tags());
+        }
+        // Luma (0 to 1), and blue and red differences (-0.5 to 0.5),
+        // mid-way down at `x`.
+        let sample = |x: usize| {
+            let y = frame.height() as usize / 2;
+            [(0, x, y), (1, x / 2, y / 2), (2, x / 2, y / 2)].map(|(plane, x, y)| {
+                let at = frame.stride(plane) * y;
+                let (offset, range) = match plane {
+                    0 => (64.0, 876.0),
+                    _ => (512.0, 896.0),
+                };
+                if hdr.is_some() {
+                    let data = &frame.data(plane)[at + 2 * x..];
+                    (f64::from(u16::from_le_bytes([data[0], data[1]])) - offset) / range
+                } else {
+                    (f64::from(frame.data(plane)[at + x]) - offset / 4.0) / (range / 4.0)
+                }
+            })
+        };
+        // Worked out apart from this code, from the colors the halves were
+        // made of, BT.709's (60, 40, 30) and (0, 50, 0) nits: through
+        // BT.2087, ST 2084 and BT.2020's matrix for HDR10, through BT.1886
+        // and BT.709's matrix for SDR, below where the curve rolls off.
+        // SDR's 8 bits, at this size, take more of a step.
+        let (halves, close) = if hdr.is_some() {
+            (
+                [[0.4265, -0.0157, 0.012], [0.3967, -0.0839, -0.0382]],
+                0.005,
+            )
+        } else {
+            ([[0.524, -0.0394, 0.0494], [0.3989, -0.215, -0.2533]], 0.03)
+        };
+        let width = frame.width() as usize;
+        for (x, want) in [width / 4, width * 3 / 4].into_iter().zip(halves) {
+            let got = sample(x);
+            assert!(
+                want.iter().zip(got).all(|(a, b)| (a - b).abs() < close),
+                "{hdr:?} at {x}: want {want:?}, got {got:?}"
+            );
+        }
+    }
 }
 
 /// A read failing partway through a file, as a network share's might: the

@@ -681,11 +681,10 @@ fn video_work(
             ..
         } => {
             let decoder = open_video_decoder(&parameters, time_base)?;
-            let colors = kept_colors(Colors::of(&parameters), *ten_bit, *hdr);
-            let size = media
-                .info
-                .video(*stream)
-                .map_or((*width, *height), |video| (video.width, video.height));
+            let info = media.info.video(*stream);
+            let reshapes = info.is_some_and(|video| video.ipt);
+            let colors = kept_colors(Colors::of(&parameters), *ten_bit, *hdr, reshapes);
+            let size = info.map_or((*width, *height), |video| (video.width, video.height));
             let overlay = media.plan.subtitles.and_then(|subtitles| {
                 Overlay::open(input, subtitles, size, Coding::of(colors.as_ref()))
                     .inspect_err(|err| log::warn!("the subtitles can't be drawn in: {err}"))
@@ -701,6 +700,7 @@ fn video_work(
                 time_base,
                 frame_rate,
                 colors,
+                reshapes,
                 global_header,
             })?;
             let out = OutStream {

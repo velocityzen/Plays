@@ -17,9 +17,9 @@ use ffmpeg_next as ffmpeg;
 use ffmpeg_safe::Layout;
 
 use crate::Error;
-use crate::hdr;
 use crate::profile::{AudioCodec, Hdr, VideoCodec};
 use crate::sync::lock;
+use crate::{dovi, hdr};
 
 /// The hardware encoders to try for a codec, in order.
 fn video_encoders(codec: VideoCodec) -> &'static [&'static str] {
@@ -60,6 +60,7 @@ pub(crate) fn video_encoder(
             time_base: Rational::new(1, 25),
             frame_rate: Some(Rational::new(25, 1)),
             colors: ten_bit.then(Colors::default),
+            reshapes: false,
             global_header: true,
         };
         match VideoEncoder::open(&settings) {
@@ -153,6 +154,13 @@ impl Colors {
         }
     }
 
+    /// HDR10's: BT.2020 and PQ.
+    pub const HDR10: Self = Self {
+        primaries: Some(ffi::AVColorPrimaries::AVCOL_PRI_BT2020),
+        transfer: Some(ffi::AVColorTransferCharacteristic::AVCOL_TRC_SMPTE2084),
+        space: Some(ffi::AVColorSpace::AVCOL_SPC_BT2020_NCL),
+    };
+
     /// Whether these are HDR's, PQ or HLG.
     pub fn is_hdr(&self) -> bool {
         use ffi::AVColorTransferCharacteristic::{AVCOL_TRC_ARIB_STD_B67, AVCOL_TRC_SMPTE2084};
@@ -238,6 +246,9 @@ pub(crate) struct VideoSettings<'a> {
     /// [`kept_colors`]). Without, it's tagged BT.709 and HDR frames are
     /// fitted to SDR for it.
     pub colors: Option<Colors>,
+    /// Whether the source is Dolby Vision in IPT, which each frame's RPU
+    /// reshapes: into HDR10, where `colors` are HDR10's, else SDR.
+    pub reshapes: bool,
     /// Parameter sets in the stream's header, as MP4 needs.
     pub global_header: bool,
 }
@@ -255,10 +266,12 @@ pub(crate) struct VideoEncoder {
     scaler: Option<Scaler>,
     /// Whether it's tagged with the source's colors, not BT.709.
     keeps_colors: bool,
-    /// HDR frames' fitting to SDR, made for the first of them.
-    to_sdr: Option<Box<hdr::ToSdr>>,
-    /// Whether that scaling failed, after which frames are only scaled.
-    to_sdr_failed: bool,
+    /// Whether Dolby Vision's IPT is reshaped.
+    reshapes: bool,
+    /// HDR frames' conversion, made for the first of them.
+    converter: Option<Box<hdr::Converter>>,
+    /// Whether that conversion failed, after which frames are only scaled.
+    conversion_failed: bool,
     #[cfg(target_os = "linux")]
     vaapi: Option<vaapi::Frames>,
 }
@@ -352,8 +365,9 @@ impl VideoEncoder {
             height: settings.height,
             scaler: None,
             keeps_colors: settings.colors.is_some(),
-            to_sdr: None,
-            to_sdr_failed: false,
+            reshapes: settings.reshapes,
+            converter: None,
+            conversion_failed: false,
             #[cfg(target_os = "linux")]
             vaapi,
         })
@@ -380,19 +394,34 @@ impl VideoEncoder {
 
     /// A decoded frame at `width` × `height`, in the encoder's format. One
     /// tagged BT.709 has HDR frames fitted to SDR's BT.709, not only
-    /// scaled.
+    /// scaled, and Dolby Vision's IPT is reshaped by its RPU, into HDR10
+    /// where that's kept.
     pub fn scale_to(
         &mut self,
         decoded: &frame::Video,
         width: u32,
         height: u32,
     ) -> Result<frame::Video, Error> {
-        if !self.keeps_colors
-            && !self.to_sdr_failed
-            && let Some(transfer) = hdr::Transfer::of(decoded)
-            && let Some(frame) = self.fit_to_sdr(decoded, transfer, width, height)
-        {
-            return Ok(frame);
+        if !self.conversion_failed {
+            let reshaping = self
+                .reshapes
+                .then(|| dovi::Reshaping::of(decoded))
+                .flatten();
+            let conversion = match &reshaping {
+                Some(reshaping) => Some(hdr::Conversion::Reshaped {
+                    reshaping,
+                    hdr10: self.keeps_colors,
+                }),
+                None if !self.keeps_colors => {
+                    hdr::Transfer::of(decoded).map(hdr::Conversion::ToSdr)
+                }
+                None => None,
+            };
+            if let Some(conversion) = conversion
+                && let Some(frame) = self.convert(decoded, conversion, width, height)
+            {
+                return Ok(frame);
+            }
         }
         let source = (decoded.format(), decoded.width(), decoded.height());
         if self
@@ -420,22 +449,21 @@ impl VideoEncoder {
         Ok(frame)
     }
 
-    /// HDR `decoded`, in `transfer`, at `width` × `height`, as SDR in
-    /// BT.709 in the encoder's format; `None`, from then on, where that
-    /// fails.
-    fn fit_to_sdr(
+    /// HDR `decoded` converted as `conversion` says, at `width` × `height`
+    /// in the encoder's format; `None`, from then on, where that fails.
+    fn convert(
         &mut self,
         decoded: &frame::Video,
-        transfer: hdr::Transfer,
+        conversion: hdr::Conversion,
         width: u32,
         height: u32,
     ) -> Option<frame::Video> {
-        let to_sdr = self.to_sdr.get_or_insert_with(Box::default);
+        let converter = self.converter.get_or_insert_with(Box::default);
         let mut frame = frame::Video::new(self.format, width, height);
-        if let Err(err) = to_sdr.run(decoded, transfer, &mut frame) {
-            log::warn!("HDR video can't be fitted to SDR, so it's only scaled: {err}");
-            self.to_sdr = None;
-            self.to_sdr_failed = true;
+        if let Err(err) = converter.run(decoded, conversion, &mut frame) {
+            log::warn!("HDR video can't be converted, so it's only scaled: {err}");
+            self.converter = None;
+            self.conversion_failed = true;
             return None;
         }
         Some(frame)
@@ -475,7 +503,17 @@ impl VideoEncoder {
 
 /// The source's `colors` an encoding keeps: a 10-bit one's, unless they're
 /// HDR the device isn't given (`hdr`), which is fitted to SDR instead.
-pub(crate) fn kept_colors(colors: Colors, ten_bit: bool, hdr: Option<Hdr>) -> Option<Colors> {
+/// Dolby Vision's IPT (`reshaped`) keeps none of its own: reshaped, it's
+/// HDR10 where the device is given that, else SDR.
+pub(crate) fn kept_colors(
+    colors: Colors,
+    ten_bit: bool,
+    hdr: Option<Hdr>,
+    reshaped: bool,
+) -> Option<Colors> {
+    if reshaped {
+        return (ten_bit && hdr == Some(Hdr::Hdr10)).then_some(Colors::HDR10);
+    }
     (ten_bit && (hdr.is_some() || !colors.is_hdr())).then_some(colors)
 }
 

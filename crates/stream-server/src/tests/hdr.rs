@@ -7,13 +7,28 @@ pub(crate) fn grey(
     space: color::Space,
     signal: f64,
 ) -> frame::Video {
+    flat(transfer, space, [signal, 0.0, 0.0])
+}
+
+/// A 64 × 32 10-bit picture in limited range of one color all over: its
+/// luma (0 to 1), and blue and red differences (-0.5 to 0.5), tagged
+/// BT.2020 with `transfer` and `space`.
+fn flat(
+    transfer: color::TransferCharacteristic,
+    space: color::Space,
+    [y, cb, cr]: [f64; 3],
+) -> frame::Video {
     let mut frame = frame::Video::new(Pixel::YUV420P10LE, 64, 32);
     frame.set_color_primaries(color::Primaries::BT2020);
     frame.set_color_transfer_characteristic(transfer);
     frame.set_color_space(space);
     frame.set_color_range(color::Range::MPEG);
-    let luma = (64.0 + signal * 876.0).round() as u16;
-    for (plane, value) in [(0, luma), (1, 512), (2, 512)] {
+    let code = |value: f64, offset: f64, range: f64| (offset + value * range).round() as u16;
+    for (plane, value) in [
+        (0, code(y, 64.0, 876.0)),
+        (1, code(cb, 512.0, 896.0)),
+        (2, code(cr, 512.0, 896.0)),
+    ] {
         let (stride, width) = (frame.stride(plane), frame.plane_width(plane) as usize);
         let rows = frame.plane_height(plane) as usize;
         for row in frame.data_mut(plane).chunks_mut(stride).take(rows) {
@@ -37,6 +52,22 @@ pub(crate) fn luma(frame: &frame::Video) -> f64 {
             (f64::from(u16::from_le_bytes([data[at], data[at + 1]]) >> 6) - 64.0) / 876.0
         }
     }
+}
+
+/// The luma, and blue and red differences, in the middle of an NV12 or
+/// P010 frame, as `flat` takes them.
+fn ycbcr(frame: &frame::Video) -> [f64; 3] {
+    let (x, y) = (frame.width() as usize / 2, frame.height() as usize / 2);
+    let chroma = frame.stride(1) * (y / 2);
+    let (luma, data) = (luma(frame), frame.data(1));
+    let [cb, cr] = match frame.format() {
+        Pixel::NV12 => [0, 1].map(|i| (f64::from(data[chroma + x + i]) - 128.0) / 224.0),
+        _ => [0, 2].map(|i| {
+            let at = chroma + 2 * x + i;
+            (f64::from(u16::from_le_bytes([data[at], data[at + 1]]) >> 6) - 512.0) / 896.0
+        }),
+    };
+    [luma, cb, cr]
 }
 
 /// BT.709's tags, in limited range.
@@ -82,7 +113,9 @@ fn with_peak(frame: &mut frame::Video, nits: u32) {
 fn fitted(from: &frame::Video, format: Pixel) -> frame::Video {
     let transfer = Transfer::of(from).expect("HDR");
     let mut to = frame::Video::new(format, 32, 16);
-    ToSdr::default().run(from, transfer, &mut to).unwrap();
+    Converter::default()
+        .run(from, Conversion::ToSdr(transfer), &mut to)
+        .unwrap();
     to
 }
 
@@ -221,4 +254,114 @@ fn reads_the_peak_as_the_lower_of_maxcll_and_the_mastering_display() {
         (*display).has_luminance = 1;
     }
     assert_eq!(peak_nits(&frame, Transfer::Pq), Some(1000.0));
+}
+
+/// Dolby Vision's IPT at HDR's reference white, a frame `dovi`'s tests
+/// make: its chroma neutral, its luma code the one this frame's curve
+/// reshapes to PQ's code for 203 nits.
+fn ipt_white() -> frame::Video {
+    use crate::dovi::tests::{NEUTRAL, rpu_frame};
+    let neutral = (NEUTRAL * 1024.0).round() as u16;
+    rpu_frame([833, neutral, neutral])
+}
+
+/// Reshaped into HDR10, IPT keeps its light: reference white has PQ's code
+/// for 203 nits, grey and in BT.2020. Fitted to SDR instead, it's as HDR10's
+/// reference white is, nearly SDR's white, by the same peak: the 1000 nits
+/// its RPU says it was mastered at.
+#[test]
+fn reshapes_ipt_into_hdr10_as_it_was_mastered_or_fits_it_to_sdr() {
+    let white = ipt_white();
+    let reshaping = Reshaping::of(&white).unwrap();
+    let converted = |format, hdr10| {
+        let mut to = frame::Video::new(format, 32, 16);
+        Converter::default()
+            .run(
+                &white,
+                Conversion::Reshaped {
+                    reshaping: &reshaping,
+                    hdr10,
+                },
+                &mut to,
+            )
+            .unwrap();
+        to
+    };
+
+    let hdr10 = converted(Pixel::P010LE, true);
+    assert!((luma(&hdr10) - pq(203.0)).abs() < 0.003, "{}", luma(&hdr10));
+    let at = hdr10.stride(1) * 4 + 16;
+    let chroma = &hdr10.data(1)[at..at + 4];
+    for sample in [[chroma[0], chroma[1]], [chroma[2], chroma[3]]] {
+        let code = u16::from_le_bytes(sample) >> 6;
+        assert!(code.abs_diff(512) <= 1, "{code}");
+    }
+    assert_eq!(
+        Tags::of(&hdr10),
+        Tags {
+            primaries: ffi::AVColorPrimaries::AVCOL_PRI_BT2020 as u32,
+            transfer: ffi::AVColorTransferCharacteristic::AVCOL_TRC_SMPTE2084 as u32,
+            space: ffi::AVColorSpace::AVCOL_SPC_BT2020_NCL as u32,
+            range: ffi::AVColorRange::AVCOL_RANGE_MPEG as u32,
+        }
+    );
+
+    let mut hdr10_white = grey(
+        color::TransferCharacteristic::SMPTE2084,
+        color::Space::BT2020NCL,
+        pq(203.0),
+    );
+    with_peak(&mut hdr10_white, 1000);
+    for format in [Pixel::NV12, Pixel::P010LE] {
+        let sdr = converted(format, false);
+        let as_hdr10 = fitted(&hdr10_white, format);
+        assert!(
+            (shown(luma(&sdr)) - shown(luma(&as_hdr10))).abs() < 0.02,
+            "{format:?}: {} {}",
+            luma(&sdr),
+            luma(&as_hdr10)
+        );
+        assert_eq!(Tags::of(&sdr), sdr_tags());
+    }
+}
+
+/// PQ's codes come from a table, by the fourth root of the light, finely
+/// enough from a mastering display's black to PQ's peak that 12 bits of
+/// them are right.
+#[test]
+fn encodes_pq_finely_from_black_to_its_peak() {
+    let table = Tables::default().pq_encode;
+    for nits in [0.005, 0.05, 0.5, 5.0, 50.0, 203.0, 1000.0, 4000.0, 10000.0] {
+        let root = (nits / PQ_PEAK_NITS).sqrt().sqrt();
+        let coded = f64::from(table[(root * ENCODE_STEPS as f32 + 0.5) as usize]) / 65535.0;
+        let exact = pq(f64::from(nits));
+        assert!(
+            (coded - exact).abs() < 1.0 / 4096.0,
+            "{nits}: {coded} {exact}"
+        );
+        assert!((f64::from(nits_to_pq(nits)) - exact).abs() < 1e-5, "{nits}");
+    }
+}
+
+/// HDR10's colors are read by BT.2020's matrix, not BT.601's that swscale
+/// takes untagged YCbCr in, and coded by BT.709's: its code for BT.709's
+/// (30, 60, 15) nits is SDR's for the same color, below where the curve
+/// rolls off. Worked out apart from this code, through BT.2087, ST 2084
+/// and BT.2020's matrix to 10-bit codes, then back and through BT.1886 and
+/// BT.709's.
+#[test]
+fn fits_hdr10s_colors_by_their_matrices() {
+    let color = flat(
+        color::TransferCharacteristic::SMPTE2084,
+        color::Space::BT2020NCL,
+        [0.4384, -0.0446, -0.0145],
+    );
+    for (format, close) in [(Pixel::P010LE, 0.008), (Pixel::NV12, 0.01)] {
+        let got = ycbcr(&fitted(&color, format));
+        let want = [0.5511, -0.1141, -0.0658];
+        assert!(
+            want.iter().zip(got).all(|(a, b)| (a - b).abs() < close),
+            "{format:?}: want {want:?}, got {got:?}"
+        );
+    }
 }

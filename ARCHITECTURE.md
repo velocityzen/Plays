@@ -599,7 +599,9 @@ flowchart LR
 - `job.rs`: segments made three ahead of the device; a seek starts another
 - `overlay.rs`: picture subtitles drawn into the video, re-encoded for them
 - `adjust.rs`: the block's crop, aspect, turns, flips and gamma, re-encoded
-- `hdr.rs`: HDR fitted to SDR for a device not given it, as Plays shows it
+- `hdr.rs`: HDR fitted to SDR for a device not given it, as Plays shows it;
+  Dolby Vision's IPT reshaped into HDR10 or SDR
+- `dovi.rs`: Dolby Vision's RPU reshaping, as `src/media/dovi.rs` has it
 - `subtitles.rs`: text subtitles as WebVTT, placed as ASS puts them, or SRT
 - `playlist.rs`: the master, media and subtitle playlists
 - `http.rs`, `server.rs`: HTTP/1.1, a thread per connection, a token per cast

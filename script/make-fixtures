@@ -37,6 +37,10 @@
 # clip-hdr10.mkv  2 s of a flat 10-bit FFV1 grey at HDR's reference white
 #                (203 nits, PQ's code 573 in limited range), tagged BT.2020
 #                and PQ, as HDR10 is
+# clip-dv-ipt.mp4  1 s of Dolby Vision profile 20 at 320x180, lossless
+#                HEVC whose codes are IPT, half a skin tone, half green, each
+#                frame with profile 5's RPU: made by Plays' own tests, as no
+#                ffmpeg tool writes an RPU
 # uncommon-order.mov  0.5 s of 440 Hz on the right only, 8 kHz PCM, its
 #                channels in an order of their own: the right, then the
 #                left; last by name, so the files beside the others stay
@@ -233,6 +237,9 @@ PY
 "${ffmpeg[@]}" -f lavfi -i "color=size=160x120:rate=25:duration=2" \
     -vf "format=yuv420p10le,geq=lum=573:cb=512:cr=512,setparams=color_primaries=bt2020:color_trc=smpte2084:colorspace=bt2020nc:range=tv" \
     -c:v ffv1 -g 25 -map_metadata -1 clip-hdr10.mkv
+
+(cd ../.. && cargo test -q --bin plays media::dovi::tests::plays_profile_20_as_ipt)
+cp "${TMPDIR:-/tmp}/plays-tests/profile-20.mp4" clip-dv-ipt.mp4
 
 # MOV keeps PCM's channels in the order they're joined in.
 "${ffmpeg[@]}" -f lavfi -i "sine=frequency=440:sample_rate=8000:duration=0.5" \

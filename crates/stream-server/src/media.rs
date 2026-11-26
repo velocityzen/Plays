@@ -13,6 +13,7 @@ use ffmpeg_next as ffmpeg;
 use ffmpeg_safe::tag;
 
 use crate::Error;
+use crate::dovi;
 use crate::profile::{AudioCodec, Container, Hdr, VideoCodec};
 
 /// How long a network read may stall before it gives up, in microseconds.
@@ -108,9 +109,12 @@ pub struct VideoInfo {
     pub hdr: Option<Hdr>,
     /// HDR10 or HLG, as a player without Dolby Vision shows the picture: as
     /// `hdr` is, or Dolby Vision's base layer's, by its colors. None for
-    /// SDR, and for a picture in IPT (Dolby Vision's profiles 5 and 20),
-    /// which only its reshaping makes HDR.
+    /// SDR, and for a picture in IPT, which only its reshaping makes HDR.
     pub base_hdr: Option<Hdr>,
+    /// Dolby Vision whose pictures are IPT, with nothing a player without
+    /// it can show (profiles 5, 10.0 and 20): only reshaped by its RPU do
+    /// they look right, never sent without their signalling as they are.
+    pub ipt: bool,
     /// Cover art in an audio file, not a video.
     pub picture: bool,
 }
@@ -228,15 +232,22 @@ fn video_info(stream: &ffmpeg::format::stream::Stream) -> VideoInfo {
     // SAFETY: the parameters belong to an open stream. They are read through
     // the pointer, never a reference, and the transfer and color space as
     // the C ints they are: a file can hold numbers the Rust enums have no
-    // variant for.
+    // variant for. The Dolby Vision configuration, all bytes, is read only
+    // from side data as long as it.
     let (width, height, format, transfer, space, dolby_vision, picture) = unsafe {
         let raw = parameters.as_ptr();
-        let dolby_vision = !ffi::av_packet_side_data_get(
+        let configuration = ffi::av_packet_side_data_get(
             (*raw).coded_side_data,
             (*raw).nb_coded_side_data,
             ffi::AVPacketSideDataType::AV_PKT_DATA_DOVI_CONF,
-        )
-        .is_null();
+        );
+        // Its base layer's compatibility, if the side data is long enough
+        // to say.
+        let dolby_vision = (!configuration.is_null()).then(|| {
+            let (data, size) = ((*configuration).data, (*configuration).size);
+            (!data.is_null() && size >= size_of::<dovi::sys::Configuration>())
+                .then(|| (*data.cast::<dovi::sys::Configuration>()).dv_bl_signal_compatibility_id)
+        });
         let disposition = (*stream.as_ptr()).disposition;
         (
             (*raw).width.max(0) as u32,
@@ -250,7 +261,7 @@ fn video_info(stream: &ffmpeg::format::stream::Stream) -> VideoInfo {
     };
     let pq = transfer == ffi::AVColorTransferCharacteristic::AVCOL_TRC_SMPTE2084 as u32;
     let hlg = transfer == ffi::AVColorTransferCharacteristic::AVCOL_TRC_ARIB_STD_B67 as u32;
-    let hdr = if dolby_vision {
+    let hdr = if dolby_vision.is_some() {
         Some(Hdr::DolbyVision)
     } else if pq {
         Some(Hdr::Hdr10)
@@ -259,9 +270,16 @@ fn video_info(stream: &ffmpeg::format::stream::Stream) -> VideoInfo {
     } else {
         None
     };
-    let ipt = space == ffi::AVColorSpace::AVCOL_SPC_IPT_C2 as u32;
+    // A base layer with nothing to fall back on, as its configuration
+    // says, or as its colors do where that doesn't: tagged IPT, or not HDR.
+    let ipt = match dolby_vision {
+        Some(Some(compatibility)) => compatibility == 0,
+        Some(None) => space == ffi::AVColorSpace::AVCOL_SPC_IPT_C2 as u32 || !(pq || hlg),
+        None => false,
+    };
     let base_hdr = match hdr {
-        Some(Hdr::DolbyVision) if pq && !ipt => Some(Hdr::Hdr10),
+        Some(Hdr::DolbyVision) if ipt => None,
+        Some(Hdr::DolbyVision) if pq => Some(Hdr::Hdr10),
         Some(Hdr::DolbyVision) if hlg => Some(Hdr::Hlg),
         Some(Hdr::DolbyVision) => None,
         other => other,
@@ -275,6 +293,7 @@ fn video_info(stream: &ffmpeg::format::stream::Stream) -> VideoInfo {
         frame_rate: (rate.numerator() > 0 && rate.denominator() > 0).then(|| f64::from(rate)),
         hdr,
         base_hdr,
+        ipt,
         picture,
     }
 }

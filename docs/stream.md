@@ -104,6 +104,8 @@ What the tests play, made with the `ffmpeg` tool unless they're fixtures
 - MPEG-TS from a time (DLNA), with SubRip
 - HDR10 and HLG for a device not given them, 8-bit or 10-bit: fitted to
   SDR in BT.709; Dolby Vision as its base layer, HDR10 or HLG
+- Dolby Vision in IPT (profiles 5, 10.0 and 20), never sent repackaged:
+  reshaped by its RPU into HDR10, or fitted to SDR
 - Sound alone: ADTS AAC, FLAC, HLS
 - AirPlay sound: 16-bit stereo at 44.1 kHz
 
@@ -115,7 +117,8 @@ Samples too big to commit, in `ignore/`:
 - HEVC 4K Dolby Vision 7 FEL: Matroska; MP4 with AC-3 5.1; DTS 5.1
 - HEVC Dolby Vision 8.1, 3840×2014
 - HEVC Dolby Vision 20 (MV-HEVC), 24 fps: its first view, on VideoToolbox,
-  given the base layer alone
+  given the base layer alone; cast as an Apple TV 4K gets it, HDR10 at 4K
+  made twice as fast as it plays, and fitted to SDR, as Plays shows it
 - HEVC Dolby Vision 5, 4K 59.94, E-AC-3 stereo
 - AV1 4K PQ, Dolby Vision 10, DTS-HD MA 7.1
 - AV1 Dolby Vision 10, 3840×1920, E-AC-3 Atmos 5.1, MJPEG cover; cast to

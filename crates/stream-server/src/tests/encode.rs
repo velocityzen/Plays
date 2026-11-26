@@ -144,8 +144,8 @@ fn encodes_frames_holding_many_of_its_own() {
 }
 
 /// A hardware encoder at 32 × 16, 10-bit HEVC or 8-bit H.264, tagged with
-/// `colors`, else BT.709.
-fn video_encoder(ten_bit: bool, colors: Option<Colors>) -> VideoEncoder {
+/// `colors`, else BT.709, reshaping Dolby Vision's IPT if it `reshapes`.
+fn video_encoder(ten_bit: bool, colors: Option<Colors>, reshapes: bool) -> VideoEncoder {
     crate::init();
     let codec = if ten_bit {
         VideoCodec::Hevc
@@ -163,6 +163,7 @@ fn video_encoder(ten_bit: bool, colors: Option<Colors>) -> VideoEncoder {
         time_base: Rational::new(1, 25),
         frame_rate: Some(Rational::new(25, 1)),
         colors,
+        reshapes,
         global_header: false,
     })
     .expect("the encoder opens")
@@ -183,22 +184,68 @@ fn fits_hdr_to_sdr_for_an_encoding_tagged_bt709() {
     let mut ipt = pq_white.clone();
     // SAFETY: the frame is ours, and IPT-C2 a value FFmpeg names.
     unsafe { (*ipt.as_mut_ptr()).colorspace = ffi::AVColorSpace::AVCOL_SPC_IPT_C2 };
-    let hdr10 = Colors {
-        primaries: Some(ffi::AVColorPrimaries::AVCOL_PRI_BT2020),
-        transfer: Some(ffi::AVColorTransferCharacteristic::AVCOL_TRC_SMPTE2084),
-        space: Some(ffi::AVColorSpace::AVCOL_SPC_BT2020_NCL),
-    };
 
     for ten_bit in [false, true] {
-        let mut sdr = video_encoder(ten_bit, None);
+        let mut sdr = video_encoder(ten_bit, None, false);
         let fitted = sdr.scale(&pq_white).unwrap();
         assert!(luma(&fitted) > 0.9, "{ten_bit}: {}", luma(&fitted));
         let scaled = sdr.scale(&ipt).unwrap();
         assert!((luma(&scaled) - white).abs() < 0.01, "{ten_bit}");
     }
-    let mut kept = video_encoder(true, Some(hdr10));
+    let mut kept = video_encoder(true, Some(Colors::HDR10), false);
     let scaled = kept.scale(&pq_white).unwrap();
     assert!((luma(&scaled) - white).abs() < 0.01, "{}", luma(&scaled));
+}
+
+/// Dolby Vision's IPT is reshaped by its RPU: into HDR10 for an encoding
+/// keeping HDR10's colors, so its reference white has PQ's code for 203
+/// nits, and fitted to SDR otherwise, as HDR10 is, so it shows nearly as
+/// SDR's white. Grey stays grey either way.
+#[cfg(target_os = "macos")]
+#[test]
+fn reshapes_dolby_visions_ipt_into_hdr10_or_sdr() {
+    use crate::dovi::tests::{NEUTRAL, rpu_frame};
+    use crate::hdr::tests::{luma, pq, sdr_tags};
+    use crate::hdr::{TV_GAMMA, Tags};
+    let neutral = (NEUTRAL * 1024.0).round() as u16;
+    // The luma code this frame's curve, x² / 2 + 1/4 there, reshapes to
+    // PQ's code for 203 nits.
+    let white = rpu_frame([833, neutral, neutral]);
+    let chroma = |frame: &ffmpeg::frame::Video| {
+        let data = frame.data(1);
+        let at = frame.stride(1) * 4 + 16;
+        [0, 2].map(|i| u16::from_le_bytes([data[at + i], data[at + i + 1]]) >> 6)
+    };
+
+    let mut hdr10 = video_encoder(true, Some(Colors::HDR10), true);
+    let reshaped = hdr10.scale(&white).unwrap();
+    assert!(
+        (luma(&reshaped) - pq(203.0)).abs() < 0.005,
+        "{}",
+        luma(&reshaped)
+    );
+    assert!(chroma(&reshaped).iter().all(|c| c.abs_diff(512) <= 1));
+    assert_eq!(
+        Tags::of(&reshaped),
+        Tags {
+            primaries: ffi::AVColorPrimaries::AVCOL_PRI_BT2020 as u32,
+            transfer: ffi::AVColorTransferCharacteristic::AVCOL_TRC_SMPTE2084 as u32,
+            space: ffi::AVColorSpace::AVCOL_SPC_BT2020_NCL as u32,
+            range: ffi::AVColorRange::AVCOL_RANGE_MPEG as u32,
+        }
+    );
+
+    for ten_bit in [false, true] {
+        let mut sdr = video_encoder(ten_bit, None, true);
+        let fitted = sdr.scale(&white).unwrap();
+        let light = luma(&fitted).powf(f64::from(TV_GAMMA));
+        assert!((0.8..0.95).contains(&light), "{ten_bit}: {light}");
+        assert_eq!(Tags::of(&fitted), sdr_tags());
+    }
+    // Not reshaped, its chroma stays IPT's, which YCbCr shows green.
+    let mut scaled = video_encoder(true, Some(Colors::HDR10), false);
+    let scaled = scaled.scale(&white).unwrap();
+    assert!(chroma(&scaled).iter().all(|c| c.abs_diff(neutral) <= 1));
 }
 
 /// A 10-bit encoding keeps the source's colors unless they're HDR the
@@ -216,7 +263,7 @@ fn keeps_the_sources_colors_only_as_the_device_shows_them() {
         colors(AVCOL_TRC_ARIB_STD_B67),
         colors(AVCOL_TRC_BT2020_10),
     );
-    let kept = |colors, ten_bit, hdr| kept_colors(colors, ten_bit, hdr).is_some();
+    let kept = |colors, ten_bit, hdr| kept_colors(colors, ten_bit, hdr, false).is_some();
     assert!(kept(pq, true, Some(Hdr::Hdr10)));
     assert!(kept(hlg, true, Some(Hdr::Hlg)));
     assert!(!kept(pq, true, None));
@@ -225,4 +272,17 @@ fn keeps_the_sources_colors_only_as_the_device_shows_them() {
     assert!(kept(Colors::default(), true, None));
     assert!(!kept(pq, false, Some(Hdr::Hdr10)));
     assert!(!kept(sdr, false, None));
+    // Dolby Vision's IPT, whatever it's tagged, is reshaped into HDR10.
+    for colors in [pq, Colors::default()] {
+        let reshaped = |ten_bit, hdr| kept_colors(colors, ten_bit, hdr, true);
+        assert!(matches!(
+            reshaped(true, Some(Hdr::Hdr10)),
+            Some(Colors {
+                space: Some(ffi::AVColorSpace::AVCOL_SPC_BT2020_NCL),
+                ..
+            })
+        ));
+        assert!(reshaped(true, None).is_none());
+        assert!(reshaped(false, Some(Hdr::Hdr10)).is_none());
+    }
 }

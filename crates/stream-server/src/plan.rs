@@ -59,7 +59,8 @@ pub enum VideoPlan {
         ten_bit: bool,
         /// Kept, where the device shows it and the encoding is 10-bit:
         /// HDR10 or HLG, as Dolby Vision's base layer is too, its reshaping
-        /// lost. HDR not kept is fitted to SDR.
+        /// lost, or HDR10 that IPT is reshaped into. HDR not kept is fitted
+        /// to SDR.
         hdr: Option<Hdr>,
         bit_rate: u64,
     },
@@ -257,7 +258,8 @@ fn planned(
         return Err(Error::Unsupported("there is nothing to play in it".into()));
     }
 
-    let video_fits = video.is_none_or(|index| media.video(index).is_some_and(|v| fits(v, profile)));
+    let video_fits =
+        video.is_none_or(|index| media.video(index).is_some_and(|v| fits(v, profile, true)));
     let audio_fits = audio.is_none_or(|index| {
         media
             .audio(index)
@@ -383,13 +385,21 @@ fn pick(media: &MediaInfo, pick: Pick, video: bool) -> Result<Option<usize>, Err
     }
 }
 
-fn fits(video: &VideoInfo, profile: &Profile) -> bool {
+/// Whether the device plays `video` as it is: in the file it's in
+/// (`as_is`), or repackaged, where Dolby Vision loses its signalling and is
+/// only its base layer, which IPT's is no picture of.
+fn fits(video: &VideoInfo, profile: &Profile, as_is: bool) -> bool {
+    let hdr = if as_is {
+        video.hdr.is_none_or(|hdr| profile.hdr.contains(&hdr))
+    } else {
+        !video.ipt && video.base_hdr.is_none_or(|hdr| profile.hdr.contains(&hdr))
+    };
     profile.video.contains(&video.codec)
         && video.bit_depth <= profile.max_bit_depth
         && profile
             .max_size
             .is_none_or(|(width, height)| video.width <= width && video.height <= height)
-        && video.hdr.is_none_or(|hdr| profile.hdr.contains(&hdr))
+        && hdr
 }
 
 fn plan_video(
@@ -402,7 +412,7 @@ fn plan_video(
     let info = media
         .video(stream)
         .ok_or_else(|| Error::Unsupported(format!("stream {stream} isn't a video")))?;
-    if fits(info, profile) && segments.carries_video(info.codec) {
+    if fits(info, profile, false) && segments.carries_video(info.codec) {
         return Ok(VideoPlan::Copy {
             stream,
             codec: info.codec,
@@ -477,8 +487,10 @@ fn encoded_video(
     }
     for to in candidates {
         let ten_bit = deep && to == VideoCodec::Hevc && profile.max_bit_depth >= 10;
+        // IPT's reshaping makes HDR10.
         let hdr = info
             .base_hdr
+            .or(info.ipt.then_some(Hdr::Hdr10))
             .filter(|hdr| ten_bit && profile.hdr.contains(hdr));
         if let Some(encoder) = encode::video_encoder(to, width, height, ten_bit) {
             return Ok(VideoPlan::Encode {
