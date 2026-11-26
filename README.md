@@ -87,6 +87,8 @@ GPU-accelerated UI framework.
 - Command palette (`⇧⌘P`) and Go to (`⌘P`)
 - Every shortcut can be changed
 - The `plays` command line
+- [Lua scripts](docs/lua.md) that run commands and react to events, with
+  `plays do`
 - Settings in a JSON file you can export, import and reset
 - Plays as the default player, for the formats you pick in Settings
 - Updates itself from a signed feed, downloading only what changed where it can
