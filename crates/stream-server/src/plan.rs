@@ -396,11 +396,11 @@ fn pick(media: &MediaInfo, pick: Pick, video: bool) -> Result<Option<usize>, Err
 }
 
 /// Whether the device plays `video` as it is: in the file it's in
-/// (`as_is`), or repackaged, where Dolby Vision loses its signalling and is
+/// (`as_is`), Dolby Vision of a profile it shows, or repackaged, where Dolby Vision loses its signalling and is
 /// only its base layer, which IPT's is no picture of.
 fn fits(video: &VideoInfo, profile: &Profile, as_is: bool) -> bool {
     let hdr = if as_is {
-        video.hdr.is_none_or(|hdr| profile.hdr.contains(&hdr))
+        video.hdr.is_none_or(|hdr| profile.hdr.contains(&hdr)) && shows_profile(video, profile)
     } else {
         !video.ipt && video.base_hdr.is_none_or(|hdr| profile.hdr.contains(&hdr))
     };
@@ -410,6 +410,17 @@ fn fits(video: &VideoInfo, profile: &Profile, as_is: bool) -> bool {
             .max_size
             .is_none_or(|(width, height)| video.width <= width && video.height <= height)
         && hdr
+}
+
+/// Whether a device that shows Dolby Vision shows `video`'s profile as it
+/// is: where it lists those it does, one of them.
+fn shows_profile(video: &VideoInfo, profile: &Profile) -> bool {
+    video.hdr != Some(Hdr::DolbyVision)
+        || profile.dolby_vision.as_ref().is_none_or(|profiles| {
+            video
+                .dolby_vision
+                .is_some_and(|shown| profiles.contains(&shown))
+        })
 }
 
 fn plan_video(

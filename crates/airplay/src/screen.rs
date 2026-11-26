@@ -1,6 +1,7 @@
 //! What a TV's screen shows, as `GET /info` says, which a receiver answers
-//! before pairing: the largest picture it plays, and the HDR it shows. TVs
-//! with AirPlay built in list it; one that doesn't is taken as showing SDR.
+//! before pairing: the largest picture it plays, the HDR it shows, and the
+//! Dolby Vision profiles it decodes. TVs with AirPlay built in list it; one
+//! that doesn't is taken as showing SDR.
 
 use std::net::SocketAddr;
 
@@ -38,6 +39,10 @@ pub struct Screen {
     pub max_size: Option<(u32, u32)>,
     /// The HDR it shows, in the order it lists them.
     pub hdr: Vec<Hdr>,
+    /// The Dolby Vision profiles it decodes, as the codecs it lists for
+    /// Dolby Vision say, `dvhe.05.09` profile 5 and `hev1.08.09` 8: none
+    /// where it lists none.
+    pub dolby_vision: Vec<u8>,
 }
 
 impl Screen {
@@ -81,6 +86,7 @@ impl Screen {
             .flatten()
             .filter_map(Value::as_dictionary);
         let mut hdr = Vec::new();
+        let mut dolby_vision = Vec::new();
         for mode in listed.chain(display.get("HDRInfo").and_then(Value::as_dictionary)) {
             let named = mode
                 .get("HDRMode")
@@ -91,9 +97,38 @@ impl Screen {
             {
                 hdr.push(named);
             }
+            if named == Some(Hdr::DolbyVision) {
+                let codecs = mode
+                    .get("codecStrings")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Value::as_string);
+                for profile in codecs.filter_map(dolby_vision_profile) {
+                    if !dolby_vision.contains(&profile) {
+                        dolby_vision.push(profile);
+                    }
+                }
+            }
         }
-        Some(Self { max_size, hdr })
+        Some(Self {
+            max_size,
+            hdr,
+            dolby_vision,
+        })
     }
+}
+
+/// The Dolby Vision profile a codec string names: the second of its three
+/// parts, as `dvhe.05.09` and `hev1.08.09` (profile 8, on HEVC) do.
+fn dolby_vision_profile(codec: &str) -> Option<u8> {
+    let mut parts = codec.split('.');
+    let (Some(_), Some(profile), Some(_), None) =
+        (parts.next(), parts.next(), parts.next(), parts.next())
+    else {
+        return None;
+    };
+    profile.parse().ok()
 }
 
 /// A count of pixels, which is more than none.

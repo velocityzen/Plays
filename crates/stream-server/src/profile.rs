@@ -89,6 +89,9 @@ pub struct Profile {
     /// Bits per color sample it decodes, 8 or 10.
     pub max_bit_depth: u8,
     pub hdr: Vec<Hdr>,
+    /// Of Dolby Vision, where `hdr` has it, the profiles it shows in a file
+    /// as it is, as a TV lists those it decodes; `None`, any.
+    pub dolby_vision: Option<Vec<u8>>,
     pub max_channels: u16,
 }
 
@@ -108,6 +111,7 @@ impl Default for Profile {
             max_size: Some((1920, 1080)),
             max_bit_depth: 8,
             hdr: Vec::new(),
+            dolby_vision: None,
             max_channels: 2,
         }
     }

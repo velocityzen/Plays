@@ -57,6 +57,38 @@ fn a_tv_with_airplay_built_in_lists_the_hdr_it_shows_up_to_its_largest_picture()
         "not the 1080p it shows now"
     );
     assert_eq!(screen.hdr, [Hdr::Hdr10, Hdr::DolbyVision, Hdr::Hlg]);
+    assert_eq!(screen.dolby_vision, [4, 5, 8, 9]);
+}
+
+#[test]
+fn the_dolby_vision_it_decodes_is_the_profiles_its_codecs_for_it_name() {
+    let listing = |mode: &str, codecs: &[&str]| {
+        let codecs: String = codecs
+            .iter()
+            .map(|codec| format!("<string>{codec}</string>"))
+            .collect();
+        info(&format!(
+            "<key>HDRSupportedModes</key><array><dict>\
+             <key>HDRMode</key><string>{mode}</string>\
+             <key>codecStrings</key><array>{codecs}</array></dict></array>"
+        ))
+    };
+    let shown = |mode, codecs| Screen::from_info(&listing(mode, codecs)).unwrap();
+    assert_eq!(
+        shown("DoVi", &["dvh1.08.06", "dvhe.8.09", "dav1.10.09"]).dolby_vision,
+        [8, 10]
+    );
+    assert!(
+        shown("DoVi", &["dvhe", "dvhe.05", "dvhe.x5.09", "dvhe.05.09.1"])
+            .dolby_vision
+            .is_empty(),
+        "no profile in them"
+    );
+    assert!(
+        shown("HDR10", &["hvc1.02.09"]).dolby_vision.is_empty(),
+        "not Dolby Vision's"
+    );
+    assert!(shown("DoVi", &[]).dolby_vision.is_empty());
 }
 
 #[test]

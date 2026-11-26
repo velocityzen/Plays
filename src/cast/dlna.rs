@@ -11,8 +11,10 @@
 //! doesn't say. Where AirPlay at its address says the TV's screen shows
 //! HDR10 or HLG, it's sent HEVC at 10 bits with that HDR, up to the
 //! screen's largest picture, as a screen showing HDR decodes it; Dolby
-//! Vision as the HDR10 under it, as nothing says it plays that as it is.
-//! Else, and for one that names codecs, HDR is fitted to SDR.
+//! Vision as it is where the screen lists its profile among those it
+//! decodes, as a Google TV projector plays profile 5 and refuses 20, else
+//! as the HDR10 under it or reshaped into HDR10. Else, and for one that
+//! names codecs, HDR is fitted to SDR.
 //!
 //! Subtitles go as SRT beside the media, which a renderer takes only with
 //! the media, so changing them loads it again from where it is. DLNA has
@@ -313,8 +315,8 @@ fn names_no_codecs(capabilities: Option<&[Capability]>) -> bool {
             .all(|capability| capability.mime != "*" && capability.profile.is_none())
 }
 
-/// The HDR a screen shows that's sent as it is: Dolby Vision goes as the
-/// HDR10 under it.
+/// The HDR a screen shows that's sent as it is: Dolby Vision only where it
+/// lists profiles it decodes.
 fn shown_hdr(screen: &Screen) -> Vec<Hdr> {
     screen
         .hdr
@@ -322,7 +324,9 @@ fn shown_hdr(screen: &Screen) -> Vec<Hdr> {
         .filter_map(|hdr| match hdr {
             ::airplay::Hdr::Hdr10 => Some(Hdr::Hdr10),
             ::airplay::Hdr::Hlg => Some(Hdr::Hlg),
-            ::airplay::Hdr::DolbyVision => None,
+            ::airplay::Hdr::DolbyVision => {
+                (!screen.dolby_vision.is_empty()).then_some(Hdr::DolbyVision)
+            }
         })
         .collect()
 }
@@ -427,9 +431,10 @@ fn profile(capabilities: Option<&[Capability]>, screen: Option<&Screen>) -> Prof
 }
 
 /// `profile`, for a renderer that plays `capabilities`, on a TV whose
-/// `screen` shows HDR10 or HLG: one naming no codecs plays what its TV
-/// decodes, and a screen showing HDR decodes HEVC at 10 bits, so it gets
-/// that HDR in HEVC, up to the screen's largest picture.
+/// `screen` shows HDR: one naming no codecs plays what its TV decodes, and
+/// a screen showing HDR decodes HEVC at 10 bits, so it gets that HDR in
+/// HEVC, up to the screen's largest picture, and Dolby Vision of the
+/// profiles the screen decodes.
 fn on_screen(
     mut profile: Profile,
     capabilities: Option<&[Capability]>,
@@ -448,6 +453,7 @@ fn on_screen(
     profile.max_size = screen.max_size.or(profile.max_size);
     profile.max_bit_depth = 10;
     profile.hdr = hdr;
+    profile.dolby_vision = Some(screen.dolby_vision.clone());
     profile
 }
 

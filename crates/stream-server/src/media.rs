@@ -115,6 +115,9 @@ pub struct VideoInfo {
     /// it can show (profiles 5, 10.0 and 20): only reshaped by its RPU do
     /// they look right, never sent without their signalling as they are.
     pub ipt: bool,
+    /// Dolby Vision's profile, as its configuration says: none for other
+    /// video, and where the configuration is too short to say.
+    pub dolby_vision: Option<u8>,
     /// Cover art in an audio file, not a video.
     pub picture: bool,
 }
@@ -241,12 +244,14 @@ fn video_info(stream: &ffmpeg::format::stream::Stream) -> VideoInfo {
             (*raw).nb_coded_side_data,
             ffi::AVPacketSideDataType::AV_PKT_DATA_DOVI_CONF,
         );
-        // Its base layer's compatibility, if the side data is long enough
-        // to say.
+        // Its profile and its base layer's compatibility, if the side data
+        // is long enough to say.
         let dolby_vision = (!configuration.is_null()).then(|| {
             let (data, size) = ((*configuration).data, (*configuration).size);
-            (!data.is_null() && size >= size_of::<dovi::sys::Configuration>())
-                .then(|| (*data.cast::<dovi::sys::Configuration>()).dv_bl_signal_compatibility_id)
+            (!data.is_null() && size >= size_of::<dovi::sys::Configuration>()).then(|| {
+                let record = &*data.cast::<dovi::sys::Configuration>();
+                (record.dv_profile, record.dv_bl_signal_compatibility_id)
+            })
         });
         let disposition = (*stream.as_ptr()).disposition;
         (
@@ -273,7 +278,7 @@ fn video_info(stream: &ffmpeg::format::stream::Stream) -> VideoInfo {
     // A base layer with nothing to fall back on, as its configuration
     // says, or as its colors do where that doesn't: tagged IPT, or not HDR.
     let ipt = match dolby_vision {
-        Some(Some(compatibility)) => compatibility == 0,
+        Some(Some((_, compatibility))) => compatibility == 0,
         Some(None) => space == ffi::AVColorSpace::AVCOL_SPC_IPT_C2 as u32 || !(pq || hlg),
         None => false,
     };
@@ -294,6 +299,7 @@ fn video_info(stream: &ffmpeg::format::stream::Stream) -> VideoInfo {
         hdr,
         base_hdr,
         ipt,
+        dolby_vision: dolby_vision.flatten().map(|(profile, _)| profile),
         picture,
     }
 }

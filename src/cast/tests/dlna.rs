@@ -249,7 +249,7 @@ fn a_4k_tv_gets_4k() {
 }
 
 /// What a Google TV projector's screen shows, as AirPlay there says: 4K at
-/// most, and every HDR.
+/// most, every HDR, and Dolby Vision's profiles 4, 5, 8 and 9.
 fn projector_screen() -> Screen {
     Screen {
         max_size: Some((3840, 2160)),
@@ -258,6 +258,7 @@ fn projector_screen() -> Screen {
             ::airplay::Hdr::DolbyVision,
             ::airplay::Hdr::Hlg,
         ],
+        dolby_vision: vec![4, 5, 8, 9],
     }
 }
 
@@ -278,11 +279,8 @@ fn a_tv_naming_no_codecs_gets_hevc_and_the_hdr_its_screen_shows() {
         ]
     );
     assert_eq!(hdr.max_bit_depth, 10);
-    assert_eq!(
-        hdr.hdr,
-        [Hdr::Hdr10, Hdr::Hlg],
-        "Dolby Vision as the HDR10 under it"
-    );
+    assert_eq!(hdr.hdr, [Hdr::Hdr10, Hdr::DolbyVision, Hdr::Hlg]);
+    assert_eq!(hdr.dolby_vision, Some(vec![4, 5, 8, 9]));
     assert_eq!(hdr.max_size, Some((3840, 2160)));
     assert_eq!(
         hdr.files,
@@ -306,7 +304,16 @@ fn a_tv_naming_no_codecs_gets_hevc_and_the_hdr_its_screen_shows() {
     };
     let without_size = profile(projector, Some(&without_size));
     assert_eq!(without_size.max_size, Some((1920, 1080)));
-    assert_eq!(without_size.hdr, [Hdr::Hdr10, Hdr::Hlg]);
+    assert_eq!(without_size.hdr, [Hdr::Hdr10, Hdr::DolbyVision, Hdr::Hlg]);
+    // Listing no profiles it decodes, Dolby Vision goes as the HDR10 under
+    // it, or reshaped into HDR10.
+    let no_profiles = Screen {
+        dolby_vision: Vec::new(),
+        ..screen.clone()
+    };
+    let no_profiles = profile(projector, Some(&no_profiles));
+    assert_eq!(no_profiles.hdr, [Hdr::Hdr10, Hdr::Hlg]);
+    assert_eq!(no_profiles.dolby_vision, Some(Vec::new()));
     let hevc = Capability::parse_list("http-get:*:video/mp4:*,http-get:*:video/hevc:*");
     assert_eq!(
         profile(Some(&hevc), Some(&screen)).video,
@@ -314,16 +321,20 @@ fn a_tv_naming_no_codecs_gets_hevc_and_the_hdr_its_screen_shows() {
         "HEVC once"
     );
 
-    // Without a screen that says, or one showing none of HDR10 and HLG:
-    // fitted to SDR.
-    let showing = |hdr: Vec<::airplay::Hdr>| Screen {
+    // Without a screen that says, or one showing no HDR it's sent: fitted
+    // to SDR.
+    let showing = |hdr: Vec<::airplay::Hdr>, dolby_vision: Vec<u8>| Screen {
         hdr,
+        dolby_vision,
         ..screen.clone()
     };
     for plain in [
         profile(projector, None),
-        profile(projector, Some(&showing(Vec::new()))),
-        profile(projector, Some(&showing(vec![::airplay::Hdr::DolbyVision]))),
+        profile(projector, Some(&showing(Vec::new(), vec![5]))),
+        profile(
+            projector,
+            Some(&showing(vec![::airplay::Hdr::DolbyVision], Vec::new())),
+        ),
     ] {
         assert_eq!(
             plain.video,
@@ -331,8 +342,14 @@ fn a_tv_naming_no_codecs_gets_hevc_and_the_hdr_its_screen_shows() {
         );
         assert_eq!(plain.max_bit_depth, 8);
         assert!(plain.hdr.is_empty());
+        assert_eq!(plain.dolby_vision, None);
         assert_eq!(plain.max_size, Some((1920, 1080)));
     }
+    let dolby_vision_alone = profile(
+        projector,
+        Some(&showing(vec![::airplay::Hdr::DolbyVision], vec![5])),
+    );
+    assert_eq!(dolby_vision_alone.hdr, [Hdr::DolbyVision]);
 }
 
 #[test]
@@ -368,14 +385,21 @@ fn projector_info() -> plist::Dictionary {
     let mode = |name: &str| {
         let mut mode = Dictionary::new();
         mode.insert("HDRMode".into(), name.into());
-        Value::Dictionary(mode)
+        mode
     };
+    let mut dolby_vision = mode("DoVi");
+    let codecs = ["dvhe.05.09", "hev1.08.09"].map(Value::from);
+    dolby_vision.insert("codecStrings".into(), Value::Array(codecs.to_vec()));
     let mut display = Dictionary::new();
     display.insert("widthPixelsMax".into(), Value::Integer(3840.into()));
     display.insert("heightPixelsMax".into(), Value::Integer(2160.into()));
     display.insert(
         "HDRSupportedModes".into(),
-        Value::Array(vec![mode("SDR"), mode("HDR10"), mode("DoVi"), mode("HLG")]),
+        Value::Array(
+            [mode("SDR"), mode("HDR10"), dolby_vision, mode("HLG")]
+                .map(Value::Dictionary)
+                .to_vec(),
+        ),
     );
     let mut info = Dictionary::new();
     info.insert(
@@ -407,7 +431,8 @@ fn a_tv_naming_no_codecs_is_asked_by_airplay_what_its_screen_shows() {
         include_str!("../../../crates/dlna/fixtures/visionmaster-protocol-info.txt").into();
     let served = cast_to(&projector);
     assert_eq!(asked(), 1);
-    assert_eq!(served.hdr, [Hdr::Hdr10, Hdr::Hlg]);
+    assert_eq!(served.hdr, [Hdr::Hdr10, Hdr::DolbyVision, Hdr::Hlg]);
+    assert_eq!(served.dolby_vision, Some(vec![5, 8]));
     assert_eq!(served.max_size, Some((3840, 2160)));
     assert!(served.video.contains(&VideoCodec::Hevc));
 

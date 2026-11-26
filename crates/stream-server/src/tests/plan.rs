@@ -26,6 +26,7 @@ fn with_pictures(codec: VideoCodec) -> MediaInfo {
         hdr: None,
         base_hdr: None,
         ipt: false,
+        dolby_vision: None,
         picture: false,
     };
     let audio = crate::media::AudioInfo {
@@ -354,8 +355,42 @@ fn repackages_dolby_vision_as_its_base_layer() {
         hdr: every.to_vec(),
         ..Profile::default()
     };
+    let of_profile = |media: &MediaInfo, profile: Option<u8>| {
+        let mut media = media.clone();
+        if let StreamKind::Video(video) = &mut media.streams[0].kind {
+            video.dolby_vision = profile;
+        }
+        media
+    };
     assert_eq!(
-        planned(&profile_20, dolby_vision_tv).delivery,
+        planned(&of_profile(&profile_20, Some(20)), dolby_vision_tv.clone()).delivery,
         Delivery::File
     );
+
+    // One that lists the profiles it shows gets a file as it is only of
+    // those, the others as one without Dolby Vision does.
+    let listing = Profile {
+        dolby_vision: Some(vec![5, 8]),
+        ..dolby_vision_tv
+    };
+    for (media, profile) in [(&profile_20, 5), (&profile_8_1, 8)] {
+        let shown = planned(&of_profile(media, Some(profile)), listing.clone());
+        assert_eq!(shown.delivery, Delivery::File, "{profile}");
+    }
+    for profile in [Some(20), None] {
+        let reshaped = planned(&of_profile(&profile_20, profile), listing.clone());
+        assert_ne!(reshaped.delivery, Delivery::File, "{profile:?}");
+        assert!(
+            matches!(
+                reshaped.video,
+                Some(VideoPlan::Encode {
+                    hdr: Some(Hdr::Hdr10),
+                    ..
+                })
+            ),
+            "{reshaped:?}"
+        );
+    }
+    let hdr10 = hdr_media(VideoCodec::Hevc, Hdr::Hdr10, Some(Hdr::Hdr10), false);
+    assert_eq!(planned(&hdr10, listing).delivery, Delivery::File);
 }

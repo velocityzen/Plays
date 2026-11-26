@@ -26,7 +26,7 @@ fn reads_a_track_named_in_another_encoding() {
 /// 8.4, SDR for 8.2. With none (profiles 5, 10.0 and 20) it's IPT, which
 /// is neither, whatever it's tagged. A configuration too short to say
 /// leaves it to the colors: IPT tagged so (profile 20) or not as HDR
-/// (profile 5).
+/// (profile 5). Its profile is the configuration's, where it says.
 #[test]
 fn reads_dolby_visions_base_layer_as_hdr10_or_hlg() {
     use ffi::AVColorSpace::*;
@@ -36,9 +36,9 @@ fn reads_dolby_visions_base_layer_as_hdr10_or_hlg() {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/clip-odd-colors.mkv");
     let mut input = open(&Source::File(path), Arc::default()).unwrap();
     let index = input.streams().best(Type::Video).unwrap().index();
-    // With `Some((size, compatibility))`, a Dolby Vision configuration that
-    // long, saying that of its base layer where it's long enough.
-    let mut read = |transfer, space, configuration: Option<(usize, u8)>| {
+    // With `Some((size, profile, compatibility))`, a Dolby Vision
+    // configuration that long, saying those where it's long enough.
+    let mut read = |transfer, space, configuration: Option<(usize, u8, u8)>| {
         let mut stream = input.stream_mut(index).unwrap();
         // SAFETY: the stream is ours and open; its parameters take these
         // values FFmpeg names, and side data FFmpeg allocates, written
@@ -52,7 +52,7 @@ fn reads_dolby_visions_base_layer_as_hdr10_or_hlg() {
                 &raw mut (*parameters).nb_coded_side_data,
                 ffi::AVPacketSideDataType::AV_PKT_DATA_DOVI_CONF,
             );
-            if let Some((size, compatibility)) = configuration {
+            if let Some((size, profile, compatibility)) = configuration {
                 let made = ffi::av_packet_side_data_new(
                     &raw mut (*parameters).coded_side_data,
                     &raw mut (*parameters).nb_coded_side_data,
@@ -62,59 +62,62 @@ fn reads_dolby_visions_base_layer_as_hdr10_or_hlg() {
                 );
                 assert!(!made.is_null());
                 std::ptr::write_bytes((*made).data, 0, size);
+                if size > 2 {
+                    (*made).data.add(2).write(profile);
+                }
                 if size > 7 {
                     (*made).data.add(7).write(compatibility);
                 }
             }
         }
         let info = video_info(&input.stream(index).unwrap());
-        (info.hdr, info.base_hdr, info.ipt)
+        (info.hdr, info.base_hdr, info.ipt, info.dolby_vision)
     };
 
     let (hdr10, hlg) = (Some(Hdr::Hdr10), Some(Hdr::Hlg));
     assert_eq!(
         read(AVCOL_TRC_SMPTE2084, AVCOL_SPC_BT2020_NCL, None),
-        (hdr10, hdr10, false)
+        (hdr10, hdr10, false, None)
     );
     assert_eq!(
         read(AVCOL_TRC_ARIB_STD_B67, AVCOL_SPC_BT2020_NCL, None),
-        (hlg, hlg, false)
+        (hlg, hlg, false, None)
     );
     assert_eq!(
         read(AVCOL_TRC_BT709, AVCOL_SPC_BT709, None),
-        (None, None, false)
+        (None, None, false, None)
     );
 
     let dolby_vision = Some(Hdr::DolbyVision);
-    let whole = |compatibility| Some((24, compatibility));
+    let whole = |profile, compatibility| Some((24, profile, compatibility));
     assert_eq!(
-        read(AVCOL_TRC_SMPTE2084, AVCOL_SPC_BT2020_NCL, whole(1)),
-        (dolby_vision, hdr10, false)
+        read(AVCOL_TRC_SMPTE2084, AVCOL_SPC_BT2020_NCL, whole(8, 1)),
+        (dolby_vision, hdr10, false, Some(8))
     );
     assert_eq!(
-        read(AVCOL_TRC_ARIB_STD_B67, AVCOL_SPC_BT2020_NCL, whole(4)),
-        (dolby_vision, hlg, false)
+        read(AVCOL_TRC_ARIB_STD_B67, AVCOL_SPC_BT2020_NCL, whole(8, 4)),
+        (dolby_vision, hlg, false, Some(8))
     );
     assert_eq!(
-        read(AVCOL_TRC_BT709, AVCOL_SPC_BT709, whole(2)),
-        (dolby_vision, None, false)
+        read(AVCOL_TRC_BT709, AVCOL_SPC_BT709, whole(8, 2)),
+        (dolby_vision, None, false, Some(8))
     );
-    for (transfer, space) in [
-        (AVCOL_TRC_SMPTE2084, AVCOL_SPC_IPT_C2),
-        (AVCOL_TRC_UNSPECIFIED, AVCOL_SPC_UNSPECIFIED),
-        (AVCOL_TRC_SMPTE2084, AVCOL_SPC_BT2020_NCL),
+    for (transfer, space, profile) in [
+        (AVCOL_TRC_SMPTE2084, AVCOL_SPC_IPT_C2, 20),
+        (AVCOL_TRC_UNSPECIFIED, AVCOL_SPC_UNSPECIFIED, 5),
+        (AVCOL_TRC_SMPTE2084, AVCOL_SPC_BT2020_NCL, 10),
     ] {
         assert_eq!(
-            read(transfer, space, whole(0)),
-            (dolby_vision, None, true),
+            read(transfer, space, whole(profile, 0)),
+            (dolby_vision, None, true, Some(profile)),
             "{transfer:?} {space:?}"
         );
     }
 
-    let short = Some((4, 0));
+    let short = Some((4, 5, 0));
     assert_eq!(
         read(AVCOL_TRC_SMPTE2084, AVCOL_SPC_BT2020_NCL, short),
-        (dolby_vision, hdr10, false)
+        (dolby_vision, hdr10, false, None)
     );
     for (transfer, space) in [
         (AVCOL_TRC_SMPTE2084, AVCOL_SPC_IPT_C2),
@@ -122,7 +125,7 @@ fn reads_dolby_visions_base_layer_as_hdr10_or_hlg() {
     ] {
         assert_eq!(
             read(transfer, space, short),
-            (dolby_vision, None, true),
+            (dolby_vision, None, true, None),
             "{transfer:?} {space:?}"
         );
     }
