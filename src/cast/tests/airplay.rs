@@ -130,7 +130,11 @@ fn a_tv_of_another_make_gets_hevc_with_the_hdr_its_screen_shows_up_to_its_larges
     assert_eq!(tv.max_size, Some(UHD));
     assert_eq!(tv.max_bit_depth, 10);
     assert_eq!(tv.hdr, [Hdr::Hdr10, Hdr::DolbyVision, Hdr::Hlg]);
-    assert_eq!(tv.hls, Some(Segments::Fmp4));
+    assert_eq!(
+        tv.hls,
+        Some(Segments::Ts),
+        "its player asks for no init.mp4, so fragmented MP4 never starts"
+    );
     assert_eq!(
         tv.audio,
         [AudioCodec::Aac],

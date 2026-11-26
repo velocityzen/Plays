@@ -187,9 +187,11 @@ pub(crate) fn turned_away(receiver: &::airplay::Device) -> String {
 /// TV H.264. Apple TVs take AC-3, E-AC-3 and ALAC too, up to 7.1, in HLS of
 /// fragmented MP4, which HEVC and HDR need. A TV of another make whose
 /// `screen` lists the HDR it shows gets HEVC with that, up to its largest
-/// picture, in fragmented MP4 too; any other what nearly every TV plays:
-/// H.264 and AAC in MPEG-TS. Always as HLS, never a file as it is, so
-/// subtitles go in the playlist.
+/// picture; any other what nearly every TV plays: H.264 and AAC. Both in
+/// MPEG-TS, as a TV's own player may not take fragmented MP4: a Google TV's
+/// asks for its first segment, never for the `init.mp4` before it, and
+/// waits. Always as HLS, never a file as it is, so subtitles go in the
+/// playlist.
 fn profile(model: &str, screen: Option<&Screen>) -> Profile {
     let plain = Profile {
         files: Vec::new(),
@@ -199,7 +201,6 @@ fn profile(model: &str, screen: Option<&Screen>) -> Profile {
     let Some(generation) = apple_tv(model) else {
         return match screen.filter(|screen| !screen.hdr.is_empty()) {
             Some(screen) => Profile {
-                hls: Some(Segments::Fmp4),
                 video: vec![VideoCodec::H264, VideoCodec::Hevc],
                 max_size: Some(screen.max_size.unwrap_or(FULL_HD)),
                 max_bit_depth: 10,
