@@ -7,14 +7,15 @@
 //! it, is stopped, which takes it back to where it was.
 //!
 //! What one plays goes by its model: an Apple TV 4K HEVC and HDR, as Apple
-//! lists. Everything goes as HLS, so subtitles go in its playlist, which
+//! lists; a TV of another make by what its screen says it shows, asked as
+//! it's connected to. Everything goes as HLS, so subtitles go in its playlist, which
 //! the receiver draws in its own style; other subtitles have it play the
 //! media again from where it is, as it reads the playlist only once.
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use ::airplay::{Browser, Event, PinPairing, PlaybackInfo, PlaybackState, VideoSession};
+use ::airplay::{Browser, Event, PinPairing, PlaybackInfo, PlaybackState, Screen, VideoSession};
 use futures::channel::mpsc::UnboundedReceiver;
 use stream_server::{AudioCodec, Hdr, Profile, Segments, VideoCodec};
 
@@ -111,11 +112,15 @@ impl Target for AirPlayTarget {
         let credentials = self.pairings.credentials(&receiver.id);
         let sender = self.pairings.sender();
         match VideoSession::connect(&receiver, credentials.as_ref(), &sender) {
-            Ok((session, events)) => Ok(Box::new(AirPlaySession::new(
-                session,
-                events,
-                profile(&receiver.model),
-            ))),
+            Ok((session, events)) => {
+                // Apple TVs go by their model, which says more.
+                let screen = apple_tv(&receiver.model)
+                    .is_none()
+                    .then(|| Screen::ask(&receiver))
+                    .flatten();
+                let profile = profile(&receiver.model, screen.as_ref());
+                Ok(Box::new(AirPlaySession::new(session, events, profile)))
+            }
             Err(::airplay::Error::NeedsPin) => Err(Error::NeedsPin),
             // It no longer knows us, as after it's reset: paired again,
             // which replaces what's kept. Kept till then: a receiver turning
@@ -180,17 +185,29 @@ pub(crate) fn turned_away(receiver: &::airplay::Device) -> String {
 /// (`AppleTV6,2` and later) HEVC up to 2160p with HDR10, HLG and Dolby
 /// Vision; an Apple TV HD (`AppleTV5,3`) HEVC up to 1080p; an older Apple
 /// TV H.264. Apple TVs take AC-3, E-AC-3 and ALAC too, up to 7.1, in HLS of
-/// fragmented MP4, which HEVC and HDR need. Any other TV gets what nearly
-/// every TV plays: H.264 and AAC in MPEG-TS. Always as HLS, never a file as
-/// it is, so subtitles go in the playlist.
-fn profile(model: &str) -> Profile {
+/// fragmented MP4, which HEVC and HDR need. A TV of another make whose
+/// `screen` lists the HDR it shows gets HEVC with that, up to its largest
+/// picture, in fragmented MP4 too; any other what nearly every TV plays:
+/// H.264 and AAC in MPEG-TS. Always as HLS, never a file as it is, so
+/// subtitles go in the playlist.
+fn profile(model: &str, screen: Option<&Screen>) -> Profile {
     let plain = Profile {
         files: Vec::new(),
         hls_subtitles: true,
         ..Profile::default()
     };
     let Some(generation) = apple_tv(model) else {
-        return plain;
+        return match screen.filter(|screen| !screen.hdr.is_empty()) {
+            Some(screen) => Profile {
+                hls: Some(Segments::Fmp4),
+                video: vec![VideoCodec::H264, VideoCodec::Hevc],
+                max_size: Some(screen.max_size.unwrap_or(FULL_HD)),
+                max_bit_depth: 10,
+                hdr: screen.hdr.iter().copied().map(hdr).collect(),
+                ..plain
+            },
+            None => plain,
+        };
     };
     let apple = Profile {
         audio: vec![
@@ -219,6 +236,15 @@ fn profile(model: &str) -> Profile {
             ..apple
         },
         _ => apple,
+    }
+}
+
+/// HDR as the stream server names it.
+fn hdr(shown: ::airplay::Hdr) -> Hdr {
+    match shown {
+        ::airplay::Hdr::Hdr10 => Hdr::Hdr10,
+        ::airplay::Hdr::Hlg => Hdr::Hlg,
+        ::airplay::Hdr::DolbyVision => Hdr::DolbyVision,
     }
 }
 

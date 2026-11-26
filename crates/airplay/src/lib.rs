@@ -18,6 +18,7 @@ mod message;
 mod pairing;
 mod rsa;
 mod rtp;
+mod screen;
 mod session;
 mod srp;
 #[cfg(test)]
@@ -31,5 +32,6 @@ pub use browser::{Browser, Found};
 pub use device::{Device, Features, Pairing, Record};
 pub use error::{Error, Result};
 pub use pairing::Credentials;
+pub use screen::{Hdr, Screen};
 pub use session::{Event, Sender};
 pub use video::{PinPairing, PlaybackInfo, PlaybackState, VideoSession};

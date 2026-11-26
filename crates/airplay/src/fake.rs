@@ -157,6 +157,9 @@ pub struct State {
     /// Whether it refuses a remote-control stream, as a TV told what to
     /// play with `/play` does.
     pub no_queue: bool,
+    /// What it answers `GET /info` with, before pairing too, as TVs with
+    /// AirPlay built in do; none says nothing.
+    pub info: Option<Dictionary>,
     /// Whether what it's given never comes, as when it can't fetch it: it
     /// says it isn't ready to play it, and nothing of why.
     pub never_ready: bool,
@@ -285,6 +288,7 @@ impl FakeReceiver {
                 asked: 0,
                 commands: Vec::new(),
                 no_queue: false,
+                info: None,
                 never_ready: false,
                 refuse_playback_info: false,
                 playback: Dictionary::new(),
@@ -584,6 +588,10 @@ fn answer(shared: &Arc<Shared>, request: &Received, secret: Option<&[u8]>) -> Re
             pairing(lock(&shared.accessory).setup(&request.body))
         }
         ("POST", "/pair-verify") => pairing(lock(&shared.accessory).verify(&request.body)),
+        ("GET", "/info") => match shared.state().info.clone() {
+            Some(info) => Reply::ok().plist(info),
+            None => Reply::status(404),
+        },
         // An AirPlay 2 receiver takes nothing else until paired.
         _ if !request.sealed && kind.airplay2() => Reply::status(403),
         ("ANNOUNCE", _) => announce(shared, request),

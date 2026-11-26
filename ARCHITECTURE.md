@@ -569,8 +569,8 @@ sequenceDiagram
 - `src/cast/chromecast.rs`: subtitles as WebVTT beside the HLS
 - `src/cast/dlna.rs`: the files the renderer lists, else MPEG-TS, as fewer
   TVs take HLS; subtitles as SRT
-- `src/cast/airplay.rs`: always HLS, subtitles in the playlist; speakers
-  are outputs, not cast to
+- `src/cast/airplay.rs`: always HLS, subtitles in the playlist; Apple TVs
+  by model, other TVs by their `Screen`; speakers are outputs, not cast to
 - `src/cast/pairings.rs`: AirPlay credentials, owner-only (`AppPairings`)
 - `src/ui/pairing.rs`, `src/ui/workspace/pairing.rs`: the PIN sheet
 - `src/cast/fake.rs`: a protocol for tests
@@ -649,6 +649,7 @@ to play a URL, a speaker is sent live sound. Built like the other two.
 Apple's protocol is unpublished, so an update can break it.
 
 - `browser.rs`, `device.rs`: mDNS for `_airplay._tcp` and `_raop._tcp`
+- `screen.rs`: a TV's largest picture and HDR, from `GET /info`
 - `tlv8.rs`, `srp.rs`, `pairing.rs`: HomeKit pairing (SRP-6a, Ed25519,
   ChaCha20-Poly1305); a `403` is `Error::Refused`, a pairing the receiver
   no longer takes `Error::Forgotten`

@@ -2,15 +2,17 @@
 //!
 //! ```text
 //! cargo run -p airplay --example airplay -- list
+//! cargo run -p airplay --example airplay -- screen "Living Room"
 //! cargo run -p airplay --example airplay -- pair "Living Room" tv.pairing
 //! cargo run -p airplay --example airplay -- play "Living Room" http://…/clip.mp4 tv.pairing
 //! cargo run -p airplay --example airplay -- tone Kitchen 0.2
 //! ```
 //!
-//! `pair` asks for the PIN the TV shows and keeps what pairing leaves in the
-//! file; `play` has the TV play the URL to the end, or for two minutes;
-//! `tone` plays two seconds of a quiet tone at the volume given, then puts
-//! the volume back.
+//! `screen` says what the TV's `/info` says its screen shows; `pair` asks
+//! for the PIN the TV shows and keeps what pairing leaves in the file;
+//! `play` has the TV play the URL to the end, or for two minutes; `tone`
+//! plays two seconds of a quiet tone at the volume given, then puts the
+//! volume back.
 
 use std::error::Error;
 use std::io::BufRead;
@@ -18,7 +20,8 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use airplay::{
-    AudioStream, Browser, Credentials, Device, PinPairing, PlaybackState, Sender, VideoSession,
+    AudioStream, Browser, Credentials, Device, PinPairing, PlaybackState, Screen, Sender,
+    VideoSession,
 };
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
@@ -28,6 +31,7 @@ fn main() {
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
     let done = match args.as_slice() {
         ["list"] => list(),
+        ["screen", name] => screen(name),
         ["pair", name, file] => pair(name, file),
         ["play", name, url] => play(name, url, None),
         ["play", name, url, file] => play(name, url, Some(file)),
@@ -35,7 +39,9 @@ fn main() {
             .parse()
             .map_err(Into::into)
             .and_then(|volume| tone(name, volume)),
-        _ => Err("list | pair NAME FILE | play NAME URL [FILE] | tone NAME VOLUME".into()),
+        _ => Err(
+            "list | screen NAME | pair NAME FILE | play NAME URL [FILE] | tone NAME VOLUME".into(),
+        ),
     };
     if let Err(err) = done {
         eprintln!("{err}");
@@ -62,6 +68,12 @@ fn list() -> Result<()> {
             device.pairing()
         );
     }
+    Ok(())
+}
+
+fn screen(name: &str) -> Result<()> {
+    let device = find(name)?;
+    println!("{:?}", Screen::ask(&device));
     Ok(())
 }
 
