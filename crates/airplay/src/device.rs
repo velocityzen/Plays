@@ -163,9 +163,11 @@ impl Device {
             .any(|address| ips.contains(&address.ip()))
     }
 
-    /// Whether it shows pictures: a TV, or a box on one.
+    /// Whether it shows pictures: a TV, or a box on one. Apple TVs say so
+    /// with AirPlay video's first bit; TVs with AirPlay 2 built in, as
+    /// LG's, Samsung's and some Google TVs, with only its second.
     pub fn shows_video(&self) -> bool {
-        self.features.has(Features::VIDEO)
+        self.features.has(Features::VIDEO) || self.features.has(Features::VIDEO_V2)
     }
 
     pub fn plays_audio(&self) -> bool {

@@ -55,6 +55,40 @@ pub fn speaker() -> (Record, Record) {
     )
 }
 
+// The record a Google TV projector with AirPlay 2 built in sends, its
+// ids, serial number and key made up: no `_raop._tcp` beside it.
+fn google_tv() -> Record {
+    record(
+        "VisionMaster",
+        7000,
+        "acl=0 deviceid=0A:12:34:56:78:9A features=0x7F8AD0,0x38BCF46 fex=0Ip/AEbPiwNACA \
+             rsf=0x3 fv=p20.2025.12.15 at=0x1 flags=0x244 model=VisionMaster \
+             integrator=VALERION manufacturer=VALERION serialNumber=00000000000000000001 \
+             protovers=1.1 srcvers=377.40.00 pi=0A:12:34:56:78:9A \
+             psi=00000000-0000-0000-0000-0A123456789A gid=00000000-0000-0000-0000-0A123456789A \
+             gcgl=0 pk=3333333333333333333333333333333333333333333333333333333333333333",
+    )
+}
+
+// An Apple TV of before AirPlay 2, which says it shows video with the first
+// bit alone.
+fn older_apple_tv() -> (Record, Record) {
+    (
+        record(
+            "Bedroom",
+            7000,
+            "deviceid=0E:22:33:44:55:66 features=0x5A7FFFF7,0x1E flags=0x4 model=AppleTV3,2 \
+                 srcvers=220.68",
+        ),
+        record(
+            "0E2233445566@Bedroom",
+            49152,
+            "cn=0,1,2,3 da=true et=0,3,5 ft=0x5A7FFFF7,0x1E md=0,1,2 am=AppleTV3,2 sf=0x4 \
+                 tp=UDP vn=65537 vs=220.68",
+        ),
+    )
+}
+
 #[test]
 fn reads_the_features_low_word_first() {
     let features = Features::parse("0x445F8A00,0x1C340").unwrap();
@@ -85,6 +119,35 @@ fn an_apple_tv_shows_video_and_pairs_with_a_pin() {
     assert_eq!(tv.pairing(), Pairing::Pin);
     assert_eq!(tv.codecs, [0, 1, 2, 3]);
     assert_eq!(tv.public_key, Some([0x11; 32]));
+}
+
+#[test]
+fn a_tv_with_airplay_2_built_in_shows_video_by_the_second_bit_alone() {
+    let tv = Device::from_records(Some(&google_tv()), None).unwrap();
+    assert_eq!(tv.id, "0A123456789A");
+    assert_eq!(tv.name, "VisionMaster");
+    assert_eq!(tv.model, "VisionMaster");
+    assert_eq!(tv.manufacturer.as_deref(), Some("VALERION"));
+    assert!(!tv.features.has(Features::VIDEO));
+    assert!(tv.features.has(Features::VIDEO_V2));
+    assert!(tv.shows_video());
+    assert!(tv.plays_audio(), "its sound too");
+    assert!(tv.airplay2());
+    assert_eq!(tv.pairing(), Pairing::Pin);
+    assert!(tv.codecs.is_empty());
+    assert_eq!(tv.public_key, Some([0x33; 32]));
+}
+
+#[test]
+fn an_older_apple_tv_shows_video_by_the_first_bit_alone() {
+    let (airplay, raop) = older_apple_tv();
+    let tv = Device::from_records(Some(&airplay), Some(&raop)).unwrap();
+    assert!(tv.features.has(Features::VIDEO));
+    assert!(!tv.features.has(Features::VIDEO_V2));
+    assert!(tv.shows_video());
+    assert!(tv.plays_audio());
+    assert!(!tv.airplay2());
+    assert_eq!(tv.pairing(), Pairing::None);
 }
 
 #[test]
