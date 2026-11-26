@@ -3424,7 +3424,7 @@ The keys that run commands changed.
 
 #### Open Paths or URLs
 
-`app.open`: Play files, the media files in folders, and streams, in the window named, or the one in front, or a new one if none is open: each in a block, or one after another in one, as Settings say.
+`app.open`: Play files, the media files in folders, what playlist files list, and streams, in the window named, or the one in front, or a new one if none is open: each in a block, or one after another in one, as Settings say; a playlist file's one after another in one.
 
 - Acts on a player window.
 - Arguments:

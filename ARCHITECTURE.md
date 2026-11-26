@@ -279,6 +279,8 @@ flowchart LR
 - `src/media/source.rs`: files, URLs, and folders listed in the background
   (`media_in`); entries picked by name, then told apart by the listing,
   only links looked at again (`is_file`, `is_folder`)
+- `src/media/playlist_file.rs`: what `.m3u` and `.pls` files list, on disk
+  or over HTTP; an HLS playlist is a stream
 - `src/media/details.rs`: the console's format and stream details
 - `src/media/colors.rs`: colors read as numbers, as ffmpeg-next's enums
   have gaps a file can hit; `clippy.toml` bans its getters

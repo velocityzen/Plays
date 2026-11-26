@@ -315,6 +315,13 @@ fn open(
         .with_context(|| format!("could not open {source}"))
 }
 
+/// The small file at `url`, such as a playlist, read whole as a stream is
+/// read; `None` if it holds more than `limit` bytes. Waits on the network
+/// as long as a stream would.
+pub(crate) fn fetch_small(url: &str, limit: usize) -> Result<Option<fetch::Fetched>> {
+    fetch::fetch(url, network_options(), limit, || false)
+}
+
 /// What a stream is opened with.
 fn network_options() -> ffmpeg::Dictionary<'static> {
     let mut options = ffmpeg::Dictionary::new();

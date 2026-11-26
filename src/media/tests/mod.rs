@@ -2686,7 +2686,7 @@ fn dovi_surface_to_sdr(
 // ---------------------------------------------------------------------------
 // Network streams, served from a tiny HTTP server on localhost.
 
-mod http {
+pub(super) mod http {
     use std::io::{BufRead, BufReader, Write};
     use std::net::{SocketAddr, TcpListener, TcpStream};
     use std::path::PathBuf;

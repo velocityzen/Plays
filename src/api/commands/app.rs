@@ -51,9 +51,10 @@ pub const COMMANDS: &[Spec] = &[
     Spec::custom_with(
         "app.open",
         "Open Paths or URLs",
-        "Play files, the media files in folders, and streams, in the window named, or \
-         the one in front, or a new one if none is open: each in a block, or one after \
-         another in one, as Settings say.",
+        "Play files, the media files in folders, what playlist files list, and streams, \
+         in the window named, or the one in front, or a new one if none is open: each in \
+         a block, or one after another in one, as Settings say; a playlist file's one \
+         after another in one.",
         Scope::Window,
         &[
             Arg::required(

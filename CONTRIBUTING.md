@@ -210,7 +210,8 @@ mod tests;
 
 ### What's tested where
 
-- `src/media/tests/`: the engine, tracks, subtitles, delays, colors, HDR, streams
+- `src/media/tests/`: the engine, tracks, subtitles, delays, colors, HDR, streams,
+  playlist files
 - `src/media/decoder/tests/`: cover files, timestamps, seeks, frame conversion
 - `src/ui/tests/`: screenshots, framing, PQ and HLG math, the text field and IME
 - `src/ui/components/tests/`: panels' looks in pixels, `gpui::render_offscreen` (macOS)

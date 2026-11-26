@@ -19,6 +19,8 @@ GPU-accelerated UI framework.
 
 - Any number of files and folders, side by side in a grid, or one after
   another in one block as a playlist
+- Playlist files (`.m3u`, `.m3u8`, `.pls`), on disk or over HTTP, each in
+  one block
 - Streams: HTTP(S), HLS, DASH, RTMP, RTSP
 - Play/pause, seek, loop, volume and mute in each block
 - Frame-accurate scrubbing and frame stepping
@@ -241,7 +243,7 @@ mkdir ($nu.user-autoload-dirs | first); plays completions nushell | save -f ($nu
 
 ## Limitations
 
-- No playback speed. Playlist files (`.m3u`, `.pls`) aren't read.
+- No playback speed.
 - Live streams can't be seeked or screenshotted, and one paused goes on
   from where it paused, not the live edge.
 - Picture adjustments and delays aren't kept when a file opens again.

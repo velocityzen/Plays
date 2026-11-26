@@ -1,6 +1,7 @@
-//! Opening files, the media files in folders, and streams, from the open
-//! panel, a drop or the "Open URL" form: several at once in a block each,
-//! or in one playing them in turn, as Settings → Playback say.
+//! Opening files, the media files in folders, what playlist files list,
+//! and streams, from the open panel, a drop or the "Open URL" form: several
+//! at once in a block each, or in one playing them in turn, as Settings →
+//! Playback say; what a playlist file lists, in one playing them in turn.
 
 use std::path::PathBuf;
 
@@ -10,6 +11,7 @@ use serde_json::json;
 
 use super::Workspace;
 use crate::media::Source;
+use crate::media::playlist_file;
 use crate::media::source::{kind_of, media_in};
 use crate::recents;
 use crate::settings::{Settings, SeveralFiles};
@@ -35,50 +37,55 @@ impl Workspace {
         self.open_sources(paths.into_iter().map(Source::File).collect(), cx);
     }
 
-    /// Open files, the media files in folders, and streams. What is a
-    /// folder, and what is in it, is found in the background (it may be on
-    /// a network drive), then the blocks open in the order given.
+    /// Open files, the media files in folders, what playlist files list,
+    /// and streams. What is a folder, and what is in it or in a playlist, is
+    /// found in the background (it may be on a network drive), then the
+    /// blocks open in the order given.
     pub fn open_sources(&mut self, sources: Vec<Source>, cx: &mut Context<Self>) {
         self.open_as(sources, Opening::default(), cx);
     }
 
     /// Open `sources` as `open_sources` does, but as `opening` says.
     pub fn open_as(&mut self, sources: Vec<Source>, opening: Opening, cx: &mut Context<Self>) {
-        let listing = cx.background_spawn(async move { expand_folders(sources, opening.kind) });
+        let listing = cx.background_spawn(async move { expand(sources, opening.kind) });
         cx.spawn(async move |this, cx| {
-            let sources = listing.await;
-            this.update(cx, |this, cx| this.add_players(sources, opening, cx))
+            let listed = listing.await;
+            this.update(cx, |this, cx| this.add_players(listed, opening, cx))
                 .ok();
         })
         .detach();
     }
 
-    /// A block for each of `sources`, or one playing them one after
-    /// another, as Settings → Playback say, unless `opening` says else.
-    fn add_players(&mut self, sources: Vec<Source>, opening: Opening, cx: &mut Context<Self>) {
-        let Some(first) = sources.first() else {
-            return;
-        };
+    /// A block for each of `listed`, or one playing them all one after
+    /// another, as Settings → Playback say, unless `opening` says else; a
+    /// playlist file's in one block either way.
+    fn add_players(&mut self, listed: Vec<Listed>, opening: Opening, cx: &mut Context<Self>) {
         let settings = cx.global::<Settings>();
         let in_turn =
             opening.several_files.unwrap_or(settings.several_files) == SeveralFiles::Playlist;
         let autoplay = opening.autoplay.unwrap_or(settings.autoplay);
-        let (blocks, playlist) = if in_turn {
-            (vec![first.clone()], sources)
-        } else {
-            (sources, Vec::new())
-        };
+        let blocks = blocks(listed, in_turn);
+        if blocks.is_empty() {
+            return;
+        }
         let mixer = self.mixer(cx);
         let shown = self.over_video;
         let mut opened = Vec::new();
-        for source in blocks {
+        for Block {
+            source,
+            playlist,
+            from,
+        } in blocks
+        {
             log::info!("opening {source}");
-            if let Source::File(path) = &source {
+            if let Some(path) = from.as_ref().or(match &source {
+                Source::File(path) => Some(path),
+                Source::Url(_) => None,
+            }) {
                 recents::note_file(path, cx);
             }
             let graveyard = self.graveyard.clone();
             let mixer = mixer.clone();
-            let playlist = playlist.clone();
             let view = cx.new(|cx| {
                 let mut view = PlayerView::new(source, autoplay, mixer, graveyard, cx);
                 view.set_over_video(shown, cx);
@@ -138,18 +145,110 @@ impl Workspace {
     }
 }
 
+/// What's opened, a folder's files and a playlist's found.
+#[derive(Debug, PartialEq, Eq)]
+enum Listed {
+    /// A file or stream, given or in a folder given.
+    One(Source),
+    /// What a playlist file lists, which plays in one block.
+    List {
+        /// The playlist file, noted among the recent files for it; none for
+        /// one from the network.
+        from: Option<PathBuf>,
+        sources: Vec<Source>,
+    },
+}
+
 /// Replace folders with the media files directly inside them, only those
-/// of `kind` if there is one. Looks at the disk, so not for the UI thread.
-fn expand_folders(sources: Vec<Source>, kind: Option<file_types::Kind>) -> Vec<Source> {
-    sources
+/// of `kind` if there is one, and playlist files with what they list. A
+/// playlist that can't be read, or is a stream (HLS), opens as it is.
+/// Looks at the disk and the network, so not for the UI thread.
+fn expand(sources: Vec<Source>, kind: Option<file_types::Kind>) -> Vec<Listed> {
+    let mut listed = Vec::new();
+    for source in sources {
+        match source {
+            Source::File(path) if path.is_dir() => listed.extend(
+                media_in(&path)
+                    .into_iter()
+                    .filter(|file| kind.is_none_or(|kind| kind_of(file) == Some(kind)))
+                    .map(|file| Listed::One(Source::File(file))),
+            ),
+            Source::File(path) if playlist_file::is_playlist_file(&path) => {
+                listed.push(match playlist_file::read(&path) {
+                    Some(sources) if !sources.is_empty() => Listed::List {
+                        from: Some(path),
+                        sources,
+                    },
+                    _ => Listed::One(Source::File(path)),
+                });
+            }
+            Source::Url(url) if playlist_file::is_playlist_url(&url) => {
+                listed.push(match playlist_file::fetch(&url) {
+                    Some(sources) if !sources.is_empty() => Listed::List {
+                        from: None,
+                        sources,
+                    },
+                    _ => Listed::One(Source::Url(url)),
+                });
+            }
+            source => listed.push(Listed::One(source)),
+        }
+    }
+    listed
+}
+
+/// A block to open: what it plays first, the playlist it plays in turn (if
+/// more than that), and the playlist file that listed them.
+#[derive(Debug, PartialEq, Eq)]
+struct Block {
+    source: Source,
+    playlist: Vec<Source>,
+    from: Option<PathBuf>,
+}
+
+/// The blocks `listed` opens in: all in one, playing them in turn, if
+/// `in_turn`, else a block each, but for each playlist file's, in one.
+fn blocks(listed: Vec<Listed>, in_turn: bool) -> Vec<Block> {
+    if in_turn {
+        let from = match listed.as_slice() {
+            [Listed::List { from, .. }] => from.clone(),
+            _ => None,
+        };
+        let playlist: Vec<Source> = listed
+            .into_iter()
+            .flat_map(|listed| match listed {
+                Listed::One(source) => vec![source],
+                Listed::List { sources, .. } => sources,
+            })
+            .collect();
+        return playlist
+            .first()
+            .cloned()
+            .map(|source| Block {
+                source,
+                playlist,
+                from,
+            })
+            .into_iter()
+            .collect();
+    }
+    listed
         .into_iter()
-        .flat_map(|source| match source {
-            Source::File(path) if path.is_dir() => media_in(&path)
-                .into_iter()
-                .filter(|file| kind.is_none_or(|kind| kind_of(file) == Some(kind)))
-                .map(Source::File)
-                .collect(),
-            source => vec![source],
+        .filter_map(|listed| match listed {
+            Listed::One(source) => Some(Block {
+                source,
+                playlist: Vec::new(),
+                from: None,
+            }),
+            Listed::List { from, sources } => sources.first().cloned().map(|source| Block {
+                source,
+                playlist: sources,
+                from,
+            }),
         })
         .collect()
 }
+
+#[cfg(test)]
+#[path = "tests/opening.rs"]
+mod tests;
