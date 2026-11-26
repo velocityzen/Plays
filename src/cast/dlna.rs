@@ -6,6 +6,14 @@
 //! more TVs take than HLS. One that doesn't say is taken for a TV that
 //! plays H.264 and AAC in MPEG-TS.
 //!
+//! One that lists kinds of video file but names no codec in them, as a
+//! Google TV's own player does, plays what its TV decodes, which DLNA
+//! doesn't say. Where AirPlay at its address says the TV's screen shows
+//! HDR10 or HLG, it's sent HEVC at 10 bits with that HDR, up to the
+//! screen's largest picture, as a screen showing HDR decodes it; Dolby
+//! Vision as the HDR10 under it, as nothing says it plays that as it is.
+//! Else, and for one that names codecs, HDR is fitted to SDR.
+//!
 //! Subtitles go as SRT beside the media, which a renderer takes only with
 //! the media, so changing them loads it again from where it is. DLNA has
 //! no volume for the media apart from the renderer's own, so the block's
@@ -13,19 +21,19 @@
 //! it was.
 
 use std::collections::HashMap;
-#[cfg(test)]
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::thread;
 use std::time::Instant;
 
+use ::airplay::Screen;
 use ::dlna::{
     Browser, Capability, Ended, Event, Fault, Found, Kind, Media, TransportState, Volume,
 };
 use futures::StreamExt as _;
 use futures::channel::mpsc::UnboundedReceiver;
 use parking_lot::Mutex;
-use stream_server::{AudioCodec, Container, Profile, VideoCodec};
+use stream_server::{AudioCodec, Container, Hdr, Profile, VideoCodec};
 
 use super::target::{
     Device, Error, FOLLOW_POLL, Load, Session, Shows, State, Status, Subtitles, Target,
@@ -106,13 +114,19 @@ struct Known {
 pub struct DlnaTarget {
     browser: Browser,
     known: Arc<Mutex<Known>>,
+    /// The port AirPlay at a renderer's address is asked on what its screen
+    /// shows: none in tests, where this computer's own may answer.
+    screens_on: Option<u16>,
 }
 
 impl DlnaTarget {
     /// Look for renderers on every network this computer is on.
     pub fn start() -> Result<Self, ::dlna::Error> {
         let (browser, found) = Browser::start()?;
-        Ok(Self::with(browser, found))
+        Ok(Self {
+            screens_on: Some(Screen::PORT),
+            ..Self::with(browser, found)
+        })
     }
 
     /// For tests: look for the fake renderer that answers at `search`.
@@ -133,7 +147,11 @@ impl DlnaTarget {
         if let Err(err) = spawned {
             log::warn!("dlna: can't ask renderers what they play: {err}");
         }
-        Self { browser, known }
+        Self {
+            browser,
+            known,
+            screens_on: None,
+        }
     }
 }
 
@@ -216,12 +234,18 @@ impl Target for DlnaTarget {
             .find(|renderer| renderer.id == device.id)
             .ok_or(Error::Gone)?;
         let capabilities = self.known.lock().plays.get(&device.id).cloned().flatten();
+        let screen = self
+            .screens_on
+            .filter(|_| names_no_codecs(capabilities.as_deref()))
+            .zip(renderer.address())
+            .and_then(|(port, at)| Screen::at(&[SocketAddr::new(at.ip(), port)]));
         let (session, events) =
             ::dlna::Session::connect(&renderer).map_err(|err| Error::Failed(err.to_string()))?;
         Ok(Box::new(DlnaSession {
             session: Some(session),
             events,
             capabilities,
+            screen,
             media: None,
             starts_at_url: false,
             sent: (0.0, Instant::now()),
@@ -279,8 +303,33 @@ fn shows(capabilities: Option<&[Capability]>) -> Option<Shows> {
     }
 }
 
-/// How the stream server serves a renderer that plays `capabilities`.
-fn profile(capabilities: Option<&[Capability]>) -> Profile {
+/// Whether a renderer lists kinds of video file but names no codec in
+/// them, and so plays what its TV decodes.
+fn names_no_codecs(capabilities: Option<&[Capability]>) -> bool {
+    let listed: Vec<&Capability> = http(capabilities).collect();
+    listed.iter().any(|capability| is_video(capability))
+        && listed
+            .iter()
+            .all(|capability| capability.mime != "*" && capability.profile.is_none())
+}
+
+/// The HDR a screen shows that's sent as it is: Dolby Vision goes as the
+/// HDR10 under it.
+fn shown_hdr(screen: &Screen) -> Vec<Hdr> {
+    screen
+        .hdr
+        .iter()
+        .filter_map(|hdr| match hdr {
+            ::airplay::Hdr::Hdr10 => Some(Hdr::Hdr10),
+            ::airplay::Hdr::Hlg => Some(Hdr::Hlg),
+            ::airplay::Hdr::DolbyVision => None,
+        })
+        .collect()
+}
+
+/// How the stream server serves a renderer that plays `capabilities`, on
+/// a TV whose `screen` AirPlay there describes.
+fn profile(capabilities: Option<&[Capability]>, screen: Option<&Screen>) -> Profile {
     let listed: Vec<&Capability> = http(capabilities).collect();
     if listed.is_empty() || listed.iter().any(|capability| capability.mime == "*") {
         return Profile {
@@ -359,7 +408,7 @@ fn profile(capabilities: Option<&[Capability]>) -> Profile {
         .any(|codec| matches!(codec, AudioCodec::Ac3 | AudioCodec::Eac3))
         || named("MULT5");
 
-    Profile {
+    let listed = Profile {
         files,
         // A TV takes a stream of MPEG-TS whether it lists one or not.
         stream: shows_video,
@@ -373,7 +422,33 @@ fn profile(capabilities: Option<&[Capability]>) -> Profile {
         video,
         audio,
         ..stream_of_h264()
+    };
+    on_screen(listed, capabilities, screen)
+}
+
+/// `profile`, for a renderer that plays `capabilities`, on a TV whose
+/// `screen` shows HDR10 or HLG: one naming no codecs plays what its TV
+/// decodes, and a screen showing HDR decodes HEVC at 10 bits, so it gets
+/// that HDR in HEVC, up to the screen's largest picture.
+fn on_screen(
+    mut profile: Profile,
+    capabilities: Option<&[Capability]>,
+    screen: Option<&Screen>,
+) -> Profile {
+    let Some(screen) = screen.filter(|_| names_no_codecs(capabilities)) else {
+        return profile;
+    };
+    let hdr = shown_hdr(screen);
+    if hdr.is_empty() {
+        return profile;
     }
+    if !profile.video.contains(&VideoCodec::Hevc) {
+        profile.video.insert(1, VideoCodec::Hevc);
+    }
+    profile.max_size = screen.max_size.or(profile.max_size);
+    profile.max_bit_depth = 10;
+    profile.hdr = hdr;
+    profile
 }
 
 /// H.264 and AAC in a stream of MPEG-TS, which a TV that says nothing of
@@ -480,6 +555,9 @@ struct DlnaSession {
     session: Option<::dlna::Session>,
     events: UnboundedReceiver<Event>,
     capabilities: Option<Vec<Capability>>,
+    /// What its TV's screen shows, as AirPlay there says, where it names no
+    /// codecs.
+    screen: Option<Screen>,
     /// What it was last given, to give it again with other subtitles, or
     /// from elsewhere where it starts at its URL.
     media: Option<Media>,
@@ -609,7 +687,7 @@ impl DlnaSession {
 
 impl Session for DlnaSession {
     fn profile(&self) -> Profile {
-        profile(self.capabilities.as_deref())
+        profile(self.capabilities.as_deref(), self.screen.as_ref())
     }
 
     fn load(&mut self, load: &Load) -> Result<(), Error> {

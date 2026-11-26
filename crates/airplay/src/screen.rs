@@ -2,6 +2,8 @@
 //! before pairing: the largest picture it plays, and the HDR it shows. TVs
 //! with AirPlay built in list it; one that doesn't is taken as showing SDR.
 
+use std::net::SocketAddr;
+
 use plist::{Dictionary, Value};
 
 use crate::connection::{Connection, Request};
@@ -39,16 +41,27 @@ pub struct Screen {
 }
 
 impl Screen {
+    /// Where nearly every TV's AirPlay listens: to ask a screen at an
+    /// address without looking for its receiver first.
+    pub const PORT: u16 = 7000;
+
     /// Ask `device`, on a connection of its own; `None` if it doesn't say.
     pub fn ask(device: &Device) -> Option<Self> {
-        let mut connection = Connection::open(&device.addresses).ok()?;
-        let info = connection
-            .exchange(Request::http("GET", "/info"))
-            .and_then(|answer| answer.dictionary());
+        Self::at(&device.addresses)
+    }
+
+    /// Ask whatever answers AirPlay at the first of `addresses` that takes
+    /// a connection; `None` if none does, or it doesn't say.
+    pub fn at(addresses: &[SocketAddr]) -> Option<Self> {
+        let info = Connection::open(addresses).and_then(|mut connection| {
+            connection
+                .exchange(Request::http("GET", "/info"))
+                .and_then(|answer| answer.dictionary())
+        });
         match info {
             Ok(info) => Self::from_info(&info),
             Err(err) => {
-                log::debug!("airplay: {} doesn't say what it shows: {err}", device.name);
+                log::debug!("airplay: nothing at {addresses:?} says what it shows: {err}");
                 None
             }
         }

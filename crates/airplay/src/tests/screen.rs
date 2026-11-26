@@ -110,3 +110,17 @@ fn a_tv_is_asked_before_pairing_and_one_that_doesnt_answer_says_nothing() {
     assert_eq!(asked, 2);
     assert!(!tv.state().pin_shown, "it isn't paired with for it");
 }
+
+#[test]
+fn a_screen_is_asked_at_the_first_address_airplay_answers_at() {
+    let tv = FakeReceiver::start(Kind::Tv { pin: "1234" });
+    tv.state().info = Some(projector());
+    let nothing = std::net::TcpListener::bind("127.0.0.1:0")
+        .and_then(|listener| listener.local_addr())
+        .unwrap();
+    let at = tv.device().addresses[0];
+    let screen = Screen::at(&[nothing, at]).unwrap();
+    assert_eq!(screen.max_size, Some((3840, 2160)));
+    assert_eq!(Screen::at(&[nothing]), None);
+    assert_eq!(Screen::PORT, 7000, "AirPlay's, as receivers list it");
+}

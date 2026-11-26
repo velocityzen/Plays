@@ -568,7 +568,8 @@ sequenceDiagram
   every call may wait on the network; dropped, it stops the device
 - `src/cast/chromecast.rs`: subtitles as WebVTT beside the HLS
 - `src/cast/dlna.rs`: the files the renderer lists, else MPEG-TS, as fewer
-  TVs take HLS; subtitles as SRT
+  TVs take HLS; HDR to one naming no codecs whose screen, as AirPlay there
+  says, shows it; subtitles as SRT
 - `src/cast/airplay.rs`: always HLS, subtitles in the playlist; Apple TVs
   by model, other TVs H.264; speakers are outputs, not cast to
 - `src/cast/pairings.rs`: AirPlay credentials, owner-only (`AppPairings`)

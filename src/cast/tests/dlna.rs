@@ -90,6 +90,9 @@ fn listed(name: &str) -> Option<Vec<Capability>> {
         "lg" => include_str!("../../../crates/dlna/fixtures/lg-protocol-info.txt"),
         "sonos" => include_str!("../../../crates/dlna/fixtures/sonos-protocol-info.txt"),
         "devialet" => include_str!("../../../crates/dlna/fixtures/devialet-protocol-info.txt"),
+        "visionmaster" => {
+            include_str!("../../../crates/dlna/fixtures/visionmaster-protocol-info.txt")
+        }
         _ => unreachable!(),
     };
     Some(Capability::parse_list(list))
@@ -110,7 +113,7 @@ fn a_tv_shows_video_and_a_speaker_sound() {
 
 #[test]
 fn a_tv_gets_the_files_it_lists_and_else_a_stream() {
-    let samsung = profile(listed("samsung").as_deref());
+    let samsung = profile(listed("samsung").as_deref(), None);
     assert_eq!(
         samsung.files,
         [
@@ -142,7 +145,7 @@ fn a_tv_gets_the_files_it_lists_and_else_a_stream() {
     assert_eq!(samsung.max_channels, 6, "AAC_MULT5");
     assert_eq!(samsung.max_size, Some((1920, 1080)));
 
-    let lg = profile(listed("lg").as_deref());
+    let lg = profile(listed("lg").as_deref(), None);
     assert_eq!(
         lg.files,
         [
@@ -180,7 +183,7 @@ fn a_tv_gets_the_files_it_lists_and_else_a_stream() {
 
 #[test]
 fn a_speaker_gets_files_and_a_stream_of_its_sound() {
-    let sonos = profile(listed("sonos").as_deref());
+    let sonos = profile(listed("sonos").as_deref(), None);
     assert_eq!(
         sonos.files,
         [
@@ -203,7 +206,7 @@ fn a_speaker_gets_files_and_a_stream_of_its_sound() {
         ]
     );
 
-    let devialet = profile(listed("devialet").as_deref());
+    let devialet = profile(listed("devialet").as_deref(), None);
     assert!(!devialet.stream);
     assert_eq!(devialet.sound_stream, [Container::Aac, Container::Flac]);
     assert_eq!(
@@ -224,7 +227,7 @@ fn a_speaker_gets_files_and_a_stream_of_its_sound() {
 #[test]
 fn one_that_doesnt_say_gets_h264_and_aac_in_mpeg_ts() {
     let anything = Capability::parse_list("http-get:*:*:*");
-    for profile in [profile(None), profile(Some(&anything))] {
+    for profile in [profile(None, None), profile(Some(&anything), None)] {
         assert_eq!(profile.files, [Container::MpegTs]);
         assert!(profile.stream);
         assert_eq!(profile.hls, None);
@@ -240,9 +243,182 @@ fn a_4k_tv_gets_4k() {
         "http-get:*:video/mp4:DLNA.ORG_PN=AVC_MP4_HP_HD_AAC,\
              http-get:*:video/mp4:DLNA.ORG_PN=HEVC_MP4_MP_UHD_AAC",
     );
-    let profile = profile(Some(&tv));
+    let profile = profile(Some(&tv), None);
     assert_eq!(profile.max_size, Some((3840, 2160)));
     assert_eq!(profile.video, [VideoCodec::H264, VideoCodec::Hevc]);
+}
+
+/// What a Google TV projector's screen shows, as AirPlay there says: 4K at
+/// most, and every HDR.
+fn projector_screen() -> Screen {
+    Screen {
+        max_size: Some((3840, 2160)),
+        hdr: vec![
+            ::airplay::Hdr::Hdr10,
+            ::airplay::Hdr::DolbyVision,
+            ::airplay::Hdr::Hlg,
+        ],
+    }
+}
+
+#[test]
+fn a_tv_naming_no_codecs_gets_hevc_and_the_hdr_its_screen_shows() {
+    let projector = listed("visionmaster");
+    let projector = projector.as_deref();
+    assert!(names_no_codecs(projector));
+    let screen = projector_screen();
+    let hdr = profile(projector, Some(&screen));
+    assert_eq!(
+        hdr.video,
+        [
+            VideoCodec::H264,
+            VideoCodec::Hevc,
+            VideoCodec::Vp9,
+            VideoCodec::Vp8
+        ]
+    );
+    assert_eq!(hdr.max_bit_depth, 10);
+    assert_eq!(
+        hdr.hdr,
+        [Hdr::Hdr10, Hdr::Hlg],
+        "Dolby Vision as the HDR10 under it"
+    );
+    assert_eq!(hdr.max_size, Some((3840, 2160)));
+    assert_eq!(
+        hdr.files,
+        [
+            Container::Mp4,
+            Container::MpegTs,
+            Container::Matroska,
+            Container::WebM,
+            Container::Avi,
+            Container::Mp3,
+            Container::Aac,
+            Container::Flac,
+            Container::Ogg,
+            Container::Wav,
+        ]
+    );
+    assert!(hdr.stream);
+    let without_size = Screen {
+        max_size: None,
+        ..screen.clone()
+    };
+    let without_size = profile(projector, Some(&without_size));
+    assert_eq!(without_size.max_size, Some((1920, 1080)));
+    assert_eq!(without_size.hdr, [Hdr::Hdr10, Hdr::Hlg]);
+    let hevc = Capability::parse_list("http-get:*:video/mp4:*,http-get:*:video/hevc:*");
+    assert_eq!(
+        profile(Some(&hevc), Some(&screen)).video,
+        [VideoCodec::H264, VideoCodec::Hevc],
+        "HEVC once"
+    );
+
+    // Without a screen that says, or one showing none of HDR10 and HLG:
+    // fitted to SDR.
+    let showing = |hdr: Vec<::airplay::Hdr>| Screen {
+        hdr,
+        ..screen.clone()
+    };
+    for plain in [
+        profile(projector, None),
+        profile(projector, Some(&showing(Vec::new()))),
+        profile(projector, Some(&showing(vec![::airplay::Hdr::DolbyVision]))),
+    ] {
+        assert_eq!(
+            plain.video,
+            [VideoCodec::H264, VideoCodec::Vp9, VideoCodec::Vp8]
+        );
+        assert_eq!(plain.max_bit_depth, 8);
+        assert!(plain.hdr.is_empty());
+        assert_eq!(plain.max_size, Some((1920, 1080)));
+    }
+}
+
+#[test]
+fn a_tv_naming_codecs_or_none_gets_no_hdr_whatever_its_screen_shows() {
+    let screen = projector_screen();
+    let anything = Capability::parse_list("http-get:*:*:*");
+    let hevc = Capability::parse_list(
+        "http-get:*:video/mp4:*,http-get:*:video/mp4:DLNA.ORG_PN=HEVC_MP4_MP_UHD_AAC",
+    );
+    let speaker = Capability::parse_list("http-get:*:audio/mpeg:*,http-get:*:audio/flac:*");
+    let lists = [
+        listed("samsung"),
+        listed("lg"),
+        listed("sonos"),
+        None,
+        Some(anything),
+        Some(hevc),
+        Some(speaker),
+    ];
+    for list in &lists {
+        assert!(!names_no_codecs(list.as_deref()), "{list:?}");
+        assert_eq!(
+            profile(list.as_deref(), Some(&screen)),
+            profile(list.as_deref(), None),
+            "{list:?}"
+        );
+    }
+}
+
+/// What AirPlay on a Google TV projector answers `GET /info` with.
+fn projector_info() -> plist::Dictionary {
+    use plist::{Dictionary, Value};
+    let mode = |name: &str| {
+        let mut mode = Dictionary::new();
+        mode.insert("HDRMode".into(), name.into());
+        Value::Dictionary(mode)
+    };
+    let mut display = Dictionary::new();
+    display.insert("widthPixelsMax".into(), Value::Integer(3840.into()));
+    display.insert("heightPixelsMax".into(), Value::Integer(2160.into()));
+    display.insert(
+        "HDRSupportedModes".into(),
+        Value::Array(vec![mode("SDR"), mode("HDR10"), mode("DoVi"), mode("HLG")]),
+    );
+    let mut info = Dictionary::new();
+    info.insert(
+        "displays".into(),
+        Value::Array(vec![Value::Dictionary(display)]),
+    );
+    info
+}
+
+#[test]
+fn a_tv_naming_no_codecs_is_asked_by_airplay_what_its_screen_shows() {
+    use ::airplay::fake::{FakeReceiver, Kind as Receiver};
+    use dlna::fake::{FakeRenderer, Kind as Renderer};
+
+    let airplay = FakeReceiver::start(Receiver::Tv { pin: "1234" });
+    airplay.state().info = Some(projector_info());
+    let asked = || airplay.state().requests("GET", "/info").len();
+    let cast_to = |renderer: &FakeRenderer| {
+        let mut target = DlnaTarget::start_at(renderer.search_at());
+        target.screens_on = Some(airplay.device().addresses[0].port());
+        let mut session = target.connect(&found(&target)).expect("a session");
+        let profile = session.profile();
+        session.stop().unwrap();
+        profile
+    };
+
+    let projector = FakeRenderer::start(Renderer::Tv);
+    projector.state().sink =
+        include_str!("../../../crates/dlna/fixtures/visionmaster-protocol-info.txt").into();
+    let served = cast_to(&projector);
+    assert_eq!(asked(), 1);
+    assert_eq!(served.hdr, [Hdr::Hdr10, Hdr::Hlg]);
+    assert_eq!(served.max_size, Some((3840, 2160)));
+    assert!(served.video.contains(&VideoCodec::Hevc));
+
+    let samsung = FakeRenderer::start(Renderer::Tv);
+    let served = cast_to(&samsung);
+    assert_eq!(asked(), 1, "one naming codecs isn't asked");
+    assert!(served.hdr.is_empty());
+
+    // Nor is anything where tests run, whose AirPlay may answer.
+    let target = DlnaTarget::start_at(projector.search_at());
+    assert_eq!(target.screens_on, None);
 }
 
 #[test]
