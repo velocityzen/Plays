@@ -2,18 +2,22 @@
 //! for a screenshot. A player decodes ahead of the playhead, maybe on the
 //! GPU and maybe scaled down to the resolution limit, and keeps only what
 //! it shows; this opens the file again, finds the frame by its timestamp
-//! and converts it on the CPU, however the player decoded it.
+//! and converts it on the CPU, however the player decoded it. A live
+//! stream can't be opened again where it was: its still is the picture the
+//! player shows, read back from the GPU if it's there.
 
-use anyhow::{Context as _, Result, anyhow, bail};
+use anyhow::{Context as _, Result, anyhow, bail, ensure};
 use ffmpeg::software::scaling;
 use ffmpeg::util::format::Pixel;
 use ffmpeg::{Packet, frame};
 use ffmpeg_next as ffmpeg;
+use gpui::RenderImage;
 
+use super::colors::Colors;
 use super::decoder::{convert_pixels, open_input, open_video, output_size, set_colorspace};
 use super::dovi::Reshaping;
 use super::hdr::{self, ToneMapper, Transfer};
-use super::picture::rows;
+use super::picture::{Picture, rows};
 use super::source::Source;
 
 /// Seeking lands on a keyframe before the frame; if a file's index puts it
@@ -44,12 +48,92 @@ pub fn grab(
     keep_hdr: bool,
 ) -> Result<Still> {
     let frame = decode(source, max_short_side, stream, timestamp)?;
-    let transfer = Transfer::of(&frame);
-    let reshaping = Reshaping::of(&frame);
+    of_frame(&frame, keep_hdr)
+}
+
+/// The picture a player shows, as it shows it, at the size it plays at:
+/// for a live stream, which can't be opened again where it was. HDR video
+/// is tone mapped as `grab` does, unless `keep_hdr`; a picture in memory
+/// already was.
+pub fn shown(picture: &Picture, keep_hdr: bool) -> Result<Still> {
+    let frame = match picture {
+        Picture::Image(image) => return in_memory(image),
+        #[cfg(target_os = "macos")]
+        Picture::Surface(surface) => surface.read()?,
+        #[cfg(not(target_os = "macos"))]
+        Picture::Yuv(yuv) => yuv.read()?,
+    };
+    of_frame(&frame, keep_hdr)
+}
+
+/// A frame of `format` samples, `size` in pixels, copied from `planes`
+/// (each its samples and the bytes from one row to the next) and tagged
+/// with `colors`.
+pub(super) fn frame_of(
+    format: Pixel,
+    (width, height): (u32, u32),
+    planes: &[(&[u8], usize)],
+    colors: Colors,
+) -> Result<frame::Video> {
+    let mut frame = frame::Video::new(format, width, height);
+    ensure!(
+        frame.planes() == planes.len(),
+        "{format:?} has {} planes, not {}",
+        frame.planes(),
+        planes.len()
+    );
+    for (index, &(samples, stride)) in planes.iter().enumerate() {
+        let rows = frame.plane_height(index) as usize;
+        ensure!(samples.len() >= rows * stride, "plane {index} is short");
+        let into_stride = frame.stride(index);
+        let row = stride.min(into_stride);
+        let into = frame.data_mut(index);
+        for y in 0..rows {
+            into[y * into_stride..][..row].copy_from_slice(&samples[y * stride..][..row]);
+        }
+    }
+    frame.set_color_range(colors.range);
+    frame.set_color_space(colors.space);
+    frame.set_color_primaries(colors.primaries);
+    frame.set_color_transfer_characteristic(colors.transfer);
+    Ok(frame)
+}
+
+/// `frame` as a still: tone mapped for an SDR screen, unless `keep_hdr`.
+fn of_frame(frame: &frame::Video, keep_hdr: bool) -> Result<Still> {
+    let transfer = Transfer::of(frame);
+    let reshaping = Reshaping::of(frame);
     match (keep_hdr, reshaping, transfer) {
-        (true, Some(reshaping), _) => dolby_vision(&frame, &reshaping),
-        (true, None, Some(transfer)) => hdr(&frame, transfer),
-        _ => sdr(&frame),
+        (true, Some(reshaping), _) => dolby_vision(frame, &reshaping),
+        (true, None, Some(transfer)) => hdr(frame, transfer),
+        _ => sdr(frame),
+    }
+}
+
+/// A picture in memory, BGRA, as a player converted it for an SDR screen.
+fn in_memory(image: &RenderImage) -> Result<Still> {
+    let size = image.size(0);
+    let (width, height) = (size.width.0.max(0) as u32, size.height.0.max(0) as u32);
+    let bgra = image.as_bytes(0).context("the picture has no pixels")?;
+    ensure!(
+        bgra.len() == width as usize * height as usize * 4,
+        "the picture has the wrong size"
+    );
+    Ok(from_bgra(width, height, bgra))
+}
+
+/// Tightly packed BGRA, as sRGB.
+fn from_bgra(width: u32, height: u32, bgra: &[u8]) -> Still {
+    let (bgra, _) = bgra.as_chunks::<4>();
+    let pixels = bgra
+        .iter()
+        .map(|&[b, g, r, _]| [r, g, b].map(|c| u16::from(c) * 257))
+        .collect();
+    Still {
+        width,
+        height,
+        pixels,
+        hdr: None,
     }
 }
 
@@ -136,17 +220,7 @@ fn find(
 /// As a player shows it on an SDR screen.
 fn sdr(frame: &frame::Video) -> Result<Still> {
     let (width, height, bgra) = convert_pixels(&mut None, None, frame)?;
-    let (bgra, _) = bgra.as_chunks::<4>();
-    let pixels = bgra
-        .iter()
-        .map(|&[b, g, r, _]| [r, g, b].map(|c| u16::from(c) * 257))
-        .collect();
-    Ok(Still {
-        width,
-        height,
-        pixels,
-        hdr: None,
-    })
+    Ok(from_bgra(width, height, &bgra))
 }
 
 /// HDR10 or HLG as it is: BT.2020 RGB, still PQ or HLG.
@@ -218,3 +292,7 @@ fn scale(
     context.run(frame, &mut output)?;
     Ok((output, width, height))
 }
+
+#[cfg(test)]
+#[path = "tests/still.rs"]
+mod tests;

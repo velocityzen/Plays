@@ -3,7 +3,8 @@
 //! the subtitles showing drawn in.
 //!
 //! The frame is decoded again on its own (`media::still`), since what the
-//! block has may be scaled down or on the GPU. Bitmap subtitles go onto it
+//! block has may be scaled down or on the GPU; a live stream's can't be,
+//! so it's the picture the block shows, at the size it plays at. Bitmap subtitles go onto it
 //! where the stream places them, before the picture is turned and cropped,
 //! as on screen; text subtitles after, as `ui::overlay` draws them. HDR video is tone mapped, or kept
 //! in a 16-bit PNG whose cICP chunk says it is BT.2020 PQ or HLG; subtitles
@@ -22,19 +23,13 @@ use super::overlay::{self, Paint, Target, bilinear};
 use crate::media::hdr::{self, Transfer};
 use crate::media::picture::rows;
 use crate::media::still::{self, Still};
-use crate::media::{Orientation, Source};
+use crate::media::{Orientation, Picture, Source};
 use crate::settings::{ScreenshotFormat, ScreenshotSettings};
 
 /// What to save, gathered on the UI thread.
 pub struct Request {
     pub source: Source,
-    /// The resolution limit it was opened with: a stream's playlist is cut
-    /// down to the variant playing.
-    pub max_short_side: Option<u32>,
-    /// The video track, by stream index.
-    pub stream: usize,
-    /// When the frame shows, in the stream's time base.
-    pub timestamp: i64,
+    pub frame: Frame,
     /// When it shows, in seconds, for the file's name.
     pub position: f64,
     /// How the file says to turn the picture, and how it was adjusted.
@@ -49,16 +44,38 @@ pub struct Request {
     pub folder: PathBuf,
 }
 
+/// The frame to save.
+pub enum Frame {
+    /// Decoded again from the file: its video track, by stream index, and
+    /// when it shows, in the stream's time base. A stream is opened with
+    /// the resolution limit it was opened with, its playlist cut down to
+    /// the variant playing.
+    Decoded {
+        max_short_side: Option<u32>,
+        stream: usize,
+        timestamp: i64,
+    },
+    /// The picture the block shows: a live stream's.
+    Shown(Picture),
+}
+
 /// Decode the frame, draw it as it shows and save it. The file written.
 pub fn take(request: Request) -> Result<PathBuf> {
     let settings = &request.settings;
-    let still = still::grab(
-        &request.source,
-        request.max_short_side,
-        request.stream,
-        request.timestamp,
-        settings.keeps_hdr(),
-    )?;
+    let still = match &request.frame {
+        &Frame::Decoded {
+            max_short_side,
+            stream,
+            timestamp,
+        } => still::grab(
+            &request.source,
+            max_short_side,
+            stream,
+            timestamp,
+            settings.keeps_hdr(),
+        )?,
+        Frame::Shown(picture) => still::shown(picture, settings.keeps_hdr())?,
+    };
     let mut canvas = Canvas::from(still);
     for (image, rect) in &request.bitmaps {
         overlay::draw_image(&mut canvas, image, *rect, ContentTransform::IDENTITY);

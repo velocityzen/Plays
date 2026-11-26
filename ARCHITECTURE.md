@@ -298,7 +298,8 @@ flowchart LR
 - `src/media/picking.rs`: which tracks play (`Wanted`): those picked
   before (`Picked`), else preferred languages, else FFmpeg's best
 - `src/media/chapters.rs`: chapters
-- `src/media/still.rs`: a frame decoded again at full size for a screenshot
+- `src/media/still.rs`: a frame decoded again at full size for a screenshot,
+  or a live stream's picture as it shows
 
 ## The app and its windows
 

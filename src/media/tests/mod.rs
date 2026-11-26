@@ -20,7 +20,7 @@ use super::source::Source;
 use super::tracks::TrackKind;
 
 mod limits;
-mod made;
+pub(super) mod made;
 mod playlists;
 use made::{in_own_folder, kept, made_from, made_in, media};
 
@@ -2285,7 +2285,7 @@ fn a_surface_is_tagged_with_its_gamma_only_when_that_changed() {
 /// The first frame of the video at `path`, decoded on the GPU or in
 /// software.
 #[cfg(target_os = "macos")]
-fn first_frame(path: &std::path::Path, hardware: bool) -> super::picture::Picture {
+pub(super) fn first_frame(path: &std::path::Path, hardware: bool) -> super::picture::Picture {
     let mut player = Player::open(
         Source::File(path.to_path_buf()),
         None,
@@ -2305,7 +2305,7 @@ fn first_frame(path: &std::path::Path, hardware: bool) -> super::picture::Pictur
 /// of 8x8 blocks of each channel (0-255) of `a` and `b`: the mean
 /// difference, and the 90th percentile.
 #[cfg(target_os = "macos")]
-fn block_differences(
+pub(super) fn block_differences(
     width: usize,
     height: usize,
     a: impl Fn(usize, usize, usize) -> f64,
@@ -2415,30 +2415,7 @@ fn hdr_surfaces_match_software_tone_mapping() {
         ("hlg.mp4", "arib-std-b67", Transfer::Hlg, 18),
     ];
     for (name, trc, transfer, code_point) in cases {
-        let x265 = format!("log-level=error:colorprim=bt2020:transfer={trc}:colormatrix=bt2020nc");
-        let args = [
-            "-f",
-            "lavfi",
-            "-i",
-            "testsrc2=size=640x360:rate=30:duration=1",
-            "-c:v",
-            "libx265",
-            "-tag:v",
-            "hvc1",
-            "-crf",
-            "8",
-            "-pix_fmt",
-            "yuv420p10le",
-            "-color_primaries",
-            "bt2020",
-            "-color_trc",
-            trc,
-            "-colorspace",
-            "bt2020nc",
-            "-x265-params",
-            &x265,
-        ];
-        let path = media(name, &args);
+        let path = hdr_media(name, trc);
         let Picture::Surface(surface) = first_frame(&path, true) else {
             panic!("{name}: hardware frames should stay on the GPU");
         };
@@ -2477,6 +2454,36 @@ fn hdr_surfaces_match_software_tone_mapping() {
             "{name}: colors differ by {mean:.2} levels on average, {p90:.2} at the 90th percentile"
         );
     }
+}
+
+/// A second of 10-bit BT.2020 HEVC, `name`, with the transfer `trc`
+/// (`smpte2084` or `arib-std-b67`).
+#[cfg(target_os = "macos")]
+pub(super) fn hdr_media(name: &str, trc: &str) -> PathBuf {
+    let x265 = format!("log-level=error:colorprim=bt2020:transfer={trc}:colormatrix=bt2020nc");
+    let args = [
+        "-f",
+        "lavfi",
+        "-i",
+        "testsrc2=size=640x360:rate=30:duration=1",
+        "-c:v",
+        "libx265",
+        "-tag:v",
+        "hvc1",
+        "-crf",
+        "8",
+        "-pix_fmt",
+        "yuv420p10le",
+        "-color_primaries",
+        "bt2020",
+        "-color_trc",
+        trc,
+        "-colorspace",
+        "bt2020nc",
+        "-x265-params",
+        &x265,
+    ];
+    media(name, &args)
 }
 
 /// RGB (0-255) of a 10-bit HDR surface as gpui's `surface_hdr_fragment`
@@ -2686,7 +2693,7 @@ fn dovi_surface_to_sdr(
 // ---------------------------------------------------------------------------
 // Network streams, served from a tiny HTTP server on localhost.
 
-pub(super) mod http {
+pub(crate) mod http {
     use std::io::{BufRead, BufReader, Write};
     use std::net::{SocketAddr, TcpListener, TcpStream};
     use std::path::PathBuf;
@@ -2827,7 +2834,7 @@ const HLS: &[&str] = &[
 ];
 
 /// A short video with sound, as MPEG-TS, plus an HLS version of it in `hls/`.
-pub(super) fn stream_media() -> PathBuf {
+pub(crate) fn stream_media() -> PathBuf {
     let ts = media("stream.ts", STREAM);
     let dir = ts.parent().unwrap().to_path_buf();
     made_in(&dir, "hls", &format!("{STREAM:?} {HLS:?}"), |hls| {

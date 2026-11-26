@@ -22,7 +22,7 @@ pub mod subtitles;
 pub mod tempo;
 #[cfg(test)]
 #[path = "tests/mod.rs"]
-mod tests;
+pub(crate) mod tests;
 pub mod tracks;
 #[cfg(target_os = "macos")]
 mod videotoolbox;

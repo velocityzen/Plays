@@ -19,10 +19,10 @@
 //! [`DOLBY_VISION_ATTACHMENT`].
 
 use std::ffi::c_void;
-use std::ptr;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::{ptr, slice};
 
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Context as _, Result, anyhow, bail, ensure};
 use core_foundation::base::{CFRelease, CFType, CFTypeRef, OSStatus, TCFType, kCFAllocatorDefault};
 use core_foundation::boolean::CFBoolean;
 use core_foundation::data::CFData;
@@ -39,18 +39,21 @@ use core_video::image_buffer::{
 };
 use core_video::pixel_buffer::{
     CVPixelBuffer, CVPixelBufferGetPixelFormatType, CVPixelBufferKeys, CVPixelBufferRef,
-    kCVPixelFormatType_420YpCbCr8BiPlanarFullRange,
+    kCVPixelBufferLock_ReadOnly, kCVPixelFormatType_420YpCbCr8BiPlanarFullRange,
     kCVPixelFormatType_420YpCbCr10BiPlanarFullRange,
     kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange,
 };
 use core_video::pixel_buffer_pool::CVPixelBufferPool;
 use ffmpeg::ffi;
 use ffmpeg::frame;
+use ffmpeg::util::color;
+use ffmpeg::util::format::Pixel;
 use ffmpeg_next as ffmpeg;
 
+use super::colors::Colors;
 use super::dovi::Reshaping;
 use super::hdr::Transfer;
-use super::picture;
+use super::{picture, still};
 
 /// The pixel buffer attachment (a `CFData` of `dovi::ShaderParams`) that
 /// makes vendor/gpui draw a surface as Dolby Vision. Matches
@@ -86,6 +89,8 @@ pub struct Surface {
     buffer: CVPixelBuffer,
     id: u64,
     hdr: bool,
+    /// How an HDR frame's samples encode light; none for Dolby Vision.
+    transfer: Option<Transfer>,
     dolby_vision: bool,
 }
 
@@ -150,6 +155,68 @@ impl Surface {
             }
         }
         self.buffer.clone()
+    }
+
+    /// Its samples, read back from GPU memory into a frame tagged with the
+    /// colors they're drawn in: for a screenshot of what shows.
+    pub fn read(&self) -> Result<frame::Video> {
+        ensure!(
+            !self.dolby_vision,
+            "Dolby Vision can't be read back as it shows"
+        );
+        let colors = |range, space, primaries, transfer| Colors {
+            range,
+            space,
+            primaries,
+            transfer,
+        };
+        let buffer = &self.buffer;
+        // CoreVideo's names, as they are.
+        #[allow(non_upper_case_globals)]
+        let (format, colors) = match buffer.get_pixel_format() {
+            // gpui draws these with BT.601's matrix.
+            kCVPixelFormatType_420YpCbCr8BiPlanarFullRange => (
+                Pixel::NV12,
+                colors(
+                    color::Range::JPEG,
+                    color::Space::SMPTE170M,
+                    color::Primaries::Unspecified,
+                    color::TransferCharacteristic::Unspecified,
+                ),
+            ),
+            kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange => (
+                Pixel::P010LE,
+                colors(
+                    color::Range::MPEG,
+                    color::Space::BT2020NCL,
+                    color::Primaries::BT2020,
+                    match self.transfer {
+                        Some(Transfer::Pq) => color::TransferCharacteristic::SMPTE2084,
+                        Some(Transfer::Hlg) => color::TransferCharacteristic::ARIB_STD_B67,
+                        None => color::TransferCharacteristic::Unspecified,
+                    },
+                ),
+            ),
+            format => bail!("a surface in pixel format {format:#x}"),
+        };
+        let status = buffer.lock_base_address(kCVPixelBufferLock_ReadOnly);
+        ensure!(status == 0, "couldn't lock a pixel buffer (error {status})");
+        let planes: Option<Vec<(&[u8], usize)>> = (0..2)
+            // SAFETY: locked, a two-plane buffer's planes are their rows
+            // times the bytes a row, which nothing writes to after the
+            // transfer that filled them.
+            .map(|index| unsafe {
+                let base = buffer.get_base_address_of_plane(index).cast::<u8>();
+                let stride = buffer.get_bytes_per_row_of_plane(index);
+                let rows = buffer.get_height_of_plane(index);
+                (!base.is_null()).then(|| (slice::from_raw_parts(base, stride * rows), stride))
+            })
+            .collect();
+        let frame = planes
+            .context("a pixel buffer has no memory")
+            .and_then(|planes| still::frame_of(format, self.size(), &planes, colors));
+        buffer.unlock_base_address(kCVPixelBufferLock_ReadOnly);
+        frame
     }
 }
 
@@ -236,7 +303,8 @@ impl Converter {
             bail!("not a VideoToolbox frame");
         }
         let reshaping = Reshaping::of(frame);
-        let hdr = reshaping.is_some() || Transfer::of(frame).is_some();
+        let transfer = Transfer::of(frame).filter(|_| reshaping.is_none());
+        let hdr = reshaping.is_some() || transfer.is_some();
         let dolby_vision = reshaping.is_some();
         let format = if reshaping.is_some() {
             // SAFETY: the frame keeps the buffer alive.
@@ -284,6 +352,7 @@ impl Converter {
             buffer: destination,
             id: NEXT_ID.fetch_add(1, Ordering::Relaxed),
             hdr,
+            transfer,
             dolby_vision,
         })
     }

@@ -248,7 +248,8 @@ mkdir ($nu.user-autoload-dirs | first); plays completions nushell | save -f ($nu
 
 ## Limitations
 
-- Live streams but HLS can't be seeked, and none can be screenshotted.
+- Live streams but HLS can't be seeked. A live stream's screenshot is the
+  picture as it plays, at the size it plays at.
 - Picture adjustments and delays aren't kept when a file opens again.
 - HDR goes brighter than SDR white only on macOS, decoded by
   VideoToolbox. HDR metadata isn't used, and Dolby Vision profile 7's

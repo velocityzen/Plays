@@ -14,7 +14,7 @@ use gpui::{YuvColor, YuvFrame, YuvLayout, YuvTransfer};
 
 use super::colors::Colors;
 use super::decoder::output_size;
-use super::{dovi, hdr};
+use super::{dovi, hdr, still};
 
 /// A frame's planes and the size it shows at.
 #[derive(Clone, Debug)]
@@ -22,11 +22,36 @@ pub struct YuvPicture {
     pub frame: YuvFrame,
     /// Whether it is HDR, for which gamma to draw it with.
     pub hdr: bool,
+    /// How its samples are coded, its range as the planes have it.
+    pub colors: Colors,
 }
 
 impl YuvPicture {
     pub fn size(&self) -> (u32, u32) {
         self.frame.size()
+    }
+
+    /// Its planes in a frame tagged with its colors: for a screenshot of
+    /// what shows.
+    pub fn read(&self) -> Result<frame::Video> {
+        let wide = self.frame.is_wide();
+        let format = match (self.frame.layout(), wide) {
+            (YuvLayout::Planar, false) => Pixel::YUV420P,
+            (YuvLayout::SemiPlanar, false) => Pixel::NV12,
+            (YuvLayout::Planar, true) => Pixel::YUV420P10LE,
+            (YuvLayout::SemiPlanar, true) => Pixel::P010LE,
+        };
+        let sample_bytes = if wide { 2 } else { 1 };
+        let planes: Vec<(&[u8], usize)> = self
+            .frame
+            .planes()
+            .iter()
+            .zip(self.frame.plane_sizes())
+            .map(|(plane, (width, _, channels))| {
+                (plane.as_slice(), (width * channels) as usize * sample_bytes)
+            })
+            .collect();
+        still::frame_of(format, self.size(), &planes, self.colors)
     }
 }
 
@@ -203,9 +228,25 @@ fn planes(
         chroma_siting,
     };
     let frame = YuvFrame::new(width, height, format.layout, format.wide, planes, color)?;
+    // As they were taken here, whatever size the planes are now.
+    let range = if full_range {
+        color::Range::JPEG
+    } else {
+        color::Range::MPEG
+    };
+    let space = match colors.space {
+        color::Space::Unspecified if tags.height() >= 720 => color::Space::BT709,
+        color::Space::Unspecified => color::Space::SMPTE170M,
+        space => space,
+    };
     Ok(YuvPicture {
         frame,
         hdr: transfer.is_some(),
+        colors: Colors {
+            range,
+            space,
+            ..colors
+        },
     })
 }
 

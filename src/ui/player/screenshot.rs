@@ -8,7 +8,7 @@ use gpui::{AppContext as _, Context, Window};
 use super::PlayerView;
 use crate::settings::Settings;
 use crate::ui::overlay;
-use crate::ui::screenshot::{self, Request};
+use crate::ui::screenshot::{self, Frame, Request};
 use crate::ui::theme::Theme;
 
 impl PlayerView {
@@ -19,15 +19,20 @@ impl PlayerView {
             self.note("No video", cx);
             return;
         };
-        if info.live {
-            self.note("Live streams can't be screenshotted", cx);
-            return;
-        }
-        let (Some(stream), Some(timestamp), Some(position)) = (
-            info.video_track,
-            self.playback.local().frame_timestamp(),
-            self.playback.local().frame_pts(),
-        ) else {
+        let player = self.playback.local();
+        // A live stream can't be opened again where it was.
+        let frame = if info.live {
+            player.frame().map(Frame::Shown)
+        } else {
+            info.video_track
+                .zip(player.frame_timestamp())
+                .map(|(stream, timestamp)| Frame::Decoded {
+                    max_short_side: player.max_short_side(),
+                    stream,
+                    timestamp,
+                })
+        };
+        let (Some(frame), Some(position)) = (frame, player.frame_pts()) else {
             self.note("No picture yet", cx);
             return;
         };
@@ -54,9 +59,7 @@ impl PlayerView {
         });
         let request = Request {
             source: self.playback.local().source().clone(),
-            max_short_side: self.playback.local().max_short_side(),
-            stream,
-            timestamp,
+            frame,
             position,
             orientation: info.orientation,
             adjustments: self.adjustments,
@@ -92,3 +95,7 @@ fn saved(path: &Path) -> String {
         None => "Screenshot saved".to_owned(),
     }
 }
+
+#[cfg(test)]
+#[path = "tests/screenshot.rs"]
+mod tests;

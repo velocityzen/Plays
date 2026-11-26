@@ -117,3 +117,59 @@ fn hands_over_a_frame_stored_bottom_up_the_right_way_up() {
     let picture = converter.convert(&stored, None).unwrap().unwrap();
     assert_eq!(picture.frame.planes(), upright.frame.planes());
 }
+
+#[test]
+fn a_pictures_planes_read_back_are_its_frame_tagged_as_it_was() {
+    let mut converter = YuvConverter::default();
+    let mut tagged = numbered(8, 6);
+    tagged.set_color_space(color::Space::BT709);
+    tagged.set_color_primaries(color::Primaries::BT709);
+    let read = converter
+        .convert(&tagged, None)
+        .unwrap()
+        .unwrap()
+        .read()
+        .unwrap();
+    assert_eq!(read.format(), Pixel::YUV420P);
+    assert_eq!((read.width(), read.height()), (8, 6));
+    for plane in 0..3 {
+        let (width, rows) = (
+            read.plane_width(plane) as usize,
+            read.plane_height(plane) as usize,
+        );
+        let row = |frame: &frame::Video, y: usize| {
+            frame.data(plane)[y * frame.stride(plane)..][..width].to_vec()
+        };
+        for y in 0..rows {
+            assert_eq!(row(&read, y), row(&tagged, y), "plane {plane}, row {y}");
+        }
+    }
+    let colors = Colors::of_frame(&read);
+    assert_eq!(
+        colors,
+        Colors {
+            range: color::Range::MPEG,
+            ..Colors::of_frame(&tagged)
+        }
+    );
+
+    // Untagged, the matrix and range it was taken to have, whatever size
+    // it's at now.
+    let mut read = |frame: &frame::Video, max_short_side| {
+        let picture = converter.convert(frame, max_short_side).unwrap().unwrap();
+        Colors::of_frame(&picture.read().unwrap())
+    };
+    let hd = read(&numbered(1280, 720), Some(360));
+    assert_eq!(
+        (hd.space, hd.range),
+        (color::Space::BT709, color::Range::MPEG)
+    );
+    let mut jpeg = numbered(8, 6);
+    // SAFETY: a field of a valid frame, set to a format of the same planes.
+    unsafe { (*jpeg.as_mut_ptr()).format = ffmpeg::ffi::AVPixelFormat::AV_PIX_FMT_YUVJ420P as i32 };
+    let sd = read(&jpeg, None);
+    assert_eq!(
+        (sd.space, sd.range),
+        (color::Space::SMPTE170M, color::Range::JPEG)
+    );
+}
