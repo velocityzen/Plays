@@ -45,6 +45,30 @@ fn parses_ass_markup() {
     assert_eq!(parse_ass("a { b").unwrap().text, "a { b");
 }
 
+#[test]
+fn places_a_webvtt_cue_by_its_line() {
+    let placed = |settings| line_placement(settings);
+    assert_eq!(placed("line:0"), Some(Placement::Top));
+    assert_eq!(placed("align:start line:2,end"), Some(Placement::Top));
+    assert_eq!(placed("line:-1"), Some(Placement::Bottom));
+    assert_eq!(placed("line:10%"), Some(Placement::Top));
+    assert_eq!(placed("line:33.4%"), Some(Placement::Middle));
+    assert_eq!(placed("line:50%,center"), Some(Placement::Middle));
+    assert_eq!(placed("line:66.7%"), Some(Placement::Bottom));
+    assert_eq!(placed("line:100%"), Some(Placement::Bottom));
+    // Without a line, or one it can't read, it goes where it would.
+    for settings in [
+        "",
+        "position:10%",
+        "line:",
+        "line:auto",
+        "line:101%",
+        "line:x%",
+    ] {
+        assert_eq!(placed(settings), None, "{settings:?}");
+    }
+}
+
 fn cue(start: f64, end: Option<f64>) -> Cue {
     let content = CueContent {
         texts: parse_plain("x").into_iter().collect(),

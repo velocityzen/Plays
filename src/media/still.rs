@@ -16,7 +16,10 @@ use gpui::RenderImage;
 
 use super::colors::Colors;
 use super::decoder::layers::{self, Found, Layers};
-use super::decoder::{convert_pixels, open_input, open_video, output_size, set_colorspace};
+use super::decoder::{
+    container_aspect, convert_pixels, open_input, open_video, output_size, set_aspect,
+    set_colorspace,
+};
 use super::dovi::Reshaping;
 use super::enhancement::Composer;
 use super::hdr::{self, ToneMapper, Transfer};
@@ -156,11 +159,12 @@ fn decode(
     timestamp: i64,
 ) -> Result<frame::Video> {
     let mut input = open_input(source, max_short_side, || false)?;
-    let (parameters, time_base) = {
+    let (parameters, time_base, aspect) = {
         let found = input
             .stream(stream)
             .ok_or_else(|| anyhow!("the file no longer has this video track"))?;
-        (found.parameters(), f64::from(found.time_base()))
+        let aspect = container_aspect(&found);
+        (found.parameters(), f64::from(found.time_base()), aspect)
     };
     let (mut decoder, _) = open_video(&parameters, false)?;
     let mut layer = Layer::of(&input, stream);
@@ -180,7 +184,9 @@ fn decode(
             layer: layer.as_mut(),
         };
         if let Some(frame) = find(&mut reading, &mut decoder, timestamp, last)? {
-            return Ok(reading.composed(frame));
+            let mut frame = reading.composed(frame);
+            set_aspect(&mut frame, aspect);
+            return Ok(frame);
         }
     }
     bail!("the frame can't be found in the file")

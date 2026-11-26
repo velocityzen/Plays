@@ -305,3 +305,32 @@ fn a_screenshot_of_dolby_vision_profile_7_is_composed() {
         assert_eq!(raised > 0.1, composed, "{layout:?}: {raised:.3} greener");
     }
 }
+
+/// A screenshot is the shape its pixels are, as its pictures say or, over
+/// that, its container: 4:3 pixels of 160×120 as H.264 has them, and the
+/// 3:2 of a Matroska file saying it's twice as wide as it's high.
+#[test]
+fn a_screenshot_is_the_shape_of_its_pixels() {
+    use crate::media::tests::made::media;
+    let wide = media(
+        "still-sar.mkv",
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc=size=160x120:rate=25:duration=1",
+            "-vf",
+            "setsar=4/3",
+            "-c:v",
+            "libx264",
+        ],
+    );
+    let told = media(
+        "still-aspect.mkv",
+        &["-i", wide.to_str().unwrap(), "-c", "copy", "-aspect", "2:1"],
+    );
+    for (path, size) in [(wide, (212, 120)), (told, (240, 120))] {
+        let still = grab(&Source::File(path.clone()), None, 0, 0, false).unwrap();
+        assert_eq!((still.width, still.height), size, "{}", path.display());
+    }
+}

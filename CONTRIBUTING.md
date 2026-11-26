@@ -159,8 +159,9 @@ script/check                        # all a change passes before a commit
   when that isn't installed.
 
 - The engine tests make clips with the `ffmpeg` command line tool, with
-  libx264 and libx265 (`brew install ffmpeg`, `sudo apt install ffmpeg`).
-  Without it they fail, saying so.
+  libx264, libx265, libsvtav1, libvpx, libopus and libmp3lame
+  (`brew install ffmpeg`, `sudo apt install ffmpeg`). Without it they
+  fail, saying so. [docs/stream.md](docs/stream.md) lists what they play.
 - Hardware decoding tests need VideoToolbox on macOS.
 - What fish and Nushell complete is checked only where they're installed.
 - Property and fuzz tests try 100 cases each; `HEGEL_TEST_CASES` sets more.
@@ -211,7 +212,7 @@ mod tests;
 ### What's tested where
 
 - `src/media/tests/`: the engine, tracks, subtitles, delays, colors, HDR, streams,
-  playlist files, speed
+  playlist files, speed; `player.rs`, each kind of stream
 - `src/media/decoder/tests/`: cover files, timestamps, seeks, frame conversion
 - `src/ui/tests/`: screenshots, framing, PQ and HLG math, the text field and IME
 - `src/ui/components/tests/`: panels' looks in pixels, `gpui::render_offscreen` (macOS)

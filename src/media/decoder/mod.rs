@@ -47,7 +47,7 @@ use ffmpeg_next as ffmpeg;
 use parking_lot::{Condvar, Mutex};
 
 pub(crate) use convert::output_size;
-pub(super) use convert::{convert_pixels, set_colorspace};
+pub(super) use convert::{container_aspect, convert_pixels, set_aspect, set_colorspace};
 #[cfg(test)]
 pub use demux::PANICS_IN_DEMUX;
 pub use shared::{Shared, VideoFrame};
@@ -351,6 +351,8 @@ struct StreamInfo {
     frame_rate: Option<f64>,
     /// In seconds, when the file says.
     start_time: Option<f64>,
+    /// For video, the shape of its pixels, where its container gives it.
+    aspect: Option<Rational>,
 }
 
 impl StreamInfo {
@@ -365,6 +367,7 @@ impl StreamInfo {
                 .filter(|fps| (1.0..=480.0).contains(fps)),
             start_time: (stream.start_time() != NO_PTS)
                 .then(|| stream.start_time() as f64 * f64::from(time_base)),
+            aspect: container_aspect(stream),
         }
     }
 

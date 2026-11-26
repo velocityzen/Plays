@@ -3,7 +3,8 @@
 //!
 //! FFmpeg turns every text format (SRT, WebVTT, MP4 timed text, ASS) into
 //! ASS dialogue lines; of most, only their words, line breaks, italics, bold
-//! and placement (top, middle or bottom) are kept. An ASS or SSA track's
+//! and placement (top, middle or bottom) are kept, WebVTT's from its cue's
+//! line, which FFmpeg leaves beside its words. An ASS or SSA track's
 //! keep how its script draws them too (see [`ass`](super::ass)). Bitmap
 //! formats (PGS, VobSub, DVB) become images placed on the picture as
 //! fractions of its size.
@@ -12,6 +13,7 @@ use std::slice;
 use std::sync::Arc;
 
 use anyhow::{Context as _, Result};
+use ffmpeg::codec::packet::side_data;
 use ffmpeg::codec::subtitle::{self as rect, Rect};
 use ffmpeg::{Packet, Rational, codec};
 use ffmpeg_next as ffmpeg;
@@ -407,6 +409,12 @@ impl SubtitleDecoder {
                 Rect::None(_) => {}
             }
         }
+        if let Some(placement) = cue_settings(packet).and_then(|settings| line_placement(&settings))
+        {
+            for text in &mut content.texts {
+                text.placement = placement;
+            }
+        }
         Some(Cue::new(
             start,
             end.filter(|end| *end > start),
@@ -492,6 +500,39 @@ fn pixels(
         }
     }
     Some(pixels)
+}
+
+/// A WebVTT cue's settings, which its packet carries beside its words.
+fn cue_settings(packet: &Packet) -> Option<String> {
+    packet
+        .side_data()
+        .find(|data| data.kind() == side_data::Type::WebVTTSettings)
+        .map(|data| String::from_utf8_lossy(data.data()).into_owned())
+}
+
+/// Where a WebVTT cue goes whose `settings` set its line: one counted from
+/// the top at the top, one from the bottom at the bottom, and one a share
+/// of the way down in the third of the picture that holds it.
+pub(super) fn line_placement(settings: &str) -> Option<Placement> {
+    let line = settings
+        .split_whitespace()
+        .find_map(|setting| setting.strip_prefix("line:"))?;
+    let line = line.split(',').next()?;
+    if let Some(share) = line.strip_suffix('%') {
+        let share: f64 = share.parse().ok()?;
+        (0.0..=100.0).contains(&share).then(|| match share {
+            share if share < 100.0 / 3.0 => Placement::Top,
+            share if share < 200.0 / 3.0 => Placement::Middle,
+            _ => Placement::Bottom,
+        })
+    } else {
+        let line: i32 = line.parse().ok()?;
+        Some(if line < 0 {
+            Placement::Bottom
+        } else {
+            Placement::Top
+        })
+    }
 }
 
 /// The script an ASS or SSA track's header sets out. Other formats' are

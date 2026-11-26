@@ -8,13 +8,13 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context as _, Result, anyhow, bail};
-use ffmpeg::{Discard, Packet, codec, ffi, frame};
+use ffmpeg::{Discard, Packet, Rational, codec, ffi, frame};
 use ffmpeg_next as ffmpeg;
 use gpui::RenderImage;
 
 #[cfg(not(target_os = "macos"))]
 use super::convert::gpu_conversion;
-use super::convert::{Scaler, convert, output_size};
+use super::convert::{Scaler, convert, output_size, set_aspect};
 use super::demux::packet_time;
 use super::layers::{Found, Layers};
 use super::{Session, StreamInfo, VideoFrame, codec_name};
@@ -51,6 +51,8 @@ const MOST_WAITING: usize = 12;
 
 pub(super) struct VideoDecoder {
     pub(super) index: usize,
+    /// The shape of its pixels, where its container gives it.
+    aspect: Option<Rational>,
     pub(super) decoder: ffmpeg::decoder::Video,
     /// Kept to reopen the decoder in software if the hardware one fails.
     parameters: codec::Parameters,
@@ -197,6 +199,7 @@ impl VideoDecoder {
         let frame_duration = stream.frame_rate.map_or(1.0 / 25.0, |fps| 1.0 / fps);
         Ok(Self {
             index: stream.index,
+            aspect: stream.aspect,
             decoder,
             orientation: Orientation::of(&parameters),
             parameters,
@@ -253,7 +256,7 @@ impl VideoDecoder {
         output_size(
             self.decoder.width(),
             self.decoder.height(),
-            self.decoder.aspect_ratio(),
+            self.aspect.unwrap_or_else(|| self.decoder.aspect_ratio()),
             self.pictures.show.max_short_side,
         )
     }
@@ -418,6 +421,7 @@ impl VideoDecoder {
                 }
             }
             self.errors = 0;
+            set_aspect(&mut self.decoded, self.aspect);
             let on_gpu = hwaccel::is_hardware_frame(&self.decoded);
             self.report(on_gpu, session);
 
