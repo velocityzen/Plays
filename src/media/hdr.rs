@@ -195,7 +195,7 @@ pub fn tone_map(rgb: [f32; 3], headroom: f32, peak: Option<f32>) -> [f32; 3] {
 /// FFmpeg's structs in libavutil/mastering_display_metadata.h, which the
 /// bindings don't cover.
 #[allow(dead_code)]
-mod sys {
+pub(super) mod sys {
     use std::ffi::{c_int, c_uint};
 
     use ffmpeg_next::ffi::AVRational;

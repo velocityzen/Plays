@@ -214,6 +214,7 @@ only files another Plays hands over. On macOS, Plays → Install Command Line To
 ```bash
 plays ls                                        # windows, each with its blocks
 plays open ~/Movies/film.mkv                    # in the window in front
+plays info ~/Movies/film.mkv                    # its streams, colours, HDR, chapters
 plays -w Kitchen block ls                       # the window labeled Kitchen
 plays do block.playback.seek time=90            # any command, by its id
 plays do seek.lua time=90                       # a Lua script; -e CODE, - for stdin
@@ -230,6 +231,7 @@ plays actions flip                              # those with flip in id or title
 - `-w` names a window and `-b` a block, by id, label or number. Without
   them, it's the window in front and the block keys go to.
 - `--json` prints JSON.
+- `plays info` reads files and streams itself, without Plays or its socket.
 - [docs/commands.md](docs/commands.md) has every command and event;
   [docs/lua.md](docs/lua.md) and [docs/lua-events.md](docs/lua-events.md),
   Lua scripts and their handlers; [lua/](lua), example scripts, as

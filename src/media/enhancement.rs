@@ -40,6 +40,10 @@ const DEPTH: u32 = 10;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Configuration {
     pub profile: u8,
+    pub level: u8,
+    /// What its base layer shows as without Dolby Vision: 1 HDR10, 2 SDR,
+    /// 4 HLG, 6 a Blu-ray's HDR10; 0 nothing else can show it.
+    pub compatibility: u8,
     /// The base layer: the picture players without Dolby Vision show.
     pub base: bool,
     pub enhancement: bool,
@@ -68,6 +72,8 @@ impl Configuration {
             let record = &*(*side).data.cast::<sys::Configuration>();
             Some(Self {
                 profile: record.dv_profile,
+                level: record.dv_level,
+                compatibility: record.dv_bl_signal_compatibility_id,
                 base: record.bl_present_flag != 0,
                 enhancement: record.el_present_flag != 0,
             })

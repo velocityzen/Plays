@@ -18,6 +18,7 @@ pub mod picking;
 pub mod picture;
 pub mod player;
 pub mod playlist_file;
+pub mod probe;
 pub mod source;
 pub mod still;
 pub mod subtitles;

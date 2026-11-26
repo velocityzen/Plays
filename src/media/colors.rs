@@ -7,7 +7,7 @@
 //! for is taken to be unspecified.
 
 use ffmpeg::util::color;
-use ffmpeg::{decoder, ffi, frame};
+use ffmpeg::{codec, decoder, ffi, frame};
 use ffmpeg_next as ffmpeg;
 
 /// How a picture's colors are coded. Each is unspecified where the file
@@ -42,6 +42,20 @@ impl Colors {
             Self::named(
                 (&raw const (*raw).color_range).cast::<u32>().read(),
                 (&raw const (*raw).colorspace).cast::<u32>().read(),
+                (&raw const (*raw).color_primaries).cast::<u32>().read(),
+                (&raw const (*raw).color_trc).cast::<u32>().read(),
+            )
+        }
+    }
+
+    /// As a stream's parameters say, before anything is decoded.
+    pub fn of_parameters(parameters: &codec::Parameters) -> Self {
+        // SAFETY: as for a frame, with the stream's parameters.
+        unsafe {
+            let raw = parameters.as_ptr();
+            Self::named(
+                (&raw const (*raw).color_range).cast::<u32>().read(),
+                (&raw const (*raw).color_space).cast::<u32>().read(),
                 (&raw const (*raw).color_primaries).cast::<u32>().read(),
                 (&raw const (*raw).color_trc).cast::<u32>().read(),
             )

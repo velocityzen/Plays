@@ -10,7 +10,8 @@
 //! time, and 130 stopped with Ctrl-C, which nothing here catches.
 //!
 //! `plays do` runs a Lua script too (`lua`), in this process, a client of
-//! the Plays running as the command line is.
+//! the Plays running as the command line is. `plays info` asks no Plays:
+//! it reads files with FFmpeg here (`info`).
 //!
 //! `plays FILE…`, with no subcommand, isn't the command line's: it's
 //! Plays started with files, which hands them to the one running.
@@ -18,6 +19,7 @@
 mod args;
 mod completions;
 mod events;
+mod info;
 mod lua;
 mod reference;
 mod show;
@@ -260,6 +262,7 @@ impl Session<'_> {
             Command::Window(window) => windows::window(self, window),
             Command::Block(block) => windows::block(self, block),
             Command::Open { paths, new_window } => self.open(&paths, new_window),
+            Command::Info { paths } => info::info(self.out, self.err, self.options.json, &paths),
             Command::Events {
                 positions,
                 count,

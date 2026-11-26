@@ -212,7 +212,7 @@ mod tests;
 ### What's tested where
 
 - `src/media/tests/`: the engine, tracks, subtitles, delays, colors, HDR, streams,
-  playlist files, speed; `player.rs`, each kind of stream
+  playlist files, speed, probes; `player.rs`, each kind of stream
 - `src/media/decoder/tests/`: cover files, timestamps, seeks, frame conversion
 - `src/ui/tests/`: screenshots, framing, PQ and HLG math, the text field and IME
 - `src/ui/components/tests/`: panels' looks in pixels, `gpui::render_offscreen` (macOS)
@@ -226,7 +226,7 @@ mod tests;
 - `src/app/tests/`: menus, the keymap, windows, audio devices, speakers, Bluetooth, updates
 - `src/settings/tests/`: each setting's key and the values it takes
 - `src/tests/`: the settings, progress, recents and hotkeys files; the command line
-- `src/cli/tests/`: shell completions, `events` and `wait`, tables, Lua scripts
+- `src/cli/tests/`: shell completions, `events` and `wait`, `info`, tables, Lua scripts
 - `src/cli/lua/tests/`: a script's sleeps, waits, handlers, timers,
   programs and JSON; the guides' examples and those in `lua/`
 - `src/api/tests/`, `src/api/*/tests/`: commands, events, the socket

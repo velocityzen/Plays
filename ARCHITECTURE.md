@@ -299,6 +299,7 @@ flowchart LR
 - `src/media/playlist_file.rs`: what `.m3u` and `.pls` files list, on disk
   or over HTTP; an HLS playlist is a stream
 - `src/media/details.rs`: the console's format and stream details
+- `src/media/probe.rs`: all a file or stream holds, unplayed, for `plays info`
 - `src/media/colors.rs`: colors read as numbers, as ffmpeg-next's enums
   have gaps a file can hit; `clippy.toml` bans its getters
 - `crates/ffmpeg-safe`: a frame's channel layout copied out of it, as one
@@ -394,7 +395,8 @@ flowchart TB
   hands files over, all else refused while Settings has the command line
   off
 - `src/cli.rs`, `src/cli/`: the command line, a client of that socket;
-  `reference.rs` writes `docs/commands.md`, by function; `lua.rs` runs
+  `reference.rs` writes `docs/commands.md`, by function; `info.rs` prints
+  `src/media/probe.rs`'s probe of a file, without Plays; `lua.rs` runs
   `plays do`'s Lua scripts ([docs/lua.md](docs/lua.md),
   [docs/lua-events.md](docs/lua-events.md))
 - `src/app/mod.rs`, `keymap.rs`, `menus.rs`: startup, keys and menu bar

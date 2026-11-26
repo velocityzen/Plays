@@ -1,7 +1,7 @@
 //! What the console shows about the streams playing: their formats as the
 //! file has them, read from their decoders before they decode anything.
 
-use std::ffi::{CStr, c_char};
+use std::ffi::{CStr, c_char, c_int};
 
 use ffmpeg::ffi;
 use ffmpeg::util::{color, format::Pixel, format::Sample};
@@ -110,50 +110,82 @@ impl AudioDetails {
 /// a fixed number; lossy codecs have none.
 fn bits(decoder: &ffmpeg::decoder::Audio) -> Option<u32> {
     // SAFETY: the context is open.
-    let bits = unsafe {
+    unsafe {
         let context = decoder.as_ptr();
-        match (*context).bits_per_raw_sample {
-            0 => ffi::av_get_bits_per_sample((*context).codec_id),
-            raw => raw,
-        }
+        sample_bits((*context).bits_per_raw_sample, (*context).codec_id)
+    }
+}
+
+/// The bits a sample has, `raw` as a decoder or a stream says, or as
+/// `codec` has if it has a fixed number.
+pub(super) fn sample_bits(raw: c_int, codec: ffi::AVCodecID) -> Option<u32> {
+    let bits = match raw {
+        // SAFETY: looks the codec up in FFmpeg's table.
+        0 => unsafe { ffi::av_get_bits_per_sample(codec) },
+        raw => raw,
     };
     u32::try_from(bits).ok().filter(|bits| *bits > 0)
 }
 
-fn positive(bit_rate: i64) -> Option<u64> {
+pub(super) fn positive(bit_rate: i64) -> Option<u64> {
     u64::try_from(bit_rate).ok().filter(|rate| *rate > 0)
 }
 
 /// The profile's name, for codecs that have them.
 fn profile(decoder: &ffmpeg::codec::decoder::Opened) -> Option<String> {
-    // SAFETY: the context is open, and FFmpeg's names are static strings.
+    // SAFETY: the context is open.
     unsafe {
         let context = decoder.as_ptr();
-        string(ffi::avcodec_profile_name(
-            (*context).codec_id,
-            (*context).profile,
-        ))
+        profile_name((*context).codec_id, (*context).profile)
     }
+}
+
+/// The name of `codec`'s profile `profile`, for codecs that have them,
+/// such as "High" or "Main 10".
+pub(super) fn profile_name(codec: ffi::AVCodecID, profile: c_int) -> Option<String> {
+    // SAFETY: FFmpeg's names are static strings.
+    unsafe { string(ffi::avcodec_profile_name(codec, profile)) }
 }
 
 /// The channel layout's name, such as "stereo".
 fn layout(decoder: &ffmpeg::decoder::Audio) -> Option<String> {
+    // SAFETY: the context is open.
+    unsafe { layout_name(&(*decoder.as_ptr()).ch_layout) }
+}
+
+/// `layout`'s name, such as "stereo" or "5.1(side)".
+pub(super) fn layout_name(layout: &ffi::AVChannelLayout) -> Option<String> {
     let mut name = [0 as c_char; 64];
-    // SAFETY: the context is open; FFmpeg writes a terminated string of at
-    // most the buffer's size.
+    // SAFETY: the layout is borrowed; FFmpeg writes a terminated string of
+    // at most the buffer's size.
     unsafe {
-        let context = decoder.as_ptr();
-        if ffi::av_channel_layout_describe(&(*context).ch_layout, name.as_mut_ptr(), name.len()) < 0
-        {
+        if ffi::av_channel_layout_describe(layout, name.as_mut_ptr(), name.len()) < 0 {
             return None;
         }
         string(name.as_ptr())
     }
 }
 
+/// What `codec` is, FFmpeg's table says: its long name, such as
+/// "H.264 / AVC / MPEG-4 AVC / MPEG-4 part 10", and whether it's
+/// subtitles as text rather than pictures.
+pub(super) fn described(codec: ffi::AVCodecID) -> (Option<String>, bool) {
+    // SAFETY: the table and its names live as long as the program.
+    unsafe {
+        let descriptor = ffi::avcodec_descriptor_get(codec);
+        if descriptor.is_null() {
+            return (None, false);
+        }
+        (
+            string((*descriptor).long_name),
+            (*descriptor).props & ffi::AV_CODEC_PROP_TEXT_SUB != 0,
+        )
+    }
+}
+
 /// # Safety
 /// `name` is null or a terminated string.
-unsafe fn string(name: *const c_char) -> Option<String> {
+pub(super) unsafe fn string(name: *const c_char) -> Option<String> {
     if name.is_null() {
         return None;
     }

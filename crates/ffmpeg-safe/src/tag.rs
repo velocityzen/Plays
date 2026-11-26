@@ -3,7 +3,7 @@
 //! INFO, a Matroska name, in whatever encoding it was written in.
 
 use std::borrow::Cow;
-use std::ffi::CStr;
+use std::ffi::{CStr, c_int};
 use std::ptr;
 
 use ffmpeg_next::{DictionaryRef, ffi};
@@ -24,6 +24,38 @@ pub fn tag(metadata: &DictionaryRef<'_>, key: &CStr) -> Option<String> {
     let text = text(value);
     let trimmed = text.trim();
     (!trimmed.is_empty()).then(|| trimmed.to_owned())
+}
+
+/// Every tag in `metadata`, in its order, each read as `tag` reads it,
+/// its name too, and those that are blank left out.
+pub fn tags(metadata: &DictionaryRef<'_>) -> Vec<(String, String)> {
+    let mut tags = Vec::new();
+    let mut entry = ptr::null();
+    loop {
+        // SAFETY: as for `tag`; an empty key with IGNORE_SUFFIX matches
+        // every entry, each after the one before it.
+        let (key, value) = unsafe {
+            entry = ffi::av_dict_get(
+                metadata.as_ptr(),
+                c"".as_ptr(),
+                entry,
+                ffi::AV_DICT_IGNORE_SUFFIX as c_int,
+            );
+            if entry.is_null() {
+                break;
+            }
+            (
+                CStr::from_ptr((*entry).key).to_bytes(),
+                CStr::from_ptr((*entry).value).to_bytes(),
+            )
+        };
+        let value = text(value);
+        let trimmed = value.trim();
+        if !trimmed.is_empty() {
+            tags.push((text(key).into_owned(), trimmed.to_owned()));
+        }
+    }
+    tags
 }
 
 /// `bytes` as UTF-8 if they are, or else decoded as what they look like.

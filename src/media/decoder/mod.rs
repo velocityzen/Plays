@@ -938,7 +938,7 @@ fn tag(input: &ffmpeg::format::context::Input, sound: Option<usize>, key: &CStr)
 
 /// The file's chapters, in order, on the playback timeline, which starts
 /// `offset` into the file.
-fn chapters(input: &ffmpeg::format::context::Input, offset: f64) -> Vec<Chapter> {
+pub(super) fn chapters(input: &ffmpeg::format::context::Input, offset: f64) -> Vec<Chapter> {
     let mut chapters: Vec<Chapter> = input
         .chapters()
         .map(|chapter| {

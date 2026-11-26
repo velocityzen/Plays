@@ -107,6 +107,14 @@ pub enum Command {
         #[arg(long)]
         new_window: bool,
     },
+    /// Print what files and streams hold: their format, tags and chapters,
+    /// and each stream's codec, size, colours or sound, read here without
+    /// Plays. With --json, an object for each, a list of them for more than
+    /// one.
+    Info {
+        #[arg(required = true, value_name = "FILE|URL", value_hint = ValueHint::AnyPath)]
+        paths: Vec<OsString>,
+    },
     /// Print what changes, as it does: everything, the app's, its windows'
     /// and their blocks', or the window's named (-w).
     Events {

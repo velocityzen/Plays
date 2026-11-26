@@ -75,7 +75,7 @@ impl Track {
         Some(Self {
             index: stream.index(),
             kind,
-            language: tag(c"language").filter(|code| !matches!(code.as_str(), "und" | "zxx")),
+            language: stream_language(&metadata),
             title: tag(c"title"),
             codec: parameters.id().name().to_owned(),
             format,
@@ -133,6 +133,12 @@ impl Track {
     }
 }
 
+/// A stream's language, as its tags say, unless they say it has none or
+/// it's unknown.
+pub(super) fn stream_language(metadata: &ffmpeg::DictionaryRef<'_>) -> Option<String> {
+    ffmpeg_safe::tag(metadata, c"language").filter(|code| !matches!(code.as_str(), "und" | "zxx"))
+}
+
 fn channels_name(channels: i32) -> Option<String> {
     Some(match channels {
         ..=0 => return None,
@@ -144,7 +150,8 @@ fn channels_name(channels: i32) -> Option<String> {
     })
 }
 
-fn codec_display_name(codec: &str) -> String {
+/// What a codec is called, by FFmpeg's name for it: "E-AC-3" for `eac3`.
+pub fn codec_display_name(codec: &str) -> String {
     let name = match codec {
         "h264" => "H.264",
         "hevc" => "HEVC",

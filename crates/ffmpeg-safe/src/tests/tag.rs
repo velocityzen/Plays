@@ -3,7 +3,7 @@ use std::ptr;
 
 use ffmpeg_next::{DictionaryRef, ffi};
 
-use super::tag;
+use super::{tag, tags};
 
 /// A dictionary holding `entries` as they are, as a demuxer copies them.
 struct Raw(*mut ffi::AVDictionary);
@@ -24,6 +24,12 @@ impl Raw {
         // SAFETY: the dictionary lives as long as this borrow.
         let metadata = unsafe { DictionaryRef::wrap(self.0) };
         tag(&metadata, key)
+    }
+
+    fn tags(&self) -> Vec<(String, String)> {
+        // SAFETY: the dictionary lives as long as this borrow.
+        let metadata = unsafe { DictionaryRef::wrap(self.0) };
+        tags(&metadata)
     }
 }
 
@@ -60,4 +66,24 @@ fn reads_a_tag_in_another_encoding_as_what_it_looks_like() {
 #[test]
 fn reads_no_tags_from_no_dictionary() {
     assert_eq!(Raw(ptr::null_mut()).tag(c"title"), None);
+}
+
+#[test]
+fn reads_every_tag_in_its_order_as_a_tag_is_read() {
+    let tags = Raw::of(&[
+        (c"title", c" Caf\xe9 "),
+        (c"comment", c"   "),
+        (c"M\xfcller", c"x"),
+        (c"encoder", c"Lavf"),
+    ]);
+    let named = |name: &str, value: &str| (name.to_owned(), value.to_owned());
+    assert_eq!(
+        tags.tags(),
+        [
+            named("title", "Café"),
+            named("Müller", "x"),
+            named("encoder", "Lavf")
+        ]
+    );
+    assert!(Raw::of(&[]).tags().is_empty());
 }

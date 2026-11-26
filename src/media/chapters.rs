@@ -7,7 +7,7 @@
 const AT_START: f64 = 0.01;
 
 /// A part of a file, on the playback timeline.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
 pub struct Chapter {
     pub start: f64,
     pub end: f64,

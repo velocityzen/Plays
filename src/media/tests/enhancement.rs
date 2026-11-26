@@ -653,6 +653,8 @@ fn a_streams_configuration_says_which_layers_it_has() {
         Configuration::of(&record(1, 1)),
         Some(Configuration {
             profile: 7,
+            level: 6,
+            compatibility: 6,
             base: true,
             enhancement: true,
         })

@@ -5,4 +5,4 @@ mod layout;
 mod tag;
 
 pub use layout::Layout;
-pub use tag::tag;
+pub use tag::{tag, tags};
