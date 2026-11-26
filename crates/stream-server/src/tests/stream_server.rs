@@ -1351,18 +1351,42 @@ fn dvd_cast(server: &Server, profile: Profile, subtitles: bool) -> crate::Cast {
 }
 
 #[test]
-fn leaves_picture_subtitles_out_of_video_it_copies() {
+fn re_encodes_video_it_would_copy_to_draw_picture_subtitles_in() {
     let server = server();
     for profile in [Profile::default(), hls(Segments::Ts)] {
-        let cast = dvd_cast(&server, profile, true);
-        assert!(matches!(cast.plan().video, Some(VideoPlan::Copy { .. })));
-        assert_eq!(cast.plan().subtitles, None);
-        assert!(!cast.plan().describe().contains("subtitles"));
-        assert_eq!(cast.draws(Some(&SubtitleSource::Track(2))), None);
+        let drawn = dvd_cast(&server, profile.clone(), true);
+        assert_eq!(drawn.plan().delivery, Delivery::Hls(Segments::Ts));
+        assert!(matches!(drawn.plan().video, Some(VideoPlan::Encode { .. })));
+        assert_eq!(drawn.plan().subtitles, Some(2));
+        assert_eq!(drawn.draws(Some(&SubtitleSource::Track(2))), Some(2));
+        assert_eq!(drawn.draws(None), None);
         // Pictures have no text to serve beside it.
-        assert_eq!(cast.webvtt_url(), None);
-        assert_eq!(get(&sibling(&cast.url(), "subs.vtt")).status, 404);
+        assert_eq!(drawn.webvtt_url(), None);
+        assert_eq!(get(&sibling(&drawn.url(), "subs.vtt")).status, 404);
+
+        // Without them it's copied, and served again with them.
+        let plain = dvd_cast(&server, profile, false);
+        assert!(matches!(plain.plan().video, Some(VideoPlan::Copy { .. })));
+        assert_eq!(plain.plan().subtitles, None);
+        assert_eq!(plain.draws(Some(&SubtitleSource::Track(2))), Some(2));
+        assert_eq!(plain.draws(None), None);
     }
+}
+
+#[test]
+fn sends_the_file_without_picture_subtitles_to_a_device_that_takes_only_files() {
+    let server = server();
+    let files = Profile {
+        files: vec![Container::Matroska],
+        hls: None,
+        stream: false,
+        ..Profile::default()
+    };
+    let cast = dvd_cast(&server, files, true);
+    assert_eq!(cast.plan().delivery, Delivery::File);
+    assert_eq!(cast.plan().subtitles, None);
+    assert_eq!(cast.draws(Some(&SubtitleSource::Track(2))), None);
+    assert_eq!(cast.plan().describe(), "as is");
 }
 
 /// The video frames of `bytes`, read as a file, decoded: each one's time

@@ -641,8 +641,15 @@ fn stays_here(window: WindowHandle<Workspace>, cx: &mut VisualTestContext) -> Ve
 }
 
 #[gpui::test]
-fn picture_subtitles_stay_here_when_the_video_goes_as_it_is(cx: &mut TestAppContext) {
+fn picture_subtitles_stay_here_on_a_device_that_takes_only_files(cx: &mut TestAppContext) {
     let (window, mut cx, fake, tv) = start(cx, "clip-dvdsub.mkv", false);
+    // It gets the file itself, which nothing draws them into.
+    fake.screen(&tv).lock().profile = stream_server::Profile {
+        files: vec![stream_server::Container::Matroska],
+        hls: None,
+        stream: false,
+        ..stream_server::Profile::default()
+    };
     let view = block(window, &cx);
     view.update(&mut cx, |view, cx| {
         view.select_track(TrackKind::Subtitle, None, cx)
@@ -657,19 +664,14 @@ fn picture_subtitles_stay_here_when_the_video_goes_as_it_is(cx: &mut TestAppCont
     wait(&mut cx, "the device to be told", |_| {
         calls(&fake, &tv).last() == Some(&Call::Subtitles(None))
     });
-    assert_eq!(loads(&fake, &tv).len(), 1, "the video goes as it is");
+    assert_eq!(loads(&fake, &tv).len(), 1, "the file goes as it is");
     assert_eq!(stays_here(window, &mut cx), [PICTURES_STAY]);
 }
 
 #[cfg(target_os = "macos")]
 #[gpui::test]
-fn picture_subtitles_are_drawn_into_video_it_re_encodes(cx: &mut TestAppContext) {
+fn picture_subtitles_have_the_video_re_encoded_to_be_drawn_in(cx: &mut TestAppContext) {
     let (window, mut cx, fake, tv) = start(cx, "clip-dvdsub.mkv", false);
-    // Too big for the TV, so it is re-encoded.
-    fake.screen(&tv).lock().profile = stream_server::Profile {
-        max_size: Some((80, 60)),
-        ..stream_server::Profile::default()
-    };
     let view = block(window, &cx);
     view.update(&mut cx, |view, cx| {
         view.select_track(TrackKind::Subtitle, None, cx)

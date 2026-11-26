@@ -272,8 +272,9 @@ mkdir ($nu.user-autoload-dirs | first); plays completions nushell | save -f ($nu
 - Casting re-encodes video only with a hardware encoder. While a block
   casts, delays, speed, picture adjustments and frame steps don't apply.
 - Cast subtitles go where they're placed only to a third of the picture,
-  and on DLNA TVs at the bottom; picture subtitles (PGS, VobSub, DVB) go
-  only where the video is re-encoded.
+  and on DLNA TVs at the bottom; picture subtitles (PGS, VobSub, DVB)
+  don't reach a device that takes only files or plays neither H.264 nor
+  HEVC.
 - AirPlay speakers with a password, AirPlay 1 speakers with FairPlay or
   MFi, and speakers and TVs that let only their home play to them can't be
   played through. Several speakers aren't played through as a group.

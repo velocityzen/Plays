@@ -1,8 +1,9 @@
 //! Deciding what a device gets: the least work that fits what it plays.
 //! The file or stream as it is, if it can; else HLS or an MPEG-TS stream,
 //! with each track copied when the device decodes it and re-encoded when
-//! it doesn't. Picture subtitles picked from the media are drawn into video
-//! being re-encoded; video copied goes without them.
+//! it doesn't. Picture subtitles picked from the media are drawn into the
+//! video, which is re-encoded for them where it can be; where it can't,
+//! it's copied without them.
 
 use crate::Error;
 use crate::encode;
@@ -213,7 +214,8 @@ fn audio_name(codec: AudioCodec) -> &'static str {
 }
 
 /// The plan for playing the picked streams of `media`, with `subtitles`,
-/// on a device that plays what `profile` says.
+/// on a device that plays what `profile` says. Picture subtitles have the
+/// video re-encoded to be drawn in, where it can be.
 pub(crate) fn plan(
     media: &MediaInfo,
     source: &Source,
@@ -221,6 +223,25 @@ pub(crate) fn plan(
     audio: Pick,
     subtitles: Option<&SubtitleSource>,
     profile: &Profile,
+) -> Result<Plan, Error> {
+    if picture(media, subtitles).is_some()
+        && let Ok(plan) = planned(media, source, video, audio, subtitles, profile, true)
+        && plan.subtitles.is_some()
+    {
+        return Ok(plan);
+    }
+    planned(media, source, video, audio, subtitles, profile, false)
+}
+
+/// The plan for `plan`, the video re-encoded if `draw`.
+fn planned(
+    media: &MediaInfo,
+    source: &Source,
+    video: Pick,
+    audio: Pick,
+    subtitles: Option<&SubtitleSource>,
+    profile: &Profile,
+    draw: bool,
 ) -> Result<Plan, Error> {
     let video = pick(media, video, true)?;
     let audio = pick(media, audio, false)?;
@@ -236,7 +257,7 @@ pub(crate) fn plan(
     });
     // A device playing the file itself plays its default streams.
     let as_picked = video == media.first(true) && audio == media.first(false);
-    if video_fits && audio_fits && as_picked {
+    if video_fits && audio_fits && as_picked && !draw {
         let delivery = match source {
             Source::Stream { .. }
                 if profile.fetches_urls
@@ -290,7 +311,10 @@ pub(crate) fn plan(
         _ => Segments::Ts,
     };
     let video = video
-        .map(|stream| plan_video(media, stream, profile, segments))
+        .map(|stream| match media.video(stream) {
+            Some(info) if draw => encoded_video(info, stream, profile, segments),
+            _ => plan_video(media, stream, profile, segments),
+        })
         .transpose()?;
     Ok(Plan {
         delivery,
@@ -304,19 +328,25 @@ pub(crate) fn plan(
 
 /// The stream of `subtitles` drawn into `video`: picture subtitles in the
 /// media, where the video is re-encoded.
-pub(crate) fn drawn(
+fn drawn(
     media: &MediaInfo,
     video: Option<&VideoPlan>,
     subtitles: Option<&SubtitleSource>,
 ) -> Option<usize> {
+    picture(media, subtitles).filter(|_| matches!(video, Some(VideoPlan::Encode { .. })))
+}
+
+/// The picture subtitle stream of `media` that `subtitles` is, if it is
+/// one.
+fn picture(media: &MediaInfo, subtitles: Option<&SubtitleSource>) -> Option<usize> {
     let Some(SubtitleSource::Track(index)) = subtitles else {
         return None;
     };
-    let picture = matches!(
+    matches!(
         media.stream(*index).map(|stream| &stream.kind),
         Some(StreamKind::Subtitle { text: false })
-    );
-    (picture && matches!(video, Some(VideoPlan::Encode { .. }))).then_some(*index)
+    )
+    .then_some(*index)
 }
 
 fn pick(media: &MediaInfo, pick: Pick, video: bool) -> Result<Option<usize>, Error> {

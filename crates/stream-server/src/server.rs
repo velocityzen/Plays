@@ -200,6 +200,7 @@ impl Server {
             output,
             variant,
             hls_subtitles: request.profile.hls_subtitles,
+            profile: request.profile,
             stop,
             streams: Mutex::default(),
             subtitles: Mutex::default(),
@@ -298,13 +299,23 @@ impl Cast {
         &self.state.media.info
     }
 
-    /// The stream of `subtitles` this cast's video would have drawn in: picture
-    /// subtitles in the media, where the video is re-encoded. While it
-    /// differs from what the plan draws, other subtitles need the media
-    /// served again.
+    /// The stream of `subtitles` a cast of its streams with them would
+    /// have drawn into the video: picture subtitles in the media, where the
+    /// video is, or can be, re-encoded. While it differs from what the plan
+    /// draws, other subtitles need the media served again.
     pub fn draws(&self, subtitles: Option<&SubtitleSource>) -> Option<usize> {
         let media = &self.state.media;
-        plan::drawn(&media.info, media.plan.video.as_ref(), subtitles)
+        let picked = |stream: Option<usize>| stream.map_or(Pick::Off, Pick::Stream);
+        plan::plan(
+            &media.info,
+            &media.source,
+            picked(media.plan.video_stream()),
+            picked(media.plan.audio_stream()),
+            subtitles,
+            &self.state.profile,
+        )
+        .ok()
+        .and_then(|plan| plan.subtitles)
     }
 
     /// Seconds, when the media has an end.
@@ -366,6 +377,8 @@ struct CastState {
     variant: Variant,
     /// Whether the HLS playlist lists the subtitles.
     hls_subtitles: bool,
+    /// What the device plays, to plan the media again by.
+    profile: Profile,
     stop: Arc<AtomicBool>,
     /// What stops each MPEG-TS stream made, oldest first.
     streams: Mutex<Vec<Arc<AtomicBool>>>,
