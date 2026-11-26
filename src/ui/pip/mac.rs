@@ -17,9 +17,9 @@
 //! cropped and shaped as the block shows them, on the GPU, and once the
 //! window is open scaled to its size in pixels, subtitles or not; a
 //! surface's gamma is bent into them (`gamma`), and the subtitles showing
-//! drawn in (`burn_in`). Each time their size changes, AVKit lays the video
-//! out anew, zoomed, until `follow_window` puts it back. Dolby Vision
-//! surfaces need Plays' own shader, so they aren't shown.
+//! drawn in (`burn_in`); Dolby Vision is reshaped into plain HDR10 first
+//! (`reshape`). Each time their size changes, AVKit lays the video out
+//! anew, zoomed, until `follow_window` puts it back.
 
 // objc's message macros test a `cargo-clippy` feature this crate doesn't have.
 #![allow(unexpected_cfgs)]
@@ -67,8 +67,10 @@ use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
 use super::burn_in::{Overlay, Sample, Ycc};
 use super::gamma::Curve;
+use super::reshape::{self, Pq};
 use super::turn::turn;
 use super::{PipEvent, Playback, Subtitles};
+use crate::media::dovi::Reshaping;
 use crate::media::hdr::Transfer;
 use crate::media::picture::PictureId;
 use crate::media::{Orientation, Picture};
@@ -654,11 +656,10 @@ impl Pip {
             return;
         }
         self.shown = Some(shown);
-        let buffer = match picture {
-            Picture::Surface(surface) if surface.is_dolby_vision() => return,
-            Picture::Surface(surface) => surface.buffer().clone(),
+        let (buffer, reshaping) = match picture {
+            Picture::Surface(surface) => (surface.buffer().clone(), surface.reshaping()),
             Picture::Image(image) => match self.copy_image(image) {
-                Ok(buffer) => buffer,
+                Ok(buffer) => (buffer, None),
                 Err(err) => {
                     log::warn!("Picture in Picture: {err:#}");
                     return;
@@ -666,9 +667,14 @@ impl Pip {
             },
         };
         let (buffer, left) = self.turn(buffer, framing.orientation());
-        let buffer = match self.fitting.fit(&buffer, framing, gamma, left) {
+        let buffer = match self.fitting.fit(&buffer, framing, gamma, left, reshaping) {
             Ok(Some(fitted)) => fitted,
             Ok(None) => buffer,
+            // As it is, it would show green and purple.
+            Err(err) if reshaping.is_some() => {
+                log::warn!("Picture in Picture can't show a Dolby Vision frame: {err:#}");
+                return;
+            }
             Err(err) => {
                 log::warn!("Picture in Picture shows frames as they are, no subtitles: {err:#}");
                 buffer
@@ -1183,6 +1189,9 @@ impl Layout {
                             Pass::Gamma(curve) => {
                                 curve.bend_bgra(pixels, stride, buffer.get_width());
                             }
+                            // Dolby Vision never is BGRA, as `Fitting::fit`
+                            // makes sure.
+                            Pass::Reshape(..) => {}
                         }
                     })
                 }
@@ -1202,6 +1211,8 @@ enum Pass<'a> {
     Overlay(&'a Overlay),
     /// Gamma bent into them.
     Gamma(&'a Curve),
+    /// Dolby Vision reshaped into PQ Y'CbCr.
+    Reshape(&'a Reshaping, &'a Pq),
 }
 
 /// Do `pass` to a locked biplanar buffer's samples; `None` if it has no
@@ -1209,7 +1220,7 @@ enum Pass<'a> {
 ///
 /// # Safety
 /// `buffer` must be locked, and have two planes of `S` samples.
-unsafe fn apply_planes<S: Sample + Send>(
+unsafe fn apply_planes<S: Sample + Send + Sync>(
     pass: Pass,
     buffer: &CVPixelBuffer,
     ycc: Ycc,
@@ -1226,6 +1237,13 @@ unsafe fn apply_planes<S: Sample + Send>(
     match pass {
         Pass::Overlay(overlay) => overlay.over_ycbcr(luma, luma_stride, chroma, chroma_stride, ycc),
         Pass::Gamma(curve) => curve.bend_ycbcr(
+            (luma, luma_stride),
+            (chroma, chroma_stride),
+            buffer.get_width(),
+            ycc,
+        ),
+        Pass::Reshape(reshaping, pq) => reshape::reshape(
+            (reshaping, pq),
             (luma, luma_stride),
             (chroma, chroma_stride),
             buffer.get_width(),
@@ -1339,7 +1357,8 @@ fn across<T>(orientation: Orientation, (a, b): (T, T)) -> (T, T) {
 
 /// Frames made to show in the Picture in Picture window as the block shows
 /// them: cropped and at its shape, scaled to the window's size in pixels
-/// once it is open, with gamma bent and the subtitles showing drawn in.
+/// once it is open, Dolby Vision reshaped, with gamma bent and the
+/// subtitles showing drawn in.
 #[derive(Default)]
 struct Fitting {
     /// The window's content width and height in points, and its scale.
@@ -1350,6 +1369,8 @@ struct Fitting {
     burned: Option<(Option<Transfer>, Overlay)>,
     /// The last gamma bent in (as bits), for frames of this HDR signal.
     curve: Option<(u32, Option<Transfer>, Curve)>,
+    /// PQ's tables, once Dolby Vision is reshaped.
+    pq: Option<Pq>,
     /// Frames made to fit, to hand over and draw into.
     scaled: Buffers,
     /// Frames scaled, then turned on the CPU.
@@ -1384,8 +1405,9 @@ impl Fitting {
     }
 
     /// `buffer`, still to be turned by `left`, framed as `framing` has it,
-    /// at the size frames go at, with `gamma` bent into it and the
-    /// subtitles showing drawn in; `None` if it goes as it is. They keep
+    /// at the size frames go at, reshaped by `reshaping` if it is Dolby
+    /// Vision, with `gamma` bent into it and the subtitles showing drawn
+    /// in; `None` if it goes as it is. They keep
     /// that size as subtitles come and go: each time it changes, AVKit lays
     /// the video out anew, bigger than the window, which shows part of the
     /// picture, zoomed, until `Pip::follow_window` puts it back a frame or
@@ -1396,6 +1418,7 @@ impl Fitting {
         framing: &Framing,
         gamma: f32,
         left: Orientation,
+        reshaping: Option<&Reshaping>,
     ) -> Result<Option<CVPixelBuffer>> {
         let decoded = (buffer.get_width() as u32, buffer.get_height() as u32);
         let own = across(left, decoded);
@@ -1406,15 +1429,26 @@ impl Fitting {
         let bent = gamma != 1.0;
         let whole = framing.kept() == (1.0, 1.0);
         let upright = left == Orientation::UPRIGHT;
-        if size == own && whole && upright && !bent && self.subtitles.is_none() {
+        let plain = !bent && reshaping.is_none() && self.subtitles.is_none();
+        if size == own && whole && upright && plain {
             return Ok(None);
         }
         let scaled = self.scale(buffer, size, framing.kept(), left)?;
-        if !bent && self.subtitles.is_none() {
+        if plain {
             return Ok(Some(scaled));
         }
         let format = buffer.get_pixel_format();
         let layout = Layout::of(buffer).with_context(|| format!("frames in format {format:#x}"))?;
+        if let Some(reshaping) = reshaping {
+            ensure!(
+                !matches!(layout, Layout::Bgra),
+                "Dolby Vision frames in format {format:#x}"
+            );
+            let pq = self.pq.get_or_insert_with(Pq::default);
+            // SAFETY: the buffer was just made, and is this layout.
+            unsafe { layout.apply(Pass::Reshape(reshaping, pq), &scaled)? };
+        }
+        // Dolby Vision is tagged PQ, as it is once reshaped.
         let transfer = transfer_of(buffer);
         if bent {
             let curve = self.curve(gamma, transfer);

@@ -458,6 +458,7 @@ impl ShaderParams {
     }
 }
 
+// Its reshaping is the one Picture in Picture's tests reshape by too.
 #[cfg(test)]
 #[path = "tests/dovi.rs"]
-mod tests;
+pub(crate) mod tests;

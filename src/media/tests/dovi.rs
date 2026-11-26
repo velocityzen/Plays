@@ -46,7 +46,7 @@ fn profile5() -> (
     (header, mapping, color)
 }
 
-fn reshaping() -> Reshaping {
+pub(crate) fn reshaping() -> Reshaping {
     let (header, mapping, color) = profile5();
     Reshaping::new(&header, &mapping, &color).unwrap()
 }

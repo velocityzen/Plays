@@ -93,12 +93,8 @@ impl PlayerView {
             self.note("The picture plays on the device it casts to", cx);
             return;
         }
-        let Some(frame) = self.playback.local().frame() else {
+        if self.playback.local().frame().is_none() {
             self.note("No picture for Picture in Picture", cx);
-            return;
-        };
-        if frame.is_dolby_vision() {
-            self.note("Picture in Picture can't show Dolby Vision", cx);
             return;
         }
         let bounds = self

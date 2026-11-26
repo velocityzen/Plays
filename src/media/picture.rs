@@ -53,15 +53,6 @@ impl Picture {
         }
     }
 
-    /// Dolby Vision on a surface, which only gpui's own shader shows right.
-    pub fn is_dolby_vision(&self) -> bool {
-        match self {
-            #[cfg(target_os = "macos")]
-            Picture::Surface(surface) => surface.is_dolby_vision(),
-            _ => false,
-        }
-    }
-
     pub fn id(&self) -> PictureId {
         match self {
             Picture::Image(image) => PictureId::Image(image.id),

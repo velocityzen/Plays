@@ -3,8 +3,9 @@
 //! pause and skip buttons. Plays decodes the video itself, so the frames the
 //! block would show go to an `AVSampleBufferDisplayLayer`, one by one as they
 //! are due, which AVKit shows in that window (`mac`), as the block shows
-//! them: cropped, at its aspect ratio, with its gamma (`gamma`) and the
-//! subtitles showing burned in (`burn_in`). Elsewhere there is no Picture
+//! them: cropped, at its aspect ratio, Dolby Vision reshaped (`reshape`),
+//! with its gamma (`gamma`) and the subtitles showing burned in
+//! (`burn_in`). Elsewhere there is no Picture
 //! in Picture, and `Pip::new` says so.
 
 use std::sync::Arc;
@@ -27,6 +28,8 @@ mod burn_in;
 mod gamma;
 #[cfg(target_os = "macos")]
 mod mac;
+#[cfg(target_os = "macos")]
+mod reshape;
 #[cfg(target_os = "macos")]
 mod turn;
 #[cfg(target_os = "macos")]

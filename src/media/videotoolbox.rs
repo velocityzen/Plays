@@ -19,6 +19,7 @@
 //! [`DOLBY_VISION_ATTACHMENT`].
 
 use std::ffi::c_void;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::{ptr, slice};
 
@@ -91,7 +92,8 @@ pub struct Surface {
     hdr: bool,
     /// How an HDR frame's samples encode light; none for Dolby Vision.
     transfer: Option<Transfer>,
-    dolby_vision: bool,
+    /// Dolby Vision's reshaping, which gpui's own shader does as it draws.
+    reshaping: Option<Arc<Reshaping>>,
 }
 
 // SAFETY: CoreVideo buffers are reference counted thread-safely, and nothing
@@ -124,9 +126,10 @@ impl Surface {
         &self.buffer
     }
 
-    /// Dolby Vision, which only gpui's own shader shows right.
-    pub fn is_dolby_vision(&self) -> bool {
-        self.dolby_vision
+    /// The frame's reshaping, if it is Dolby Vision: only gpui's own
+    /// shader shows it right as it is.
+    pub fn reshaping(&self) -> Option<&Reshaping> {
+        self.reshaping.as_deref()
     }
 
     /// The gamma it is drawn with now, for its kind of video.
@@ -166,7 +169,7 @@ impl Surface {
     /// colors they're drawn in: for a screenshot of what shows.
     pub fn read(&self) -> Result<frame::Video> {
         ensure!(
-            !self.dolby_vision,
+            self.reshaping.is_none(),
             "Dolby Vision can't be read back as it shows"
         );
         let colors = |range, space, primaries, transfer| Colors {
@@ -310,7 +313,6 @@ impl Converter {
         let reshaping = Reshaping::of(frame);
         let transfer = Transfer::of(frame).filter(|_| reshaping.is_none());
         let hdr = reshaping.is_some() || transfer.is_some();
-        let dolby_vision = reshaping.is_some();
         let format = if reshaping.is_some() {
             // SAFETY: the frame keeps the buffer alive.
             let format = unsafe { CVPixelBufferGetPixelFormatType(source) };
@@ -347,8 +349,8 @@ impl Converter {
         if status != 0 {
             bail!("converting a frame on the GPU failed (error {status})");
         }
-        if let Some(reshaping) = reshaping {
-            tag_dolby_vision(&destination, &reshaping);
+        if let Some(reshaping) = &reshaping {
+            tag_dolby_vision(&destination, reshaping);
         } else {
             tag_converted(source, &destination, hdr);
         }
@@ -358,7 +360,7 @@ impl Converter {
             id: NEXT_ID.fetch_add(1, Ordering::Relaxed),
             hdr,
             transfer,
-            dolby_vision,
+            reshaping: reshaping.map(Arc::new),
         })
     }
 

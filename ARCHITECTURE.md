@@ -420,7 +420,8 @@ flowchart TB
   shader
 - `src/ui/pip/` (macOS): frames to an `AVSampleBufferDisplayLayer` that
   `AVPictureInPictureController` shows, pumped on a timer of its own,
-  framed as the block frames them, gamma and subtitles drawn in
+  framed as the block frames them, Dolby Vision reshaped to HDR10, gamma
+  and subtitles drawn in
 - `src/ui/settings/`: a file per pane; controls set through `app.settings.set`
 - `src/ui/palette/`: command palette and Go to…, listing what can run there
 - `src/ui/displays.rs`, `blackout/`: displays, and blacking out the others

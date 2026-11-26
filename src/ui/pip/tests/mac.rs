@@ -61,7 +61,7 @@ fn frames_go_at_the_windows_size_as_subtitles_come_and_go(cx: &mut gpui::TestApp
     let mut fitting = Fitting::default();
     let fit = |fitting: &mut Fitting, frame: &CVPixelBuffer| {
         fitting
-            .fit(frame, &as_it_is, 1.0, Orientation::UPRIGHT)
+            .fit(frame, &as_it_is, 1.0, Orientation::UPRIGHT, None)
             .unwrap()
     };
     assert!(
@@ -119,7 +119,7 @@ fn frames_are_cropped_and_shaped_as_the_block_shows_them() {
     let mut fitting = Fitting::default();
     let fitted = |fitting: &mut Fitting, framing: &Framing| {
         let buffer = fitting
-            .fit(&frame, framing, 1.0, Orientation::UPRIGHT)
+            .fit(&frame, framing, 1.0, Orientation::UPRIGHT, None)
             .unwrap()
             .expect("made anew");
         let (width, height) = (buffer.get_width(), buffer.get_height());
@@ -231,7 +231,7 @@ fn a_surfaces_gamma_is_bent_into_its_frames_and_not_into_the_surface() {
     let mut fitting = Fitting::default();
     let mut bent = |frame: &CVPixelBuffer, gamma| {
         let bent = fitting
-            .fit(frame, &upright, gamma, Orientation::UPRIGHT)
+            .fit(frame, &upright, gamma, Orientation::UPRIGHT, None)
             .unwrap()
             .expect("a copy");
         let mut luma = Vec::new();
@@ -283,7 +283,7 @@ fn a_surfaces_gamma_is_bent_into_its_frames_and_not_into_the_surface() {
     );
     assert!(
         fitting
-            .fit(&pq_frame, &upright, 1.0, Orientation::UPRIGHT)
+            .fit(&pq_frame, &upright, 1.0, Orientation::UPRIGHT, None)
             .unwrap()
             .is_none(),
         "none to bend"
@@ -302,6 +302,7 @@ fn converted_frames_bend_by_the_same_table_as_converting_them() {
             &framing((8, 8), None, None),
             1.7,
             Orientation::UPRIGHT,
+            None,
         )
         .unwrap()
         .expect("a copy");
@@ -348,7 +349,9 @@ fn frames_turn_on_the_cpu_as_on_the_gpu_where_it_cant() {
             };
             let framing = Framing::new((4, 2), Orientation::UPRIGHT, &adjustments).unwrap();
             let mut fitting = Fitting::default();
-            let turned = fitting.fit(&frame, &framing, 1.0, orientation).unwrap();
+            let turned = fitting
+                .fit(&frame, &framing, 1.0, orientation, None)
+                .unwrap();
             // Upright, it goes as it is.
             let turned = rows(&turned.unwrap_or_else(|| frame.clone()));
             let (across, down) = across(orientation, (4, 2));
@@ -404,7 +407,7 @@ fn frames_turned_on_the_cpu_are_cropped_as_they_show() {
     let framing = Framing::new((1920, 1080), Orientation::UPRIGHT, &adjustments).unwrap();
     let mut fitting = Fitting::default();
     let fitted = fitting
-        .fit(&frame, &framing, 1.0, turned)
+        .fit(&frame, &framing, 1.0, turned, None)
         .unwrap()
         .expect("made anew");
     let (width, height) = (fitted.get_width(), fitted.get_height());
@@ -446,7 +449,7 @@ fn turn_both_planes<S: Sample>(format: u32) {
     let framing = Framing::new((4, 4), Orientation::UPRIGHT, &adjustments).unwrap();
     let mut fitting = Fitting::default();
     let turned = fitting
-        .fit(&frame, &framing, 1.0, turned_left)
+        .fit(&frame, &framing, 1.0, turned_left, None)
         .unwrap()
         .unwrap();
     let (mut luma, mut chroma) = (Vec::new(), Vec::new());
@@ -515,4 +518,83 @@ fn the_progress_runs_as_playback_does_whichever_buttons_play_it() {
     assert_eq!(rate(), 1.0, "running again");
     // SAFETY: made above, and done with.
     unsafe { CFRelease(timebase) };
+}
+
+#[test]
+fn dolby_vision_is_reshaped_into_hdr10_before_gamma_bends_it() {
+    let reshaping = crate::media::dovi::tests::reshaping();
+    let ycc = Ycc {
+        kr: 0.2627,
+        kb: 0.0593,
+        bits: 10,
+        full_range: false,
+        shift: 6,
+    };
+    // 4 × 4 of one IPT color, tagged PQ as Dolby Vision surfaces are.
+    let (i, pt) = (0.6, 0.45);
+    let code = |value: f32| ((value * 1024.0).round() as u16) << 6;
+    // SAFETY: CoreVideo's constant.
+    let pq = unsafe { kCVImageBufferTransferFunction_SMPTE_ST_2084_PQ };
+    let frame = planes::<u16>(
+        kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange,
+        code(i),
+        code(pt),
+        Some(pq),
+    );
+    let signal = |value: f32| f32::from(code(value)) / 65536.0;
+    let light = reshaping.lms_to_rgb(
+        reshaping
+            .lms_signal([signal(i), signal(pt), signal(pt)])
+            .map(hdr::pq_to_nits),
+    );
+    let reshaped = light.map(hdr::nits_to_pq);
+    let upright = framing((4, 4), None, None);
+    let mut fitting = Fitting::default();
+    for gamma in [1.0, 1.7] {
+        let rgb = reshaped.map(|signal| Curve::new(gamma, Some(Transfer::Pq)).at(signal));
+        let fitted = fitting
+            .fit(
+                &frame,
+                &upright,
+                gamma,
+                Orientation::UPRIGHT,
+                Some(&reshaping),
+            )
+            .unwrap()
+            .expect("reshaped, though it fits as it is");
+        let luma: u16 = ycc.write(ycc.luma(rgb), ycc.luma_range());
+        let (cb, cr) = ycc.chroma(rgb);
+        let chroma: [u16; 2] = [cb, cr].map(|value| ycc.write(value, ycc.chroma_range()));
+        let mut at = 0;
+        each_sample(&fitted, |plane, sample: &mut u16| {
+            let want = if plane == 0 { luma } else { chroma[at % 2] };
+            assert!(
+                (*sample >> 6).abs_diff(want >> 6) <= 1,
+                "gamma {gamma}, plane {plane}: {} for {}",
+                *sample >> 6,
+                want >> 6
+            );
+            at += plane;
+        });
+        assert_eq!(transfer_of(&fitted), Some(Transfer::Pq), "HDR10");
+    }
+    each_sample(&frame, |plane, sample: &mut u16| {
+        let own = if plane == 0 { code(i) } else { code(pt) };
+        assert_eq!(*sample, own, "the surface keeps its own");
+    });
+}
+
+#[test]
+fn dolby_vision_in_bgra_is_no_frame_to_show() {
+    let mut decoded = Buffers::default();
+    let frame = decoded.get(kCVPixelFormatType_32BGRA, 4, 4).unwrap();
+    let reshaping = crate::media::dovi::tests::reshaping();
+    let fitted = Fitting::default().fit(
+        &frame,
+        &framing((4, 4), None, None),
+        1.0,
+        Orientation::UPRIGHT,
+        Some(&reshaping),
+    );
+    assert!(fitted.is_err());
 }
