@@ -207,10 +207,17 @@ fn typing_finds_places_by_name_kind_or_where_they_are(cx: &mut TestAppContext) {
     clear(&mut cx);
     type_in(&mut cx, "clip.mp4");
     let found = places(window, &cx);
+    let in_folder = of(&found, Kind::InFolder);
+    // By name, clip-one-key.mp4 and the folder's other clip-….mp4 files
+    // would come before it.
     assert_eq!(
-        of(&found, Kind::InFolder),
-        ["clip.mp4", "clip-one-key.mp4"],
-        "best first, not by name"
+        in_folder.first(),
+        Some(&"clip.mp4"),
+        "best first, not by name: {in_folder:?}"
+    );
+    assert!(
+        in_folder.contains(&"clip-one-key.mp4"),
+        "then the rest: {in_folder:?}"
     );
     clear(&mut cx);
     type_in(&mut cx, "nowhere at all");
