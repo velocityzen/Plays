@@ -52,21 +52,22 @@ fn learned(known: &Mutex<Known>, id: &str, within: std::time::Duration) -> bool 
 #[test]
 fn a_renderer_slow_to_say_what_it_plays_holds_up_no_other() {
     use dlna::fake::{FakeRenderer, Kind as Renderer};
-    let slow = FakeRenderer::start(Renderer::Tv);
-    slow.state().answer_after = std::time::Duration::from_secs(5);
-    let quick = FakeRenderer::start(Renderer::Speaker);
+    let holds = std::time::Duration::from_secs(5);
+    let tv = FakeRenderer::start(Renderer::Tv);
+    tv.state().answer_after = holds;
+    let speaker = FakeRenderer::start(Renderer::Speaker);
+    // Described once, before it's asked: a fake answers one at a time, so
+    // describing it while it holds its answer would wait as long.
+    let (slow, quick) = (tv.device(), speaker.device());
     let (found, known) = learning();
-    found.unbounded_send(Found::Added(slow.device())).unwrap();
-    found.unbounded_send(Found::Added(quick.device())).unwrap();
+    found.unbounded_send(Found::Added(slow.clone())).unwrap();
+    found.unbounded_send(Found::Added(quick.clone())).unwrap();
     let within = std::time::Duration::from_secs(3);
+    assert!(learned(&known, &quick.id, within), "the quick one waited");
+    assert!(!known.lock().plays.contains_key(&slow.id), "still asked");
     assert!(
-        learned(&known, &quick.device().id, within),
-        "the quick one waited"
-    );
-    assert!(!known.lock().plays.contains_key(&slow.device().id));
-    assert!(
-        learned(&known, &slow.device().id, within),
-        "the slow one in time"
+        learned(&known, &slow.id, holds + within),
+        "the slow one once it answers"
     );
 }
 
