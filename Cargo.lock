@@ -6383,6 +6383,7 @@ dependencies = [
  "ffmpeg-safe",
  "hegeltest",
  "log",
+ "network",
 ]
 
 [[package]]

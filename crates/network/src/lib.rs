@@ -1,7 +1,8 @@
 //! What the casting crates share on the network, so a fix in one reaches
 //! them all: connecting to the first of a device's addresses that takes
-//! it, reading HTTP and RTSP messages within bounds and in time, and, with
-//! the `mdns` feature, finding devices over mDNS.
+//! it, connections taken that close for the other end however they're let
+//! go of (`Accepted`), reading HTTP and RTSP messages within bounds and in
+//! time, and, with the `mdns` feature, finding devices over mDNS.
 
 #![forbid(unsafe_code)]
 
@@ -10,7 +11,8 @@ pub mod http;
 pub mod mdns;
 
 use std::io;
-use std::net::{SocketAddr, TcpStream};
+use std::net::{Shutdown, SocketAddr, TcpStream};
+use std::ops::{Deref, DerefMut};
 use std::sync::{Mutex, MutexGuard};
 use std::time::Duration;
 
@@ -49,6 +51,39 @@ pub fn connect_first(
         }
     }
     Err(refused.unwrap_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no address")))
+}
+
+/// A connection a listener took. Dropped, it's shut down both ways, not
+/// only closed here: on macOS a connection is taken, then kept from
+/// processes started after, so one started between the two has it too,
+/// and would keep it open, the other end waiting on it.
+#[derive(Debug)]
+pub struct Accepted(TcpStream);
+
+impl From<TcpStream> for Accepted {
+    fn from(stream: TcpStream) -> Self {
+        Self(stream)
+    }
+}
+
+impl Deref for Accepted {
+    type Target = TcpStream;
+
+    fn deref(&self) -> &TcpStream {
+        &self.0
+    }
+}
+
+impl DerefMut for Accepted {
+    fn deref_mut(&mut self) -> &mut TcpStream {
+        &mut self.0
+    }
+}
+
+impl Drop for Accepted {
+    fn drop(&mut self) {
+        let _ = self.0.shutdown(Shutdown::Both);
+    }
 }
 
 #[cfg(test)]

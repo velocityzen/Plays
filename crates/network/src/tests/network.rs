@@ -1,4 +1,7 @@
+use std::io::Read;
 use std::net::{Ipv4Addr, TcpListener};
+use std::os::fd::OwnedFd;
+use std::process::Command;
 
 use super::*;
 
@@ -44,4 +47,23 @@ fn a_lock_a_panic_left_poisoned_still_locks() {
     assert!(mutex.is_poisoned());
     *lock(&mutex) += 1;
     assert_eq!(*lock(&mutex), 2);
+}
+
+#[test]
+fn a_connection_taken_and_let_go_of_closes_though_another_process_has_it() {
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let mut device = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+    let taken = Accepted::from(listener.accept().unwrap().0);
+    // As a process started as it was taken would: with it too.
+    let mut holding = Command::new("sleep")
+        .arg("30")
+        .stdin(OwnedFd::from(taken.try_clone().unwrap()))
+        .spawn()
+        .unwrap();
+    drop(taken);
+    device.set_read_timeout(Some(WAIT)).unwrap();
+    let read = device.read(&mut [0; 1]);
+    holding.kill().ok();
+    holding.wait().ok();
+    assert_eq!(read.ok(), Some(0), "the device sees it closed");
 }

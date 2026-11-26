@@ -118,7 +118,7 @@ on its own. Clippy lints in the root `Cargo.toml` apply to all.
 | `crates/chromecast` | Finds and drives Google Cast devices |
 | `crates/dlna` | Finds and drives UPnP media renderers |
 | `crates/airplay` | Finds, pairs with and sends to AirPlay receivers |
-| `crates/network` | What the casting crates share: connecting, bounded HTTP and RTSP, mDNS |
+| `crates/network` | What the casting crates share: connecting, connections taken, bounded HTTP and RTSP, mDNS |
 | `crates/ffmpeg-link` | Links the static FFmpeg into Plays and the stream server's tests |
 | `crates/ffmpeg-safe` | Sound reads of what ffmpeg-next reads unsoundly: channel layouts, tags |
 | `crates/completions` | Shell completion scripts for a clap command line |
@@ -576,9 +576,11 @@ flowchart LR
 
 ## The network crate
 
-`crates/network`: what the Chromecast, DLNA and AirPlay crates share.
+`crates/network`: what the Chromecast, DLNA and AirPlay crates and the
+stream server share.
 
 - `connect_first`: tries each of a device's addresses in turn
+- `Accepted`: a connection a server took, shut down both ways as it's dropped
 - `http`: HTTP and RTSP read in bounds; a `Deadline` times a whole message
 - `mdns` (feature `mdns`): browsing; each crate's `Protocol` says what for
 - `Found` (a device added, changed or gone), and `lock` for poisoned mutexes

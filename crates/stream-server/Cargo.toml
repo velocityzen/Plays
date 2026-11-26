@@ -19,6 +19,8 @@ ffmpeg-next = { version = "9.1", default-features = false, features = [
 ] }
 ffmpeg-safe = { path = "../ffmpeg-safe" }
 log = "0.4"
+# Connections taken that close for the device however they're let go of.
+network = { path = "../network" }
 
 [build-dependencies]
 ffmpeg-link = { path = "../ffmpeg-link" }

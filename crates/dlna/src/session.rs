@@ -14,7 +14,7 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant, SystemTime};
 
 use futures_channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
-use network::lock;
+use network::{Accepted, lock};
 
 use crate::device::{Device, Service};
 use crate::error::{Error, Result};
@@ -588,7 +588,9 @@ impl Inner {
 
 /// Take the renderer's events, from its `addresses` alone, until
 /// `closing`. What comes from elsewhere is left unread: its state is
-/// still asked for then, as no event of its own has come.
+/// still asked for then, as no event of its own has come. Each connection
+/// is `Accepted` as it's taken, so it closes for the other end however
+/// it's let go of.
 fn listen(inner: &Inner, listener: &TcpListener, addresses: &[IpAddr], closing: &AtomicBool) {
     let base = Url::parse(&inner.callback)
         .map(|url| url.path)
@@ -604,10 +606,13 @@ fn listen(inner: &Inner, listener: &TcpListener, addresses: &[IpAddr], closing: 
     }
     while !closing.load(Ordering::Relaxed) {
         let stream = match listener.accept() {
-            Ok((stream, peer)) if addresses.contains(&peer.ip()) => stream,
-            Ok((_, peer)) => {
-                log::debug!("dlna: an event from {peer}, not the renderer");
-                continue;
+            Ok((stream, peer)) => {
+                let stream = Accepted::from(stream);
+                if !addresses.contains(&peer.ip()) {
+                    log::debug!("dlna: an event from {peer}, not the renderer");
+                    continue;
+                }
+                stream
             }
             Err(err) => {
                 if !matches!(
@@ -627,7 +632,7 @@ fn listen(inner: &Inner, listener: &TcpListener, addresses: &[IpAddr], closing: 
         // Events are heard one at a time, so each has BRIEF as a whole:
         // one sent a byte at a time would hold up the rest.
         let _ = stream.set_write_timeout(Some(BRIEF));
-        let Ok(message) = Message::read(Deadline::new(&stream, BRIEF), false) else {
+        let Ok(message) = Message::read(Deadline::new(&*stream, BRIEF), false) else {
             continue;
         };
         let of = match message.head.request() {

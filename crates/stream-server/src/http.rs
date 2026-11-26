@@ -4,13 +4,15 @@
 
 use std::fs::File;
 use std::io::{self, BufRead, BufReader, Read, Seek, SeekFrom, Write};
-use std::net::{IpAddr, Shutdown, TcpListener, TcpStream};
+use std::net::{IpAddr, TcpListener, TcpStream};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::Receiver;
 use std::thread;
 use std::time::{Duration, Instant};
+
+use network::Accepted;
 
 /// How long a kept-open connection waits for its next request, head and
 /// all: one sent a byte at a time takes no longer.
@@ -136,7 +138,9 @@ pub(crate) type Handler = Arc<dyn Fn(&Request) -> Response + Send + Sync>;
 
 /// Accept connections from the peers `admit` lets in until `stop` is set
 /// (and a connection wakes the listener to see it). Others are closed as
-/// they come, before they take one of the places or a thread.
+/// they come, before they take one of the places or a thread. Each is
+/// `Accepted` as it's taken, so it closes for the device however it's let
+/// go of.
 pub(crate) fn serve(
     listener: TcpListener,
     handler: Handler,
@@ -145,6 +149,7 @@ pub(crate) fn serve(
 ) {
     let open = Arc::new(AtomicUsize::new(0));
     for stream in listener.incoming() {
+        let stream = stream.map(Accepted::from);
         if stop.load(Ordering::Relaxed) {
             break;
         }
@@ -226,7 +231,7 @@ impl Read for Timed {
     }
 }
 
-fn connection(stream: TcpStream, handler: &Handler) -> io::Result<()> {
+fn connection(stream: Accepted, handler: &Handler) -> io::Result<()> {
     stream.set_write_timeout(Some(STALL))?;
     let _ = stream.set_nodelay(true);
     let mut reader = BufReader::new(Timed {
@@ -258,7 +263,6 @@ fn connection(stream: TcpStream, handler: &Handler) -> io::Result<()> {
         };
         let keep_alive = write_response(&mut writer, &request, response, keep_alive)?;
         if !keep_alive {
-            let _ = writer.shutdown(Shutdown::Both);
             return Ok(());
         }
     }
