@@ -3437,6 +3437,13 @@ fn dolby_vision_surfaces_of(path: &std::path::Path) {
                 player.tick();
                 player.frame_pts().is_some_and(|pts| pts >= time - 1.0)
             }));
+            // Software frames are surfaces too: these are the GPU's.
+            let decoded_on = player.info().unwrap().hardware;
+            assert_eq!(
+                decoded_on,
+                hardware.then_some("VideoToolbox"),
+                "{file}: decoded on {decoded_on:?}"
+            );
             (player.frame().unwrap(), time)
         };
         let (Picture::Surface(surface), time) = frame_at(true) else {

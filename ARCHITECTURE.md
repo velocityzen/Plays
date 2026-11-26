@@ -205,6 +205,8 @@ sound heard. No sound, wall time. A gap in the sound plays as silence.
 - `src/media/decoder/layers.rs`: Dolby Vision profile 7's enhancement layer,
   split out of the video's track (`dovi_split`) or a track of its own, its
   packets queued with the video's; frames wait for theirs, paired by time
+- `src/media/decoder/base_layer.rs`: HEVC of more than one layer goes to the
+  GPU as its base layer alone, as VideoToolbox won't take MV-HEVC's second view
 - `src/media/decoder/shared.rs`: what a player and its threads share; each
   seek starts a generation, and nothing from an earlier one is handed out
 - `src/media/player.rs`: the UI-side handle, ticked as its block draws; a

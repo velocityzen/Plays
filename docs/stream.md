@@ -17,7 +17,7 @@ What the tests play, made with the `ffmpeg` tool unless they're fixtures
 | Codec | Kinds | In |
 | --- | --- | --- |
 | H.264 | Constrained Baseline, High, High 10, High 4:2:2, High 4:4:4 | MP4, MOV, Matroska, MPEG-TS, HLS |
-| HEVC | Main, Main 10, Main 12, 4:2:2 10-bit | MP4, Matroska, MPEG-TS |
+| HEVC | Main, Main 10, Main 12, 4:2:2 10-bit; with alpha, a second layer | MP4, Matroska, MPEG-TS |
 | AV1 | Main, 8- and 10-bit | MP4, Matroska, WebM |
 | VP9 | Profiles 0, 1 (4:4:4) and 2 (10-bit) | WebM |
 | VP8 | | WebM |
@@ -112,8 +112,8 @@ Samples too big to commit, in `ignore/`:
 - HEVC Main 10 HLG, 4K60, Dolby Vision 8.4, AAC (MOV)
 - HEVC 4K Dolby Vision 7 FEL: Matroska; MP4 with AC-3 5.1; DTS 5.1
 - HEVC Dolby Vision 8.1, 3840×2014
-- HEVC Dolby Vision 20 (MV-HEVC), 24 fps: its first view, decoded in
-  software, as VideoToolbox won't take it
+- HEVC Dolby Vision 20 (MV-HEVC), 24 fps: its first view, on VideoToolbox,
+  given the base layer alone
 - HEVC Dolby Vision 5, 4K 59.94, E-AC-3 stereo
 - AV1 4K PQ, Dolby Vision 10, DTS-HD MA 7.1
 - AV1 Dolby Vision 10, 3840×1920, E-AC-3 Atmos 5.1, MJPEG cover
@@ -123,6 +123,8 @@ Samples too big to commit, in `ignore/`:
 ## Not tested
 
 - PGS, CEA-608 and 708 captions: no encoder makes them
+- MV-HEVC in a made file: no encoder here makes it (x265 is built without
+  multiview), so only the Dolby Vision 20 sample has a second view
 - HDR10+
 - Theora, VC-1
 - DASH, encrypted HLS, HTTPS, RTSP, RTMP

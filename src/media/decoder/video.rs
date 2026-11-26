@@ -12,6 +12,7 @@ use ffmpeg::{Discard, Packet, Rational, codec, ffi, frame};
 use ffmpeg_next as ffmpeg;
 use gpui::RenderImage;
 
+use super::base_layer::BaseLayer;
 #[cfg(not(target_os = "macos"))]
 use super::convert::gpu_conversion;
 use super::convert::{Scaler, convert, output_size, set_aspect};
@@ -64,6 +65,9 @@ pub(super) struct VideoDecoder {
     decoded: frame::Video,
     /// The hardware the decoder decodes on, if any.
     hardware: Option<Hardware>,
+    /// Keeps the packets of HEVC of more than one layer to the base layer,
+    /// for the hardware decoder, which takes that alone.
+    base: Option<BaseLayer>,
     /// Whether the last frame came from the hardware decoder, as last reported.
     reported: Option<bool>,
     /// Dolby Vision profile 7's enhancement layer, decoded beside it.
@@ -192,7 +196,13 @@ impl VideoDecoder {
         hardware: bool,
     ) -> Result<Self> {
         let parameters = stream.parameters.clone();
-        let (decoder, hardware) = open_video(&parameters, hardware)?;
+        let base = hardware.then(|| BaseLayer::of(&parameters)).flatten();
+        let (decoder, hardware) = open_video(
+            base.as_ref()
+                .map_or(&parameters, |(_, parameters)| parameters),
+            hardware,
+        )?;
+        let base = base.filter(|_| hardware.is_some()).map(|(base, _)| base);
         if decoder.width() == 0 || decoder.height() == 0 {
             bail!("video stream has no dimensions");
         }
@@ -222,6 +232,7 @@ impl VideoDecoder {
             },
             decoded: frame::Video::empty(),
             hardware,
+            base,
             reported: None,
             layers: None,
             waiting: VecDeque::new(),
@@ -321,7 +332,7 @@ impl VideoDecoder {
         } else {
             Discard::Default
         });
-        if let Err(err) = self.decoder.send_packet(packet) {
+        if let Err(err) = self.send(packet) {
             log::debug!("video decode error: {err}");
             // The decoder in its place starts with the packet this one
             // failed on: the first one decoded, when the GPU can't.
@@ -331,12 +342,24 @@ impl VideoDecoder {
                 } else {
                     Discard::Default
                 });
-                if let Err(err) = self.decoder.send_packet(packet) {
+                if let Err(err) = self.send(packet) {
                     log::debug!("video decode error: {err}");
                 }
             }
         }
         self.drain(session);
+    }
+
+    /// Give the decoder `packet`, or its base layer alone where it takes
+    /// only that.
+    fn send(&mut self, packet: &Packet) -> Result<(), ffmpeg::Error> {
+        match self.base.as_ref().and_then(|base| base.packet(packet)) {
+            // None of it is the base layer's: an empty packet would be an
+            // error, or the end.
+            Some(base) if base.size() == 0 => Ok(()),
+            Some(base) => self.decoder.send_packet(&base),
+            None => self.decoder.send_packet(packet),
+        }
     }
 
     pub(super) fn finish(&mut self, session: &Session) {
@@ -377,6 +400,7 @@ impl VideoDecoder {
             Ok((decoder, _)) => {
                 self.decoder = decoder;
                 self.hardware = None;
+                self.base = None;
                 self.errors = 0;
                 true
             }

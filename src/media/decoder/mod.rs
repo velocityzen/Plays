@@ -21,6 +21,7 @@
 //! play at a time; another can be picked while playing.
 
 mod audio;
+mod base_layer;
 mod convert;
 mod cover_file;
 mod demux;

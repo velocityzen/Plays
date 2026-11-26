@@ -182,3 +182,43 @@ fn frames_the_gpu_leaves_to_the_cpu_are_said_to_be_decoded_in_software() {
     assert_eq!(shown(&mut decoder, &packets), (tenths(10), None));
     assert_eq!(decoder.reported, Some(false));
 }
+
+#[test]
+fn hevc_of_two_layers_decodes_its_base_layer_on_the_gpu() {
+    use crate::media::decoder::base_layer::tests::two_layer_media;
+    use crate::media::{still, tests::first_frame};
+
+    let path = two_layer_media();
+    let (stream, packets) = video(&path);
+    let mut decoder = VideoDecoder::new(&stream, None, true).unwrap();
+    let gpu = decoder.hardware.is_some();
+    assert_eq!(
+        decoder.base.is_some(),
+        gpu,
+        "packets go as they are to the CPU"
+    );
+    assert_eq!(
+        shown(&mut decoder, &packets),
+        (tenths(10), gpu.then_some("VideoToolbox"))
+    );
+    let mut decoder = VideoDecoder::new(&stream, None, false).unwrap();
+    assert!(decoder.base.is_none());
+    assert_eq!(shown(&mut decoder, &packets), (tenths(10), None));
+
+    // The same picture either way.
+    let [gpu, cpu] =
+        [true, false].map(|hardware| still::shown(&first_frame(&path, hardware), false).unwrap());
+    assert_eq!((gpu.width, gpu.height), (cpu.width, cpu.height));
+    let apart = gpu
+        .pixels
+        .iter()
+        .zip(&cpu.pixels)
+        .flat_map(|(a, b)| {
+            a.iter()
+                .zip(b)
+                .map(|(a, b)| f64::from(a.abs_diff(*b)) / 257.0)
+        })
+        .sum::<f64>()
+        / (gpu.pixels.len() * 3) as f64;
+    assert!(apart < 2.0, "{apart:.2} levels apart on average");
+}
