@@ -194,7 +194,7 @@ impl Ycc {
     }
 
     /// Black's code and how far white is from it.
-    fn luma_range(&self) -> (f32, f32) {
+    pub(super) fn luma_range(&self) -> (f32, f32) {
         let unit = (1u32 << (self.bits - 8)) as f32;
         if self.full_range {
             (0.0, self.max())
@@ -204,7 +204,7 @@ impl Ycc {
     }
 
     /// No color's code and how far the extremes are apart.
-    fn chroma_range(&self) -> (f32, f32) {
+    pub(super) fn chroma_range(&self) -> (f32, f32) {
         let unit = (1u32 << (self.bits - 8)) as f32;
         let scale = if self.full_range {
             self.max()
@@ -214,26 +214,34 @@ impl Ycc {
         (128.0 * unit, scale)
     }
 
-    fn read(&self, sample: impl Sample, (offset, scale): (f32, f32)) -> f32 {
+    pub(super) fn read(&self, sample: impl Sample, (offset, scale): (f32, f32)) -> f32 {
         ((sample.code() >> self.shift) as f32 - offset) / scale
     }
 
-    fn write<S: Sample>(&self, value: f32, (offset, scale): (f32, f32)) -> S {
+    pub(super) fn write<S: Sample>(&self, value: f32, (offset, scale): (f32, f32)) -> S {
         let code = (offset + value * scale).round().clamp(0.0, self.max());
         S::from_code((code as u32) << self.shift)
     }
 
-    fn luma(&self, [r, g, b]: [f32; 3]) -> f32 {
+    pub(super) fn luma(&self, [r, g, b]: [f32; 3]) -> f32 {
         self.kr * r + (1.0 - self.kr - self.kb) * g + self.kb * b
     }
 
-    fn chroma(&self, rgb: [f32; 3]) -> (f32, f32) {
+    pub(super) fn chroma(&self, rgb: [f32; 3]) -> (f32, f32) {
         let y = self.luma(rgb);
         let [r, _, b] = rgb;
         (
             (b - y) / (2.0 * (1.0 - self.kb)),
             (r - y) / (2.0 * (1.0 - self.kr)),
         )
+    }
+
+    /// R'G'B' from luma and chroma, as `luma` and `chroma` make them.
+    pub(super) fn rgb(&self, y: f32, cb: f32, cr: f32) -> [f32; 3] {
+        let r = y + 2.0 * (1.0 - self.kr) * cr;
+        let b = y + 2.0 * (1.0 - self.kb) * cb;
+        let g = (y - self.kr * r - self.kb * b) / (1.0 - self.kr - self.kb);
+        [r, g, b]
     }
 }
 

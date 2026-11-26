@@ -157,6 +157,18 @@ fn cycles_through_ratios() {
 }
 
 #[test]
+fn knows_what_it_keeps_of_the_turned_picture() {
+    let wide = ratio("2.39:1", 2.39);
+    let square = ratio("1:1", 1.0);
+    assert_eq!(framing(Orientation::UPRIGHT, None, None).kept(), (1.0, 1.0));
+    let (across, down) = framing(Orientation::UPRIGHT, None, Some(wide)).kept();
+    assert!(across == 1.0 && (down - 16.0 / 9.0 / 2.39).abs() < 1e-6);
+    // Turned, it's 1080 across and 1920 down.
+    let (across, down) = framing(Orientation::new(1, false), None, Some(square)).kept();
+    assert!(across == 1.0 && (down - 1080.0 / 1920.0).abs() < 1e-6);
+}
+
+#[test]
 fn knows_the_decoded_size_from_what_shows_of_it() {
     let shown = |width: f32, height: f32| Bounds {
         origin: point(px(10.), px(20.)),

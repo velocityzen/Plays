@@ -110,6 +110,11 @@ impl Framing {
         self.orientation
     }
 
+    /// The part of the turned picture kept, across and down, centered.
+    pub fn kept(&self) -> (f32, f32) {
+        self.kept
+    }
+
     /// How wide and tall the decoded picture is when what's kept of it
     /// shows at `shown`: before it's turned, and with what's cropped away.
     pub fn decoded(&self, shown: Bounds<Pixels>) -> (f32, f32) {

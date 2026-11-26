@@ -14,10 +14,10 @@ use futures::future::{self, Either};
 use gpui::{Bounds, Context, Point, Task, Window};
 
 use super::{PlayerEvent, PlayerView};
+use crate::media::Picture;
 use crate::media::subtitles::CueContent;
-use crate::media::{Orientation, Picture};
 use crate::settings::{Settings, SubtitleStyle};
-use crate::ui::framing::{Adjustments, Framing};
+use crate::ui::framing::Framing;
 use crate::ui::overlay;
 use crate::ui::pip::{self, Pip, PipEvent, Playback, Subtitles};
 use crate::ui::theme::Theme;
@@ -44,14 +44,15 @@ pub(super) struct PipSession {
     _pump: Task<()>,
 }
 
-/// The cues showing, how they look, and the size of the frames they go on.
+/// The cues showing, how they look, and the frames they go on: how big
+/// they are decoded, how the block frames them, and their size.
 struct Layout {
     /// Held, so none is let go of while laid out and another made where it
     /// was taken for it.
     cues: Vec<Arc<CueContent>>,
     style: SubtitleStyle,
     picture: (u32, u32),
-    orientation: Orientation,
+    framing: Framing,
     size: (u32, u32),
 }
 
@@ -160,9 +161,7 @@ impl PlayerView {
         let cues = self.playback.local().subtitles();
         self.show_cues(cues);
         let frame = self.playback.local().frame();
-        let orientation = self
-            .framing()
-            .map_or(Orientation::UPRIGHT, |framing| framing.orientation());
+        let framing = self.framing();
         // Where it plays, here or on the device its sound is cast to.
         let playing = self.is_playing();
         let playback = Playback {
@@ -174,12 +173,14 @@ impl PlayerView {
         if session.started {
             session.pip.follow_window();
         }
-        if let Some(frame) = &frame {
-            self.lay_out_subtitles(frame, orientation, window, cx);
+        // Shown as the block shows it: turned, cropped and shaped.
+        let shown = frame.as_ref().zip(framing);
+        if let Some((frame, framing)) = &shown {
+            self.lay_out_subtitles(frame, framing, window, cx);
         }
         let session = self.pip.as_mut()?;
-        if let Some(frame) = &frame {
-            session.pip.show(frame, orientation);
+        if let Some((frame, framing)) = &shown {
+            session.pip.show(frame, framing);
         }
         session.pip.update(playback);
         if !session.pip.start_when_possible() && session.asked_at.elapsed() > START_WITHIN {
@@ -195,12 +196,12 @@ impl PlayerView {
         ))
     }
 
-    /// Hand the subtitles showing over, laid out for frames like `frame`,
-    /// when they or what they go on change.
+    /// Hand the subtitles showing over, laid out for frames like `frame`
+    /// framed so, when they or what they go on change.
     fn lay_out_subtitles(
         &mut self,
         frame: &Picture,
-        orientation: Orientation,
+        framing: &Framing,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -208,17 +209,17 @@ impl PlayerView {
             return;
         };
         let picture = frame.size();
-        let shown = if orientation.sideways() {
+        let shown = if framing.orientation().sideways() {
             (picture.1, picture.0)
         } else {
             picture
         };
         let style = &cx.global::<Settings>().subtitles;
-        let size = session.pip.subtitle_size(shown);
+        let size = session.pip.subtitle_size(shown, framing);
         // Looked at as it is, made anew only when something changed.
         let same = session.laid_out.as_ref().is_some_and(|laid| {
             laid.picture == picture
-                && laid.orientation == orientation
+                && laid.framing == *framing
                 && laid.size == size
                 && laid.style == *style
                 && same_cues(&laid.cues, &self.cues)
@@ -230,7 +231,7 @@ impl PlayerView {
             cues: self.cues.clone(),
             style: style.clone(),
             picture,
-            orientation,
+            framing: *framing,
             size,
         };
         let subtitles = self.subtitles_for(&layout, window, cx);
@@ -252,8 +253,7 @@ impl PlayerView {
         }
         let (width, height) = layout.size;
         let font = Theme::get(window, cx).font;
-        // The window shows the picture turned, but not reshaped or cropped.
-        let framing = Framing::new(layout.picture, layout.orientation, &Adjustments::default());
+        let framing = Some(layout.framing);
         let text = overlay::text_overlay(
             &self.cues,
             &layout.style,

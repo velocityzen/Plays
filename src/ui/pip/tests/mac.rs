@@ -1,4 +1,17 @@
 use super::*;
+use crate::media::hdr;
+use crate::media::picture::gamma_table;
+use crate::ui::framing::{Adjustments, CROPS, Ratio};
+
+/// How the block frames a picture of `size`, upright, adjusted so.
+fn framing(size: (u32, u32), aspect: Option<Ratio>, crop: Option<Ratio>) -> Framing {
+    let adjustments = Adjustments {
+        aspect,
+        crop,
+        ..Adjustments::default()
+    };
+    Framing::new(size, Orientation::UPRIGHT, &adjustments).unwrap()
+}
 
 #[test]
 fn the_layers_are_looked_through_when_the_video_moves_and_now_and_then() {
@@ -44,21 +57,24 @@ fn frames_go_at_the_windows_size_as_subtitles_come_and_go(cx: &mut gpui::TestApp
         let buffer = buffer.expect("scaled");
         (buffer.get_width(), buffer.get_height())
     };
+    let as_it_is = framing((1920, 1080), None, None);
     let mut fitting = Fitting::default();
+    let fit =
+        |fitting: &mut Fitting, frame: &CVPixelBuffer| fitting.fit(frame, &as_it_is, 1.0).unwrap();
     assert!(
-        fitting.fit(&frame).unwrap().is_none(),
+        fit(&mut fitting, &frame).is_none(),
         "as they are before the window opens"
     );
 
     // The window: 480 by 270 points, at 2x.
     fitting.window = Some((480.0, 270.0, 2.0));
-    assert_eq!(size(fitting.fit(&frame).unwrap()), (960, 540));
+    assert_eq!(size(fit(&mut fitting, &frame)), (960, 540));
     // A bitmap subtitle of opaque white over all of it.
     let white = RenderImage::new(vec![image::Frame::new(
         image::RgbaImage::from_raw(1, 1, vec![255; 4]).unwrap(),
     )]);
     let subtitles = Subtitles {
-        size: fitting.size((1920, 1080)),
+        size: fitting.size((1920, 1080), &as_it_is),
         text: Vec::new(),
         bitmaps: vec![(
             Arc::new(white),
@@ -68,19 +84,224 @@ fn frames_go_at_the_windows_size_as_subtitles_come_and_go(cx: &mut gpui::TestApp
         text_system: cx.text_system().clone(),
     };
     fitting.set_subtitles(Some(subtitles));
-    let burned = fitting.fit(&frame).unwrap();
+    let burned = fit(&mut fitting, &frame);
     pixels(burned.as_ref().unwrap(), |pixel| {
         assert_eq!(pixel[..3], [255; 3], "drawn in");
     });
     assert_eq!(size(burned), (960, 540), "subtitles came");
     fitting.set_subtitles(None);
-    assert_eq!(size(fitting.fit(&frame).unwrap()), (960, 540), "and went");
+    assert_eq!(size(fit(&mut fitting, &frame)), (960, 540), "and went");
 
     let fits = decoded.get(kCVPixelFormatType_32BGRA, 960, 540).unwrap();
-    assert!(
-        fitting.fit(&fits).unwrap().is_none(),
-        "one that fits as it is"
+    assert!(fit(&mut fitting, &fits).is_none(), "one that fits as it is");
+}
+
+#[test]
+fn frames_are_cropped_and_shaped_as_the_block_shows_them() {
+    // 1920 × 1080, green in the middle square and red around it.
+    let mut decoded = Buffers::default();
+    let frame = decoded.get(kCVPixelFormatType_32BGRA, 1920, 1080).unwrap();
+    let mut at = 0;
+    pixels(&frame, |pixel| {
+        let x = at % 1920;
+        *pixel = if (420..1500).contains(&x) {
+            [0, 255, 0, 255]
+        } else {
+            [0, 0, 255, 255]
+        };
+        at += 1;
+    });
+    let square = framing((1920, 1080), None, Some(CROPS[0]));
+    let four_three = framing((1920, 1080), Some(ASPECT_4_3), None);
+    let mut fitting = Fitting::default();
+    let fitted = |fitting: &mut Fitting, framing: &Framing| {
+        let buffer = fitting
+            .fit(&frame, framing, 1.0)
+            .unwrap()
+            .expect("made anew");
+        let (width, height) = (buffer.get_width(), buffer.get_height());
+        let mut colors = Vec::new();
+        let mut at = 0;
+        pixels(&buffer, |pixel| {
+            let x = at % width;
+            // The edges may blend in a little of what's next to them.
+            if (4..width - 4).contains(&x) {
+                colors.push((x * 3 / width, pixel[..3].to_vec()));
+            }
+            at += 1;
+        });
+        ((width, height), colors)
+    };
+    let (size, colors) = fitted(&mut fitting, &square);
+    assert_eq!(
+        size,
+        (1080, 1080),
+        "as tall as it was, before the window opens"
     );
+    assert!(
+        colors
+            .iter()
+            .all(|(_, color)| color[1] > 250 && color[2] < 5)
+    );
+    let (size, colors) = fitted(&mut fitting, &four_three);
+    assert_eq!(size, (1440, 1080), "squeezed to 4:3");
+    let third = |third: usize| colors.iter().filter(move |(at, _)| *at == third);
+    assert!(third(0).any(|(_, color)| color[2] > 250), "red to the left");
+    assert!(
+        third(1).all(|(_, color)| color[1] > 250),
+        "green in the middle"
+    );
+    // The window: 480 by 270 points, at 2x.
+    fitting.window = Some((480.0, 270.0, 2.0));
+    assert_eq!(fitted(&mut fitting, &square).0, (540, 540));
+    assert_eq!(fitted(&mut fitting, &four_three).0, (720, 540));
+    let key = CFString::from(CVImageBufferKeys::CleanAperture);
+    assert!(
+        frame.as_buffer().get_attachment(&key, None).is_none(),
+        "the frame is left as it was"
+    );
+}
+
+#[test]
+fn frames_converted_smaller_stay_as_big_as_they_are_until_the_window_opens() {
+    // A 1920 × 1080 video, converted at half that.
+    let fitting = Fitting::default();
+    let half = (960, 540);
+    assert_eq!(fitting.size(half, &framing((1920, 1080), None, None)), half);
+    // Cropped to 2.39:1, as tall as what's kept.
+    let wide = framing((1920, 1080), None, Some(CROPS[4]));
+    assert_eq!(fitting.size(half, &wide), (960, 402));
+    assert_eq!(fitting.size((0, 540), &wide), (0, 540), "nothing to show");
+}
+
+/// 4:3, as the menus have it.
+const ASPECT_4_3: Ratio = crate::ui::framing::ASPECT_RATIOS[1];
+
+/// A 4 × 4 biplanar buffer of `format`, one luma and one chroma sample
+/// throughout, tagged with `transfer` if it's given.
+fn planes<S: Sample>(
+    format: u32,
+    luma: S,
+    chroma: S,
+    transfer: Option<CFStringRef>,
+) -> CVPixelBuffer {
+    let mut decoded = Buffers::default();
+    let buffer = decoded.get(format, 4, 4).unwrap();
+    each_sample(&buffer, |plane, sample: &mut S| {
+        *sample = if plane == 0 { luma } else { chroma };
+    });
+    if let Some(transfer) = transfer {
+        // SAFETY: the buffer and CoreVideo's constants are valid.
+        unsafe {
+            CVBufferSetAttachment(
+                buffer.as_concrete_TypeRef(),
+                CFString::from(CVImageBufferKeys::TransferFunction).as_concrete_TypeRef(),
+                transfer.cast(),
+                kCVAttachmentMode_ShouldPropagate,
+            );
+        }
+    }
+    buffer
+}
+
+/// Each sample of a biplanar buffer's pixels, by plane, read or written.
+fn each_sample<S: Sample>(buffer: &CVPixelBuffer, mut each: impl FnMut(usize, &mut S)) {
+    // SAFETY: locked while its planes are touched, within their strides.
+    unsafe {
+        assert_eq!(buffer.lock_base_address(0), 0);
+        for plane in 0..2 {
+            let base = buffer.get_base_address_of_plane(plane).cast::<S>();
+            let stride = buffer.get_bytes_per_row_of_plane(plane) / size_of::<S>();
+            let wide = buffer.get_width_of_plane(plane) * (plane + 1);
+            for y in 0..buffer.get_height_of_plane(plane) {
+                let row = slice::from_raw_parts_mut(base.add(y * stride), wide);
+                row.iter_mut().for_each(|sample| each(plane, sample));
+            }
+        }
+        buffer.unlock_base_address(0);
+    }
+}
+
+#[test]
+fn a_surfaces_gamma_is_bent_into_its_frames_and_not_into_the_surface() {
+    let upright = framing((4, 4), None, None);
+    let mut fitting = Fitting::default();
+    let mut bent = |frame: &CVPixelBuffer, gamma| {
+        let bent = fitting
+            .fit(frame, &upright, gamma)
+            .unwrap()
+            .expect("a copy");
+        let mut luma = Vec::new();
+        each_sample(&bent, |plane, sample: &mut u16| {
+            if plane == 0 {
+                luma.push(sample.code() >> 6);
+            }
+        });
+        luma
+    };
+    // SDR, 10 bits: a quarter of the way from black to white lifts to half.
+    let quarter: u16 = 64 + 876 / 4;
+    let sdr = planes::<u16>(
+        kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange,
+        quarter << 6,
+        512 << 6,
+        None,
+    );
+    let half = 64.0 + 876.0 * 0.5;
+    assert!(
+        bent(&sdr, 2.0)
+            .iter()
+            .all(|&code| (f64::from(code) - half).abs() <= 2.0)
+    );
+    let mut kept = Vec::new();
+    each_sample(&sdr, |plane, sample: &mut u16| {
+        if plane == 0 {
+            kept.push(*sample >> 6);
+        }
+    });
+    assert!(
+        kept.iter().all(|&code| code == quarter),
+        "the surface keeps its own"
+    );
+    // PQ keeps SDR white where it is.
+    let white = (64.0 + 876.0 * hdr::encode([1.0; 3], Transfer::Pq)[0]).round() as u16;
+    // SAFETY: CoreVideo's constant.
+    let pq = unsafe { kCVImageBufferTransferFunction_SMPTE_ST_2084_PQ };
+    let pq_frame = planes::<u16>(
+        kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange,
+        white << 6,
+        512 << 6,
+        Some(pq),
+    );
+    assert!(
+        bent(&pq_frame, 2.0)
+            .iter()
+            .all(|&code| code.abs_diff(u32::from(white)) <= 2)
+    );
+    assert!(
+        fitting.fit(&pq_frame, &upright, 1.0).unwrap().is_none(),
+        "none to bend"
+    );
+}
+
+#[test]
+fn converted_frames_bend_by_the_same_table_as_converting_them() {
+    let mut decoded = Buffers::default();
+    let frame = decoded.get(kCVPixelFormatType_32BGRA, 8, 8).unwrap();
+    pixels(&frame, |pixel| *pixel = [64, 128, 200, 255]);
+    let mut fitting = Fitting::default();
+    let bent = fitting
+        .fit(&frame, &framing((8, 8), None, None), 1.7)
+        .unwrap()
+        .expect("a copy");
+    let table = gamma_table(1.7);
+    pixels(&bent, |pixel| {
+        let expected = [table[64], table[128], table[200], 255];
+        assert!(
+            pixel.iter().zip(expected).all(|(a, b)| a.abs_diff(b) <= 1),
+            "{pixel:?} for {expected:?}"
+        );
+    });
 }
 
 unsafe extern "C" {

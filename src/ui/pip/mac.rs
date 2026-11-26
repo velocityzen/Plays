@@ -13,11 +13,12 @@
 //! the window's progress bar. VideoToolbox surfaces go tagged with their
 //! colors (HDR included); converted frames are copied into BGRA buffers.
 //! Turned or mirrored videos are turned on the GPU first, from macOS 13.
-//! Once the window is open, frames are scaled on the GPU to its size in
-//! pixels, subtitles or not, and the subtitles showing drawn into them
-//! (`burn_in`): each time their size changes, AVKit lays the video out
-//! anew, zoomed, until `follow_window` puts it back. Dolby Vision surfaces
-//! need Plays' own shader, so they aren't shown.
+//! Frames are cropped and shaped as the block shows them, on the GPU, and
+//! once the window is open scaled to its size in pixels, subtitles or not;
+//! a surface's gamma is bent into them (`gamma`), and the subtitles showing
+//! drawn in (`burn_in`). Each time their size changes, AVKit lays the video
+//! out anew, zoomed, until `follow_window` puts it back. Dolby Vision
+//! surfaces need Plays' own shader, so they aren't shown.
 
 // objc's message macros test a `cargo-clippy` feature this crate doesn't have.
 #![allow(unexpected_cfgs)]
@@ -37,11 +38,13 @@ use core_foundation::dictionary::{CFDictionary, CFDictionarySetValue, CFMutableD
 use core_foundation::number::CFNumber;
 use core_foundation::string::{CFString, CFStringRef};
 use core_video::buffer::{
-    CVBufferGetAttachment, CVBufferPropagateAttachments, CVBufferSetAttachment,
-    kCVAttachmentMode_ShouldPropagate,
+    CVBufferGetAttachment, CVBufferPropagateAttachments, CVBufferSetAttachment, TCVBuffer,
+    kCVAttachmentMode_ShouldNotPropagate, kCVAttachmentMode_ShouldPropagate,
 };
 use core_video::image_buffer::{
-    CVImageBufferColorPrimaries, CVImageBufferKeys, kCVImageBufferTransferFunction_ITU_R_2100_HLG,
+    CVImageBufferColorPrimaries, CVImageBufferKeys, kCVImageBufferCleanApertureHeightKey,
+    kCVImageBufferCleanApertureHorizontalOffsetKey, kCVImageBufferCleanApertureVerticalOffsetKey,
+    kCVImageBufferCleanApertureWidthKey, kCVImageBufferTransferFunction_ITU_R_2100_HLG,
     kCVImageBufferTransferFunction_SMPTE_ST_2084_PQ, kCVImageBufferTransferFunction_sRGB,
     kCVImageBufferYCbCrMatrix_ITU_R_709_2, kCVImageBufferYCbCrMatrix_ITU_R_2020,
 };
@@ -62,10 +65,12 @@ use parking_lot::Mutex;
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
 use super::burn_in::{Overlay, Sample, Ycc};
+use super::gamma::Curve;
 use super::{PipEvent, Playback, Subtitles};
 use crate::media::hdr::Transfer;
 use crate::media::picture::PictureId;
 use crate::media::{Orientation, Picture};
+use crate::ui::framing::Framing;
 use crate::ui::overlay;
 
 #[repr(C)]
@@ -227,6 +232,8 @@ unsafe extern "C" {
     fn VTPixelTransferSessionInvalidate(session: *mut c_void);
 
     static kVTPixelTransferPropertyKey_RealTime: CFStringRef;
+    static kVTPixelTransferPropertyKey_ScalingMode: CFStringRef;
+    static kVTScalingMode_CropSourceToCleanAperture: CFStringRef;
 }
 
 unsafe extern "C" {
@@ -540,9 +547,9 @@ pub struct Pip {
     running: Option<bool>,
     /// The last frame's format, for the next of the same.
     format: CMFormatDescriptionRef,
-    /// The last frame handed over, how it was turned, and with which
-    /// subtitles (`revision`).
-    shown: Option<(PictureId, Orientation, u64)>,
+    /// The last frame handed over, how it was framed, the gamma bent into
+    /// it (as bits), and with which subtitles (`revision`).
+    shown: Option<(PictureId, Framing, u32, u64)>,
     /// BGRA buffers for converted frames.
     images: Buffers,
     turner: Option<Turner>,
@@ -632,10 +639,15 @@ impl Pip {
         }
     }
 
-    /// Hand over `picture`, turned to `orientation`, unless it is the one
-    /// already showing.
-    pub fn show(&mut self, picture: &Picture, orientation: Orientation) {
-        let shown = (picture.id(), orientation, self.revision);
+    /// Hand over `picture` as the block shows it, `framing` it so, unless
+    /// it is already showing so.
+    pub fn show(&mut self, picture: &Picture, framing: &Framing) {
+        // Converted frames have it already; surfaces get it as drawn.
+        let gamma = match picture {
+            Picture::Surface(surface) => surface.gamma(),
+            Picture::Image(_) => 1.0,
+        };
+        let shown = (picture.id(), *framing, gamma.to_bits(), self.revision);
         if self.shown == Some(shown) {
             return;
         }
@@ -651,8 +663,8 @@ impl Pip {
                 }
             },
         };
-        let buffer = self.turn(buffer, orientation);
-        let buffer = match self.fitting.fit(&buffer) {
+        let buffer = self.turn(buffer, framing.orientation());
+        let buffer = match self.fitting.fit(&buffer, framing, gamma) {
             Ok(Some(fitted)) => fitted,
             Ok(None) => buffer,
             Err(err) => {
@@ -781,10 +793,10 @@ impl Pip {
         }
     }
 
-    /// The size frames of `picture` size (as they show) go at, which the
-    /// subtitles are laid out for (`Fitting::size`).
-    pub fn subtitle_size(&self, picture: (u32, u32)) -> (u32, u32) {
-        self.fitting.size(picture)
+    /// The size frames of `picture` size (as they show, turned) go at,
+    /// framed so, which the subtitles are laid out for (`Fitting::size`).
+    pub fn subtitle_size(&self, picture: (u32, u32), framing: &Framing) -> (u32, u32) {
+        self.fitting.size(picture, framing)
     }
 
     /// Draw these subtitles into the frames from now on, or none.
@@ -1138,40 +1150,54 @@ impl Layout {
         }
     }
 
-    /// Lay `overlay` over `buffer`'s samples.
+    /// Do `pass` to `buffer`'s samples.
     ///
     /// # Safety
     /// `buffer` must be in this layout, and nothing else using it.
-    unsafe fn draw(self, overlay: &Overlay, buffer: &CVPixelBuffer) -> Result<()> {
+    unsafe fn apply(self, pass: Pass, buffer: &CVPixelBuffer) -> Result<()> {
         let status = buffer.lock_base_address(0);
         ensure!(status == 0, "couldn't lock a pixel buffer (error {status})");
         // SAFETY: locked, the planes are this memory, apart from each other.
-        let drawn = unsafe {
+        let done = unsafe {
             match self {
                 Self::Bgra => {
                     let base = buffer.get_base_address().cast::<u8>();
                     let stride = buffer.get_bytes_per_row();
                     (!base.is_null()).then(|| {
                         let pixels = slice::from_raw_parts_mut(base, stride * buffer.get_height());
-                        overlay.over_bgra(pixels, stride);
+                        match pass {
+                            Pass::Overlay(overlay) => overlay.over_bgra(pixels, stride),
+                            Pass::Gamma(curve) => {
+                                curve.bend_bgra(pixels, stride, buffer.get_width());
+                            }
+                        }
                     })
                 }
-                Self::Planes8(ycc) => draw_planes::<u8>(overlay, buffer, ycc),
-                Self::Planes16(ycc) => draw_planes::<u16>(overlay, buffer, ycc),
+                Self::Planes8(ycc) => apply_planes::<u8>(pass, buffer, ycc),
+                Self::Planes16(ycc) => apply_planes::<u16>(pass, buffer, ycc),
             }
         };
         buffer.unlock_base_address(0);
-        drawn.context("a pixel buffer has no memory")
+        done.context("a pixel buffer has no memory")
     }
 }
 
-/// Lay `overlay` over a locked biplanar buffer's samples; `None` if it has
-/// no memory.
+/// What is done to a frame's samples once it is scaled.
+#[derive(Clone, Copy)]
+enum Pass<'a> {
+    /// Subtitles laid over them.
+    Overlay(&'a Overlay),
+    /// Gamma bent into them.
+    Gamma(&'a Curve),
+}
+
+/// Do `pass` to a locked biplanar buffer's samples; `None` if it has no
+/// memory.
 ///
 /// # Safety
 /// `buffer` must be locked, and have two planes of `S` samples.
-unsafe fn draw_planes<S: Sample>(
-    overlay: &Overlay,
+unsafe fn apply_planes<S: Sample + Send>(
+    pass: Pass,
     buffer: &CVPixelBuffer,
     ycc: Ycc,
 ) -> Option<()> {
@@ -1184,12 +1210,21 @@ unsafe fn draw_planes<S: Sample>(
     };
     let (luma, luma_stride) = plane(0)?;
     let (chroma, chroma_stride) = plane(1)?;
-    overlay.over_ycbcr(luma, luma_stride, chroma, chroma_stride, ycc);
+    match pass {
+        Pass::Overlay(overlay) => overlay.over_ycbcr(luma, luma_stride, chroma, chroma_stride, ycc),
+        Pass::Gamma(curve) => curve.bend_ycbcr(
+            (luma, luma_stride),
+            (chroma, chroma_stride),
+            buffer.get_width(),
+            ycc,
+        ),
+    }
     Some(())
 }
 
-/// Frames made to fit the Picture in Picture window: scaled to its size in
-/// pixels once it is open, with the subtitles showing drawn in.
+/// Frames made to show in the Picture in Picture window as the block shows
+/// them: cropped and at its shape, scaled to the window's size in pixels
+/// once it is open, with gamma bent and the subtitles showing drawn in.
 #[derive(Default)]
 struct Fitting {
     /// The window's content width and height in points, and its scale.
@@ -1198,26 +1233,30 @@ struct Fitting {
     subtitles: Option<Subtitles>,
     /// The subtitles drawn for frames of this HDR signal (or SDR).
     burned: Option<(Option<Transfer>, Overlay)>,
-    /// Frames scaled to fit, to hand over and draw the subtitles into.
+    /// The last gamma bent in (as bits), for frames of this HDR signal.
+    curve: Option<(u32, Option<Transfer>, Curve)>,
+    /// Frames made to fit, to hand over and draw into.
     scaled: Buffers,
     scaler: Option<Scaler>,
 }
 
 impl Fitting {
-    /// The size frames of `picture` size (as they show) go at: the
-    /// window's, in pixels, so they are as sharp as it shows them; their
-    /// own until it is open.
-    fn size(&self, picture: (u32, u32)) -> (u32, u32) {
-        let (Some((width, height, scale)), (w, h)) = (self.window, picture) else {
-            return picture;
-        };
-        if w == 0 || h == 0 {
+    /// The size frames of `picture` size (as they show, turned) go at,
+    /// framed so: at the shape the block shows them, as big as the window
+    /// shows them, in pixels, so they are as sharp; until it is open, as
+    /// tall as what is kept of them.
+    fn size(&self, picture: (u32, u32), framing: &Framing) -> (u32, u32) {
+        let (width, height) = framing.size;
+        if picture.0 == 0 || picture.1 == 0 || width <= 0.0 || height <= 0.0 {
             return picture;
         }
-        let (w, h) = (f64::from(w), f64::from(h));
-        let fit = (width * scale / w).min(height * scale / h);
+        let (width, height) = (f64::from(width), f64::from(height));
+        let fit = match self.window {
+            Some((across, down, scale)) => (across * scale / width).min(down * scale / height),
+            None => f64::from(picture.1) * f64::from(framing.kept().1) / height,
+        };
         let side = |length: f64| (length * fit).round().max(1.0) as u32;
-        (side(w), side(h))
+        (side(width), side(height))
     }
 
     /// Draw these subtitles, laid out at the size frames go at, into them
@@ -1227,24 +1266,64 @@ impl Fitting {
         self.burned = None;
     }
 
-    /// `buffer` at the size frames go at, with the subtitles showing drawn
-    /// in; `None` if it goes as it is. They keep that size as subtitles
-    /// come and go: each time it changes, AVKit lays the video out anew,
-    /// bigger than the window, which shows part of the picture, zoomed,
-    /// until `Pip::follow_window` puts it back a frame or two later.
-    fn fit(&mut self, buffer: &CVPixelBuffer) -> Result<Option<CVPixelBuffer>> {
-        let Some(subtitles) = &self.subtitles else {
-            let own = (buffer.get_width() as u32, buffer.get_height() as u32);
-            let size = self.size(own);
-            if size == own {
-                return Ok(None);
-            }
-            return self.scale(buffer, size).map(Some);
+    /// `buffer` (turned) framed as `framing` has it, at the size frames go
+    /// at, with `gamma` bent into it and the subtitles showing drawn in;
+    /// `None` if it goes as it is. They keep that size as subtitles come
+    /// and go: each time it changes, AVKit lays the video out anew, bigger
+    /// than the window, which shows part of the picture, zoomed, until
+    /// `Pip::follow_window` puts it back a frame or two later.
+    fn fit(
+        &mut self,
+        buffer: &CVPixelBuffer,
+        framing: &Framing,
+        gamma: f32,
+    ) -> Result<Option<CVPixelBuffer>> {
+        let own = (buffer.get_width() as u32, buffer.get_height() as u32);
+        let size = match &self.subtitles {
+            Some(subtitles) => subtitles.size,
+            None => self.size(own, framing),
         };
+        let bent = gamma != 1.0;
+        let whole = framing.kept() == (1.0, 1.0);
+        if size == own && whole && !bent && self.subtitles.is_none() {
+            return Ok(None);
+        }
+        let scaled = self.scale(buffer, size, framing.kept())?;
+        if !bent && self.subtitles.is_none() {
+            return Ok(Some(scaled));
+        }
         let format = buffer.get_pixel_format();
         let layout = Layout::of(buffer).with_context(|| format!("frames in format {format:#x}"))?;
-        let size = subtitles.size;
         let transfer = transfer_of(buffer);
+        if bent {
+            let curve = self.curve(gamma, transfer);
+            // SAFETY: the buffer was just made, and is this layout.
+            unsafe { layout.apply(Pass::Gamma(curve), &scaled)? };
+        }
+        if let Some(drawn) = self.burned(size, transfer) {
+            // SAFETY: as above.
+            unsafe { layout.apply(Pass::Overlay(drawn), &scaled)? };
+        }
+        Ok(Some(scaled))
+    }
+
+    /// The curve `gamma` bends frames of `transfer`'s signal by.
+    fn curve(&mut self, gamma: f32, transfer: Option<Transfer>) -> &Curve {
+        let key = (gamma.to_bits(), transfer);
+        if self
+            .curve
+            .as_ref()
+            .is_none_or(|(bits, signal, _)| (*bits, *signal) != key)
+        {
+            self.curve = Some((key.0, transfer, Curve::new(gamma, transfer)));
+        }
+        &self.curve.as_ref().expect("made above").2
+    }
+
+    /// The subtitles showing, drawn at `size` in `transfer`'s signal, if
+    /// there are any.
+    fn burned(&mut self, size: (u32, u32), transfer: Option<Transfer>) -> Option<&Overlay> {
+        let subtitles = self.subtitles.as_ref()?;
         if self
             .burned
             .as_ref()
@@ -1257,28 +1336,31 @@ impl Fitting {
             overlay::draw_text(&mut drawn, &subtitles.text, &subtitles.text_system);
             self.burned = Some((transfer, drawn));
         }
-        let scaled = self.scale(buffer, size)?;
-        let (_, drawn) = self.burned.as_ref().expect("drawn above");
-        // SAFETY: the buffer was just made, and is this layout.
-        unsafe { layout.draw(drawn, &scaled)? };
-        Ok(Some(scaled))
+        self.burned.as_ref().map(|(_, drawn)| drawn)
     }
 
-    /// `buffer` scaled to `size` on the GPU, in a buffer of its own.
-    fn scale(&mut self, buffer: &CVPixelBuffer, size: (u32, u32)) -> Result<CVPixelBuffer> {
+    /// The part `kept` of `buffer` (across and down, centered) scaled to
+    /// `size` on the GPU, in a buffer of its own.
+    fn scale(
+        &mut self,
+        buffer: &CVPixelBuffer,
+        size: (u32, u32),
+        kept: (f32, f32),
+    ) -> Result<CVPixelBuffer> {
         let format = buffer.get_pixel_format();
         let scaled = self.scaled.get(format, size.0 as usize, size.1 as usize)?;
         let scaler = match &mut self.scaler {
             Some(scaler) => scaler,
             None => self.scaler.insert(Scaler::new()?),
         };
-        scaler.scale(buffer, &scaled)?;
+        scaler.scale(buffer, kept, &scaled)?;
         Ok(scaled)
     }
 }
 
 /// Scales pixel buffers on the GPU, into buffers of their own format, with
-/// VideoToolbox's `VTPixelTransferSession`.
+/// VideoToolbox's `VTPixelTransferSession`: a part of each, centered, to the
+/// whole of the other, stretched to its shape.
 struct Scaler {
     session: *mut c_void,
 }
@@ -1286,7 +1368,7 @@ struct Scaler {
 impl Scaler {
     fn new() -> Result<Self> {
         let mut session = ptr::null_mut();
-        // SAFETY: the session is ours; the value is retained by it.
+        // SAFETY: the session is ours; the values are retained by it.
         unsafe {
             let status = VTPixelTransferSessionCreate(kCFAllocatorDefault, &mut session);
             ensure!(
@@ -1298,26 +1380,86 @@ impl Scaler {
                 kVTPixelTransferPropertyKey_RealTime,
                 CFBoolean::true_value().as_CFTypeRef(),
             );
+            // The source's clean aperture to the whole destination, its
+            // pixels square.
+            let status = VTSessionSetProperty(
+                session,
+                kVTPixelTransferPropertyKey_ScalingMode,
+                kVTScalingMode_CropSourceToCleanAperture.cast(),
+            );
+            if status != 0 {
+                VTPixelTransferSessionInvalidate(session);
+                CFRelease(session as CFTypeRef);
+                bail!("frames can't be cropped as they are scaled (error {status})");
+            }
         }
         Ok(Self { session })
     }
 
-    /// Scale `source` into `destination`, of the same format. It gets the
-    /// source's color tags first, so the colors are left as they are.
-    fn scale(&mut self, source: &CVPixelBuffer, destination: &CVPixelBuffer) -> Result<()> {
+    /// Scale the part `kept` of `source` (across and down, centered) into
+    /// `destination`, of the same format. It gets the source's color tags
+    /// first, so the colors are left as they are. The part goes as the
+    /// source's clean aperture while it is scaled, then its own (if it has
+    /// one) is put back, as the source may be the block's.
+    fn scale(
+        &mut self,
+        source: &CVPixelBuffer,
+        kept: (f32, f32),
+        destination: &CVPixelBuffer,
+    ) -> Result<()> {
+        let key = CFString::from(CVImageBufferKeys::CleanAperture);
+        let side = |length: usize, kept: f32| {
+            let part = (length as f64 * f64::from(kept))
+                .round()
+                .clamp(1.0, length as f64);
+            CFNumber::from(part).as_CFType()
+        };
+        // SAFETY: CoreVideo's constants.
+        let aperture = unsafe {
+            CFDictionary::from_CFType_pairs(&[
+                (
+                    CFString::wrap_under_get_rule(kCVImageBufferCleanApertureWidthKey),
+                    side(source.get_width(), kept.0),
+                ),
+                (
+                    CFString::wrap_under_get_rule(kCVImageBufferCleanApertureHeightKey),
+                    side(source.get_height(), kept.1),
+                ),
+                (
+                    CFString::wrap_under_get_rule(kCVImageBufferCleanApertureHorizontalOffsetKey),
+                    CFNumber::from(0).as_CFType(),
+                ),
+                (
+                    CFString::wrap_under_get_rule(kCVImageBufferCleanApertureVerticalOffsetKey),
+                    CFNumber::from(0).as_CFType(),
+                ),
+            ])
+        };
+        let source_buffer = source.as_buffer();
+        let mut mode = kCVAttachmentMode_ShouldPropagate;
+        let own = source_buffer.get_attachment(&key, Some(&mut mode));
+        source_buffer.set_attachment(
+            &key,
+            &aperture.as_CFType(),
+            kCVAttachmentMode_ShouldNotPropagate,
+        );
         // SAFETY: both buffers are valid; the session lives until dropped.
-        unsafe {
+        let status = unsafe {
             CVBufferPropagateAttachments(
                 source.as_concrete_TypeRef(),
                 destination.as_concrete_TypeRef(),
             );
-            let status = VTPixelTransferSessionTransferImage(
+            VTPixelTransferSessionTransferImage(
                 self.session,
                 source.as_concrete_TypeRef(),
                 destination.as_concrete_TypeRef(),
-            );
-            ensure!(status == 0, "scaling a frame failed (error {status})");
+            )
+        };
+        match own {
+            Some(own) => source_buffer.set_attachment(&key, &own, mode),
+            None => source_buffer.remove_attachment(&key),
         }
+        ensure!(status == 0, "scaling a frame failed (error {status})");
         Ok(())
     }
 }

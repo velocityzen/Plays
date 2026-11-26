@@ -2,9 +2,10 @@
 //! system's own floating window, over every app and Space, with its play,
 //! pause and skip buttons. Plays decodes the video itself, so the frames the
 //! block would show go to an `AVSampleBufferDisplayLayer`, one by one as they
-//! are due, which AVKit shows in that window (`mac`), with the subtitles
-//! showing burned in (`burn_in`). Elsewhere there is no Picture in Picture,
-//! and `Pip::new` says so.
+//! are due, which AVKit shows in that window (`mac`), as the block shows
+//! them: cropped, at its aspect ratio, with its gamma (`gamma`) and the
+//! subtitles showing burned in (`burn_in`). Elsewhere there is no Picture
+//! in Picture, and `Pip::new` says so.
 
 use std::sync::Arc;
 
@@ -15,11 +16,15 @@ use gpui::{Bounds, Pixels, Window};
 use gpui::{ContentTransform, RenderImage, TextSystem};
 
 #[cfg(not(target_os = "macos"))]
-use crate::media::{Orientation, Picture};
+use crate::media::Picture;
+#[cfg(not(target_os = "macos"))]
+use crate::ui::framing::Framing;
 use crate::ui::overlay::Paint;
 
 #[cfg(target_os = "macos")]
 mod burn_in;
+#[cfg(target_os = "macos")]
+mod gamma;
 #[cfg(target_os = "macos")]
 mod mac;
 #[cfg(target_os = "macos")]
@@ -87,7 +92,7 @@ impl Pip {
         anyhow::bail!("there is no Picture in Picture on this system")
     }
 
-    pub fn show(&mut self, _picture: &Picture, _orientation: Orientation) {}
+    pub fn show(&mut self, _picture: &Picture, _framing: &Framing) {}
 
     pub fn update(&mut self, _playback: Playback) {}
 
@@ -99,7 +104,7 @@ impl Pip {
 
     pub fn follow_window(&mut self) {}
 
-    pub fn subtitle_size(&self, picture: (u32, u32)) -> (u32, u32) {
+    pub fn subtitle_size(&self, picture: (u32, u32), _framing: &Framing) -> (u32, u32) {
         picture
     }
 

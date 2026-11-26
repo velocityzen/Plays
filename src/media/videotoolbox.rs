@@ -129,12 +129,17 @@ impl Surface {
         self.dolby_vision
     }
 
+    /// The gamma it is drawn with now, for its kind of video.
+    pub fn gamma(&self) -> f32 {
+        picture::gamma(self.hdr)
+    }
+
     /// The buffer to draw now, with the current gamma for its kind of video
     /// attached. Set as it is drawn, so a change shows on every surface at
     /// once, paused ones included, and only when it changed.
     pub fn for_drawing(&self) -> CVPixelBuffer {
         let key = CFString::from_static_string(GAMMA_ATTACHMENT);
-        let gamma = picture::gamma(self.hdr);
+        let gamma = self.gamma();
         let attached = self
             .buffer
             .as_buffer()
