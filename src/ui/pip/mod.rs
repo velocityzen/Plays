@@ -28,6 +28,8 @@ mod gamma;
 #[cfg(target_os = "macos")]
 mod mac;
 #[cfg(target_os = "macos")]
+mod turn;
+#[cfg(target_os = "macos")]
 pub use mac::{Pip, supported};
 
 /// What the Picture in Picture window asks of its block, or says happened.

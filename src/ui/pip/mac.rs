@@ -12,10 +12,11 @@
 //! player says they are due. The layer's timebase only follows playback for
 //! the window's progress bar. VideoToolbox surfaces go tagged with their
 //! colors (HDR included); converted frames are copied into BGRA buffers.
-//! Turned or mirrored videos are turned on the GPU first, from macOS 13.
-//! Frames are cropped and shaped as the block shows them, on the GPU, and
-//! once the window is open scaled to its size in pixels, subtitles or not;
-//! a surface's gamma is bent into them (`gamma`), and the subtitles showing
+//! Turned or mirrored videos are turned on the GPU first, from macOS 13;
+//! before, on the CPU once they are scaled down (`turn`). Frames are
+//! cropped and shaped as the block shows them, on the GPU, and once the
+//! window is open scaled to its size in pixels, subtitles or not; a
+//! surface's gamma is bent into them (`gamma`), and the subtitles showing
 //! drawn in (`burn_in`). Each time their size changes, AVKit lays the video
 //! out anew, zoomed, until `follow_window` puts it back. Dolby Vision
 //! surfaces need Plays' own shader, so they aren't shown.
@@ -49,8 +50,8 @@ use core_video::image_buffer::{
     kCVImageBufferYCbCrMatrix_ITU_R_709_2, kCVImageBufferYCbCrMatrix_ITU_R_2020,
 };
 use core_video::pixel_buffer::{
-    CVPixelBuffer, CVPixelBufferKeys, CVPixelBufferRef, kCVPixelFormatType_32BGRA,
-    kCVPixelFormatType_420YpCbCr8BiPlanarFullRange,
+    CVPixelBuffer, CVPixelBufferKeys, CVPixelBufferRef, kCVPixelBufferLock_ReadOnly,
+    kCVPixelFormatType_32BGRA, kCVPixelFormatType_420YpCbCr8BiPlanarFullRange,
     kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
     kCVPixelFormatType_420YpCbCr10BiPlanarFullRange,
     kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange,
@@ -66,6 +67,7 @@ use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
 use super::burn_in::{Overlay, Sample, Ycc};
 use super::gamma::Curve;
+use super::turn::turn;
 use super::{PipEvent, Playback, Subtitles};
 use crate::media::hdr::Transfer;
 use crate::media::picture::PictureId;
@@ -552,7 +554,7 @@ pub struct Pip {
     shown: Option<(PictureId, Framing, u32, u64)>,
     /// BGRA buffers for converted frames.
     images: Buffers,
-    turner: Option<Turner>,
+    turning: Turning,
     /// `startPictureInPicture` was called.
     asked: bool,
     /// The layer's own layer showing the video, retained once AVKit is
@@ -618,7 +620,7 @@ impl Pip {
                 format: ptr::null(),
                 shown: None,
                 images: Buffers::default(),
-                turner: None,
+                turning: Turning::Unknown,
                 asked: false,
                 video: ptr::null_mut(),
                 lookout: Lookout::default(),
@@ -663,8 +665,8 @@ impl Pip {
                 }
             },
         };
-        let buffer = self.turn(buffer, framing.orientation());
-        let buffer = match self.fitting.fit(&buffer, framing, gamma) {
+        let (buffer, left) = self.turn(buffer, framing.orientation());
+        let buffer = match self.fitting.fit(&buffer, framing, gamma, left) {
             Ok(Some(fitted)) => fitted,
             Ok(None) => buffer,
             Err(err) => {
@@ -857,25 +859,36 @@ impl Pip {
         Ok(buffer)
     }
 
-    /// `buffer` turned to `orientation`, or as it is if it can't be.
-    fn turn(&mut self, buffer: CVPixelBuffer, orientation: Orientation) -> CVPixelBuffer {
+    /// `buffer` turned to `orientation` on the GPU, and how it is still to
+    /// be turned: upright, or all of it where the GPU can't, which
+    /// `Fitting` does once it is scaled down.
+    fn turn(
+        &mut self,
+        buffer: CVPixelBuffer,
+        orientation: Orientation,
+    ) -> (CVPixelBuffer, Orientation) {
         if orientation == Orientation::UPRIGHT {
-            return buffer;
+            return (buffer, orientation);
         }
-        if self.turner.is_none() {
-            match Turner::new() {
-                Ok(turner) => self.turner = Some(turner),
+        if let Turning::Unknown = self.turning {
+            self.turning = match Turner::new() {
+                Ok(turner) => Turning::Gpu(turner),
                 Err(err) => {
-                    log::info!("Picture in Picture shows videos as decoded: {err:#}");
-                    return buffer;
+                    log::info!("Picture in Picture turns videos on the CPU: {err:#}");
+                    Turning::Cpu
                 }
+            };
+        }
+        let Turning::Gpu(turner) = &mut self.turning else {
+            return (buffer, orientation);
+        };
+        match turner.turn(&buffer, orientation) {
+            Ok(turned) => (turned, Orientation::UPRIGHT),
+            Err(err) => {
+                log::warn!("Picture in Picture turns a frame on the CPU: {err:#}");
+                (buffer, orientation)
             }
         }
-        let turner = self.turner.as_mut().expect("made above");
-        turner
-            .turn(&buffer, orientation)
-            .inspect_err(|err| log::warn!("Picture in Picture: {err:#}"))
-            .unwrap_or(buffer)
     }
 
     /// Put `buffer` in the layer, to show at once.
@@ -1222,6 +1235,108 @@ unsafe fn apply_planes<S: Sample + Send>(
     Some(())
 }
 
+impl Layout {
+    /// Lay `buffer`'s samples into `turned` as `orientation` turns them.
+    ///
+    /// # Safety
+    /// Both must be in this layout, `turned` as big as `buffer` turned,
+    /// and nothing else writing either.
+    unsafe fn turn(
+        self,
+        buffer: &CVPixelBuffer,
+        turned: &CVPixelBuffer,
+        orientation: Orientation,
+    ) -> Result<()> {
+        let status = buffer.lock_base_address(kCVPixelBufferLock_ReadOnly);
+        ensure!(status == 0, "couldn't lock a pixel buffer (error {status})");
+        let status = turned.lock_base_address(0);
+        if status != 0 {
+            buffer.unlock_base_address(kCVPixelBufferLock_ReadOnly);
+            bail!("couldn't lock a pixel buffer (error {status})");
+        }
+        // SAFETY: both locked, in this layout; their planes are apart.
+        let done = unsafe {
+            match self {
+                Self::Bgra => turn_plane::<[u8; 4]>(buffer, turned, None, orientation),
+                Self::Planes8(_) => turn_plane::<u8>(buffer, turned, Some(0), orientation)
+                    .and(turn_plane::<[u8; 2]>(buffer, turned, Some(1), orientation)),
+                Self::Planes16(_) => turn_plane::<u16>(buffer, turned, Some(0), orientation)
+                    .and(turn_plane::<[u16; 2]>(buffer, turned, Some(1), orientation)),
+            }
+        };
+        turned.unlock_base_address(0);
+        buffer.unlock_base_address(kCVPixelBufferLock_ReadOnly);
+        done.context("a pixel buffer has no memory")
+    }
+}
+
+/// Lay a plane of `buffer` (or its one plane, if `None`) into the same
+/// plane of `turned`, samples of `T`, as `orientation` turns it; `None` if
+/// either has no memory.
+///
+/// # Safety
+/// Both must be locked, `turned` writably, with the plane in `T` samples.
+unsafe fn turn_plane<T: Copy + Send + Sync>(
+    buffer: &CVPixelBuffer,
+    turned: &CVPixelBuffer,
+    plane: Option<usize>,
+    orientation: Orientation,
+) -> Option<()> {
+    // SAFETY: the buffers are locked, as the caller says.
+    let of = |buffer: &CVPixelBuffer| unsafe {
+        match plane {
+            Some(index) => (
+                buffer.get_base_address_of_plane(index),
+                buffer.get_bytes_per_row_of_plane(index) / size_of::<T>(),
+                buffer.get_width_of_plane(index),
+                buffer.get_height_of_plane(index),
+            ),
+            None => (
+                buffer.get_base_address(),
+                buffer.get_bytes_per_row() / size_of::<T>(),
+                buffer.get_width(),
+                buffer.get_height(),
+            ),
+        }
+    };
+    let (from, stride, width, height) = of(buffer);
+    let (to, turned_stride, _, rows) = of(turned);
+    if from.is_null() || to.is_null() {
+        return None;
+    }
+    // SAFETY: as the caller says; each plane is its rows of samples.
+    let (samples, into) = unsafe {
+        (
+            slice::from_raw_parts(from.cast::<T>(), stride * height),
+            slice::from_raw_parts_mut(to.cast::<T>(), turned_stride * rows),
+        )
+    };
+    turn(
+        (samples, stride),
+        (width, height),
+        (into, turned_stride),
+        orientation,
+    );
+    Some(())
+}
+
+/// Turning frames on the GPU, once it's known whether it can.
+enum Turning {
+    Unknown,
+    Gpu(Turner),
+    /// It can't (before macOS 13): frames turn on the CPU.
+    Cpu,
+}
+
+/// `pair` as it is, or the other way round if `orientation` is sideways.
+fn across<T>(orientation: Orientation, (a, b): (T, T)) -> (T, T) {
+    if orientation.sideways() {
+        (b, a)
+    } else {
+        (a, b)
+    }
+}
+
 /// Frames made to show in the Picture in Picture window as the block shows
 /// them: cropped and at its shape, scaled to the window's size in pixels
 /// once it is open, with gamma bent and the subtitles showing drawn in.
@@ -1237,6 +1352,8 @@ struct Fitting {
     curve: Option<(u32, Option<Transfer>, Curve)>,
     /// Frames made to fit, to hand over and draw into.
     scaled: Buffers,
+    /// Frames scaled, then turned on the CPU.
+    turned: Buffers,
     scaler: Option<Scaler>,
 }
 
@@ -1266,29 +1383,33 @@ impl Fitting {
         self.burned = None;
     }
 
-    /// `buffer` (turned) framed as `framing` has it, at the size frames go
-    /// at, with `gamma` bent into it and the subtitles showing drawn in;
-    /// `None` if it goes as it is. They keep that size as subtitles come
-    /// and go: each time it changes, AVKit lays the video out anew, bigger
-    /// than the window, which shows part of the picture, zoomed, until
-    /// `Pip::follow_window` puts it back a frame or two later.
+    /// `buffer`, still to be turned by `left`, framed as `framing` has it,
+    /// at the size frames go at, with `gamma` bent into it and the
+    /// subtitles showing drawn in; `None` if it goes as it is. They keep
+    /// that size as subtitles come and go: each time it changes, AVKit lays
+    /// the video out anew, bigger than the window, which shows part of the
+    /// picture, zoomed, until `Pip::follow_window` puts it back a frame or
+    /// two later.
     fn fit(
         &mut self,
         buffer: &CVPixelBuffer,
         framing: &Framing,
         gamma: f32,
+        left: Orientation,
     ) -> Result<Option<CVPixelBuffer>> {
-        let own = (buffer.get_width() as u32, buffer.get_height() as u32);
+        let decoded = (buffer.get_width() as u32, buffer.get_height() as u32);
+        let own = across(left, decoded);
         let size = match &self.subtitles {
             Some(subtitles) => subtitles.size,
             None => self.size(own, framing),
         };
         let bent = gamma != 1.0;
         let whole = framing.kept() == (1.0, 1.0);
-        if size == own && whole && !bent && self.subtitles.is_none() {
+        let upright = left == Orientation::UPRIGHT;
+        if size == own && whole && upright && !bent && self.subtitles.is_none() {
             return Ok(None);
         }
-        let scaled = self.scale(buffer, size, framing.kept())?;
+        let scaled = self.scale(buffer, size, framing.kept(), left)?;
         if !bent && self.subtitles.is_none() {
             return Ok(Some(scaled));
         }
@@ -1339,22 +1460,40 @@ impl Fitting {
         self.burned.as_ref().map(|(_, drawn)| drawn)
     }
 
-    /// The part `kept` of `buffer` (across and down, centered) scaled to
-    /// `size` on the GPU, in a buffer of its own.
+    /// The part `kept` of `buffer` as it shows (across and down, centered)
+    /// scaled to `size` on the GPU, in a buffer of its own; turned by
+    /// `left` after, on the CPU, into another.
     fn scale(
         &mut self,
         buffer: &CVPixelBuffer,
         size: (u32, u32),
         kept: (f32, f32),
+        left: Orientation,
     ) -> Result<CVPixelBuffer> {
         let format = buffer.get_pixel_format();
-        let scaled = self.scaled.get(format, size.0 as usize, size.1 as usize)?;
+        let (width, height) = across(left, size);
+        let scaled = self.scaled.get(format, width as usize, height as usize)?;
         let scaler = match &mut self.scaler {
             Some(scaler) => scaler,
             None => self.scaler.insert(Scaler::new()?),
         };
-        scaler.scale(buffer, kept, &scaled)?;
-        Ok(scaled)
+        scaler.scale(buffer, across(left, kept), &scaled)?;
+        if left == Orientation::UPRIGHT {
+            return Ok(scaled);
+        }
+        let layout =
+            Layout::of(&scaled).with_context(|| format!("frames in format {format:#x}"))?;
+        let turned = self.turned.get(format, size.0 as usize, size.1 as usize)?;
+        // SAFETY: both were just made, in this layout, and turned is as big
+        // as scaled turned.
+        unsafe {
+            layout.turn(&scaled, &turned, left)?;
+            CVBufferPropagateAttachments(
+                scaled.as_concrete_TypeRef(),
+                turned.as_concrete_TypeRef(),
+            );
+        }
+        Ok(turned)
     }
 }
 

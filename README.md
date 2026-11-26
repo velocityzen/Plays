@@ -259,8 +259,7 @@ mkdir ($nu.user-autoload-dirs | first); plays completions nushell | save -f ($nu
   (`\move` stays where it starts), keep one size and font per line, and
   lines placed alike stack rather than dodge each other. Drawings aren't
   drawn.
-- Picture in Picture can't show Dolby Vision, and on macOS 12 doesn't
-  rotate or flip.
+- Picture in Picture can't show Dolby Vision.
 - On Linux, frames decoded on the GPU are copied back to memory to be
   drawn. Lower Settings → Video → Resolution limit for many large videos.
 - On Linux, ALSA names a TV's HDMI output after the sound card, so a window

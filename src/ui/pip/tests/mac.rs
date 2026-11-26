@@ -59,8 +59,11 @@ fn frames_go_at_the_windows_size_as_subtitles_come_and_go(cx: &mut gpui::TestApp
     };
     let as_it_is = framing((1920, 1080), None, None);
     let mut fitting = Fitting::default();
-    let fit =
-        |fitting: &mut Fitting, frame: &CVPixelBuffer| fitting.fit(frame, &as_it_is, 1.0).unwrap();
+    let fit = |fitting: &mut Fitting, frame: &CVPixelBuffer| {
+        fitting
+            .fit(frame, &as_it_is, 1.0, Orientation::UPRIGHT)
+            .unwrap()
+    };
     assert!(
         fit(&mut fitting, &frame).is_none(),
         "as they are before the window opens"
@@ -116,7 +119,7 @@ fn frames_are_cropped_and_shaped_as_the_block_shows_them() {
     let mut fitting = Fitting::default();
     let fitted = |fitting: &mut Fitting, framing: &Framing| {
         let buffer = fitting
-            .fit(&frame, framing, 1.0)
+            .fit(&frame, framing, 1.0, Orientation::UPRIGHT)
             .unwrap()
             .expect("made anew");
         let (width, height) = (buffer.get_width(), buffer.get_height());
@@ -228,7 +231,7 @@ fn a_surfaces_gamma_is_bent_into_its_frames_and_not_into_the_surface() {
     let mut fitting = Fitting::default();
     let mut bent = |frame: &CVPixelBuffer, gamma| {
         let bent = fitting
-            .fit(frame, &upright, gamma)
+            .fit(frame, &upright, gamma, Orientation::UPRIGHT)
             .unwrap()
             .expect("a copy");
         let mut luma = Vec::new();
@@ -279,7 +282,10 @@ fn a_surfaces_gamma_is_bent_into_its_frames_and_not_into_the_surface() {
             .all(|&code| code.abs_diff(u32::from(white)) <= 2)
     );
     assert!(
-        fitting.fit(&pq_frame, &upright, 1.0).unwrap().is_none(),
+        fitting
+            .fit(&pq_frame, &upright, 1.0, Orientation::UPRIGHT)
+            .unwrap()
+            .is_none(),
         "none to bend"
     );
 }
@@ -291,7 +297,12 @@ fn converted_frames_bend_by_the_same_table_as_converting_them() {
     pixels(&frame, |pixel| *pixel = [64, 128, 200, 255]);
     let mut fitting = Fitting::default();
     let bent = fitting
-        .fit(&frame, &framing((8, 8), None, None), 1.7)
+        .fit(
+            &frame,
+            &framing((8, 8), None, None),
+            1.7,
+            Orientation::UPRIGHT,
+        )
         .unwrap()
         .expect("a copy");
     let table = gamma_table(1.7);
@@ -302,6 +313,171 @@ fn converted_frames_bend_by_the_same_table_as_converting_them() {
             "{pixel:?} for {expected:?}"
         );
     });
+}
+
+/// Each of a BGRA buffer's pixels, by row.
+fn rows(buffer: &CVPixelBuffer) -> Vec<Vec<[u8; 4]>> {
+    let width = buffer.get_width();
+    let mut rows = vec![Vec::new(); buffer.get_height()];
+    let mut at = 0;
+    pixels(buffer, |pixel| {
+        rows[at / width].push(*pixel);
+        at += 1;
+    });
+    rows
+}
+
+#[test]
+fn frames_turn_on_the_cpu_as_on_the_gpu_where_it_cant() {
+    // 4 × 2, each pixel its own.
+    let mut decoded = Buffers::default();
+    let frame = decoded.get(kCVPixelFormatType_32BGRA, 4, 2).unwrap();
+    let mut at = 0u8;
+    pixels(&frame, |pixel| {
+        *pixel = [at * 30, 255 - at * 30, at * 7, 255];
+        at += 1;
+    });
+    let decoded_rows = rows(&frame);
+    let mut gpu = Turner::new().ok();
+    for turns in 0..4 {
+        for mirrored in [false, true] {
+            let orientation = Orientation::new(turns, mirrored);
+            let adjustments = Adjustments {
+                orientation,
+                ..Adjustments::default()
+            };
+            let framing = Framing::new((4, 2), Orientation::UPRIGHT, &adjustments).unwrap();
+            let mut fitting = Fitting::default();
+            let turned = fitting.fit(&frame, &framing, 1.0, orientation).unwrap();
+            // Upright, it goes as it is.
+            let turned = rows(&turned.unwrap_or_else(|| frame.clone()));
+            let (across, down) = across(orientation, (4, 2));
+            assert_eq!(
+                (turned[0].len(), turned.len()),
+                (across, down),
+                "{orientation:?}"
+            );
+            // Each pixel where the block shows it.
+            for (y, row) in decoded_rows.iter().enumerate() {
+                for (x, pixel) in row.iter().enumerate() {
+                    let center = [(x as f32 + 0.5) / 4.0, (y as f32 + 0.5) / 2.0, 0.0, 0.0];
+                    let [shown_x, shown_y, ..] = framing.place(center).0;
+                    let (column, line) = (
+                        (shown_x * across as f32) as usize,
+                        (shown_y * down as f32) as usize,
+                    );
+                    assert_eq!(turned[line][column], *pixel, "{orientation:?} at {x}, {y}");
+                }
+            }
+            // And as the GPU turns it, where it can.
+            if let Some(gpu) = &mut gpu {
+                let on_gpu = gpu.turn(&frame, orientation).unwrap();
+                assert_eq!(rows(&on_gpu), turned, "{orientation:?}");
+            }
+        }
+    }
+}
+
+#[test]
+fn frames_turned_on_the_cpu_are_cropped_as_they_show() {
+    // 1920 × 1080, green in the middle square and red around it.
+    let mut decoded = Buffers::default();
+    let frame = decoded.get(kCVPixelFormatType_32BGRA, 1920, 1080).unwrap();
+    let mut at = 0;
+    pixels(&frame, |pixel| {
+        let x = at % 1920;
+        *pixel = if (420..1500).contains(&x) {
+            [0, 255, 0, 255]
+        } else {
+            [0, 0, 255, 255]
+        };
+        at += 1;
+    });
+    // Turned, it's 1080 across and 1920 down, and cropped square it keeps
+    // the middle of what was across.
+    let turned = Orientation::new(1, false);
+    let adjustments = Adjustments {
+        orientation: turned,
+        crop: Some(CROPS[0]),
+        ..Adjustments::default()
+    };
+    let framing = Framing::new((1920, 1080), Orientation::UPRIGHT, &adjustments).unwrap();
+    let mut fitting = Fitting::default();
+    let fitted = fitting
+        .fit(&frame, &framing, 1.0, turned)
+        .unwrap()
+        .expect("made anew");
+    let (width, height) = (fitted.get_width(), fitted.get_height());
+    assert_eq!((width, height), (1080, 1080));
+    let mut at = 0;
+    pixels(&fitted, |pixel| {
+        let (x, y) = (at % width, at / width);
+        // The edges may blend in a little of what's next to them.
+        if (4..width - 4).contains(&x) && (4..height - 4).contains(&y) {
+            assert!(pixel[1] > 250 && pixel[2] < 5, "{pixel:?} at {x}, {y}");
+        }
+        at += 1;
+    });
+}
+
+/// A 4 × 4 frame in `format`, tagged PQ, its luma samples and chroma
+/// pairs each their own, turned a quarter to the left on the CPU.
+fn turn_both_planes<S: Sample>(format: u32) {
+    // Ten bits are kept high in sixteen.
+    let shift = if size_of::<S>() == 2 { 6 } else { 0 };
+    // SAFETY: CoreVideo's constant.
+    let pq = unsafe { kCVImageBufferTransferFunction_SMPTE_ST_2084_PQ };
+    let frame = planes::<S>(format, S::from_code(0), S::from_code(0), Some(pq));
+    let mut at = 0;
+    each_sample(&frame, |plane, sample: &mut S| {
+        let code = if plane == 0 {
+            16 + at
+        } else {
+            100 + at % 2 + 10 * (at / 2)
+        };
+        *sample = S::from_code(code << shift);
+        at = if plane == 0 && at == 15 { 0 } else { at + 1 };
+    });
+    let turned_left = Orientation::new(-1, false);
+    let adjustments = Adjustments {
+        orientation: turned_left,
+        ..Adjustments::default()
+    };
+    let framing = Framing::new((4, 4), Orientation::UPRIGHT, &adjustments).unwrap();
+    let mut fitting = Fitting::default();
+    let turned = fitting
+        .fit(&frame, &framing, 1.0, turned_left)
+        .unwrap()
+        .unwrap();
+    let (mut luma, mut chroma) = (Vec::new(), Vec::new());
+    each_sample(&turned, |plane, sample: &mut S| {
+        let code = sample.code() >> shift;
+        if plane == 0 {
+            luma.push(code)
+        } else {
+            chroma.push(code)
+        }
+    });
+    // Turned a quarter to the left, the top row is the right column, up.
+    assert_eq!(luma[..4], [19, 23, 27, 31], "{format:#x}");
+    assert_eq!(
+        luma[12..],
+        [16, 20, 24, 28],
+        "{format:#x}, the bottom the left"
+    );
+    // Chroma pairs turn as pairs: the right column's on top.
+    assert_eq!(
+        chroma,
+        [110, 111, 130, 131, 100, 101, 120, 121],
+        "{format:#x}"
+    );
+    assert_eq!(transfer_of(&turned), Some(Transfer::Pq), "{format:#x}");
+}
+
+#[test]
+fn both_planes_of_a_frame_turn_and_its_colors_go_with_them() {
+    turn_both_planes::<u8>(kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange);
+    turn_both_planes::<u16>(kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange);
 }
 
 unsafe extern "C" {
