@@ -570,7 +570,7 @@ sequenceDiagram
 - `src/cast/dlna.rs`: the files the renderer lists, else MPEG-TS, as fewer
   TVs take HLS; subtitles as SRT
 - `src/cast/airplay.rs`: always HLS, subtitles in the playlist; Apple TVs
-  by model, other TVs by their `Screen`; speakers are outputs, not cast to
+  by model, other TVs H.264; speakers are outputs, not cast to
 - `src/cast/pairings.rs`: AirPlay credentials, owner-only (`AppPairings`)
 - `src/ui/pairing.rs`, `src/ui/workspace/pairing.rs`: the PIN sheet
 - `src/cast/fake.rs`: a protocol for tests
