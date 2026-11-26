@@ -292,3 +292,25 @@ fn an_ass_cue_goes_where_its_style_or_tags_put_it() {
         "{cues:?}"
     );
 }
+
+#[test]
+fn delays_cues_keeping_them_from_before_the_start() {
+    let cue = |start, end| Cue {
+        start,
+        end,
+        spans: Vec::new(),
+        placement: Placement::default(),
+    };
+    let cues = [cue(1.0, 3.0), cue(5.0, 6.0)];
+    let times = |delay| -> Vec<(f64, f64)> {
+        delayed(&cues, delay)
+            .iter()
+            .map(|cue| (cue.start, cue.end))
+            .collect()
+    };
+    assert_eq!(times(1.5), [(2.5, 4.5), (6.5, 7.5)]);
+    // One that would start before the media does shows from its start;
+    // one that would end by then is gone.
+    assert_eq!(times(-2.0), [(0.0, 1.0), (3.0, 4.0)]);
+    assert_eq!(times(-3.0), [(2.0, 3.0)]);
+}

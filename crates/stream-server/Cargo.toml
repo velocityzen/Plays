@@ -19,6 +19,8 @@ ffmpeg-next = { version = "9.1", default-features = false, features = [
 ] }
 ffmpeg-safe = { path = "../ffmpeg-safe" }
 log = "0.4"
+# Frames turned row by row in parallel.
+rayon = "1.12"
 # Connections taken that close for the device however they're let go of.
 network = { path = "../network" }
 # A listener over IPv4 and IPv6 both.

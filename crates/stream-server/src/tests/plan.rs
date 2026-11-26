@@ -46,10 +46,13 @@ fn with_pictures(codec: VideoCodec) -> MediaInfo {
 
 #[test]
 fn re_encodes_video_for_picture_subtitles_where_it_can() {
-    let source = Source::File("film.mkv".into());
     let pictures = SubtitleSource::Track(2);
-    let planned = |media: &MediaInfo, profile: &Profile, subtitles| {
-        plan(media, &source, Pick::Best, Pick::Best, subtitles, profile).unwrap()
+    let planned = |media: &MediaInfo, profile: &Profile, subtitles: Option<&SubtitleSource>| {
+        let request = CastRequest {
+            subtitles: subtitles.cloned(),
+            ..CastRequest::new(Source::File("film.mkv".into()), profile.clone())
+        };
+        plan(media, &request).unwrap()
     };
 
     let h264 = with_pictures(VideoCodec::H264);
@@ -99,4 +102,115 @@ fn re_encodes_video_for_picture_subtitles_where_it_can() {
     let alone = planned(&sound, &Profile::default(), Some(&pictures));
     assert_eq!(alone.delivery, Delivery::File);
     assert_eq!(alone.subtitles, None);
+}
+
+#[test]
+fn re_encodes_video_for_adjustments_at_the_size_it_shows() {
+    let h264 = with_pictures(VideoCodec::H264);
+    let turned = Adjustments {
+        turns: 1,
+        ..Adjustments::default()
+    };
+    let request = |profile: Profile, adjustments| CastRequest {
+        adjustments,
+        ..CastRequest::new(Source::File("film.mkv".into()), profile)
+    };
+    let mkv = Profile {
+        files: vec![Container::Matroska],
+        max_size: None,
+        ..Profile::default()
+    };
+    let plain = plan(&h264, &request(mkv.clone(), None)).unwrap();
+    assert_eq!(plain.delivery, Delivery::File);
+    assert_eq!(plain.adjustments, None);
+
+    let adjusted = plan(&h264, &request(mkv, Some(turned))).unwrap();
+    assert_eq!(adjusted.delivery, Delivery::Hls(Segments::Ts));
+    assert!(matches!(
+        adjusted.video,
+        Some(VideoPlan::Encode {
+            width: 720,
+            height: 1280,
+            ..
+        })
+    ));
+    assert_eq!(adjusted.adjustments, Some(turned));
+    // Fitted to the device on its side too.
+    let small = Profile {
+        max_size: Some((640, 640)),
+        ..Profile::default()
+    };
+    let cropped = Adjustments {
+        crop: Some(1.0),
+        ..turned
+    };
+    let fitted = plan(&h264, &request(small, Some(cropped))).unwrap();
+    assert!(matches!(
+        fitted.video,
+        Some(VideoPlan::Encode {
+            width: 640,
+            height: 640,
+            ..
+        })
+    ));
+
+    // Where it can't be re-encoded, it's copied as it is.
+    let vp9 = Profile {
+        hls: Some(Segments::Fmp4),
+        video: vec![VideoCodec::Vp9],
+        ..Profile::default()
+    };
+    let copied = plan(&with_pictures(VideoCodec::Vp9), &request(vp9, Some(turned))).unwrap();
+    assert!(matches!(copied.video, Some(VideoPlan::Copy { .. })));
+    assert_eq!(copied.adjustments, None);
+}
+
+#[test]
+fn re_encoding_video_for_its_keyframes_does_its_adjustments() {
+    let h264 = with_pictures(VideoCodec::H264);
+    let gamma = Adjustments {
+        gamma: 1.5,
+        ..Adjustments::default()
+    };
+    let mut request = CastRequest::new(Source::File("film.mkv".into()), Profile::default());
+    let mut plan = plan(&h264, &request).unwrap();
+    assert!(matches!(plan.video, Some(VideoPlan::Copy { .. })));
+    request.adjustments = Some(gamma);
+    re_encode_video(&mut plan, &h264, &request).unwrap();
+    assert!(matches!(plan.video, Some(VideoPlan::Encode { .. })));
+    assert_eq!(plan.adjustments, Some(gamma));
+}
+
+#[test]
+fn delays_the_sound_where_the_media_isnt_sent_as_it_is() {
+    let mut mp4 = with_pictures(VideoCodec::H264);
+    mp4.container = Container::Mp4;
+    let request = |profile: Profile, delay| CastRequest {
+        audio_delay: delay,
+        ..CastRequest::new(Source::File("film.mp4".into()), profile)
+    };
+    let plain = plan(&mp4, &request(Profile::default(), 0.0)).unwrap();
+    assert_eq!(plain.delivery, Delivery::File);
+    let delayed = plan(&mp4, &request(Profile::default(), 0.25)).unwrap();
+    assert_eq!(delayed.delivery, Delivery::Hls(Segments::Ts));
+    assert_eq!(delayed.audio_delay, 0.25);
+    assert!(matches!(delayed.video, Some(VideoPlan::Copy { .. })));
+    assert!(matches!(delayed.audio, Some(AudioPlan::Copy { .. })));
+
+    // A device that takes only files gets the file, as it is.
+    let files = Profile {
+        hls: None,
+        ..Profile::default()
+    };
+    let as_is = plan(&mp4, &request(files, -0.5)).unwrap();
+    assert_eq!(as_is.delivery, Delivery::File);
+    assert_eq!(as_is.audio_delay, 0.0);
+
+    // Without sound, there's none to delay.
+    let silent = CastRequest {
+        audio: Pick::Off,
+        ..request(Profile::default(), 0.25)
+    };
+    let picture = plan(&mp4, &silent).unwrap();
+    assert_eq!(picture.audio_delay, 0.0);
 }

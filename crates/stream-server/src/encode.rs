@@ -230,13 +230,17 @@ pub(crate) struct VideoSettings<'a> {
     pub global_header: bool,
 }
 
+/// Scaling, and the format and size it scales from and the size it scales
+/// to.
+type Scaler = (scaling::Context, (Pixel, u32, u32), (u32, u32));
+
 /// A hardware video encoder, scaling frames to its size and format first.
 pub(crate) struct VideoEncoder {
     encoder: ffmpeg::encoder::Video,
     format: Pixel,
     width: u32,
     height: u32,
-    scaler: Option<(scaling::Context, (Pixel, u32, u32))>,
+    scaler: Option<Scaler>,
     #[cfg(target_os = "linux")]
     vaapi: Option<vaapi::Frames>,
 }
@@ -342,29 +346,44 @@ impl VideoEncoder {
         self.encoder.time_base()
     }
 
+    /// The size it encodes pictures at.
+    pub fn size(&self) -> (u32, u32) {
+        (self.width, self.height)
+    }
+
     /// A decoded frame at the encoder's size and in its format, NV12 or
     /// P010, to draw on before it is encoded.
     pub fn scale(&mut self, decoded: &frame::Video) -> Result<frame::Video, Error> {
+        self.scale_to(decoded, self.width, self.height)
+    }
+
+    /// A decoded frame at `width` × `height`, in the encoder's format.
+    pub fn scale_to(
+        &mut self,
+        decoded: &frame::Video,
+        width: u32,
+        height: u32,
+    ) -> Result<frame::Video, Error> {
         let source = (decoded.format(), decoded.width(), decoded.height());
         if self
             .scaler
             .as_ref()
-            .is_none_or(|(_, input)| *input != source)
+            .is_none_or(|(_, input, output)| *input != source || *output != (width, height))
         {
             let scaler = scaling::Context::get(
                 source.0,
                 source.1,
                 source.2,
                 self.format,
-                self.width,
-                self.height,
+                width,
+                height,
                 scaling::Flags::BILINEAR,
             )
             .map_err(|err| Error::Encode(format!("scaling: {err}")))?;
-            self.scaler = Some((scaler, source));
+            self.scaler = Some((scaler, source, (width, height)));
         }
-        let (scaler, _) = self.scaler.as_mut().expect("the scaler was just made");
-        let mut frame = frame::Video::new(self.format, self.width, self.height);
+        let (scaler, ..) = self.scaler.as_mut().expect("the scaler was just made");
+        let mut frame = frame::Video::new(self.format, width, height);
         scaler
             .run(decoded, &mut frame)
             .map_err(|err| Error::Encode(format!("scaling: {err}")))?;

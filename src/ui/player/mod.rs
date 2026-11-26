@@ -533,8 +533,9 @@ impl PlayerView {
     /// How pictures look changed (gamma). Surfaces take it as they are
     /// drawn and new frames as they are converted, so only a paused video
     /// showing a converted image needs its frame decoded again.
-    pub fn picture_settings_changed(&mut self) {
+    pub fn picture_settings_changed(&mut self, cx: &App) {
         self.playback.refresh_picture();
+        self.send_cast_changes(cx);
     }
 
     /// Release a frame that is no longer current. Only frames that were rendered

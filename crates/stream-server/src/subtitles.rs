@@ -399,6 +399,19 @@ fn spans_of(subtitle: &ffmpeg::Subtitle) -> Vec<Span> {
     tidy(spans)
 }
 
+/// `cues`, each shown `delay` seconds after its time (negative: before);
+/// those that would be over before the start go.
+pub(crate) fn delayed(cues: &[Cue], delay: f64) -> Vec<Cue> {
+    cues.iter()
+        .filter(|cue| cue.end + delay > 0.0)
+        .map(|cue| Cue {
+            start: (cue.start + delay).max(0.0),
+            end: cue.end + delay,
+            ..cue.clone()
+        })
+        .collect()
+}
+
 /// Where a decoded subtitle goes: where its first ASS event does.
 fn placement_of(subtitle: &ffmpeg::Subtitle, styles: &Styles) -> Placement {
     subtitle

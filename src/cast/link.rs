@@ -10,7 +10,9 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
-use stream_server::{Cast, CastRequest, Delivery, Pick, Server, Source, SubtitleSource};
+use stream_server::{
+    Adjustments, Cast, CastRequest, Delivery, Pick, Server, Source, SubtitleSource,
+};
 
 use super::target::{Device, Error, FOLLOW_POLL, Load, Session, State, Status, Subtitles, Target};
 use crate::media::text_encoding;
@@ -35,6 +37,32 @@ pub struct Request {
     pub looping: bool,
     /// Only the sound goes: the picture plays here, following the device.
     pub picture_here: bool,
+    /// What is done to the media on its way.
+    pub changes: Changes,
+}
+
+/// What a block does to what it plays, done to the media on its way to a
+/// device where it can be.
+#[derive(Clone, Copy, Default, PartialEq, Debug)]
+pub struct Changes {
+    /// Seconds the sound plays after the picture (negative: before it).
+    pub audio_delay: f64,
+    /// Seconds subtitles show after their times (negative: before them).
+    pub subtitle_delay: f64,
+    /// What is done to the picture, where the video can be re-encoded.
+    pub adjustments: Option<Adjustments>,
+}
+
+impl Changes {
+    /// `request`, asking for these.
+    fn asked_in(self, request: CastRequest) -> CastRequest {
+        CastRequest {
+            audio_delay: self.audio_delay,
+            subtitle_delay: self.subtitle_delay,
+            adjustments: self.adjustments,
+            ..request
+        }
+    }
 }
 
 /// Subtitles to send along.
@@ -57,6 +85,10 @@ pub enum Phase {
         serves: String,
         /// Whether picture subtitles are drawn into its video.
         draws_subtitles: bool,
+        /// Whether the picture is adjusted as it is here.
+        adjusts_picture: bool,
+        /// Whether the sound is delayed as it is here.
+        delays_sound: bool,
     },
     /// Over: the device went away, or wouldn't play it.
     Over(Error),
@@ -82,6 +114,13 @@ enum Command {
     Reload {
         video: Pick,
         audio: Pick,
+        start: f64,
+        autoplay: bool,
+    },
+    /// Other delays or adjustments: where they differ from what the media
+    /// was served with, it is served again with them, from `start`.
+    Changes {
+        changes: Changes,
         start: f64,
         autoplay: bool,
     },
@@ -312,6 +351,20 @@ impl Link {
         );
     }
 
+    /// Delay or adjust the media as `changes` says: loaded again from
+    /// where it is, if that's other than it was served.
+    pub fn set_changes(&mut self, changes: Changes) {
+        let (position, playing) = self.shown();
+        self.send(
+            Command::Changes {
+                changes,
+                start: position,
+                autoplay: playing,
+            },
+            Asked { position, playing },
+        );
+    }
+
     /// Play other video or sound: the media loaded again from where it is.
     pub fn reload(&mut self, video: Pick, audio: Pick) {
         let (position, playing) = self.shown();
@@ -372,13 +425,12 @@ impl Worker {
     ) -> Result<Self, Error> {
         let session = target.connect(device)?;
         let subtitles = request.subtitles.map(with_encoding);
-        let cast_request = CastRequest {
-            source: request.source,
-            profile: session.profile(),
+        let cast_request = request.changes.asked_in(CastRequest {
+            subtitles: subtitles.as_ref().map(|choice| choice.source.clone()),
             video: request.video,
             audio: request.audio,
-            subtitles: subtitles.as_ref().map(|choice| choice.source.clone()),
-        };
+            ..CastRequest::new(request.source, session.profile())
+        });
         let cast = server
             .add(cast_request.clone(), device.address)
             .map_err(|err| Error::Failed(err.to_string()))?;
@@ -551,6 +603,20 @@ impl Worker {
                 };
                 self.serve_again(request, self.subtitles.clone(), start, autoplay)
             }
+            Command::Changes {
+                changes,
+                start,
+                autoplay,
+            } => {
+                let request = changes.asked_in(self.request.clone());
+                if self.serves_as(&request) {
+                    // As it can't be delayed or adjusted, or already is.
+                    self.request = request;
+                    return Ok(());
+                }
+                self.since = None;
+                self.serve_again(request, self.subtitles.clone(), start, autoplay)
+            }
         }
     }
 
@@ -585,6 +651,17 @@ impl Worker {
         self.server.remove(&old);
         self.shared.lock().phase = on(&self.cast);
         loaded
+    }
+
+    /// Whether the media goes as `request` would have it already: its
+    /// subtitles delayed as they are, and its sound and picture as they
+    /// would be planned.
+    fn serves_as(&self, request: &CastRequest) -> bool {
+        let served = self.cast.plan();
+        request.subtitle_delay == self.cast.request().subtitle_delay
+            && self.cast.planned(request).is_some_and(|plan| {
+                plan.audio_delay == served.audio_delay && plan.adjustments == served.adjustments
+            })
     }
 
     /// Play again from the start.
@@ -623,9 +700,12 @@ impl Worker {
 
 /// Playing `cast`.
 fn on(cast: &Cast) -> Phase {
+    let plan = cast.plan();
     Phase::On {
-        serves: cast.plan().describe(),
-        draws_subtitles: cast.plan().subtitles.is_some(),
+        serves: plan.describe(),
+        draws_subtitles: plan.subtitles.is_some(),
+        adjusts_picture: plan.adjustments.is_some(),
+        delays_sound: plan.audio_delay != 0.0,
     }
 }
 
@@ -665,20 +745,22 @@ fn with_encoding(mut choice: SubtitleChoice) -> SubtitleChoice {
 }
 
 /// Commands as they're to be done: of seeks in a row, as a slider sends
-/// them, only the last; of the volume, looping and subtitles asked for,
-/// only the last of each, as each says all there is to it and is a call
+/// them, only the last; of the volume, looping, subtitles and changes
+/// asked for, only the last of each, as each says all there is to it and is a call
 /// to the device the others would wait behind.
 fn coalesce(commands: Vec<Command>) -> Vec<Command> {
     let last = |kind: fn(&Command) -> bool| commands.iter().rposition(kind);
     let volume = last(|command| matches!(command, Command::Volume { .. }));
     let looping = last(|command| matches!(command, Command::Looping(_)));
     let subtitles = last(|command| matches!(command, Command::Subtitles { .. }));
+    let changes = last(|command| matches!(command, Command::Changes { .. }));
     let mut kept: Vec<Command> = Vec::with_capacity(commands.len());
     for (index, command) in commands.into_iter().enumerate() {
         let latest = match command {
             Command::Volume { .. } => volume,
             Command::Looping(_) => looping,
             Command::Subtitles { .. } => subtitles,
+            Command::Changes { .. } => changes,
             _ => Some(index),
         };
         if latest != Some(index) {

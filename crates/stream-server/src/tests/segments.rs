@@ -26,6 +26,8 @@ fn a_file_claiming_to_last_for_ever_has_no_more_than_the_most_segments() {
         video: None,
         audio: None,
         subtitles: None,
+        audio_delay: 0.0,
+        adjustments: None,
     };
     let copied = Plan {
         video: Some(VideoPlan::Copy {

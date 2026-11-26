@@ -23,7 +23,7 @@ use gpui::{App, BorrowAppContext, Global};
 use parking_lot::Mutex;
 use stream_server::Server;
 
-pub use link::{Link, Phase, Request, SubtitleChoice};
+pub use link::{Changes, Link, Phase, Request, SubtitleChoice};
 pub use pairings::{AppPairings, Pairings};
 pub use target::{Device, Error, Shows, Target};
 

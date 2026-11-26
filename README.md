@@ -85,6 +85,7 @@ GPU-accelerated UI framework.
 - Chromecast, Google TV and Nest; DLNA; Apple TV and AirPlay TVs
 - Files go as they are, repackaged or re-encoded, as the device needs
 - Subtitles go along
+- Delays, gamma and picture adjustments go along
 - A video's sound to a speaker while its picture plays here
 
 ### And
@@ -270,7 +271,9 @@ mkdir ($nu.user-autoload-dirs | first); plays completions nushell | save -f ($nu
   on a Mac from where it was downloaded, or installed by a package
   manager, Flatpak or Snap.
 - Casting re-encodes video only with a hardware encoder. While a block
-  casts, delays, speed, picture adjustments and frame steps don't apply.
+  casts, speed and frame steps don't apply; a device that takes only
+  files gets them without delays or picture adjustments, and one that
+  plays nothing this computer encodes, without picture adjustments.
 - Cast subtitles go where they're placed only to a third of the picture,
   and on DLNA TVs at the bottom; picture subtitles (PGS, VobSub, DVB)
   don't reach a device that takes only files or plays neither H.264 nor

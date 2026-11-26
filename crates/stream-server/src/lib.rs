@@ -17,6 +17,7 @@
 //! # Ok::<(), stream_server::Error>(())
 //! ```
 
+mod adjust;
 mod encode;
 mod http;
 mod job;
@@ -39,6 +40,7 @@ use std::fmt;
 
 use ffmpeg_next as ffmpeg;
 
+pub use adjust::Adjustments;
 pub use media::{AudioInfo, MediaInfo, Source, StreamInfo, StreamKind, VideoInfo};
 pub use plan::{AudioPlan, Delivery, Pick, Plan, VideoPlan};
 pub use profile::{AudioCodec, Container, Hdr, Profile, Segments, VideoCodec};

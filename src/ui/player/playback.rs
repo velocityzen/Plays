@@ -15,7 +15,7 @@ use stream_server::Pick;
 
 use super::PlayerView;
 use super::cast::{Cast, NextCast, pick, subtitle_choice};
-use crate::cast::Device;
+use crate::cast::{Changes, Device};
 use crate::media::player::Tick;
 use crate::media::tracks::TrackKind;
 use crate::media::{Mixer, Picture, Player, PlayerOptions, Source};
@@ -343,12 +343,11 @@ impl Playback {
     }
 
     /// Hear the sound `delay` seconds after the picture (negative: before
-    /// it). A device plays both, and a delay here doesn't reach it, so
-    /// while the block casts it stays as it is.
+    /// it): a picture following a device's sound follows it that much
+    /// later, and a device playing both is sent it with the block's other
+    /// changes (`set_cast_changes`).
     pub fn set_audio_delay(&mut self, delay: f64) {
-        if self.casting().is_none() {
-            self.player.set_audio_delay(delay);
-        }
+        self.player.set_audio_delay(delay);
     }
 
     /// Play faster or slower here. A device plays at its own speed, so
@@ -360,10 +359,17 @@ impl Playback {
     }
 
     /// Show subtitles `delay` seconds after their times (negative:
-    /// before). As with the sound's, not while the block casts.
+    /// before), here and, as with the sound's, on a device playing the
+    /// picture.
     pub fn set_subtitle_delay(&mut self, delay: f64) {
-        if self.casting().is_none() {
-            self.player.set_subtitle_delay(delay);
+        self.player.set_subtitle_delay(delay);
+    }
+
+    /// Have a device playing the picture do `changes`: the media is served
+    /// again with them where they're other than it was.
+    pub fn set_cast_changes(&mut self, changes: Changes) {
+        if let Some(cast) = self.cast.as_mut().filter(|cast| !cast.picture_here) {
+            cast.link.set_changes(changes);
         }
     }
 

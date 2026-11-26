@@ -16,8 +16,8 @@ use ffmpeg_next as ffmpeg;
 use crate::encode::Colors;
 use crate::http;
 use crate::{
-    AudioCodec, AudioPlan, CastRequest, Container, Delivery, Error, MediaInfo, Pick, Profile,
-    Segments, Server, Source, SubtitleSource, VideoCodec, VideoPlan,
+    Adjustments, AudioCodec, AudioPlan, CastRequest, Container, Delivery, Error, MediaInfo, Pick,
+    Profile, Segments, Server, Source, SubtitleSource, VideoCodec, VideoPlan,
 };
 
 /// This computer, as a device: on no port in particular.
@@ -1293,6 +1293,189 @@ fn serves_subtitles_from_a_file() {
 }
 
 #[test]
+fn serves_subtitles_later_or_earlier_than_their_times() {
+    let server = server();
+    let delayed = |delay| {
+        let mut request = CastRequest::new(Source::File(fixture("clip.mp4")), Profile::default());
+        request.subtitles = Some(SubtitleSource::File {
+            path: fixture("clip.srt"),
+            encoding: None,
+        });
+        request.subtitle_delay = delay;
+        server.add(request, LOCALHOST).unwrap()
+    };
+    let later = delayed(0.5);
+    // The file still goes as it is.
+    assert_eq!(later.plan().delivery, Delivery::File);
+    assert_eq!(
+        get(&later.webvtt_url().unwrap()).text(),
+        "WEBVTT\n\n00:00:00.700 --> 00:00:01.500\nFirst\n\n\
+         00:00:01.700 --> 00:00:02.400\nSecond\n\n"
+    );
+    // One past the start is cut short there.
+    let earlier = delayed(-0.5);
+    assert_eq!(
+        get(&earlier.srt_url().unwrap()).text(),
+        "1\n00:00:00,000 --> 00:00:00,500\nFirst\n\n\
+         2\n00:00:00,700 --> 00:00:01,400\nSecond\n\n"
+    );
+    assert_eq!(
+        get(&delayed(-1.5).srt_url().unwrap()).text(),
+        "1\n00:00:00,000 --> 00:00:00,400\nSecond\n\n"
+    );
+}
+
+/// A cast of `name` with its sound `delay` seconds after its picture.
+fn delayed(server: &Server, name: &str, profile: Profile, delay: f64) -> crate::Cast {
+    let mut request = CastRequest::new(Source::File(fixture(name)), profile);
+    request.audio_delay = delay;
+    server.add(request, LOCALHOST).unwrap()
+}
+
+#[test]
+fn delays_the_sound_it_repackages() {
+    let server = server();
+    // A device that would take the file gets it repackaged, for its sound
+    // to be moved.
+    let later = delayed(&server, "clip.mp4", Profile::default(), 0.5);
+    assert_eq!(later.plan().delivery, Delivery::Hls(Segments::Ts));
+    assert!(matches!(later.plan().audio, Some(AudioPlan::Copy { .. })));
+    assert_eq!(later.plan().audio_delay, 0.5);
+    let (video, audio) = fetch(&later.url(), Segments::Ts, 0);
+    assert!(close(video.first(), 10.0), "{}", video.first());
+    let audio = audio.unwrap();
+    assert!(close(audio.first(), 10.5), "{}", audio.first());
+
+    let earlier = delayed(&server, "clip.mp4", Profile::default(), -0.5);
+    let (_, first) = fetch(&earlier.url(), Segments::Ts, 0);
+    let (_, second) = fetch(&earlier.url(), Segments::Ts, 1);
+    let (first, second) = (first.unwrap(), second.unwrap());
+    // From the start, sound from half a second in.
+    assert!(close(first.first(), 10.0), "{}", first.first());
+    let last = second.times.iter().copied().fold(0.0, f64::max);
+    assert!(last < 11.5 && last > 11.4, "{last}");
+
+    let kind = Segments::Fmp4;
+    let later = delayed(&server, "clip.mp4", hls(kind), 0.5);
+    let (_, audio) = fetch(&later.url(), kind, 0);
+    let audio = audio.unwrap();
+    assert!(close(audio.first(), 10.5), "{}", audio.first());
+}
+
+#[test]
+fn delays_the_sound_of_a_segment_made_from_there() {
+    // Asked for first, the second segment is made by a job starting
+    // there, which reads the sound from earlier on: Matroska has it beside
+    // the keyframe the segment starts at, MP4 here further on.
+    for name in ["clip.mp4", "clip-subs.mkv"] {
+        let made = |first: bool| {
+            let server = server();
+            let cast = delayed(&server, name, Profile::default(), 0.5);
+            let before = first.then(|| fetch(&cast.url(), Segments::Ts, 0).1.unwrap().times);
+            (before, fetch(&cast.url(), Segments::Ts, 1).1.unwrap().times)
+        };
+        let ((before, after), (_, alone)) = (made(true), made(false));
+        assert_eq!(alone, after, "{name}");
+        // It carries on from the sound of the one before, a frame later.
+        let end = before.unwrap().iter().copied().fold(0.0, f64::max);
+        let first = alone.iter().copied().fold(f64::INFINITY, f64::min);
+        assert!(
+            first > end && first - end < 0.03,
+            "{name}: {end} then {first}"
+        );
+    }
+}
+
+#[test]
+fn delays_the_sound_it_re_encodes() {
+    let server = server();
+    let profile = Profile {
+        audio: vec![AudioCodec::Ac3],
+        ..Profile::default()
+    };
+    let cast = delayed(&server, "clip.mp4", profile, 0.5);
+    assert!(matches!(cast.plan().audio, Some(AudioPlan::Encode { .. })));
+    let (_, audio) = fetch(&cast.url(), Segments::Ts, 0);
+    let audio = audio.unwrap();
+    assert_eq!(audio.codec, Id::AC3);
+    assert!(close(audio.first(), 10.5), "{}", audio.first());
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn turns_and_mirrors_the_video_it_re_encodes() {
+    let server = server();
+    let adjusted = |adjustments| {
+        let mut request = CastRequest::new(Source::File(fixture("clip.mp4")), Profile::default());
+        request.adjustments = Some(adjustments);
+        server.add(request, LOCALHOST).unwrap()
+    };
+    let frame = |cast: &crate::Cast| {
+        let segment = get(&sibling(&cast.url(), "0.ts"));
+        assert_eq!(segment.status, 200);
+        decode(&segment.body, "ts").remove(0).1.remove(0)
+    };
+    // As it is, but re-encoded, to set the others against.
+    let plain = adjusted(Adjustments::default());
+    assert!(matches!(
+        plain.plan().video,
+        Some(VideoPlan::Encode {
+            width: 160,
+            height: 120,
+            ..
+        })
+    ));
+    let plain = frame(&plain);
+    let turned = Adjustments {
+        turns: 1,
+        mirrored: true,
+        ..Adjustments::default()
+    };
+    let cast = adjusted(turned);
+    assert_eq!(cast.plan().adjustments, Some(turned));
+    let (video, _) = fetch(&cast.url(), Segments::Ts, 0);
+    assert_eq!((video.width, video.height), (120, 160));
+    let shown = frame(&cast);
+    // Each pixel where mirroring and a quarter turn take it: at (x, y) of
+    // the 120 x 160 picture, (159 - y, 119 - x) of the 160 x 120 one.
+    let apart = |taken: &dyn Fn(usize, usize) -> u8| {
+        let total: f64 = (0..160)
+            .flat_map(|y| (0..120).map(move |x| (x, y)))
+            .map(|(x, y)| (f64::from(shown[y * 120 + x]) - f64::from(taken(x, y))).abs())
+            .sum();
+        total / (120.0 * 160.0)
+    };
+    let mirrored_turn = apart(&|x, y| plain[(119 - x) * 160 + (159 - y)]);
+    let turn_only = apart(&|x, y| plain[(119 - x) * 160 + y]);
+    assert!(mirrored_turn < 4.0, "{mirrored_turn}");
+    assert!(
+        turn_only > mirrored_turn * 3.0,
+        "{turn_only} vs {mirrored_turn}"
+    );
+
+    // Cropped square, it's the middle of the picture, not all of it
+    // squeezed in.
+    let cast = adjusted(Adjustments {
+        crop: Some(1.0),
+        ..Adjustments::default()
+    });
+    let (video, _) = fetch(&cast.url(), Segments::Ts, 0);
+    assert_eq!((video.width, video.height), (120, 120));
+    let shown = frame(&cast);
+    let apart = |taken: &dyn Fn(usize, usize) -> u8| {
+        let total: f64 = (0..120)
+            .flat_map(|y| (0..120).map(move |x| (x, y)))
+            .map(|(x, y)| (f64::from(shown[y * 120 + x]) - f64::from(taken(x, y))).abs())
+            .sum();
+        total / (120.0 * 120.0)
+    };
+    let middle = apart(&|x, y| plain[y * 160 + x + 20]);
+    let squeezed = apart(&|x, y| plain[y * 160 + x * 4 / 3]);
+    assert!(middle < 4.0, "{middle}");
+    assert!(squeezed > middle * 3.0, "{squeezed} vs {middle}");
+}
+
+#[test]
 fn serves_subtitles_from_a_track_with_hls() {
     let server = server();
     let mut request_ = CastRequest::new(Source::File(fixture("clip-subs.mkv")), Profile::default());
@@ -1433,6 +1616,47 @@ fn decode(bytes: &[u8], extension: &str) -> Vec<(f64, Vec<Vec<u8>>)> {
     frames
 }
 
+/// The frames of a cast's first two segments, with their times.
+#[cfg(target_os = "macos")]
+fn first_frames(cast: &crate::Cast) -> Vec<(f64, Vec<Vec<u8>>)> {
+    (0..2)
+        .flat_map(|number| {
+            let segment = get(&sibling(&cast.url(), &format!("{number}.ts")));
+            assert_eq!(segment.status, 200);
+            decode(&segment.body, "ts")
+        })
+        .collect()
+}
+
+/// Drawn in later than their times, picture subtitles show that much
+/// later: past the clip's end, not at all.
+#[cfg(target_os = "macos")]
+#[test]
+fn draws_picture_subtitles_later_than_their_times() {
+    let profile = Profile {
+        max_size: Some((80, 60)),
+        ..hls(Segments::Ts)
+    };
+    let server = server();
+    let mut request = CastRequest::new(Source::File(fixture("clip-dvdsub.mkv")), profile.clone());
+    request.subtitles = Some(SubtitleSource::Track(2));
+    request.subtitle_delay = 5.0;
+    let late = server.add(request, LOCALHOST).unwrap();
+    assert_eq!(late.plan().subtitles, Some(2));
+    let plain = dvd_cast(&server, profile, false);
+    let (late, plain) = (first_frames(&late), first_frames(&plain));
+    assert_eq!(late.len(), plain.len());
+    for ((time, with), (_, without)) in late.iter().zip(&plain) {
+        let apart = with[0]
+            .iter()
+            .zip(&without[0])
+            .map(|(with, without)| (f64::from(*with) - f64::from(*without)).abs())
+            .sum::<f64>()
+            / with[0].len() as f64;
+        assert!(apart < 0.5, "at {time:.2}: {apart}");
+    }
+}
+
 #[cfg(target_os = "macos")]
 #[test]
 fn draws_picture_subtitles_into_video_it_re_encodes() {
@@ -1464,16 +1688,7 @@ fn draws_picture_subtitles_into_video_it_re_encodes() {
     assert_eq!(text.draws(Some(&SubtitleSource::Track(2))), None);
     assert!(text.webvtt_url().is_some());
 
-    let frames = |cast: &crate::Cast| -> Vec<(f64, Vec<Vec<u8>>)> {
-        (0..2)
-            .flat_map(|number| {
-                let segment = get(&sibling(&cast.url(), &format!("{number}.ts")));
-                assert_eq!(segment.status, 200);
-                decode(&segment.body, "ts")
-            })
-            .collect()
-    };
-    let (drawn, plain) = (frames(&drawn), frames(&plain));
+    let (drawn, plain) = (first_frames(&drawn), first_frames(&plain));
     assert_eq!((drawn.len(), plain.len()), (50, 50));
     // Each cue's bar at 80x60: the first low in the picture, the second
     // high. White and black, it takes the color out of what is under it.

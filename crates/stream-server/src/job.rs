@@ -21,6 +21,7 @@ use ffmpeg::{Packet, Rational, codec, ffi, frame};
 use ffmpeg_next as ffmpeg;
 
 use crate::Error;
+use crate::adjust::{self, Adjustments};
 use crate::encode::{AudioEncoder, AudioSettings, Colors, VideoEncoder, VideoSettings};
 use crate::media::{self, MediaInfo, Source};
 use crate::mux::{Format, Muxer, OutStream};
@@ -58,6 +59,8 @@ pub(crate) struct Media {
     pub kind: Segments,
     /// How long segments are, about, in seconds.
     pub segment: f64,
+    /// Seconds picture subtitles drawn in show after their times.
+    pub subtitle_delay: f64,
 }
 
 /// Wait for `changed` to be rung, until `deadline` at the most; past it,
@@ -157,6 +160,8 @@ enum Work {
         last: Option<i64>,
         /// Picture subtitles drawn in.
         overlay: Option<Box<Overlay>>,
+        /// What's done to the picture.
+        adjustments: Option<Adjustments>,
     },
     Audio {
         decoder: ffmpeg::decoder::Audio,
@@ -169,6 +174,8 @@ struct Track {
     input: usize,
     output: usize,
     time_base: f64,
+    /// Seconds its timestamps are moved later (negative: earlier).
+    shift: f64,
     work: Work,
 }
 
@@ -192,6 +199,8 @@ struct Pipeline {
     lengths: Lengths,
     /// Each output stream's latest time, for packets that have none.
     times: Vec<f64>,
+    /// Seconds picture subtitles drawn in show after their times.
+    subtitle_delay: f64,
     /// Packets read before reads fail, from `BREAKS`.
     #[cfg(test)]
     reads_left: Option<usize>,
@@ -276,7 +285,9 @@ impl Pipeline {
             .chain(media.plan.subtitles)
             .collect();
         set_discard_all_but(&mut input, &keep, false);
-        seek(&mut input, &start, video)?;
+        // Sound sent later is read from earlier on.
+        let delay = media.plan.audio_delay;
+        seek(&mut input, &start, video, delay.max(0.0))?;
 
         let (from_key, from_time) = match start {
             Start::Beginning => (None, f64::NEG_INFINITY),
@@ -292,16 +303,24 @@ impl Pipeline {
                 input: stream_index,
                 output: outputs.len(),
                 time_base: f64::from(time_base),
+                shift: 0.0,
                 work,
             });
             outputs.push(out);
         }
         if let Some(plan) = &media.plan.audio {
-            let (stream_index, time_base, work, out) = audio_work(media, &input, plan, from_time)?;
+            // Sound sent earlier starts no sooner than the media.
+            let from = if delay < 0.0 {
+                from_time.max(media.info.start)
+            } else {
+                from_time
+            };
+            let (stream_index, time_base, work, out) = audio_work(media, &input, plan, from)?;
             tracks.push(Track {
                 input: stream_index,
                 output: outputs.len(),
                 time_base: f64::from(time_base),
+                shift: delay,
                 work,
             });
             outputs.push(out);
@@ -315,6 +334,7 @@ impl Pipeline {
             tracks,
             lengths: Lengths::new(count),
             times: vec![0.0; count],
+            subtitle_delay: media.subtitle_delay,
             #[cfg(test)]
             reads_left: {
                 let location = media.source.location();
@@ -402,10 +422,12 @@ impl Pipeline {
         let Track {
             output,
             time_base,
+            shift,
             work,
             ..
         } = &mut self.tracks[track];
-        let (output, time_base) = (*output, *time_base);
+        let (output, time_base, shift) = (*output, *time_base, *shift);
+        let subtitle_delay = self.subtitle_delay;
         match work {
             Work::CopyVideo {
                 started,
@@ -413,7 +435,7 @@ impl Pipeline {
                 domain,
             } => made.extend(copy_video(packet, started, *from, *domain, time_base)),
             Work::CopyAudio { started, from } => {
-                made.extend(copy_audio(packet, started, *from, time_base));
+                made.extend(copy_audio(packet, started, *from, time_base, shift));
             }
             Work::Video {
                 decoder,
@@ -423,6 +445,7 @@ impl Pipeline {
                 first,
                 last,
                 overlay,
+                adjustments,
             } => {
                 let end = packet.is_none();
                 send(decoder, packet.as_ref(), "video");
@@ -441,9 +464,9 @@ impl Pipeline {
                         _ => ts,
                     };
                     *last = Some(pts);
-                    let mut frame = encoder.scale(&decoded)?;
+                    let mut frame = prepared(encoder, &mut decoded, adjustments.as_ref())?;
                     if let Some(overlay) = overlay {
-                        overlay.draw(&mut frame, time);
+                        overlay.draw(&mut frame, time - subtitle_delay);
                     }
                     encoder.encode(frame, pts, *first || due)?;
                     *first = false;
@@ -466,7 +489,7 @@ impl Pipeline {
                     let Some(ts) = decoded.timestamp().or(decoded.pts()) else {
                         continue;
                     };
-                    encoder.send(&mut decoded, ts as f64 * time_base, *from)?;
+                    encoder.send(&mut decoded, ts as f64 * time_base + shift, *from)?;
                     drain_audio(encoder, &mut made);
                 }
                 if end {
@@ -532,23 +555,47 @@ fn copy_video(
     ))
 }
 
-/// A copied sound packet to pass on, from `from` seconds on.
+/// `decoded` as `encoder` takes it: at its size and in its format, with
+/// `adjustments` done.
+fn prepared(
+    encoder: &mut VideoEncoder,
+    decoded: &mut frame::Video,
+    adjustments: Option<&Adjustments>,
+) -> Result<frame::Video, Error> {
+    let Some(adjustments) = adjustments else {
+        return encoder.scale(decoded);
+    };
+    adjust::crop(decoded, adjustments);
+    let (width, height) = encoder.size();
+    let (width, height) = adjust::before_turning(adjustments, width, height);
+    let scaled = encoder.scale_to(decoded, width, height)?;
+    Ok(adjust::finish(scaled, adjustments))
+}
+
+/// A copied sound packet to pass on, `shift` seconds later, from `from`
+/// seconds on.
 fn copy_audio(
     packet: Option<Packet>,
     started: &mut bool,
     from: f64,
     time_base: f64,
+    shift: f64,
 ) -> Option<Made> {
-    let packet = packet?;
+    let mut packet = packet?;
     let time = packet
         .pts()
         .or(packet.dts())
-        .map(|ts| ts as f64 * time_base);
+        .map(|ts| ts as f64 * time_base + shift);
     if !*started {
         if time.is_none_or(|time| time < from - EPSILON) {
             return None;
         }
         *started = true;
+    }
+    let by = (shift / time_base).round() as i64;
+    if by != 0 {
+        packet.set_pts(packet.pts().map(|ts| ts + by));
+        packet.set_dts(packet.dts().map(|ts| ts + by));
     }
     Some((time, packet.is_key(), None, packet))
 }
@@ -666,6 +713,7 @@ fn video_work(
                     first: true,
                     last: None,
                     overlay: overlay.map(Box::new),
+                    adjustments: media.plan.adjustments,
                 },
                 out,
             )
@@ -785,11 +833,15 @@ fn open_audio_decoder(
     decoder.audio().map_err(fail)
 }
 
-fn seek(input: &mut Input, start: &Start, video: Option<usize>) -> Result<(), Error> {
+/// Seek `input` to where `start` says, `early` seconds before it.
+fn seek(input: &mut Input, start: &Start, video: Option<usize>, early: f64) -> Result<(), Error> {
+    let at = |time: f64| (time * f64::from(ffi::AV_TIME_BASE)).round() as i64;
     let (stream, ts) = match *start {
         Start::Beginning => return Ok(()),
+        // Before the keyframe, which copied video waits for.
+        Start::Key { time, .. } if early > 0.0 => (-1, at(time - early)),
         Start::Key { key, .. } => (video.map_or(-1, |video| video as i32), key),
-        Start::Time(time) => (-1, (time * f64::from(ffi::AV_TIME_BASE)).round() as i64),
+        Start::Time(time) => (-1, at(time - early)),
     };
     // SAFETY: the context is open; seeking to the keyframe at or before
     // `ts`.

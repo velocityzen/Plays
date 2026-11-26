@@ -24,7 +24,7 @@ use crate::api::commands::{cast, output, window as windows};
 use crate::app::{AudioEngine, Held, airplay_id, hold_receiver, output_kind};
 use crate::cast::airplay;
 use crate::cast::target::FOLLOW_POLL;
-use crate::cast::{Casting, Device, Error, Link, Phase, Request, Shows, SubtitleChoice};
+use crate::cast::{Casting, Changes, Device, Error, Link, Phase, Request, Shows, SubtitleChoice};
 use crate::media::Source;
 use crate::media::decoder::MediaInfo;
 use crate::media::output::DeviceInfo;
@@ -227,7 +227,33 @@ impl PlayerView {
             muted: player.is_muted(),
             looping: player.is_looping(),
             picture_here,
+            changes: self.cast_changes(info, picture_here, cx),
         }
+    }
+
+    /// What the block does to what it plays, for a device playing its
+    /// picture to do too: its delays and its picture's adjustments. With
+    /// the picture here, it all happens here.
+    fn cast_changes(&self, info: Option<&MediaInfo>, picture_here: bool, cx: &App) -> Changes {
+        if picture_here {
+            return Changes::default();
+        }
+        let player = self.playback.local();
+        Changes {
+            audio_delay: player.audio_delay(),
+            subtitle_delay: player.subtitle_delay(),
+            adjustments: info.and_then(|info| {
+                picture_adjustments(&self.adjustments, info, cx.global::<Settings>())
+            }),
+        }
+    }
+
+    /// Have a device playing the picture do what the block now does to
+    /// it: its delays, adjustments and gamma.
+    pub(super) fn send_cast_changes(&mut self, cx: &App) {
+        let info = self.playback.local().info();
+        let changes = self.cast_changes(info.as_deref(), false, cx);
+        self.playback.set_cast_changes(changes);
     }
 
     /// Play here again, from where the device was, playing if it was.
@@ -306,26 +332,33 @@ impl PlayerView {
     }
 
     fn stays_here(&self, phase: &Phase, cx: &App) -> Vec<&'static str> {
-        let settings = cx.global::<Settings>();
-        let adjusted = self.adjustments != Adjustments::default() || settings.gamma() != [1.0; 2];
-        let drawn = matches!(
-            phase,
-            Phase::On {
-                draws_subtitles: true,
-                ..
-            }
-        );
+        // What goes is known once it plays there.
+        let Phase::On {
+            draws_subtitles: drawn,
+            adjusts_picture: adjusted,
+            delays_sound: delayed,
+            ..
+        } = *phase
+        else {
+            return Vec::new();
+        };
+        let info = self.playback.local().info();
+        let adjusts = info.as_ref().is_some_and(|info| {
+            picture_adjustments(&self.adjustments, info, cx.global::<Settings>()).is_some()
+        });
         let picture_subtitles = !drawn
-            && self.playback.local().info().is_some_and(|info| {
+            && info.as_ref().is_some_and(|info| {
                 info.subtitle_track.is_some_and(|index| {
                     info.tracks(TrackKind::Subtitle)
                         .any(|track| track.index == index && !track.is_text())
                 })
             });
+        let delays = self.playback.local().audio_delay() != 0.0;
         [
-            adjusted
+            (adjusts && !adjusted)
                 .then_some("Gamma, crop, rotation, flips and aspect ratio stay on this computer"),
             picture_subtitles.then_some("Picture subtitles stay on this computer"),
+            (delays && !delayed).then_some("The audio delay stays on this computer"),
         ]
         .into_iter()
         .flatten()
@@ -776,3 +809,38 @@ fn heading(text: &'static str, theme: &Theme) -> Div {
         .text_color(theme.text_muted)
         .child(text)
 }
+
+/// What the viewer does to the picture, for a device re-encoding it to do
+/// too: turned and mirrored after the file's own orientation, at its
+/// aspect ratio and crop, and bent by the gamma for its kind of video.
+/// `None` while it shows as it is, or without a picture.
+fn picture_adjustments(
+    adjustments: &Adjustments,
+    info: &MediaInfo,
+    settings: &Settings,
+) -> Option<stream_server::Adjustments> {
+    if !info.has_video {
+        return None;
+    }
+    let hdr = info
+        .video_details
+        .as_ref()
+        .and_then(|details| details.transfer)
+        .is_some_and(|transfer| matches!(transfer, "smpte2084" | "arib-std-b67"));
+    let gamma = settings.gamma()[usize::from(hdr)];
+    if *adjustments == Adjustments::default() && gamma == 1.0 {
+        return None;
+    }
+    let orientation = adjustments.orientation.after(info.orientation);
+    Some(stream_server::Adjustments {
+        turns: orientation.clockwise_turns(),
+        mirrored: orientation.is_mirrored(),
+        aspect: adjustments.aspect.map(|ratio| f64::from(ratio.value)),
+        crop: adjustments.crop.map(|ratio| f64::from(ratio.value)),
+        gamma: f64::from(gamma),
+    })
+}
+
+#[cfg(test)]
+#[path = "tests/cast.rs"]
+mod tests;

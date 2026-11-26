@@ -17,6 +17,7 @@ use ffmpeg::format::context::Input;
 use ffmpeg_next as ffmpeg;
 use socket2::{Domain, Protocol, Socket, Type};
 
+use crate::adjust::Adjustments;
 use crate::encode::{Colors, VideoEncoder, VideoSettings};
 use crate::http::{self, Body, Request, Response};
 use crate::job::{self, Live, Media, Vod};
@@ -49,10 +50,19 @@ pub struct CastRequest {
     pub video: Pick,
     pub audio: Pick,
     pub subtitles: Option<SubtitleSource>,
+    /// Seconds the sound plays after the picture (negative: before it),
+    /// where the media isn't sent as it is.
+    pub audio_delay: f64,
+    /// Seconds subtitles show after their times (negative: before them).
+    pub subtitle_delay: f64,
+    /// What's done to the picture, where the video can be re-encoded for
+    /// it.
+    pub adjustments: Option<Adjustments>,
 }
 
 impl CastRequest {
-    /// The source's default video and sound, without subtitles.
+    /// The source's default video and sound, as they are, without
+    /// subtitles.
     pub fn new(source: Source, profile: Profile) -> Self {
         Self {
             source,
@@ -60,6 +70,9 @@ impl CastRequest {
             video: Pick::Best,
             audio: Pick::Best,
             subtitles: None,
+            audio_delay: 0.0,
+            subtitle_delay: 0.0,
+            adjustments: None,
         }
     }
 }
@@ -131,14 +144,7 @@ impl Server {
         let stop = Arc::new(AtomicBool::new(false));
         let mut input = media::open(&request.source, Arc::clone(&stop))?;
         let info = MediaInfo::read(&input, &request.source.location());
-        let mut plan = plan::plan(
-            &info,
-            &request.source,
-            request.video,
-            request.audio,
-            request.subtitles.as_ref(),
-            &request.profile,
-        )?;
+        let mut plan = plan::plan(&info, &request)?;
         let live = request.source.is_live() || info.duration.is_none();
         let segment = self.shared.segment;
         let timeline = match plan.delivery {
@@ -146,12 +152,7 @@ impl Server {
                 let mut timeline = segments::timeline(&mut input, &info, &plan, segment);
                 let copied = matches!(plan.video, Some(VideoPlan::Copy { .. }));
                 if copied && timeline.longest() > segment * segments::LONGEST_COPIED {
-                    match plan::re_encode_video(
-                        &mut plan,
-                        &info,
-                        &request.profile,
-                        request.subtitles.as_ref(),
-                    ) {
+                    match plan::re_encode_video(&mut plan, &info, &request) {
                         Ok(()) => timeline = segments::timeline(&mut input, &info, &plan, segment),
                         Err(err) => log::warn!(
                             "{}: keyframes {:.0} s apart, copied as they are: {err}",
@@ -173,6 +174,7 @@ impl Server {
             info,
             plan,
             segment,
+            subtitle_delay: request.subtitle_delay,
         });
         let output = match (media.plan.delivery, timeline) {
             (Delivery::Direct, _) => Output::Direct,
@@ -200,12 +202,12 @@ impl Server {
             output,
             variant,
             hls_subtitles: request.profile.hls_subtitles,
-            profile: request.profile,
+            request,
             stop,
             streams: Mutex::default(),
             subtitles: Mutex::default(),
         });
-        state.set_subtitles(request.subtitles);
+        state.set_subtitles(state.request.subtitles.clone());
         lock(&self.shared.casts).insert(token, Arc::clone(&state));
         Ok(Cast { state })
     }
@@ -304,18 +306,30 @@ impl Cast {
     /// video is, or can be, re-encoded. While it differs from what the plan
     /// draws, other subtitles need the media served again.
     pub fn draws(&self, subtitles: Option<&SubtitleSource>) -> Option<usize> {
+        let request = CastRequest {
+            subtitles: subtitles.cloned(),
+            ..self.state.request.clone()
+        };
+        self.planned(&request).and_then(|plan| plan.subtitles)
+    }
+
+    /// How a cast of its streams would be planned, asked otherwise as
+    /// `request` asks: where its delay or adjustments differ from this
+    /// one's, the media needs serving again for them.
+    pub fn planned(&self, request: &CastRequest) -> Option<Plan> {
         let media = &self.state.media;
         let picked = |stream: Option<usize>| stream.map_or(Pick::Off, Pick::Stream);
-        plan::plan(
-            &media.info,
-            &media.source,
-            picked(media.plan.video_stream()),
-            picked(media.plan.audio_stream()),
-            subtitles,
-            &self.state.profile,
-        )
-        .ok()
-        .and_then(|plan| plan.subtitles)
+        let request = CastRequest {
+            video: picked(media.plan.video_stream()),
+            audio: picked(media.plan.audio_stream()),
+            ..request.clone()
+        };
+        plan::plan(&media.info, &request).ok()
+    }
+
+    /// What this cast was asked for.
+    pub fn request(&self) -> &CastRequest {
+        &self.state.request
     }
 
     /// Seconds, when the media has an end.
@@ -377,8 +391,8 @@ struct CastState {
     variant: Variant,
     /// Whether the HLS playlist lists the subtitles.
     hls_subtitles: bool,
-    /// What the device plays, to plan the media again by.
-    profile: Profile,
+    /// What it was asked for, to plan the media again by.
+    request: CastRequest,
     stop: Arc<AtomicBool>,
     /// What stops each MPEG-TS stream made, oldest first.
     streams: Mutex<Vec<Arc<AtomicBool>>>,
@@ -683,6 +697,9 @@ impl CastState {
             });
         }
         let cues = match subtitles.cues() {
+            Ok(cues) if self.media.subtitle_delay != 0.0 => {
+                Arc::new(subtitles::delayed(&cues, self.media.subtitle_delay))
+            }
             Ok(cues) => cues,
             Err(err) => {
                 log::warn!("can't serve subtitles: {err}");

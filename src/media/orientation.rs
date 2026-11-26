@@ -32,13 +32,11 @@ impl Orientation {
     }
 
     /// Quarter turns clockwise, 0 to 3, after mirroring.
-    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     pub fn clockwise_turns(self) -> u8 {
         self.turns
     }
 
     /// Mirrored left to right, before turning.
-    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     pub fn is_mirrored(self) -> bool {
         self.mirrored
     }

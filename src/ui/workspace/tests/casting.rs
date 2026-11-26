@@ -366,21 +366,14 @@ fn the_blocks_controls_reach_the_device_and_its_status_moves_the_bar(cx: &mut Te
 }
 
 #[gpui::test]
-fn the_slider_frame_steps_and_delays_leave_the_player_here_alone_while_it_casts(
-    cx: &mut TestAppContext,
-) {
+fn the_slider_and_frame_steps_leave_the_player_here_alone_while_it_casts(cx: &mut TestAppContext) {
     let (window, mut cx, fake, tv) = start(cx, "clip-subs.mkv", false);
     let view = block(window, &cx);
     cast(window, &mut cx, &fake, &tv);
     let here = |cx: &mut VisualTestContext| {
         view.read_with(cx, |view, _| {
             let player = view.player();
-            (
-                player.position(),
-                player.is_playing(),
-                player.audio_delay(),
-                player.subtitle_delay(),
-            )
+            (player.position(), player.is_playing())
         })
     };
     let before = here(&mut cx);
@@ -400,16 +393,120 @@ fn the_slider_frame_steps_and_delays_leave_the_player_here_alone_while_it_casts(
             .any(|call| matches!(call, Call::Seek(_)))
     });
 
-    view.update(&mut cx, |view, cx| {
-        view.step_frame(1.0, cx);
-        view.shift_audio(0.05, cx);
-        view.shift_subtitles(0.1, cx);
-    });
+    view.update(&mut cx, |view, cx| view.step_frame(1.0, cx));
     assert_eq!(
         here(&mut cx),
         before,
         "nothing of it reaches the player here"
     );
+}
+
+const DELAY_STAYS: &str = "The audio delay stays on this computer";
+const ADJUSTMENTS_STAY: &str =
+    "Gamma, crop, rotation, flips and aspect ratio stay on this computer";
+
+/// Delays go to the device, the media served again with them from where
+/// it is, and stay with the block for once it plays here again.
+#[gpui::test]
+fn delays_reach_the_device_and_stay_with_the_block(cx: &mut TestAppContext) {
+    let (window, mut cx, fake, tv) = start(cx, "clip-subs.mkv", false);
+    let view = block(window, &cx);
+    let first = cast(window, &mut cx, &fake, &tv);
+    say(&fake, &tv, State::Paused, 1.25);
+    wait(&mut cx, "the bar to follow the TV", |cx| {
+        view.read_with(cx, |view, _| (view.position() - 1.25).abs() < 1e-9)
+    });
+
+    view.update(&mut cx, |view, cx| view.shift_audio(0.05, cx));
+    wait(&mut cx, "it to load again", |_| {
+        loads(&fake, &tv).len() == 2
+    });
+    let delayed = loads(&fake, &tv).remove(1);
+    assert_ne!(delayed.url, first.url);
+    assert!((delayed.start - 1.25).abs() < 0.01, "from where it was");
+    view.update(&mut cx, |view, cx| view.shift_subtitles(0.1, cx));
+    wait(&mut cx, "it to load again", |_| {
+        loads(&fake, &tv).len() == 3
+    });
+    let (audio, subtitles) = view.read_with(&cx, |view, _| {
+        (view.player().audio_delay(), view.player().subtitle_delay())
+    });
+    assert!((audio - 0.05).abs() < 1e-6 && (subtitles - 0.1).abs() < 1e-6);
+    assert!(stays_here(window, &mut cx).is_empty());
+}
+
+/// Set before the block casts, a delay goes with it from the first: the
+/// file, which would go as it is, is repackaged to delay its sound.
+#[gpui::test]
+fn a_delay_set_before_casting_goes_from_the_first(cx: &mut TestAppContext) {
+    let (window, mut cx, fake, tv) = start(cx, "clip.mp4", false);
+    let view = block(window, &cx);
+    view.update(&mut cx, |view, cx| view.shift_audio(0.05, cx));
+    let load = cast(window, &mut cx, &fake, &tv);
+    assert!(load.segments.is_some(), "{load:?}");
+    assert_eq!(loads(&fake, &tv).len(), 1);
+}
+
+/// A device that takes only files gets them as they are: the sound
+/// isn't delayed there, nor the picture adjusted, and the block says so.
+#[gpui::test]
+fn a_device_that_takes_only_files_keeps_the_delay_and_adjustments_here(cx: &mut TestAppContext) {
+    let (window, mut cx, fake, tv) = start(cx, "clip.mp4", false);
+    fake.screen(&tv).lock().profile = stream_server::Profile {
+        hls: None,
+        ..stream_server::Profile::default()
+    };
+    let view = block(window, &cx);
+    cast(window, &mut cx, &fake, &tv);
+    view.update(&mut cx, |view, cx| {
+        view.shift_audio(0.05, cx);
+        view.rotate(1, cx);
+    });
+    wait(&mut cx, "the block to say they stay", |cx| {
+        stays_here(window, cx) == [ADJUSTMENTS_STAY, DELAY_STAYS]
+    });
+    assert_eq!(loads(&fake, &tv).len(), 1, "the file goes as it is");
+}
+
+/// Turned here, the picture is turned there: re-encoded, served again
+/// from where it was.
+#[cfg(target_os = "macos")]
+#[gpui::test]
+fn adjusting_the_picture_has_the_video_re_encoded_to_show_it(cx: &mut TestAppContext) {
+    let (window, mut cx, fake, tv) = start(cx, "clip.mp4", false);
+    let view = block(window, &cx);
+    let first = cast(window, &mut cx, &fake, &tv);
+    assert_eq!(first.segments, None, "the file as it is");
+
+    view.update(&mut cx, |view, cx| view.rotate(1, cx));
+    wait(&mut cx, "it to load again", |_| {
+        loads(&fake, &tv).len() == 2
+    });
+    let turned = loads(&fake, &tv).remove(1);
+    assert!(turned.segments.is_some(), "re-encoded into HLS");
+    wait(&mut cx, "the block to say it goes", |cx| {
+        stays_here(window, cx).is_empty()
+    });
+
+    // Back as the file is, it goes as it is again.
+    view.update(&mut cx, |view, cx| view.reset_picture(cx));
+    wait(&mut cx, "it to load again", |_| {
+        loads(&fake, &tv).len() == 3
+    });
+    assert_eq!(loads(&fake, &tv).remove(2).segments, None);
+
+    // Another gamma for its kind of video re-encodes it too. The window
+    // takes it as its own first, so the gamma every test's picture is
+    // drawn with stays as it is.
+    window
+        .update(&mut cx, |workspace, _, _| workspace.gamma = [1.5, 1.0])
+        .unwrap();
+    cx.update(|_, cx| cx.global_mut::<Settings>().sdr_gamma = 1.5);
+    view.update(&mut cx, |view, cx| view.picture_settings_changed(cx));
+    wait(&mut cx, "it to load again", |_| {
+        loads(&fake, &tv).len() == 4
+    });
+    assert!(loads(&fake, &tv).remove(3).segments.is_some());
 }
 
 /// What a Picture in Picture window's button asks of `view`.
@@ -775,6 +872,35 @@ fn speaker(fake: &FakeTarget, name: &str) -> Device {
         ..stream_server::Profile::default()
     };
     speaker
+}
+
+/// With the picture here, its delay is done here, the picture following
+/// the sound that much later or earlier: a speaker gets the sound as it
+/// would without one.
+#[gpui::test]
+fn a_speaker_gets_the_sound_as_it_is_whatever_the_delay_here(cx: &mut TestAppContext) {
+    let (window, mut cx, fake, _) = start(cx, "clip.mp4", false);
+    let view = block(window, &cx);
+    let kitchen = speaker(&fake, "Kitchen");
+    let (status, plain) = get(&cast(window, &mut cx, &fake, &kitchen).url);
+    assert_eq!(status, 200);
+    view.update(&mut cx, |view, cx| {
+        view.shift_audio(-0.5, cx);
+        view.seek_to(1.0, cx);
+    });
+    wait(&mut cx, "the speaker to seek", |_| {
+        calls(&fake, &kitchen).contains(&Call::Seek(1.0))
+    });
+    assert_eq!(loads(&fake, &kitchen).len(), 1, "it isn't served again");
+    let hall = speaker(&fake, "Hall");
+    let (_, delayed) = get(&cast(window, &mut cx, &fake, &hall).url);
+    assert!(!plain.is_empty());
+    assert!(
+        delayed == plain,
+        "{} bytes, not {}",
+        delayed.len(),
+        plain.len()
+    );
 }
 
 #[gpui::test]

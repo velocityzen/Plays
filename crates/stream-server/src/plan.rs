@@ -2,14 +2,17 @@
 //! The file or stream as it is, if it can; else HLS or an MPEG-TS stream,
 //! with each track copied when the device decodes it and re-encoded when
 //! it doesn't. Picture subtitles picked from the media are drawn into the
-//! video, which is re-encoded for them where it can be; where it can't,
-//! it's copied without them.
+//! video, and adjustments done to its picture, which is re-encoded for
+//! them where it can be; where it can't, it's copied without them. A sound
+//! delay has the media sent other than as it is, where it can be.
 
 use crate::Error;
+use crate::adjust::Adjustments;
 use crate::encode;
 use crate::media::{MediaInfo, Source, StreamKind, VideoInfo};
 use crate::mux::Format;
 use crate::profile::{AudioCodec, Container, Hdr, Profile, Segments, VideoCodec};
+use crate::server::CastRequest;
 use crate::subtitles::SubtitleSource;
 
 /// Which stream of a kind to play.
@@ -84,6 +87,10 @@ pub struct Plan {
     pub audio: Option<AudioPlan>,
     /// The picture subtitle stream drawn into the video, by index.
     pub subtitles: Option<usize>,
+    /// Seconds the sound is sent after the picture (negative: before it).
+    pub audio_delay: f64,
+    /// What's done to the picture as it's re-encoded.
+    pub adjustments: Option<Adjustments>,
 }
 
 impl Plan {
@@ -213,38 +220,37 @@ fn audio_name(codec: AudioCodec) -> &'static str {
     }
 }
 
-/// The plan for playing the picked streams of `media`, with `subtitles`,
-/// on a device that plays what `profile` says. Picture subtitles have the
-/// video re-encoded to be drawn in, where it can be.
-pub(crate) fn plan(
-    media: &MediaInfo,
-    source: &Source,
-    video: Pick,
-    audio: Pick,
-    subtitles: Option<&SubtitleSource>,
-    profile: &Profile,
-) -> Result<Plan, Error> {
-    if picture(media, subtitles).is_some()
-        && let Ok(plan) = planned(media, source, video, audio, subtitles, profile, true)
-        && plan.subtitles.is_some()
+/// The plan for playing the streams `request` picks of `media` on the
+/// device it goes to, with as much of what else it asks as the device can
+/// be given: picture subtitles and adjustments have the video re-encoded
+/// for them, and a sound delay has the media sent other than as it is.
+pub(crate) fn plan(media: &MediaInfo, request: &CastRequest) -> Result<Plan, Error> {
+    let draw =
+        picture(media, request.subtitles.as_ref()).is_some() || request.adjustments.is_some();
+    let delay = request.audio_delay != 0.0;
+    if draw
+        && let Ok(plan) = planned(media, request, true, delay)
+        && matches!(plan.video, Some(VideoPlan::Encode { .. }))
     {
         return Ok(plan);
     }
-    planned(media, source, video, audio, subtitles, profile, false)
+    if delay && let Ok(plan) = planned(media, request, false, true) {
+        return Ok(plan);
+    }
+    planned(media, request, false, false)
 }
 
-/// The plan for `plan`, the video re-encoded if `draw`.
+/// The plan for `plan`, the video re-encoded if `draw`, and the sound
+/// delayed if `delay`.
 fn planned(
     media: &MediaInfo,
-    source: &Source,
-    video: Pick,
-    audio: Pick,
-    subtitles: Option<&SubtitleSource>,
-    profile: &Profile,
+    request: &CastRequest,
     draw: bool,
+    delay: bool,
 ) -> Result<Plan, Error> {
-    let video = pick(media, video, true)?;
-    let audio = pick(media, audio, false)?;
+    let (source, profile) = (&request.source, &request.profile);
+    let video = pick(media, request.video, true)?;
+    let audio = pick(media, request.audio, false)?;
     if video.is_none() && audio.is_none() {
         return Err(Error::Unsupported("there is nothing to play in it".into()));
     }
@@ -257,7 +263,8 @@ fn planned(
     });
     // A device playing the file itself plays its default streams.
     let as_picked = video == media.first(true) && audio == media.first(false);
-    if video_fits && audio_fits && as_picked && !draw {
+    let delayed = delay && audio.is_some();
+    if video_fits && audio_fits && as_picked && !draw && !delayed {
         let delivery = match source {
             Source::Stream { .. }
                 if profile.fetches_urls
@@ -287,6 +294,8 @@ fn planned(
                         .map(|a| a.codec)
                         .unwrap_or(AudioCodec::Other),
                 }),
+                audio_delay: 0.0,
+                adjustments: None,
             });
         }
     }
@@ -310,20 +319,28 @@ fn planned(
         Delivery::Hls(segments) => segments,
         _ => Segments::Ts,
     };
+    let adjustments = request.adjustments.as_ref();
     let video = video
         .map(|stream| match media.video(stream) {
-            Some(info) if draw => encoded_video(info, stream, profile, segments),
-            _ => plan_video(media, stream, profile, segments),
+            Some(info) if draw => encoded_video(info, stream, profile, segments, adjustments),
+            _ => plan_video(media, stream, profile, segments, adjustments),
         })
         .transpose()?;
     Ok(Plan {
         delivery,
-        subtitles: drawn(media, video.as_ref(), subtitles),
+        subtitles: drawn(media, video.as_ref(), request.subtitles.as_ref()),
         audio: audio
             .map(|stream| plan_audio(media, stream, profile, format(delivery)))
             .transpose()?,
+        audio_delay: if delayed { request.audio_delay } else { 0.0 },
+        adjustments: adjusted(video.as_ref(), request.adjustments),
         video,
     })
+}
+
+/// `adjustments`, where `video` is re-encoded for them to be done.
+fn adjusted(video: Option<&VideoPlan>, adjustments: Option<Adjustments>) -> Option<Adjustments> {
+    adjustments.filter(|_| matches!(video, Some(VideoPlan::Encode { .. })))
 }
 
 /// The stream of `subtitles` drawn into `video`: picture subtitles in the
@@ -378,6 +395,7 @@ fn plan_video(
     stream: usize,
     profile: &Profile,
     segments: Segments,
+    adjustments: Option<&Adjustments>,
 ) -> Result<VideoPlan, Error> {
     let info = media
         .video(stream)
@@ -388,16 +406,16 @@ fn plan_video(
             codec: info.codec,
         });
     }
-    encoded_video(info, stream, profile, segments)
+    encoded_video(info, stream, profile, segments, adjustments)
 }
 
-/// Re-encode the video `plan` copies, drawing in the picture `subtitles`
-/// it can now: for video with keyframes too far apart to cut it at.
+/// Re-encode the video `plan` copies, with the picture subtitles and
+/// adjustments `request` asks for it can now have: for video with
+/// keyframes too far apart to cut it at.
 pub(crate) fn re_encode_video(
     plan: &mut Plan,
     media: &MediaInfo,
-    profile: &Profile,
-    subtitles: Option<&SubtitleSource>,
+    request: &CastRequest,
 ) -> Result<(), Error> {
     let Some(VideoPlan::Copy { stream, .. }) = plan.video else {
         return Ok(());
@@ -405,18 +423,39 @@ pub(crate) fn re_encode_video(
     let info = media
         .video(stream)
         .ok_or_else(|| Error::Unsupported(format!("stream {stream} isn't a video")))?;
-    plan.video = Some(encoded_video(info, stream, profile, plan.segments())?);
-    plan.subtitles = drawn(media, plan.video.as_ref(), subtitles);
+    let adjustments = request.adjustments.as_ref();
+    let segments = plan.segments();
+    plan.video = Some(encoded_video(
+        info,
+        stream,
+        &request.profile,
+        segments,
+        adjustments,
+    )?);
+    plan.subtitles = drawn(media, plan.video.as_ref(), request.subtitles.as_ref());
+    plan.adjustments = adjusted(plan.video.as_ref(), request.adjustments);
     Ok(())
 }
 
+/// The video re-encoded at the size it shows at, `adjustments` done.
 fn encoded_video(
     info: &VideoInfo,
     stream: usize,
     profile: &Profile,
     segments: Segments,
+    adjustments: Option<&Adjustments>,
 ) -> Result<VideoPlan, Error> {
-    let (width, height) = fit_size(info.width, info.height, profile.max_size);
+    let (width, height) = match adjustments {
+        Some(adjustments) => {
+            let (width, height) = adjustments.shown(info.width, info.height);
+            fit_size(
+                width.round() as u32,
+                height.round() as u32,
+                profile.max_size,
+            )
+        }
+        None => fit_size(info.width, info.height, profile.max_size),
+    };
     let deep = info.bit_depth > 8 || info.hdr.is_some();
     let mut candidates: Vec<VideoCodec> = profile
         .video

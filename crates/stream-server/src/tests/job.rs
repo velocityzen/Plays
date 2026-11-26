@@ -1,7 +1,9 @@
 use std::path::PathBuf;
+use std::sync::atomic::AtomicUsize;
 
 use super::*;
-use crate::plan::{Pick, plan};
+use crate::CastRequest;
+use crate::plan::plan;
 use crate::profile::{AudioCodec, Profile};
 
 /// The tone, re-encoded to AC-3, in segments a tenth of a second long:
@@ -25,7 +27,7 @@ fn tone_in(hls: Option<Segments>) -> (Media, Timeline) {
         ..Profile::default()
     };
     profile.hls = hls.or(profile.hls);
-    let plan = plan(&info, &source, Pick::Best, Pick::Best, None, &profile).unwrap();
+    let plan = plan(&info, &CastRequest::new(source.clone(), profile)).unwrap();
     let timeline = crate::segments::timeline(&mut input, &info, &plan, 0.1);
     assert_eq!(timeline.len(), 10);
     let media = Media {
@@ -34,6 +36,7 @@ fn tone_in(hls: Option<Segments>) -> (Media, Timeline) {
         info,
         plan,
         segment: 0.1,
+        subtitle_delay: 0.0,
     };
     (media, timeline)
 }
@@ -77,6 +80,52 @@ fn a_live_stream_hands_over_mp4s_init_segment_before_its_first_segment() {
         assert!(made[0], "{segment} s segments start with the init segment");
         assert_eq!(made.iter().filter(|init| **init).count(), 1);
     }
+}
+
+/// When the sound in MPEG-TS `segment` starts, in seconds as it has them.
+fn sound_starts(segment: &[u8]) -> Option<f64> {
+    static COUNT: AtomicUsize = AtomicUsize::new(0);
+    let path = std::env::temp_dir().join(format!(
+        "stream-server-job-{}-{}.ts",
+        std::process::id(),
+        COUNT.fetch_add(1, Ordering::Relaxed)
+    ));
+    std::fs::write(&path, segment).unwrap();
+    let mut input = ffmpeg::format::input(&path).unwrap();
+    let start = input
+        .packets()
+        .filter_map(|(stream, packet)| {
+            let pts = packet.pts()?;
+            Some(pts as f64 * f64::from(stream.time_base()))
+        })
+        .fold(f64::INFINITY, f64::min);
+    std::fs::remove_file(&path).ok();
+    start.is_finite().then_some(start)
+}
+
+/// Its sound heard a quarter of a second after the picture, a segment
+/// made by a job starting there has the sound from that much earlier in
+/// it, as one made by a job from the start does.
+#[test]
+fn a_job_from_a_segment_reads_the_sound_delayed_into_it() {
+    let (mut media, timeline) = tone_in(None);
+    media.plan.audio_delay = 0.25;
+    let fifth = |from: usize| {
+        let mut made = None;
+        make_segments(&media, &timeline, from, &Arc::default(), &mut |product| {
+            if let Product::Segment(5, bytes) = product {
+                made = Some(bytes);
+                return false;
+            }
+            true
+        })
+        .unwrap();
+        sound_starts(&made.expect("the fifth segment"))
+    };
+    let (alone, after) = (fifth(5).unwrap(), fifth(0).unwrap());
+    let start = crate::mux::OFFSET + timeline.start(5);
+    assert!((alone - start).abs() < 0.04, "{alone} for {start}");
+    assert!((alone - after).abs() < 0.04, "{alone} and {after}");
 }
 
 #[test]

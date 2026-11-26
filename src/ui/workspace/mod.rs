@@ -219,7 +219,7 @@ impl Workspace {
                 for block in &this.blocks {
                     block
                         .view
-                        .update(cx, |view, _| view.picture_settings_changed());
+                        .update(cx, |view, cx| view.picture_settings_changed(cx));
                 }
             }
             cx.notify();
