@@ -22,6 +22,40 @@ fn timestamps_at_the_ends_of_what_they_can_be_are_no_trouble() {
 }
 
 #[test]
+fn an_enhancement_layers_packets_come_with_the_videos_in_its_time_base() {
+    let video = PacketQueue::new(0, 1.0 / 90_000.0).with_layer(
+        2,
+        Rational::new(1, 1000),
+        Rational::new(1, 90_000),
+    );
+    let mut packets = Packets {
+        video: Some(video),
+        audio: None,
+        subtitle: None,
+        spare: Vec::new(),
+        cover_index: None,
+        cover: None,
+        cover_seen: false,
+        bytes: 0,
+        serial: 0,
+        eof: false,
+        seek: None,
+        landed: None,
+        stopped: false,
+    };
+    assert!(packets.push(packet(0, 9000, 3750)), "the first, waited for");
+    assert!(!packets.push(packet(2, 100, 42)));
+    assert!(!packets.push(packet(1, 100, 42)), "nobody's");
+    let queue = packets.video.as_ref().unwrap();
+    assert_eq!(queue.packets.len(), 2);
+    let layer = &queue.packets[1];
+    assert_eq!(layer.stream(), 2, "still its own, to be told apart");
+    assert_eq!((layer.pts(), layer.dts()), (Some(9000), Some(9000)));
+    assert_eq!(layer.duration(), 3780);
+    assert_eq!(queue.packets[0].pts(), Some(9000), "the video's as it was");
+}
+
+#[test]
 fn reads_a_length_as_matroska_tags_it() {
     assert_eq!(length_in_seconds("00:00:01.000000000"), Some(1.0));
     assert_eq!(length_in_seconds("01:02:03.500000000"), Some(3723.5));

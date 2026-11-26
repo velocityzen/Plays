@@ -1,12 +1,13 @@
 //! Decoding video: packets into frames, on the GPU when it can, made into
 //! pictures to show.
 
+use std::collections::VecDeque;
 use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context as _, Result, anyhow, bail};
-use ffmpeg::{Discard, Packet, codec, frame};
+use ffmpeg::{Discard, Packet, codec, ffi, frame};
 use ffmpeg_next as ffmpeg;
 use gpui::RenderImage;
 
@@ -14,7 +15,9 @@ use gpui::RenderImage;
 use super::convert::gpu_conversion;
 use super::convert::{Scaler, convert, output_size};
 use super::demux::packet_time;
+use super::layers::{Found, Layers};
 use super::{Session, StreamInfo, VideoFrame, codec_name};
+use crate::media::enhancement::Composer;
 use crate::media::hwaccel;
 use crate::media::orientation::Orientation;
 use crate::media::picture::Picture;
@@ -38,6 +41,9 @@ const SCRUB_SHOWS_EVERY: Duration = Duration::from_millis(40);
 /// Consecutive decoding errors after which a hardware decoder is replaced by
 /// a software one.
 const HARDWARE_ERROR_LIMIT: u32 = 8;
+/// Frames waiting for their enhancement layer at most, past which the
+/// oldest shows without it: more than its decoder's threads hold back.
+const MOST_WAITING: usize = 12;
 
 pub(super) struct VideoDecoder {
     pub(super) index: usize,
@@ -48,15 +54,50 @@ pub(super) struct VideoDecoder {
     pub(super) orientation: Orientation,
     pub(super) time_base: f64,
     pub(super) frame_duration: f64,
-    max_short_side: Option<u32>,
-    scaler: Option<Scaler>,
+    pictures: Pictures,
     decoded: frame::Video,
-    /// Hardware frames copied back from the GPU.
-    downloaded: frame::Video,
     /// The hardware decoding API attached to the decoder, if any.
     hardware: Option<&'static str>,
     /// Whether the last frame came from the hardware decoder, as last reported.
     reported: Option<bool>,
+    /// Dolby Vision profile 7's enhancement layer, decoded beside it.
+    layers: Option<Layers>,
+    /// Frames to show once their enhancement layer is decoded, in order.
+    waiting: VecDeque<Waiting>,
+    errors: u32,
+    next_pts: f64,
+    /// The time of the frame out of the decoder last since it was flushed.
+    position: Option<f64>,
+    /// In a scrub: when a frame on the way last went to the queue, and
+    /// whether the frame asked for has.
+    shown: Option<Instant>,
+    pub(super) reached: bool,
+    pub(super) finished: bool,
+}
+
+/// A frame waiting for its enhancement layer, with what it shows by.
+struct Waiting {
+    frame: frame::Video,
+    pts: f64,
+    timestamp: Option<i64>,
+    on_gpu: bool,
+}
+
+/// Makes decoded frames drawable.
+struct Pictures {
+    show: Show,
+    /// Hardware frames copied back from the GPU.
+    downloaded: frame::Video,
+    /// The last frame composed of Dolby Vision's two layers.
+    composed: frame::Video,
+    /// Whether composing has failed, said once.
+    failed: bool,
+}
+
+/// Makes frames in memory, or on the GPU on macOS, drawable.
+struct Show {
+    max_short_side: Option<u32>,
+    scaler: Option<Scaler>,
     /// Turns hardware frames into surfaces, created on first use; `Err` once
     /// that failed, after which frames are copied to memory instead.
     #[cfg(target_os = "macos")]
@@ -68,15 +109,6 @@ pub(super) struct VideoDecoder {
     /// Hands frames to gpui as their planes, for the GPU to convert.
     #[cfg(not(target_os = "macos"))]
     planes: YuvConverter,
-    errors: u32,
-    next_pts: f64,
-    /// The time of the frame out of the decoder last since it was flushed.
-    position: Option<f64>,
-    /// In a scrub: when a frame on the way last went to the queue, and
-    /// whether the frame asked for has.
-    shown: Option<Instant>,
-    pub(super) reached: bool,
-    pub(super) finished: bool,
 }
 
 /// Open a decoder for the stream, on the GPU when asked and possible.
@@ -135,18 +167,26 @@ impl VideoDecoder {
             parameters,
             time_base: f64::from(stream.time_base),
             frame_duration,
-            max_short_side,
-            scaler: None,
+            pictures: Pictures {
+                show: Show {
+                    max_short_side,
+                    scaler: None,
+                    #[cfg(target_os = "macos")]
+                    surfaces: None,
+                    #[cfg(target_os = "macos")]
+                    uploads: None,
+                    #[cfg(not(target_os = "macos"))]
+                    planes: YuvConverter::default(),
+                },
+                downloaded: frame::Video::empty(),
+                composed: frame::Video::empty(),
+                failed: false,
+            },
             decoded: frame::Video::empty(),
-            downloaded: frame::Video::empty(),
             hardware,
             reported: None,
-            #[cfg(target_os = "macos")]
-            surfaces: None,
-            #[cfg(target_os = "macos")]
-            uploads: None,
-            #[cfg(not(target_os = "macos"))]
-            planes: YuvConverter::default(),
+            layers: None,
+            waiting: VecDeque::new(),
             errors: 0,
             next_pts: 0.0,
             position: None,
@@ -154,6 +194,20 @@ impl VideoDecoder {
             reached: false,
             finished: false,
         })
+    }
+
+    /// Decode Dolby Vision profile 7's enhancement layer with it, if
+    /// `stream` has one among `streams`.
+    pub(super) fn with_layers(mut self, stream: &StreamInfo, streams: &[StreamInfo]) -> Self {
+        let streams: Vec<_> = streams.iter().map(StreamInfo::as_layer).collect();
+        self.layers = Layers::of(stream.as_layer(), self.frame_duration, &streams);
+        self
+    }
+
+    /// The stream of its enhancement layer, when that has one of its own,
+    /// whose packets come with its own.
+    pub(super) fn layer_stream(&self) -> Option<usize> {
+        self.layers.as_ref()?.stream
     }
 
     pub(super) fn codec_name(&self) -> String {
@@ -165,7 +219,7 @@ impl VideoDecoder {
             self.decoder.width(),
             self.decoder.height(),
             self.decoder.aspect_ratio(),
-            self.max_short_side,
+            self.pictures.show.max_short_side,
         )
     }
 
@@ -178,6 +232,10 @@ impl VideoDecoder {
 
     pub(super) fn reset(&mut self) {
         self.decoder.flush();
+        if let Some(layers) = &mut self.layers {
+            layers.reset();
+        }
+        self.waiting.clear();
         self.finished = false;
         self.position = None;
         self.retarget();
@@ -199,6 +257,20 @@ impl VideoDecoder {
     }
 
     pub(super) fn decode(&mut self, packet: &Packet, session: &Session) {
+        if packet.stream() != self.index {
+            // The enhancement layer's own stream.
+            if let Some(layers) = &mut self.layers {
+                layers.decode(packet);
+            }
+            self.release(session);
+            return;
+        }
+        // Its enhancement layer first, for its frames to be there.
+        if let Some(layers) = &mut self.layers
+            && layers.stream.is_none()
+        {
+            layers.decode(packet);
+        }
         // Frames other frames don't refer to aren't decoded on the way to a
         // seek's target, as they wouldn't be shown: it gets there sooner.
         let before_target = session.seek_target.is_some_and(|target| {
@@ -221,6 +293,10 @@ impl VideoDecoder {
     pub(super) fn finish(&mut self, session: &Session) {
         let _ = self.decoder.send_eof();
         self.drain(session);
+        if let Some(layers) = &mut self.layers {
+            layers.finish();
+        }
+        self.release(session);
         self.finished = true;
         session.shared.set_video_ended(session.serial);
     }
@@ -328,7 +404,17 @@ impl VideoDecoder {
                     continue;
                 }
             }
-            if let Some(picture) = self.picture(on_gpu, session) {
+            if self.layers.is_some()
+                && let Some(frame) = reference(&self.decoded)
+            {
+                self.waiting.push_back(Waiting {
+                    frame,
+                    pts,
+                    timestamp,
+                    on_gpu,
+                });
+                self.release(session);
+            } else if let Some(picture) = self.pictures.picture(&self.decoded, on_gpu, session) {
                 session.shared.push_frame(VideoFrame {
                     pts,
                     timestamp,
@@ -339,34 +425,129 @@ impl VideoDecoder {
         }
     }
 
-    /// Make the decoded frame drawable.
-    fn picture(&mut self, on_gpu: bool, session: &Session) -> Option<Picture> {
+    /// Show the frames waiting whose enhancement layer has been decoded,
+    /// composed with it, and those whose won't be, without. A scrub
+    /// doesn't wait.
+    fn release(&mut self, session: &Session) {
+        while let Some(front) = self.waiting.front() {
+            let found = match (&mut self.layers, front.timestamp) {
+                (Some(layers), Some(timestamp)) => layers.take(timestamp),
+                _ => Found::Missing,
+            };
+            let enhancement = match found {
+                Found::Later if !session.scrub && self.waiting.len() < MOST_WAITING => break,
+                Found::Frame(frame) => Some(frame),
+                Found::Later | Found::Missing => None,
+            };
+            let Some(waiting) = self.waiting.pop_front() else {
+                break;
+            };
+            let (frame, on_gpu) = (&waiting.frame, waiting.on_gpu);
+            let picture = enhancement
+                .and_then(|layer| self.pictures.composed(frame, on_gpu, &layer, session))
+                .or_else(|| self.pictures.picture(frame, on_gpu, session));
+            if let Some(picture) = picture {
+                session.shared.push_frame(VideoFrame {
+                    pts: waiting.pts,
+                    timestamp: waiting.timestamp,
+                    serial: session.serial,
+                    picture,
+                });
+            }
+        }
+    }
+
+    /// Decode a single picture, used for embedded cover art.
+    pub(super) fn decode_still(&mut self, packet: &Packet) -> Option<Arc<RenderImage>> {
+        self.decoder.send_packet(packet).ok()?;
+        let _ = self.decoder.send_eof();
+        self.decoder.receive_frame(&mut self.decoded).ok()?;
+        let show = &mut self.pictures.show;
+        convert(&mut show.scaler, show.max_short_side, &self.decoded)
+            .inspect_err(|err| log::warn!("cover art conversion failed: {err:#}"))
+            .ok()
+    }
+}
+
+/// Another reference to `frame`'s pictures, which aren't copied.
+fn reference(frame: &frame::Video) -> Option<frame::Video> {
+    let mut copy = frame::Video::empty();
+    // SAFETY: both frames are valid, and the new one is blank.
+    let referenced = unsafe { ffi::av_frame_ref(copy.as_mut_ptr(), frame.as_ptr()) };
+    (referenced >= 0).then_some(copy)
+}
+
+impl Pictures {
+    /// Make a decoded frame drawable.
+    fn picture(
+        &mut self,
+        frame: &frame::Video,
+        on_gpu: bool,
+        session: &Session,
+    ) -> Option<Picture> {
         #[cfg(target_os = "macos")]
-        if on_gpu && let Some(surface) = self.surface(session) {
+        if on_gpu && let Some(surface) = self.show.surface(frame, session) {
             return Some(Picture::Surface(surface));
         }
         // Elsewhere, frames decoded on the GPU are copied back to draw.
-        #[cfg(not(target_os = "macos"))]
-        let _ = session;
         let frame = if on_gpu {
-            if let Err(err) = hwaccel::download(&self.decoded, &mut self.downloaded) {
+            if let Err(err) = hwaccel::download(frame, &mut self.downloaded) {
                 log::warn!("{err:#}");
                 return None;
             }
             &self.downloaded
         } else {
-            &self.decoded
+            frame
         };
+        self.show.in_memory(frame, session)
+    }
+
+    /// Make a picture of Dolby Vision's two layers composed; `None` if they
+    /// don't compose.
+    fn composed(
+        &mut self,
+        base: &frame::Video,
+        on_gpu: bool,
+        enhancement: &frame::Video,
+        session: &Session,
+    ) -> Option<Picture> {
+        let base = if on_gpu {
+            hwaccel::download(base, &mut self.downloaded)
+                .inspect_err(|err| log::warn!("{err:#}"))
+                .ok()?;
+            &self.downloaded
+        } else {
+            base
+        };
+        // The RPU comes with the base layer in one track, with the
+        // enhancement layer in two.
+        let composer = Composer::of(base).or_else(|| Composer::of(enhancement))?;
+        if let Err(err) = composer.compose(base, enhancement, &mut self.composed) {
+            if !std::mem::replace(&mut self.failed, true) {
+                log::warn!("{}: {err:#}; showing the base layer", session.name);
+            }
+            return None;
+        }
+        self.show.in_memory(&self.composed, session)
+    }
+}
+
+impl Show {
+    /// Make a frame in memory drawable.
+    fn in_memory(&mut self, frame: &frame::Video, session: &Session) -> Option<Picture> {
         #[cfg(target_os = "macos")]
         if let Some(surface) = upload(&mut self.uploads, frame, self.max_short_side, session) {
             return Some(Picture::Surface(surface));
         }
         #[cfg(not(target_os = "macos"))]
-        if gpu_conversion() {
-            match self.planes.convert(frame, self.max_short_side) {
-                Some(Ok(planes)) => return Some(Picture::Yuv(planes)),
-                Some(Err(err)) => log::warn!("handing the frame to the GPU failed: {err:#}"),
-                None => {}
+        {
+            let _ = session;
+            if gpu_conversion() {
+                match self.planes.convert(frame, self.max_short_side) {
+                    Some(Ok(planes)) => return Some(Picture::Yuv(planes)),
+                    Some(Err(err)) => log::warn!("handing the frame to the GPU failed: {err:#}"),
+                    None => {}
+                }
             }
         }
         convert(&mut self.scaler, self.max_short_side, frame)
@@ -378,11 +559,15 @@ impl VideoDecoder {
     /// Convert a hardware frame without it leaving the GPU. `None` if that
     /// isn't possible, in which case it never is again for this video.
     #[cfg(target_os = "macos")]
-    fn surface(&mut self, session: &Session) -> Option<videotoolbox::Surface> {
+    fn surface(
+        &mut self,
+        frame: &frame::Video,
+        session: &Session,
+    ) -> Option<videotoolbox::Surface> {
         let (width, height) = output_size(
-            self.decoded.width(),
-            self.decoded.height(),
-            self.decoded.aspect_ratio(),
+            frame.width(),
+            frame.height(),
+            frame.aspect_ratio(),
             self.max_short_side,
         );
         let converter = self
@@ -394,7 +579,7 @@ impl VideoDecoder {
             })
             .as_mut()
             .ok()?;
-        match converter.convert(&self.decoded, width, height) {
+        match converter.convert(frame, width, height) {
             Ok(surface) => Some(surface),
             Err(err) => {
                 log::warn!("{}: {err:#}; copying frames from the GPU", session.name);
@@ -402,16 +587,6 @@ impl VideoDecoder {
                 None
             }
         }
-    }
-
-    /// Decode a single picture, used for embedded cover art.
-    pub(super) fn decode_still(&mut self, packet: &Packet) -> Option<Arc<RenderImage>> {
-        self.decoder.send_packet(packet).ok()?;
-        let _ = self.decoder.send_eof();
-        self.decoder.receive_frame(&mut self.decoded).ok()?;
-        convert(&mut self.scaler, self.max_short_side, &self.decoded)
-            .inspect_err(|err| log::warn!("cover art conversion failed: {err:#}"))
-            .ok()
     }
 }
 

@@ -8,6 +8,7 @@ mod colors;
 pub mod decoder;
 pub mod details;
 pub mod dovi;
+pub mod enhancement;
 mod external;
 pub mod hdr;
 mod hwaccel;

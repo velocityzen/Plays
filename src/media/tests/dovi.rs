@@ -80,13 +80,25 @@ pub(crate) fn rpu_frame(size: (u32, u32), codes: [u16; 3], source_max_pq: u16) -
             }
         }
     }
+    attach_rpu(&mut frame, &header, &mapping, &color);
+    frame
+}
+
+/// Give `frame` an RPU of these parts, as FFmpeg's side data has it.
+pub(crate) fn attach_rpu(
+    frame: &mut frame::Video,
+    header: &sys::RpuDataHeader,
+    mapping: &sys::DataMapping,
+    color: &sys::ColorMetadata,
+) {
     let after = |offset: usize, len: usize| (offset + len).next_multiple_of(8);
     let header_offset = after(0, size_of::<sys::Metadata>());
     let mapping_offset = after(header_offset, size_of::<sys::RpuDataHeader>());
     let color_offset = after(mapping_offset, size_of::<sys::DataMapping>());
     let len = color_offset + size_of::<sys::ColorMetadata>();
     // SAFETY: FFmpeg makes side data `len` bytes long, aligned for any
-    // struct, and each goes within it at a multiple of 8.
+    // struct, and each goes within it at a multiple of 8, copied from one
+    // of its own type.
     unsafe {
         let side = ffi::av_frame_new_side_data(
             frame.as_mut_ptr(),
@@ -100,17 +112,10 @@ pub(crate) fn rpu_frame(size: (u32, u32), codes: [u16; 3], source_max_pq: u16) -
             mapping_offset,
             color_offset,
         });
-        data.add(header_offset)
-            .cast::<sys::RpuDataHeader>()
-            .write(header);
-        data.add(mapping_offset)
-            .cast::<sys::DataMapping>()
-            .write(*mapping);
-        data.add(color_offset)
-            .cast::<sys::ColorMetadata>()
-            .write(color);
+        std::ptr::copy_nonoverlapping(header, data.add(header_offset).cast(), 1);
+        std::ptr::copy_nonoverlapping(mapping, data.add(mapping_offset).cast(), 1);
+        std::ptr::copy_nonoverlapping(color, data.add(color_offset).cast(), 1);
     }
-    frame
 }
 
 #[test]
@@ -125,6 +130,19 @@ fn mirrors_ffmpegs_layout() {
     assert_eq!(offset_of!(sys::ReshapingCurve, mmr_constant), 264);
     assert_eq!(offset_of!(sys::ReshapingCurve, mmr_coef), 328);
     assert_eq!(offset_of!(sys::DataMapping, curves), 8);
+    assert_eq!(offset_of!(sys::DataMapping, nlq_method_idc), 5024);
+    assert_eq!(offset_of!(sys::DataMapping, num_x_partitions), 5028);
+    assert_eq!(offset_of!(sys::DataMapping, num_y_partitions), 5032);
+    assert_eq!(offset_of!(sys::DataMapping, nlq), 5040);
+    assert_eq!(offset_of!(sys::DataMapping, nlq_pivots), 5136);
+    assert_eq!(size_of::<sys::DataMapping>(), 5144);
+    assert_eq!(size_of::<sys::NlqParams>(), 32);
+    assert_eq!(offset_of!(sys::NlqParams, vdr_in_max), 8);
+    assert_eq!(offset_of!(sys::NlqParams, linear_deadzone_threshold), 24);
+    assert_eq!(offset_of!(sys::Configuration, dv_profile), 2);
+    assert_eq!(offset_of!(sys::Configuration, el_present_flag), 5);
+    assert_eq!(offset_of!(sys::Configuration, bl_present_flag), 6);
+    assert_eq!(size_of::<sys::Configuration>(), 9);
     assert_eq!(offset_of!(sys::ColorMetadata, ycc_to_rgb_offset), 76);
     assert_eq!(offset_of!(sys::ColorMetadata, rgb_to_lms_matrix), 100);
     assert_eq!(offset_of!(sys::ColorMetadata, signal_eotf_param2), 180);
@@ -134,6 +152,51 @@ fn mirrors_ffmpegs_layout() {
     // within Metal's limit of 4 KB for bytes set straight on an encoder.
     #[cfg(target_os = "macos")]
     assert_eq!(size_of::<ShaderParams>(), 2928);
+}
+
+#[test]
+fn reads_no_rpu_past_the_end_of_its_side_data() {
+    use ffmpeg::util::format::Pixel;
+
+    let (header, mapping, color) = profile5();
+    // The mapping last, where no part after it vouches for its end.
+    let after = |offset: usize, len: usize| (offset + len).next_multiple_of(8);
+    let header_offset = after(0, size_of::<sys::Metadata>());
+    let color_offset = after(header_offset, size_of::<sys::RpuDataHeader>());
+    let mapping_offset = after(color_offset, size_of::<sys::ColorMetadata>());
+    let whole = mapping_offset + size_of::<sys::DataMapping>();
+    for len in [whole, whole - 1, mapping_offset + 8] {
+        let mut frame = frame::Video::new(Pixel::P010LE, 2, 2);
+        // SAFETY: FFmpeg makes side data `len` bytes long, aligned for any
+        // struct; each part goes within it at a multiple of 8, the mapping
+        // only as much of it as fits.
+        unsafe {
+            let side = ffi::av_frame_new_side_data(
+                frame.as_mut_ptr(),
+                ffi::AVFrameSideDataType::AV_FRAME_DATA_DOVI_METADATA,
+                len,
+            );
+            assert!(!side.is_null());
+            let data = (*side).data;
+            data.cast::<sys::Metadata>().write(sys::Metadata {
+                header_offset,
+                mapping_offset,
+                color_offset,
+            });
+            std::ptr::copy_nonoverlapping(&header, data.add(header_offset).cast(), 1);
+            std::ptr::copy_nonoverlapping(&color, data.add(color_offset).cast(), 1);
+            std::ptr::copy_nonoverlapping(
+                (&raw const *mapping).cast::<u8>(),
+                data.add(mapping_offset),
+                len - mapping_offset,
+            );
+        }
+        assert_eq!(
+            rpu(&frame).is_some(),
+            len == whole,
+            "{len} of {whole} bytes"
+        );
+    }
 }
 
 #[test]

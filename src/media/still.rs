@@ -4,18 +4,21 @@
 //! it shows; this opens the file again, finds the frame by its timestamp
 //! and converts it on the CPU, however the player decoded it. A live
 //! stream can't be opened again where it was: its still is the picture the
-//! player shows, read back from the GPU if it's there.
+//! player shows, read back from the GPU if it's there. Dolby Vision profile
+//! 7's frames are composed with their enhancement layer, as they play.
 
 use anyhow::{Context as _, Result, anyhow, bail, ensure};
 use ffmpeg::software::scaling;
 use ffmpeg::util::format::Pixel;
-use ffmpeg::{Packet, frame};
+use ffmpeg::{Packet, Rational, codec, frame};
 use ffmpeg_next as ffmpeg;
 use gpui::RenderImage;
 
 use super::colors::Colors;
+use super::decoder::layers::{self, Found, Layers};
 use super::decoder::{convert_pixels, open_input, open_video, output_size, set_colorspace};
 use super::dovi::Reshaping;
+use super::enhancement::Composer;
 use super::hdr::{self, ToneMapper, Transfer};
 use super::picture::{Picture, rows};
 use super::source::Source;
@@ -23,6 +26,8 @@ use super::source::Source;
 /// Seeking lands on a keyframe before the frame; if a file's index puts it
 /// after, try again this much earlier, in seconds.
 const SEEK_BACK: [f64; 3] = [0.0, 5.0, 30.0];
+/// Packets read past the frame for its enhancement layer, at most.
+const LAYER_PACKETS: usize = 256;
 
 /// A picture in memory.
 pub struct Still {
@@ -158,27 +163,162 @@ fn decode(
         (found.parameters(), f64::from(found.time_base()))
     };
     let (mut decoder, _) = open_video(&parameters, false)?;
+    let mut layer = Layer::of(&input, stream);
     for (attempt, back) in SEEK_BACK.into_iter().enumerate() {
         let micros = ((timestamp as f64 * time_base - back) * 1_000_000.0) as i64;
         input
             .seek(micros, ..micros)
             .context("seeking to the frame")?;
         decoder.flush();
+        if let Some(layer) = &mut layer {
+            layer.layers.reset();
+        }
         let last = attempt + 1 == SEEK_BACK.len();
-        if let Some(frame) = find(&mut input, &mut decoder, stream, timestamp, last)? {
-            return Ok(frame);
+        let mut reading = Reading {
+            input: &mut input,
+            stream,
+            layer: layer.as_mut(),
+        };
+        if let Some(frame) = find(&mut reading, &mut decoder, timestamp, last)? {
+            return Ok(reading.composed(frame));
         }
     }
     bail!("the frame can't be found in the file")
+}
+
+/// Dolby Vision profile 7's enhancement layer, decoded with the video.
+struct Layer {
+    layers: Layers,
+    /// Its own stream's time base, and the video's, to take its packets'
+    /// times to.
+    from: Rational,
+    to: Rational,
+}
+
+impl Layer {
+    /// The enhancement layer of `input`'s video `stream`, if it has one.
+    fn of(input: &ffmpeg::format::context::Input, stream: usize) -> Option<Self> {
+        type StreamOf = (usize, codec::Parameters, Rational, Rational);
+        let streams: Vec<StreamOf> = input
+            .streams()
+            .map(|s| (s.index(), s.parameters(), s.time_base(), s.avg_frame_rate()))
+            .collect();
+        fn view((index, parameters, time_base, _): &StreamOf) -> layers::Stream<'_> {
+            layers::Stream {
+                index: *index,
+                parameters,
+                time_base: *time_base,
+            }
+        }
+        let views: Vec<_> = streams.iter().map(view).collect();
+        let (_, _, to, rate) = streams.iter().find(|s| s.0 == stream)?;
+        let frame_duration = if rate.numerator() > 0 && rate.denominator() > 0 {
+            f64::from(rate.invert())
+        } else {
+            1.0 / 25.0
+        };
+        let layers = Layers::of(
+            view(streams.iter().find(|s| s.0 == stream)?),
+            frame_duration,
+            &views,
+        )?;
+        let from = layers
+            .stream
+            .and_then(|index| streams.iter().find(|s| s.0 == index))
+            .map_or(*to, |s| s.2);
+        Some(Self {
+            layers,
+            from,
+            to: *to,
+        })
+    }
+}
+
+/// A file being read for a frame of its video `stream`, and of its
+/// enhancement layer.
+struct Reading<'a> {
+    input: &'a mut ffmpeg::format::context::Input,
+    stream: usize,
+    layer: Option<&'a mut Layer>,
+}
+
+impl Reading<'_> {
+    /// The next packet of the video, giving the enhancement layer what it
+    /// has of it on the way; `None` at the end.
+    fn next(&mut self, packet: &mut Packet) -> Result<Option<()>> {
+        loop {
+            match packet.read(self.input) {
+                Ok(()) => {}
+                Err(ffmpeg::Error::Eof) => {
+                    if let Some(layer) = &mut self.layer {
+                        layer.layers.finish();
+                    }
+                    return Ok(None);
+                }
+                Err(err) => return Err(err).context("reading the file"),
+            }
+            let index = packet.stream();
+            if let Some(layer) = &mut self.layer {
+                if index == self.stream && layer.layers.stream.is_none() {
+                    layer.layers.decode(packet);
+                } else if layer.layers.stream == Some(index) {
+                    packet.rescale_ts(layer.from, layer.to);
+                    layer.layers.decode(packet);
+                }
+            }
+            if index == self.stream {
+                return Ok(Some(()));
+            }
+        }
+    }
+
+    /// `frame` composed with its enhancement layer, read on for until it's
+    /// there; as it is if it never is.
+    fn composed(&mut self, frame: frame::Video) -> frame::Video {
+        let Some(timestamp) = frame.timestamp() else {
+            return frame;
+        };
+        let mut packet = Packet::empty();
+        for _ in 0..LAYER_PACKETS {
+            let Some(layer) = &mut self.layer else {
+                return frame;
+            };
+            match layer.layers.take(timestamp) {
+                Found::Frame(enhancement) => return compose(&frame, &enhancement).unwrap_or(frame),
+                Found::Missing => return frame,
+                Found::Later => {}
+            }
+            if !matches!(self.next(&mut packet), Ok(Some(()))) {
+                // The end, which leaves the layer finished, or a read error.
+                if let Some(layer) = &mut self.layer
+                    && let Found::Frame(enhancement) = layer.layers.take(timestamp)
+                {
+                    return compose(&frame, &enhancement).unwrap_or(frame);
+                }
+                return frame;
+            }
+        }
+        frame
+    }
+}
+
+/// A frame of Dolby Vision profile 7 composed of its two layers.
+fn compose(base: &frame::Video, enhancement: &frame::Video) -> Option<frame::Video> {
+    let composer = Composer::of(base).or_else(|| Composer::of(enhancement))?;
+    let mut composed = frame::Video::empty();
+    composer
+        .compose(base, enhancement, &mut composed)
+        .inspect_err(|err| log::warn!("a screenshot of the base layer: {err:#}"))
+        .ok()?;
+    Some(composed)
 }
 
 /// Decode from where `input` is until the frame at `timestamp`. `None` if
 /// the first frame is already past it (seeking landed too late), unless
 /// `or_later`, which takes it then.
 fn find(
-    input: &mut ffmpeg::format::context::Input,
+    reading: &mut Reading,
     decoder: &mut ffmpeg::decoder::Video,
-    stream: usize,
     timestamp: i64,
     or_later: bool,
 ) -> Result<Option<frame::Video>> {
@@ -207,18 +347,16 @@ fn find(
         if ended {
             return Ok(before);
         }
-        match packet.read(input) {
-            Ok(()) if packet.stream() == stream => {
+        match reading.next(&mut packet)? {
+            Some(()) => {
                 if let Err(err) = decoder.send_packet(&packet) {
                     log::debug!("screenshot decode error: {err}");
                 }
             }
-            Ok(()) => {}
-            Err(ffmpeg::Error::Eof) => {
+            None => {
                 let _ = decoder.send_eof();
                 ended = true;
             }
-            Err(err) => return Err(err).context("reading the file"),
         }
     }
 }

@@ -9,6 +9,8 @@ use ffmpeg::format::stream::{Disposition, Stream};
 use ffmpeg::{ffi, media};
 use ffmpeg_next as ffmpeg;
 
+use super::enhancement::Configuration;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum TrackKind {
     Video,
@@ -39,12 +41,16 @@ pub struct Track {
 
 impl Track {
     /// The stream as a track, if it is one that can be played: not cover
-    /// art, and with a decoder for it.
+    /// art, nor Dolby Vision's enhancement layer, which plays with its
+    /// base layer, and with a decoder for it.
     pub fn of(stream: &Stream) -> Option<Self> {
         let parameters = stream.parameters();
         let disposition = stream.disposition();
         let kind = match parameters.medium() {
-            media::Type::Video if !disposition.contains(Disposition::ATTACHED_PIC) => {
+            media::Type::Video
+                if !disposition.contains(Disposition::ATTACHED_PIC)
+                    && !Configuration::is_layer_only(&parameters) =>
+            {
                 TrackKind::Video
             }
             media::Type::Audio => TrackKind::Audio,

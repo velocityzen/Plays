@@ -2282,6 +2282,501 @@ fn a_surface_is_tagged_with_its_gamma_only_when_that_changed() {
     assert_eq!(tagged(), drawn);
 }
 
+/// A video with Dolby Vision's enhancement layer in a track of its own:
+/// ten frames of HEVC flagged as profile 7's enhancement layer alone, then
+/// the same again as the base layer. With no RPU its layers don't compose,
+/// and it plays as its base layer, waiting for the other's frames all the
+/// same.
+pub(super) fn layered_media() -> PathBuf {
+    let plain = media(
+        "ten-frames.mp4",
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=320x180:rate=10:duration=1",
+            "-c:v",
+            "libx265",
+            "-x265-params",
+            "log-level=error",
+            "-pix_fmt",
+            "yuv420p10le",
+        ],
+    );
+    made_in(
+        &kept(),
+        "layered.mp4",
+        "ten-frames.mp4 as profile 7's enhancement layer, then as it is",
+        |out| with_enhancement_layer(&plain, out).map_err(|err| err.to_string()),
+    )
+}
+
+/// `from`'s video as an enhancement layer, then as it is, into `to`.
+fn with_enhancement_layer(
+    from: &std::path::Path,
+    to: &std::path::Path,
+) -> Result<(), ffmpeg_next::Error> {
+    use ffmpeg_next::{codec, ffi, media::Type};
+
+    let mut input = ffmpeg_next::format::input(from)?;
+    let mut output = ffmpeg_next::format::output(to)?;
+    let (index, time_base, parameters) = {
+        let stream = input.streams().best(Type::Video).unwrap();
+        (stream.index(), stream.time_base(), stream.parameters())
+    };
+    for layer in [true, false] {
+        let mut stream = output.add_stream(ffmpeg_next::encoder::find(codec::Id::None))?;
+        stream.set_parameters(parameters.clone());
+        stream.set_time_base(time_base);
+        // SAFETY: the stream's parameters are valid; FFmpeg makes the side
+        // data as big as asked, owned by them.
+        unsafe {
+            let raw = (*stream.as_mut_ptr()).codecpar;
+            (*raw).codec_tag = 0;
+            if layer {
+                // Profile 7, an RPU and the enhancement layer, no base layer.
+                let record = [1u8, 0, 7, 6, 1, 1, 0, 6, 0];
+                let side = ffi::av_packet_side_data_new(
+                    &mut (*raw).coded_side_data,
+                    &mut (*raw).nb_coded_side_data,
+                    ffi::AVPacketSideDataType::AV_PKT_DATA_DOVI_CONF,
+                    record.len(),
+                    0,
+                );
+                assert!(!side.is_null());
+                std::ptr::copy_nonoverlapping(record.as_ptr(), (*side).data, record.len());
+            }
+        }
+    }
+    // MP4 keeps a Dolby Vision configuration only so.
+    // SAFETY: setting a field of a valid context.
+    unsafe { (*output.as_mut_ptr()).strict_std_compliance = ffi::FF_COMPLIANCE_UNOFFICIAL };
+    output.write_header()?;
+    let time_bases: Vec<_> = output.streams().map(|s| s.time_base()).collect();
+    for (stream, packet) in input.packets() {
+        if stream.index() != index {
+            continue;
+        }
+        for (out, &to) in time_bases.iter().enumerate() {
+            let mut copy = packet.clone();
+            copy.set_stream(out);
+            copy.rescale_ts(time_base, to);
+            copy.set_position(-1);
+            copy.write_interleaved(&mut output)?;
+        }
+    }
+    output.write_trailer()
+}
+
+/// Ten frames of 10-bit HEVC tagged PQ and BT.2020, at most 1,000 nits,
+/// with no B-frames: as a Dolby Vision base layer is.
+pub(super) fn pq_media() -> PathBuf {
+    media(
+        "ten-frames-pq.mp4",
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=320x180:rate=10:duration=1",
+            "-c:v",
+            "libx265",
+            "-x265-params",
+            "log-level=error:bframes=0:max-cll=1000,400:colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc",
+            "-pix_fmt",
+            "yuv420p10le",
+        ],
+    )
+}
+
+/// The same frames negated, losslessly, with their parameter sets in the
+/// keyframe: an enhancement layer that looks nothing like its base layer,
+/// in more bits.
+fn negated_media() -> PathBuf {
+    media(
+        "ten-frames-negated.mp4",
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=320x180:rate=10:duration=1",
+            "-vf",
+            "negate",
+            "-c:v",
+            "libx265",
+            "-x265-params",
+            "log-level=error:bframes=0:lossless=1:repeat-headers=1",
+            "-pix_fmt",
+            "yuv420p10le",
+        ],
+    )
+}
+
+/// Where a Dolby Vision profile 7 test file has its enhancement layer.
+#[derive(Clone, Copy, Debug)]
+pub(super) enum Layout {
+    /// In a track of its own, first, in a time base of its own.
+    TwoTracks,
+    /// In the video's, as Blu-rays have it.
+    OneTrack,
+    /// Nowhere, though the video's track says it's there.
+    Missing,
+}
+
+/// `pq_media` as Dolby Vision profile 7's base layer, `negated_media` as
+/// its enhancement layer, laid out so, with `enhancement::tests::rpu_nal`'s
+/// RPU, mastered at 4,000 nits, with each picture: in the enhancement
+/// layer's track, or the video's. Composed, the base layer's luma is a
+/// quarter higher, give or take the enhancement layer's sixteenth.
+pub(super) fn profile_7_media(layout: Layout) -> PathBuf {
+    let (base, layer) = (pq_media(), negated_media());
+    // Made again when either is.
+    let recipes = [&base, &layer]
+        .map(|path| std::fs::read_to_string(path.with_added_extension("made")).unwrap());
+    made_in(
+        &kept(),
+        &format!("profile-7-{layout:?}.mp4"),
+        &format!("{recipes:?} as profile 7, {layout:?}, a sixteenth of the layer"),
+        |out| profile_7(&base, &layer, layout, out).map_err(|err| err.to_string()),
+    )
+}
+
+/// The packets of the video `path` is, and its parameters and time base.
+fn video_packets(
+    path: &std::path::Path,
+) -> Result<
+    (
+        ffmpeg_next::codec::Parameters,
+        Rational,
+        Vec<ffmpeg_next::Packet>,
+    ),
+    ffmpeg_next::Error,
+> {
+    let mut input = ffmpeg_next::format::input(path)?;
+    let (parameters, time_base) = {
+        let stream = input.stream(0).unwrap();
+        (stream.parameters(), stream.time_base())
+    };
+    let packets = input.packets().map(|(_, packet)| packet).collect();
+    Ok((parameters, time_base, packets))
+}
+
+/// The NAL units of an MP4 packet, each after its 4-byte length.
+fn nal_units(mut data: &[u8]) -> Vec<&[u8]> {
+    let mut units = Vec::new();
+    while let Some((length, rest)) = data.split_first_chunk::<4>() {
+        let (unit, after) = rest.split_at(u32::from_be_bytes(*length) as usize);
+        units.push(unit);
+        data = after;
+    }
+    units
+}
+
+/// `packet` with `units` after its own NAL units, as it was otherwise.
+fn appended(packet: &ffmpeg_next::Packet, units: &[Vec<u8>]) -> ffmpeg_next::Packet {
+    let mut data = packet.data().unwrap().to_vec();
+    for unit in units {
+        data.extend(u32::try_from(unit.len()).unwrap().to_be_bytes());
+        data.extend(unit);
+    }
+    let mut with = ffmpeg_next::Packet::copy(&data);
+    with.set_pts(packet.pts());
+    with.set_dts(packet.dts());
+    with.set_duration(packet.duration());
+    with.set_flags(packet.flags());
+    with
+}
+
+/// `base` and `layer`'s videos as Dolby Vision profile 7's two layers, laid
+/// out so, into `to`.
+fn profile_7(
+    base: &std::path::Path,
+    layer: &std::path::Path,
+    layout: Layout,
+    to: &std::path::Path,
+) -> Result<(), ffmpeg_next::Error> {
+    use ffmpeg_next::{codec, ffi};
+
+    let (base_parameters, base_time_base, base_packets) = video_packets(base)?;
+    let (layer_parameters, layer_time_base, layer_packets) = video_packets(layer)?;
+    assert_eq!(base_packets.len(), layer_packets.len());
+    let rpu = super::enhancement::tests::rpu_nal(3696);
+    // Profile 7, an RPU, and the layers each track has.
+    let record = |enhancement: u8, base: u8| [1u8, 0, 7, 6, 1, enhancement, base, 6, 0];
+    let tracks = match layout {
+        Layout::TwoTracks => vec![
+            (
+                &layer_parameters,
+                Rational::new(1, 90_000),
+                Some(record(1, 0)),
+            ),
+            (&base_parameters, base_time_base, None),
+        ],
+        Layout::OneTrack | Layout::Missing => {
+            vec![(&base_parameters, base_time_base, Some(record(1, 1)))]
+        }
+    };
+    let mut output = ffmpeg_next::format::output(to)?;
+    for (parameters, time_base, record) in tracks {
+        let mut stream = output.add_stream(ffmpeg_next::encoder::find(codec::Id::None))?;
+        stream.set_parameters(parameters.clone());
+        stream.set_time_base(time_base);
+        // SAFETY: the stream's parameters are valid; FFmpeg makes the side
+        // data as big as asked, owned by them.
+        unsafe {
+            let raw = (*stream.as_mut_ptr()).codecpar;
+            (*raw).codec_tag = 0;
+            if let Some(record) = record {
+                let side = ffi::av_packet_side_data_new(
+                    &mut (*raw).coded_side_data,
+                    &mut (*raw).nb_coded_side_data,
+                    ffi::AVPacketSideDataType::AV_PKT_DATA_DOVI_CONF,
+                    record.len(),
+                    0,
+                );
+                assert!(!side.is_null());
+                std::ptr::copy_nonoverlapping(record.as_ptr(), (*side).data, record.len());
+            }
+        }
+    }
+    // MP4 keeps a Dolby Vision configuration only so.
+    // SAFETY: setting a field of a valid context.
+    unsafe { (*output.as_mut_ptr()).strict_std_compliance = ffi::FF_COMPLIANCE_UNOFFICIAL };
+    output.write_header()?;
+    let time_bases: Vec<_> = output.streams().map(|s| s.time_base()).collect();
+    for (base, layer) in base_packets.iter().zip(&layer_packets) {
+        let written = match layout {
+            Layout::TwoTracks => vec![
+                (appended(layer, std::slice::from_ref(&rpu)), layer_time_base),
+                (base.clone(), base_time_base),
+            ],
+            Layout::OneTrack | Layout::Missing => {
+                // The enhancement layer's units, each in one of type 63.
+                let mut units: Vec<Vec<u8>> = match layout {
+                    Layout::OneTrack => nal_units(layer.data().unwrap())
+                        .into_iter()
+                        .map(|unit| [&[63 << 1, 1], unit].concat())
+                        .collect(),
+                    _ => Vec::new(),
+                };
+                units.push(rpu.clone());
+                vec![(appended(base, &units), base_time_base)]
+            }
+        };
+        for (index, (mut packet, from)) in written.into_iter().enumerate() {
+            packet.set_stream(index);
+            packet.rescale_ts(from, time_bases[index]);
+            packet.set_position(-1);
+            packet.write_interleaved(&mut output)?;
+        }
+    }
+    output.write_trailer()
+}
+
+/// Its enhancement layer, in a track of its own, isn't a track to pick,
+/// and doesn't hold up its base layer, which plays, seeks and is
+/// screenshot as any video.
+#[test]
+fn plays_a_dolby_vision_enhancement_layer_with_its_base_layer() {
+    use super::tracks::Track;
+
+    let path = layered_media();
+    let input = ffmpeg_next::format::input(&path).unwrap();
+    let tracks: Vec<_> = input.streams().filter_map(|s| Track::of(&s)).collect();
+    assert_eq!(tracks.iter().map(|t| t.index).collect::<Vec<_>>(), [1]);
+    drop(input);
+
+    let mut player = Player::open(Source::File(path.clone()), None, options(true, false));
+    let mut shown = Vec::new();
+    assert!(
+        wait_until(Duration::from_secs(10), || {
+            player.tick();
+            if let Some(pts) = player.frame_pts()
+                && shown.last() != Some(&pts)
+            {
+                shown.push(pts);
+            }
+            shown.len() == 10
+        }),
+        "{shown:?}"
+    );
+    let info = player.info().unwrap();
+    assert_eq!(info.tracks(TrackKind::Video).count(), 1);
+    player.seek(0.5);
+    assert!(wait_until(Duration::from_secs(5), || {
+        player.tick();
+        player
+            .frame_pts()
+            .is_some_and(|pts| (0.5..0.6).contains(&pts))
+    }));
+    player.scrub(0.35);
+    assert!(
+        wait_until(Duration::from_secs(5), || {
+            player.tick();
+            player
+                .frame_pts()
+                .is_some_and(|pts| (0.3..0.4).contains(&pts))
+        }),
+        "a scrub shows the frame it's to"
+    );
+    let still = super::still::grab(&Source::File(path), None, 1, 5, false).unwrap();
+    assert_eq!((still.width, still.height), (320, 180));
+}
+
+/// How green `still` is on average, 0 to 1: what composing the profile 7
+/// test files raises, kept HDR.
+pub(super) fn green(still: &super::still::Still) -> f64 {
+    let sum: f64 = still.pixels.iter().map(|pixel| f64::from(pixel[1])).sum();
+    sum / still.pixels.len() as f64 / 65535.0
+}
+
+/// How far apart two stills of a size are on average, 0 to 1.
+fn apart(a: &super::still::Still, b: &super::still::Still) -> f64 {
+    assert_eq!((a.width, a.height), (b.width, b.height));
+    let sum: f64 = a
+        .pixels
+        .iter()
+        .zip(&b.pixels)
+        .flat_map(|(a, b)| (0..3).map(|c| f64::from(a[c].abs_diff(b[c]))))
+        .sum();
+    sum / (a.pixels.len() * 3) as f64 / 65535.0
+}
+
+/// How green the base layer of the profile 7 test files is, plain, in its
+/// first frame.
+pub(super) fn plain_green() -> f64 {
+    green(&super::still::grab(&Source::File(pq_media()), None, 0, 0, true).unwrap())
+}
+
+/// Dolby Vision profile 7, its enhancement layer in a track of its own or
+/// in the video's, shows each frame composed, decoded in software or on the
+/// GPU, as its screenshot (composed apart) shows it: as it plays, after a
+/// seek and as it's scrubbed. Its enhancement layer is no track to pick,
+/// nor the video shown, though FFmpeg would take a track of its own for the
+/// best.
+#[test]
+fn plays_dolby_vision_profile_7_composed() {
+    use super::tracks::Track;
+
+    let plain = plain_green();
+    for (layout, video) in [(Layout::TwoTracks, 1), (Layout::OneTrack, 0)] {
+        let path = profile_7_media(layout);
+        let input = ffmpeg_next::format::input(&path).unwrap();
+        let tracks: Vec<_> = input
+            .streams()
+            .filter_map(|s| Track::of(&s))
+            .map(|t| t.index)
+            .collect();
+        assert_eq!(tracks, [video], "{layout:?}");
+        let time_base = f64::from(input.stream(video).unwrap().time_base());
+        drop(input);
+        let composed = |player: &Player| {
+            let shown = super::still::shown(&player.frame().unwrap(), true).unwrap();
+            let timestamp = (player.frame_pts().unwrap() / time_base).round() as i64;
+            let source = Source::File(path.clone());
+            let screenshot = super::still::grab(&source, None, video, timestamp, true).unwrap();
+            green(&shown) - plain > 0.1 && apart(&shown, &screenshot) < 0.002
+        };
+        for hardware in [false, true] {
+            let what = format!("{layout:?}, hardware decoding {hardware}");
+            let mut player = Player::open(
+                Source::File(path.clone()),
+                None,
+                PlayerOptions {
+                    hardware_decoding: hardware,
+                    ..options(true, false)
+                },
+            );
+            let mut shown = Vec::new();
+            assert!(
+                wait_until(Duration::from_secs(10), || {
+                    player.tick();
+                    if let Some(pts) = player.frame_pts()
+                        && shown.last() != Some(&pts)
+                    {
+                        assert!(composed(&player), "{what}: the frame at {pts}");
+                        shown.push(pts);
+                    }
+                    shown.len() == 10
+                }),
+                "{what}: {shown:?}"
+            );
+            #[cfg(target_os = "macos")]
+            if let super::picture::Picture::Surface(surface) = player.frame().unwrap() {
+                let peak = super::hdr::peak_nits(&surface.read().unwrap());
+                assert_eq!(peak, Some(4000.0), "{what}: the master's peak");
+            }
+            player.seek(0.5);
+            assert!(
+                wait_until(Duration::from_secs(5), || {
+                    player.tick();
+                    player
+                        .frame_pts()
+                        .is_some_and(|pts| (0.5..0.6).contains(&pts))
+                }),
+                "{what}: seeking"
+            );
+            assert!(composed(&player), "{what}: after a seek");
+            player.scrub(0.35);
+            assert!(
+                wait_until(Duration::from_secs(5), || {
+                    player.tick();
+                    player
+                        .frame_pts()
+                        .is_some_and(|pts| (0.3..0.4).contains(&pts))
+                }),
+                "{what}: scrubbing"
+            );
+            assert!(composed(&player), "{what}: as it's scrubbed");
+        }
+    }
+}
+
+/// A video that says it has Dolby Vision profile 7's enhancement layer and
+/// hasn't plays as its base layer: every frame, the one a seek is to, and
+/// the one a scrub is to.
+#[test]
+fn plays_a_base_layer_whose_enhancement_layer_is_missing() {
+    let plain = plain_green();
+    let path = profile_7_media(Layout::Missing);
+    let mut player = Player::open(Source::File(path), None, options(true, false));
+    let as_it_is = |player: &Player| {
+        let still = super::still::shown(&player.frame().unwrap(), true).unwrap();
+        (green(&still) - plain).abs() < 0.05
+    };
+    let mut shown = Vec::new();
+    assert!(
+        wait_until(Duration::from_secs(10), || {
+            player.tick();
+            if let Some(pts) = player.frame_pts()
+                && shown.last() != Some(&pts)
+            {
+                assert!(as_it_is(&player), "the frame at {pts}");
+                shown.push(pts);
+            }
+            shown.len() == 10
+        }),
+        "{shown:?}"
+    );
+    player.seek(0.5);
+    assert!(wait_until(Duration::from_secs(5), || {
+        player.tick();
+        player
+            .frame_pts()
+            .is_some_and(|pts| (0.5..0.6).contains(&pts))
+    }));
+    player.scrub(0.35);
+    assert!(
+        wait_until(Duration::from_secs(5), || {
+            player.tick();
+            player
+                .frame_pts()
+                .is_some_and(|pts| (0.3..0.4).contains(&pts))
+        }),
+        "a scrub shows the frame it's to"
+    );
+    assert!(as_it_is(&player));
+}
+
 /// The first frame of the video at `path`, decoded on the GPU or in
 /// software.
 #[cfg(target_os = "macos")]
@@ -2314,15 +2809,24 @@ pub(super) fn converted_first_frame(path: &std::path::Path) -> (usize, usize, Ve
 /// The first frame of `path`, decoded in software.
 #[cfg(target_os = "macos")]
 fn decoded_first_frame(path: &std::path::Path) -> ffmpeg_next::frame::Video {
-    use super::decoder::open_video;
-
     ffmpeg_next::init().unwrap();
-    let mut input = ffmpeg_next::format::input(path).unwrap();
+    let input = ffmpeg_next::format::input(path).unwrap();
     let stream = input
         .streams()
         .best(ffmpeg_next::media::Type::Video)
         .unwrap();
-    let (index, parameters) = (stream.index(), stream.parameters());
+    decoded_first_frame_of(path, stream.index())
+}
+
+/// The first frame of stream `index` of `path`, decoded in software on its
+/// own.
+#[cfg(target_os = "macos")]
+fn decoded_first_frame_of(path: &std::path::Path, index: usize) -> ffmpeg_next::frame::Video {
+    use super::decoder::open_video;
+
+    ffmpeg_next::init().unwrap();
+    let mut input = ffmpeg_next::format::input(path).unwrap();
+    let parameters = input.stream(index).unwrap().parameters();
     let (mut decoder, _) = open_video(&parameters, false).unwrap();
     let mut frame = ffmpeg_next::frame::Video::empty();
     let mut packets = input.packets();
@@ -2341,6 +2845,242 @@ fn decoded_first_frame(path: &std::path::Path) -> ffmpeg_next::frame::Video {
         }
     }
     frame
+}
+
+/// The Dolby Vision files of one of `profiles` in the folder
+/// `PLAYS_DOLBY_VISION_SAMPLES` names, by name: the ffmpeg tool can't make
+/// them, so these tests run on files of your own, each on those of the
+/// profiles it's about.
+#[cfg(target_os = "macos")]
+fn dolby_vision_samples(profiles: &[u8]) -> Vec<PathBuf> {
+    use super::enhancement::Configuration;
+
+    let folder = std::env::var_os("PLAYS_DOLBY_VISION_SAMPLES")
+        .map(PathBuf::from)
+        .expect("PLAYS_DOLBY_VISION_SAMPLES names a folder of Dolby Vision files");
+    ffmpeg_next::init().unwrap();
+    let mut paths: Vec<PathBuf> = std::fs::read_dir(&folder)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| {
+            path.is_file()
+                && ffmpeg_next::format::input(path).is_ok_and(|input| {
+                    input.streams().any(|stream| {
+                        Configuration::of(&stream.parameters())
+                            .is_some_and(|c| profiles.contains(&c.profile))
+                    })
+                })
+        })
+        .collect();
+    paths.sort();
+    assert!(
+        !paths.is_empty(),
+        "no Dolby Vision profile {profiles:?} files in {}",
+        folder.display()
+    );
+    paths
+}
+
+/// The first frame of `path`, decoded on the GPU or in software and as its
+/// screenshot, of its video in the stream `index` at `timestamp`: HDR on
+/// the GPU at `peak`, all three alike, and each saved as a PNG next to the
+/// generated test media, named from `name`. The software one.
+#[cfg(target_os = "macos")]
+fn shown_alike(
+    path: &std::path::Path,
+    (index, timestamp): (usize, i64),
+    peak: Option<f32>,
+    name: &str,
+) -> super::still::Still {
+    use super::hdr::peak_nits;
+    use super::picture::Picture;
+    use super::still;
+
+    let out_dir = kept();
+    std::fs::create_dir_all(&out_dir).unwrap();
+    let shown = |hardware| {
+        let picture = first_frame(path, hardware);
+        let Picture::Surface(surface) = &picture else {
+            panic!("{name}: HDR frames go to the GPU");
+        };
+        // Kept as MaxCLL, a whole number of nits.
+        let kept = peak_nits(&surface.read().unwrap());
+        assert!(
+            match (kept, peak) {
+                (Some(kept), Some(peak)) => (kept - peak).abs() <= 0.5,
+                (kept, peak) => kept == peak,
+            },
+            "{name}: {kept:?} isn't the video's peak, {peak:?}"
+        );
+        still::shown(&picture, false).unwrap()
+    };
+    let (gpu, software) = (shown(true), shown(false));
+    let screenshot = still::grab(
+        &Source::File(path.to_path_buf()),
+        None,
+        index,
+        timestamp,
+        false,
+    )
+    .unwrap();
+    let (width, height) = (software.width as usize, software.height as usize);
+    for (what, still) in [
+        ("gpu", &gpu),
+        ("software", &software),
+        ("screenshot", &screenshot),
+    ] {
+        assert_eq!(
+            (still.width as usize, still.height as usize),
+            (width, height),
+            "{name}: the {what} picture's size"
+        );
+        save_still(still, &out_dir.join(format!("{name}-{what}.png")));
+    }
+    for (what, still, most) in [("the GPU", &gpu, 2.0), ("a screenshot", &screenshot, 1.0)] {
+        let (mean, p90) = block_differences(width, height, channel(&software), channel(still));
+        assert!(
+            mean < most && p90 < 2.0 * most,
+            "{name}: {what} and software are {mean:.2} apart, {p90:.2} at the 90th percentile"
+        );
+    }
+    software
+}
+
+/// A still's channel `c` at `x`, `y`, 0-255.
+#[cfg(target_os = "macos")]
+fn channel(still: &super::still::Still) -> impl Fn(usize, usize, usize) -> f64 + '_ {
+    let width = still.width as usize;
+    move |x, y, c| f64::from(still.pixels[y * width + x][c]) / 257.0
+}
+
+/// Each Dolby Vision profile 7 file's first frame, decoded on the GPU or
+/// in software, and its screenshot, show both layers composed: HDR10 with
+/// the peak its RPU says, all three alike. The pictures are saved as PNGs,
+/// with the base layer's own beside them and how far apart they are said.
+#[cfg(target_os = "macos")]
+#[test]
+#[ignore = "needs Dolby Vision files in the folder PLAYS_DOLBY_VISION_SAMPLES names"]
+fn dolby_vision_profile_7_shows_both_layers() {
+    use super::enhancement::Configuration;
+    use super::hdr::{peak_nits, plausible_peak, pq_to_nits};
+
+    for path in &dolby_vision_samples(&[7]) {
+        let name = path.file_name().unwrap().to_string_lossy();
+        // The base layer's stream and first frame, and the RPU's peak, from
+        // whichever layer carries it.
+        let input = ffmpeg_next::format::input(path).unwrap();
+        let videos: Vec<(usize, bool)> = input
+            .streams()
+            .filter(|s| s.parameters().medium() == ffmpeg_next::media::Type::Video)
+            .map(|s| (s.index(), Configuration::is_layer_only(&s.parameters())))
+            .collect();
+        drop(input);
+        let base_index = videos.iter().find(|(_, layer)| !layer).unwrap().0;
+        let base = decoded_first_frame_of(path, base_index);
+        let rpu_peak = videos
+            .iter()
+            .map(|&(index, _)| decoded_first_frame_of(path, index))
+            .find_map(|frame| {
+                let (_, _, color) = super::dovi::rpu(&frame)?;
+                plausible_peak(pq_to_nits(f32::from(color.source_max_pq) / 4095.0))
+            });
+        let software = shown_alike(
+            path,
+            (base_index, base.timestamp().unwrap()),
+            rpu_peak.or(peak_nits(&base)),
+            &format!("profile-7-{name}"),
+        );
+        let base_layer = sdr_still(&base);
+        let (width, height) = (software.width as usize, software.height as usize);
+        assert_eq!(
+            (base_layer.width as usize, base_layer.height as usize),
+            (width, height),
+            "{name}: the base layer's size"
+        );
+        save_still(
+            &base_layer,
+            &kept().join(format!("profile-7-{name}-base-layer.png")),
+        );
+        let (mean, p90) =
+            block_differences(width, height, channel(&software), channel(&base_layer));
+        eprintln!(
+            "{name}: composed and the base layer alone are {mean:.2} apart, {p90:.2} at the 90th percentile"
+        );
+    }
+}
+
+/// Dolby Vision profiles 8 and 10 are HDR10 or HLG with an RPU beside
+/// them, which shows as it is: each such file's first frame, decoded on the
+/// GPU or in software, and its screenshot, alike, at the peak its own HDR
+/// metadata says, reshaped by nothing.
+#[cfg(target_os = "macos")]
+#[test]
+#[ignore = "needs Dolby Vision files in the folder PLAYS_DOLBY_VISION_SAMPLES names"]
+fn dolby_vision_over_hdr10_or_hlg_shows_its_base_layer() {
+    use super::enhancement::Configuration;
+    use super::hdr::{Transfer, peak_nits};
+
+    for path in &dolby_vision_samples(&[8, 10]) {
+        let name = path.file_name().unwrap().to_string_lossy();
+        let input = ffmpeg_next::format::input(path).unwrap();
+        let (index, profile) = input
+            .streams()
+            .find_map(|s| Some((s.index(), Configuration::of(&s.parameters())?.profile)))
+            .unwrap();
+        drop(input);
+        let base = decoded_first_frame_of(path, index);
+        assert!(
+            Transfer::of(&base).is_some(),
+            "{name}: its base layer is HDR"
+        );
+        assert!(
+            super::dovi::rpu(&base).is_some(),
+            "{name}: the RPU comes with each frame"
+        );
+        assert!(
+            super::dovi::Reshaping::of(&base).is_none(),
+            "{name}: shown as it is"
+        );
+        let peak = peak_nits(&base);
+        shown_alike(
+            path,
+            (index, base.timestamp().unwrap()),
+            peak,
+            &format!("profile-{profile}-{name}"),
+        );
+        eprintln!("{name}: profile {profile}, {peak:?} nits at the peak");
+    }
+}
+
+/// `frame` as a player shows it on an SDR screen, converted on the CPU.
+#[cfg(target_os = "macos")]
+fn sdr_still(frame: &ffmpeg_next::frame::Video) -> super::still::Still {
+    let (width, height, bgra) = super::decoder::convert_pixels(&mut None, None, frame).unwrap();
+    super::still::Still {
+        width,
+        height,
+        pixels: bgra
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|&[b, g, r, _]| [r, g, b].map(|c| u16::from(c) * 257))
+            .collect(),
+        hdr: None,
+    }
+}
+
+/// Save an SDR still as a PNG at `png`, and say where.
+#[cfg(target_os = "macos")]
+fn save_still(still: &super::still::Still, png: &std::path::Path) {
+    let pixels = still
+        .pixels
+        .iter()
+        .flat_map(|rgb| rgb.map(|c| (c / 257) as u8));
+    image::RgbImage::from_raw(still.width, still.height, pixels.collect())
+        .unwrap()
+        .save(png)
+        .unwrap();
+    eprintln!("{}", png.display());
 }
 
 /// How far apart two pictures of `width` by `height` are, by the averages
@@ -2655,28 +3395,32 @@ fn hdr_surface_to_sdr(
     SurfaceRgb { width, height, rgb }
 }
 
-/// Dolby Vision profile 5 can't be made with the ffmpeg tool, so this runs
-/// on a file of your own: `PLAYS_DOLBY_VISION_SAMPLE=path cargo test dolby`.
-/// Decoded on the GPU or in software, its surfaces must carry the frame's
-/// reshaping and, through the Dolby Vision shader's math, show what the
-/// CPU's reshaping and tone mapping of the software one shows. The
-/// pictures are saved as PNGs next to the generated test media.
+/// Each Dolby Vision profile 5 file, decoded on the GPU or in software,
+/// gives surfaces that carry the frame's reshaping and, through the Dolby
+/// Vision shader's math, show what the CPU's reshaping and tone mapping of
+/// the software one shows. The pictures are saved as PNGs next to the
+/// generated test media.
 #[cfg(target_os = "macos")]
 #[test]
-#[ignore = "needs a Dolby Vision profile 5 file named by PLAYS_DOLBY_VISION_SAMPLE"]
+#[ignore = "needs Dolby Vision files in the folder PLAYS_DOLBY_VISION_SAMPLES names"]
 fn dolby_vision_surfaces_match_software() {
+    for path in dolby_vision_samples(&[5]) {
+        dolby_vision_surfaces_of(&path);
+    }
+}
+
+/// `dolby_vision_surfaces_match_software` for the file at `path`.
+#[cfg(target_os = "macos")]
+fn dolby_vision_surfaces_of(path: &std::path::Path) {
     use super::picture::Picture;
 
-    let path = std::env::var_os("PLAYS_DOLBY_VISION_SAMPLE")
-        .map(PathBuf::from)
-        .expect("PLAYS_DOLBY_VISION_SAMPLE names a Dolby Vision profile 5 file");
-    ffmpeg_next::init().unwrap();
+    let file = path.file_name().unwrap().to_string_lossy();
     let out_dir = kept();
     std::fs::create_dir_all(&out_dir).unwrap();
     for share in [0.2, 0.5] {
         let frame_at = |hardware| {
             let mut player = Player::open(
-                Source::File(path.clone()),
+                Source::File(path.to_path_buf()),
                 None,
                 PlayerOptions {
                     hardware_decoding: hardware,
@@ -2723,7 +3467,7 @@ fn dolby_vision_surfaces_match_software() {
             .collect();
         let to_png = |name: &str, rgb: &dyn Fn(usize) -> [u8; 3]| {
             let pixels = (0..width * height).flat_map(rgb).collect();
-            let png = out_dir.join(format!("dolby-vision-{time}-{name}.png"));
+            let png = out_dir.join(format!("dolby-vision-{file}-{time}-{name}.png"));
             image::RgbImage::from_raw(width as u32, height as u32, pixels)
                 .unwrap()
                 .save(&png)
@@ -2743,11 +3487,11 @@ fn dolby_vision_surfaces_match_software() {
                 |x, y, c| f64::from(bgra[(y * width + x) * 4 + 2 - c]),
             );
             eprintln!(
-                "{time}s, {what}: {mean:.2} levels apart on average, {p90:.2} at the 90th percentile"
+                "{file} at {time}s, {what}: {mean:.2} levels apart on average, {p90:.2} at the 90th percentile"
             );
             assert!(
                 mean < 1.5 && p90 < 3.0,
-                "{time}s, {what}: colors differ by {mean:.2} levels on average, {p90:.2} at the 90th percentile"
+                "{file} at {time}s, {what}: colors differ by {mean:.2} levels on average, {p90:.2} at the 90th percentile"
             );
         }
     }

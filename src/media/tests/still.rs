@@ -277,3 +277,31 @@ fn dolby_vision_read_back_is_reshaped_and_kept_or_tone_mapped() {
         assert!(got.abs_diff(u16::from(want)) <= 1, "{c}: {got} for {want}");
     }
 }
+
+/// A screenshot of Dolby Vision profile 7 is composed, its enhancement
+/// layer in a track of its own, in a time base of its own, or in the
+/// video's; and, with none there, it's of the base layer as it is.
+#[test]
+fn a_screenshot_of_dolby_vision_profile_7_is_composed() {
+    use crate::media::hdr::Transfer;
+    use crate::media::tests::{Layout, green, plain_green, profile_7_media};
+
+    let plain = plain_green();
+    for (layout, stream, composed) in [
+        (Layout::TwoTracks, 1, true),
+        (Layout::OneTrack, 0, true),
+        (Layout::Missing, 0, false),
+    ] {
+        let path = profile_7_media(layout);
+        let input = ffmpeg::format::input(&path).unwrap();
+        let time_base = input.stream(stream).unwrap().time_base();
+        drop(input);
+        // Half a second in, the sixth frame.
+        let timestamp = (0.5 / f64::from(time_base)).round() as i64;
+        let still = grab(&Source::File(path), None, stream, timestamp, true).unwrap();
+        assert_eq!((still.width, still.height), (320, 180), "{layout:?}");
+        assert_eq!(still.hdr, Some(Transfer::Pq), "{layout:?}");
+        let raised = green(&still) - plain;
+        assert_eq!(raised > 0.1, composed, "{layout:?}: {raised:.3} greener");
+    }
+}

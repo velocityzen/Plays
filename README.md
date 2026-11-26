@@ -41,8 +41,8 @@ GPU-accelerated UI framework.
 
 ### Picture
 
-- HDR10, HLG and Dolby Vision (profile 5 too): brighter than SDR white on
-  macOS (EDR), tone mapped elsewhere
+- HDR10, HLG and Dolby Vision (profile 5, and profile 7's enhancement
+  layer, too): brighter than SDR white on macOS (EDR), tone mapped elsewhere
 - Rotate, flip, aspect ratio and crop
 - Gamma for SDR and for HDR
 - Fit or fill
@@ -253,8 +253,8 @@ mkdir ($nu.user-autoload-dirs | first); plays completions nushell | save -f ($nu
 - Live streams but HLS can't be seeked. A live stream's screenshot is the
   picture as it plays, at the size it plays at.
 - HDR goes brighter than SDR white only on macOS. Of HDR metadata, only
-  peaks are used (MaxCLL, the mastering display's), and Dolby Vision
-  profile 7's enhancement layer is ignored.
+  peaks are used (MaxCLL, the mastering display's).
+- Dolby Vision profile 7's enhancement layer is composed on the CPU.
 - ASS and SSA lines don't move, fade, turn, scale, blur or clip
   (`\move` stays where it starts), keep one size and font per line, and
   lines placed alike stack rather than dodge each other. Drawings aren't

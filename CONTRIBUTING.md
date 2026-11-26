@@ -170,8 +170,8 @@ script/check                        # all a change passes before a commit
 Ignored tests, and the protocol crates' examples for real devices:
 
 ```bash
-# Dolby Vision profile 5 on a file of your own; saves both paths' frames as PNGs
-PLAYS_DOLBY_VISION_SAMPLE=path/to/profile5.mkv cargo test dolby -- --ignored --nocapture
+# Dolby Vision profiles 5, 7, 8 and 10, the files in a folder of your own; saves frames as PNGs
+PLAYS_DOLBY_VISION_SAMPLES=path/to/folder cargo test dolby_vision -- --ignored --nocapture
 # plays through this machine's own outputs, each by its id
 cargo test plays_through_the_devices_here -- --ignored --nocapture
 

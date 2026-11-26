@@ -7,7 +7,7 @@ use std::thread;
 use std::time::Duration;
 
 use ffmpeg::format::context::Input;
-use ffmpeg::{Packet, Rescale};
+use ffmpeg::{Packet, Rational, Rescale};
 use ffmpeg_next as ffmpeg;
 use parking_lot::{Condvar, Mutex};
 
@@ -58,7 +58,18 @@ pub(super) struct ReadAhead {
 pub(super) struct PacketQueue {
     index: usize,
     time_base: f64,
+    /// Another stream whose packets come in this one's, in its time base:
+    /// Dolby Vision's enhancement layer, with the video's.
+    layer: Option<Layer>,
     packets: VecDeque<Packet>,
+}
+
+#[derive(Clone, Copy)]
+struct Layer {
+    index: usize,
+    /// Its time base, and the queue's.
+    from: Rational,
+    to: Rational,
 }
 
 impl PacketQueue {
@@ -66,7 +77,25 @@ impl PacketQueue {
         Self {
             index,
             time_base,
+            layer: None,
             packets: VecDeque::new(),
+        }
+    }
+
+    /// Queue the packets of stream `index`, whose time base is `from`, with
+    /// these, in this stream's time base, `to`.
+    pub(super) fn with_layer(mut self, index: usize, from: Rational, to: Rational) -> Self {
+        self.layer = Some(Layer { index, from, to });
+        self
+    }
+
+    /// Whether the packets of stream `index` go here, and the layer it is
+    /// if they're another stream's.
+    fn takes(&self, index: usize) -> Option<Option<Layer>> {
+        if self.index == index {
+            Some(None)
+        } else {
+            self.layer.filter(|layer| layer.index == index).map(Some)
         }
     }
 
@@ -164,13 +193,16 @@ impl Packets {
 
     /// Queue `packet`; whether the decode thread may be waiting for it,
     /// its queue having been empty.
-    fn push(&mut self, packet: Packet) -> bool {
+    fn push(&mut self, mut packet: Packet) -> bool {
         let index = packet.stream();
         let queue = [&mut self.video, &mut self.audio, &mut self.subtitle]
             .into_iter()
             .flatten()
-            .find(|q| q.index == index);
-        if let Some(queue) = queue {
+            .find_map(|q| q.takes(index).map(|layer| (q, layer)));
+        if let Some((queue, layer)) = queue {
+            if let Some(layer) = layer {
+                packet.rescale_ts(layer.from, layer.to);
+            }
             self.bytes += packet.size();
             let waited = queue.packets.is_empty();
             queue.packets.push_back(packet);

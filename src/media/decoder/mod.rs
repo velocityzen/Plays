@@ -26,6 +26,7 @@ mod cover_file;
 mod demux;
 pub(super) mod fetch;
 mod hls;
+pub(super) mod layers;
 mod shared;
 mod video;
 
@@ -54,6 +55,7 @@ pub(super) use video::open_video;
 
 use super::chapters::Chapter;
 use super::details::{AudioDetails, ContainerDetails, VideoDetails};
+use super::enhancement::Configuration;
 use super::external::{self, Reading, SubtitleFile};
 use super::orientation::Orientation;
 use super::picking::Wanted;
@@ -366,6 +368,15 @@ impl StreamInfo {
         }
     }
 
+    /// As finding a video's enhancement layer takes it.
+    fn as_layer(&self) -> layers::Stream<'_> {
+        layers::Stream {
+            index: self.index,
+            parameters: &self.parameters,
+            time_base: self.time_base,
+        }
+    }
+
     /// The video's size before scaling or aspect-ratio correction.
     fn coded_size(&self) -> Option<(u32, u32)> {
         // SAFETY: the parameters are owned and valid while `self` is. Read
@@ -541,11 +552,13 @@ impl Decoders {
             return Ok(());
         }
         let stream = self.stream(index)?;
-        let queue = Some(PacketQueue::new(index, f64::from(stream.time_base)));
+        let mut queue = Some(PacketQueue::new(index, f64::from(stream.time_base)));
         match kind {
             TrackKind::Video => {
                 let options = self.options;
-                let decoder = VideoDecoder::new(stream, options.max_short_side, options.hardware)?;
+                let decoder = VideoDecoder::new(stream, options.max_short_side, options.hardware)?
+                    .with_layers(stream, &self.streams);
+                queue = self.video_queue(&decoder);
                 shared.update_info(|info| {
                     info.video_size = Some(decoder.display_size());
                     info.orientation = decoder.orientation;
@@ -572,6 +585,17 @@ impl Decoders {
         }
         demuxer.select(kind, queue);
         Ok(())
+    }
+
+    /// The packets to queue for `video`: its stream's, and its enhancement
+    /// layer's when that has one of its own.
+    fn video_queue(&self, video: &VideoDecoder) -> Option<PacketQueue> {
+        let stream = &self.streams[video.index];
+        let queue = PacketQueue::new(video.index, f64::from(stream.time_base));
+        Some(match video.layer_stream() {
+            Some(layer) => queue.with_layer(layer, self.streams[layer].time_base, stream.time_base),
+            None => queue,
+        })
     }
 
     /// After a seek to `cue_time`, as the subtitles' own timeline has it
@@ -757,7 +781,20 @@ fn open_best_video(
     source: &Source,
 ) -> Option<VideoDecoder> {
     let mut cover: Option<VideoDecoder> = None;
-    if let Some(stream) = input.streams().best(media::Type::Video) {
+    // Dolby Vision's enhancement layer plays with its base layer.
+    let shown = |stream: &ffmpeg::format::stream::Stream| {
+        !Configuration::is_layer_only(&stream.parameters())
+    };
+    let best = input
+        .streams()
+        .best(media::Type::Video)
+        .filter(shown)
+        .or_else(|| {
+            input
+                .streams()
+                .find(|s| s.parameters().medium() == media::Type::Video && shown(s))
+        });
+    if let Some(stream) = best {
         let is_cover = stream.disposition().contains(Disposition::ATTACHED_PIC);
         let hardware = options.hardware && !is_cover;
         let info = &decoders.streams[stream.index()];
@@ -765,7 +802,7 @@ fn open_best_video(
             Ok(decoder) if is_cover => cover = Some(decoder),
             Ok(decoder) => {
                 decoders.canvas = info.coded_size();
-                decoders.video = Some(decoder);
+                decoders.video = Some(decoder.with_layers(info, &decoders.streams));
             }
             Err(err) => log::warn!("{source}: skipping video: {err:#}"),
         }
@@ -934,7 +971,10 @@ fn start_demuxer(
     };
     let demuxer = Arc::new(Demuxer {
         packets: Mutex::new(Packets {
-            video: queue(TrackKind::Video),
+            video: decoders
+                .video
+                .as_ref()
+                .and_then(|video| decoders.video_queue(video)),
             audio: queue(TrackKind::Audio),
             // A file's subtitles don't come from the demuxer, and are still
             // being read.

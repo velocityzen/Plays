@@ -34,13 +34,28 @@ const LMS_TO_BT2020: [[f32; 3]; 3] = [
     [0.017_360_633, -0.047_244_53, 1.029_889_5],
 ];
 
-/// The parts of FFmpeg's structs in libavutil/dovi_meta.h that are read here,
-/// which the bindings don't cover. Later FFmpeg versions only add fields at
-/// the ends, and `AVDOVIMetadata` says where each struct starts.
+/// The parts of FFmpeg's structs in libavutil/dovi_meta.h that are read here
+/// and by `enhancement`, which the bindings don't cover. Later FFmpeg
+/// versions only add fields at the ends, and `AVDOVIMetadata` says where
+/// each struct starts.
 #[allow(dead_code)]
-mod sys {
+pub(super) mod sys {
     use super::MAX_PIECES;
     use ffmpeg_next::ffi::AVRational;
+
+    /// `AVDOVIDecoderConfigurationRecord`, a stream's coded side data.
+    #[repr(C)]
+    pub struct Configuration {
+        pub dv_version_major: u8,
+        pub dv_version_minor: u8,
+        pub dv_profile: u8,
+        pub dv_level: u8,
+        pub rpu_present_flag: u8,
+        pub el_present_flag: u8,
+        pub bl_present_flag: u8,
+        pub dv_bl_signal_compatibility_id: u8,
+        pub dv_md_compression: u8,
+    }
 
     #[repr(C)]
     pub struct Metadata {
@@ -83,12 +98,31 @@ mod sys {
         pub mmr_coef: [[[i64; 7]; 3]; MAX_PIECES],
     }
 
+    /// `AV_DOVI_NLQ_LINEAR_DZ`, the one method of dequantizing.
+    pub const NLQ_LINEAR_DZ: i32 = 0;
+
+    /// `AVDOVINLQParams`: how a component's enhancement layer is
+    /// dequantized, in fixed point with `coef_log2_denom` bits of fraction.
+    #[repr(C)]
+    #[derive(Clone, Copy)]
+    pub struct NlqParams {
+        pub nlq_offset: u16,
+        pub vdr_in_max: u64,
+        pub linear_deadzone_slope: u64,
+        pub linear_deadzone_threshold: u64,
+    }
+
     #[repr(C)]
     pub struct DataMapping {
         pub vdr_rpu_id: u8,
         pub mapping_color_space: u8,
         pub mapping_chroma_format_idc: u8,
         pub curves: [ReshapingCurve; 3],
+        pub nlq_method_idc: i32,
+        pub num_x_partitions: u32,
+        pub num_y_partitions: u32,
+        pub nlq: [NlqParams; 3],
+        pub nlq_pivots: [u16; 2],
     }
 
     #[repr(C)]
@@ -110,6 +144,40 @@ mod sys {
         pub source_min_pq: u16,
         pub source_max_pq: u16,
         pub source_diagonal: u16,
+    }
+}
+
+/// A frame's RPU as FFmpeg parsed it, from its side data.
+pub(super) fn rpu(
+    frame: &frame::Video,
+) -> Option<(&sys::RpuDataHeader, &sys::DataMapping, &sys::ColorMetadata)> {
+    // SAFETY: side data stays valid as long as the frame, which the
+    // references borrow; each struct is checked to be within it before it
+    // is read, and FFmpeg places each aligned for any struct.
+    unsafe {
+        let side = ffi::av_frame_get_side_data(
+            frame.as_ptr(),
+            ffi::AVFrameSideDataType::AV_FRAME_DATA_DOVI_METADATA,
+        );
+        if side.is_null() {
+            return None;
+        }
+        let (data, size) = ((*side).data as *const u8, (*side).size);
+        let within =
+            |offset: usize, len: usize| offset.checked_add(len).is_some_and(|end| end <= size);
+        if data.is_null() || !within(0, size_of::<sys::Metadata>()) {
+            return None;
+        }
+        let metadata = &*(data as *const sys::Metadata);
+        let part = |offset: usize, len: usize| within(offset, len).then(|| data.add(offset));
+        let header = part(metadata.header_offset, size_of::<sys::RpuDataHeader>())?;
+        let mapping = part(metadata.mapping_offset, size_of::<sys::DataMapping>())?;
+        let color = part(metadata.color_offset, size_of::<sys::ColorMetadata>())?;
+        Some((
+            &*(header as *const sys::RpuDataHeader),
+            &*(mapping as *const sys::DataMapping),
+            &*(color as *const sys::ColorMetadata),
+        ))
     }
 }
 
@@ -198,33 +266,8 @@ impl Reshaping {
         if hdr::Transfer::of(frame).is_some() {
             return None;
         }
-        // SAFETY: side data stays valid as long as the frame; each struct is
-        // checked to be within it before it is read.
-        unsafe {
-            let side = ffi::av_frame_get_side_data(
-                frame.as_ptr(),
-                ffi::AVFrameSideDataType::AV_FRAME_DATA_DOVI_METADATA,
-            );
-            if side.is_null() {
-                return None;
-            }
-            let (data, size) = ((*side).data as *const u8, (*side).size as usize);
-            let within =
-                |offset: usize, len: usize| offset.checked_add(len).is_some_and(|end| end <= size);
-            if data.is_null() || !within(0, size_of::<sys::Metadata>()) {
-                return None;
-            }
-            let metadata = &*(data as *const sys::Metadata);
-            let part = |offset: usize, len: usize| within(offset, len).then(|| data.add(offset));
-            let header = part(metadata.header_offset, size_of::<sys::RpuDataHeader>())?;
-            let mapping = part(metadata.mapping_offset, size_of::<sys::DataMapping>())?;
-            let color = part(metadata.color_offset, size_of::<sys::ColorMetadata>())?;
-            Self::new(
-                &*(header as *const sys::RpuDataHeader),
-                &*(mapping as *const sys::DataMapping),
-                &*(color as *const sys::ColorMetadata),
-            )
-        }
+        let (header, mapping, color) = rpu(frame)?;
+        Self::new(header, mapping, color)
     }
 
     fn new(

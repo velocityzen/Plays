@@ -18,6 +18,17 @@ fn frame_with(
 ) -> frame::Video {
     let mut frame = frame::Video::new(Pixel::YUV420P10LE, 2, 2);
     frame.set_color_transfer_characteristic(transfer);
+    attach_hdr10(&mut frame, max_cll, display);
+    frame
+}
+
+/// Give `frame` side data of a MaxCLL and of a mastering display's peak,
+/// each if given, as `frame_with` does.
+pub(crate) fn attach_hdr10(
+    frame: &mut frame::Video,
+    max_cll: Option<u32>,
+    display: Option<(i32, i32, bool)>,
+) {
     let mut side = |kind, size| {
         // SAFETY: FFmpeg makes side data of the size asked for, or none.
         let side = unsafe { ffi::av_frame_new_side_data(frame.as_mut_ptr(), kind, size) };
@@ -56,7 +67,6 @@ fn frame_with(
             data.cast::<sys::MasteringDisplay>().write(mastering);
         }
     }
-    frame
 }
 
 #[test]

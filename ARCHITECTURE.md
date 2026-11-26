@@ -202,6 +202,9 @@ sound heard. No sound, wall time. A gap in the sound plays as silence.
   interrupts a read waiting on the network
 - `src/media/decoder/mod.rs`: decodes only while its queues have room
 - `src/media/decoder/video.rs`, `audio.rs`, `convert.rs`: decoders, pictures
+- `src/media/decoder/layers.rs`: Dolby Vision profile 7's enhancement layer,
+  split out of the video's track (`dovi_split`) or a track of its own, its
+  packets queued with the video's; frames wait for theirs, paired by time
 - `src/media/decoder/shared.rs`: what a player and its threads share; each
   seek starts a generation, and nothing from an earlier one is handed out
 - `src/media/player.rs`: the UI-side handle, ticked as its block draws; a
@@ -232,6 +235,8 @@ A decoded picture reaches gpui in one of three forms
 - `src/media/hdr.rs`: PQ, HLG and the tone curve; reference white as SDR
   white, the video's peak (MaxCLL, mastering display) at the headroom
 - `src/media/dovi.rs`: Dolby Vision profile 5, reshaped by each frame's RPU
+- `src/media/enhancement.rs`: profile 7's two layers composed into HDR10 on
+  the CPU (ETSI GS CCM 001), at the master's peak
 - `src/media/picture.rs`: the forms, and the gamma every player shares
 - `src/media/orientation.rs`: the eight turns and mirrors
 - `src/ui/player/graveyard.rs`: replaced frames, kept a few display frames

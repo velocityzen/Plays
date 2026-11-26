@@ -432,7 +432,7 @@ impl ToneMapper {
 
 #[cfg(test)]
 #[path = "tests/hdr.rs"]
-mod tests;
+pub(crate) mod tests;
 
 #[cfg(test)]
 #[path = "tests/hdr_properties.rs"]
