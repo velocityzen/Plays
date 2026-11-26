@@ -1,9 +1,12 @@
 //! Subtitles for a cast: every cue of a text track in the media, or of a
 //! subtitle file, read once and written as WebVTT (for HLS and Chromecast)
-//! or SRT (for DLNA TVs). Italic and bold are kept; placement isn't.
-//! Picture subtitles (PGS, DVD) have no text: they go drawn into the
+//! or SRT (for DLNA TVs). Italic and bold are kept, and in WebVTT where a
+//! cue goes: at the top, in the middle or at the bottom, to the left, in
+//! the centre or to the right, as its ASS style or tags put it. Picture
+//! subtitles (PGS, DVD) have no text: they go drawn into the
 //! video, where it is re-encoded (see `overlay`).
 
+use std::collections::HashMap;
 use std::fmt::Write;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -50,6 +53,222 @@ pub(crate) struct Cue {
     pub start: f64,
     pub end: f64,
     pub spans: Vec<Span>,
+    pub placement: Placement,
+}
+
+/// Where a cue goes on the picture, in thirds of it. Bottom centre, where
+/// a player puts any it's told nothing of, unless said otherwise.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub(crate) struct Placement {
+    pub vertical: Vertical,
+    pub horizontal: Horizontal,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub(crate) enum Vertical {
+    Top,
+    Middle,
+    #[default]
+    Bottom,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub(crate) enum Horizontal {
+    Left,
+    #[default]
+    Center,
+    Right,
+}
+
+impl Placement {
+    /// ASS's alignment, as on a numeric keypad: 1 to 3 along the bottom,
+    /// left to right, 4 to 6 the middle, 7 to 9 the top.
+    fn numpad(alignment: u32) -> Option<Self> {
+        let index = alignment.checked_sub(1).filter(|&index| index < 9)?;
+        Some(Self {
+            vertical: [Vertical::Bottom, Vertical::Middle, Vertical::Top][index as usize / 3],
+            horizontal: [Horizontal::Left, Horizontal::Center, Horizontal::Right]
+                [index as usize % 3],
+        })
+    }
+
+    /// SSA's alignment: 1 to 3 left to right along the bottom, 4 more for
+    /// the top, 8 more for the middle.
+    fn legacy(alignment: u32) -> Option<Self> {
+        let horizontal = match alignment & 3 {
+            1 => Horizontal::Left,
+            2 => Horizontal::Center,
+            3 => Horizontal::Right,
+            _ => return None,
+        };
+        let vertical = match alignment & !3 {
+            0 => Vertical::Bottom,
+            4 => Vertical::Top,
+            8 => Vertical::Middle,
+            _ => return None,
+        };
+        Some(Self {
+            vertical,
+            horizontal,
+        })
+    }
+
+    /// Where a point `x`, `y` is on a `width` × `height` picture.
+    fn at(x: f64, y: f64, (width, height): (f64, f64)) -> Self {
+        let third = |at: f64, of: f64| (at / of * 3.0).floor().clamp(0.0, 2.0) as usize;
+        Self {
+            vertical: [Vertical::Top, Vertical::Middle, Vertical::Bottom][third(y, height)],
+            horizontal: [Horizontal::Left, Horizontal::Center, Horizontal::Right][third(x, width)],
+        }
+    }
+
+    /// The WebVTT cue settings that put a cue here, each after a space: a
+    /// line from the top or the middle, text from near either side.
+    fn webvtt(self) -> String {
+        let line = match self.vertical {
+            Vertical::Top => " line:0",
+            Vertical::Middle => " line:50%,center",
+            Vertical::Bottom => "",
+        };
+        let side = match self.horizontal {
+            Horizontal::Left => " position:5% align:left",
+            Horizontal::Center => "",
+            Horizontal::Right => " position:95% align:right",
+        };
+        format!("{line}{side}")
+    }
+}
+
+/// A track's ASS styles' placements, by name, and the size of the picture
+/// its positions are on, from its header.
+#[derive(Debug, PartialEq)]
+struct Styles {
+    placements: HashMap<String, Placement>,
+    size: (f64, f64),
+}
+
+impl Styles {
+    fn of(header: &str) -> Self {
+        let mut placements = HashMap::new();
+        let (mut width, mut height) = (None, None);
+        let mut legacy = false;
+        let mut columns: Option<(usize, usize)> = None;
+        for line in header.lines() {
+            let line = line.trim();
+            if line.starts_with('[') {
+                legacy = line.eq_ignore_ascii_case("[V4 Styles]");
+                columns = None;
+                continue;
+            }
+            let Some((key, value)) = line.split_once(':') else {
+                continue;
+            };
+            let value = value.trim();
+            match key.trim() {
+                "PlayResX" => width = value.parse::<f64>().ok().filter(|&w| w > 0.0),
+                "PlayResY" => height = value.parse::<f64>().ok().filter(|&h| h > 0.0),
+                "Format" => {
+                    let names: Vec<_> = value.split(',').map(str::trim).collect();
+                    let column =
+                        |name: &str| names.iter().position(|n| n.eq_ignore_ascii_case(name));
+                    columns = column("Name").zip(column("Alignment"));
+                }
+                "Style" => {
+                    let Some((name, alignment)) = columns else {
+                        continue;
+                    };
+                    let fields: Vec<_> = value.split(',').map(str::trim).collect();
+                    let placement =
+                        fields
+                            .get(alignment)
+                            .and_then(|a| a.parse().ok())
+                            .and_then(|a| {
+                                if legacy {
+                                    Placement::legacy(a)
+                                } else {
+                                    Placement::numpad(a)
+                                }
+                            });
+                    if let (Some(name), Some(placement)) = (fields.get(name), placement) {
+                        placements.insert((*name).to_owned(), placement);
+                    }
+                }
+                _ => {}
+            }
+        }
+        // As players take a size the header leaves out: 384 × 288, or 4:3
+        // to the side it gives.
+        let size = match (width, height) {
+            (Some(width), Some(height)) => (width, height),
+            (Some(width), None) => (width, width * 3.0 / 4.0),
+            (None, Some(height)) => (height * 4.0 / 3.0, height),
+            (None, None) => (384.0, 288.0),
+        };
+        Self { placements, size }
+    }
+
+    /// Where an ASS event goes: where its tags put it, else its style.
+    fn placement(&self, line: &str) -> Placement {
+        let style = dialogue_style(line).trim_start_matches('*');
+        let style = self
+            .placements
+            .get(style)
+            .or_else(|| self.placements.get("Default"))
+            .copied()
+            .unwrap_or_default();
+        let tags = Tags::of(dialogue_text(line));
+        match (tags.position, tags.alignment) {
+            (Some((x, y)), _) => Placement::at(x, y, self.size),
+            (None, Some(alignment)) => alignment,
+            (None, None) => style,
+        }
+    }
+}
+
+/// What an ASS event's override tags say of where it goes: the first of
+/// each, as players take them.
+#[derive(Debug, Default, PartialEq)]
+struct Tags {
+    alignment: Option<Placement>,
+    position: Option<(f64, f64)>,
+}
+
+impl Tags {
+    fn of(text: &str) -> Self {
+        let mut tags = Self::default();
+        let mut rest = text;
+        while let Some(open) = rest.find('{') {
+            let Some(close) = rest[open..].find('}') else {
+                break;
+            };
+            for tag in rest[open + 1..open + close].split('\\').skip(1) {
+                let tag = tag.trim();
+                if let Some(value) = tag.strip_prefix("an") {
+                    if tags.alignment.is_none() {
+                        tags.alignment = value.trim().parse().ok().and_then(Placement::numpad);
+                    }
+                } else if let Some(value) = tag.strip_prefix('a') {
+                    if tags.alignment.is_none() {
+                        tags.alignment = value.trim().parse().ok().and_then(Placement::legacy);
+                    }
+                } else if let Some(arguments) = tag
+                    .strip_prefix("pos(")
+                    .or_else(|| tag.strip_prefix("move("))
+                    && tags.position.is_none()
+                {
+                    let mut numbers = arguments
+                        .trim_end_matches(')')
+                        .split(',')
+                        .map(|n| n.trim().parse::<f64>());
+                    if let (Some(Ok(x)), Some(Ok(y))) = (numbers.next(), numbers.next()) {
+                        tags.position = Some((x, y));
+                    }
+                }
+            }
+            rest = &rest[open + close + 1..];
+        }
+        tags
+    }
 }
 
 /// Read every cue of `subtitles`, for media from `source`.
@@ -107,6 +326,7 @@ pub(crate) fn read(
         (stream.parameters(), stream.time_base())
     };
     let mut decoder = open_decoder(&parameters, time_base, encoding)?;
+    let styles = Styles::of(&header(&decoder));
     set_discard(&mut input, Some(index));
 
     let time_base = f64::from(time_base);
@@ -141,7 +361,12 @@ pub(crate) fn read(
         };
         let spans = spans_of(subtitle);
         if !spans.is_empty() && end > start {
-            cues.push(Cue { start, end, spans });
+            cues.push(Cue {
+                start,
+                end,
+                spans,
+                placement: placement_of(subtitle, &styles),
+            });
         }
     }
     cues.sort_by(|a, b| a.start.total_cmp(&b.start));
@@ -172,6 +397,34 @@ fn spans_of(subtitle: &ffmpeg::Subtitle) -> Vec<Span> {
         }
     }
     tidy(spans)
+}
+
+/// Where a decoded subtitle goes: where its first ASS event does.
+fn placement_of(subtitle: &ffmpeg::Subtitle, styles: &Styles) -> Placement {
+    subtitle
+        .rects()
+        .find_map(|rect| match rect {
+            Rect::Ass(ass) => Some(styles.placement(ass.get())),
+            _ => None,
+        })
+        .unwrap_or_default()
+}
+
+/// The ASS header a subtitle decoder makes its events for: the track's
+/// own, or FFmpeg's for text it turns into ASS.
+fn header(decoder: &ffmpeg::decoder::Subtitle) -> String {
+    // SAFETY: the decoder is open, and its header, where it has one, is
+    // `subtitle_header_size` bytes it owns.
+    unsafe {
+        let context = decoder.as_ptr();
+        let (data, size) = ((*context).subtitle_header, (*context).subtitle_header_size);
+        match usize::try_from(size) {
+            Ok(size) if !data.is_null() && size > 0 => {
+                String::from_utf8_lossy(std::slice::from_raw_parts(data, size)).into_owned()
+            }
+            _ => String::new(),
+        }
+    }
 }
 
 /// A decoded `AVSubtitle`, freed when dropped.
@@ -220,6 +473,13 @@ fn open_decoder(
 fn dialogue_text(line: &str) -> &str {
     let fields = if line.starts_with("Dialogue:") { 10 } else { 9 };
     line.splitn(fields, ',').nth(fields - 1).unwrap_or(line)
+}
+
+/// The style of a decoded ASS event: after its read order and layer, or
+/// a whole dialogue line's layer, start and end.
+fn dialogue_style(line: &str) -> &str {
+    let index = if line.starts_with("Dialogue:") { 3 } else { 2 };
+    line.split(',').nth(index).map_or("", str::trim)
 }
 
 /// ASS dialogue text as spans: override blocks (`{\i1}`) set the style,
@@ -401,9 +661,10 @@ pub(crate) fn webvtt(cues: &[Cue], range: Option<(f64, f64)>, mpegts: Option<u64
         }
         let _ = write!(
             out,
-            "{} --> {}\n{}\n\n",
+            "{} --> {}{}\n{}\n\n",
             timestamp(cue.start, '.'),
             timestamp(cue.end, '.'),
+            cue.placement.webvtt(),
             markup(cue, true)
         );
     }

@@ -592,7 +592,7 @@ flowchart LR
 - `mux.rs`: fragmented MP4, MPEG-TS, ADTS or FLAC, written into memory
 - `job.rs`: segments made three ahead of the device; a seek starts another
 - `overlay.rs`: picture subtitles drawn into re-encoded video
-- `subtitles.rs`: text subtitles as WebVTT or SRT
+- `subtitles.rs`: text subtitles as WebVTT, placed as ASS puts them, or SRT
 - `playlist.rs`: the master, media and subtitle playlists
 - `http.rs`, `server.rs`: HTTP/1.1, a thread per connection, a token per cast
 
