@@ -246,6 +246,9 @@ pub enum SeekMode {
     /// the way as they are decoded, and nothing after it, with no sound.
     /// One a little ahead of the frame decoded last decodes on from there.
     Scrub,
+    /// A live stream, to where it is now: opened again, from the first
+    /// keyframe read; the time asked for is what it was.
+    Live,
 }
 
 /// A seek for the demux thread.
@@ -957,11 +960,19 @@ fn start_demuxer(
     {
         let demuxer = demuxer.clone();
         let name = name.to_owned();
+        let (source, max_short_side) = (source.clone(), decoders.options.max_short_side);
+        let reopen = {
+            let shared = shared.clone();
+            move || {
+                let shared = shared.clone();
+                open_input(&source, max_short_side, move || shared.stopped())
+            }
+        };
         thread::Builder::new()
             .name(format!("demux {name}"))
             .spawn(move || {
                 guarded(&demuxer.shared, &name, || {
-                    demux(input, &demuxer, &name);
+                    demux(input, reopen, &demuxer, &name);
                     Ok(())
                 });
             })
@@ -1042,7 +1053,8 @@ fn seek_to(
         session.settled = false;
     }
     session.serial = serial;
-    session.seek_target = Some(time);
+    // Where a live stream is now is known once it has landed.
+    session.seek_target = (mode != SeekMode::Live).then_some(time);
     session.scrub = scrub;
     shared.reset_queues(serial);
 }

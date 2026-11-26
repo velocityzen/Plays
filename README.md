@@ -21,7 +21,8 @@ GPU-accelerated UI framework.
   another in one block as a playlist
 - Playlist files (`.m3u`, `.m3u8`, `.pls`), on disk or over HTTP, each in
   one block
-- Streams: HTTP(S), HLS, DASH, RTMP, RTSP
+- Streams: HTTP(S), HLS, DASH, RTMP, RTSP; a live one paused plays on
+  from where it is now
 - Play/pause, seek, loop, volume and mute in each block
 - Speed from 0.25× to 4×, the sound at its own pitch
 - Frame-accurate scrubbing and frame stepping
@@ -245,8 +246,7 @@ mkdir ($nu.user-autoload-dirs | first); plays completions nushell | save -f ($nu
 
 ## Limitations
 
-- Live streams can't be seeked or screenshotted, and one paused goes on
-  from where it paused, not the live edge.
+- Live streams can't be seeked or screenshotted.
 - Picture adjustments and delays aren't kept when a file opens again.
 - HDR goes brighter than SDR white only on macOS, decoded by
   VideoToolbox. HDR metadata isn't used, and Dolby Vision profile 7's

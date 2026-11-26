@@ -333,8 +333,14 @@ impl Drop for StopOnDrop {
 pub const PANICS_IN_DEMUX: &str = "panics-in-demux";
 
 /// The demux thread: reads packets until the queues are full enough, and
-/// carries out seeks.
-pub(super) fn demux(mut input: Input, demuxer: &Demuxer, name: &str) {
+/// carries out seeks; a live stream's to where it is now, opened again
+/// with `reopen`.
+pub(super) fn demux(
+    mut input: Input,
+    reopen: impl Fn() -> anyhow::Result<Input>,
+    demuxer: &Demuxer,
+    name: &str,
+) {
     #[cfg(test)]
     if name.starts_with(PANICS_IN_DEMUX) {
         panic!("the demux thread failing, as the test asked");
@@ -360,10 +366,14 @@ pub(super) fn demux(mut input: Input, demuxer: &Demuxer, name: &str) {
                 let packets = demuxer.packets.lock();
                 (
                     packets.video.as_ref().map(|q| (q.index, q.time_base)),
-                    packets.audio.as_ref().map(|q| q.index),
+                    packets.audio.as_ref().map(|q| (q.index, q.time_base)),
                 )
             };
-            let landing = land(&mut input, seek, video, sound, name);
+            let landing = if seek.mode == SeekMode::Live {
+                go_live(&mut input, &reopen, video.or(sound), name)
+            } else {
+                land(&mut input, seek, video, sound.map(|(index, _)| index), name)
+            };
             let mut packets = demuxer.packets.lock();
             // A newer seek may have come in meanwhile; it runs next time round.
             if packets.seek == Some(seek) {
@@ -456,7 +466,7 @@ fn land(
     let (SeekMode::Skip { forward }, Some(video)) = (seek.mode, video) else {
         return Landing::default();
     };
-    let mut landing = read_to_video(input, video);
+    let mut landing = read_to(input, video, false);
     let Some(keyframe) = landing.keyframe.filter(|k| seconds - k > EXACT_SKIP) else {
         landing.keyframe = None;
         return landing;
@@ -466,7 +476,7 @@ fn land(
         return landing;
     }
     if input.seek(target, target..).is_ok() {
-        let mut after = read_to_video(input, video);
+        let mut after = read_to(input, video, false);
         if after.keyframe.is_some_and(|k| k >= seconds) {
             return after;
         }
@@ -522,21 +532,57 @@ fn length_in_seconds(text: &str) -> Option<f64> {
     (seconds >= 0.0 && length.is_finite()).then_some(length)
 }
 
-/// Read up to the first packet of the `video` stream (index, time base),
-/// keeping its time in `keyframe`.
-fn read_to_video(input: &mut Input, video: (usize, f64)) -> Landing {
+/// Open a live stream's `input` again with `reopen`, where it is now, and
+/// read to the first keyframe of the `first` stream (index, time base):
+/// the picture's, else the sound's. If it won't open as it was, it reads
+/// on from where it was, to its next keyframe.
+fn go_live(
+    input: &mut Input,
+    reopen: impl Fn() -> anyhow::Result<Input>,
+    first: Option<(usize, f64)>,
+    name: &str,
+) -> Landing {
+    match reopen() {
+        Ok(again) if same_streams(input, &again) => *input = again,
+        Ok(_) => log::warn!("{name}: its streams changed, so it plays on from where it was"),
+        Err(err) => {
+            log::warn!("{name}: it plays on from where it was, as it won't open again: {err:#}")
+        }
+    }
+    first.map_or_else(Landing::default, |first| read_to(input, first, true))
+}
+
+/// Whether `a` and `b` have the same streams, by kind and codec.
+fn same_streams(a: &Input, b: &Input) -> bool {
+    let streams = |input: &Input| -> Vec<_> {
+        input
+            .streams()
+            .map(|stream| {
+                let parameters = stream.parameters();
+                (parameters.medium(), parameters.id())
+            })
+            .collect()
+    };
+    streams(a) == streams(b)
+}
+
+/// Read up to the first packet of `stream` (index, time base), or its
+/// first keyframe if `key`, keeping its time in `keyframe`: with no
+/// keyframe among the packets peeked, the time of its first.
+fn read_to(input: &mut Input, stream: (usize, f64), key: bool) -> Landing {
     let mut landing = Landing::default();
+    let mut first = None;
     while landing.packets.len() < PEEK_PACKETS {
         let mut packet = Packet::empty();
         match packet.read(input) {
             Ok(()) => {
-                let found = packet.stream() == video.0;
-                if found {
-                    landing.keyframe = packet.pts().or(packet.dts()).map(|t| t as f64 * video.1);
-                }
+                let time = (packet.stream() == stream.0).then(|| packet_time(&packet, stream.1));
+                let found = time.is_some() && (!key || packet.is_key());
+                first = first.or(time);
                 landing.packets.push(packet);
                 if found {
-                    break;
+                    landing.keyframe = time.flatten();
+                    return landing;
                 }
             }
             Err(ffmpeg::Error::Other { errno }) if errno == ffmpeg::util::error::EAGAIN => {
@@ -548,6 +594,7 @@ fn read_to_video(input: &mut Input, video: (usize, f64)) -> Landing {
             }
         }
     }
+    landing.keyframe = first.flatten();
     landing
 }
 

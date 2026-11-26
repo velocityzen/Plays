@@ -24,7 +24,7 @@ mod made;
 mod playlists;
 use made::{in_own_folder, kept, made_from, made_in, media};
 
-fn options(autoplay: bool, looping: bool) -> PlayerOptions {
+pub(super) fn options(autoplay: bool, looping: bool) -> PlayerOptions {
     PlayerOptions {
         autoplay,
         looping,
@@ -157,7 +157,7 @@ fn what_a_file_holds_is_shared_not_copied() {
     );
 }
 
-fn wait_until(timeout: Duration, mut done: impl FnMut() -> bool) -> bool {
+pub(super) fn wait_until(timeout: Duration, mut done: impl FnMut() -> bool) -> bool {
     let start = Instant::now();
     while start.elapsed() < timeout {
         if done() {
@@ -2827,7 +2827,7 @@ const HLS: &[&str] = &[
 ];
 
 /// A short video with sound, as MPEG-TS, plus an HLS version of it in `hls/`.
-fn stream_media() -> PathBuf {
+pub(super) fn stream_media() -> PathBuf {
     let ts = media("stream.ts", STREAM);
     let dir = ts.parent().unwrap().to_path_buf();
     made_in(&dir, "hls", &format!("{STREAM:?} {HLS:?}"), |hls| {

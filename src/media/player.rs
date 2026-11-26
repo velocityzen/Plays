@@ -80,6 +80,9 @@ pub struct Player {
     buffering_since: Instant,
     network: bool,
     ended: bool,
+    /// A live stream paused once it had played: played again, it goes on
+    /// from where the stream is now.
+    behind_live: bool,
     looping: bool,
     muted: bool,
     volume: f32,
@@ -224,6 +227,7 @@ impl Player {
             scrubbing: false,
             buffering_since: Instant::now(),
             ended: false,
+            behind_live: false,
             looping: options.looping,
             muted: false,
             volume,
@@ -381,6 +385,8 @@ impl Player {
     pub fn play(&mut self) {
         if self.ended {
             self.seek(0.0);
+        } else if std::mem::take(&mut self.behind_live) {
+            self.go_live();
         }
         self.playing = true;
         self.apply_running();
@@ -388,6 +394,7 @@ impl Player {
     }
 
     pub fn pause(&mut self) {
+        self.behind_live |= self.playing && self.started && self.is_live();
         self.playing = false;
         self.apply_running();
         self.note_started();
@@ -440,6 +447,21 @@ impl Player {
         self.shared.subtitles().seeked(from, time);
         self.shared.clock().set(time);
         self.send(Command::Seek { time, serial, mode });
+    }
+
+    /// Go on from where a live stream is now, letting go of what was read
+    /// of it before: it's opened again, and its clock set to where that
+    /// lands.
+    fn go_live(&mut self) {
+        let serial = self.shared.new_serial();
+        self.start_buffering();
+        self.shared.subtitles().clear();
+        let time = self.position();
+        self.send(Command::Seek {
+            time,
+            serial,
+            mode: SeekMode::Live,
+        });
     }
 
     /// Decode the frame on screen again, for a paused player whose frames
@@ -787,6 +809,10 @@ impl Drop for Player {
 pub(super) fn wait_for(seconds: f64) -> Duration {
     Duration::try_from_secs_f64(seconds.max(0.0)).unwrap_or(Duration::MAX)
 }
+
+#[cfg(test)]
+#[path = "tests/player.rs"]
+mod tests;
 
 #[cfg(test)]
 #[path = "tests/player_properties.rs"]
