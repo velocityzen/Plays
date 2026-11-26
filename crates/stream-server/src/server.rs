@@ -951,6 +951,7 @@ fn variant(input: &Input, info: &MediaInfo, plan: &Plan) -> Variant {
         codecs: (known && !codecs.is_empty()).then(|| codecs.join(",")),
         resolution,
         frame_rate,
+        hdr: plan.shown_hdr(info),
     }
 }
 

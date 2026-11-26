@@ -133,6 +133,16 @@ impl Plan {
         })
     }
 
+    /// The HDR the video sent shows, repackaged or re-encoded: what an
+    /// encoding keeps, or a copy's base layer's, as a copy loses its Dolby
+    /// Vision signalling. None for SDR.
+    pub(crate) fn shown_hdr(&self, media: &MediaInfo) -> Option<Hdr> {
+        match self.video.as_ref()? {
+            VideoPlan::Copy { stream, .. } => media.video(*stream)?.base_hdr,
+            VideoPlan::Encode { hdr, .. } => *hdr,
+        }
+    }
+
     pub(crate) fn audio_stream(&self) -> Option<usize> {
         self.audio.as_ref().map(|audio| match audio {
             AudioPlan::Copy { stream, .. } | AudioPlan::Encode { stream, .. } => *stream,

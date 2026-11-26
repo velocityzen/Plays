@@ -34,6 +34,7 @@ fn writes_a_master_playlist() {
         codecs: Some("avc1.640028,mp4a.40.2".into()),
         resolution: Some((1920, 1080)),
         frame_rate: Some(25.0),
+        hdr: None,
     };
     let subtitles = SubtitlesRendition {
         language: Some("en".into()),
@@ -48,6 +49,41 @@ fn writes_a_master_playlist() {
              RESOLUTION=1920x1080,FRAME-RATE=25.000,SUBTITLES=\"subs\",CLOSED-CAPTIONS=NONE\n\
              video.m3u8\n"
     );
+}
+
+/// HDR's `VIDEO-RANGE`, without which an Apple TV plays none of it: PQ for
+/// HDR10 and Dolby Vision, HLG for HLG, and none for SDR, its default.
+#[test]
+fn names_the_range_of_hdr_video() {
+    let variant = |hdr| Variant {
+        bandwidth: 20_000_000,
+        codecs: Some("hvc1.2.4.L150.B0".into()),
+        resolution: Some((3840, 2160)),
+        frame_rate: Some(24.0),
+        hdr,
+    };
+    let stream_info = |hdr| {
+        let playlist = master(&variant(hdr), None);
+        let line = playlist
+            .lines()
+            .find(|line| line.starts_with("#EXT-X-STREAM-INF:"));
+        line.unwrap().to_owned()
+    };
+    for (hdr, range) in [
+        (Hdr::Hdr10, "PQ"),
+        (Hdr::DolbyVision, "PQ"),
+        (Hdr::Hlg, "HLG"),
+    ] {
+        assert_eq!(
+            stream_info(Some(hdr)),
+            format!(
+                "#EXT-X-STREAM-INF:BANDWIDTH=20000000,CODECS=\"hvc1.2.4.L150.B0\",\
+                 RESOLUTION=3840x2160,FRAME-RATE=24.000,VIDEO-RANGE={range},\
+                 CLOSED-CAPTIONS=NONE"
+            )
+        );
+    }
+    assert!(!stream_info(None).contains("VIDEO-RANGE"));
 }
 
 #[test]

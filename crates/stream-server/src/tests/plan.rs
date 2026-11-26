@@ -288,7 +288,8 @@ fn keeps_hdr_in_a_re_encoding_only_as_the_device_shows_it() {
 /// Repackaged, Dolby Vision loses its signalling, and a device shows its
 /// base layer: copied where that's HDR10 the device shows, IPT re-encoded,
 /// as without its RPU it's green and purple. A file the device plays as it
-/// is keeps its Dolby Vision, for one that shows it.
+/// is keeps its Dolby Vision, for one that shows it. The HDR shown, which
+/// the master playlist names, is the base layer's or the encoding's.
 #[test]
 fn repackages_dolby_vision_as_its_base_layer() {
     let apple_tv = |hdr: &[Hdr]| Profile {
@@ -308,18 +309,27 @@ fn repackages_dolby_vision_as_its_base_layer() {
     let profile_20 = hdr_media(VideoCodec::Hevc, Hdr::DolbyVision, None, true);
 
     for hdr in [&every[..], &[Hdr::Hdr10]] {
-        let copied = planned(&profile_8_1, apple_tv(hdr)).video;
-        assert!(matches!(copied, Some(VideoPlan::Copy { .. })), "{copied:?}");
+        let copied = planned(&profile_8_1, apple_tv(hdr));
+        assert!(
+            matches!(copied.video, Some(VideoPlan::Copy { .. })),
+            "{copied:?}"
+        );
+        assert_eq!(copied.shown_hdr(&profile_8_1), Some(Hdr::Hdr10));
     }
-    let sdr_copy = planned(&profile_8_1, apple_tv(&[])).video;
+    let profile_8_4 = hdr_media(VideoCodec::Hevc, Hdr::DolbyVision, Some(Hdr::Hlg), false);
+    let copied = planned(&profile_8_4, apple_tv(&every));
+    assert!(matches!(copied.video, Some(VideoPlan::Copy { .. })));
+    assert_eq!(copied.shown_hdr(&profile_8_4), Some(Hdr::Hlg));
+    let sdr_copy = planned(&profile_8_1, apple_tv(&[]));
     assert!(matches!(
-        sdr_copy,
+        sdr_copy.video,
         Some(VideoPlan::Encode { hdr: None, .. })
     ));
-    let reshaped = planned(&profile_20, apple_tv(&every)).video;
+    assert_eq!(sdr_copy.shown_hdr(&profile_8_1), None);
+    let reshaped = planned(&profile_20, apple_tv(&every));
     assert!(
         matches!(
-            reshaped,
+            reshaped.video,
             Some(VideoPlan::Encode {
                 to: VideoCodec::Hevc,
                 ten_bit: true,
@@ -329,8 +339,13 @@ fn repackages_dolby_vision_as_its_base_layer() {
         ),
         "{reshaped:?}"
     );
-    let fitted = planned(&profile_20, apple_tv(&[])).video;
-    assert!(matches!(fitted, Some(VideoPlan::Encode { hdr: None, .. })));
+    assert_eq!(reshaped.shown_hdr(&profile_20), Some(Hdr::Hdr10));
+    let fitted = planned(&profile_20, apple_tv(&[]));
+    assert!(matches!(
+        fitted.video,
+        Some(VideoPlan::Encode { hdr: None, .. })
+    ));
+    assert_eq!(fitted.shown_hdr(&profile_20), None);
 
     let dolby_vision_tv = Profile {
         files: vec![Container::Matroska],

@@ -9,7 +9,7 @@ use ffmpeg::codec::Id;
 use ffmpeg_next as ffmpeg;
 
 use crate::job::LiveWindow;
-use crate::profile::Segments;
+use crate::profile::{Hdr, Segments};
 use crate::segments::Timeline;
 
 /// What the master playlist says about the stream.
@@ -20,6 +20,9 @@ pub(crate) struct Variant {
     pub codecs: Option<String>,
     pub resolution: Option<(u32, u32)>,
     pub frame_rate: Option<f64>,
+    /// The HDR its video shows, as its `VIDEO-RANGE` says; none for SDR. An
+    /// Apple TV plays HDR it's told of alone.
+    pub hdr: Option<Hdr>,
 }
 
 /// The subtitles the master playlist offers.
@@ -51,11 +54,23 @@ pub(crate) fn master(variant: &Variant, subtitles: Option<&SubtitlesRendition>) 
     if let Some(rate) = variant.frame_rate {
         let _ = write!(out, ",FRAME-RATE={rate:.3}");
     }
+    if let Some(hdr) = variant.hdr {
+        let _ = write!(out, ",VIDEO-RANGE={}", video_range(hdr));
+    }
     if subtitles.is_some() {
         out.push_str(",SUBTITLES=\"subs\"");
     }
     out.push_str(",CLOSED-CAPTIONS=NONE\nvideo.m3u8\n");
     out
+}
+
+/// HDR's transfer, as `VIDEO-RANGE` names it: Dolby Vision's is PQ, as
+/// its base layer's is when that's HDR10.
+fn video_range(hdr: Hdr) -> &'static str {
+    match hdr {
+        Hdr::Hlg => "HLG",
+        Hdr::Hdr10 | Hdr::DolbyVision => "PQ",
+    }
 }
 
 /// What can't be in a quoted attribute.

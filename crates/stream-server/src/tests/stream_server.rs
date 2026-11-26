@@ -1047,9 +1047,10 @@ fn first_frame(cast: &crate::Cast, kind: Segments) -> ffmpeg::frame::Video {
 
 /// Dolby Vision in IPT, profile 20 here, shows green and purple without
 /// its RPU, so a device it's repackaged for gets it reshaped: HDR10 for an
-/// Apple TV 4K, which shows that, SDR for one that doesn't. The picture's
-/// left half is a skin tone, redder than it is blue, and its right half
-/// green; their IPT taken for YCbCr would be green and magenta.
+/// Apple TV 4K, which shows that, its master playlist saying PQ, SDR for
+/// one that doesn't. The picture's left half is a skin tone, redder than
+/// it is blue, and its right half green; their IPT taken for YCbCr would
+/// be green and magenta.
 #[test]
 fn reshapes_dolby_visions_ipt_for_a_device() {
     use crate::Hdr;
@@ -1070,6 +1071,12 @@ fn reshapes_dolby_visions_ipt_for_a_device() {
         assert!(
             matches!(plan, Some(VideoPlan::Encode { hdr: planned, .. }) if *planned == hdr),
             "{plan:?}"
+        );
+        let master = get(&cast.url()).text();
+        assert_eq!(
+            master.contains(",VIDEO-RANGE=PQ,"),
+            hdr.is_some(),
+            "{master}"
         );
         let frame = first_frame(&cast, kind);
         let tags = Tags::of(&frame);
