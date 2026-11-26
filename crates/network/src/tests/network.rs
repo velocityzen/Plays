@@ -7,21 +7,28 @@ use super::*;
 
 const WAIT: Duration = Duration::from_secs(2);
 
-/// An address that refuses connections: a free port below the system's
-/// ephemeral ones (from 32768 on Linux, 49152 on macOS), so no test
-/// binding port 0 is given it meanwhile.
-fn refusing() -> SocketAddr {
-    (20_000..32_000)
-        .find_map(|port| {
-            let free = TcpListener::bind((Ipv4Addr::LOCALHOST, port)).ok()?;
-            free.local_addr().ok()
-        })
-        .expect("a free port")
+/// Held while a test starts a process, and while `refusing` listens: on
+/// macOS a socket is made, then kept from processes started after, so one
+/// started between the two would have the listener, and listen on.
+static STARTING: Mutex<()> = Mutex::new(());
+
+/// An address that refuses connections while the connection given with
+/// it is held: a port the system picked, listened on only to connect to
+/// it once. The connection keeps the port from being given to anything
+/// else, and nothing listens on it after. (A port bound but not listening
+/// isn't refused on macOS: what's sent to it is dropped.)
+fn refusing() -> ((TcpStream, TcpStream), SocketAddr) {
+    let _starting = lock(&STARTING);
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let address = listener.local_addr().unwrap();
+    let client = TcpStream::connect(address).unwrap();
+    let (server, _) = listener.accept().unwrap();
+    ((client, server), address)
 }
 
 #[test]
 fn connects_at_the_first_address_that_takes_it() {
-    let refused = refusing();
+    let (_held, refused) = refusing();
     let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
     let open = listener.local_addr().unwrap();
     let (stream, address) = connect_first(&[refused, open], WAIT).unwrap();
@@ -32,7 +39,7 @@ fn connects_at_the_first_address_that_takes_it() {
 
 #[test]
 fn with_none_taking_it_the_last_refusal_is_the_error() {
-    let refused = refusing();
+    let (_held, refused) = refusing();
     let err = connect_first(&[refused], WAIT).unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::ConnectionRefused);
     let err = connect_first(&[], WAIT).unwrap_err();
@@ -61,11 +68,14 @@ fn a_connection_taken_and_let_go_of_closes_though_another_process_has_it() {
     let mut device = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
     let taken = Accepted::from(listener.accept().unwrap().0);
     // As a process started as it was taken would: with it too.
-    let mut holding = Command::new("sleep")
-        .arg("30")
-        .stdin(OwnedFd::from(taken.try_clone().unwrap()))
-        .spawn()
-        .unwrap();
+    let mut holding = {
+        let _starting = lock(&STARTING);
+        Command::new("sleep")
+            .arg("30")
+            .stdin(OwnedFd::from(taken.try_clone().unwrap()))
+            .spawn()
+            .unwrap()
+    };
     drop(taken);
     device.set_read_timeout(Some(WAIT)).unwrap();
     let read = device.read(&mut [0; 1]);
