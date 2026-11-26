@@ -9,6 +9,7 @@
 use std::ffi::OsString;
 use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
+use std::os::fd::OwnedFd;
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
@@ -1005,6 +1006,36 @@ fn a_plays_that_cant_open_what_its_handed_says_why(cx: &mut TestAppContext) {
     assert!(why.contains("gopher:// streams aren't supported"), "{why}");
     let files = window.read_with(&cx, |workspace, _| workspace.players().len());
     assert_eq!(files.unwrap(), 0);
+}
+
+#[gpui::test]
+fn a_client_gone_is_heard_leaving_though_a_process_has_its_socket(cx: &mut TestAppContext) {
+    let (path, _, mut cx) = serving("held", cx);
+    let (_, apps) = listening(
+        &mut cx,
+        &path,
+        |client| client.subscribe(Heard::App, false).unwrap(),
+        |client| until(client, "app.client_left"),
+    );
+    let mut holding = talk(&mut cx, move || {
+        let mut client = Client::connect(&path).unwrap();
+        client.hello().unwrap();
+        // As a process started as it connected would: with its socket too.
+        let socket = client.socket().try_clone().unwrap();
+        Command::new("sleep")
+            .arg("30")
+            .stdin(OwnedFd::from(socket))
+            .spawn()
+            .unwrap()
+    });
+    let left = wait_until(&mut cx, |_| apps.is_finished());
+    holding.kill().ok();
+    holding.wait().ok();
+    assert!(left, "Plays hears it leave while that process runs");
+    assert_eq!(
+        kinds(&apps.join().unwrap()),
+        ["app.client_connected", "app.client_left"]
+    );
 }
 
 #[gpui::test]

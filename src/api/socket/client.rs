@@ -222,6 +222,12 @@ impl Client {
         self.events.len()
     }
 
+    /// Its socket, for a test to hand to another process.
+    #[cfg(test)]
+    pub fn socket(&self) -> &UnixStream {
+        &self.writer
+    }
+
     /// Wait at most `wait` for what Plays sends, or with none as long as it
     /// takes.
     fn wait(&self, wait: Option<Duration>) {
@@ -235,6 +241,15 @@ impl Client {
     fn next(&mut self) -> Result<Incoming, Failure> {
         self.reader.read_until(b'\n', &mut self.partial)?;
         incoming(&std::mem::take(&mut self.partial))
+    }
+}
+
+impl Drop for Client {
+    /// Closed both ways, not only here, so Plays hears it leave: on macOS a
+    /// process started as it connected may have its socket too, and would
+    /// keep it open.
+    fn drop(&mut self) {
+        self.writer.shutdown(Shutdown::Both).ok();
     }
 }
 

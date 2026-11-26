@@ -18,6 +18,7 @@ mod server;
 use std::ffi::OsString;
 use std::fs::{self, DirBuilder, File, OpenOptions, Permissions};
 use std::io;
+use std::net::Shutdown;
 use std::os::unix::fs::{DirBuilderExt, FileTypeExt, MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
@@ -86,7 +87,12 @@ pub fn claim(path: &Path) -> io::Result<Claimed> {
     let _looking = locked(path)?;
     for _ in 0..TRIES {
         match UnixStream::connect(path) {
-            Ok(_) => return Ok(Claimed::Running),
+            Ok(answering) => {
+                // So it hears this one leave, as a process started as it
+                // connected may have its socket too.
+                answering.shutdown(Shutdown::Both).ok();
+                return Ok(Claimed::Running);
+            }
             // Left by a Plays that's gone.
             Err(err) if err.kind() == io::ErrorKind::ConnectionRefused => {
                 log::info!("taking over the socket a Plays left: {}", path.display());

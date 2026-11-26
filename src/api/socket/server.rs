@@ -6,6 +6,9 @@
 //! lines waiting for it, is cut off rather than kept in memory. As the
 //! app quits, each client is sent what it was told, the windows closing
 //! and `app.quit` among it, before its connection closes (`end_on_quit`).
+//! A connection ends both ways (`shutdown`), not only closed here: on
+//! macOS a process Plays starts as a client connects may have it too, and
+//! would keep it open.
 //!
 //! With control from the command line off in Settings, only files handed
 //! over are taken: all else is refused (`allowed`), and turning it off
@@ -354,30 +357,46 @@ fn accept(
     }
 }
 
-/// Start reading what `client` asks and writing what it's told.
+/// Start reading what `client` asks and writing what it's told; one that
+/// can't be is shut out, and has left, if the app took it.
 fn connect(
     client: ClientId,
     stream: UnixStream,
     messages: &UnboundedSender<Message>,
 ) -> io::Result<()> {
     let stream = Arc::new(stream);
+    let answering = start_answering(client, &stream, messages);
+    if answering.is_err() {
+        stream.shutdown(Shutdown::Both).ok();
+        messages.unbounded_send(Message::Left(client)).ok();
+    }
+    answering
+}
+
+/// The threads reading what `client` asks on `stream` and writing what
+/// it's told, started, and the app told it connected.
+fn start_answering(
+    client: ClientId,
+    stream: &Arc<UnixStream>,
+    messages: &UnboundedSender<Message>,
+) -> io::Result<()> {
     let (lines, outgoing) = mpsc::sync_channel(OUTBOX);
-    let writing = Arc::clone(&stream);
+    let writing = Arc::clone(stream);
     let writing = thread::Builder::new()
         .name("plays-socket-out".into())
         .spawn(move || write(&writing, &outgoing))?;
     // Before anything it asks.
     let out = Out {
         lines,
-        stream: Arc::clone(&stream),
+        stream: Arc::clone(stream),
     };
     messages
         .unbounded_send(Message::Connected(client, out, writing))
         .map_err(|_| io::Error::other("the app isn't answering"))?;
-    let messages = messages.clone();
+    let (reading, messages) = (Arc::clone(stream), messages.clone());
     thread::Builder::new()
         .name("plays-socket-in".into())
-        .spawn(move || read(client, &stream, &messages))?;
+        .spawn(move || read(client, &reading, &messages))?;
     Ok(())
 }
 
