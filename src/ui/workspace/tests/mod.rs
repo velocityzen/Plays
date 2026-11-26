@@ -18,7 +18,7 @@ mod inspect;
 mod languages;
 mod letting_go;
 mod over_video;
-mod playlist;
+pub(super) mod playlist;
 mod sound_files;
 mod sound_to_airplay;
 mod sound_to_bluetooth;

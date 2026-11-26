@@ -10,9 +10,7 @@ use serde_json::{Value, json};
 
 use super::open;
 use crate::api::{self, Invocation};
-use crate::files;
 use crate::media::source::media_in;
-use crate::recents;
 use crate::settings::{Settings, SeveralFiles};
 use crate::ui::player::PlayerView;
 use crate::ui::testing::{self, OPEN_WAIT, click, fixture, hover, painted, wait_until};
@@ -56,7 +54,7 @@ fn in_turn(cx: &mut VisualTestContext) {
 
 /// Open `paths` in `window` at once, and wait until the one block they
 /// open in plays its first.
-fn open_in_turn(
+pub(in crate::ui::workspace) fn open_in_turn(
     window: WindowHandle<Workspace>,
     cx: &mut VisualTestContext,
     paths: Vec<PathBuf>,
@@ -80,7 +78,7 @@ fn open_in_turn(
 }
 
 /// Wait until `block` has opened what it plays now, and plays it.
-fn plays(block: &Entity<PlayerView>, cx: &mut VisualTestContext) {
+pub(in crate::ui::workspace) fn plays(block: &Entity<PlayerView>, cx: &mut VisualTestContext) {
     let playing = wait_until(cx, |cx| {
         block.read_with(cx, |view, _| {
             let player = view.player();
@@ -92,7 +90,10 @@ fn plays(block: &Entity<PlayerView>, cx: &mut VisualTestContext) {
 
 /// The name of the file `block` plays, and where that is in its
 /// playlist, as its header says.
-fn at(block: &Entity<PlayerView>, cx: &VisualTestContext) -> (String, Option<String>) {
+pub(in crate::ui::workspace) fn at(
+    block: &Entity<PlayerView>,
+    cx: &VisualTestContext,
+) -> (String, Option<String>) {
     block.read_with(cx, |view, _| {
         let name = view
             .file()
@@ -103,13 +104,20 @@ fn at(block: &Entity<PlayerView>, cx: &VisualTestContext) -> (String, Option<Str
     })
 }
 
-fn playing(name: &str, counter: Option<&str>) -> (String, Option<String>) {
+pub(in crate::ui::workspace) fn playing(
+    name: &str,
+    counter: Option<&str>,
+) -> (String, Option<String>) {
     (name.to_owned(), counter.map(str::to_owned))
 }
 
 /// Play the file before (`-1`) or after (`1`) in `block` instead, as
 /// Previous File and Next File do; what it notes, if that's nowhere.
-fn step(block: &Entity<PlayerView>, cx: &mut VisualTestContext, direction: i32) -> Option<String> {
+pub(in crate::ui::workspace) fn step(
+    block: &Entity<PlayerView>,
+    cx: &mut VisualTestContext,
+    direction: i32,
+) -> Option<String> {
     block.update(cx, |view, cx| view.open_neighbor(direction, cx));
     cx.run_until_parked();
     block.read_with(cx, |view, _| view.noted())
@@ -241,28 +249,6 @@ fn a_folder_opened_plays_its_files_in_turn_as_settings_say(cx: &mut TestAppConte
     let first = files[0].file_name().unwrap().to_string_lossy();
     let counter = format!("1 of {}", files.len());
     assert_eq!(at(&block, &cx), playing(&first, Some(&counter)));
-}
-
-#[gpui::test]
-fn a_playlist_file_plays_what_it_lists_in_turn_in_a_block_of_its_own(cx: &mut TestAppContext) {
-    let (window, mut cx) = testing::start(cx);
-    let dir = files::test_folder("playlist-file-opened");
-    std::fs::create_dir_all(&dir).unwrap();
-    let list = dir.join("list.m3u");
-    let lines = ["clip-subs.mkv", "tone.m4a"].map(|name| fixture(name).display().to_string());
-    std::fs::write(&list, format!("#EXTM3U\n{}\n", lines.join("\n"))).unwrap();
-
-    // Whatever Settings say of several files.
-    let block = open_in_turn(window, &mut cx, vec![list.clone()]);
-    assert_eq!(at(&block, &cx), playing("clip-subs.mkv", Some("1 of 2")));
-    step(&block, &mut cx, 1);
-    plays(&block, &mut cx);
-    assert_eq!(at(&block, &cx), playing("tone.m4a", Some("2 of 2")));
-    let noted = cx.update(|_, cx| recents::FILES.list(cx));
-    assert!(
-        noted.contains(&list.display().to_string()),
-        "the playlist is noted as opened: {noted:?}"
-    );
 }
 
 #[gpui::test]

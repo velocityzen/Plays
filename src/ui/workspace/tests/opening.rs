@@ -1,8 +1,12 @@
 use std::fs;
 use std::path::PathBuf;
 
+use gpui::TestAppContext;
+
 use super::*;
 use crate::files::test_folder;
+use crate::ui::testing::{self, fixture};
+use crate::ui::workspace::tests::playlist::{at, open_in_turn, playing, plays, step};
 
 fn file(name: &str) -> Source {
     Source::File(PathBuf::from(name))
@@ -97,5 +101,27 @@ fn playlist_files_are_read_folders_listed_and_the_rest_left_alone() {
             Listed::One(Source::File(hls)),
             Listed::One(stream),
         ]
+    );
+}
+
+#[gpui::test]
+fn a_playlist_file_plays_what_it_lists_in_turn_in_a_block_of_its_own(cx: &mut TestAppContext) {
+    let (window, mut cx) = testing::start(cx);
+    let dir = test_folder("playlist-file-opened");
+    std::fs::create_dir_all(&dir).unwrap();
+    let list = dir.join("list.m3u");
+    let lines = ["clip-subs.mkv", "tone.m4a"].map(|name| fixture(name).display().to_string());
+    std::fs::write(&list, format!("#EXTM3U\n{}\n", lines.join("\n"))).unwrap();
+
+    // Whatever Settings say of several files.
+    let block = open_in_turn(window, &mut cx, vec![list.clone()]);
+    assert_eq!(at(&block, &cx), playing("clip-subs.mkv", Some("1 of 2")));
+    step(&block, &mut cx, 1);
+    plays(&block, &mut cx);
+    assert_eq!(at(&block, &cx), playing("tone.m4a", Some("2 of 2")));
+    let noted = cx.update(|_, cx| recents::FILES.list(cx));
+    assert!(
+        noted.contains(&list.display().to_string()),
+        "the playlist is noted as opened: {noted:?}"
     );
 }
