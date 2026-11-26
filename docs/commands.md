@@ -151,6 +151,16 @@ A cue is a block reaching a time or a frame: `block.<block>.position@120.5s`, or
 - Returns: nothing.
 - Events: [`block.playback.seeked`](#blockplaybackseeked), [`block.playback.chapter_changed`](#blockplaybackchapter_changed).
 
+#### Go Live
+
+`block.playback.go_live`: Play a live stream from where it is now, if it plays behind.
+
+- Acts on a block.
+- Keys: ↘
+- Arguments: none.
+- Returns: nothing.
+- Events: none.
+
 #### Previous File
 
 `block.playback.previous_file`: Play the file before this one in its playlist, or else its folder, instead.
@@ -371,6 +381,15 @@ A cue is a block reaching a time or a frame: `block.<block>.position@120.5s`, or
 - Returns: nothing.
 - Events: [`block.playback.seeked`](#blockplaybackseeked), [`block.playback.chapter_changed`](#blockplaybackchapter_changed).
 
+#### Go Live in Window
+
+`window.playback.go_live`: Play every live stream in the window from where it is now.
+
+- Acts on every block in a window.
+- Arguments: none.
+- Returns: nothing.
+- Events: none.
+
 #### Previous File in Window
 
 `window.playback.previous_file`: Play the file before each of every file in the window in its playlist, or else its folder, instead.
@@ -580,6 +599,16 @@ A cue is a block reaching a time or a frame: `block.<block>.position@120.5s`, or
 - Arguments: none.
 - Returns: nothing.
 - Events: [`block.playback.seeked`](#blockplaybackseeked), [`block.playback.chapter_changed`](#blockplaybackchapter_changed).
+
+#### Go Live in Every Window
+
+`app.playback.go_live`: Play every live stream in every window from where it is now.
+
+- Acts on every block in every window.
+- Keys: ⇧↘
+- Arguments: none.
+- Returns: nothing.
+- Events: none.
 
 #### Previous File in Every Window
 

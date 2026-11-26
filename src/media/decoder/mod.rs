@@ -100,8 +100,10 @@ pub enum Command {
 #[derive(Clone, Debug, Default)]
 pub struct MediaInfo {
     pub duration: Option<f64>,
-    /// A network stream without an end (it can't be seeked).
+    /// A network stream without an end.
     pub live: bool,
+    /// A live stream that seeks within what its server keeps of it: HLS.
+    pub seeks_back: bool,
     pub has_video: bool,
     pub has_audio: bool,
     /// Display size of the video, after aspect-ratio correction and any cap,
@@ -601,7 +603,9 @@ fn run(
     // opens: each can take a while.
     let looking = look_for_subtitle_files(source);
     let interrupt = shared.clone();
-    let input = open_input(source, options.max_short_side, move || interrupt.stopped())?;
+    let input = open_input(source, options.max_short_side, move || {
+        interrupt.interrupted()
+    })?;
     let name = source.name();
     let mut tracks: Vec<Track> = input.streams().filter_map(|s| Track::of(&s)).collect();
     let mut decoders = Decoders {
@@ -637,7 +641,10 @@ fn run(
         source,
     );
 
-    let start_offset = media_start(&decoders);
+    // A live stream's time starts where it was opened, not where what its
+    // server keeps does: taken from its first packet.
+    let live = source.is_network() && input.duration() <= 0;
+    let start_offset = media_start(&decoders).filter(|_| !live);
     shared.set_info(media_info(source, &input, &decoders, tracks, start_offset));
     if let Some(audio) = &mut decoders.audio {
         audio.due_from_the_start = start_offset.is_some();
@@ -852,9 +859,11 @@ fn media_info(
         .then(|| decoders.selected(TrackKind::Audio))
         .flatten();
     let tag = |key| tag(input, sound, key);
+    let live = source.is_network() && duration.is_none();
     MediaInfo {
         duration,
-        live: source.is_network() && duration.is_none(),
+        live,
+        seeks_back: live && input.format().name() == "hls",
         has_video: video.is_some(),
         has_audio: audio.is_some(),
         video_size: video.map(|v| v.display_size()),

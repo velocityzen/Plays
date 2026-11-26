@@ -21,8 +21,9 @@ GPU-accelerated UI framework.
   another in one block as a playlist
 - Playlist files (`.m3u`, `.m3u8`, `.pls`), on disk or over HTTP, each in
   one block
-- Streams: HTTP(S), HLS, DASH, RTMP, RTSP; a live one paused plays on
-  from where it is now
+- Streams: HTTP(S), HLS, DASH, RTMP, RTSP. A live one paused at its live
+  edge plays on from where it is now; a live HLS one seeks back as far as
+  its server keeps, and End goes live again
 - Play/pause, seek, loop, volume and mute in each block
 - Speed from 0.25× to 4×, the sound at its own pitch
 - Frame-accurate scrubbing and frame stepping
@@ -137,6 +138,7 @@ One Plays runs at a time: `plays FILE…` hands files to the one running.
 | Seek back/forward | `←` `→` |
 | Previous/next frame | `⌥←` `⌥→` / `Alt+←` `Alt+→`, or `,` `.` |
 | Restart | `Home` |
+| Go live | `End` |
 | Previous/next chapter | `Page Up` `Page Down` |
 | Previous/next file | `⌘←` `⌘→` / `Ctrl+←` `Ctrl+→` |
 | Loop | `⌘⇧L` / `Ctrl+Shift+L` |
@@ -246,7 +248,7 @@ mkdir ($nu.user-autoload-dirs | first); plays completions nushell | save -f ($nu
 
 ## Limitations
 
-- Live streams can't be seeked or screenshotted.
+- Live streams but HLS can't be seeked, and none can be screenshotted.
 - Picture adjustments and delays aren't kept when a file opens again.
 - HDR goes brighter than SDR white only on macOS, decoded by
   VideoToolbox. HDR metadata isn't used, and Dolby Vision profile 7's

@@ -49,6 +49,21 @@ impl PlayerView {
         time
     }
 
+    /// Play a live stream from where it is now, if it's behind.
+    pub fn go_live(&mut self, cx: &mut Context<Self>) {
+        self.playback.go_live();
+        cx.notify();
+    }
+
+    /// How far behind its live edge a live stream plays, in seconds; none
+    /// for a file.
+    pub fn behind_live(&self) -> Option<f64> {
+        self.playback
+            .local()
+            .behind_live()
+            .filter(|_| self.casting().is_none())
+    }
+
     pub fn restart(&mut self, cx: &mut Context<Self>) {
         self.seek(0.0);
         cx.notify();

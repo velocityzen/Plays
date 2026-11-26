@@ -97,6 +97,9 @@ pub struct Shared {
     read_ahead: AtomicU64,
     /// Set when the player goes away; aborts network reads that are blocking.
     stop: AtomicBool,
+    /// Set while a seek waits for the demux thread: a read waiting on the
+    /// network, as a live stream's does for its next segment, gives up.
+    seek_waits: AtomicBool,
     /// Where a skip landed (serial, time) when that isn't where it was
     /// asked to, for the clock.
     landed: Mutex<Option<(u64, f64)>>,
@@ -139,6 +142,7 @@ impl Shared {
             audio_ended: AtomicU64::new(0),
             read_ahead: AtomicU64::new(0.0f64.to_bits()),
             stop: AtomicBool::new(false),
+            seek_waits: AtomicBool::new(false),
             landed: Mutex::new(None),
             wake: Doorbell::default(),
             picks: Default::default(),
@@ -342,6 +346,17 @@ impl Shared {
 
     pub(super) fn stopped(&self) -> bool {
         self.stop.load(Ordering::Relaxed)
+    }
+
+    /// Whether a read waiting on the network should give up: the player
+    /// went away, or a seek waits.
+    pub(super) fn interrupted(&self) -> bool {
+        self.stopped() || self.seek_waits.load(Ordering::Relaxed)
+    }
+
+    /// Note a seek waiting for the demux thread, or taken.
+    pub(super) fn set_seek_waits(&self, waits: bool) {
+        self.seek_waits.store(waits, Ordering::Relaxed);
     }
 
     /// Where the current seek landed, when it was a skip that landed away

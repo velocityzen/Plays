@@ -316,7 +316,7 @@ fn block_inspect_says_how_a_block_plays(cx: &mut TestAppContext) {
         "duration": 2.021,
         "frame_rate": 25.0,
         "ended": false, "buffering": false,
-        "volume": 50.0, "muted": true, "speed": 1.5, "looping": true,
+        "volume": 50.0, "muted": true, "speed": 1.5, "looping": true, "behind_live": null,
         "tracks": {
             "video": [track("h264", Some("160×120"))],
             "audio": [track("aac", Some("Mono"))],

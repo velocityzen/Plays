@@ -198,12 +198,15 @@ Audio is the master: the picture follows the clock, the clock follows the
 sound heard. No sound, wall time. A gap in the sound plays as silence.
 
 - `src/media/decoder/demux.rs`: reads ahead (1 s, 15 s for streams), seeks;
-  a live stream played after a pause is opened again where it is now
+  a live stream going live is opened again where it is now. A seek waiting
+  interrupts a read waiting on the network
 - `src/media/decoder/mod.rs`: decodes only while its queues have room
 - `src/media/decoder/video.rs`, `audio.rs`, `convert.rs`: decoders, pictures
 - `src/media/decoder/shared.rs`: what a player and its threads share; each
   seek starts a generation, and nothing from an earlier one is handed out
-- `src/media/player.rs`: the UI-side handle, ticked as its block draws
+- `src/media/player.rs`: the UI-side handle, ticked as its block draws; a
+  live stream's time starts where it opened, and it keeps where its live
+  edge is
 - `src/media/clock.rs`: a per-player wall clock at the player's speed,
   eased toward the audio
 

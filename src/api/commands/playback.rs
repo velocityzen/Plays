@@ -176,6 +176,15 @@ pub const COMMANDS: &[Spec] = &[
     .setting("restart")
     .keys(&["home"]),
     Spec::block(
+        "block.playback.go_live",
+        "Go Live",
+        "Play a live stream from where it is now, if it plays behind.",
+        |player, _, cx| player.go_live(cx),
+    )
+    .keywords(&["live", "edge", "now", "stream", "catch up"])
+    .setting("go_live")
+    .keys(&["end"]),
+    Spec::block(
         "block.playback.previous_file",
         "Previous File",
         "Play the file before this one in its playlist, or else its folder, instead.",
@@ -440,6 +449,13 @@ pub const COMMANDS: &[Spec] = &[
     ])
     .keywords(&["every", "all", "beginning", "rewind"]),
     Spec::blocks(
+        "window.playback.go_live",
+        "Go Live in Window",
+        "Play every live stream in the window from where it is now.",
+        |players, cx| players.each(cx, PlayerView::go_live),
+    )
+    .keywords(&["every", "all", "live", "edge", "now", "stream"]),
+    Spec::blocks(
         "window.playback.previous_file",
         "Previous File in Window",
         "Play the file before each of every file in the window in its playlist, or else its folder, instead.",
@@ -683,6 +699,15 @@ pub const COMMANDS: &[Spec] = &[
     .keywords(&["every", "all", "beginning", "rewind"])
     .setting("restart_all")
     .keys(&["shift-home"]),
+    Spec::every_block(
+        "app.playback.go_live",
+        "Go Live in Every Window",
+        "Play every live stream in every window from where it is now.",
+        |players, cx| players.each(cx, PlayerView::go_live),
+    )
+    .keywords(&["every", "all", "live", "edge", "now", "stream"])
+    .setting("go_live_all")
+    .keys(&["shift-end"]),
     Spec::every_block(
         "app.playback.previous_file",
         "Previous File in Every Window",

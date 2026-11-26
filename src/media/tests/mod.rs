@@ -2923,7 +2923,7 @@ fn treats_playlists_without_an_end_as_live() {
     );
     assert!(player.is_live());
     assert_eq!(player.duration(), None);
-    // Live streams can't seek; the request is ignored.
+    // Past the live edge, it stays live.
     let before = player.position();
     player.seek(before + 30.0);
     assert!(player.position() < before + 1.0);

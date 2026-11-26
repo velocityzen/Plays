@@ -84,6 +84,8 @@ impl PlayerView {
             "volume": (f64::from(player.volume()) * 100.0).round(),
             "muted": player.is_muted(),
             "speed": player.speed(),
+            // Seconds behind its live edge, for a live stream.
+            "behind_live": self.behind_live(),
             "looping": player.is_looping(),
             "tracks": KINDS
                 .iter()

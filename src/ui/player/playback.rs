@@ -223,8 +223,12 @@ impl Playback {
         if self.casting().is_some() {
             self.seek(self.position() + seconds);
         } else {
-            // About there: it lands on a keyframe.
-            let mut time = (self.position() + seconds).max(0.0);
+            // About there: it lands on a keyframe. A live stream may go
+            // back to before it was opened.
+            let mut time = self.position() + seconds;
+            if !self.player.is_live() {
+                time = time.max(0.0);
+            }
             if let Some(duration) = self.duration() {
                 time = time.min(duration);
             }
@@ -464,6 +468,14 @@ impl Playback {
             self.player.pause();
         }
         true
+    }
+
+    /// Play a live stream from where it is now, if it's behind; a device
+    /// it casts to plays it as it does.
+    pub fn go_live(&mut self) {
+        if self.cast.is_none() {
+            self.player.go_live();
+        }
     }
 
     /// Stop the device as the app quits, handing back the thread stopping

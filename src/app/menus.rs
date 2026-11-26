@@ -187,6 +187,7 @@ fn playback_menu(state: &MenuState) -> Menu {
         &[
             "block.playback.play_pause",
             "block.playback.restart",
+            "block.playback.go_live",
             "block.playback.loop.toggle",
         ],
         state,
@@ -220,6 +221,7 @@ fn playback_menu(state: &MenuState) -> Menu {
             "app.playback.play",
             "app.playback.pause",
             "app.playback.restart",
+            "app.playback.go_live",
             "app.playback.seek_forward",
             "app.playback.seek_backward",
             "app.playback.next_frame",

@@ -1,6 +1,6 @@
 use gpui::px;
 
-use super::{Chapter, clearance, format_time, height, time_label};
+use super::{Chapter, behind_label, clearance, format_time, height, time_label};
 
 #[test]
 fn subtitles_keep_clear_of_the_controls_only_while_they_show() {
@@ -38,4 +38,10 @@ fn formats_times() {
     assert_eq!(format_time(61.0), "1:01");
     assert_eq!(format_time(3725.0), "1:02:05");
     assert_eq!(format_time(-3.0), "0:00");
+}
+
+#[test]
+fn a_live_stream_behind_says_by_how_much() {
+    assert_eq!(behind_label(30.4), "−0:30");
+    assert_eq!(behind_label(3725.0), "−1:02:05");
 }

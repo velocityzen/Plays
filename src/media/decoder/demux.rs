@@ -298,6 +298,8 @@ impl Demuxer {
         let mut packets = self.packets.lock();
         packets.clear();
         packets.seek = Some(seek);
+        // A read it waits for gives up.
+        self.shared.set_seek_waits(true);
         packets.landed = None;
         self.publish(&packets);
         self.wake.notify_one();
@@ -357,6 +359,9 @@ pub(super) fn demux(
                     break;
                 }
                 demuxer.wake.wait(&mut packets);
+            }
+            if packets.seek.is_some() {
+                demuxer.shared.set_seek_waits(false);
             }
             packets.seek
         };
@@ -446,7 +451,8 @@ struct Landing {
 
 /// Seek `input` to the keyframe before the target. A skip whose target is
 /// far past it lands on that keyframe instead when going back, or on the
-/// one after the target when going forward, so it shows at once. Past
+/// one after the target when going forward, so it shows at once; one
+/// that can't go back as far lands where it can. Past
 /// where the `video` stream says it ends, the seek goes by the `sound`
 /// stream: Matroska seeks by the picture's cues, and the cluster of its
 /// last one can come after most of the sound.
@@ -467,6 +473,10 @@ fn land(
         return Landing::default();
     };
     let mut landing = read_to(input, video, false);
+    // As near as it goes: a live stream's server keeps only so much.
+    if landing.keyframe.is_some_and(|k| k > seconds) {
+        return landing;
+    }
     let Some(keyframe) = landing.keyframe.filter(|k| seconds - k > EXACT_SKIP) else {
         landing.keyframe = None;
         return landing;

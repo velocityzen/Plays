@@ -10,6 +10,7 @@ use super::tracks::{close_tracks, has_track_choice};
 use super::{PlayerView, Reveal};
 use crate::media::chapters::{self, Chapter};
 use crate::media::decoder::MediaInfo;
+use crate::media::player::LIVE_NEAR;
 use crate::settings::Settings;
 use crate::ui::components::{
     Badge, Button, ComponentSize, Panel, Popover, Sizable, Slide, Slider, SliderEvent,
@@ -51,13 +52,19 @@ impl PlayerView {
         cx: &mut Context<Self>,
     ) -> Div {
         let live = info.is_some_and(|i| i.live);
+        // A live stream skips only within what its server keeps.
+        let fixed = live && !info.is_some_and(|i| i.seeks_back);
+        let behind = self.behind_live().filter(|&behind| behind > LIVE_NEAR);
         let duration = self.duration();
         let position = self.bar_position();
         let progress = duration
             .filter(|d| *d > 0.0)
             .map_or(0.0, |d| (position / d) as f32);
         let chapters = info.map_or(&[][..], |info| info.chapters.as_slice());
-        let time_label = time_label(position, duration, chapters);
+        let time_label = match behind {
+            Some(behind) => behind_label(behind),
+            None => time_label(position, duration, chapters),
+        };
         let notches = match duration {
             Some(d) if cx.global::<Settings>().chapter_marks => chapters::marks(chapters, d),
             _ => Vec::new(),
@@ -100,8 +107,8 @@ impl PlayerView {
                             .gap_0p5()
                             // The time and the buttons on the right take equal
                             // room, so the transport is in the middle.
-                            .child(render_time(live, time_label, theme))
-                            .child(self.render_transport(live, play_icon, cx))
+                            .child(self.render_time(live, behind.is_some(), time_label, theme, cx))
+                            .child(self.render_transport(fixed, play_icon, cx))
                             .child(self.render_buttons(live, info, cast, theme, cx)),
                     ),
             )
@@ -236,8 +243,13 @@ impl PlayerView {
 
     /// The file before this one in its playlist or folder, skip back,
     /// play, skip forward, and the file after. Skips go by the seek step in Settings,
-    /// as the arrow keys do; a live stream can't skip.
-    fn render_transport(&self, live: bool, play_icon: &'static str, cx: &mut Context<Self>) -> Div {
+    /// as the arrow keys do; a live stream that's `fixed` can't skip.
+    fn render_transport(
+        &self,
+        fixed: bool,
+        play_icon: &'static str,
+        cx: &mut Context<Self>,
+    ) -> Div {
         div()
             .flex()
             .flex_none()
@@ -254,7 +266,7 @@ impl PlayerView {
             .child(
                 Button::icon("skip-back", "skip-back")
                     .overlay()
-                    .disabled(live)
+                    .disabled(fixed)
                     .on_click(cx.listener(|this, _, _, cx| {
                         this.send("block.playback.seek_backward", Value::Null, cx);
                     })),
@@ -269,7 +281,7 @@ impl PlayerView {
             .child(
                 Button::icon("skip-forward", "skip-forward")
                     .overlay()
-                    .disabled(live)
+                    .disabled(fixed)
                     .on_click(cx.listener(|this, _, _, cx| {
                         this.send("block.playback.seek_forward", Value::Null, cx);
                     })),
@@ -312,8 +324,37 @@ impl PlayerView {
     }
 }
 
-/// The time on the left, after a LIVE badge for a live stream.
-fn render_time(live: bool, time_label: String, theme: &Theme) -> Div {
+impl PlayerView {
+    /// The time on the left, after a LIVE badge for a live stream: dim
+    /// while it plays `behind` its live edge, and clicked, it goes live.
+    fn render_time(
+        &self,
+        live: bool,
+        behind: bool,
+        time_label: String,
+        theme: &Theme,
+        cx: &mut Context<Self>,
+    ) -> Div {
+        let color = if behind {
+            theme.text_muted
+        } else {
+            theme.danger
+        };
+        let badge = div()
+            .id("live")
+            .when(behind, |this| {
+                this.cursor_pointer()
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.send("block.playback.go_live", Value::Null, cx);
+                    }))
+            })
+            .child(Badge::label("LIVE", color));
+        render_time(live.then_some(badge), time_label)
+    }
+}
+
+/// The time on the left, after the `badge` of a live stream.
+fn render_time(badge: Option<impl IntoElement>, time_label: String) -> Div {
     div()
         .flex_1()
         .min_w_0()
@@ -321,7 +362,7 @@ fn render_time(live: bool, time_label: String, theme: &Theme) -> Div {
         .items_center()
         .gap_1()
         .pl_1()
-        .when(live, |this| this.child(Badge::label("LIVE", theme.danger)))
+        .children(badge)
         .child(
             div()
                 .min_w_0()
@@ -343,6 +384,11 @@ fn time_label(position: f64, duration: Option<f64>, chapters: &[Chapter]) -> Str
         Some(name) => format!("{time} · {name}"),
         None => time,
     }
+}
+
+/// How far behind its live edge a live stream plays, as its time says.
+fn behind_label(behind: f64) -> String {
+    format!("−{}", format_time(behind))
 }
 
 /// The name of the chapter `time` is in, for a file of several.

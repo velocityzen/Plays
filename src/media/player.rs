@@ -23,6 +23,8 @@ const STREAM_START_AUDIO_SECONDS: f64 = 0.3;
 /// Start anyway after this long if there is something to play, in case the
 /// read-ahead estimate is off (timestamps jumping in a live stream, say).
 const STREAM_MAX_WAIT: Duration = Duration::from_secs(3);
+/// How near its live edge a live stream plays to be live, in seconds.
+pub const LIVE_NEAR: f64 = 2.0;
 /// How far back the console's frame rate and lateness look.
 const RECENT: Duration = Duration::from_secs(1);
 
@@ -80,9 +82,15 @@ pub struct Player {
     buffering_since: Instant,
     network: bool,
     ended: bool,
-    /// A live stream paused once it had played: played again, it goes on
-    /// from where the stream is now.
-    behind_live: bool,
+    /// A live stream plays at its live edge, as it does until it's seeked
+    /// back.
+    at_live: bool,
+    /// Where it last played at the live edge, and when: the edge moves on
+    /// with the time.
+    live_edge: Option<(f64, Instant)>,
+    /// A live stream paused at its live edge once it had played: played
+    /// again, it goes on from where the stream is now.
+    paused_at_live: bool,
     looping: bool,
     muted: bool,
     volume: f32,
@@ -227,7 +235,9 @@ impl Player {
             scrubbing: false,
             buffering_since: Instant::now(),
             ended: false,
-            behind_live: false,
+            at_live: true,
+            live_edge: None,
+            paused_at_live: false,
             looping: options.looping,
             muted: false,
             volume,
@@ -316,9 +326,36 @@ impl Player {
         self.network
     }
 
-    /// A live network stream, which has no duration and can't seek.
+    /// A live network stream, which has no duration.
     pub fn is_live(&self) -> bool {
         self.shared.info().is_some_and(|i| i.live)
+    }
+
+    /// A live stream that seeks within what its server keeps of it.
+    pub fn seeks_back(&self) -> bool {
+        self.shared.info().is_some_and(|i| i.seeks_back)
+    }
+
+    /// How far behind its live edge a live stream plays, in seconds; none
+    /// for a file. Paused, or waiting for more, it falls behind.
+    pub fn behind_live(&self) -> Option<f64> {
+        if !self.is_live() {
+            return None;
+        }
+        let behind = self.live_edge.map_or(0.0, |(edge, at)| {
+            edge + at.elapsed().as_secs_f64() - self.position()
+        });
+        Some(behind.max(0.0))
+    }
+
+    /// Play a live stream from where it is now, if it's behind.
+    pub fn go_live(&mut self) {
+        if self
+            .behind_live()
+            .is_some_and(|behind| behind > LIVE_NEAR || !self.at_live)
+        {
+            self.catch_up_live();
+        }
     }
 
     pub fn is_looping(&self) -> bool {
@@ -364,10 +401,12 @@ impl Player {
     }
 
     pub fn position(&self) -> f64 {
-        let now = self.shared.clock().now().max(0.0);
+        let now = self.shared.clock().now();
         match self.duration() {
-            Some(duration) => now.min(duration),
-            None => now,
+            Some(duration) => now.clamp(0.0, duration),
+            // A live stream may be seeked back to before it was opened.
+            None if self.is_live() => now,
+            None => now.max(0.0),
         }
     }
 
@@ -385,8 +424,8 @@ impl Player {
     pub fn play(&mut self) {
         if self.ended {
             self.seek(0.0);
-        } else if std::mem::take(&mut self.behind_live) {
-            self.go_live();
+        } else if std::mem::take(&mut self.paused_at_live) {
+            self.catch_up_live();
         }
         self.playing = true;
         self.apply_running();
@@ -394,7 +433,7 @@ impl Player {
     }
 
     pub fn pause(&mut self) {
-        self.behind_live |= self.playing && self.started && self.is_live();
+        self.paused_at_live |= self.playing && self.started && self.at_live && self.is_live();
         self.playing = false;
         self.apply_running();
         self.note_started();
@@ -425,12 +464,30 @@ impl Player {
     }
 
     fn seek_to(&mut self, time: f64, mode: SeekMode) {
-        if self.is_live() {
-            return;
-        }
-        let time = match self.duration() {
-            Some(duration) => time.clamp(0.0, duration),
-            None => time.max(0.0),
+        let (time, mode) = if self.is_live() {
+            if !self.seeks_back() || mode == SeekMode::Scrub {
+                return;
+            }
+            // As far as the live edge, it's live; short of it, the seek
+            // says where it landed, the server keeping only so much.
+            let edge = self.position() + self.behind_live().unwrap_or(0.0);
+            if time >= edge {
+                self.go_live();
+                return;
+            }
+            if self.at_live {
+                self.live_edge = Some((edge, Instant::now()));
+            }
+            self.at_live = false;
+            self.paused_at_live = false;
+            let forward = time > self.position();
+            (time, SeekMode::Skip { forward })
+        } else {
+            let time = match self.duration() {
+                Some(duration) => time.clamp(0.0, duration),
+                None => time.max(0.0),
+            };
+            (time, mode)
         };
         let serial = self.shared.new_serial();
         self.ended = false;
@@ -452,7 +509,10 @@ impl Player {
     /// Go on from where a live stream is now, letting go of what was read
     /// of it before: it's opened again, and its clock set to where that
     /// lands.
-    fn go_live(&mut self) {
+    fn catch_up_live(&mut self) {
+        self.at_live = true;
+        self.live_edge = None;
+        self.paused_at_live = false;
         let serial = self.shared.new_serial();
         self.start_buffering();
         self.shared.subtitles().clear();
@@ -468,6 +528,11 @@ impl Player {
     /// are now converted differently (a new gamma). It stays on screen
     /// until the new one is ready.
     pub fn refresh(&mut self) {
+        // A live stream's picture comes again soon enough, and it'd leave
+        // the live edge.
+        if self.is_live() {
+            return;
+        }
         if let Some(pts) = self.current.as_ref().map(|frame| frame.pts) {
             self.seek(pts);
         }
@@ -648,6 +713,14 @@ impl Player {
         }
     }
 
+    /// Note where the live edge is, while a live stream plays (`running`)
+    /// at it.
+    fn keep_live_edge(&mut self, running: bool) {
+        if running && self.at_live {
+            self.live_edge = Some((self.position(), Instant::now()));
+        }
+    }
+
     /// Advance to the frame that should be on screen now. Call once per render.
     pub fn tick(&mut self) -> Tick {
         let mut tick = Tick::default();
@@ -668,6 +741,7 @@ impl Player {
         let eof = self.shared.eof();
         let has_audio = info.has_audio && self.shared.audio().is_some();
         let running = self.playing && !self.buffering;
+        self.keep_live_edge(running && info.live);
         let stale = self.current.as_ref().is_none_or(|f| f.serial != serial);
 
         let mut next = None;
