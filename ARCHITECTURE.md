@@ -307,7 +307,7 @@ flowchart LR
 - `src/media/tracks.rs`: tracks, their menu names, and languages
 - `src/media/picking.rs`: which tracks play (`Wanted`): those picked
   before (`Picked`), else preferred languages, else FFmpeg's best
-- `src/media/chapters.rs`: chapters
+- `src/media/chapters.rs`: chapters, and which are an intro or credits
 - `src/media/still.rs`: a frame decoded again at full size for a screenshot,
   or a live stream's picture as it shows
 
@@ -424,6 +424,7 @@ flowchart TB
 - `src/ui/player/mod.rs`: `BlockLayout`, where the window says each block is
 - `src/ui/player/failed.rs`: a block whose drawing panics says why and stops
 - `src/ui/player/sound.rs`: a sound file's title, artist, album and quality
+- `src/ui/player/skip.rs`: Skip Intro, Skip Credits and Next Episode
 - `src/ui/player/visualizer.rs`: what's drawn behind a sound file, a gpui
   shader
 - `src/ui/pip/` (macOS): frames to an `AVSampleBufferDisplayLayer` that

@@ -217,7 +217,8 @@ mod tests;
 - `src/ui/tests/`: screenshots, framing, PQ and HLG math, the text field and IME
 - `src/ui/components/tests/`: panels' looks in pixels, `gpui::render_offscreen` (macOS)
 - `src/ui/pip/tests/`: Picture in Picture's subtitles
-- `src/ui/player/tests/`: a block's controls, console, notes, playlist, delays, speed
+- `src/ui/player/tests/`: a block's controls, console, notes, playlist, delays, speed,
+  skipping
 - `src/ui/blackout/tests/`: blacking out the other displays
 - `src/ui/workspace/tests/`: whole windows, a file per feature
 - `src/ui/settings/tests/`: Settings' panes, settings as commands, About

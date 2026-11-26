@@ -29,6 +29,10 @@ const ONLY: &[(&str, &str)] = &[
         "it brings every block in every window to where one is: to the block's",
     ),
     (
+        "block.playback.skip",
+        "an intro or credits are one file's, skipped as its own button shows them",
+    ),
+    (
         "block.subtitles.bigger",
         "how subtitles look is a setting every file's follow: it acts on every window",
     ),

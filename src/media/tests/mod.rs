@@ -20,7 +20,7 @@ use super::source::Source;
 use super::tracks::TrackKind;
 
 mod limits;
-pub(super) mod made;
+pub(crate) mod made;
 mod playlists;
 use made::{in_own_folder, kept, made_from, made_in, media};
 

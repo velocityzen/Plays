@@ -141,6 +141,20 @@ pub const COMMANDS: &[Spec] = &[
     .keywords(&["back"])
     .setting("previous_chapter")
     .keys(&["pageup"]),
+    Spec::block(
+        "block.playback.skip",
+        "Skip Intro or Credits",
+        "Play on past the intro or credits playing, as its chapters mark them; past credits \
+         it ends with, play the file after it in its playlist, or else its folder, instead.",
+        |player, _, cx| player.skip(cx),
+    )
+    .tells(&[
+        "block.playback.seeked",
+        "block.playback.chapter_changed",
+        "block.playback.opened",
+        "block.playback.playing",
+    ])
+    .keywords(&["intro", "opening", "credits", "ending", "episode", "next"]),
     Spec::block_with(
         "block.playback.go_to_chapter",
         "Go to Chapter",

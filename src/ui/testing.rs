@@ -16,6 +16,7 @@ use gpui::{
 };
 
 use crate::app;
+use crate::media::tests::made::{made_from, media};
 use crate::ui::settings::SettingsView;
 use crate::ui::theme::layout::WINDOW_SIZE;
 use crate::ui::workspace::Workspace;
@@ -29,6 +30,49 @@ pub fn fixture(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures")
         .join(name)
+}
+
+/// An episode's chapters: an intro to 1 s, its story, and credits from 2 s
+/// to its end at 6 s.
+const EPISODE_CHAPTERS: &str = ";FFMETADATA1\n\
+    [CHAPTER]\nTIMEBASE=1/1000\nSTART=0\nEND=1000\ntitle=Intro\n\
+    [CHAPTER]\nTIMEBASE=1/1000\nSTART=1000\nEND=2000\ntitle=Story\n\
+    [CHAPTER]\nTIMEBASE=1/1000\nSTART=2000\nEND=6000\ntitle=Credits\n";
+
+const EPISODE_PICTURE: &str = "testsrc=size=160x120:rate=25:duration=6";
+
+/// An episode, `1.mkv` in `folder` of the media made for tests, in the
+/// chapters of `EPISODE_CHAPTERS`.
+pub fn episode(folder: &str) -> PathBuf {
+    made_from(
+        "ffmpeg",
+        &format!("{folder}/1.mkv"),
+        &[("chapters.txt", EPISODE_CHAPTERS)],
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            EPISODE_PICTURE,
+            "-i",
+            "chapters.txt",
+            "-map",
+            "0",
+            "-map_chapters",
+            "1",
+            "-c:v",
+            "libx264",
+        ],
+    )
+}
+
+/// Two episodes in a folder of their own: the first, an `episode`, and the
+/// second, without chapters.
+pub fn episodes() -> (PathBuf, PathBuf) {
+    let second = media(
+        "episodes/2.mkv",
+        &["-f", "lavfi", "-i", EPISODE_PICTURE, "-c:v", "libx264"],
+    );
+    (episode("episodes"), second)
 }
 
 /// The app as it starts (default settings, silent audio), and its first

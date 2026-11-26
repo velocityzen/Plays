@@ -18,6 +18,7 @@ mod pip;
 mod playback;
 mod playlist;
 mod screenshot;
+mod skip;
 mod sound;
 pub mod speed;
 mod sync;
@@ -747,6 +748,7 @@ impl PlayerView {
         let bars = self.render_bars(&reveal, info.as_deref(), &theme, window, cx);
         let osd = self.render_osd(window, cx);
         let console = self.render_console();
+        let skip = self.render_skip(cx);
 
         let surface = self.render_surface(window, cx);
 
@@ -796,6 +798,7 @@ impl PlayerView {
                 },
             )
             .when(stalled, |this| this.child(render_buffering()))
+            .children(skip)
             .children(console)
             .children(osd)
             .children(bars)

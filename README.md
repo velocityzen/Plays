@@ -28,7 +28,8 @@ GPU-accelerated UI framework.
 - Speed from 0.25× to 4×, the sound at its own pitch
 - Frame-accurate scrubbing and frame stepping
 - Hardware decoding: VideoToolbox on macOS; VA-API, NVDEC or VDPAU on Linux
-- Chapters
+- Chapters, and Skip Intro, Skip Credits and Next Episode where they
+  mark them
 - Previous and next file in the folder or playlist
 - Open Recent
 - Files resume where they were left, with their tracks, picture

@@ -58,3 +58,87 @@ fn the_chapters_after_the_first_are_marked_along_the_bar() {
     assert_eq!(marks(&chapters(), 40.0), [0.25, 0.75]);
     assert!(marks(&chapters(), 0.0).is_empty());
 }
+
+/// A chapter of `title`, from `start` to `end`.
+fn titled(start: f64, end: f64, title: &str) -> Chapter {
+    Chapter {
+        start,
+        end,
+        title: Some(title.to_owned()),
+    }
+}
+
+#[test]
+fn a_chapter_is_an_intro_or_credits_as_its_title_says() {
+    let part = |title: &str| titled(0.0, 1.0, title).part();
+    for title in [
+        "Intro",
+        "OPENING",
+        "OP",
+        "OP2",
+        "Opening 2",
+        "Opening (2)",
+        "Opening Credits",
+        "Title Sequence",
+    ] {
+        assert_eq!(part(title), Some(Part::Intro), "{title}");
+    }
+    for title in [
+        "Credits",
+        "End Credits",
+        "ending",
+        "ED",
+        "ED1",
+        "End-Credits",
+        "Outro",
+        "Closing Credits",
+    ] {
+        assert_eq!(part(title), Some(Part::Credits), "{title}");
+    }
+    // Story, however it starts or ends.
+    for title in [
+        "Opening Scene",
+        "Introduction",
+        "The End",
+        "End",
+        "Middle",
+        "Chapter 1",
+        "2",
+        "",
+    ] {
+        assert_eq!(part(title), None, "{title}");
+    }
+    let untitled = Chapter {
+        title: None,
+        ..titled(0.0, 1.0, "")
+    };
+    assert_eq!(untitled.part(), None);
+}
+
+#[test]
+fn skipping_goes_past_the_intro_or_credits_playing() {
+    let chapters = [
+        titled(0.0, 5.0, "Recap"),
+        titled(5.0, 10.0, "Opening"),
+        titled(10.0, 12.0, "Opening 2"),
+        titled(12.0, 30.0, "Part A"),
+        titled(30.0, 40.0, "Ending"),
+        titled(40.0, 45.0, "Preview"),
+    ];
+    assert_eq!(skip(&chapters, 2.0), None, "a recap is story");
+    // An opening in two parts is skipped whole, from either.
+    assert_eq!(skip(&chapters, 5.0), Some((Part::Intro, 12.0)));
+    assert_eq!(skip(&chapters, 11.0), Some((Part::Intro, 12.0)));
+    assert_eq!(
+        skip(&chapters, 9.995),
+        Some((Part::Intro, 12.0)),
+        "landed a hair early"
+    );
+    assert_eq!(skip(&chapters, 20.0), None);
+    assert_eq!(skip(&chapters, 35.0), Some((Part::Credits, 40.0)));
+    assert_eq!(skip(&chapters, 42.0), None);
+    assert_eq!(skip(&[], 1.0), None);
+    // An intro run straight into credits is skipped to its own end.
+    let short = [titled(0.0, 1.0, "Intro"), titled(1.0, 2.0, "Credits")];
+    assert_eq!(skip(&short, 0.5), Some((Part::Intro, 1.0)));
+}

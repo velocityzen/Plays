@@ -198,6 +198,13 @@ fn chapters() -> Invocation {
     open(&["clip-chapters.mkv"])
 }
 
+/// The first of two episodes, third in the front window: credits from
+/// 2 s to its end, and the second after it in its folder.
+fn episode() -> Invocation {
+    let (first, _) = testing::episodes();
+    Invocation::new("app.open").with_args(json!({"urls": [first.display().to_string()]}))
+}
+
 /// Seek the block keys go to to `time`.
 fn at(time: f64) -> Invocation {
     command("block.playback.seek").with_args(json!({"time": time}))
@@ -328,6 +335,27 @@ fn playback_ways(plan: &Plan) -> Option<Vec<Way>> {
             vec![chapters()],
             vec![on_chapters().with_args(json!({"number": 2}))],
         )],
+        // Past the file of chapters' opening, paused at its start, then
+        // nothing in its middle; past credits an episode ends with,
+        // playing, to the next.
+        "skip" => vec![
+            way(
+                vec![
+                    chapters(),
+                    command("block.playback.pause").on_block("3"),
+                    at(0.0).on_block("3"),
+                ],
+                vec![third(), third()],
+            ),
+            way(
+                vec![
+                    episode(),
+                    at(2.2).on_block("3"),
+                    command("block.playback.play").on_block("3"),
+                ],
+                vec![third()],
+            ),
+        ],
         "set_speed" => Plan::twice(plan.with(json!({"speed": 1.5}))),
         // Back from faster; the second run finds it there.
         "normal_speed" => vec![way(
