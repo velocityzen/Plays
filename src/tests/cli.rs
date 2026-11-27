@@ -21,6 +21,9 @@ use crate::ui::testing::{self, fixture, wait_until};
 use crate::ui::theme::layout::WINDOW_SIZE;
 use crate::ui::workspace::Workspace;
 
+/// Plays' version, as Cargo.toml has it.
+const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 /// What a command line came to: its exit status, and what it printed.
 #[derive(Debug)]
 pub(super) struct Ran {
@@ -169,7 +172,10 @@ fn help_and_the_version_print_and_a_bad_command_line_says_why() {
     );
     assert!(help.out.contains("4 no Plays to ask"), "the exit statuses");
     let version = command_line(None, Unanswered::Fails, &["--version"]);
-    assert_eq!((version.status, version.out.as_str()), (0, "plays 0.1.0\n"));
+    assert_eq!(
+        (version.status, version.out),
+        (0, format!("plays {VERSION}\n"))
+    );
 
     for (args, why) in [
         (&["window", "frob"][..], "unrecognized subcommand 'frob'"),
@@ -251,8 +257,8 @@ fn with_no_plays_to_ask_it_says_so_or_starts_one() {
 
     let ran = command_line(Some(path), Unanswered::Starts(start), &["version"]);
     assert_eq!(
-        (ran.status, ran.out.as_str()),
-        (0, "plays 0.1.0\nrunning: none\n")
+        (ran.status, ran.out),
+        (0, format!("plays {VERSION}\nrunning: none\n"))
     );
     assert_eq!(started.get(), 1, "not started just to say");
 }
@@ -562,8 +568,8 @@ fn with_control_off_it_says_where_to_turn_it_on(cx: &mut TestAppContext) {
         command_line(Some(path), Unanswered::Off, &["version"])
     });
     assert_eq!(
-        (ran.status, ran.out.as_str()),
-        (0, "plays 0.1.0\nrunning: none\n"),
+        (ran.status, ran.out),
+        (0, format!("plays {VERSION}\nrunning: none\n")),
         "who runs is no control"
     );
 }
@@ -1539,12 +1545,12 @@ fn the_version_says_which_plays_runs(cx: &mut TestAppContext) {
     let pid = std::process::id();
     assert_eq!(
         ran.out,
-        format!("plays 0.1.0\nrunning: Plays 0.1.0, process {pid}\n")
+        format!("plays {VERSION}\nrunning: Plays {VERSION}, process {pid}\n")
     );
     let ran = plays(&mut cx, &path, &["--json", "version"]);
     assert_eq!(
         ran.json(),
-        json!({"version": "0.1.0", "running": {"version": "0.1.0", "pid": pid}})
+        json!({"version": VERSION, "running": {"version": VERSION, "pid": pid}})
     );
 }
 

@@ -50,7 +50,7 @@ jobs:
         with:
           persist-credentials: false
       - id: release
-        name: The tag is Cargo.toml's version, not released yet, with notes
+        name: The tag is Cargo.toml's and Cargo.lock's version, not released yet, with notes
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -65,6 +65,12 @@ jobs:
           version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
           if [ "$version" != "$TAG" ]; then
             echo "::error::$TAG isn't Cargo.toml's version, $version"
+            exit 1
+          fi
+          # The builds take Cargo.lock as it is (--locked).
+          locked=$(awk '$0 == "name = \"plays\"" { getline; print }' Cargo.lock | sed -n 's/^version = "\(.*\)"$/\1/p')
+          if [ "$locked" != "$TAG" ]; then
+            echo "::error::Cargo.lock says Plays is $locked, not $TAG: build once and commit Cargo.lock"
             exit 1
           fi
           if [ ! -f release.md ]; then

@@ -91,13 +91,14 @@ Once:
 
 Each release:
 
-1. Set `version` in `Cargo.toml`, write the release's notes in
-   `release.md`, and commit and push them.
+1. Set `version` in `Cargo.toml`, build once so `Cargo.lock` has it
+   too, write the release's notes in `release.md`, and commit and push
+   all three.
 2. Push the tag, the version as it is, such as `0.2.1`, for every OS. Or
    Actions → Release → Run workflow, on that commit, with the tag and the
    OS: `all`, `macos` or `linux`. The workflow:
-   - fails if the tag isn't `Cargo.toml`'s version, is released already,
-     or `release.md` is missing or empty
+   - fails if the tag isn't `Cargo.toml`'s and `Cargo.lock`'s version,
+     is released already, or `release.md` is missing or empty
    - builds each of the OS's platforms: `macos-aarch64`, `linux-x86_64`,
      `linux-aarch64`
    - makes their update files with `script/release-files`, with deltas
