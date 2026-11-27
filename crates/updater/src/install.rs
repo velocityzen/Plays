@@ -10,6 +10,8 @@ use std::ffi::OsString;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::package::remove;
 use crate::{Error, NotInstalled, Result};
@@ -126,12 +128,31 @@ impl Install {
     }
 
     /// That an update can be put together beside the install: its folder
-    /// can be written to.
+    /// can be written to. The file it writes there is a new one, under a
+    /// name of its own, as anyone who can write there too could have put
+    /// a link where it goes: a new file is never one a link points to.
     pub(crate) fn check_writable(&self) -> Result<()> {
+        self.check_writable_as(probe_name)
+    }
+
+    /// `check_writable`, its file named `.<name><suffix>` with each suffix
+    /// `name` gives, till one isn't taken, a few times at most.
+    fn check_writable_as(&self, mut name: impl FnMut() -> String) -> Result<()> {
         let folder = self.path.parent().unwrap_or(Path::new("."));
-        let probe = self.beside(".probe");
-        match fs::write(&probe, b"") {
-            Ok(()) => {
+        let mut tries = 0;
+        let made = loop {
+            let probe = self.beside(&name());
+            match fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&probe)
+            {
+                Err(err) if err.kind() == io::ErrorKind::AlreadyExists && tries < 3 => tries += 1,
+                made => break made.map(|_| probe),
+            }
+        };
+        match made {
+            Ok(probe) => {
                 let _ = fs::remove_file(&probe);
                 Ok(())
             }
@@ -232,3 +253,14 @@ fn exchange(a: &Path, b: &Path) -> io::Result<()> {
 #[cfg(test)]
 #[path = "tests/install.rs"]
 mod tests;
+
+/// A name for `check_writable`'s file, this process's, this moment's and
+/// this call's.
+fn probe_name() -> String {
+    static MADE: AtomicU64 = AtomicU64::new(0);
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |since| since.as_nanos());
+    let made = MADE.fetch_add(1, Ordering::Relaxed);
+    format!(".probe-{}-{now}-{made}", std::process::id())
+}

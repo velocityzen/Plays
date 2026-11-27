@@ -210,3 +210,38 @@ fn a_folder_that_cant_be_written_to_says_so() {
         matches!(install.check_writable(), Err(Error::Permission(folder)) if folder == scratch.join("bin"))
     );
 }
+
+/// What's at the name its file would take, a link to another file as
+/// anyone who can write there could put, is left as it is, and another
+/// name taken.
+#[cfg(unix)]
+#[test]
+fn a_folder_is_written_to_without_following_a_link() {
+    let scratch = Scratch::new();
+    let kept = scratch.join("kept");
+    fs::write(&kept, b"what's kept").unwrap();
+    std::os::unix::fs::symlink(&kept, scratch.join(".plays.taken")).unwrap();
+    let install = Install::at(scratch.join("plays"));
+    let mut names = [".taken", ".free"].into_iter().map(String::from);
+    install
+        .check_writable_as(|| names.next().unwrap_or_default())
+        .unwrap();
+    assert_eq!(fs::read(&kept).unwrap(), b"what's kept");
+    assert_eq!(scratch.names(""), [".plays.taken", "kept"]);
+    // A name always taken, a few tries, then it says so.
+    let tried = std::cell::Cell::new(0);
+    let taken = install.check_writable_as(|| {
+        tried.set(tried.get() + 1);
+        ".taken".into()
+    });
+    assert!(matches!(taken, Err(Error::Io(err)) if err.kind() == io::ErrorKind::AlreadyExists));
+    assert_eq!(tried.get(), 4);
+    assert_eq!(fs::read(&kept).unwrap(), b"what's kept");
+}
+
+#[test]
+fn its_files_name_is_new_each_time() {
+    // Many within the clock's least step.
+    let names: std::collections::HashSet<String> = (0..1000).map(|_| probe_name()).collect();
+    assert_eq!(names.len(), 1000);
+}
