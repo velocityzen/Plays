@@ -29,4 +29,8 @@ disallowed-methods = [
     { path = "ffmpeg_next::util::frame::video::Video::stride", reason = "a negative linesize wraps: use ffmpeg_safe::plane" },
     { path = "ffmpeg_next::util::frame::video::Video::plane", reason = "a negative linesize slices past memory: use ffmpeg_safe::plane" },
     { path = "ffmpeg_next::util::frame::video::Video::plane_mut", reason = "a negative linesize slices past memory: use ffmpeg_safe::plane_mut" },
+    # A subtitle's text is taken for UTF-8 without looking, and one without
+    # any read from a null pointer.
+    { path = "ffmpeg_next::codec::subtitle::rect::Ass::get", reason = "it takes the line for UTF-8 without looking: use ffmpeg_safe::ass_line" },
+    { path = "ffmpeg_next::codec::subtitle::rect::Text::get", reason = "it takes the text for UTF-8 without looking: use ffmpeg_safe::plain_text" },
 ]

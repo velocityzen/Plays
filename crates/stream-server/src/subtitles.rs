@@ -378,9 +378,9 @@ fn spans_of(subtitle: &ffmpeg::Subtitle) -> Vec<Span> {
     let mut spans = Vec::new();
     for rect in subtitle.rects() {
         let more = match rect {
-            Rect::Ass(ass) => from_ass(dialogue_text(ass.get())),
+            Rect::Ass(ass) => from_ass(dialogue_text(&ffmpeg_safe::ass_line(&ass))),
             Rect::Text(text) => vec![Span {
-                text: text.get().trim().to_owned(),
+                text: ffmpeg_safe::plain_text(&text).trim().to_owned(),
                 ..Span::default()
             }],
             Rect::Bitmap(_) | Rect::None(_) => Vec::new(),
@@ -417,7 +417,7 @@ fn placement_of(subtitle: &ffmpeg::Subtitle, styles: &Styles) -> Placement {
     subtitle
         .rects()
         .find_map(|rect| match rect {
-            Rect::Ass(ass) => Some(styles.placement(ass.get())),
+            Rect::Ass(ass) => Some(styles.placement(&ffmpeg_safe::ass_line(&ass))),
             _ => None,
         })
         .unwrap_or_default()

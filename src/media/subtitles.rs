@@ -399,12 +399,15 @@ impl SubtitleDecoder {
         let mut content = CueContent::default();
         for rect in subtitle.rects() {
             match rect {
-                Rect::Ass(line) => {
-                    let line = Dialogue::parse(line.get());
+                Rect::Ass(rect) => {
+                    let event = ffmpeg_safe::ass_line(&rect);
+                    let line = Dialogue::parse(&event);
                     let script = self.script.as_ref().map(|script| (script, &line));
                     content.texts.extend(ass::parse(line.text, script));
                 }
-                Rect::Text(text) => content.texts.extend(parse_plain(text.get())),
+                Rect::Text(text) => content
+                    .texts
+                    .extend(parse_plain(&ffmpeg_safe::plain_text(&text))),
                 Rect::Bitmap(bitmap) => content.bitmaps.extend(self.bitmap(&bitmap)),
                 Rect::None(_) => {}
             }
