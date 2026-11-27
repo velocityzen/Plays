@@ -7,7 +7,6 @@ GPU-accelerated UI framework.
 
 - [Features](#features)
 - [Getting Plays](#getting-plays)
-- [Shortcuts](#shortcuts)
 - [Good to know](#good-to-know)
 - [Command line](#command-line)
 - [Limitations](#limitations)
@@ -104,7 +103,8 @@ GPU-accelerated UI framework.
 - Screenshots at full resolution, PNG or JPEG, HDR as 16-bit PNG
 - A console: format, streams, decoder, dropped frames, A/V offset, buffers
 - Command palette (`⇧⌘P`) and Go to (`⌘P`)
-- Every shortcut can be changed
+- Every shortcut is shown in the command palette, and can be changed there
+  or in Settings → Hotkeys
 - The `plays` command line
 - [Lua scripts](docs/lua.md) that run commands and react to events, with
   `plays do`
@@ -141,62 +141,6 @@ plays video.mp4 song.mp3 https://example.com/live.m3u8
 ```
 
 One Plays runs at a time: `plays FILE…` hands files to the one running.
-
-## Shortcuts
-
-| Action | Shortcut |
-| --- | --- |
-| Open files | `⌘O` / `Ctrl+O`, or drop them on the window |
-| Open a stream URL | `⌘⇧O` / `Ctrl+Shift+O` |
-| Play/pause | `Space` or `P` |
-| Seek back/forward | `←` `→` |
-| Previous/next frame | `⌥←` `⌥→` / `Alt+←` `Alt+→`, or `,` `.` |
-| Restart | `Home` |
-| Go live | `End` |
-| Previous/next chapter | `Page Up` `Page Down` |
-| Previous/next file | `⌘←` `⌘→` / `Ctrl+←` `Ctrl+→` |
-| Loop | `⌘⇧L` / `Ctrl+Shift+L` |
-| Slower/faster, normal speed | `[` `]`, `⌫` / `Backspace` |
-| Volume down/up | `↓` `↑` |
-| Mute/unmute | `M`, or `⌘/` / `Ctrl+/` |
-| Next audio, subtitle, video track | `⌃⌘A` `⌃⌘S` `⌃⌘V` / `Ctrl+Alt+A` `S` `V` |
-| Show/hide subtitles | `V` |
-| Bigger/smaller subtitles | `⇧G` `⇧F` |
-| Move subtitles up/down | `R` / `⇧R` or `T` |
-| Audio earlier/later, back in step | `⌃-` `⌃=`, `⌃⌫` / `Ctrl+-` `Ctrl+=`, `Ctrl+Backspace` |
-| Subtitles earlier/later, back in step | `Z` `X`, `⇧⌫` / `Shift+Backspace` |
-| Rotate right/left | `⌘R` `⌘L` / `Ctrl+R` `Ctrl+L` |
-| Flip horizontally/vertically | `⌘⇧H` `⌘⇧V` / `Ctrl+Shift+H` `Ctrl+Shift+V` |
-| Next aspect ratio, next crop | `A`, `C` |
-| Picture as the file has it | `⌘0` / `Ctrl+0` |
-| Screenshot | `S` |
-| Full screen | `F`, or `⌃⌘F` / `F11` |
-| Window to its videos' size | `⌥⌘0` / `Ctrl+Alt+0` |
-| Picture in Picture (macOS) | `⌃⌘P` |
-| Console | `~` or `` ` `` |
-| Play/pause, seek, restart, mute all | `⇧Space`, `⇧←` `⇧→`, `⇧Home`, `⇧M` |
-| Volume down/up on all | `⇧↓` `⇧↑` |
-| Previous/next frame on all | `⌥⇧←` `⌥⇧→` / `Alt+Shift+←` `Alt+Shift+→` |
-| Sync all to this block | `⇧S` |
-| Focus the block left, right, above, below | `⌥⌘` and an arrow / `Ctrl+Alt+` arrows |
-| Focus the previous/next block | `⌘[` `⌘]` / `Ctrl+[` `Ctrl+]` |
-| Move the block left, right, up, down | `⌥⇧⌘` and an arrow / `Ctrl+Alt+Shift+` arrows |
-| Maximize the block, or show them all | `⇧⌘↩` / `Ctrl+Shift+Enter` |
-| Copy the file's path | `⌥⌘C` / `Ctrl+Alt+C` |
-| Close the file | `⌘W` / `Ctrl+W` |
-| Close all files | `⌘⇧W` / `Ctrl+Shift+W` |
-| Close the window | `⌥⌘W` / `Ctrl+Alt+W` |
-| New window | `⌘N` / `Ctrl+N` |
-| Player window 1 to 9 | `⌘1` … `⌘9` / `Ctrl+1` … `Ctrl+9` |
-| Next/previous window | `⌃⇥` `⌃⇧⇥` / `Ctrl+Tab` `Ctrl+Shift+Tab` |
-| The window in front before | `⌘'` / `Ctrl+'` |
-| Command palette | `⇧⌘P` / `Ctrl+Shift+P` |
-| Go to a window, block or file | `⌘P` / `Ctrl+P` |
-| Settings | `⌘,` / `Ctrl+,` |
-
-Shortcuts go to the block under the mouse, or the one the keys went to.
-With `⇧`, they go to every block in every window. Change them in Settings
-→ Hotkeys, or with Change Shortcut (`⌘↩`) in the command palette.
 
 ## Good to know
 
