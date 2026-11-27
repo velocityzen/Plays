@@ -40,8 +40,6 @@ mod tests;
 
 use std::fmt;
 
-use ffmpeg_next as ffmpeg;
-
 pub use adjust::Adjustments;
 pub use media::{AudioInfo, MediaInfo, Source, StreamInfo, StreamKind, VideoInfo};
 pub use plan::{AudioPlan, Delivery, Pick, Plan, VideoPlan};
@@ -94,11 +92,12 @@ impl From<std::io::Error> for Error {
     }
 }
 
-/// FFmpeg's set-up, once, before anything of it is used.
+/// FFmpeg's set-up, its network's too, once, before anything of it is
+/// used.
 fn init() {
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(|| {
-        if let Err(err) = ffmpeg::init() {
+        if let Err(err) = ffmpeg_safe::init() {
             log::warn!("FFmpeg didn't initialize: {err}");
         }
     });

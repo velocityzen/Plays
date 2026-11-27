@@ -72,8 +72,6 @@ use video::VideoDecoder;
 
 /// How far ahead of the playhead a subtitle file is decoded.
 const SUBTITLE_FILE_AHEAD: f64 = 2.0;
-/// Network reads and connections give up after this long without data.
-const NETWORK_TIMEOUT_MICROS: &str = "15000000";
 /// How long the decode thread waits, at most, with nothing to do. What it
 /// waits for rings it awake sooner; only time brings a subtitle file's
 /// next cues within reach, and they are decoded seconds early.
@@ -315,7 +313,7 @@ fn open(
     stop: impl Fn() -> bool + Send + 'static,
 ) -> Result<ffmpeg::format::context::Input> {
     if source.is_network() {
-        ffmpeg::format::input_with_interrupt_and_dictionary(location, stop, network_options())
+        ffmpeg_safe::input_stream(location, stop)
     } else {
         // Reaching only files, as what a file names isn't followed elsewhere.
         ffmpeg_safe::input_file_with(location, stop, ffmpeg::Dictionary::new())
@@ -327,20 +325,7 @@ fn open(
 /// read; `None` if it holds more than `limit` bytes. Waits on the network
 /// as long as a stream would.
 pub(crate) fn fetch_small(url: &str, limit: usize) -> Result<Option<fetch::Fetched>> {
-    fetch::fetch(url, network_options(), limit, || false)
-}
-
-/// What a stream is opened with.
-fn network_options() -> ffmpeg::Dictionary<'static> {
-    let mut options = ffmpeg::Dictionary::new();
-    options.set("rw_timeout", NETWORK_TIMEOUT_MICROS);
-    options.set("timeout", NETWORK_TIMEOUT_MICROS);
-    options.set("reconnect", "1");
-    options.set("reconnect_streamed", "1");
-    options.set("reconnect_delay_max", "5");
-    // Like most players: UDP rarely makes it through NAT and firewalls.
-    options.set("rtsp_transport", "tcp");
-    options
+    fetch::fetch(url, ffmpeg_safe::network_options(), limit, || false)
 }
 
 /// What the decode thread keeps of each stream once the demux thread has the file.

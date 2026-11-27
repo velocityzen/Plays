@@ -9,7 +9,8 @@ use std::thread;
 
 use ffmpeg_next::{Dictionary, ffi, format};
 
-use super::{input_file, input_file_with};
+use super::{input_file, input_file_with, input_stream, network_options};
+use crate::tag;
 
 /// A fixture of the workspace's.
 fn fixture(name: &str) -> PathBuf {
@@ -109,6 +110,28 @@ fn a_playlist_on_disk_plays_files_on_disk() {
     let list = folder.playlist(&segment.to_string_lossy());
     let input = input_file(&list).expect("the playlist");
     assert!(input.streams().count() > 0);
+}
+
+#[test]
+fn a_stream_is_opened_waiting_15_seconds_and_connecting_again() {
+    let options = network_options();
+    let set = |key: &CStr| tag(&options, key);
+    assert_eq!(set(c"rw_timeout").as_deref(), Some("15000000"));
+    assert_eq!(set(c"timeout").as_deref(), Some("15000000"));
+    assert_eq!(set(c"reconnect").as_deref(), Some("1"));
+    assert_eq!(set(c"reconnect_streamed").as_deref(), Some("1"));
+    assert_eq!(set(c"reconnect_delay_max").as_deref(), Some("5"));
+    assert_eq!(set(c"rtsp_transport").as_deref(), Some("tcp"));
+}
+
+#[test]
+fn a_stream_reaches_the_network_until_told_to_stop() {
+    let watched = Watched::new();
+    let url = format!("http://127.0.0.1:{}/stream.ts", watched.port);
+    assert!(input_stream(&url, || true).is_err(), "told to stop");
+    assert_eq!(watched.connected(), 0, "before connecting");
+    assert!(input_stream(&url, || false).is_err(), "cut off");
+    assert!(watched.connected() >= 1);
 }
 
 #[test]

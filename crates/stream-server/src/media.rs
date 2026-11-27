@@ -16,9 +16,6 @@ use crate::Error;
 use crate::adjust::Adjustments;
 use crate::profile::{AudioCodec, Container, Hdr, VideoCodec};
 
-/// How long a network read may stall before it gives up, in microseconds.
-const NETWORK_TIMEOUT_MICROS: &str = "15000000";
-
 /// Where a cast's media comes from.
 #[derive(Clone, PartialEq, Debug)]
 pub enum Source {
@@ -44,21 +41,15 @@ impl Source {
 }
 
 /// Open the source; network reads give up once `stop` is set. A file
-/// reaches only files (`ffmpeg_safe::input_file_with`).
+/// reaches only files (`ffmpeg_safe::input_file_with`), a stream waits on
+/// the network as Plays does (`ffmpeg_safe::input_stream`).
 pub(crate) fn open(source: &Source, stop: Arc<AtomicBool>) -> Result<Input, Error> {
     let stopped = move || stop.load(Ordering::Relaxed);
-    let mut options = ffmpeg::Dictionary::new();
     let opened = match source {
-        Source::File(path) => ffmpeg_safe::input_file_with(path, stopped, options),
-        Source::Stream { url, .. } => {
-            options.set("rw_timeout", NETWORK_TIMEOUT_MICROS);
-            options.set("timeout", NETWORK_TIMEOUT_MICROS);
-            options.set("reconnect", "1");
-            options.set("reconnect_streamed", "1");
-            options.set("reconnect_delay_max", "5");
-            options.set("rtsp_transport", "tcp");
-            ffmpeg::format::input_with_interrupt_and_dictionary(url, stopped, options)
+        Source::File(path) => {
+            ffmpeg_safe::input_file_with(path, stopped, ffmpeg::Dictionary::new())
         }
+        Source::Stream { url, .. } => ffmpeg_safe::input_stream(url, stopped),
     };
     opened.map_err(|err| Error::Source(format!("can't open {}: {err}", source.location())))
 }

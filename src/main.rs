@@ -45,13 +45,9 @@ fn main() {
         api::socket::Start::HandedOver(status) => std::process::exit(status.into()),
     };
 
-    ffmpeg::init().expect("initializing FFmpeg");
+    // Sets up TLS libraries too, before any thread opens an https:// stream.
+    ffmpeg_safe::init().expect("initializing FFmpeg");
     ffmpeg::util::log::set_level(ffmpeg::util::log::Level::Error);
-    // Sets up TLS libraries before any thread opens an https:// stream.
-    // SAFETY: called once, before any other FFmpeg use on other threads.
-    unsafe {
-        ffmpeg::ffi::avformat_network_init();
-    }
 
     // Files, folders and stream URLs can be given on the command line.
     let sources: Vec<Source> = args

@@ -14,7 +14,6 @@ use anyhow::{Context as _, Result};
 use url::Url;
 
 use super::fetch::fetch;
-use super::network_options;
 use crate::media::source::Source;
 
 /// A master playlist longer than this isn't cut down.
@@ -40,8 +39,13 @@ pub(super) fn variant(
     let Some(url) = Url::parse(location).ok().filter(is_playlist) else {
         return Ok(None);
     };
-    let fetched = fetch(location, network_options(), MAX_PLAYLIST_BYTES, stop)
-        .with_context(|| format!("could not open {source}"))?;
+    let fetched = fetch(
+        location,
+        ffmpeg_safe::network_options(),
+        MAX_PLAYLIST_BYTES,
+        stop,
+    )
+    .with_context(|| format!("could not open {source}"))?;
     let Some(fetched) = fetched else {
         return Ok(None);
     };

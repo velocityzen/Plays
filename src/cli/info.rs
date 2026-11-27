@@ -58,12 +58,8 @@ pub fn info(out: &mut dyn Write, err: &mut dyn Write, json: bool, paths: &[OsStr
 fn ready() {
     static FFMPEG: Once = Once::new();
     FFMPEG.call_once(|| {
-        ffmpeg::init().ok();
+        ffmpeg_safe::init().ok();
         ffmpeg::util::log::set_level(ffmpeg::util::log::Level::Quiet);
-        // SAFETY: once, before anything here opens a stream.
-        unsafe {
-            ffmpeg::ffi::avformat_network_init();
-        }
     });
 }
 
