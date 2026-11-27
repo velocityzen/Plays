@@ -1,0 +1,32 @@
+[package]
+name = "hdr"
+version = "0.1.0"
+edition = "2024"
+description = "HDR video's light: PQ and HLG, fitting it under a screen's headroom, and Dolby Vision's reshaping of IPT"
+license = "MIT"
+publish = false
+
+[lints]
+workspace = true
+
+[features]
+# `testing`: profile 5's RPU and HDR10's metadata on frames, for other
+# crates' tests.
+testing = []
+
+[dependencies]
+# The same FFmpeg bindings Plays uses, linked to the same static FFmpeg.
+ffmpeg-next = { version = "9.1", default-features = false, features = [
+    "codec",
+    "format",
+    "software-resampling",
+    "software-scaling",
+] }
+ffmpeg-safe = { path = "../ffmpeg-safe" }
+
+[build-dependencies]
+ffmpeg-link = { path = "../ffmpeg-link" }
+
+[dev-dependencies]
+# The property tests.
+hegeltest = "0.54"

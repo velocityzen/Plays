@@ -17,9 +17,9 @@ use ffmpeg_next as ffmpeg;
 use ffmpeg_safe::Layout;
 
 use crate::Error;
+use crate::hdr;
 use crate::profile::{AudioCodec, Hdr, VideoCodec};
 use crate::sync::lock;
-use crate::{dovi, hdr};
 
 /// The hardware encoders to try for a codec, in order.
 fn video_encoders(codec: VideoCodec) -> &'static [&'static str] {
@@ -330,16 +330,14 @@ impl VideoEncoder {
         if !self.conversion_failed {
             let reshaping = self
                 .reshapes
-                .then(|| dovi::Reshaping::of(decoded))
+                .then(|| ::hdr::Reshaping::of(decoded))
                 .flatten();
             let conversion = match &reshaping {
                 Some(reshaping) => Some(hdr::Conversion::Reshaped {
                     reshaping,
                     hdr10: self.keeps_colors,
                 }),
-                None if !self.keeps_colors => {
-                    hdr::Transfer::of(decoded).map(hdr::Conversion::ToSdr)
-                }
+                None if !self.keeps_colors => hdr::transfer(decoded).map(hdr::Conversion::ToSdr),
                 None => None,
             };
             if let Some(conversion) = conversion

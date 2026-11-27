@@ -18,6 +18,8 @@ ffmpeg-next = { version = "9.1", default-features = false, features = [
     "software-scaling",
 ] }
 ffmpeg-safe = { path = "../ffmpeg-safe" }
+# HDR's light, fitted to SDR, and Dolby Vision's reshaping, as Plays has them.
+hdr = { path = "../hdr" }
 log = "0.4"
 # Frames turned row by row in parallel.
 rayon = "1.12"
@@ -30,5 +32,7 @@ socket2 = "0.6"
 ffmpeg-link = { path = "../ffmpeg-link" }
 
 [dev-dependencies]
+# Profile 5's RPU and HDR10's metadata on frames.
+hdr = { path = "../hdr", features = ["testing"] }
 # The property tests.
 hegeltest = "0.54"

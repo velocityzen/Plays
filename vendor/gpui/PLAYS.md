@@ -220,7 +220,7 @@ and `shaders.wgsl`):
   the matrix, then for HDR decodes PQ or HLG to light, converts BT.2020 to
   sRGB primaries, tone maps it to SDR with reference white (203 nits) on
   SDR white and its peak at the top, and encodes it as sRGB, with the same
-  math as Plays' `src/media/hdr.rs`. Last comes the gamma,
+  math and constants as Plays' `crates/hdr`. Last comes the gamma,
   `signal^(1/gamma)`. The swapchain isn't sRGB, so the encoded values are
   written as they are.
 
@@ -373,9 +373,10 @@ which a future Rust rejects.
 `src/taffy.rs`: two float literals are typed as `f32`, which newer Rust
 warns about otherwise.
 
-The tone mapping matches Plays' `src/media/hdr.rs`, and the Dolby Vision
-reshaping its `src/media/dovi.rs`, which do the same on the CPU for software
-decoding on macOS, and for Dolby Vision on Linux.
+The tone mapping and the Dolby Vision reshaping match Plays' `crates/hdr`,
+whose tests read the shaders' constants and `DoviParams` back out of them,
+and which Plays uses on the CPU for software decoding on macOS, and for
+Dolby Vision on Linux.
 
 ## Updating gpui
 

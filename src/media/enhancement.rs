@@ -189,7 +189,6 @@ impl Composer {
                 .map(|e| dequantize(e, nlq, el_depth, denom))
                 .collect()
         });
-        let peak = hdr::pq_to_nits(f32::from(color.source_max_pq) / 4095.0);
         let ranges = curves
             .each_ref()
             .map(|curve| (curve.pivots[0], curve.pivots[curve.pivots.len() - 1]));
@@ -202,7 +201,7 @@ impl Composer {
             mapped,
             nlq,
             residuals,
-            peak_nits: hdr::plausible_peak(peak),
+            peak_nits: ::hdr::mastered_peak(color),
         })
     }
 

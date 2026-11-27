@@ -2941,7 +2941,7 @@ fn channel(still: &super::still::Still) -> impl Fn(usize, usize, usize) -> f64 +
 #[test]
 #[ignore = "needs Dolby Vision files in the folder PLAYS_DOLBY_VISION_SAMPLES names"]
 fn dolby_vision_profile_7_shows_both_layers() {
-    use super::hdr::{peak_nits, plausible_peak, pq_to_nits};
+    use ::hdr::{peak_nits, plausible_peak, pq_to_nits};
     use ffmpeg_safe::DolbyVision;
 
     for path in &dolby_vision_samples(&[7]) {
@@ -3026,7 +3026,7 @@ fn dolby_vision_over_hdr10_or_hlg_shows_its_base_layer() {
             "{name}: the RPU comes with each frame"
         );
         assert!(
-            super::dovi::Reshaping::of(&base).is_none(),
+            super::dovi::reshaping(&base).is_none(),
             "{name}: shown as it is"
         );
         let peak = peak_nits(&base);
@@ -3330,7 +3330,7 @@ fn hdr_surface_to_sdr(
 ) -> SurfaceRgb {
     use core_video::pixel_buffer::kCVPixelBufferLock_ReadOnly;
 
-    use super::hdr::{
+    use ::hdr::{
         REFERENCE_WHITE_NITS, Transfer, bt2020_to_bt709, hlg_scene_to_nits, hlg_to_scene,
         pq_to_nits, srgb_encode, tone_map,
     };
@@ -3494,14 +3494,14 @@ fn dolby_vision_surfaces_of(path: &std::path::Path) {
 
 /// The reshaping a Dolby Vision surface carries for gpui's shader.
 #[cfg(target_os = "macos")]
-fn dovi_params(buffer: &core_video::pixel_buffer::CVPixelBuffer) -> super::dovi::ShaderParams {
+fn dovi_params(buffer: &core_video::pixel_buffer::CVPixelBuffer) -> ::hdr::ShaderParams {
     use core_foundation::base::TCFType;
     use core_foundation::data::{CFData, CFDataRef};
     use core_foundation::string::CFString;
     use core_video::buffer::CVBufferGetAttachment;
 
-    use super::dovi::ShaderParams;
     use super::videotoolbox::DOLBY_VISION_ATTACHMENT;
+    use ::hdr::ShaderParams;
 
     let key = CFString::from_static_string(DOLBY_VISION_ATTACHMENT);
     // SAFETY: reading an attachment of a valid buffer.
@@ -3513,6 +3513,7 @@ fn dovi_params(buffer: &core_video::pixel_buffer::CVPixelBuffer) -> super::dovi:
         );
         assert!(!value.is_null(), "surfaces should carry the reshaping");
         ShaderParams::from_bytes(CFData::wrap_under_get_rule(value as CFDataRef).bytes())
+            .expect("the reshaping, whole")
     }
 }
 
@@ -3521,11 +3522,11 @@ fn dovi_params(buffer: &core_video::pixel_buffer::CVPixelBuffer) -> super::dovi:
 #[cfg(target_os = "macos")]
 fn dovi_surface_to_sdr(
     buffer: &core_video::pixel_buffer::CVPixelBuffer,
-    params: &super::dovi::ShaderParams,
+    params: &::hdr::ShaderParams,
 ) -> SurfaceRgb {
     use core_video::pixel_buffer::kCVPixelBufferLock_ReadOnly;
 
-    use super::hdr::{REFERENCE_WHITE_NITS, bt2020_to_bt709, srgb_encode, tone_map};
+    use ::hdr::{REFERENCE_WHITE_NITS, bt2020_to_bt709, srgb_encode, tone_map};
 
     let (width, height) = (buffer.get_width(), buffer.get_height());
     assert_eq!(buffer.lock_base_address(kCVPixelBufferLock_ReadOnly), 0);

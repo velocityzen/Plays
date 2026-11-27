@@ -60,12 +60,12 @@ use ffmpeg::util::format::Pixel;
 use ffmpeg_next as ffmpeg;
 use rayon::prelude::*;
 
-use super::dovi::Reshaping;
+use super::dovi::{self, Reshaping};
 use super::hdr::{self, Transfer};
 use super::{picture, still};
 use ffmpeg_safe::Colors;
 
-/// The pixel buffer attachment (a `CFData` of `dovi::ShaderParams`) that
+/// The pixel buffer attachment (a `CFData` of `hdr::ShaderParams`) that
 /// makes vendor/gpui draw a surface as Dolby Vision. Matches
 /// `DOLBY_VISION_ATTACHMENT` in its metal_renderer.rs.
 pub const DOLBY_VISION_ATTACHMENT: &str = "PlaysDolbyVision";
@@ -474,7 +474,7 @@ impl Converter {
         width: u32,
         height: u32,
     ) -> Result<Surface> {
-        let reshaping = Reshaping::of(frame);
+        let reshaping = dovi::reshaping(frame);
         let transfer = Transfer::of(frame).filter(|_| reshaping.is_none());
         let hdr = reshaping.is_some() || transfer.is_some();
         let format = if reshaping.is_some() {

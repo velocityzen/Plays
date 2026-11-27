@@ -18,7 +18,6 @@
 //! ```
 
 mod adjust;
-mod dovi;
 mod encode;
 mod hdr;
 mod http;

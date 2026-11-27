@@ -1,21 +1,20 @@
-//! Dolby Vision whose pictures are IPT (profiles 5, 10.0 and 20), with no
-//! HDR10, HLG or SDR picture to fall back on: they only look right reshaped
-//! by the curves and matrices each frame's RPU carries, which FFmpeg parses
-//! into `AV_FRAME_DATA_DOVI_METADATA`. Sent as YCbCr, without its
-//! signalling, as a repackaged or re-encoded stream is, a picture turns
-//! green and purple; a re-encoding reshapes it here first, as Plays does
-//! (`src/media/dovi.rs`, whose math this mirrors: libplacebo's).
+//! Dolby Vision whose pictures are IPT, not YCbCr (profiles 5, 10.0 and 20):
+//! they only look right reshaped by the curves and matrices each frame's
+//! RPU carries, which FFmpeg parses into `AV_FRAME_DATA_DOVI_METADATA`.
+//! Shown as YCbCr instead, a picture turns green and purple.
 //!
-//! Each component goes through its own piecewise curve, polynomials or MMR
-//! (which mixes in the other two). Then a matrix turns IPT into PQ-encoded
-//! LMS, and PQ's EOTF and a second matrix lead to linear BT.2020 light.
+//! Each component goes through its own piecewise curve: polynomials, or for
+//! chroma usually MMR, which mixes in the other two. Then a matrix turns
+//! IPT into PQ-encoded LMS, and PQ's EOTF and a second matrix lead to
+//! linear BT.2020 light, like any HDR10 picture's. The math is libplacebo's
+//! (which mpv uses). gpui's `surface_dovi_fragment` does the same on the
+//! GPU, with the curves and matrices packed by [`ShaderParams`].
 
-use ffmpeg::{ffi, frame};
-use ffmpeg_next as ffmpeg;
+use ffmpeg_next::{ffi, frame};
 use ffmpeg_safe::Rpu;
 use ffmpeg_safe::sys::{self, MAX_PIECES};
 
-use crate::hdr;
+use crate::{plausible_peak, pq_to_nits};
 
 /// From BT.2020's Hunt-Pointer-Estevez LMS, without crosstalk, to BT.2020
 /// RGB. The RPU's own linear matrix comes first (libplacebo's values).
@@ -91,7 +90,7 @@ impl Curve {
 
 /// A frame's reshaping and matrices, from its RPU.
 #[derive(Clone, Debug)]
-pub(crate) struct Reshaping {
+pub struct Reshaping {
     curves: [Curve; 3],
     /// Rows from reshaped IPT to PQ-encoded LMS, with the RPU's offset
     /// folded into the last column.
@@ -103,7 +102,8 @@ pub(crate) struct Reshaping {
 }
 
 impl Reshaping {
-    /// The reshaping `frame`'s RPU gives, if it has one that can be read.
+    /// The reshaping `frame`'s RPU gives, if it has one that can be read,
+    /// however the frame is tagged.
     pub fn of(frame: &frame::Video) -> Option<Self> {
         let Rpu {
             header,
@@ -113,7 +113,7 @@ impl Reshaping {
         Self::new(header, mapping, color)
     }
 
-    fn new(
+    pub(crate) fn new(
         header: &sys::RpuDataHeader,
         mapping: &sys::DataMapping,
         color: &sys::ColorMetadata,
@@ -179,12 +179,11 @@ impl Reshaping {
         let lms_to_rgb = std::array::from_fn(|row| {
             std::array::from_fn(|col| (0..3).map(|k| LMS_TO_BT2020[row][k] * linear[k][col]).sum())
         });
-        let peak = hdr::pq_to_nits(f32::from(color.source_max_pq) / 4095.0);
         Some(Self {
             curves: curves.try_into().ok()?,
             ipt_to_lms,
             lms_to_rgb,
-            peak_nits: hdr::plausible_peak(peak),
+            peak_nits: mastered_peak(color),
         })
     }
 
@@ -212,8 +211,138 @@ impl Reshaping {
         self.lms_to_rgb
             .map(|row| (row[0] * lms[0] + row[1] * lms[1] + row[2] * lms[2]).max(0.0))
     }
+
+    /// The reshaping and matrices as `surface_dovi_fragment` takes them.
+    pub fn shader_params(&self) -> ShaderParams {
+        let curves = self.curves.each_ref().map(|curve| {
+            let mut pivots = [[2.0; 4]; 2];
+            for (i, &pivot) in curve.pivots[1..curve.pivots.len() - 1].iter().enumerate() {
+                pivots[i / 4][i % 4] = pivot;
+            }
+            let mut pieces = [ShaderPiece::default(); MAX_PIECES];
+            for (piece, out) in curve.pieces.iter().zip(&mut pieces) {
+                match *piece {
+                    Piece::Polynomial([c0, c1, c2]) => out.poly = [c0, c1, c2, 0.0],
+                    Piece::Mmr {
+                        order,
+                        constant,
+                        coefficients,
+                    } => {
+                        out.poly = [constant, 0.0, 0.0, order as f32];
+                        for (k, c) in coefficients.iter().enumerate() {
+                            out.mmr[2 * k] = [c[0], c[1], c[2], 0.0];
+                            out.mmr[2 * k + 1] = [c[3], c[4], c[5], c[6]];
+                        }
+                    }
+                }
+            }
+            ShaderCurve {
+                bounds: [curve.first(), curve.last(), curve.pieces.len() as f32, 0.0],
+                pivots,
+                pieces,
+            }
+        });
+        ShaderParams {
+            ipt_to_lms: self.ipt_to_lms,
+            lms_to_rgb: self.lms_to_rgb.map(|[a, b, c]| [a, b, c, 0.0]),
+            curves,
+        }
+    }
+}
+
+/// The peak of the display a Dolby Vision video was mastered on, in nits,
+/// as its RPU's `color` says, if a video could be mastered at it.
+pub fn mastered_peak(color: &sys::ColorMetadata) -> Option<f32> {
+    plausible_peak(pq_to_nits(f32::from(color.source_max_pq) / 4095.0))
+}
+
+/// The reshaping and matrices for gpui's `surface_dovi_fragment`, which
+/// gets these bytes as they are. Matches `DoviParams` in vendor/gpui's
+/// shaders.metal: only `float4`s, so there is no padding to agree on.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct ShaderParams {
+    /// Rows from reshaped IPT (and 1) to PQ-encoded LMS.
+    ipt_to_lms: [[f32; 4]; 3],
+    /// Rows from linear LMS to linear BT.2020 RGB.
+    lms_to_rgb: [[f32; 4]; 3],
+    curves: [ShaderCurve; 3],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct ShaderCurve {
+    /// The first and last pivot, and the number of pieces.
+    bounds: [f32; 4],
+    /// The pivots between pieces, padded with 2 (above any signal).
+    pivots: [[f32; 4]; 2],
+    pieces: [ShaderPiece; MAX_PIECES],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+struct ShaderPiece {
+    /// A polynomial's coefficients of x⁰, x¹ and x², or MMR's constant;
+    /// then MMR's order, 0 for a polynomial.
+    poly: [f32; 4],
+    /// MMR weights for each power: of s₀, s₁, s₂, then of s₀s₁, s₀s₂, s₁s₂,
+    /// s₀s₁s₂.
+    mmr: [[f32; 4]; 6],
+}
+
+impl ShaderParams {
+    pub fn as_bytes(&self) -> &[u8] {
+        // SAFETY: the struct is plain f32s with no padding.
+        unsafe { std::slice::from_raw_parts((self as *const Self).cast(), size_of::<Self>()) }
+    }
+
+    /// The params as a surface carries them, if they're as long.
+    #[cfg(any(test, feature = "testing"))]
+    pub fn from_bytes(bytes: &[u8]) -> Option<Self> {
+        if bytes.len() != size_of::<Self>() {
+            return None;
+        }
+        // SAFETY: the length matches, and any f32s are valid.
+        Some(unsafe { std::ptr::read_unaligned(bytes.as_ptr().cast()) })
+    }
+
+    /// What `surface_dovi_fragment` computes from `samples`, before tone
+    /// mapping: linear BT.2020 light in nits. For checking the packing.
+    #[cfg(any(test, feature = "testing"))]
+    pub fn light(&self, samples: [f32; 3]) -> [f32; 3] {
+        let dot = |a: &[f32], b: &[f32]| a.iter().zip(b).map(|(a, b)| a * b).sum::<f32>();
+        let sig: [f32; 3] = std::array::from_fn(|c| {
+            let bounds = self.curves[c].bounds;
+            samples[c].clamp(bounds[0], bounds[1])
+        });
+        let reshape = |curve: &ShaderCurve, s: f32| {
+            let above = curve.pivots.iter().flatten().filter(|&&p| s >= p).count();
+            let piece = &curve.pieces[above.min(curve.bounds[2] as usize - 1)];
+            let order = piece.poly[3];
+            if order == 0.0 {
+                return (piece.poly[2] * s + piece.poly[1]) * s + piece.poly[0];
+            }
+            let [a, b, c] = sig;
+            let base = [a, b, c];
+            let cross = [a * b, a * c, b * c, a * b * c];
+            let mut value = piece.poly[0];
+            for k in 0..order as usize {
+                let p = k as i32 + 1;
+                value += dot(&piece.mmr[2 * k][..3], &base.map(|v| v.powi(p)));
+                value += dot(&piece.mmr[2 * k + 1], &cross.map(|v| v.powi(p)));
+            }
+            value
+        };
+        let ipt: [f32; 3] =
+            std::array::from_fn(|c| reshape(&self.curves[c], sig[c]).clamp(0.0, 1.0));
+        let lms = self.ipt_to_lms.map(|row| {
+            let signal = (dot(&row[..3], &ipt) + row[3]).clamp(0.0, 1.0);
+            pq_to_nits(signal)
+        });
+        self.lms_to_rgb.map(|row| dot(&row[..3], &lms).max(0.0))
+    }
 }
 
 #[cfg(test)]
 #[path = "tests/dovi.rs"]
-pub(crate) mod tests;
+mod tests;

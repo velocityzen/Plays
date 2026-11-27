@@ -1,3 +1,6 @@
+use ::hdr::testing::{NEUTRAL, attach_hdr10, attach_rpu, profile5};
+use ::hdr::{PQ_C1, PQ_C2, PQ_C3, PQ_M1, PQ_M2};
+
 use super::*;
 
 /// A flat grey 64 × 32 10-bit picture in limited range, its luma `signal`
@@ -91,30 +94,9 @@ pub(crate) fn pq(nits: f64) -> f64 {
     ((c1 + c2 * y) / (1.0 + c3 * y)).powf(m2)
 }
 
-/// Gives `frame` the MaxCLL `nits`.
-fn with_peak(frame: &mut frame::Video, nits: u32) {
-    // SAFETY: the side data FFmpeg makes for the frame is as big as asked,
-    // and this kind is `ContentLightLevel`.
-    unsafe {
-        let side = ffi::av_frame_new_side_data(
-            frame.as_mut_ptr(),
-            ffi::AVFrameSideDataType::AV_FRAME_DATA_CONTENT_LIGHT_LEVEL,
-            size_of::<sys::ContentLightLevel>(),
-        );
-        assert!(!side.is_null());
-        (*side)
-            .data
-            .cast::<sys::ContentLightLevel>()
-            .write(sys::ContentLightLevel {
-                max_cll: nits,
-                max_fall: 0,
-            });
-    }
-}
-
 /// `from` fitted to SDR in 32 × 16 `format`.
 fn fitted(from: &frame::Video, format: Pixel) -> frame::Video {
-    let transfer = Transfer::of(from).expect("HDR");
+    let transfer = transfer(from).expect("HDR");
     let mut to = frame::Video::new(format, 32, 16);
     Converter::default()
         .run(from, Conversion::ToSdr(transfer), &mut to)
@@ -125,32 +107,6 @@ fn fitted(from: &frame::Video, format: Pixel) -> frame::Video {
 /// SDR's light, 0 to 1, of a luma a TV shows (BT.1886).
 fn shown(luma: f64) -> f64 {
     luma.max(0.0).powf(f64::from(TV_GAMMA))
-}
-
-#[test]
-fn leaves_brightness_below_the_knee_alone_and_rolls_off_toward_white() {
-    for x in [0.0, 0.1, 0.5, KNEE] {
-        assert_eq!(tone_curve(x, Some(4.9)), x);
-        assert_eq!(tone_curve(x, None), x);
-    }
-    // A video peaking at its mastering display's 1000 nits reaches white
-    // there, and no further.
-    let peak = 1000.0 / REFERENCE_WHITE_NITS;
-    assert!((tone_curve(peak, Some(peak)) - 1.0).abs() < 1e-6);
-    assert_eq!(tone_curve(peak * 2.0, Some(peak)), 1.0);
-    // Without a peak, it nears white, short of it.
-    assert!(tone_curve(2.0, None) < 1.0);
-    assert!(tone_curve(2.0, None) > 0.99);
-    // A video that fits is left alone.
-    assert_eq!(tone_curve(0.9, Some(0.95)), 0.9);
-    // It never darkens what's brighter.
-    let mut last = 0.0;
-    for step in 0..2000 {
-        let x = step as f32 * 0.01;
-        let y = tone_curve(x, Some(peak));
-        assert!(y >= last, "{x}: {y} after {last}");
-        last = y;
-    }
 }
 
 /// HDR's reference white is SDR's white, nearly: just under it, as the
@@ -202,13 +158,13 @@ fn fits_highlights_by_the_videos_peak() {
     assert!((half - 100.0 / 203.0).abs() < 0.02, "{half}");
 
     let mut peak = grey_at(1000.0);
-    with_peak(&mut peak, 1000);
+    attach_hdr10(&mut peak, Some(1000), None);
     let white = shown(luma(&fitted(&peak, Pixel::P010LE)));
     assert!(white > 0.98, "{white}");
     let mut brighter = grey_at(600.0);
-    with_peak(&mut brighter, 1000);
+    attach_hdr10(&mut brighter, Some(1000), None);
     let mut brightest = grey_at(600.0);
-    with_peak(&mut brightest, 4000);
+    attach_hdr10(&mut brightest, Some(4000), None);
     let (rolled, more) = (
         shown(luma(&fitted(&brighter, Pixel::P010LE))),
         shown(luma(&fitted(&brightest, Pixel::P010LE))),
@@ -216,10 +172,23 @@ fn fits_highlights_by_the_videos_peak() {
     assert!(more < rolled && rolled < white, "{more} {rolled} {white}");
 }
 
+/// HLG's half signal is a twelfth of its peak's scene light, shown on a
+/// 1000-nit display as about 51 nits, a quarter of SDR's white.
+#[test]
+fn shows_hlg_grey_as_its_display_would() {
+    let grey = grey(
+        color::TransferCharacteristic::ARIB_STD_B67,
+        color::Space::BT2020NCL,
+        0.5,
+    );
+    let light = shown(luma(&fitted(&grey, Pixel::P010LE)));
+    assert!((light - 50.7 / 203.0).abs() < 0.02, "{light}");
+}
+
 #[test]
 fn reads_hdr_by_its_transfer_in_any_matrix_but_ipt() {
     use color::{Space, TransferCharacteristic as Trc};
-    let of = |transfer, space| Transfer::of(&grey(transfer, space, 0.5));
+    let of = |trc, space| transfer(&grey(trc, space, 0.5));
     assert_eq!(of(Trc::SMPTE2084, Space::BT2020NCL), Some(Transfer::Pq));
     assert_eq!(of(Trc::ARIB_STD_B67, Space::BT2020NCL), Some(Transfer::Hlg));
     assert_eq!(of(Trc::SMPTE2084, Space::Unspecified), Some(Transfer::Pq));
@@ -232,42 +201,36 @@ fn reads_hdr_by_its_transfer_in_any_matrix_but_ipt() {
     let mut ipt = grey(Trc::SMPTE2084, Space::BT2020NCL, 0.5);
     // SAFETY: the frame is ours, and IPT-C2 a value FFmpeg names.
     unsafe { (*ipt.as_mut_ptr()).colorspace = ffi::AVColorSpace::AVCOL_SPC_IPT_C2 };
-    assert_eq!(Transfer::of(&ipt), None);
+    assert_eq!(transfer(&ipt), None);
 }
 
-#[test]
-fn reads_the_peak_as_the_lower_of_maxcll_and_the_mastering_display() {
-    let mut frame = grey(
-        color::TransferCharacteristic::SMPTE2084,
-        color::Space::BT2020NCL,
-        0.5,
-    );
-    assert_eq!(peak_nits(&frame, Transfer::Pq), None);
-    assert_eq!(peak_nits(&frame, Transfer::Hlg), Some(HLG_PEAK_NITS));
-    with_peak(&mut frame, 2010);
-    assert_eq!(peak_nits(&frame, Transfer::Pq), Some(2010.0));
-    // SAFETY: the side data FFmpeg makes for the frame is as big as asked,
-    // and this kind is `MasteringDisplay`.
-    unsafe {
-        let side = ffi::av_frame_new_side_data(
-            frame.as_mut_ptr(),
-            ffi::AVFrameSideDataType::AV_FRAME_DATA_MASTERING_DISPLAY_METADATA,
-            size_of::<sys::MasteringDisplay>(),
+/// A 64 × 32 profile 5 frame, 10-bit in full range as such a picture is,
+/// of one color all over: its luma and chroma `codes`, with `profile5`'s
+/// RPU as side data.
+pub(crate) fn rpu_frame(codes: [u16; 3]) -> frame::Video {
+    let (header, mapping, color) = profile5();
+    let mut frame = frame::Video::new(Pixel::YUV420P10LE, 64, 32);
+    frame.set_color_range(color::Range::JPEG);
+    for (plane, code) in codes.into_iter().enumerate() {
+        let (width, rows) = (
+            frame.plane_width(plane) as usize,
+            frame.plane_height(plane) as usize,
         );
-        assert!(!side.is_null());
-        let display = (*side).data.cast::<sys::MasteringDisplay>();
-        std::ptr::write_bytes(display, 0, 1);
-        (*display).max_luminance = ffi::AVRational { num: 1000, den: 1 };
-        (*display).has_luminance = 1;
+        let (data, stride) = ffmpeg_safe::plane_mut(&mut frame, plane).unwrap();
+        for row in data.chunks_mut(stride).take(rows) {
+            for sample in row[..width * 2].as_chunks_mut::<2>().0 {
+                *sample = code.to_le_bytes();
+            }
+        }
     }
-    assert_eq!(peak_nits(&frame, Transfer::Pq), Some(1000.0));
+    attach_rpu(&mut frame, &header, &mapping, &color);
+    frame
 }
 
-/// Dolby Vision's IPT at HDR's reference white, a frame `dovi`'s tests
-/// make: its chroma neutral, its luma code the one this frame's curve
-/// reshapes to PQ's code for 203 nits.
+/// Dolby Vision's IPT at HDR's reference white: its chroma neutral, its
+/// luma code the one this frame's curve reshapes to PQ's code for 203
+/// nits.
 fn ipt_white() -> frame::Video {
-    use crate::dovi::tests::{NEUTRAL, rpu_frame};
     let neutral = (NEUTRAL * 1024.0).round() as u16;
     rpu_frame([833, neutral, neutral])
 }
@@ -318,7 +281,7 @@ fn reshapes_ipt_into_hdr10_as_it_was_mastered_or_fits_it_to_sdr() {
         color::Space::BT2020NCL,
         pq(203.0),
     );
-    with_peak(&mut hdr10_white, 1000);
+    attach_hdr10(&mut hdr10_white, Some(1000), None);
     for format in [Pixel::NV12, Pixel::P010LE] {
         let sdr = converted(format, false);
         let as_hdr10 = fitted(&hdr10_white, format);
@@ -329,24 +292,6 @@ fn reshapes_ipt_into_hdr10_as_it_was_mastered_or_fits_it_to_sdr() {
             luma(&as_hdr10)
         );
         assert_eq!(Tags::of_frame(&sdr), sdr_tags());
-    }
-}
-
-/// PQ's codes come from a table, by the fourth root of the light, finely
-/// enough from a mastering display's black to PQ's peak that 12 bits of
-/// them are right.
-#[test]
-fn encodes_pq_finely_from_black_to_its_peak() {
-    let table = Tables::default().pq_encode;
-    for nits in [0.005, 0.05, 0.5, 5.0, 50.0, 203.0, 1000.0, 4000.0, 10000.0] {
-        let root = (nits / PQ_PEAK_NITS).sqrt().sqrt();
-        let coded = f64::from(table[(root * ENCODE_STEPS as f32 + 0.5) as usize]) / 65535.0;
-        let exact = pq(f64::from(nits));
-        assert!(
-            (coded - exact).abs() < 1.0 / 4096.0,
-            "{nits}: {coded} {exact}"
-        );
-        assert!((f64::from(nits_to_pq(nits)) - exact).abs() < 1e-5, "{nits}");
     }
 }
 

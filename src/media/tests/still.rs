@@ -250,7 +250,7 @@ fn a_surface_is_seen_in_the_colors_it_shows() {
 fn dolby_vision_read_back_is_reshaped_and_kept_or_tone_mapped() {
     use crate::media::hdr::{REFERENCE_WHITE_NITS, nits_to_pq, pq_to_nits};
 
-    let reshaping = crate::media::dovi::tests::reshaping();
+    let reshaping = ::hdr::testing::reshaping();
     // 2 × 2 of one IPT color, ten bits high in sixteen: past the knee,
     // where the peak it was mastered for tells.
     let (i, pt) = (0.9, 0.45);

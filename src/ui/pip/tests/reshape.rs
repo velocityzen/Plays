@@ -1,6 +1,6 @@
 use super::*;
-use crate::media::dovi::tests::reshaping;
 use crate::media::hdr::{nits_to_pq, pq_to_nits};
+use ::hdr::testing::reshaping;
 
 /// 10-bit BT.2020 in video range, as Dolby Vision surfaces are.
 const YCC: Ycc = Ycc {
@@ -28,29 +28,6 @@ fn code(sample: u16) -> i32 {
 }
 
 #[test]
-fn pq_reads_between_its_tables_as_its_curve_goes() {
-    let pq = Pq::default();
-    for step in 0..=10_000 {
-        let signal = step as f32 / 10_000.0;
-        let nits = pq_to_nits(signal);
-        assert!(
-            (pq.nits(signal) - nits).abs() <= 1e-4 * nits.max(1.0),
-            "{signal}"
-        );
-        // Far within a 10-bit code, from black to PQ's peak.
-        assert!(
-            (pq.signal(nits) - signal).abs() < 1e-4,
-            "{signal}: {nits} nits"
-        );
-    }
-    assert_eq!(pq.signal(-1.0), pq.signal(0.0), "no light under none");
-    assert!(
-        (pq.signal(20_000.0) - 1.0).abs() < 1e-6,
-        "none over its peak"
-    );
-}
-
-#[test]
 fn each_pixel_is_reshaped_as_the_shader_reshapes_it() {
     let reshaping = reshaping();
     // 4 × 4, each luma sample its own, one chroma all over.
@@ -62,13 +39,7 @@ fn each_pixel_is_reshaped_as_the_shader_reshapes_it() {
     let rgb: Vec<[f32; 3]> = (0..16)
         .map(|at| expected(&reshaping, samples(at)))
         .collect();
-    reshape(
-        (&reshaping, &Pq::default()),
-        (&mut luma, 4),
-        (&mut chroma, 4),
-        4,
-        YCC,
-    );
+    reshape(&reshaping, (&mut luma, 4), (&mut chroma, 4), 4, YCC);
     for (at, rgb) in rgb.iter().enumerate() {
         let want: u16 = YCC.write(YCC.luma(*rgb), YCC.luma_range());
         assert!(code(luma[at]).abs_diff(code(want)) <= 1, "luma at {at}");
@@ -97,13 +68,7 @@ fn chroma_is_read_between_its_samples_as_a_gpus_sampler_reads_it() {
     let mut luma = vec![sample(0.5); 16];
     let mut chroma: Vec<u16> = pairs.iter().flatten().map(|&value| sample(value)).collect();
     let pairs = pairs.map(|pair| pair.map(|value| f32::from(sample(value)) / 65536.0));
-    reshape(
-        (&reshaping, &Pq::default()),
-        (&mut luma, 4),
-        (&mut chroma, 4),
-        4,
-        YCC,
-    );
+    reshape(&reshaping, (&mut luma, 4), (&mut chroma, 4), 4, YCC);
     // Pixel centers fall a quarter of a sample in from their own, so each
     // takes a quarter of its neighbor's, if it has one that way.
     let toward_the_second = [0.0, 0.25, 0.75, 1.0];
@@ -140,13 +105,7 @@ fn planes_too_narrow_for_their_pixels_are_left_alone() {
     let mut luma = vec![sample(0.5); 16];
     // Rows of one sample, not the pair two pixels' chroma needs.
     let mut chroma = vec![sample(0.5); 2];
-    reshape(
-        (&reshaping(), &Pq::default()),
-        (&mut luma, 4),
-        (&mut chroma, 1),
-        4,
-        YCC,
-    );
+    reshape(&reshaping(), (&mut luma, 4), (&mut chroma, 1), 4, YCC);
     assert!(luma.iter().all(|&own| own == sample(0.5)));
     assert!(chroma.iter().all(|&own| own == sample(0.5)));
 }

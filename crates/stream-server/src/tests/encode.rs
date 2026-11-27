@@ -204,9 +204,10 @@ fn fits_hdr_to_sdr_for_an_encoding_tagged_bt709() {
 #[cfg(target_os = "macos")]
 #[test]
 fn reshapes_dolby_visions_ipt_into_hdr10_or_sdr() {
-    use crate::dovi::tests::{NEUTRAL, rpu_frame};
+    use ::hdr::testing::NEUTRAL;
+
     use crate::hdr::TV_GAMMA;
-    use crate::hdr::tests::{luma, pq, sdr_tags};
+    use crate::hdr::tests::{luma, pq, rpu_frame, sdr_tags};
     use ffmpeg_safe::Tags;
     let neutral = (NEUTRAL * 1024.0).round() as u16;
     // The luma code this frame's curve, x² / 2 + 1/4 there, reshapes to

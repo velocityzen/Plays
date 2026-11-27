@@ -120,6 +120,7 @@ on its own. Clippy lints in the root `Cargo.toml` apply to all.
 | `crates/airplay` | Finds, pairs with and sends to AirPlay receivers |
 | `crates/network` | What the casting crates share: connecting, connections taken, bounded HTTP and RTSP, mDNS |
 | `crates/ffmpeg-link` | Links the static FFmpeg into Plays and the stream server's tests |
+| `crates/hdr` | HDR's light for Plays and the stream server: PQ, HLG, the tone curve, Dolby Vision's reshaping |
 | `crates/ffmpeg-safe` | Sound reads of what ffmpeg-next reads unsoundly, or not at all: colors, channel layouts, tags, frame planes, subtitle text, side data; files opened reaching only files, streams as Plays waits on them; FFmpeg's set-up |
 | `crates/completions` | Shell completion scripts for a clap command line |
 | `crates/file-types` | The formats Plays opens, and what macOS and Linux are told of them, with an icon each |
@@ -235,10 +236,13 @@ A decoded picture reaches gpui in one of three forms
   copied into a 10-bit buffer first; HDR already so, at its size, not copied
 - `src/media/yuv.rs` (Linux): planes and their matrix;
   `PLAYS_GPU_CONVERSION=0` converts on the CPU instead
-- `src/media/hdr.rs`: PQ, HLG and the tone curve; reference white as SDR
-  white, the video's peak (MaxCLL, mastering display) at the headroom
-- `src/media/dovi.rs`: Dolby Vision profiles 5 and 20, reshaped by each
-  frame's RPU
+- `crates/hdr`: PQ, HLG and the tone curve; reference white as SDR white,
+  the video's peak (MaxCLL, mastering display) at the headroom; PQ and HLG
+  by table; Dolby Vision's IPT reshaped by each frame's RPU; the constants
+  checked against the shaders'
+- `src/media/hdr.rs`: HDR fitted to an SDR screen on the CPU
+- `src/media/dovi.rs`: Dolby Vision profiles 5 and 20, IPT however tagged,
+  reshaped on the CPU
 - `src/media/enhancement.rs`: profile 7's two layers composed into HDR10 on
   the CPU (ETSI GS CCM 001), at the master's peak
 - `src/media/picture.rs`: the forms, and the gamma every player shares
@@ -611,9 +615,8 @@ flowchart LR
 - `job.rs`: segments made three ahead of the device; a seek starts another
 - `overlay.rs`: picture subtitles drawn into the video, re-encoded for them
 - `adjust.rs`: the block's crop, aspect, turns, flips and gamma, re-encoded
-- `hdr.rs`: HDR fitted to SDR for a device not given it, as Plays shows it;
-  Dolby Vision's IPT reshaped into HDR10 or SDR
-- `dovi.rs`: Dolby Vision's RPU reshaping, as `src/media/dovi.rs` has it
+- `hdr.rs`: HDR fitted to SDR for a device not given it, as Plays shows it,
+  coded for BT.1886; Dolby Vision's IPT reshaped into HDR10 or SDR
 - `subtitles.rs`: text subtitles as WebVTT, placed as ASS puts them, or SRT
 - `playlist.rs`: the master, media and subtitle playlists
 - `http.rs`, `server.rs`: HTTP/1.1, a thread per connection, a token per cast

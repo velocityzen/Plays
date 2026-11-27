@@ -687,7 +687,7 @@ fn upload(
     max_short_side: Option<u32>,
     session: &Session,
 ) -> Option<videotoolbox::Surface> {
-    if hdr::Transfer::of(frame).is_none() && dovi::Reshaping::of(frame).is_none() {
+    if hdr::Transfer::of(frame).is_none() && dovi::reshaping(frame).is_none() {
         return None;
     }
     let converter = uploads

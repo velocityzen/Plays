@@ -522,7 +522,7 @@ fn the_progress_runs_as_playback_does_whichever_buttons_play_it() {
 
 #[test]
 fn dolby_vision_is_reshaped_into_hdr10_before_gamma_bends_it() {
-    let reshaping = crate::media::dovi::tests::reshaping();
+    let reshaping = ::hdr::testing::reshaping();
     let ycc = Ycc {
         kr: 0.2627,
         kb: 0.0593,
@@ -588,7 +588,7 @@ fn dolby_vision_is_reshaped_into_hdr10_before_gamma_bends_it() {
 fn dolby_vision_in_bgra_is_no_frame_to_show() {
     let mut decoded = Buffers::default();
     let frame = decoded.get(kCVPixelFormatType_32BGRA, 4, 4).unwrap();
-    let reshaping = crate::media::dovi::tests::reshaping();
+    let reshaping = ::hdr::testing::reshaping();
     let fitted = Fitting::default().fit(
         &frame,
         &framing((4, 4), None, None),

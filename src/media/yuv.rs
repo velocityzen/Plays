@@ -110,7 +110,7 @@ impl YuvConverter {
         frame: &frame::Video,
         max_short_side: Option<u32>,
     ) -> Option<Result<YuvPicture>> {
-        if dovi::Reshaping::of(frame).is_some() {
+        if dovi::reshaping(frame).is_some() {
             return None;
         }
         samples(frame.format())?;

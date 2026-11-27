@@ -2,7 +2,7 @@ use hegel::TestCase;
 use hegel::generators as gs;
 
 use super::*;
-use crate::media::dovi::tests::reshaping;
+use ::hdr::testing::reshaping;
 
 /// A 4:2:0 frame of any size, its rows any stride apart: luma and chroma
 /// planes, their strides, its width and how its samples are written.
@@ -53,7 +53,7 @@ impl Frame {
         let (luma, luma_stride) = &mut self.luma;
         let (chroma, chroma_stride) = &mut self.chroma;
         reshape(
-            (&reshaping(), &Pq::default()),
+            &reshaping(),
             (luma, *luma_stride),
             (chroma, *chroma_stride),
             self.width,

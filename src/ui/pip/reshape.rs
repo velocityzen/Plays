@@ -10,58 +10,13 @@ use rayon::prelude::*;
 
 use super::burn_in::{Sample, Ycc};
 use crate::media::dovi::Reshaping;
-use crate::media::hdr;
-
-/// Steps in each of PQ's tables.
-const STEPS: usize = 4096;
-
-/// PQ's curve both ways, through tables read between their steps.
-pub struct Pq {
-    /// The nits at the signals `0, 1 / STEPS, …, 1`.
-    nits: Box<[f32]>,
-    /// The signals at light whose fourth root over PQ's peak is `0,
-    /// 1 / STEPS, …, 1`: even steps there crowd near black, where PQ bends
-    /// most.
-    signals: Box<[f32]>,
-}
-
-impl Default for Pq {
-    fn default() -> Self {
-        let step = |step: usize| step as f32 / STEPS as f32;
-        Self {
-            nits: (0..=STEPS).map(|at| hdr::pq_to_nits(step(at))).collect(),
-            signals: (0..=STEPS)
-                .map(|at| hdr::nits_to_pq(10000.0 * step(at).powi(4)))
-                .collect(),
-        }
-    }
-}
-
-impl Pq {
-    /// PQ's EOTF: a signal in 0..=1 to nits.
-    pub fn nits(&self, signal: f32) -> f32 {
-        between(&self.nits, signal)
-    }
-
-    /// PQ's inverse EOTF: nits to a signal in 0..=1.
-    pub fn signal(&self, nits: f32) -> f32 {
-        between(&self.signals, (nits / 10000.0).max(0.0).sqrt().sqrt())
-    }
-}
-
-/// What `table` holds at `place` in 0..=1, between its steps.
-fn between(table: &[f32], place: f32) -> f32 {
-    let place = place.clamp(0.0, 1.0) * STEPS as f32;
-    let step = (place as usize).min(STEPS - 1);
-    let (low, high) = (table[step], table[step + 1]);
-    low + (high - low) * (place - step as f32)
-}
+use crate::media::hdr::Tables;
 
 /// Reshape biplanar 4:2:0 Dolby Vision `width` pixels wide, a luma plane
 /// and a plane of chroma pairs at half the size each way (strides in
 /// samples), in place into PQ Y'CbCr as `ycc` writes it.
 pub fn reshape<S: Sample + Send + Sync>(
-    (reshaping, pq): (&Reshaping, &Pq),
+    reshaping: &Reshaping,
     (luma, luma_stride): (&mut [S], usize),
     (chroma, chroma_stride): (&mut [S], usize),
     width: usize,
@@ -87,6 +42,7 @@ pub fn reshape<S: Sample + Send + Sync>(
         .map(|x| sampled(x, width, chroma_width))
         .collect();
     let (luma_range, chroma_range) = (ycc.luma_range(), ycc.chroma_range());
+    let tables = Tables::get();
     let rows = luma.par_chunks_mut(2 * luma_stride);
     let lines = chroma.par_chunks_mut(chroma_stride);
     rows.zip(lines).enumerate().for_each(|(at, (pair, line))| {
@@ -108,8 +64,8 @@ pub fn reshape<S: Sample + Send + Sync>(
                     down,
                 );
                 let lms = reshaping.lms_signal([sample.code() as f32 * unit, cb, cr]);
-                let light = reshaping.lms_to_rgb(lms.map(|signal| pq.nits(signal)));
-                let rgb = light.map(|nits| pq.signal(nits));
+                let light = reshaping.lms_to_rgb(lms.map(|signal| tables.pq_nits(signal)));
+                let rgb = light.map(|nits| tables.pq_signal(nits));
                 *sample = ycc.write(ycc.luma(rgb), luma_range);
                 let (sum, count) = &mut sums[x / 2];
                 for (total, value) in sum.iter_mut().zip(rgb) {

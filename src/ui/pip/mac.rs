@@ -67,7 +67,7 @@ use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
 use super::burn_in::{Overlay, Sample, Ycc};
 use super::gamma::Curve;
-use super::reshape::{self, Pq};
+use super::reshape;
 use super::turn::turn;
 use super::{PipEvent, Playback, Subtitles};
 use crate::media::dovi::Reshaping;
@@ -1212,7 +1212,7 @@ enum Pass<'a> {
     /// Gamma bent into them.
     Gamma(&'a Curve),
     /// Dolby Vision reshaped into PQ Y'CbCr.
-    Reshape(&'a Reshaping, &'a Pq),
+    Reshape(&'a Reshaping),
 }
 
 /// Do `pass` to a locked biplanar buffer's samples; `None` if it has no
@@ -1242,8 +1242,8 @@ unsafe fn apply_planes<S: Sample + Send + Sync>(
             buffer.get_width(),
             ycc,
         ),
-        Pass::Reshape(reshaping, pq) => reshape::reshape(
-            (reshaping, pq),
+        Pass::Reshape(reshaping) => reshape::reshape(
+            reshaping,
             (luma, luma_stride),
             (chroma, chroma_stride),
             buffer.get_width(),
@@ -1369,8 +1369,6 @@ struct Fitting {
     burned: Option<(Option<Transfer>, Overlay)>,
     /// The last gamma bent in (as bits), for frames of this HDR signal.
     curve: Option<(u32, Option<Transfer>, Curve)>,
-    /// PQ's tables, once Dolby Vision is reshaped.
-    pq: Option<Pq>,
     /// Frames made to fit, to hand over and draw into.
     scaled: Buffers,
     /// Frames scaled, then turned on the CPU.
@@ -1444,9 +1442,8 @@ impl Fitting {
                 !matches!(layout, Layout::Bgra),
                 "Dolby Vision frames in format {format:#x}"
             );
-            let pq = self.pq.get_or_insert_with(Pq::default);
             // SAFETY: the buffer was just made, and is this layout.
-            unsafe { layout.apply(Pass::Reshape(reshaping, pq), &scaled)? };
+            unsafe { layout.apply(Pass::Reshape(reshaping), &scaled)? };
         }
         // Dolby Vision is tagged PQ, as it is once reshaped.
         let transfer = transfer_of(buffer);

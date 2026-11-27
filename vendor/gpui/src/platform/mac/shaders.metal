@@ -1001,8 +1001,9 @@ fragment float4 surface_fragment(SurfaceFragmentInput input [[stage_in]],
   return float4(apply_gamma(rgb.rgb, gamma), rgb.a);
 }
 
-// Plays: HDR video (see PLAYS.md). The same math as Plays' src/media/hdr.rs,
-// which does it on the CPU for an SDR screen.
+// Plays: HDR video (see PLAYS.md). The same math and constants as Plays'
+// crates/hdr, whose tests read them here, and which src/media/hdr.rs uses
+// on the CPU for an SDR screen.
 
 // Matches HdrSurfaceParams in metal_renderer.rs.
 struct HdrSurfaceParams {
@@ -1118,8 +1119,8 @@ fragment float4 surface_hdr_fragment(
 }
 
 // Plays: Dolby Vision profile 5, whose pictures are IPT, not YCbCr, and need
-// each frame's reshaping. The same math as Plays' src/media/dovi.rs, which
-// packs DoviParams.
+// each frame's reshaping. The same math as Plays' crates/hdr/src/dovi.rs,
+// which packs DoviParams.
 
 // A polynomial's coefficients of x^0, x^1 and x^2, or MMR's constant, then
 // MMR's order (0 for a polynomial); MMR's weights for each power: of s0, s1,

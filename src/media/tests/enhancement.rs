@@ -1,7 +1,6 @@
 use super::*;
-use crate::media::dovi::tests::attach_rpu;
-use crate::media::hdr::tests::attach_hdr10;
 use crate::media::yuv::tests::stored_bottom_up;
+use ::hdr::testing::{attach_hdr10, attach_rpu};
 
 /// A profile 7 RPU, as ffprobe prints a Blu-ray's but plainer: 10-bit
 /// layers, each component mapped as it is, the enhancement layer

@@ -48,6 +48,8 @@ ffmpeg-next = { version = "9.1", default-features = false, features = [
 file-types = { path = "crates/file-types" }
 # Sound reads of what ffmpeg-next reads unsoundly.
 ffmpeg-safe = { path = "crates/ffmpeg-safe" }
+# HDR's light and Dolby Vision's reshaping, shared with the stream server.
+hdr = { path = "crates/hdr" }
 gpui = "0.2.2"
 # JPEG for screenshots; PNG goes straight through `png`, which can tag HDR.
 image = { version = "0.25", default-features = false, features = ["jpeg"] }
@@ -118,6 +120,8 @@ airplay = { path = "crates/airplay", features = ["fake"] }
 plist = "1"
 # The property tests.
 hegeltest = "0.54"
+# Profile 5's RPU and HDR10's metadata on frames.
+hdr = { path = "crates/hdr", features = ["testing"] }
 # Reads gpui's shaders for Linux, which nothing building on macOS does.
 naga = { version = "25.0", features = ["wgsl-in"] }
 

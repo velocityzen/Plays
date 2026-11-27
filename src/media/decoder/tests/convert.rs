@@ -104,7 +104,7 @@ fn dolby_vision_is_tone_mapped_to_its_mastering_display() {
     // A bright IPT color all over, mastered at 1,000 nits.
     let codes = [922, 461, 461];
     let frame = rpu_frame((16, 16), codes, 3079);
-    let reshaping = dovi::Reshaping::of(&frame).unwrap();
+    let reshaping = dovi::reshaping(&frame).unwrap();
     let (_, _, pixels) = convert_pixels(&mut None, None, &frame).unwrap();
     let mapped = |peak| {
         let mut mapper = hdr::ToneMapper::new(hdr::Transfer::Pq);

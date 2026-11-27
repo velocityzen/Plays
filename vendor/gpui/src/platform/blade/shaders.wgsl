@@ -1573,7 +1573,8 @@ fn yuv_apply_gamma(signal: vec3<f32>, gamma: f32) -> vec3<f32> {
     return sign(signal) * pow(abs(signal), vec3<f32>(1.0 / gamma));
 }
 
-// HDR to an SDR screen: the same math as Plays' src/media/hdr.rs.
+// HDR to an SDR screen: the same math and constants as Plays' crates/hdr,
+// whose tests read them here.
 
 const YUV_REFERENCE_WHITE_NITS: f32 = 203.0;
 const YUV_HLG_PEAK_NITS: f32 = 1000.0;

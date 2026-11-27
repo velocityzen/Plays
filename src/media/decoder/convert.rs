@@ -67,7 +67,7 @@ pub(in crate::media) fn convert_pixels(
     max_short_side: Option<u32>,
     frame: &frame::Video,
 ) -> Result<(u32, u32, Vec<u8>)> {
-    let reshaping = dovi::Reshaping::of(frame);
+    let reshaping = dovi::reshaping(frame);
     let light = match (&reshaping, hdr::Transfer::of(frame)) {
         (Some(_), _) => Light::DolbyVision,
         (None, Some(transfer)) => Light::Hdr(transfer),
@@ -139,7 +139,8 @@ pub(in crate::media) fn convert_pixels(
     let output = &scaler.output;
     let plane = |index| ffmpeg_safe::plane(output, index).context("a scaled plane is missing");
     let pixels = match &reshaping {
-        Some(reshaping) => reshaping.render(
+        Some(reshaping) => dovi::render(
+            reshaping,
             mapper,
             [plane(0)?, plane(1)?, plane(2)?],
             width as usize,

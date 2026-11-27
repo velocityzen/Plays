@@ -18,7 +18,7 @@ use super::decoder::layers::{self, Found, Layers};
 use super::decoder::{
     convert_pixels, open_input, open_video, output_size, set_aspect, set_colorspace,
 };
-use super::dovi::Reshaping;
+use super::dovi::{self, Reshaping};
 use super::enhancement::Composer;
 use super::hdr::{self, ToneMapper, Transfer};
 use super::picture::{Picture, rows};
@@ -119,7 +119,7 @@ pub(super) fn frame_of(
 /// `frame` as a still: tone mapped for an SDR screen, unless `keep_hdr`.
 fn of_frame(frame: &frame::Video, keep_hdr: bool) -> Result<Still> {
     let transfer = Transfer::of(frame);
-    let reshaping = Reshaping::of(frame);
+    let reshaping = dovi::reshaping(frame);
     match (keep_hdr, reshaping, transfer) {
         (true, Some(reshaping), _) => dolby_vision(frame, &reshaping),
         (true, None, Some(transfer)) => hdr(frame, transfer),
