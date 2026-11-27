@@ -45,3 +45,24 @@ fn a_file_claiming_to_last_for_ever_has_no_more_than_the_most_segments() {
         assert!(cut.end - info.start <= most, "{name}: ends at {}", cut.end);
     }
 }
+
+#[test]
+fn a_stream_the_file_hasnt_has_no_keyframes() {
+    let (mut input, info) = opened("clip.mp4");
+    assert!(!indexed_keyframes(&mut input, 0).is_empty(), "its video's");
+    assert_eq!(indexed_keyframes(&mut input, 99), Vec::<i64>::new());
+    let plan = Plan {
+        delivery: Delivery::Hls(Segments::Ts),
+        video: Some(VideoPlan::Copy {
+            stream: 99,
+            codec: VideoCodec::H264,
+        }),
+        audio: None,
+        subtitles: None,
+        audio_delay: 0.0,
+        adjustments: None,
+    };
+    let cut = timeline(&mut input, &info, &plan, 0.5);
+    assert!(cut.keyframes.is_none(), "cut every target length");
+    assert!(cut.len() > 1, "{} segments", cut.len());
+}

@@ -281,17 +281,29 @@ impl Muxer {
         self.init.take()
     }
 
-    /// The time base packets of stream `index` are written in.
-    pub fn time_base(&self, index: usize) -> Rational {
-        // SAFETY: the stream exists; its time base is set by the header.
-        unsafe { (**(*self.context).streams.add(index)).time_base.into() }
+    /// The time base packets of stream `index` are written in, if it has
+    /// one by that number.
+    fn time_base(&self, index: usize) -> Option<Rational> {
+        // SAFETY: the context is open, its streams' array holding
+        // `nb_streams` of them; a stream's time base is set by the header.
+        unsafe {
+            let context = &*self.context;
+            if index >= context.nb_streams as usize {
+                return None;
+            }
+            Some((**context.streams.add(index)).time_base.into())
+        }
     }
 
     /// Write a packet of stream `index`, its timestamps in that stream's
     /// input time base.
     pub fn write(&mut self, mut packet: Packet, index: usize) -> Result<(), Error> {
-        let output = self.time_base(index);
-        packet.rescale_ts(self.input_time_bases[index], output);
+        let (Some(output), Some(&input)) =
+            (self.time_base(index), self.input_time_bases.get(index))
+        else {
+            return Err(Error::Mux(format!("writing a packet: no stream {index}")));
+        };
+        packet.rescale_ts(input, output);
         let offset = (OFFSET * f64::from(output.denominator()) / f64::from(output.numerator()))
             .round() as i64;
         packet.set_pts(packet.pts().map(|pts| pts + offset));

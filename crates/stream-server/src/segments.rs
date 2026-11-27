@@ -123,13 +123,17 @@ pub(crate) fn timeline(input: &mut Input, media: &MediaInfo, plan: &Plan, target
     }
 }
 
-/// The keyframes the container's index lists for `stream`. Matroska reads
-/// its index on the first seek, so seek first.
+/// The keyframes the container's index lists for `stream`, none if it
+/// has no stream by that number. Matroska reads its index on the first
+/// seek, so seek first.
 fn indexed_keyframes(input: &mut Input, stream: usize) -> Vec<i64> {
     let _ = input.seek(0, ..);
+    if input.stream(stream).is_none() {
+        return Vec::new();
+    }
     let mut keys = Vec::new();
-    // SAFETY: the stream exists; index entries are read while the context
-    // is open and not changed meanwhile.
+    // SAFETY: the input has the stream, by that number; index entries are
+    // read while the context is open and not changed meanwhile.
     unsafe {
         let st = *(*input.as_ptr()).streams.add(stream);
         let count = ffi::avformat_index_get_entries_count(st);

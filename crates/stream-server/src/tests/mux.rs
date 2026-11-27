@@ -99,3 +99,27 @@ fn hands_over_what_it_wrote_without_copying_it() {
         segment.len()
     );
 }
+
+#[test]
+fn a_packet_of_a_stream_it_hasnt_isnt_written() {
+    crate::init();
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/clip-ip.mkv");
+    let input = ffmpeg::format::input(&path).expect("the fixture");
+    let stream = input.streams().best(Type::Video).expect("video");
+    let mut muxer = Muxer::new(
+        Format::Fmp4,
+        &[OutStream {
+            parameters: stream.parameters(),
+            time_base: Rational::new(1, 25),
+        }],
+    )
+    .expect("a muxer");
+    muxer.write_header().expect("the header");
+    assert!(muxer.time_base(0).is_some());
+    assert_eq!(muxer.time_base(1), None);
+    let mut packet = Packet::copy(&[0; 16]);
+    packet.set_pts(Some(0));
+    packet.set_dts(Some(0));
+    let err = muxer.write(packet, 1).expect_err("no stream 1");
+    assert!(err.to_string().contains("no stream 1"), "{err}");
+}
