@@ -120,7 +120,7 @@ on its own. Clippy lints in the root `Cargo.toml` apply to all.
 | `crates/airplay` | Finds, pairs with and sends to AirPlay receivers |
 | `crates/network` | What the casting crates share: connecting, connections taken, bounded HTTP and RTSP, mDNS |
 | `crates/ffmpeg-link` | Links the static FFmpeg into Plays and the stream server's tests |
-| `crates/ffmpeg-safe` | Sound reads of what ffmpeg-next reads unsoundly: channel layouts, tags, frame planes, subtitle text |
+| `crates/ffmpeg-safe` | Sound reads of what ffmpeg-next reads unsoundly: channel layouts, tags, frame planes, subtitle text; files opened reaching only files |
 | `crates/completions` | Shell completion scripts for a clap command line |
 | `crates/file-types` | The formats Plays opens, and what macOS and Linux are told of them, with an icon each |
 | `crates/updater` | An app updating itself: a signed feed, whole and delta update files, swapping one in; and `updater`, which makes a release |
@@ -308,8 +308,10 @@ flowchart LR
 - `crates/ffmpeg-safe`: a frame's channel layout copied out of it, as one
   in an uncommon order points into the frame, tags read as text in
   whatever encoding they're in, a frame's planes sliced to its
-  pictures, none stored bottom up, and a subtitle's text checked for
-  UTF-8; `clippy.toml` bans the getters that don't
+  pictures, none stored bottom up, a subtitle's text checked for UTF-8,
+  and a file opened reaching only files (`input_file`), never what a
+  playlist in it names on the network; `clippy.toml` bans the calls that
+  don't
 - `src/media/tracks.rs`: tracks, their menu names, and languages
 - `src/media/picking.rs`: which tracks play (`Wanted`): those picked
   before (`Picked`), else preferred languages, else FFmpeg's best
@@ -674,7 +676,8 @@ Apple's protocol is unpublished, so an update can break it.
 
 - `script/build-ffmpeg` builds FFmpeg into `build/ffmpeg-9.1`, where
   `.cargo/config.toml` points `FFMPEG_DIR` (see
-  [CONTRIBUTING.md](CONTRIBUTING.md#building))
+  [CONTRIBUTING.md](CONTRIBUTING.md#building)), with only the protocols
+  Plays opens
 - ffmpeg-sys-next makes bindings again only when `FFMPEG_DIR` changes, so
   each version gets a folder of its own
 - `build.rs` and `crates/ffmpeg-link` link it statically, with what its

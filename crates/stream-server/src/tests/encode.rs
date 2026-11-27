@@ -107,7 +107,7 @@ fn keeps_one_resampler_for_channels_in_an_uncommon_order() {
 fn encodes_frames_holding_many_of_its_own() {
     let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../tests/fixtures/uncommon-order.mov");
-    let mut input = ffmpeg::format::input(&path).unwrap();
+    let mut input = ffmpeg_safe::input_file(&path).unwrap();
     let stream = input
         .streams()
         .best(ffmpeg::media::Type::Audio)

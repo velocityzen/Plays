@@ -229,7 +229,7 @@ fn hevc_of_one_layer_and_other_codecs_are_decoded_as_they_are() {
             "log-level=error",
         ],
     );
-    let input = ffmpeg::format::input(&path).unwrap();
+    let input = ffmpeg_safe::input_file(&path).unwrap();
     let parameters = input.stream(0).unwrap().parameters();
     assert_eq!(parameters.id(), codec::Id::HEVC);
     assert!(BaseLayer::of(&parameters).is_none());
@@ -250,7 +250,7 @@ fn hevc_of_one_layer_and_other_codecs_are_decoded_as_they_are() {
 
 #[test]
 fn hevc_of_two_layers_is_given_its_base_layer_alone() {
-    let mut input = ffmpeg::format::input(&two_layer_media()).unwrap();
+    let mut input = ffmpeg_safe::input_file(&two_layer_media()).unwrap();
     let parameters = input.stream(0).unwrap().parameters();
     let layers = |data: &[u8], framing| {
         let mut layers: Vec<u8> = units(data, framing)

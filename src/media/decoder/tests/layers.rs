@@ -151,7 +151,7 @@ fn keeps_so_many_frames_ahead() {
 /// that track's parameters and time base.
 fn packets(layout: Layout) -> (Vec<Packet>, codec::Parameters, Rational) {
     ffmpeg::init().unwrap();
-    let mut input = ffmpeg::format::input(&profile_7_media(layout)).unwrap();
+    let mut input = ffmpeg_safe::input_file(&profile_7_media(layout)).unwrap();
     let (parameters, time_base) = {
         let stream = input.stream(0).unwrap();
         (stream.parameters(), stream.time_base())

@@ -287,7 +287,7 @@ pub(crate) fn read(
             (media::open(source, stop)?, None)
         }
         SubtitleSource::File { path, encoding } => (
-            ffmpeg::format::input(path)
+            ffmpeg_safe::input_file(path)
                 .map_err(|err| Error::Source(format!("can't open {}: {err}", path.display())))?,
             encoding.as_deref(),
         ),

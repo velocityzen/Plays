@@ -306,7 +306,7 @@ fn a_screenshot_of_dolby_vision_profile_7_is_composed() {
         (Layout::Missing, 0, false),
     ] {
         let path = profile_7_media(layout);
-        let input = ffmpeg::format::input(&path).unwrap();
+        let input = ffmpeg_safe::input_file(&path).unwrap();
         let time_base = input.stream(stream).unwrap().time_base();
         drop(input);
         // Half a second in, the sixth frame.

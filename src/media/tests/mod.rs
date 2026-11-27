@@ -2301,7 +2301,7 @@ fn with_enhancement_layer(
 ) -> Result<(), ffmpeg_next::Error> {
     use ffmpeg_next::{codec, ffi, media::Type};
 
-    let mut input = ffmpeg_next::format::input(from)?;
+    let mut input = ffmpeg_safe::input_file(from)?;
     let mut output = ffmpeg_next::format::output(to)?;
     let (index, time_base, parameters) = {
         let stream = input.streams().best(Type::Video).unwrap();
@@ -2445,7 +2445,7 @@ pub(super) fn video_packets(
     ),
     ffmpeg_next::Error,
 > {
-    let mut input = ffmpeg_next::format::input(path)?;
+    let mut input = ffmpeg_safe::input_file(path)?;
     let (parameters, time_base) = {
         let stream = input.stream(0).unwrap();
         (stream.parameters(), stream.time_base())
@@ -2562,7 +2562,7 @@ fn plays_a_dolby_vision_enhancement_layer_with_its_base_layer() {
     use super::tracks::Track;
 
     let path = layered_media();
-    let input = ffmpeg_next::format::input(&path).unwrap();
+    let input = ffmpeg_safe::input_file(&path).unwrap();
     let tracks: Vec<_> = input.streams().filter_map(|s| Track::of(&s)).collect();
     assert_eq!(tracks.iter().map(|t| t.index).collect::<Vec<_>>(), [1]);
     drop(input);
@@ -2642,7 +2642,7 @@ fn plays_dolby_vision_profile_7_composed() {
     let plain = plain_green();
     for (layout, video) in [(Layout::TwoTracks, 1), (Layout::OneTrack, 0)] {
         let path = profile_7_media(layout);
-        let input = ffmpeg_next::format::input(&path).unwrap();
+        let input = ffmpeg_safe::input_file(&path).unwrap();
         let tracks: Vec<_> = input
             .streams()
             .filter_map(|s| Track::of(&s))
@@ -2792,7 +2792,7 @@ pub(super) fn converted_first_frame(path: &std::path::Path) -> (usize, usize, Ve
 #[cfg(target_os = "macos")]
 fn decoded_first_frame(path: &std::path::Path) -> ffmpeg_next::frame::Video {
     ffmpeg_next::init().unwrap();
-    let input = ffmpeg_next::format::input(path).unwrap();
+    let input = ffmpeg_safe::input_file(path).unwrap();
     let stream = input
         .streams()
         .best(ffmpeg_next::media::Type::Video)
@@ -2807,7 +2807,7 @@ fn decoded_first_frame_of(path: &std::path::Path, index: usize) -> ffmpeg_next::
     use super::decoder::open_video;
 
     ffmpeg_next::init().unwrap();
-    let mut input = ffmpeg_next::format::input(path).unwrap();
+    let mut input = ffmpeg_safe::input_file(path).unwrap();
     let parameters = input.stream(index).unwrap().parameters();
     let (mut decoder, _) = open_video(&parameters, false).unwrap();
     let mut frame = ffmpeg_next::frame::Video::empty();
@@ -2846,7 +2846,7 @@ fn dolby_vision_samples(profiles: &[u8]) -> Vec<PathBuf> {
         .map(|entry| entry.unwrap().path())
         .filter(|path| {
             path.is_file()
-                && ffmpeg_next::format::input(path).is_ok_and(|input| {
+                && ffmpeg_safe::input_file(path).is_ok_and(|input| {
                     input.streams().any(|stream| {
                         Configuration::of(&stream.parameters())
                             .is_some_and(|c| profiles.contains(&c.profile))
@@ -2950,7 +2950,7 @@ fn dolby_vision_profile_7_shows_both_layers() {
         let name = path.file_name().unwrap().to_string_lossy();
         // The base layer's stream and first frame, and the RPU's peak, from
         // whichever layer carries it.
-        let input = ffmpeg_next::format::input(path).unwrap();
+        let input = ffmpeg_safe::input_file(path).unwrap();
         let videos: Vec<(usize, bool)> = input
             .streams()
             .filter(|s| s.parameters().medium() == ffmpeg_next::media::Type::Video)
@@ -3004,7 +3004,7 @@ fn dolby_vision_over_hdr10_or_hlg_shows_its_base_layer() {
 
     for path in &dolby_vision_samples(&[8, 10]) {
         let name = path.file_name().unwrap().to_string_lossy();
-        let input = ffmpeg_next::format::input(path).unwrap();
+        let input = ffmpeg_safe::input_file(path).unwrap();
         let (index, profile) = input
             .streams()
             .find_map(|s| Some((s.index(), Configuration::of(&s.parameters())?.profile)))

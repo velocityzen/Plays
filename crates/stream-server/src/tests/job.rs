@@ -91,7 +91,7 @@ fn sound_starts(segment: &[u8]) -> Option<f64> {
         COUNT.fetch_add(1, Ordering::Relaxed)
     ));
     std::fs::write(&path, segment).unwrap();
-    let mut input = ffmpeg::format::input(&path).unwrap();
+    let mut input = ffmpeg_safe::input_file(&path).unwrap();
     let start = input
         .packets()
         .filter_map(|(stream, packet)| {

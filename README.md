@@ -212,6 +212,7 @@ mkdir ($nu.user-autoload-dirs | first); plays completions nushell | save -f ($nu
 
 - Live streams but HLS can't be seeked. A live stream's screenshot is the
   picture as it plays, at the size it plays at.
+- An HLS playlist on disk plays only segments on disk.
 - HDR goes brighter than SDR white only on macOS. Of HDR metadata, only
   peaks are used (MaxCLL, the mastering display's).
 - Dolby Vision profile 7's enhancement layer is composed on the CPU.

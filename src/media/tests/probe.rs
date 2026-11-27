@@ -145,7 +145,7 @@ fn hdr10() -> PathBuf {
 fn with_hdr_metadata(from: &Path, to: &Path) -> Result<(), ffmpeg_next::Error> {
     use ffmpeg_next::{codec, media::Type};
 
-    let mut input = ffmpeg_next::format::input(from)?;
+    let mut input = ffmpeg_safe::input_file(from)?;
     let mut output = ffmpeg_next::format::output(to)?;
     let (index, time_base, parameters) = {
         let stream = input.streams().best(Type::Video).unwrap();

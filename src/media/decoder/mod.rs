@@ -314,13 +314,13 @@ fn open(
     source: &Source,
     stop: impl Fn() -> bool + Send + 'static,
 ) -> Result<ffmpeg::format::context::Input> {
-    let options = if source.is_network() {
-        network_options()
+    if source.is_network() {
+        ffmpeg::format::input_with_interrupt_and_dictionary(location, stop, network_options())
     } else {
-        ffmpeg::Dictionary::new()
-    };
-    ffmpeg::format::input_with_interrupt_and_dictionary(location, stop, options)
-        .with_context(|| format!("could not open {source}"))
+        // Reaching only files, as what a file names isn't followed elsewhere.
+        ffmpeg_safe::input_file_with(location, stop, ffmpeg::Dictionary::new())
+    }
+    .with_context(|| format!("could not open {source}"))
 }
 
 /// The small file at `url`, such as a playlist, read whole as a stream is
@@ -1256,3 +1256,7 @@ fn rational(r: Rational) -> Option<f64> {
 fn codec_name(id: codec::Id) -> String {
     format!("{id:?}").to_lowercase()
 }
+
+#[cfg(test)]
+#[path = "tests/mod.rs"]
+mod tests;

@@ -159,7 +159,7 @@ fn written(bytes: &[u8], extension: &str) -> PathBuf {
 /// The video and sound streams of `bytes`, read as a file.
 fn probe(bytes: &[u8], extension: &str) -> (Option<Probed>, Option<Probed>) {
     let path = written(bytes, extension);
-    let mut input = ffmpeg::format::input(&path).expect("the output opens");
+    let mut input = ffmpeg_safe::input_file(&path).expect("the output opens");
     let mut streams: Vec<(usize, Type, Probed)> = input
         .streams()
         .map(|stream| {
@@ -1024,7 +1024,7 @@ fn first_frame(cast: &crate::Cast, kind: Segments) -> ffmpeg::frame::Video {
     };
     bytes.extend(segment.body);
     let path = written(&bytes, extension);
-    let mut input = ffmpeg::format::input(&path).expect("the segment opens");
+    let mut input = ffmpeg_safe::input_file(&path).expect("the segment opens");
     let stream = input.streams().best(Type::Video).expect("video");
     let index = stream.index();
     let mut decoder = ffmpeg::codec::Context::from_parameters(stream.parameters())
@@ -1782,7 +1782,7 @@ fn sends_the_file_without_picture_subtitles_to_a_device_that_takes_only_files() 
 #[cfg(target_os = "macos")]
 fn decode(bytes: &[u8], extension: &str) -> Vec<(f64, Vec<Vec<u8>>)> {
     let path = written(bytes, extension);
-    let mut input = ffmpeg::format::input(&path).expect("the output opens");
+    let mut input = ffmpeg_safe::input_file(&path).expect("the output opens");
     let stream = input.streams().best(Type::Video).expect("video");
     let (index, time_base) = (stream.index(), f64::from(stream.time_base()));
     let mut decoder = ffmpeg::codec::context::Context::from_parameters(stream.parameters())

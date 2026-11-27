@@ -26,7 +26,7 @@ fn av1_media() -> std::path::PathBuf {
 
 /// The video stream of `path` and its packets.
 fn video(path: &std::path::Path) -> (StreamInfo, Vec<Packet>) {
-    let mut input = ffmpeg::format::input(path).unwrap();
+    let mut input = ffmpeg_safe::input_file(path).unwrap();
     let stream = StreamInfo::of(&input.streams().best(ffmpeg::media::Type::Video).unwrap());
     let packets = input
         .packets()

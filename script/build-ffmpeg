@@ -4,7 +4,9 @@
 # for AV1. Decoding, plus what the stream server (crates/stream-server)
 # needs to repackage and re-encode for TVs and speakers: the MP4, MPEG-TS,
 # ADTS and FLAC muxers, the AAC, AC-3, E-AC-3 and FLAC encoders, and the
-# hardware video encoders (no software one). They go in a folder named for
+# hardware video encoders (no software one). Of its protocols, only those
+# Plays opens: files, and the streams src/media/source.rs takes, with what
+# they need (TLS, RTMP's tunnels). They go in a folder named for
 # FFmpeg's version, such as build/ffmpeg-9.1, where .cargo/config.toml
 # points the Rust build, and are built again only when this script changes
 # (or with --force). Sources are checked against the checksums below.
@@ -166,6 +168,8 @@ PKG_CONFIG_PATH="$prefix/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" ./c
     --enable-encoder=aac,ac3,eac3,flac \
     --disable-muxers \
     --enable-muxer=mp4,mpegts,adts,flac \
+    --disable-protocols \
+    --enable-protocol=file,crypto,data,http,https,httpproxy,tcp,tls,udp,rtp,srtp,rtmp,rtmps,rtmpe,rtmpt,rtmpte,rtmpts,mmsh,mmst,ftp \
     --enable-libdav1d \
     --pkg-config-flags=--static \
     "${platform[@]}"

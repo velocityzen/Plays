@@ -65,7 +65,7 @@ fn the_sink_goes_back_to_put_things_right_but_not_into_what_it_handed_over() {
 fn hands_over_what_it_wrote_without_copying_it() {
     crate::init();
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/clip-ip.mkv");
-    let input = ffmpeg::format::input(&path).expect("the fixture");
+    let input = ffmpeg_safe::input_file(&path).expect("the fixture");
     let stream = input.streams().best(Type::Video).expect("video");
     let time_base = Rational::new(1, 25);
     let mut muxer = Muxer::new(
@@ -104,7 +104,7 @@ fn hands_over_what_it_wrote_without_copying_it() {
 fn a_packet_of_a_stream_it_hasnt_isnt_written() {
     crate::init();
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/clip-ip.mkv");
-    let input = ffmpeg::format::input(&path).expect("the fixture");
+    let input = ffmpeg_safe::input_file(&path).expect("the fixture");
     let stream = input.streams().best(Type::Video).expect("video");
     let mut muxer = Muxer::new(
         Format::Fmp4,

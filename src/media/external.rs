@@ -304,7 +304,7 @@ impl Found {
     pub fn track(&self) -> Result<Track> {
         #[cfg(test)]
         slow::wait(&slow::TO_OPEN, &self.path);
-        let input = ffmpeg::format::input(&self.path).context("FFmpeg can't read it")?;
+        let input = ffmpeg_safe::input_file(&self.path).context("FFmpeg can't read it")?;
         let stream = input
             .streams()
             .best(media::Type::Subtitle)
@@ -349,7 +349,7 @@ impl SubtitleFile {
     ) -> Result<(SubtitleDecoder, Self)> {
         #[cfg(test)]
         slow::wait(&slow::TO_READ, path);
-        let mut input = ffmpeg::format::input(path).context("FFmpeg can't read it")?;
+        let mut input = ffmpeg_safe::input_file(path).context("FFmpeg can't read it")?;
         let stream = input
             .streams()
             .best(media::Type::Subtitle)

@@ -79,7 +79,7 @@ fn reads_a_length_as_matroska_tags_it() {
 fn stream() -> (Input, (usize, f64)) {
     ffmpeg::init().unwrap();
     let input =
-        ffmpeg::format::input(&crate::media::tests::stream_media().join("stream.ts")).unwrap();
+        ffmpeg_safe::input_file(&crate::media::tests::stream_media().join("stream.ts")).unwrap();
     let video = input.streams().best(ffmpeg::media::Type::Video).unwrap();
     let picture = (video.index(), f64::from(video.time_base()));
     (input, picture)
@@ -121,7 +121,8 @@ fn a_live_stream_goes_on_from_its_first_keyframe_opened_again() {
 #[test]
 fn a_live_stream_that_wont_open_again_as_it_was_reads_on_where_it_was() {
     let audio_only = || {
-        ffmpeg::format::input(&crate::ui::testing::fixture("tone.m4a")).map_err(anyhow::Error::from)
+        ffmpeg_safe::input_file(&crate::ui::testing::fixture("tone.m4a"))
+            .map_err(anyhow::Error::from)
     };
     for reopen in [&audio_only as &dyn Fn() -> anyhow::Result<Input>, &|| {
         Err(anyhow::anyhow!("gone"))

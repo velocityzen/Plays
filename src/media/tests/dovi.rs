@@ -379,7 +379,7 @@ fn plays_profile_20_as_ipt() {
     use crate::media::{still, tests::first_frame};
 
     let path = profile_20_media();
-    let input = ffmpeg::format::input(&path).unwrap();
+    let input = ffmpeg_safe::input_file(&path).unwrap();
     let configuration =
         crate::media::enhancement::Configuration::of(&input.stream(0).unwrap().parameters());
     assert_eq!(configuration.map(|c| c.profile), Some(20));

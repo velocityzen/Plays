@@ -42,29 +42,26 @@ impl Source {
     pub(crate) fn is_live(&self) -> bool {
         matches!(self, Self::Stream { live: true, .. })
     }
-
-    fn is_network(&self) -> bool {
-        matches!(self, Self::Stream { .. })
-    }
 }
 
-/// Open the source; network reads give up once `stop` is set.
+/// Open the source; network reads give up once `stop` is set. A file
+/// reaches only files (`ffmpeg_safe::input_file_with`).
 pub(crate) fn open(source: &Source, stop: Arc<AtomicBool>) -> Result<Input, Error> {
+    let stopped = move || stop.load(Ordering::Relaxed);
     let mut options = ffmpeg::Dictionary::new();
-    if source.is_network() {
-        options.set("rw_timeout", NETWORK_TIMEOUT_MICROS);
-        options.set("timeout", NETWORK_TIMEOUT_MICROS);
-        options.set("reconnect", "1");
-        options.set("reconnect_streamed", "1");
-        options.set("reconnect_delay_max", "5");
-        options.set("rtsp_transport", "tcp");
-    }
-    ffmpeg::format::input_with_interrupt_and_dictionary(
-        &source.location(),
-        move || stop.load(Ordering::Relaxed),
-        options,
-    )
-    .map_err(|err| Error::Source(format!("can't open {}: {err}", source.location())))
+    let opened = match source {
+        Source::File(path) => ffmpeg_safe::input_file_with(path, stopped, options),
+        Source::Stream { url, .. } => {
+            options.set("rw_timeout", NETWORK_TIMEOUT_MICROS);
+            options.set("timeout", NETWORK_TIMEOUT_MICROS);
+            options.set("reconnect", "1");
+            options.set("reconnect_streamed", "1");
+            options.set("reconnect_delay_max", "5");
+            options.set("rtsp_transport", "tcp");
+            ffmpeg::format::input_with_interrupt_and_dictionary(url, stopped, options)
+        }
+    };
+    opened.map_err(|err| Error::Source(format!("can't open {}: {err}", source.location())))
 }
 
 /// What a source holds.

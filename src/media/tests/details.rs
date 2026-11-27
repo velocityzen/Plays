@@ -6,7 +6,7 @@ use crate::ui::testing::fixture;
 /// What the console is told of the video in `name`, in `tests/fixtures`.
 fn of(name: &str) -> VideoDetails {
     ffmpeg::init().unwrap();
-    let input = ffmpeg::format::input(&fixture(name)).unwrap();
+    let input = ffmpeg_safe::input_file(&fixture(name)).unwrap();
     let stream = input.streams().best(media::Type::Video).unwrap();
     let context = codec::Context::from_parameters(stream.parameters()).unwrap();
     VideoDetails::of(&context.decoder().video().unwrap())

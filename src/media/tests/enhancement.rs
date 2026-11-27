@@ -899,7 +899,7 @@ fn writes_bits_as_an_rpu_has_them() {
 #[test]
 fn ffmpeg_reads_a_written_rpu_with_the_frame_it_comes_with() {
     let path = crate::media::tests::pq_media();
-    let mut input = ffmpeg::format::input(&path).unwrap();
+    let mut input = ffmpeg_safe::input_file(&path).unwrap();
     let parameters = input.stream(0).unwrap().parameters();
     let mut decoder = codec::Context::from_parameters(parameters)
         .unwrap()
