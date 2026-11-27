@@ -3,7 +3,8 @@
 //! (`protocol`): a client asks Plays to run a command, as a key would,
 //! lists and describes the commands, and hears events (`api::events`).
 //! Nothing goes on the network: it's a Unix socket, in a folder only this
-//! user can change, that only they can connect to.
+//! user can change, that only they can connect to, and only their
+//! processes are answered on.
 //!
 //! Plays takes it as it starts (`start`), so one runs: one already
 //! running, another hands it the files it was given and exits; a socket
@@ -19,9 +20,11 @@ use std::ffi::OsString;
 use std::fs::{self, DirBuilder, File, OpenOptions, Permissions};
 use std::io;
 use std::net::Shutdown;
+use std::os::fd::AsRawFd;
 use std::os::unix::fs::{DirBuilderExt, FileTypeExt, MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 pub use protocol::Heard;
 pub use server::{NotListening, serve};
@@ -36,6 +39,13 @@ const LOCK: &str = "plays.lock";
 /// How many times `claim` tries, another Plays taking the socket as it
 /// looks.
 const TRIES: usize = 3;
+
+/// The socket's name in the folder it's bound in, aside (`Aside`): short,
+/// as a socket's path has room for about a hundred bytes.
+const BOUND: &str = "s";
+
+/// How many names `Aside::made` tries, a process gone having left one.
+const NAMES: usize = 4;
 
 /// The environment variable naming a socket of Plays' own, where `path`
 /// would find another: for a second Plays running apart, a smoke run's,
@@ -68,6 +78,16 @@ fn path_named(named: Option<OsString>) -> Option<PathBuf> {
 /// The socket, taken: what `serve` answers on.
 pub struct Listener {
     listener: UnixListener,
+    /// The user whose processes it answers: this one.
+    user: libc::uid_t,
+}
+
+impl Listener {
+    /// Whether `client` is a process of the user it answers. Another's
+    /// could connect only through a folder or socket opened to them.
+    fn admits(&self, client: &UnixStream) -> bool {
+        peer(client).is_ok_and(|user| user == self.user)
+    }
 }
 
 /// What `claim` found.
@@ -81,7 +101,7 @@ pub enum Claimed {
 /// Take the socket at `path`, unless a Plays answers there: one that
 /// doesn't, which crashed, left it, and it's taken over. Its folder is made
 /// if it isn't there, open to this user only, and one there already must
-/// be theirs; the socket is theirs only.
+/// be theirs; the socket is theirs only before it's there (`bound`).
 pub fn claim(path: &Path) -> io::Result<Claimed> {
     made_private(folder(path))?;
     let _looking = locked(path)?;
@@ -101,16 +121,115 @@ pub fn claim(path: &Path) -> io::Result<Claimed> {
             Err(err) if err.kind() == io::ErrorKind::NotFound => {}
             Err(err) => return Err(err),
         }
-        match UnixListener::bind(path) {
+        match bound(path) {
             Ok(listener) => {
-                fs::set_permissions(path, Permissions::from_mode(0o600))?;
-                return Ok(Claimed::Ours(Listener { listener }));
+                let user = this_user();
+                return Ok(Claimed::Ours(Listener { listener, user }));
             }
-            Err(err) if err.kind() == io::ErrorKind::AddrInUse => {}
+            Err(err) if err.kind() == io::ErrorKind::AlreadyExists => {}
             Err(err) => return Err(err),
         }
     }
     Err(io::Error::other("another Plays keeps taking the socket"))
+}
+
+/// A socket bound at `path`, this user's alone before another could reach
+/// it: bound aside, made theirs only there, then linked into place, which
+/// takes nothing there already (`AlreadyExists`).
+fn bound(path: &Path) -> io::Result<UnixListener> {
+    let aside = Aside::made(folder(path))?;
+    let bound = aside.0.join(BOUND);
+    let listener = UnixListener::bind(&bound)?;
+    fs::set_permissions(&bound, Permissions::from_mode(0o600))?;
+    fs::hard_link(&bound, path)?;
+    Ok(listener)
+}
+
+/// A folder beside the socket that only this user can open, the socket
+/// bound in it first. Removed, with the socket's name in it, as it's
+/// dropped.
+struct Aside(PathBuf);
+
+impl Aside {
+    /// Make one in `folder`, under a name of this process's and call's
+    /// own.
+    fn made(folder: &Path) -> io::Result<Self> {
+        static MADE: AtomicU64 = AtomicU64::new(0);
+        Self::made_as(folder, || {
+            let made = MADE.fetch_add(1, Ordering::Relaxed);
+            format!(".{}.{made}", std::process::id())
+        })
+    }
+
+    /// Make one in `folder`, under the name `name` gives, another if it's
+    /// taken, a few times at most.
+    fn made_as(folder: &Path, mut name: impl FnMut() -> String) -> io::Result<Self> {
+        for _ in 0..NAMES {
+            let aside = folder.join(name());
+            match DirBuilder::new().mode(0o700).create(&aside) {
+                Ok(()) => return Ok(Self(aside)),
+                Err(err) if err.kind() == io::ErrorKind::AlreadyExists => {}
+                Err(err) => return Err(err),
+            }
+        }
+        Err(io::Error::other(format!(
+            "no name free in {} to bind the socket under",
+            folder.display()
+        )))
+    }
+}
+
+impl Drop for Aside {
+    fn drop(&mut self) {
+        fs::remove_file(self.0.join(BOUND)).ok();
+        fs::remove_dir(&self.0).ok();
+    }
+}
+
+/// The user this Plays runs as.
+fn this_user() -> libc::uid_t {
+    // SAFETY: geteuid has no preconditions and can't fail.
+    unsafe { libc::geteuid() }
+}
+
+/// The user whose process is at the other end of `stream`, as it
+/// connected.
+#[cfg(not(target_os = "linux"))]
+fn peer(stream: &UnixStream) -> io::Result<libc::uid_t> {
+    let (mut user, mut group) = (0, 0);
+    // SAFETY: the descriptor is the stream's, open while it's borrowed;
+    // getpeereid writes only the two numbers.
+    if unsafe { libc::getpeereid(stream.as_raw_fd(), &mut user, &mut group) } != 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(user)
+}
+
+/// The user whose process is at the other end of `stream`, as it
+/// connected.
+#[cfg(target_os = "linux")]
+fn peer(stream: &UnixStream) -> io::Result<libc::uid_t> {
+    let mut found = libc::ucred {
+        pid: 0,
+        uid: 0,
+        gid: 0,
+    };
+    let mut length = std::mem::size_of::<libc::ucred>() as libc::socklen_t;
+    // SAFETY: the descriptor is the stream's, open while it's borrowed;
+    // getsockopt writes at most `length` bytes, a ucred's, into `found`.
+    let got = unsafe {
+        libc::getsockopt(
+            stream.as_raw_fd(),
+            libc::SOL_SOCKET,
+            libc::SO_PEERCRED,
+            (&raw mut found).cast(),
+            &mut length,
+        )
+    };
+    if got != 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(found.uid)
 }
 
 /// The folder the socket at `path` is in.
@@ -130,8 +249,7 @@ fn made_private(folder: &Path) -> io::Result<()> {
         .mode(0o700)
         .create(folder)?;
     let found = fs::metadata(folder)?;
-    // SAFETY: geteuid has no preconditions and can't fail.
-    let theirs = found.uid() == unsafe { libc::geteuid() };
+    let theirs = found.uid() == this_user();
     if !theirs || found.permissions().mode() & 0o022 != 0 {
         return Err(io::Error::new(
             io::ErrorKind::PermissionDenied,

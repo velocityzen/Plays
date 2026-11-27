@@ -96,3 +96,51 @@ fn closing_the_socket_stops_the_thread_taking_clients() {
     assert!(!path.exists(), "removed");
     assert!(socket.close().is_none(), "nothing more to close");
 }
+
+#[test]
+fn a_client_of_another_users_is_shut_out() {
+    let path = crate::api::socket::tests::socket("strangers");
+    let Ok(Claimed::Ours(mut listener)) = super::super::claim(&path) else {
+        panic!("taking the socket")
+    };
+    let user = listener.user;
+    // As though another user's Plays answered, this test a process of a
+    // user other than its.
+    listener.user = user.wrapping_add(1);
+    let taking = |listener: Listener| {
+        let (messages, told) = unbounded();
+        let stopped = Arc::new(AtomicBool::new(false));
+        let stopping = Arc::clone(&stopped);
+        let thread = thread::spawn(move || {
+            accept(&listener, &stopping, &AtomicU64::new(0), &messages);
+            listener
+        });
+        let waking = path.clone();
+        (told, move || {
+            stopped.store(true, Ordering::SeqCst);
+            UnixStream::connect(&waking).ok();
+            thread.join().unwrap()
+        })
+    };
+    let (mut told, stop) = taking(listener);
+    let mut refused = UnixStream::connect(&path).unwrap();
+    refused
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .unwrap();
+    assert_eq!(refused.read(&mut [0; 8]).unwrap(), 0, "shut out");
+    let mut listener = stop();
+    assert!(told.try_recv().is_err(), "the app isn't told of it");
+
+    listener.user = user;
+    let (mut told, stop) = taking(listener);
+    let _admitted = UnixStream::connect(&path).unwrap();
+    let connected = (0..500).find_map(|_| {
+        thread::sleep(Duration::from_millis(10));
+        told.try_recv().ok()
+    });
+    assert!(
+        matches!(connected, Some(Message::Connected(1, ..))),
+        "one of this user's is answered"
+    );
+    stop();
+}

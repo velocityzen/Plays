@@ -227,6 +227,56 @@ fn takes_the_socket_in_a_folder_only_this_user_can_open() {
 }
 
 #[test]
+fn the_socket_is_bound_aside_then_linked_where_it_goes() {
+    let path = socket("aside");
+    let Ok(Claimed::Ours(listener)) = claim(&path) else {
+        panic!("taking the socket")
+    };
+    let folder = path.parent().unwrap();
+    let bound = listener.listener.local_addr().unwrap();
+    let bound = bound.as_pathname().expect("bound at a path");
+    assert_eq!(bound.file_name(), Some(BOUND.as_ref()));
+    let aside = bound.parent().unwrap();
+    assert_eq!(aside.parent(), Some(folder), "beside it");
+    assert!(!aside.exists(), "and gone");
+    let mut left: Vec<_> = fs::read_dir(folder)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect();
+    left.sort();
+    assert_eq!(left, [LOCK, NAME].map(OsString::from));
+    assert!(
+        UnixStream::connect(&path).is_ok(),
+        "it listens where it goes"
+    );
+}
+
+#[test]
+fn a_name_taken_beside_the_socket_is_passed_over() {
+    let path = socket("names");
+    let folder = path.parent().unwrap();
+    fs::create_dir_all(folder.join("taken")).unwrap();
+    let mut names = ["taken", "free"].into_iter();
+    let aside = Aside::made_as(folder, || names.next().unwrap().to_owned()).unwrap();
+    assert_eq!(aside.0, folder.join("free"));
+    let mode = fs::metadata(&aside.0).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode, 0o700, "only this user opens it");
+    drop(aside);
+    assert!(!folder.join("free").exists(), "removed as it's dropped");
+    assert!(folder.join("taken").exists(), "what was there left");
+
+    let mut asked = 0;
+    let err = Aside::made_as(folder, || {
+        asked += 1;
+        "taken".to_owned()
+    })
+    .err()
+    .expect("none free");
+    assert_eq!(asked, NAMES, "a few tried");
+    assert!(err.to_string().starts_with("no name free"), "{err}");
+}
+
+#[test]
 fn finds_a_plays_answering_there_and_leaves_its_socket_be() {
     let path = socket("running");
     let Ok(Claimed::Ours(_listener)) = claim(&path) else {

@@ -163,8 +163,9 @@ One Plays runs at a time: `plays FILE…` hands files to the one running.
 ## Command line
 
 Off until Settings → Command Line turns it on; off, Plays' socket takes
-only files another Plays hands over. On macOS, Plays → Install Command Line Tool puts `plays` in
-`/usr/local/bin`.
+only files another Plays hands over. On, any program of yours can run its
+commands, opening what Plays may. On macOS, Plays → Install Command Line
+Tool puts `plays` in `/usr/local/bin`.
 
 ```bash
 plays ls                                        # windows, each with its blocks

@@ -1,8 +1,8 @@
-//! Answering on the socket. A thread takes each client that connects, and
-//! two more each read what it asks and write what it's told; the app
-//! answers on the UI thread, as a key's command runs, in the order asked.
-//! Events a client hears go out as they're told, those told as a request
-//! runs before its answer. A client that stops reading, with `OUTBOX`
+//! Answering on the socket. A thread takes each client that connects, a
+//! process of this user's, and two more each read what it asks and write
+//! what it's told; the app answers on the UI thread, as a key's command
+//! runs, in the order asked. Events a client hears go out as they're
+//! told, those told as a request runs before its answer. A client that stops reading, with `OUTBOX`
 //! lines waiting for it, is cut off rather than kept in memory. As the
 //! app quits, each client is sent what it was told, the windows closing
 //! and `app.quit` among it, before its connection closes (`end_on_quit`).
@@ -21,7 +21,7 @@ use std::collections::HashMap;
 use std::future::poll_fn;
 use std::io::{self, BufRead, BufReader, BufWriter, Read, Write};
 use std::net::Shutdown;
-use std::os::unix::net::{UnixListener, UnixStream};
+use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -107,7 +107,7 @@ impl Socket {
         let (last, messages) = (Arc::clone(&self.last), self.messages.clone());
         let taking = thread::Builder::new()
             .name("plays-socket".into())
-            .spawn(move || accept(&listener.listener, &stopping, &last, &messages));
+            .spawn(move || accept(&listener, &stopping, &last, &messages));
         match taking {
             Ok(thread) => {
                 self.taken = Some(Taking { stopped, thread });
@@ -326,14 +326,15 @@ fn follow_control(socket: &Rc<RefCell<Socket>>, clients: &Clients, cx: &mut App)
 }
 
 /// Take each client that connects, numbering them on from `last`, until
-/// `stopped`, or the app stops listening.
+/// `stopped`, or the app stops listening. One of another user's is shut
+/// out.
 fn accept(
-    listener: &UnixListener,
+    listener: &Listener,
     stopped: &AtomicBool,
     last: &AtomicU64,
     messages: &UnboundedSender<Message>,
 ) {
-    for stream in listener.incoming() {
+    for stream in listener.listener.incoming() {
         if stopped.load(Ordering::SeqCst) {
             return;
         }
@@ -345,6 +346,11 @@ fn accept(
                 continue;
             }
         };
+        if !listener.admits(&stream) {
+            log::warn!("shutting out a socket client of another user's");
+            stream.shutdown(Shutdown::Both).ok();
+            continue;
+        }
         let client = last.fetch_add(1, Ordering::SeqCst) + 1;
         match connect(client, stream, messages) {
             Ok(()) => {}
