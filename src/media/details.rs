@@ -175,23 +175,6 @@ pub(super) fn layout_name(layout: &ffi::AVChannelLayout) -> Option<String> {
     }
 }
 
-/// What `codec` is, FFmpeg's table says: its long name, such as
-/// "H.264 / AVC / MPEG-4 AVC / MPEG-4 part 10", and whether it's
-/// subtitles as text rather than pictures.
-pub(super) fn described(codec: ffi::AVCodecID) -> (Option<String>, bool) {
-    // SAFETY: the table and its names live as long as the program.
-    unsafe {
-        let descriptor = ffi::avcodec_descriptor_get(codec);
-        if descriptor.is_null() {
-            return (None, false);
-        }
-        (
-            string((*descriptor).long_name),
-            (*descriptor).props & ffi::AV_CODEC_PROP_TEXT_SUB != 0,
-        )
-    }
-}
-
 /// # Safety
 /// `name` is null or a terminated string.
 pub(super) unsafe fn string(name: *const c_char) -> Option<String> {

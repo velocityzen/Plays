@@ -796,7 +796,7 @@ fn stream_details(
     let stream = input
         .stream(index)
         .ok_or_else(|| Error::Source(format!("there is no stream {index}")))?;
-    let rate = media::frame_rate(&stream);
+    let rate = ffmpeg_safe::frame_rate(&stream);
     Ok((index, stream.parameters(), stream.time_base(), rate))
 }
 

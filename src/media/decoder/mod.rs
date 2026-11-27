@@ -48,7 +48,7 @@ use ffmpeg_next as ffmpeg;
 use parking_lot::{Condvar, Mutex};
 
 pub(crate) use convert::output_size;
-pub(super) use convert::{container_aspect, convert_pixels, set_aspect, set_colorspace};
+pub(super) use convert::{convert_pixels, set_aspect, set_colorspace};
 #[cfg(test)]
 pub use demux::PANICS_IN_DEMUX;
 pub use shared::{Shared, VideoFrame};
@@ -348,12 +348,10 @@ impl StreamInfo {
             index: stream.index(),
             parameters: stream.parameters().clone(),
             time_base,
-            frame_rate: rational(stream.avg_frame_rate())
-                .or_else(|| rational(stream.rate()))
-                .filter(|fps| (1.0..=480.0).contains(fps)),
+            frame_rate: ffmpeg_safe::frame_rate(stream).map(f64::from),
             start_time: (stream.start_time() != NO_PTS)
                 .then(|| stream.start_time() as f64 * f64::from(time_base)),
-            aspect: container_aspect(stream),
+            aspect: ffmpeg_safe::container_aspect(stream),
         }
     }
 

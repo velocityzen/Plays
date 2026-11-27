@@ -2208,6 +2208,7 @@ dependencies = [
  "encoding_rs",
  "ffmpeg-link",
  "ffmpeg-next",
+ "log",
 ]
 
 [[package]]

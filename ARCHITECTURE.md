@@ -312,8 +312,11 @@ flowchart LR
   (`coded`, `frame`, `rpu`): HDR10's, the display matrix, Dolby Vision's
   configuration and RPU, a file opened reaching only files
   (`input_file`), never what a playlist in it names on the network, a
-  stream opened as Plays waits on one (`input_stream`), and FFmpeg set up
-  once, its network too (`init`); `clippy.toml` bans the calls that don't
+  stream opened as Plays waits on one (`input_stream`), FFmpeg set up
+  once, its network too (`init`), and what both read alike: a codec as
+  FFmpeg's table describes it (`Described`), a frame rate, a language,
+  pixels' shape, NAL units, extradata, a subtitle decoder falling back
+  from its encoding; `clippy.toml` bans the calls that don't
 - `src/media/tracks.rs`: tracks, their menu names, and languages
 - `src/media/picking.rs`: which tracks play (`Wanted`): those picked
   before (`Picked`), else preferred languages, else FFmpeg's best

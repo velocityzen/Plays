@@ -38,7 +38,7 @@ impl BaseLayer {
         if parameters.id() != codec::Id::HEVC {
             return None;
         }
-        let extradata = extradata(parameters);
+        let extradata = ffmpeg_safe::extradata(parameters);
         let framing = Framing::of(extradata);
         let base = match framing {
             Framing::Sized(_) => base_record(extradata)?,
@@ -165,47 +165,7 @@ fn units(data: &[u8], framing: Framing) -> Option<Vec<&[u8]>> {
             }
             Some(units)
         }
-        Framing::StartCodes => Some(start_code_units(data)),
-    }
-}
-
-/// The NAL units of an Annex B byte stream, without their start codes, or
-/// the zeros before one.
-fn start_code_units(data: &[u8]) -> Vec<&[u8]> {
-    let mut starts = Vec::new();
-    let mut index = 0;
-    while index + 3 <= data.len() {
-        if data[index..index + 3] == [0, 0, 1] {
-            starts.push(index + 3);
-            index += 3;
-        } else {
-            index += 1;
-        }
-    }
-    let ends = starts.iter().skip(1).map(|&next| {
-        let mut end = next - 3;
-        while end > 0 && data[end - 1] == 0 {
-            end -= 1;
-        }
-        end
-    });
-    starts
-        .iter()
-        .zip(ends.chain([data.len()]))
-        .map(|(&start, end)| &data[start..end.max(start)])
-        .collect()
-}
-
-fn extradata(parameters: &codec::Parameters) -> &[u8] {
-    // SAFETY: the parameters own `extradata_size` bytes of extradata while
-    // they are borrowed.
-    unsafe {
-        let raw = parameters.as_ptr();
-        let (data, size) = ((*raw).extradata, (*raw).extradata_size);
-        match usize::try_from(size) {
-            Ok(size) if !data.is_null() && size > 0 => std::slice::from_raw_parts(data, size),
-            _ => &[],
-        }
+        Framing::StartCodes => Some(ffmpeg_safe::nal_units(data).collect()),
     }
 }
 

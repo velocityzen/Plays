@@ -166,7 +166,7 @@ pub(crate) fn subtitles(timeline: &Timeline) -> String {
 
 /// A video stream's codec name, as `CODECS` takes it.
 pub(crate) fn video_codec(parameters: &codec::Parameters) -> Option<String> {
-    let extradata = extradata(parameters);
+    let extradata = ffmpeg_safe::extradata(parameters);
     match parameters.id() {
         Id::H264 => avc(extradata),
         Id::HEVC => hevc(extradata),
@@ -180,7 +180,7 @@ pub(crate) fn audio_codec(parameters: &codec::Parameters) -> Option<String> {
         Id::AAC => {
             // The object type: from the AudioSpecificConfig, else the
             // profile FFmpeg read (which counts from zero).
-            let object = extradata(parameters)
+            let object = ffmpeg_safe::extradata(parameters)
                 .first()
                 .map(|byte| byte >> 3)
                 .filter(|object| (1..31).contains(object))
@@ -202,27 +202,13 @@ pub(crate) fn audio_codec(parameters: &codec::Parameters) -> Option<String> {
     })
 }
 
-fn extradata(parameters: &codec::Parameters) -> &[u8] {
-    // SAFETY: the parameters own `extradata_size` bytes of extradata while
-    // they are borrowed. Read through the pointer, never a reference: a file
-    // can hold numbers their Rust enums have no variant for.
-    unsafe {
-        let raw = parameters.as_ptr();
-        let (data, size) = ((*raw).extradata, (*raw).extradata_size);
-        if data.is_null() || size <= 0 {
-            &[]
-        } else {
-            std::slice::from_raw_parts(data, size as usize)
-        }
-    }
-}
-
 /// `avc1.PPCCLL`, from an `avcC` record or an Annex B sequence parameter set.
 pub(crate) fn avc(extradata: &[u8]) -> Option<String> {
     let bytes = if extradata.first() == Some(&1) {
         extradata.get(1..4)?
     } else {
-        let sps = nal_units(extradata).find(|nal| nal.first().is_some_and(|b| b & 0x1f == 7))?;
+        let sps = ffmpeg_safe::nal_units(extradata)
+            .find(|nal| nal.first().is_some_and(|b| b & 0x1f == 7))?;
         sps.get(1..4)?
     };
     Some(format!(
@@ -236,8 +222,8 @@ pub(crate) fn hevc(extradata: &[u8]) -> Option<String> {
     let ptl: Vec<u8> = if extradata.first() == Some(&1) {
         extradata.get(1..13)?.to_vec()
     } else {
-        let sps =
-            nal_units(extradata).find(|nal| nal.first().is_some_and(|b| (b >> 1) & 0x3f == 33))?;
+        let sps = ffmpeg_safe::nal_units(extradata)
+            .find(|nal| nal.first().is_some_and(|b| (b >> 1) & 0x3f == 33))?;
         // After the two-byte header and the byte with the parameter set's
         // id and sub-layer count.
         unescape(sps).get(3..15)?.to_vec()
@@ -257,37 +243,6 @@ pub(crate) fn hevc(extradata: &[u8]) -> Option<String> {
         let _ = write!(name, ".{byte:x}");
     }
     Some(name.to_uppercase().replacen("HVC1", "hvc1", 1))
-}
-
-/// The NAL units of an Annex B byte stream, without start codes.
-fn nal_units(data: &[u8]) -> impl Iterator<Item = &[u8]> {
-    let mut starts = Vec::new();
-    let mut index = 0;
-    while index + 3 <= data.len() {
-        if data[index] == 0 && data[index + 1] == 0 && data[index + 2] == 1 {
-            starts.push(index + 3);
-            index += 3;
-        } else {
-            index += 1;
-        }
-    }
-    let ends: Vec<usize> = starts
-        .iter()
-        .skip(1)
-        .map(|next| {
-            // Back over the start code, and a leading zero of a 4-byte one.
-            let mut end = next - 3;
-            while end > 0 && data[end - 1] == 0 {
-                end -= 1;
-            }
-            end
-        })
-        .chain(std::iter::once(data.len()))
-        .collect();
-    starts
-        .into_iter()
-        .zip(ends)
-        .map(move |(start, end)| &data[start..end.max(start)])
 }
 
 /// A NAL unit's payload without its emulation prevention bytes.

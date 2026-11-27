@@ -277,36 +277,8 @@ fn reads_an_enhancement_layer_alone() {
     assert_eq!(media.first(true), Some(1));
 }
 
-/// Subtitles are text where FFmpeg's table says so, as the player asks it:
-/// TTML, SAMI, MicroDVD and broadcast captions too, never pictures.
-#[test]
-fn takes_subtitles_for_text_as_ffmpeg_does() {
-    for id in [
-        Id::SUBRIP,
-        Id::ASS,
-        Id::MOV_TEXT,
-        Id::WEBVTT,
-        Id::TTML,
-        Id::SAMI,
-        Id::MICRODVD,
-        Id::EIA_608,
-    ] {
-        assert!(is_text(id), "{id:?}");
-    }
-    for id in [
-        Id::HDMV_PGS_SUBTITLE,
-        Id::DVD_SUBTITLE,
-        Id::DVB_SUBTITLE,
-        Id::XSUB,
-        Id::H264,
-        Id::None,
-    ] {
-        assert!(!is_text(id), "{id:?}");
-    }
-}
-
-/// A stream's frame rate is its average, else the rate FFmpeg guesses,
-/// from 1 to 480 a second, as the player takes it.
+/// A video's frame rate is as the player takes it
+/// (`ffmpeg_safe::frame_rate`).
 #[test]
 fn reads_the_frame_rate_as_the_player_does() {
     let (mut input, index) = opened("clip.mp4");
@@ -318,22 +290,11 @@ fn reads_the_frame_rate_as_the_player_does() {
             (*stream.as_mut_ptr()).avg_frame_rate = ratio(average);
             (*stream.as_mut_ptr()).r_frame_rate = ratio(guessed);
         }
-        let stream = input.stream(index).unwrap();
-        let rate = frame_rate(&stream).map(f64::from);
-        assert_eq!(video_info(&stream).frame_rate, rate, "as the video says");
-        rate
+        video_info(&input.stream(index).unwrap()).frame_rate
     };
     assert_eq!(rate((25, 1), (50, 1)), Some(25.0));
     assert_eq!(rate((0, 0), (30_000, 1001)), Some(30_000.0 / 1001.0));
-    assert_eq!(rate((0, 1), (25, 1)), Some(25.0));
-    assert_eq!(rate((25, 0), (30, 1)), Some(30.0));
-    assert_eq!(rate((0, 1), (24, 0)), None);
-    assert_eq!(rate((480, 1), (0, 0)), Some(480.0));
-    assert_eq!(rate((1, 1), (0, 0)), Some(1.0));
-    // Not plausible, whatever the other says.
     assert_eq!(rate((481, 1), (25, 1)), None);
-    assert_eq!(rate((1, 2), (25, 1)), None);
-    assert_eq!(rate((0, 0), (90_000, 1)), None);
 }
 
 /// A stream tagged as in no language, or one unknown, has none.

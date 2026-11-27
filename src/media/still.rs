@@ -16,8 +16,7 @@ use gpui::RenderImage;
 
 use super::decoder::layers::{self, Found, Layers};
 use super::decoder::{
-    container_aspect, convert_pixels, open_input, open_video, output_size, set_aspect,
-    set_colorspace,
+    convert_pixels, open_input, open_video, output_size, set_aspect, set_colorspace,
 };
 use super::dovi::Reshaping;
 use super::enhancement::Composer;
@@ -167,7 +166,7 @@ fn decode(
         let found = input
             .stream(stream)
             .ok_or_else(|| anyhow!("the file no longer has this video track"))?;
-        let aspect = container_aspect(&found);
+        let aspect = ffmpeg_safe::container_aspect(&found);
         (found.parameters(), f64::from(found.time_base()), aspect)
     };
     let (mut decoder, _) = open_video(&parameters, false)?;

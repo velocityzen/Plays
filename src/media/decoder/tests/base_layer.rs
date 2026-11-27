@@ -277,8 +277,8 @@ fn hevc_of_two_layers_is_given_its_base_layer_alone() {
         }
         all
     };
-    let before = all_units(extradata(&parameters));
-    let after = all_units(extradata(&kept));
+    let before = all_units(ffmpeg_safe::extradata(&parameters));
+    let after = all_units(ffmpeg_safe::extradata(&kept));
     assert!(before.iter().any(|unit| layer(unit) == 1), "a second layer");
     let base_units: Vec<_> = before.into_iter().filter(|unit| layer(unit) == 0).collect();
     assert_eq!(after, base_units);

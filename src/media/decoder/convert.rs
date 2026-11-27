@@ -235,18 +235,6 @@ pub(crate) fn output_size(
     (even(w), even(h))
 }
 
-/// The shape of `stream`'s pixels as its container gives it, where it
-/// does: a Matroska file's display size, an MP4's `pasp`. It goes before
-/// the shape its pictures give, as in FFmpeg's own players.
-pub(in crate::media) fn container_aspect(
-    stream: &ffmpeg::format::stream::Stream,
-) -> Option<Rational> {
-    // SAFETY: the stream is valid while borrowed, and the field a plain
-    // pair of numbers.
-    let aspect = Rational::from(unsafe { (*stream.as_ptr()).sample_aspect_ratio });
-    rational(aspect).map(|_| aspect)
-}
-
 /// Gives `frame`'s pixels the shape `aspect`, where its container gives
 /// one.
 pub(in crate::media) fn set_aspect(frame: &mut frame::Video, aspect: Option<Rational>) {

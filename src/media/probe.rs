@@ -16,10 +16,10 @@ use ffmpeg_next as ffmpeg;
 use serde::Serialize;
 
 use super::chapters::Chapter;
-use super::decoder::{self, container_aspect};
+use super::decoder;
 use super::orientation::Orientation;
 use super::source::Source;
-use super::tracks::{self, Track};
+use super::tracks::Track;
 use super::{details, external};
 use ffmpeg_safe::{Colors, sys};
 
@@ -242,7 +242,10 @@ impl StreamProbe {
             _ => Kind::Data,
         };
         let cover = disposition.contains(Disposition::ATTACHED_PIC);
-        let (codec_name, text) = details::described(codec);
+        let ffmpeg_safe::Described {
+            long_name: codec_name,
+            text,
+        } = ffmpeg_safe::Described::of(parameters.id());
         Self {
             index: stream.index(),
             kind,
@@ -251,7 +254,7 @@ impl StreamProbe {
             codec_tag: fourcc(tag_code),
             profile: details::profile_name(codec, profile),
             bit_rate: details::positive(bit_rate),
-            language: tracks::stream_language(&metadata),
+            language: ffmpeg_safe::language(&metadata),
             title: tag(c"title").or_else(|| tag(c"filename")),
             default: disposition.contains(Disposition::DEFAULT),
             forced: disposition.contains(Disposition::FORCED),
@@ -268,13 +271,12 @@ impl VideoProbe {
     fn of(stream: &Stream, parameters: &codec::Parameters) -> Self {
         // SAFETY: as for the stream's codec. Its field order is read as the
         // number it is.
-        let (width, height, format, aspect, field_order) = unsafe {
+        let (width, height, format, field_order) = unsafe {
             let raw = parameters.as_ptr();
             (
                 (*raw).width,
                 (*raw).height,
                 (*raw).format,
-                Rational::from((*raw).sample_aspect_ratio),
                 (&raw const (*raw).field_order).cast::<u32>().read(),
             )
         };
@@ -282,8 +284,8 @@ impl VideoProbe {
             u32::try_from(width).unwrap_or(0),
             u32::try_from(height).unwrap_or(0),
         );
-        let aspect = container_aspect(stream)
-            .or_else(|| ratio(aspect).map(|_| aspect))
+        let aspect = ffmpeg_safe::container_aspect(stream)
+            .or_else(|| ffmpeg_safe::coded_aspect(parameters))
             .filter(|aspect| aspect.numerator() != aspect.denominator());
         let display_width = aspect.map_or(width, |aspect| {
             (f64::from(width) * f64::from(aspect)).round() as u32

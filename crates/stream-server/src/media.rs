@@ -141,15 +141,14 @@ impl MediaInfo {
                     Type::Video => StreamKind::Video(video_info(&stream)),
                     Type::Audio => StreamKind::Audio(audio_info(&parameters)),
                     Type::Subtitle => StreamKind::Subtitle {
-                        text: is_text(parameters.id()),
+                        text: ffmpeg_safe::Described::of(parameters.id()).text,
                     },
                     _ => StreamKind::Other,
                 };
                 StreamInfo {
                     index: stream.index(),
                     kind,
-                    language: tag(&metadata, c"language")
-                        .filter(|language| !matches!(language.as_str(), "und" | "zxx")),
+                    language: ffmpeg_safe::language(&metadata),
                     title: tag(&metadata, c"title"),
                     default: disposition.contains(ffmpeg::format::stream::Disposition::DEFAULT),
                 }
@@ -250,13 +249,8 @@ fn video_info(stream: &ffmpeg::format::stream::Stream) -> VideoInfo {
             disposition & ffi::AV_DISPOSITION_ATTACHED_PIC != 0,
         )
     };
-    // SAFETY: as above; the shapes are plain pairs of numbers.
-    let (container_shape, coded_shape) = unsafe {
-        (
-            shape((*stream.as_ptr()).sample_aspect_ratio),
-            shape((*parameters.as_ptr()).sample_aspect_ratio),
-        )
-    };
+    let container_shape = ffmpeg_safe::container_aspect(stream).map(f64::from);
+    let coded_shape = ffmpeg_safe::coded_aspect(&parameters).map(f64::from);
     let (turns, mirrored) = ffmpeg_safe::coded::<DisplayMatrix>(&parameters)
         .and_then(|matrix| matrix.turns())
         .unwrap_or((0, false));
@@ -298,7 +292,7 @@ fn video_info(stream: &ffmpeg::format::stream::Stream) -> VideoInfo {
         width,
         height,
         bit_depth: bit_depth(format),
-        frame_rate: frame_rate(stream).map(f64::from),
+        frame_rate: ffmpeg_safe::frame_rate(stream).map(f64::from),
         hdr,
         base_hdr,
         ipt,
@@ -313,20 +307,6 @@ fn video_info(stream: &ffmpeg::format::stream::Stream) -> VideoInfo {
         container_aspect: container_shape
             .is_some_and(|shape| (shape - coded_shape.unwrap_or(1.0)).abs() > 1e-9),
     }
-}
-
-/// How often `stream`'s frames come, as the player takes it: their
-/// average, else the rate FFmpeg guesses, from 1 to 480 a second.
-pub(crate) fn frame_rate(stream: &ffmpeg::format::stream::Stream) -> Option<ffmpeg::Rational> {
-    [stream.avg_frame_rate(), stream.rate()]
-        .into_iter()
-        .find(|rate| rate.numerator() > 0 && rate.denominator() > 0)
-        .filter(|rate| (1.0..=480.0).contains(&f64::from(*rate)))
-}
-
-/// A pixel's width over its height, where `ratio` says one.
-fn shape(ratio: ffi::AVRational) -> Option<f64> {
-    (ratio.num > 0 && ratio.den > 0).then(|| f64::from(ratio.num) / f64::from(ratio.den))
 }
 
 /// How many times wider or narrower than square a pixel is taken to be at
@@ -411,14 +391,6 @@ pub(crate) fn audio_codec(id: Id) -> AudioCodec {
 }
 
 /// Subtitles whose cues are text, as FFmpeg's table says.
-fn is_text(id: Id) -> bool {
-    // SAFETY: the table lives as long as the program.
-    unsafe {
-        let descriptor = ffi::avcodec_descriptor_get(id.into());
-        !descriptor.is_null() && (*descriptor).props & ffi::AV_CODEC_PROP_TEXT_SUB != 0
-    }
-}
-
 #[cfg(test)]
 #[path = "tests/media.rs"]
 mod tests;

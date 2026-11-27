@@ -12,7 +12,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-use ffmpeg::codec;
 use ffmpeg::codec::subtitle::Rect;
 use ffmpeg::media::Type;
 use ffmpeg_next as ffmpeg;
@@ -325,7 +324,8 @@ pub(crate) fn read(
         }
         (stream.parameters(), stream.time_base())
     };
-    let mut decoder = open_decoder(&parameters, time_base, encoding)?;
+    let mut decoder = ffmpeg_safe::subtitle_decoder(&parameters, time_base, encoding)
+        .map_err(|err| Error::Source(format!("can't read the subtitles: {err}")))?;
     let styles = Styles::of(&header(&decoder));
     set_discard(&mut input, Some(index));
 
@@ -449,36 +449,6 @@ impl Drop for Decoded {
         // nothing if it allocated nothing).
         unsafe { ffmpeg::ffi::avsubtitle_free(self.0.as_mut_ptr()) };
     }
-}
-
-/// A decoder for the track, converting its text from `encoding` where
-/// FFmpeg can.
-fn open_decoder(
-    parameters: &codec::Parameters,
-    time_base: ffmpeg::Rational,
-    encoding: Option<&str>,
-) -> Result<ffmpeg::decoder::Subtitle, Error> {
-    let open = |encoding: Option<&str>| -> Result<ffmpeg::decoder::Subtitle, ffmpeg::Error> {
-        let context = codec::context::Context::from_parameters(parameters.clone())?;
-        let mut decoder = context.decoder();
-        // Lets FFmpeg take a cue's end from its packet's duration.
-        decoder.set_packet_time_base(time_base);
-        let codec = ffmpeg::decoder::find(parameters.id()).ok_or(ffmpeg::Error::DecoderNotFound)?;
-        let mut options = ffmpeg::Dictionary::new();
-        if let Some(encoding) = encoding {
-            options.set("sub_charenc", encoding);
-        }
-        decoder.open_as_with(codec, options)?.subtitle()
-    };
-    match encoding.map(|encoding| (encoding, open(Some(encoding)))) {
-        Some((_, Ok(decoder))) => Ok(decoder),
-        Some((encoding, Err(err))) => {
-            log::warn!("can't convert subtitles from {encoding}: {err}");
-            open(None)
-        }
-        None => open(None),
-    }
-    .map_err(|err| Error::Source(format!("can't read the subtitles: {err}")))
 }
 
 /// The text of a decoded ASS event: the last of its fields, after the

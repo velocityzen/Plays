@@ -2,11 +2,11 @@
 //! subtitle streams and the subtitle files beside it, and how to name them
 //! in a menu.
 
-use std::ffi::{CStr, CString};
+use std::ffi::CStr;
 use std::path::PathBuf;
 
 use ffmpeg::format::stream::{Disposition, Stream};
-use ffmpeg::{ffi, media};
+use ffmpeg::media;
 use ffmpeg_next as ffmpeg;
 
 use ffmpeg_safe::DolbyVision;
@@ -75,7 +75,7 @@ impl Track {
         Some(Self {
             index: stream.index(),
             kind,
-            language: stream_language(&metadata),
+            language: ffmpeg_safe::language(&metadata),
             title: tag(c"title"),
             codec: parameters.id().name().to_owned(),
             format,
@@ -110,15 +110,7 @@ impl Track {
 
     /// Subtitles that are text rather than pictures.
     pub fn is_text(&self) -> bool {
-        let Ok(name) = CString::new(self.codec.as_str()) else {
-            return false;
-        };
-        // SAFETY: looks the codec up in FFmpeg's table of them, which
-        // lives as long as the program.
-        unsafe {
-            let descriptor = ffi::avcodec_descriptor_get_by_name(name.as_ptr());
-            !descriptor.is_null() && (*descriptor).props & ffi::AV_CODEC_PROP_TEXT_SUB != 0
-        }
+        ffmpeg_safe::Described::named(&self.codec).text
     }
 
     /// The codec and format, such as "E-AC-3 · 5.1", and "External" for
@@ -131,12 +123,6 @@ impl Track {
         }
         parts.join(" · ")
     }
-}
-
-/// A stream's language, as its tags say, unless they say it has none or
-/// it's unknown.
-pub(super) fn stream_language(metadata: &ffmpeg::DictionaryRef<'_>) -> Option<String> {
-    ffmpeg_safe::tag(metadata, c"language").filter(|code| !matches!(code.as_str(), "und" | "zxx"))
 }
 
 fn channels_name(channels: i32) -> Option<String> {
