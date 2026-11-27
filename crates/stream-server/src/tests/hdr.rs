@@ -183,7 +183,7 @@ fn shows_hdr_reference_white_nearly_as_sdr_white() {
             }
         }
     }
-    assert_eq!(Tags::of(&fitted(&pq_white, Pixel::NV12)), sdr_tags());
+    assert_eq!(Tags::of_frame(&fitted(&pq_white, Pixel::NV12)), sdr_tags());
 }
 
 /// Light under the knee is shown as bright as it was mastered: 100 nits is
@@ -304,7 +304,7 @@ fn reshapes_ipt_into_hdr10_as_it_was_mastered_or_fits_it_to_sdr() {
         assert!(code.abs_diff(512) <= 1, "{code}");
     }
     assert_eq!(
-        Tags::of(&hdr10),
+        Tags::of_frame(&hdr10),
         Tags {
             primaries: ffi::AVColorPrimaries::AVCOL_PRI_BT2020 as u32,
             transfer: ffi::AVColorTransferCharacteristic::AVCOL_TRC_SMPTE2084 as u32,
@@ -328,7 +328,7 @@ fn reshapes_ipt_into_hdr10_as_it_was_mastered_or_fits_it_to_sdr() {
             luma(&sdr),
             luma(&as_hdr10)
         );
-        assert_eq!(Tags::of(&sdr), sdr_tags());
+        assert_eq!(Tags::of_frame(&sdr), sdr_tags());
     }
 }
 

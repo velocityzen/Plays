@@ -14,7 +14,6 @@ use ffmpeg::{Packet, Rational, codec, frame};
 use ffmpeg_next as ffmpeg;
 use gpui::RenderImage;
 
-use super::colors::Colors;
 use super::decoder::layers::{self, Found, Layers};
 use super::decoder::{
     container_aspect, convert_pixels, open_input, open_video, output_size, set_aspect,
@@ -25,6 +24,7 @@ use super::enhancement::Composer;
 use super::hdr::{self, ToneMapper, Transfer};
 use super::picture::{Picture, rows};
 use super::source::Source;
+use ffmpeg_safe::Colors;
 
 /// Seeking lands on a keyframe before the frame; if a file's index puts it
 /// after, try again this much earlier, in seconds.

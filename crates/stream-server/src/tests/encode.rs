@@ -205,8 +205,9 @@ fn fits_hdr_to_sdr_for_an_encoding_tagged_bt709() {
 #[test]
 fn reshapes_dolby_visions_ipt_into_hdr10_or_sdr() {
     use crate::dovi::tests::{NEUTRAL, rpu_frame};
+    use crate::hdr::TV_GAMMA;
     use crate::hdr::tests::{luma, pq, sdr_tags};
-    use crate::hdr::{TV_GAMMA, Tags};
+    use ffmpeg_safe::Tags;
     let neutral = (NEUTRAL * 1024.0).round() as u16;
     // The luma code this frame's curve, x² / 2 + 1/4 there, reshapes to
     // PQ's code for 203 nits.
@@ -226,7 +227,7 @@ fn reshapes_dolby_visions_ipt_into_hdr10_or_sdr() {
     );
     assert!(chroma(&reshaped).iter().all(|c| c.abs_diff(512) <= 1));
     assert_eq!(
-        Tags::of(&reshaped),
+        Tags::of_frame(&reshaped),
         Tags {
             primaries: ffi::AVColorPrimaries::AVCOL_PRI_BT2020 as u32,
             transfer: ffi::AVColorTransferCharacteristic::AVCOL_TRC_SMPTE2084 as u32,
@@ -240,7 +241,7 @@ fn reshapes_dolby_visions_ipt_into_hdr10_or_sdr() {
         let fitted = sdr.scale(&white).unwrap();
         let light = luma(&fitted).powf(f64::from(TV_GAMMA));
         assert!((0.8..0.95).contains(&light), "{ten_bit}: {light}");
-        assert_eq!(Tags::of(&fitted), sdr_tags());
+        assert_eq!(Tags::of_frame(&fitted), sdr_tags());
     }
     // Not reshaped, its chroma stays IPT's, which YCbCr shows green.
     let mut scaled = video_encoder(true, Some(Colors::HDR10), false);

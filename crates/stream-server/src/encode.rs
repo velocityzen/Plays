@@ -132,25 +132,11 @@ impl Colors {
     /// A stream's colors, as its parameters give them: ones unspecified,
     /// reserved or without a name in FFmpeg are left unknown.
     pub fn of(parameters: &codec::Parameters) -> Self {
-        // SAFETY: the parameters are valid while borrowed. The fields are
-        // read as the C ints they are, not as the Rust enums bound to them,
-        // since a file can hold numbers the enums have no variant for.
-        let (primaries, transfer, space) = unsafe {
-            let raw = parameters.as_ptr();
-            (
-                (&raw const (*raw).color_primaries).cast::<u32>().read(),
-                (&raw const (*raw).color_trc).cast::<u32>().read(),
-                (&raw const (*raw).color_space).cast::<u32>().read(),
-            )
-        };
+        let tags = ffmpeg_safe::Tags::of_parameters(parameters);
         Self {
-            primaries: PRIMARIES
-                .into_iter()
-                .find(|&named| named as u32 == primaries),
-            transfer: TRANSFERS
-                .into_iter()
-                .find(|&named| named as u32 == transfer),
-            space: SPACES.into_iter().find(|&named| named as u32 == space),
+            primaries: tags.primaries(),
+            transfer: tags.transfer(),
+            space: tags.space(),
         }
     }
 
@@ -170,67 +156,6 @@ impl Colors {
         )
     }
 }
-
-const PRIMARIES: [ffi::AVColorPrimaries; 11] = {
-    use ffi::AVColorPrimaries::*;
-    [
-        AVCOL_PRI_BT709,
-        AVCOL_PRI_BT470M,
-        AVCOL_PRI_BT470BG,
-        AVCOL_PRI_SMPTE170M,
-        AVCOL_PRI_SMPTE240M,
-        AVCOL_PRI_FILM,
-        AVCOL_PRI_BT2020,
-        AVCOL_PRI_SMPTE428,
-        AVCOL_PRI_SMPTE431,
-        AVCOL_PRI_SMPTE432,
-        AVCOL_PRI_EBU3213,
-    ]
-};
-
-const TRANSFERS: [ffi::AVColorTransferCharacteristic; 16] = {
-    use ffi::AVColorTransferCharacteristic::*;
-    [
-        AVCOL_TRC_BT709,
-        AVCOL_TRC_GAMMA22,
-        AVCOL_TRC_GAMMA28,
-        AVCOL_TRC_SMPTE170M,
-        AVCOL_TRC_SMPTE240M,
-        AVCOL_TRC_LINEAR,
-        AVCOL_TRC_LOG,
-        AVCOL_TRC_LOG_SQRT,
-        AVCOL_TRC_IEC61966_2_4,
-        AVCOL_TRC_BT1361_ECG,
-        AVCOL_TRC_IEC61966_2_1,
-        AVCOL_TRC_BT2020_10,
-        AVCOL_TRC_BT2020_12,
-        AVCOL_TRC_SMPTE2084,
-        AVCOL_TRC_SMPTE428,
-        AVCOL_TRC_ARIB_STD_B67,
-    ]
-};
-
-const SPACES: [ffi::AVColorSpace; 16] = {
-    use ffi::AVColorSpace::*;
-    [
-        AVCOL_SPC_RGB,
-        AVCOL_SPC_BT709,
-        AVCOL_SPC_FCC,
-        AVCOL_SPC_BT470BG,
-        AVCOL_SPC_SMPTE170M,
-        AVCOL_SPC_SMPTE240M,
-        AVCOL_SPC_YCGCO,
-        AVCOL_SPC_BT2020_NCL,
-        AVCOL_SPC_BT2020_CL,
-        AVCOL_SPC_SMPTE2085,
-        AVCOL_SPC_CHROMA_DERIVED_NCL,
-        AVCOL_SPC_CHROMA_DERIVED_CL,
-        AVCOL_SPC_ICTCP,
-        AVCOL_SPC_IPT_C2,
-        AVCOL_SPC_YCGCO_RE,
-        AVCOL_SPC_YCGCO_RO,
-    ]
-};
 
 pub(crate) struct VideoSettings<'a> {
     pub encoder: &'a str,

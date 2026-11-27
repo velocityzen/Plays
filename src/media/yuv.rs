@@ -12,9 +12,9 @@ use ffmpeg::util::{chroma, color};
 use ffmpeg_next as ffmpeg;
 use gpui::{YuvColor, YuvFrame, YuvLayout, YuvTransfer};
 
-use super::colors::Colors;
 use super::decoder::output_size;
 use super::{dovi, hdr, still};
+use ffmpeg_safe::Colors;
 
 /// A frame's planes and the size it shows at.
 #[derive(Clone, Debug)]

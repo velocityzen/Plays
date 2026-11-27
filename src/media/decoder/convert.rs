@@ -13,8 +13,8 @@ use ffmpeg_next as ffmpeg;
 use gpui::RenderImage;
 
 use super::rational;
-use crate::media::colors::Colors;
 use crate::media::{dovi, hdr, picture};
+use ffmpeg_safe::Colors;
 
 /// What a frame is converted to before it becomes BGRA.
 #[derive(Clone, Copy, PartialEq, Eq)]

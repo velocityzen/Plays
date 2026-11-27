@@ -60,10 +60,10 @@ use ffmpeg::util::format::Pixel;
 use ffmpeg_next as ffmpeg;
 use rayon::prelude::*;
 
-use super::colors::Colors;
 use super::dovi::Reshaping;
 use super::hdr::{self, Transfer};
 use super::{picture, still};
+use ffmpeg_safe::Colors;
 
 /// The pixel buffer attachment (a `CFData` of `dovi::ShaderParams`) that
 /// makes vendor/gpui draw a surface as Dolby Vision. Matches

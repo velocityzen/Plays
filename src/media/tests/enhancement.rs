@@ -601,7 +601,7 @@ fn a_composed_frame_is_hdr10_at_the_masters_peak() {
     }
     assert_eq!(out.format(), Pixel::YUV420P10LE);
     assert_eq!(out.pts(), Some(42));
-    let colors = crate::media::colors::Colors::of_frame(&out);
+    let colors = ffmpeg_safe::Colors::of_frame(&out);
     assert_eq!(colors.space, color::Space::BT2020NCL);
     assert_eq!(colors.primaries, color::Primaries::BT2020);
     assert_eq!(colors.transfer, color::TransferCharacteristic::SMPTE2084);

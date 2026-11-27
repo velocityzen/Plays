@@ -16,13 +16,13 @@ use ffmpeg_next as ffmpeg;
 use serde::Serialize;
 
 use super::chapters::Chapter;
-use super::colors::Colors;
 use super::decoder::{self, container_aspect};
 use super::enhancement::Configuration;
 use super::orientation::Orientation;
 use super::source::Source;
 use super::tracks::{self, Track};
 use super::{details, external, hdr};
+use ffmpeg_safe::Colors;
 
 /// FFmpeg's time base for a file's duration.
 const AV_TIME_BASE: f64 = 1_000_000.0;

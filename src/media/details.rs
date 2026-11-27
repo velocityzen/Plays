@@ -7,8 +7,8 @@ use ffmpeg::util::{color, format::Pixel, format::Sample};
 use ffmpeg::{codec, ffi};
 use ffmpeg_next as ffmpeg;
 
-use super::colors::Colors;
 use super::enhancement::Configuration;
+use ffmpeg_safe::Colors;
 
 /// The file or stream as a whole.
 #[derive(Clone, Debug, Default, PartialEq)]

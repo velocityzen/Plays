@@ -24,8 +24,8 @@ use ffmpeg::util::color::TransferCharacteristic;
 use ffmpeg::{ffi, frame};
 use ffmpeg_next as ffmpeg;
 
-use super::colors::Colors;
 use super::picture::{apply_gamma, bgra_rows};
+use ffmpeg_safe::Colors;
 
 /// HDR reference white (BT.2408), shown as SDR white.
 pub const REFERENCE_WHITE_NITS: f32 = 203.0;

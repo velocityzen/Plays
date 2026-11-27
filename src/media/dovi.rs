@@ -22,9 +22,9 @@ use ffmpeg::frame;
 use ffmpeg::util::color;
 use ffmpeg_next as ffmpeg;
 
-use super::colors::Colors;
 use super::hdr::{self, ToneMapper};
 use super::picture::bgra_rows;
+use ffmpeg_safe::Colors;
 
 /// FFmpeg's `AV_DOVI_MAX_PIECES`.
 const MAX_PIECES: usize = 8;

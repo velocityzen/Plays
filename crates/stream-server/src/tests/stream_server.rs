@@ -1007,7 +1007,10 @@ fn fits_hdr_to_sdr_for_a_device_not_given_it() {
         cast.plan()
     );
     let frame = first_frame(&cast, Segments::Ts);
-    assert_eq!(crate::hdr::Tags::of(&frame), crate::hdr::tests::sdr_tags());
+    assert_eq!(
+        ffmpeg_safe::Tags::of_frame(&frame),
+        crate::hdr::tests::sdr_tags()
+    );
     let (data, stride) = ffmpeg_safe::plane(&frame, 0).unwrap();
     let luma = data[stride * 60 + 80];
     assert!(luma > 210, "{luma}");
@@ -1055,7 +1058,7 @@ fn first_frame(cast: &crate::Cast, kind: Segments) -> ffmpeg::frame::Video {
 #[test]
 fn reshapes_dolby_visions_ipt_for_a_device() {
     use crate::Hdr;
-    use crate::hdr::Tags;
+    use ffmpeg_safe::Tags;
     let server = server();
     let apple_tv = Profile {
         video: vec![VideoCodec::H264, VideoCodec::Hevc],
@@ -1080,7 +1083,7 @@ fn reshapes_dolby_visions_ipt_for_a_device() {
             "{master}"
         );
         let frame = first_frame(&cast, kind);
-        let tags = Tags::of(&frame);
+        let tags = Tags::of_frame(&frame);
         if hdr.is_some() {
             assert_eq!(
                 tags,

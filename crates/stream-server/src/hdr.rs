@@ -18,6 +18,7 @@ use ffmpeg::format::Pixel;
 use ffmpeg::util::color;
 use ffmpeg::{ffi, frame};
 use ffmpeg_next as ffmpeg;
+use ffmpeg_safe::Tags;
 use rayon::prelude::*;
 
 use crate::Error;
@@ -77,7 +78,7 @@ impl Transfer {
         use ffi::AVColorTransferCharacteristic::{AVCOL_TRC_ARIB_STD_B67, AVCOL_TRC_SMPTE2084};
         let Tags {
             transfer, space, ..
-        } = Tags::of(frame);
+        } = Tags::of_frame(frame);
         if space == AVCOL_SPC_IPT_C2 as u32 {
             return None;
         }
@@ -87,32 +88,6 @@ impl Transfer {
             Some(Self::Hlg)
         } else {
             None
-        }
-    }
-}
-
-/// How a frame's colors are tagged, as the C ints FFmpeg keeps them in:
-/// a file can hold numbers the Rust enums have no variant for.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub(crate) struct Tags {
-    pub primaries: u32,
-    pub transfer: u32,
-    pub space: u32,
-    pub range: u32,
-}
-
-impl Tags {
-    pub fn of(frame: &frame::Video) -> Self {
-        // SAFETY: the frame is valid while borrowed, and the fields are
-        // read through the pointer as the C ints they are.
-        unsafe {
-            let raw = frame.as_ptr();
-            Self {
-                primaries: (&raw const (*raw).color_primaries).cast::<u32>().read(),
-                transfer: (&raw const (*raw).color_trc).cast::<u32>().read(),
-                space: (&raw const (*raw).colorspace).cast::<u32>().read(),
-                range: (&raw const (*raw).color_range).cast::<u32>().read(),
-            }
         }
     }
 }
@@ -382,7 +357,7 @@ impl Converter {
         to: &mut frame::Video,
     ) -> Result<(), Error> {
         let (width, height) = (to.width(), to.height());
-        let range = if Tags::of(from).range == ffi::AVColorRange::AVCOL_RANGE_JPEG as u32 {
+        let range = if Tags::of_frame(from).range == ffi::AVColorRange::AVCOL_RANGE_JPEG as u32 {
             color::Range::JPEG
         } else {
             color::Range::MPEG
@@ -595,7 +570,7 @@ impl Drop for Scaler {
 /// are the same).
 fn matrix(frame: &frame::Video) -> color::Space {
     use ffi::AVColorSpace::*;
-    let space = Tags::of(frame).space;
+    let space = Tags::of_frame(frame).space;
     [
         AVCOL_SPC_BT709,
         AVCOL_SPC_FCC,

@@ -242,12 +242,13 @@ fn container(name: &str, path: &str) -> Container {
 
 fn video_info(stream: &ffmpeg::format::stream::Stream) -> VideoInfo {
     let parameters = stream.parameters();
+    let ffmpeg_safe::Tags {
+        transfer, space, ..
+    } = ffmpeg_safe::Tags::of_parameters(&parameters);
     // SAFETY: the parameters belong to an open stream. They are read through
-    // the pointer, never a reference, and the transfer and color space as
-    // the C ints they are: a file can hold numbers the Rust enums have no
-    // variant for. The Dolby Vision configuration, all bytes, is read only
-    // from side data as long as it.
-    let (width, height, format, transfer, space, dolby_vision, picture) = unsafe {
+    // the pointer, never a reference. The Dolby Vision configuration, all
+    // bytes, is read only from side data as long as it.
+    let (width, height, format, dolby_vision, picture) = unsafe {
         let raw = parameters.as_ptr();
         let configuration = ffi::av_packet_side_data_get(
             (*raw).coded_side_data,
@@ -272,8 +273,6 @@ fn video_info(stream: &ffmpeg::format::stream::Stream) -> VideoInfo {
             (*raw).width.max(0) as u32,
             (*raw).height.max(0) as u32,
             (*raw).format,
-            (&raw const (*raw).color_trc).cast::<u32>().read(),
-            (&raw const (*raw).color_space).cast::<u32>().read(),
             dolby_vision,
             disposition & ffi::AV_DISPOSITION_ATTACHED_PIC != 0,
         )

@@ -1,15 +1,15 @@
 # ffmpeg-next reads a picture's colors as Rust enums with gaps in them, but
 # a file can put any number there, and one no variant has is undefined
-# behavior. Read them as numbers, as src/media/colors.rs does.
+# behavior. Read them as numbers, with ffmpeg_safe::Colors or Tags.
 disallowed-methods = [
-    { path = "ffmpeg_next::util::frame::video::Video::color_range", reason = "a file can hold a number the enum has no variant for: use media::colors" },
-    { path = "ffmpeg_next::util::frame::video::Video::color_space", reason = "a file can hold a number the enum has no variant for: use media::colors" },
-    { path = "ffmpeg_next::util::frame::video::Video::color_primaries", reason = "a file can hold a number the enum has no variant for: use media::colors" },
-    { path = "ffmpeg_next::util::frame::video::Video::color_transfer_characteristic", reason = "a file can hold a number the enum has no variant for: use media::colors" },
-    { path = "ffmpeg_next::codec::decoder::video::Video::color_range", reason = "a file can hold a number the enum has no variant for: use media::colors" },
-    { path = "ffmpeg_next::codec::decoder::video::Video::color_space", reason = "a file can hold a number the enum has no variant for: use media::colors" },
-    { path = "ffmpeg_next::codec::decoder::video::Video::color_primaries", reason = "a file can hold a number the enum has no variant for: use media::colors" },
-    { path = "ffmpeg_next::codec::decoder::video::Video::color_transfer_characteristic", reason = "a file can hold a number the enum has no variant for: use media::colors" },
+    { path = "ffmpeg_next::util::frame::video::Video::color_range", reason = "a file can hold a number the enum has no variant for: use ffmpeg_safe::Colors" },
+    { path = "ffmpeg_next::util::frame::video::Video::color_space", reason = "a file can hold a number the enum has no variant for: use ffmpeg_safe::Colors" },
+    { path = "ffmpeg_next::util::frame::video::Video::color_primaries", reason = "a file can hold a number the enum has no variant for: use ffmpeg_safe::Colors" },
+    { path = "ffmpeg_next::util::frame::video::Video::color_transfer_characteristic", reason = "a file can hold a number the enum has no variant for: use ffmpeg_safe::Colors" },
+    { path = "ffmpeg_next::codec::decoder::video::Video::color_range", reason = "a file can hold a number the enum has no variant for: use ffmpeg_safe::Colors" },
+    { path = "ffmpeg_next::codec::decoder::video::Video::color_space", reason = "a file can hold a number the enum has no variant for: use ffmpeg_safe::Colors" },
+    { path = "ffmpeg_next::codec::decoder::video::Video::color_primaries", reason = "a file can hold a number the enum has no variant for: use ffmpeg_safe::Colors" },
+    { path = "ffmpeg_next::codec::decoder::video::Video::color_transfer_characteristic", reason = "a file can hold a number the enum has no variant for: use ffmpeg_safe::Colors" },
     # A channel layout is a bare copy of FFmpeg's: one in an uncommon order
     # points into the frame, which frees it. Copy it with ffmpeg_safe::Layout.
     { path = "ffmpeg_next::util::frame::audio::Audio::channel_layout", reason = "it points into the frame, which frees it: use ffmpeg_safe::Layout" },
