@@ -3,6 +3,13 @@ use std::sync::Arc;
 
 use super::*;
 
+/// `name`, in `tests/fixtures`.
+fn fixture(name: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../tests/fixtures")
+        .join(name)
+}
+
 /// A track named in Windows-1252, not UTF-8, as a Matroska file's may be,
 /// named as it says.
 #[test]
@@ -129,4 +136,93 @@ fn reads_dolby_visions_base_layer_as_hdr10_or_hlg() {
             "{transfer:?} {space:?}"
         );
     }
+}
+
+/// FFmpeg's own matrices, as its demuxers make them, come back as the
+/// turns and mirroring they ask for. `av_display_rotation_set` takes
+/// degrees clockwise, where ffprobe gives them counterclockwise.
+#[test]
+fn reads_display_matrices_as_turns_and_mirroring() {
+    let read = |rotation: f64, flipped: bool| {
+        let mut matrix = [0i32; 9];
+        // SAFETY: both write nine i32s.
+        unsafe {
+            ffi::av_display_rotation_set(matrix.as_mut_ptr(), rotation);
+            ffi::av_display_matrix_flip(matrix.as_mut_ptr(), flipped.into(), 0);
+        }
+        orientation(&matrix)
+    };
+    assert_eq!(read(0.0, false), Some((0, false)));
+    assert_eq!(read(90.0, false), Some((1, false)));
+    assert_eq!(read(-90.0, false), Some((3, false)));
+    assert_eq!(read(180.0, false), Some((2, false)));
+    assert_eq!(read(88.0, false), Some((1, false)));
+    // The flip comes after the turn: mirrored first, it turns the other
+    // way.
+    assert_eq!(read(0.0, true), Some((0, true)));
+    assert_eq!(read(90.0, true), Some((3, true)));
+    assert_eq!(read(180.0, true), Some((2, true)));
+    assert_eq!(orientation(&[0; 9]), None);
+}
+
+/// A video's file asks for it turned as its display matrix says, and
+/// shown at its pixels' shape, its container's before its coded
+/// pictures'.
+#[test]
+fn reads_how_its_file_asks_a_video_shown() {
+    crate::init();
+    let read = |name: &str| {
+        let source = Source::File(fixture(name));
+        let input = open(&source, Arc::default()).unwrap();
+        let info = MediaInfo::read(&input, &source.location());
+        let video = info.video(info.first(true).unwrap()).unwrap();
+        (video.own, video.container_aspect)
+    };
+    let wide = |(own, container): (Adjustments, bool)| {
+        let aspect = own.aspect.expect("a shape");
+        assert!((aspect - 16.0 / 9.0).abs() < 1e-9, "{aspect}");
+        (
+            Adjustments {
+                aspect: None,
+                ..own
+            },
+            container,
+        )
+    };
+    let plain = Adjustments::default();
+    assert_eq!(read("clip.mp4"), (plain, false));
+    let turned = Adjustments { turns: 3, ..plain };
+    assert_eq!(read("shapes/turned.mp4"), (turned, false));
+    assert_eq!(wide(read("shapes/wide.mp4")), (plain, false));
+    assert_eq!(wide(read("shapes/wide.mkv")), (plain, true));
+}
+
+/// No shape from a picture of no height, nor from a shape unsaid or not
+/// a shape; the container's square pixels where the coded pictures say
+/// nothing are theirs too, kept by a copy.
+#[test]
+fn reads_no_shape_from_too_little() {
+    crate::init();
+    let mut input = open(&Source::File(fixture("clip.mp4")), Arc::default()).unwrap();
+    let index = input.streams().best(Type::Video).unwrap().index();
+    let mut read = |height, container: (i32, i32), coded: (i32, i32)| {
+        let ratio = |(num, den)| ffi::AVRational { num, den };
+        let mut stream = input.stream_mut(index).unwrap();
+        // SAFETY: the stream is ours and open, and these plain numbers.
+        unsafe {
+            let raw = stream.as_mut_ptr();
+            (*(*raw).codecpar).height = height;
+            (*raw).sample_aspect_ratio = ratio(container);
+            (*(*raw).codecpar).sample_aspect_ratio = ratio(coded);
+        }
+        let info = video_info(&input.stream(index).unwrap());
+        (info.own.aspect, info.container_aspect)
+    };
+    assert_eq!(read(120, (1, 1), (0, 1)), (None, false));
+    assert_eq!(read(120, (0, 1), (0, 1)), (None, false));
+    assert_eq!(read(120, (-4, 3), (4, -3)), (None, false));
+    assert_eq!(read(0, (4, 3), (4, 3)), (None, false));
+    assert!(!read(120, (0, 1), (4, 3)).1, "the coded pictures say it");
+    let coded = read(120, (0, 1), (4, 3)).0.expect("the coded shape");
+    assert!((coded - 16.0 / 9.0).abs() < 1e-9, "{coded}");
 }

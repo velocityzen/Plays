@@ -48,6 +48,13 @@
 #                Windows-1252, not UTF-8: titled Résumé, its sound Français,
 #                in two chapters, Début and Fin de l'été (from 0.3 s)
 # western-tags.wav  0.2 s of the same, its INFO title Café in Windows-1252
+# shapes/        in a folder of their own, so the files beside the others
+#                stay:
+# shapes/turned.mp4  clip.mp4 that its display matrix turns a quarter
+#                counterclockwise, as a phone's
+# shapes/wide.mp4  clip.mp4 in pixels 4:3 wide, as its pictures and its
+#                container say, showing 16:9
+# shapes/wide.mkv  the same, as its container alone says
 set -euo pipefail
 
 cd "$(dirname "$0")/../tests/fixtures"
@@ -267,6 +274,15 @@ tone=(-f lavfi -i "sine=frequency=440:sample_rate=8000")
 rm chapters.txt
 "${ffmpeg[@]}" "${tone[@]}" -t 0.2 -c:a pcm_s16le -map_metadata -1 \
     -metadata title=Cafe western-tags.wav
+
+mkdir -p shapes
+"${ffmpeg[@]}" -display_rotation 90 -i clip.mp4 -map 0 -c copy \
+    -map_metadata -1 shapes/turned.mp4
+"${ffmpeg[@]}" -i clip.mp4 -map 0 -c copy \
+    -bsf:v h264_metadata=sample_aspect_ratio=4/3 -aspect 16:9 \
+    -map_metadata -1 shapes/wide.mp4
+"${ffmpeg[@]}" -i clip.mp4 -map 0 -c copy -aspect 16:9 -map_metadata -1 \
+    shapes/wide.mkv
 # Each name in ASCII, then in Windows-1252 as long, as Matroska and RIFF
 # keep the length before it (and Matroska's checksums are left out).
 python3 - <<'PY'
@@ -287,4 +303,4 @@ for name, swaps in names.items():
     open(name, "wb").write(data)
 PY
 
-ls -l
+ls -l . shapes

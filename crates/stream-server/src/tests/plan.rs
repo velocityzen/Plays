@@ -28,6 +28,8 @@ fn with_pictures(codec: VideoCodec) -> MediaInfo {
         ipt: false,
         dolby_vision: None,
         picture: false,
+        own: Adjustments::default(),
+        container_aspect: false,
     };
     let audio = crate::media::AudioInfo {
         codec: AudioCodec::Aac,
@@ -182,6 +184,181 @@ fn re_encoding_video_for_its_keyframes_does_its_adjustments() {
     re_encode_video(&mut plan, &h264, &request).unwrap();
     assert!(matches!(plan.video, Some(VideoPlan::Encode { .. })));
     assert_eq!(plan.adjustments, Some(gamma));
+}
+
+/// `with_pictures`' H.264, its file asking for `own`, a shape its
+/// container alone gives if `container_aspect`.
+fn shown_as(own: Adjustments, container_aspect: bool) -> MediaInfo {
+    let mut media = with_pictures(VideoCodec::H264);
+    if let StreamKind::Video(video) = &mut media.streams[0].kind {
+        video.own = own;
+        video.container_aspect = container_aspect;
+    }
+    media
+}
+
+/// A cast to `profile`, `adjustments` asked for.
+fn asking(profile: Profile, adjustments: Option<Adjustments>) -> CastRequest {
+    CastRequest {
+        adjustments,
+        ..CastRequest::new(Source::File("film.mkv".into()), profile)
+    }
+}
+
+/// The size `plan` re-encodes its video at, if it does.
+fn encoded(plan: &Plan) -> Option<(u32, u32)> {
+    match plan.video {
+        Some(VideoPlan::Encode { width, height, .. }) => Some((width, height)),
+        _ => None,
+    }
+}
+
+#[test]
+fn re_encodes_turned_video_a_copy_would_show_sideways() {
+    let own = Adjustments {
+        turns: 3,
+        ..Adjustments::default()
+    };
+    let turned = shown_as(own, false);
+    // As it is, the device turns it.
+    let mkv = Profile {
+        files: vec![Container::Matroska],
+        ..Profile::default()
+    };
+    assert_eq!(
+        plan(&turned, &asking(mkv, None)).unwrap().delivery,
+        Delivery::File
+    );
+    // Fragmented MP4 keeps its display matrix.
+    let fmp4 = Profile {
+        hls: Some(Segments::Fmp4),
+        ..Profile::default()
+    };
+    let copied = plan(&turned, &asking(fmp4, None)).unwrap();
+    assert_eq!(encoded(&copied), None);
+    assert_eq!(copied.adjustments, None);
+    // MPEG-TS, in HLS or a stream, has none: it's turned, and fitted to
+    // the device on its side.
+    let ts = plan(&turned, &asking(Profile::default(), None)).unwrap();
+    assert_eq!(encoded(&ts), Some((608, 1080)));
+    assert_eq!(ts.adjustments, Some(own));
+    let streams = Profile {
+        hls: None,
+        stream: true,
+        ..Profile::default()
+    };
+    let streamed = plan(&turned, &asking(streams, None)).unwrap();
+    assert_eq!(streamed.delivery, Delivery::Stream);
+    assert_eq!(encoded(&streamed), Some((608, 1080)));
+    let mirrored = shown_as(
+        Adjustments {
+            mirrored: true,
+            ..Adjustments::default()
+        },
+        false,
+    );
+    let ts = plan(&mirrored, &asking(Profile::default(), None)).unwrap();
+    assert_eq!(encoded(&ts), Some((1280, 720)));
+    // Nothing is done to one its file asks nothing of.
+    let subtitled = CastRequest {
+        subtitles: Some(SubtitleSource::Track(2)),
+        ..asking(Profile::default(), None)
+    };
+    let drawn = plan(&with_pictures(VideoCodec::H264), &subtitled).unwrap();
+    assert_eq!(encoded(&drawn), Some((1280, 720)));
+    assert_eq!(drawn.adjustments, None);
+    // Where it can't be re-encoded, it's copied as it is.
+    let mpeg2 = Profile {
+        video: vec![VideoCodec::Mpeg2],
+        ..Profile::default()
+    };
+    let mut turned_mpeg2 = shown_as(own, false);
+    if let StreamKind::Video(video) = &mut turned_mpeg2.streams[0].kind {
+        video.codec = VideoCodec::Mpeg2;
+    }
+    let copied = plan(&turned_mpeg2, &asking(mpeg2, None)).unwrap();
+    assert_eq!(encoded(&copied), None);
+    assert_eq!(copied.adjustments, None);
+}
+
+#[test]
+fn re_encodes_video_at_its_pixels_shape() {
+    // A shape in its coded pictures a copy keeps, and only re-encoded is
+    // it drawn at; one its container alone gives, it loses.
+    let wider = Adjustments {
+        aspect: Some(2.0),
+        ..Adjustments::default()
+    };
+    let fmp4 = Profile {
+        hls: Some(Segments::Fmp4),
+        ..Profile::default()
+    };
+    let coded = shown_as(wider, false);
+    assert_eq!(
+        encoded(&plan(&coded, &asking(fmp4.clone(), None)).unwrap()),
+        None
+    );
+    assert_eq!(
+        encoded(&plan(&coded, &asking(Profile::default(), None)).unwrap()),
+        None
+    );
+    let contained = plan(&shown_as(wider, true), &asking(fmp4, None)).unwrap();
+    assert_eq!(encoded(&contained), Some((1440, 720)));
+    assert_eq!(contained.adjustments, Some(wider));
+
+    // Adjustments asked for are turned after its own already, and keep its
+    // shape where they ask none.
+    let gamma = Adjustments {
+        gamma: 1.5,
+        ..Adjustments::default()
+    };
+    let bent = plan(
+        &shown_as(Adjustments { turns: 3, ..wider }, false),
+        &asking(Profile::default(), Some(gamma)),
+    )
+    .unwrap();
+    assert_eq!(encoded(&bent), Some((1440, 720)));
+    assert_eq!(
+        bent.adjustments,
+        Some(Adjustments {
+            aspect: Some(2.0),
+            ..gamma
+        })
+    );
+    let square = Adjustments {
+        aspect: Some(1.0),
+        ..gamma
+    };
+    let squared = plan(&coded, &asking(Profile::default(), Some(square))).unwrap();
+    assert_eq!(encoded(&squared), Some((720, 720)));
+    assert_eq!(squared.adjustments, Some(square));
+}
+
+#[test]
+fn re_encoding_video_for_its_keyframes_shows_it_as_its_file_says() {
+    let own = Adjustments {
+        turns: 1,
+        aspect: Some(2.0),
+        ..Adjustments::default()
+    };
+    let media = shown_as(own, false);
+    let fmp4 = Profile {
+        hls: Some(Segments::Fmp4),
+        ..Profile::default()
+    };
+    let request = CastRequest::new(Source::File("film.mkv".into()), fmp4);
+    let mut plan = plan(&media, &request).unwrap();
+    assert!(matches!(plan.video, Some(VideoPlan::Copy { .. })));
+    re_encode_video(&mut plan, &media, &request).unwrap();
+    assert!(matches!(
+        plan.video,
+        Some(VideoPlan::Encode {
+            width: 540,
+            height: 1080,
+            ..
+        })
+    ));
+    assert_eq!(plan.adjustments, Some(own));
 }
 
 #[test]

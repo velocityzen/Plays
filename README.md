@@ -96,6 +96,7 @@ GPU-accelerated UI framework.
   lists
 - Subtitles go along
 - Delays, gamma and picture adjustments go along
+- Phone video upright and anamorphic video at its shape
 - A video's sound to a speaker while its picture plays here
 
 ### And
@@ -230,7 +231,8 @@ mkdir ($nu.user-autoload-dirs | first); plays completions nushell | save -f ($nu
 - Casting re-encodes video only with a hardware encoder. While a block
   casts, speed and frame steps don't apply; a device that takes only
   files gets them without delays or picture adjustments, and one that
-  plays nothing this computer encodes, without picture adjustments.
+  plays nothing this computer encodes, without picture adjustments and,
+  in MPEG-TS, phone video sideways.
 - Cast subtitles go where they're placed only to a third of the picture,
   and on DLNA TVs at the bottom; picture subtitles (PGS, VobSub, DVB)
   don't reach a device that takes only files or plays neither H.264 nor

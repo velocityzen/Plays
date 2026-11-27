@@ -13,6 +13,7 @@ use ffmpeg_next as ffmpeg;
 use ffmpeg_safe::tag;
 
 use crate::Error;
+use crate::adjust::Adjustments;
 use crate::dovi;
 use crate::profile::{AudioCodec, Container, Hdr, VideoCodec};
 
@@ -120,6 +121,14 @@ pub struct VideoInfo {
     pub dolby_vision: Option<u8>,
     /// Cover art in an audio file, not a video.
     pub picture: bool,
+    /// What a player does to show it as its file says: turns and mirrors
+    /// it as its display matrix asks, and shows it at the shape its pixels
+    /// make where they aren't square, by its container's else its coded
+    /// pictures'. Nothing else.
+    pub own: Adjustments,
+    /// Its pixels' shape is its container's alone, its coded pictures
+    /// giving another: a copy into a stream loses it.
+    pub container_aspect: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -264,6 +273,33 @@ fn video_info(stream: &ffmpeg::format::stream::Stream) -> VideoInfo {
             disposition & ffi::AV_DISPOSITION_ATTACHED_PIC != 0,
         )
     };
+    // SAFETY: as above; the matrix's size is checked before it's read, and
+    // the shapes are plain pairs of numbers.
+    let (matrix, container_shape, coded_shape) = unsafe {
+        let raw = parameters.as_ptr();
+        let side = ffi::av_packet_side_data_get(
+            (*raw).coded_side_data,
+            (*raw).nb_coded_side_data,
+            ffi::AVPacketSideDataType::AV_PKT_DATA_DISPLAYMATRIX,
+        );
+        let matrix = (!side.is_null() && !(*side).data.is_null() && (*side).size >= 9 * 4)
+            .then(|| std::ptr::read_unaligned((*side).data.cast::<[i32; 9]>()));
+        (
+            matrix,
+            shape((*stream.as_ptr()).sample_aspect_ratio),
+            shape((*raw).sample_aspect_ratio),
+        )
+    };
+    let (turns, mirrored) = matrix.as_ref().and_then(orientation).unwrap_or((0, false));
+    // The container's first, as in FFmpeg's own players.
+    let pixel = container_shape.or(coded_shape).unwrap_or(1.0);
+    let own = Adjustments {
+        turns,
+        mirrored,
+        aspect: ((pixel - 1.0).abs() > 1e-9 && height > 0)
+            .then(|| f64::from(width) * pixel / f64::from(height)),
+        ..Adjustments::default()
+    };
     let pq = transfer == ffi::AVColorTransferCharacteristic::AVCOL_TRC_SMPTE2084 as u32;
     let hlg = transfer == ffi::AVColorTransferCharacteristic::AVCOL_TRC_ARIB_STD_B67 as u32;
     let hdr = if dolby_vision.is_some() {
@@ -301,6 +337,51 @@ fn video_info(stream: &ffmpeg::format::stream::Stream) -> VideoInfo {
         ipt,
         dolby_vision: dolby_vision.flatten().map(|(profile, _)| profile),
         picture,
+        own,
+        container_aspect: container_shape
+            .is_some_and(|shape| (shape - coded_shape.unwrap_or(1.0)).abs() > 1e-9),
+    }
+}
+
+/// A pixel's width over its height, where `ratio` says one.
+fn shape(ratio: ffi::AVRational) -> Option<f64> {
+    (ratio.num > 0 && ratio.den > 0).then(|| f64::from(ratio.num) / f64::from(ratio.den))
+}
+
+/// The quarter turns clockwise, after mirroring if so, nearest to what
+/// FFmpeg's display `matrix` asks: it takes a pixel (p, q) to
+/// (a p + c q, b p + d q), with a, b, c, d its first two columns of its
+/// first two rows. None where it squashes the picture flat.
+pub(crate) fn orientation(matrix: &[i32; 9]) -> Option<(u8, bool)> {
+    let fixed = |i: usize| f64::from(matrix[i]) / 65536.0;
+    let wanted = [[fixed(0), fixed(3)], [fixed(1), fixed(4)]];
+    if (wanted[0][0] * wanted[1][1] - wanted[0][1] * wanted[1][0]).abs() < 1e-6 {
+        return None;
+    }
+    let likeness = |way: (u8, bool)| {
+        let taken = takes(way);
+        (0..2)
+            .flat_map(|row| (0..2).map(move |column| (row, column)))
+            .map(|(row, column)| taken[row][column] * wanted[row][column])
+            .sum::<f64>()
+    };
+    (0..8)
+        .map(|way| (way % 4, way >= 4))
+        .max_by(|a, b| likeness(*a).total_cmp(&likeness(*b)))
+}
+
+/// Where `turns` quarter turns clockwise, after mirroring if `mirrored`,
+/// take a point, as `[[xx, xy], [yx, yy]]` (`x' = xx x + xy y`), with x to
+/// the right and y down.
+fn takes((turns, mirrored): (u8, bool)) -> [[f64; 2]; 2] {
+    let sign = if mirrored { -1.0 } else { 1.0 };
+    // A quarter turn clockwise takes (x, y) to (-y, x); mirroring first
+    // negates x.
+    match turns {
+        0 => [[sign, 0.0], [0.0, 1.0]],
+        1 => [[0.0, -1.0], [sign, 0.0]],
+        2 => [[-sign, 0.0], [0.0, -1.0]],
+        _ => [[0.0, 1.0], [-sign, 0.0]],
     }
 }
 

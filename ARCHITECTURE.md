@@ -593,7 +593,8 @@ flowchart LR
 
 - `profile.rs`: what a device plays: containers, codecs, size, HDR
 - `media.rs`: opening and reading media
-- `plan.rs`: the least work that plays, each track copied or re-encoded
+- `plan.rs`: the least work that plays, each track copied or re-encoded;
+  video turned and shaped as its file says
 - `encode.rs`: hardware video encoders only (VideoToolbox, NVENC, VA-API)
 - `segments.rs`: copied video cut at its keyframes, else every six seconds
 - `mux.rs`: fragmented MP4, MPEG-TS, ADTS or FLAC, written into memory

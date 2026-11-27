@@ -3,8 +3,10 @@
 //! with each track copied when the device decodes it and re-encoded when
 //! it doesn't. Picture subtitles picked from the media are drawn into the
 //! video, and adjustments done to its picture, which is re-encoded for
-//! them where it can be; where it can't, it's copied without them. A sound
-//! delay has the media sent other than as it is, where it can be.
+//! them where it can be; where it can't, it's copied without them. Video
+//! re-encoded is turned and shaped as its file says, and so is video a
+//! copy would show otherwise, where it can be. A sound delay has the media
+//! sent other than as it is, where it can be.
 
 use crate::Error;
 use crate::adjust::Adjustments;
@@ -333,11 +335,15 @@ fn planned(
         Delivery::Hls(segments) => segments,
         _ => Segments::Ts,
     };
-    let adjustments = request.adjustments.as_ref();
+    let adjustments = video
+        .and_then(|stream| media.video(stream))
+        .and_then(|info| adjustments_for(info, request.adjustments));
     let video = video
         .map(|stream| match media.video(stream) {
-            Some(info) if draw => encoded_video(info, stream, profile, segments, adjustments),
-            _ => plan_video(media, stream, profile, segments, adjustments),
+            Some(info) if draw => {
+                encoded_video(info, stream, profile, segments, adjustments.as_ref())
+            }
+            _ => plan_video(media, stream, profile, segments, adjustments.as_ref()),
         })
         .transpose()?;
     Ok(Plan {
@@ -347,9 +353,30 @@ fn planned(
             .map(|stream| plan_audio(media, stream, profile, format(delivery)))
             .transpose()?,
         audio_delay: if delayed { request.audio_delay } else { 0.0 },
-        adjustments: adjusted(video.as_ref(), request.adjustments),
+        adjustments: adjusted(video.as_ref(), adjustments),
         video,
     })
+}
+
+/// What's done to `info`'s picture where it's re-encoded: what `requested`
+/// asks, which turns it as its file says already, at its own shape where
+/// that asks none; else what its file asks, if anything.
+fn adjustments_for(info: &VideoInfo, requested: Option<Adjustments>) -> Option<Adjustments> {
+    match requested {
+        Some(requested) => Some(Adjustments {
+            aspect: requested.aspect.or(info.own.aspect),
+            ..requested
+        }),
+        None => (info.own != Adjustments::default()).then_some(info.own),
+    }
+}
+
+/// Whether `info` copied into `segments` shows otherwise than its file
+/// says: MPEG-TS has no display matrix to turn it by, and neither keeps a
+/// shape its container alone gives.
+fn copy_misshapes(info: &VideoInfo, segments: Segments) -> bool {
+    info.container_aspect
+        || (segments == Segments::Ts && (info.own.turns != 0 || info.own.mirrored))
 }
 
 /// `adjustments`, where `video` is re-encoded for them to be done.
@@ -434,17 +461,22 @@ fn plan_video(
         .video(stream)
         .ok_or_else(|| Error::Unsupported(format!("stream {stream} isn't a video")))?;
     if fits(info, profile, false) && segments.carries_video(info.codec) {
-        return Ok(VideoPlan::Copy {
+        let copy = VideoPlan::Copy {
             stream,
             codec: info.codec,
-        });
+        };
+        // Re-encoded to show as its file says, where it can be.
+        if copy_misshapes(info, segments) {
+            return Ok(encoded_video(info, stream, profile, segments, adjustments).unwrap_or(copy));
+        }
+        return Ok(copy);
     }
     encoded_video(info, stream, profile, segments, adjustments)
 }
 
 /// Re-encode the video `plan` copies, with the picture subtitles and
-/// adjustments `request` asks for it can now have: for video with
-/// keyframes too far apart to cut it at.
+/// adjustments `request` asks for it can now have, turned and shaped as
+/// its file says: for video with keyframes too far apart to cut it at.
 pub(crate) fn re_encode_video(
     plan: &mut Plan,
     media: &MediaInfo,
@@ -456,17 +488,17 @@ pub(crate) fn re_encode_video(
     let info = media
         .video(stream)
         .ok_or_else(|| Error::Unsupported(format!("stream {stream} isn't a video")))?;
-    let adjustments = request.adjustments.as_ref();
+    let adjustments = adjustments_for(info, request.adjustments);
     let segments = plan.segments();
     plan.video = Some(encoded_video(
         info,
         stream,
         &request.profile,
         segments,
-        adjustments,
+        adjustments.as_ref(),
     )?);
     plan.subtitles = drawn(media, plan.video.as_ref(), request.subtitles.as_ref());
-    plan.adjustments = adjusted(plan.video.as_ref(), request.adjustments);
+    plan.adjustments = adjusted(plan.video.as_ref(), adjustments);
     Ok(())
 }
 

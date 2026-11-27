@@ -1625,6 +1625,59 @@ fn turns_and_mirrors_the_video_it_re_encodes() {
     assert!(squeezed > middle * 3.0, "{squeezed} vs {middle}");
 }
 
+/// Video goes as its file says to show it: turned by its display matrix,
+/// re-encoded where it's copied into MPEG-TS, which has none, and at its
+/// pixels' shape, re-encoded where a copy keeps it in neither.
+#[test]
+fn shows_video_as_its_file_says() {
+    let server = server();
+    let luma = |cast: &crate::Cast| {
+        let segment = get(&sibling(&cast.url(), "0.ts"));
+        assert_eq!(segment.status, 200);
+        decode(&segment.body, "ts").remove(0).1.remove(0)
+    };
+    let encoded = |cast: &crate::Cast| match cast.plan().video {
+        Some(VideoPlan::Encode { width, height, .. }) => Some((width, height)),
+        _ => None,
+    };
+    // A phone's, a quarter turn counterclockwise, as a viewer turning it
+    // would have it.
+    let turned = cast(&server, "shapes/turned.mp4", hls(Segments::Ts));
+    assert_eq!(encoded(&turned), Some((120, 160)));
+    let (video, _) = fetch(&turned.url(), Segments::Ts, 0);
+    assert_eq!((video.width, video.height), (120, 160));
+    let mut request = CastRequest::new(Source::File(fixture("clip.mp4")), hls(Segments::Ts));
+    request.adjustments = Some(Adjustments {
+        turns: 3,
+        ..Adjustments::default()
+    });
+    let asked = server.add(request, LOCALHOST).unwrap();
+    let (shown, wanted) = (luma(&turned), luma(&asked));
+    let apart = shown
+        .iter()
+        .zip(&wanted)
+        .map(|(a, b)| f64::from(a.abs_diff(*b)))
+        .sum::<f64>()
+        / shown.len() as f64;
+    assert!(apart < 2.0, "{apart}");
+    // Fragmented MP4 keeps its display matrix.
+    let kept = cast(&server, "shapes/turned.mp4", hls(Segments::Fmp4));
+    assert_eq!(encoded(&kept), None);
+
+    // Its coded pictures' shape, which a copy keeps, re-encoded wider.
+    let wide = cast(&server, "shapes/wide.mp4", hls(Segments::Ts));
+    assert_eq!(encoded(&wide), None);
+    let mut request = CastRequest::new(Source::File(fixture("shapes/wide.mp4")), hls(Segments::Ts));
+    request.adjustments = Some(Adjustments::default());
+    let wide = server.add(request, LOCALHOST).unwrap();
+    assert_eq!(encoded(&wide), Some((214, 120)));
+    let (video, _) = fetch(&wide.url(), Segments::Ts, 0);
+    assert_eq!((video.width, video.height), (214, 120));
+    // Its container's alone, which a copy loses.
+    let container = cast(&server, "shapes/wide.mkv", hls(Segments::Fmp4));
+    assert_eq!(encoded(&container), Some((214, 120)));
+}
+
 #[test]
 fn serves_subtitles_from_a_track_with_hls() {
     let server = server();
