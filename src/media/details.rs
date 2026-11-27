@@ -3,11 +3,12 @@
 
 use std::ffi::{CStr, c_char, c_int};
 
-use ffmpeg::ffi;
 use ffmpeg::util::{color, format::Pixel, format::Sample};
+use ffmpeg::{codec, ffi};
 use ffmpeg_next as ffmpeg;
 
 use super::colors::Colors;
+use super::enhancement::Configuration;
 
 /// The file or stream as a whole.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -34,6 +35,9 @@ pub struct VideoDetails {
     /// Full range ("pc") rather than video range ("tv"), if it says.
     pub full_range: Option<bool>,
     pub bit_rate: Option<u64>,
+    /// Dolby Vision, which Plays reshapes into HDR whatever its transfer
+    /// says: profile 5's says nothing.
+    pub dolby_vision: bool,
 }
 
 /// The audio stream playing.
@@ -86,7 +90,13 @@ impl VideoDetails {
                 .and_then(|transfer| transfer.name()),
             full_range,
             bit_rate: positive(decoder.bit_rate() as i64),
+            dolby_vision: Configuration::of(&codec::Parameters::from(decoder)).is_some(),
         }
+    }
+
+    /// Whether Plays shows it as HDR: PQ or HLG, or Dolby Vision.
+    pub fn hdr(&self) -> bool {
+        self.dolby_vision || matches!(self.transfer, Some("smpte2084" | "arib-std-b67"))
     }
 }
 
@@ -193,3 +203,7 @@ pub(super) unsafe fn string(name: *const c_char) -> Option<String> {
     let name = unsafe { CStr::from_ptr(name) }.to_string_lossy();
     (!name.is_empty()).then(|| name.into_owned())
 }
+
+#[cfg(test)]
+#[path = "tests/details.rs"]
+mod tests;

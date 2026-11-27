@@ -65,6 +65,11 @@ fn bends_the_picture_there_by_the_gamma_for_its_kind_of_video() {
         bent(&sideways(Some("arib-std-b67"))),
         Some(f64::from(0.8_f32))
     );
+    // Dolby Vision profile 5, whose transfer says nothing, shows here as
+    // HDR, reshaped.
+    let mut profile_5 = sideways(None);
+    profile_5.video_details.as_mut().unwrap().dolby_vision = true;
+    assert_eq!(bent(&profile_5), Some(f64::from(0.8_f32)));
     // Turned as the file says once it is bent: the device is sent the
     // picture as it shows.
     let there = picture_adjustments(&Adjustments::default(), &sideways(None), &settings);

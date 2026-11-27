@@ -66,6 +66,7 @@ fn shows_the_file_its_streams_and_how_they_play() {
             transfer: Some("bt709"),
             full_range: Some(false),
             bit_rate: Some(2_300_000),
+            dolby_vision: false,
         }),
         audio_details: Some(AudioDetails {
             profile: Some("LC".to_owned()),

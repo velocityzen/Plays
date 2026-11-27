@@ -27,6 +27,7 @@ use crate::cast::target::FOLLOW_POLL;
 use crate::cast::{Casting, Changes, Device, Error, Link, Phase, Request, Shows, SubtitleChoice};
 use crate::media::Source;
 use crate::media::decoder::MediaInfo;
+use crate::media::details::VideoDetails;
 use crate::media::output::DeviceInfo;
 use crate::media::tracks::TrackKind;
 use crate::settings::{AudioDevice, Settings};
@@ -822,11 +823,8 @@ fn picture_adjustments(
     if !info.has_video {
         return None;
     }
-    let hdr = info
-        .video_details
-        .as_ref()
-        .and_then(|details| details.transfer)
-        .is_some_and(|transfer| matches!(transfer, "smpte2084" | "arib-std-b67"));
+    // The gamma for the video as it shows here.
+    let hdr = info.video_details.as_ref().is_some_and(VideoDetails::hdr);
     let gamma = settings.gamma()[usize::from(hdr)];
     if *adjustments == Adjustments::default() && gamma == 1.0 {
         return None;
