@@ -121,3 +121,41 @@ fn dolby_vision_is_tone_mapped_to_its_mastering_display() {
         assert!(apart(pixel, fitted) <= 1, "{pixel:?}, not {fitted:?}");
     }
 }
+
+#[test]
+fn sizes_frames_for_display() {
+    let square = Rational::new(1, 1);
+    assert_eq!(output_size(1920, 1080, square, None), (1920, 1080));
+    assert_eq!(output_size(3840, 2160, square, Some(1080)), (1920, 1080));
+    // Portrait video is capped on its short side too.
+    assert_eq!(output_size(1080, 1920, square, Some(720)), (720, 1280));
+    // Anamorphic DVD: 720x480 with 32:27 pixels is 853x480 on screen (kept even).
+    assert_eq!(
+        output_size(720, 480, Rational::new(32, 27), None),
+        (852, 480)
+    );
+    // Unknown aspect ratio is treated as square.
+    assert_eq!(output_size(641, 361, Rational::new(0, 1), None), (640, 360));
+}
+
+#[test]
+fn stretches_frames_by_their_pixels_shape_only_so_far() {
+    // Pixels at most 16 times as wide, or as narrow, as square.
+    let hd = |sar| output_size(1920, 1080, sar, None);
+    assert_eq!(hd(Rational::new(100, 1)), (30720, 1080));
+    assert_eq!(hd(Rational::new(16, 1)), (30720, 1080));
+    assert_eq!(hd(Rational::new(1, 100)), (120, 1080));
+    // No bigger than 8K, its shape kept.
+    assert_eq!(
+        output_size(7680, 4320, Rational::new(2, 1), None),
+        (11216, 3154)
+    );
+    let square = Rational::new(1, 1);
+    assert_eq!(output_size(8192, 4320, square, None), (8192, 4320));
+    // Or than decoded, where that's bigger.
+    assert_eq!(output_size(15360, 8640, square, None), (15360, 8640));
+    assert_eq!(
+        output_size(15360, 8640, Rational::new(4, 3), None),
+        (17736, 7482)
+    );
+}

@@ -10,7 +10,6 @@ use std::time::{Duration, Instant};
 use ffmpeg_next::Rational;
 
 use super::audio::Mixer;
-use super::decoder::output_size;
 use super::external;
 use super::orientation::Orientation;
 use super::output::{self, AudioOutput};
@@ -1915,22 +1914,6 @@ fn reports_unplayable_files() {
         player.error().is_some()
     }));
     std::fs::remove_file(path).ok();
-}
-
-#[test]
-fn sizes_frames_for_display() {
-    let square = Rational::new(1, 1);
-    assert_eq!(output_size(1920, 1080, square, None), (1920, 1080));
-    assert_eq!(output_size(3840, 2160, square, Some(1080)), (1920, 1080));
-    // Portrait video is capped on its short side too.
-    assert_eq!(output_size(1080, 1920, square, Some(720)), (720, 1280));
-    // Anamorphic DVD: 720x480 with 32:27 pixels is 853x480 on screen (kept even).
-    assert_eq!(
-        output_size(720, 480, Rational::new(32, 27), None),
-        (852, 480)
-    );
-    // Unknown aspect ratio is treated as square.
-    assert_eq!(output_size(641, 361, Rational::new(0, 1), None), (640, 360));
 }
 
 /// A file that says to turn its pictures (as phones do) reports which way up

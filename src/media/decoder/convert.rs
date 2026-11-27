@@ -195,24 +195,41 @@ fn scale_to_bgra(
     Ok(pixels)
 }
 
+/// How many times wider or narrower than square a pixel is taken to be at
+/// most: past any anamorphic lens's, so a file can't stretch a frame to
+/// hundreds of megabytes.
+const MOST_PIXEL_SHAPE: f64 = 16.0;
+
+/// Pixels a frame is stretched to at most: DCI 8K's.
+const MOST_PIXELS: f64 = 8192.0 * 4320.0;
+
 /// Size to convert a frame to: corrects non-square pixels and applies the
-/// resolution cap to the shorter side, keeping both sides even.
+/// resolution cap to the shorter side, keeping both sides even. No bigger
+/// than it was decoded, or than 8K, whatever shape its pixels are.
 pub(crate) fn output_size(
     width: u32,
     height: u32,
     sar: Rational,
     max_short_side: Option<u32>,
 ) -> (u32, u32) {
-    let sar = rational(sar).unwrap_or(1.0);
-    let mut w = width as f64 * sar;
-    let mut h = height as f64;
+    let sar = rational(sar).map_or(1.0, |sar| {
+        sar.clamp(1.0 / MOST_PIXEL_SHAPE, MOST_PIXEL_SHAPE)
+    });
+    let mut w = f64::from(width) * sar;
+    let mut h = f64::from(height);
     if let Some(max) = max_short_side {
         let short = w.min(h);
-        if short > max as f64 {
-            let scale = max as f64 / short;
+        if short > f64::from(max) {
+            let scale = f64::from(max) / short;
             w *= scale;
             h *= scale;
         }
+    }
+    let most = (f64::from(width) * f64::from(height)).max(MOST_PIXELS);
+    if w * h > most {
+        let scale = (most / (w * h)).sqrt();
+        w *= scale;
+        h *= scale;
     }
     let even = |v: f64| ((v.round() as u32) & !1).max(2);
     (even(w), even(h))

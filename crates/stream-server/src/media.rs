@@ -299,8 +299,7 @@ fn video_info(stream: &ffmpeg::format::stream::Stream) -> VideoInfo {
         )
     };
     let (turns, mirrored) = matrix.as_ref().and_then(orientation).unwrap_or((0, false));
-    // The container's first, as in FFmpeg's own players.
-    let pixel = container_shape.or(coded_shape).unwrap_or(1.0);
+    let pixel = pixel_shape(container_shape, coded_shape);
     let own = Adjustments {
         turns,
         mirrored,
@@ -365,6 +364,18 @@ pub(crate) fn frame_rate(stream: &ffmpeg::format::stream::Stream) -> Option<ffmp
 /// A pixel's width over its height, where `ratio` says one.
 fn shape(ratio: ffi::AVRational) -> Option<f64> {
     (ratio.num > 0 && ratio.den > 0).then(|| f64::from(ratio.num) / f64::from(ratio.den))
+}
+
+/// How many times wider or narrower than square a pixel is taken to be at
+/// most, as the player takes it.
+const MOST_PIXEL_SHAPE: f64 = 16.0;
+
+/// A stream's pixels' shape: its container's, else its pictures', as in
+/// FFmpeg's own players, square where neither says.
+fn pixel_shape(container: Option<f64>, coded: Option<f64>) -> f64 {
+    container.or(coded).map_or(1.0, |shape| {
+        shape.clamp(1.0 / MOST_PIXEL_SHAPE, MOST_PIXEL_SHAPE)
+    })
 }
 
 /// The quarter turns clockwise, after mirroring if so, nearest to what

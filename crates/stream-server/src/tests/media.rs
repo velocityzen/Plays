@@ -227,6 +227,12 @@ fn reads_no_shape_from_too_little() {
     assert!(!read(120, (0, 1), (4, 3)).1, "the coded pictures say it");
     let coded = read(120, (0, 1), (4, 3)).0.expect("the coded shape");
     assert!((coded - 16.0 / 9.0).abs() < 1e-9, "{coded}");
+    // Pixels at most 16 times as wide, or as narrow, as square, as the
+    // player takes them.
+    let wide = read(120, (100, 1), (0, 1)).0.expect("a wide shape");
+    assert!((wide - 160.0 * 16.0 / 120.0).abs() < 1e-9, "{wide}");
+    let narrow = read(120, (0, 1), (1, 100)).0.expect("a narrow shape");
+    assert!((narrow - 160.0 / 16.0 / 120.0).abs() < 1e-9, "{narrow}");
 }
 
 /// Opened `name`, in `tests/fixtures`, and its video's index.
