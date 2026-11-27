@@ -322,13 +322,15 @@ impl Overlay {
         let Some((_, patches)) = &self.patches else {
             return;
         };
-        let stride = frame.stride(0);
+        let (luma, stride) =
+            ffmpeg_safe::plane_mut(frame, 0).expect("a frame made here, stored top down");
         for patch in patches {
-            blend_luma(frame.data_mut(0), stride, patch, ten_bit);
+            blend_luma(luma, stride, patch, ten_bit);
         }
-        let stride = frame.stride(1);
+        let (chroma, stride) =
+            ffmpeg_safe::plane_mut(frame, 1).expect("a frame made here, stored top down");
         for patch in patches {
-            blend_chroma(frame.data_mut(1), stride, patch, ten_bit);
+            blend_chroma(chroma, stride, patch, ten_bit);
         }
     }
 }

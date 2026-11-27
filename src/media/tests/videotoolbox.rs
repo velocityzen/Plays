@@ -1,12 +1,16 @@
 use super::*;
 use crate::media::dovi::tests::rpu_frame;
 use crate::media::tests::attached_peak;
+use crate::media::yuv::tests::stored_bottom_up;
 
 /// A grey 10-bit BT.2020 PQ frame.
 fn pq_frame() -> frame::Video {
     let mut frame = frame::Video::new(Pixel::P010LE, 16, 16);
     for plane in 0..2 {
-        frame.data_mut(plane).fill(0x80);
+        ffmpeg_safe::plane_mut(&mut frame, plane)
+            .unwrap()
+            .0
+            .fill(0x80);
     }
     tag_pq(&mut frame);
     frame
@@ -46,8 +50,8 @@ fn a_surface_carries_its_videos_peak_and_gives_it_back_read() {
 fn planar_frame(width: u32, height: u32) -> frame::Video {
     let mut frame = frame::Video::new(Pixel::YUV420P10LE, width, height);
     for plane in 0..3 {
-        let stride = frame.stride(plane);
-        for (row, samples) in frame.data_mut(plane).chunks_mut(stride).enumerate() {
+        let (data, stride) = ffmpeg_safe::plane_mut(&mut frame, plane).unwrap();
+        for (row, samples) in data.chunks_mut(stride).enumerate() {
             for (x, sample) in samples.as_chunks_mut::<2>().0.iter_mut().enumerate() {
                 let value = (plane * 389 + row * 61 + x * 7) % 1024;
                 *sample = (value as u16).to_le_bytes();
@@ -59,7 +63,7 @@ fn planar_frame(width: u32, height: u32) -> frame::Video {
 }
 
 /// The first `bytes` of each of a plane's `rows`.
-fn rows(plane: &[u8], stride: usize, rows: usize, bytes: usize) -> Vec<&[u8]> {
+fn rows((plane, stride): (&[u8], usize), rows: usize, bytes: usize) -> Vec<&[u8]> {
     plane
         .chunks(stride)
         .take(rows)
@@ -72,8 +76,8 @@ fn rows(plane: &[u8], stride: usize, rows: usize, bytes: usize) -> Vec<&[u8]> {
 fn p010_of(frame: &frame::Video) -> (Vec<Vec<u8>>, Vec<Vec<u8>>) {
     let (w, h) = (frame.width() as usize, frame.height() as usize);
     let sample = |plane: usize, x: usize, y: usize| {
-        let at = y * frame.stride(plane) + 2 * x;
-        let data = frame.data(plane);
+        let (data, stride) = ffmpeg_safe::plane(frame, plane).unwrap();
+        let at = y * stride + 2 * x;
         (u16::from_le_bytes([data[at], data[at + 1]]) << 6).to_le_bytes()
     };
     let luma = (0..h)
@@ -97,20 +101,21 @@ fn a_10_bit_frame_goes_into_p010_sample_for_sample() {
         let (luma_stride, chroma_stride) = (2 * w + 6, 4 * w.div_ceil(2) + 10);
         let mut luma = vec![0xab; luma_stride * h];
         let mut chroma = vec![0xab; chroma_stride * h.div_ceil(2)];
-        to_p010(
+        let copied = to_p010(
             &frame,
             (&mut luma, luma_stride),
             (&mut chroma, chroma_stride),
         );
+        assert!(copied.is_some(), "{width} x {height}");
         let pairs = 4 * w.div_ceil(2);
         let (expected_luma, expected_chroma) = p010_of(&frame);
         assert_eq!(
-            rows(&luma, luma_stride, h, 2 * w),
+            rows((&luma, luma_stride), h, 2 * w),
             expected_luma,
             "{width} x {height}"
         );
         assert_eq!(
-            rows(&chroma, chroma_stride, h.div_ceil(2), pairs),
+            rows((&chroma, chroma_stride), h.div_ceil(2), pairs),
             expected_chroma,
             "{width} x {height}"
         );
@@ -141,8 +146,11 @@ fn a_10_bit_frame_goes_into_p010_sample_for_sample() {
     .run(&frame, &mut swscaled)
     .unwrap();
     let (luma, chroma) = p010_of(&frame);
-    assert_eq!(rows(swscaled.data(0), swscaled.stride(0), 8, 32), luma);
-    assert_eq!(rows(swscaled.data(1), swscaled.stride(1), 4, 32), chroma);
+    assert_eq!(rows(ffmpeg_safe::plane(&swscaled, 0).unwrap(), 8, 32), luma);
+    assert_eq!(
+        rows(ffmpeg_safe::plane(&swscaled, 1).unwrap(), 4, 32),
+        chroma
+    );
 }
 
 #[test]
@@ -152,11 +160,33 @@ fn an_uploaded_10_bit_frame_shows_its_own_samples() {
     let read = converter.upload(&frame, 16, 8).unwrap().read().unwrap();
     assert_eq!(read.format(), Pixel::P010LE);
     let (luma, chroma) = p010_of(&frame);
-    assert_eq!(rows(read.data(0), read.stride(0), 8, 32), luma);
-    assert_eq!(rows(read.data(1), read.stride(1), 4, 32), chroma);
+    assert_eq!(rows(ffmpeg_safe::plane(&read, 0).unwrap(), 8, 32), luma);
+    assert_eq!(rows(ffmpeg_safe::plane(&read, 1).unwrap(), 4, 32), chroma);
     // Smaller, it's scaled.
     let surface = converter.upload(&frame, 8, 4).unwrap();
     assert_eq!(surface.size(), (8, 4));
+}
+
+#[test]
+fn an_uploaded_frame_stored_bottom_up_shows_the_right_way_up() {
+    let mut converter = Converter::new().unwrap();
+    let (luma, chroma) = p010_of(&planar_frame(16, 8));
+    // After one stored top down, as it is.
+    converter.upload(&planar_frame(16, 8), 16, 8).unwrap();
+    // Every plane, then luma alone, as rawvideo's BottomUp stores it.
+    for planes in [3, 1] {
+        let stored = stored_bottom_up(planar_frame(16, 8), planes);
+        let (mut y, mut uv) = (vec![0; 32 * 8], vec![0; 32 * 4]);
+        assert!(to_p010(&stored, (&mut y, 32), (&mut uv, 32)).is_none());
+        let read = converter.upload(&stored, 16, 8).unwrap().read().unwrap();
+        assert_eq!(read.format(), Pixel::P010LE);
+        let (read_luma, read_chroma) = (
+            rows(ffmpeg_safe::plane(&read, 0).unwrap(), 8, 32),
+            rows(ffmpeg_safe::plane(&read, 1).unwrap(), 4, 32),
+        );
+        assert_eq!(read_luma, luma, "{planes} planes");
+        assert_eq!(read_chroma, chroma, "{planes} planes");
+    }
 }
 
 #[test]

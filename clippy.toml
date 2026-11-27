@@ -21,4 +21,12 @@ disallowed-methods = [
     { path = "ffmpeg_next::util::dictionary::immutable::Ref::get", reason = "it takes a value for UTF-8 without looking: use ffmpeg_safe::tag" },
     { path = "ffmpeg_next::util::dictionary::immutable::Ref::iter", reason = "it takes values for UTF-8 without looking: use ffmpeg_safe::tag" },
     { path = "ffmpeg_next::util::dictionary::iter::Iter::new", reason = "it takes values for UTF-8 without looking: use ffmpeg_safe::tag" },
+    # A plane's linesize is taken for a usize, and a whole one sliced a row: a
+    # frame stored bottom up (a negative linesize) makes a slice far longer
+    # than memory, and a cropped one's last row can run past its buffer.
+    { path = "ffmpeg_next::util::frame::video::Video::data", reason = "a negative linesize slices past memory: use ffmpeg_safe::plane" },
+    { path = "ffmpeg_next::util::frame::video::Video::data_mut", reason = "a negative linesize slices past memory: use ffmpeg_safe::plane_mut" },
+    { path = "ffmpeg_next::util::frame::video::Video::stride", reason = "a negative linesize wraps: use ffmpeg_safe::plane" },
+    { path = "ffmpeg_next::util::frame::video::Video::plane", reason = "a negative linesize slices past memory: use ffmpeg_safe::plane" },
+    { path = "ffmpeg_next::util::frame::video::Video::plane_mut", reason = "a negative linesize slices past memory: use ffmpeg_safe::plane_mut" },
 ]

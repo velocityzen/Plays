@@ -212,8 +212,8 @@ fn reshapes_dolby_visions_ipt_into_hdr10_or_sdr() {
     // PQ's code for 203 nits.
     let white = rpu_frame([833, neutral, neutral]);
     let chroma = |frame: &ffmpeg::frame::Video| {
-        let data = frame.data(1);
-        let at = frame.stride(1) * 4 + 16;
+        let (data, stride) = ffmpeg_safe::plane(frame, 1).unwrap();
+        let at = stride * 4 + 16;
         [0, 2].map(|i| u16::from_le_bytes([data[at + i], data[at + i + 1]]) >> 6)
     };
 

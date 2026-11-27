@@ -271,10 +271,10 @@ pub struct Converter {
 }
 
 /// Frames decoded in software, copied into pixel buffers for the session,
-/// for frames of one format, size and range: by swscale, or, for 10-bit
-/// 4:2:0 already, by `to_p010`.
+/// for frames of one format, size and range, stored one way up: by
+/// swscale, or, for 10-bit 4:2:0 already stored top down, by `to_p010`.
 struct Upload {
-    key: (Pixel, u32, u32, bool),
+    key: (Pixel, u32, u32, bool, bool),
     context: Option<scaling::Context>,
     pool: CVPixelBufferPool,
 }
@@ -365,13 +365,21 @@ impl Converter {
     }
 
     /// `frame`'s samples in a 10-bit 4:2:0 pixel buffer of its size, in its
-    /// own range: only copied, if it's 10-bit 4:2:0 already.
+    /// own range: only copied, if it's 10-bit 4:2:0 already, stored top
+    /// down. One stored bottom up, swscale turns the right way up.
     fn copy(&mut self, frame: &frame::Video) -> Result<CVPixelBuffer> {
         let full_range = Colors::of_frame(frame).range == color::Range::JPEG;
-        let key = (frame.format(), frame.width(), frame.height(), full_range);
+        let bottom_up = ffmpeg_safe::bottom_up(frame);
+        let key = (
+            frame.format(),
+            frame.width(),
+            frame.height(),
+            full_range,
+            bottom_up,
+        );
         if self.upload.as_ref().is_none_or(|upload| upload.key != key) {
             let (format, width, height) = (key.0, key.1, key.2);
-            let context = (format != Pixel::YUV420P10LE)
+            let context = (format != Pixel::YUV420P10LE || bottom_up)
                 .then(|| {
                     scaling::Context::get(
                         format,
@@ -412,7 +420,8 @@ impl Converter {
         // SAFETY: locked, the buffer's two planes are its rows times the
         // bytes a row, the luma and chroma planes of P010 at the frame's
         // size; the context reads `frame`'s planes, as long as their
-        // strides say, for the format and size its key holds it to.
+        // strides say (either way through memory), for the format and size
+        // its key holds it to.
         let made = unsafe {
             let planes = [
                 buffer.get_base_address_of_plane(0).cast::<u8>(),
@@ -441,8 +450,10 @@ impl Converter {
                         stride,
                     )
                 };
-                to_p010(frame, plane(0), plane(1));
-                frame.height() as c_int
+                match to_p010(frame, plane(0), plane(1)) {
+                    Some(()) => frame.height() as c_int,
+                    None => -1,
+                }
             }
         };
         buffer.unlock_base_address(0);
@@ -625,12 +636,21 @@ fn tag_converted(source: &CVPixelBuffer, destination: &CVPixelBuffer, hdr: bool)
 /// A 10-bit 4:2:0 frame's planes into P010's `luma` and `chroma`, each a
 /// plane and the bytes a row of it: samples in the high bits of 16, the
 /// two chroma planes interleaved, rows in parallel. As swscale makes them,
-/// which takes one thread longer than an 8K frame lasts.
-fn to_p010(frame: &frame::Video, luma: (&mut [u8], usize), chroma: (&mut [u8], usize)) {
+/// which takes one thread longer than an 8K frame lasts. Nothing where a
+/// plane can't be sliced: one stored bottom up, swscale takes.
+fn to_p010(
+    frame: &frame::Video,
+    luma: (&mut [u8], usize),
+    chroma: (&mut [u8], usize),
+) -> Option<()> {
     let (width, height) = (frame.width() as usize, frame.height() as usize);
     let (chroma_width, chroma_height) = (width.div_ceil(2), height.div_ceil(2));
     let high = |sample: &[u8; 2]| (u16::from_le_bytes(*sample) << 6).to_le_bytes();
-    let (y, y_stride) = (frame.data(0), frame.stride(0));
+    let [(y, y_stride), (u, u_stride), (v, v_stride)] = [
+        ffmpeg_safe::plane(frame, 0)?,
+        ffmpeg_safe::plane(frame, 1)?,
+        ffmpeg_safe::plane(frame, 2)?,
+    ];
     luma.0
         .par_chunks_mut(luma.1)
         .zip(y.par_chunks(y_stride))
@@ -646,12 +666,11 @@ fn to_p010(frame: &frame::Video, luma: (&mut [u8], usize), chroma: (&mut [u8], u
                 *out = high(sample);
             }
         });
-    let (u, v) = (frame.data(1), frame.data(2));
     chroma
         .0
         .par_chunks_mut(chroma.1)
-        .zip(u.par_chunks(frame.stride(1)))
-        .zip(v.par_chunks(frame.stride(2)))
+        .zip(u.par_chunks(u_stride))
+        .zip(v.par_chunks(v_stride))
         .take(chroma_height)
         .for_each(|((out, u), v)| {
             let (u, v) = (
@@ -664,6 +683,7 @@ fn to_p010(frame: &frame::Video, luma: (&mut [u8], usize), chroma: (&mut [u8], u
                 *out = [u0, u1, v0, v1];
             }
         });
+    Some(())
 }
 
 /// Whether `buffer` is in `format`, `width` x `height`, BT.2020's matrix

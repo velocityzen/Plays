@@ -263,8 +263,9 @@ impl Composer {
         enhancement: &frame::Video,
         out: &mut frame::Video,
     ) -> Result<()> {
-        let bl = Planes::of(base).context("the base layer isn't 10-bit 4:2:0")?;
-        let el = Planes::of(enhancement).context("the enhancement layer isn't 10-bit 4:2:0")?;
+        let bl = Planes::of(base).context("the base layer isn't 10-bit 4:2:0, top down")?;
+        let el = Planes::of(enhancement)
+            .context("the enhancement layer isn't 10-bit 4:2:0, top down")?;
         let size = (bl.0[0].width, bl.0[0].height);
         let upscale = match (el.0[0].width, el.0[0].height) {
             el_size if el_size == size => false,
@@ -285,9 +286,11 @@ impl Composer {
             *out = frame::Video::new(Pixel::YUV420P10LE, width, height);
         }
         for c in 0..3 {
-            let (stride, width) = (out.stride(c), bl.0[c].width);
+            let width = bl.0[c].width;
             let layer = Codes::of(&el.0[c]);
-            picture::in_rows(out.data_mut(c), stride, |y, row| {
+            let (plane, stride) =
+                ffmpeg_safe::plane_mut(out, c).context("the frame made for it has no plane")?;
+            picture::in_rows(plane, stride, |y, row| {
                 let el_row = enhancement_row(&layer, c > 0, y, width, upscale);
                 let mapped = self.mapped_row(&bl, c, y);
                 let (row, _) = row[..width * 2].as_chunks_mut::<2>();
@@ -628,21 +631,25 @@ impl Codes {
     }
 }
 
-/// A frame's three components, if it is 10-bit 4:2:0 in memory.
+/// A frame's three components, if it is 10-bit 4:2:0 in memory, stored
+/// top down.
 struct Planes<'a>([Plane<'a>; 3]);
 
 impl<'a> Planes<'a> {
     fn of(frame: &'a frame::Video) -> Option<Self> {
         let (width, height) = (frame.width() as usize, frame.height() as usize);
         let (chroma_width, chroma_height) = (width.div_ceil(2), height.div_ceil(2));
-        let plane = |index: usize, width, height, step, first, shift| Plane {
-            data: frame.data(index),
-            stride: frame.stride(index),
-            width,
-            height,
-            step,
-            first,
-            shift,
+        let plane = |index: usize, width, height, step, first, shift| {
+            let (data, stride) = ffmpeg_safe::plane(frame, index)?;
+            Some(Plane {
+                data,
+                stride,
+                width,
+                height,
+                step,
+                first,
+                shift,
+            })
         };
         let planes_in = match frame.format() {
             Pixel::YUV420P10LE => 3,
@@ -654,14 +661,14 @@ impl<'a> Planes<'a> {
         }
         let planes = match frame.format() {
             Pixel::YUV420P10LE => [
-                plane(0, width, height, 1, 0, 0),
-                plane(1, chroma_width, chroma_height, 1, 0, 0),
-                plane(2, chroma_width, chroma_height, 1, 0, 0),
+                plane(0, width, height, 1, 0, 0)?,
+                plane(1, chroma_width, chroma_height, 1, 0, 0)?,
+                plane(2, chroma_width, chroma_height, 1, 0, 0)?,
             ],
             Pixel::P010LE => [
-                plane(0, width, height, 1, 0, 6),
-                plane(1, chroma_width, chroma_height, 2, 0, 6),
-                plane(1, chroma_width, chroma_height, 2, 1, 6),
+                plane(0, width, height, 1, 0, 6)?,
+                plane(1, chroma_width, chroma_height, 2, 0, 6)?,
+                plane(1, chroma_width, chroma_height, 2, 1, 6)?,
             ],
             _ => return None,
         };

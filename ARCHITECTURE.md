@@ -120,7 +120,7 @@ on its own. Clippy lints in the root `Cargo.toml` apply to all.
 | `crates/airplay` | Finds, pairs with and sends to AirPlay receivers |
 | `crates/network` | What the casting crates share: connecting, connections taken, bounded HTTP and RTSP, mDNS |
 | `crates/ffmpeg-link` | Links the static FFmpeg into Plays and the stream server's tests |
-| `crates/ffmpeg-safe` | Sound reads of what ffmpeg-next reads unsoundly: channel layouts, tags |
+| `crates/ffmpeg-safe` | Sound reads of what ffmpeg-next reads unsoundly: channel layouts, tags, frame planes |
 | `crates/completions` | Shell completion scripts for a clap command line |
 | `crates/file-types` | The formats Plays opens, and what macOS and Linux are told of them, with an icon each |
 | `crates/updater` | An app updating itself: a signed feed, whole and delta update files, swapping one in; and `updater`, which makes a release |
@@ -306,8 +306,10 @@ flowchart LR
 - `src/media/colors.rs`: colors read as numbers, as ffmpeg-next's enums
   have gaps a file can hit; `clippy.toml` bans its getters
 - `crates/ffmpeg-safe`: a frame's channel layout copied out of it, as one
-  in an uncommon order points into the frame, and tags read as text in
-  whatever encoding they're in; `clippy.toml` bans the getters that don't
+  in an uncommon order points into the frame, tags read as text in
+  whatever encoding they're in, and a frame's planes sliced to its
+  pictures, none stored bottom up; `clippy.toml` bans the getters that
+  don't
 - `src/media/tracks.rs`: tracks, their menu names, and languages
 - `src/media/picking.rs`: which tracks play (`Wanted`): those picked
   before (`Picked`), else preferred languages, else FFmpeg's best

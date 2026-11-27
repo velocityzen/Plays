@@ -68,8 +68,8 @@ fn hands_over_the_formats_the_gpu_converts() {
 fn numbered(width: u32, height: u32) -> frame::Video {
     let mut frame = frame::Video::new(Pixel::YUV420P, width, height);
     for plane in 0..frame.planes() {
-        let stride = frame.stride(plane);
-        for (y, row) in frame.data_mut(plane).chunks_mut(stride).enumerate() {
+        let (data, stride) = ffmpeg_safe::plane_mut(&mut frame, plane).unwrap();
+        for (y, row) in data.chunks_mut(stride).enumerate() {
             for (x, sample) in row.iter_mut().enumerate() {
                 *sample = (plane * 100 + y * 10 + x) as u8;
             }
@@ -81,12 +81,20 @@ fn numbered(width: u32, height: u32) -> frame::Video {
 /// `frame`'s first `planes` planes stored bottom up, the picture the same:
 /// their rows in reverse, the first last in memory, and their linesizes
 /// negative.
-fn stored_bottom_up(mut frame: frame::Video, planes: usize) -> frame::Video {
+pub(crate) fn stored_bottom_up(mut frame: frame::Video, planes: usize) -> frame::Video {
     for plane in 0..planes {
-        let (stride, rows) = (frame.stride(plane), frame.plane_height(plane) as usize);
-        let data = frame.data_mut(plane);
-        let reversed: Vec<u8> = data.chunks(stride).rev().flatten().copied().collect();
-        data.copy_from_slice(&reversed);
+        let (data, stride) = ffmpeg_safe::plane_mut(&mut frame, plane).unwrap();
+        let rows = data.len().div_ceil(stride);
+        let width = data.len() - stride * (rows - 1);
+        let reversed: Vec<u8> = data
+            .chunks(stride)
+            .rev()
+            .flat_map(|row| &row[..width])
+            .copied()
+            .collect();
+        for (row, picture) in data.chunks_mut(stride).zip(reversed.chunks(width)) {
+            row[..width].copy_from_slice(picture);
+        }
         // SAFETY: the plane holds `rows` rows of `stride` bytes; from the
         // last one's start, a negative linesize steps back through them.
         unsafe {
@@ -106,7 +114,7 @@ fn hands_over_a_frame_stored_bottom_up_the_right_way_up() {
 
     // Every plane, as Dxtory's flipped frames are.
     let stored = stored_bottom_up(numbered(8, 6), 3);
-    assert!(stored.stride(2).cast_signed() < 0, "stored bottom up");
+    assert!(ffmpeg_safe::plane(&stored, 2).is_none(), "stored bottom up");
     let picture = converter.convert(&stored, None).unwrap().unwrap();
     assert_eq!(picture.size(), (8, 6));
     assert_eq!(picture.frame.planes(), upright.frame.planes());
@@ -138,7 +146,8 @@ fn a_pictures_planes_read_back_are_its_frame_tagged_as_it_was() {
             read.plane_height(plane) as usize,
         );
         let row = |frame: &frame::Video, y: usize| {
-            frame.data(plane)[y * frame.stride(plane)..][..width].to_vec()
+            let (data, stride) = ffmpeg_safe::plane(frame, plane).unwrap();
+            data[y * stride..][..width].to_vec()
         };
         for y in 0..rows {
             assert_eq!(row(&read, y), row(&tagged, y), "plane {plane}, row {y}");

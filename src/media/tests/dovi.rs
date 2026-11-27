@@ -73,8 +73,8 @@ pub(crate) fn rpu_frame(size: (u32, u32), codes: [u16; 3], source_max_pq: u16) -
     color.source_max_pq = source_max_pq;
     let mut frame = frame::Video::new(Pixel::P010LE, size.0, size.1);
     for (plane, codes) in [(0, &codes[..1]), (1, &codes[1..])] {
-        let stride = frame.stride(plane);
-        for row in frame.data_mut(plane).chunks_exact_mut(stride) {
+        let (data, stride) = ffmpeg_safe::plane_mut(&mut frame, plane).unwrap();
+        for row in data.chunks_mut(stride) {
             for (x, sample) in row.as_chunks_mut::<2>().0.iter_mut().enumerate() {
                 *sample = (codes[x % codes.len()] << 6).to_le_bytes();
             }

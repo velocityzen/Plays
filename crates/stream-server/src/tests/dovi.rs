@@ -78,9 +78,12 @@ pub(crate) fn rpu_frame(codes: [u16; 3]) -> frame::Video {
     let mut frame = frame::Video::new(Pixel::YUV420P10LE, 64, 32);
     frame.set_color_range(Range::JPEG);
     for (plane, code) in codes.into_iter().enumerate() {
-        let (stride, width) = (frame.stride(plane), frame.plane_width(plane) as usize);
-        let rows = frame.plane_height(plane) as usize;
-        for row in frame.data_mut(plane).chunks_mut(stride).take(rows) {
+        let (width, rows) = (
+            frame.plane_width(plane) as usize,
+            frame.plane_height(plane) as usize,
+        );
+        let (data, stride) = ffmpeg_safe::plane_mut(&mut frame, plane).unwrap();
+        for row in data.chunks_mut(stride).take(rows) {
             for sample in row[..width * 2].as_chunks_mut::<2>().0 {
                 *sample = code.to_le_bytes();
             }

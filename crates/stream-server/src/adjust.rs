@@ -165,23 +165,19 @@ fn turn(frame: &frame::Video, turns: u8, mirrored: bool) -> frame::Video {
     // Luma a sample a pixel; chroma a pair of them for a pixel of half
     // the size each way.
     for (plane, size, scale) in [(0, sample, 1), (1, sample * 2, 2)] {
+        let (data, from_stride) =
+            ffmpeg_safe::plane(frame, plane).expect("a frame made here, stored top down");
         let source = Plane {
-            stride: frame.stride(plane),
+            stride: from_stride,
             size: (
                 (width as usize).div_ceil(scale),
                 (height as usize).div_ceil(scale),
             ),
             pixel: size,
         };
-        let stride = turned.stride(plane);
-        turn_plane(
-            frame.data(plane),
-            &source,
-            turns,
-            mirrored,
-            turned.data_mut(plane),
-            stride,
-        );
+        let (target, stride) =
+            ffmpeg_safe::plane_mut(&mut turned, plane).expect("a frame made here, stored top down");
+        turn_plane(data, &source, turns, mirrored, target, stride);
     }
     turned
 }
@@ -232,8 +228,10 @@ pub(crate) fn turn_plane(
 /// Bend the luma of `frame`, NV12 or P010 in video range, by `gamma`.
 fn bend(frame: &mut frame::Video, gamma: f64) {
     let (width, height) = (frame.width() as usize, frame.height() as usize);
-    let (stride, ten_bit) = (frame.stride(0), frame.format() == Pixel::P010LE);
-    let rows = frame.data_mut(0).par_chunks_mut(stride).take(height);
+    let ten_bit = frame.format() == Pixel::P010LE;
+    let (luma, stride) =
+        ffmpeg_safe::plane_mut(frame, 0).expect("a frame made here, stored top down");
+    let rows = luma.par_chunks_mut(stride).take(height);
     if ten_bit {
         let table = table(64, 940, 1023, gamma);
         rows.for_each(|row| {

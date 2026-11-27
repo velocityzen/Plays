@@ -1008,7 +1008,8 @@ fn fits_hdr_to_sdr_for_a_device_not_given_it() {
     );
     let frame = first_frame(&cast, Segments::Ts);
     assert_eq!(crate::hdr::Tags::of(&frame), crate::hdr::tests::sdr_tags());
-    let luma = frame.data(0)[frame.stride(0) * 60 + 80];
+    let (data, stride) = ffmpeg_safe::plane(&frame, 0).unwrap();
+    let luma = data[stride * 60 + 80];
     assert!(luma > 210, "{luma}");
 }
 
@@ -1098,16 +1099,17 @@ fn reshapes_dolby_visions_ipt_for_a_device() {
         let sample = |x: usize| {
             let y = frame.height() as usize / 2;
             [(0, x, y), (1, x / 2, y / 2), (2, x / 2, y / 2)].map(|(plane, x, y)| {
-                let at = frame.stride(plane) * y;
+                let (data, stride) = ffmpeg_safe::plane(&frame, plane).unwrap();
+                let at = stride * y;
                 let (offset, range) = match plane {
                     0 => (64.0, 876.0),
                     _ => (512.0, 896.0),
                 };
                 if hdr.is_some() {
-                    let data = &frame.data(plane)[at + 2 * x..];
+                    let data = &data[at + 2 * x..];
                     (f64::from(u16::from_le_bytes([data[0], data[1]])) - offset) / range
                 } else {
-                    (f64::from(frame.data(plane)[at + x]) - offset / 4.0) / (range / 4.0)
+                    (f64::from(data[at + x]) - offset / 4.0) / (range / 4.0)
                 }
             })
         };
@@ -1794,9 +1796,8 @@ fn decode(bytes: &[u8], extension: &str) -> Vec<(f64, Vec<Vec<u8>>)> {
             let planes = (0..3)
                 .map(|plane| {
                     let width = frame.plane_width(plane) as usize;
-                    frame
-                        .data(plane)
-                        .chunks(frame.stride(plane))
+                    let (data, stride) = ffmpeg_safe::plane(&frame, plane).unwrap();
+                    data.chunks(stride)
                         .take(frame.plane_height(plane) as usize)
                         .flat_map(|row| row[..width].to_vec())
                         .collect()

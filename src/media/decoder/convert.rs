@@ -137,19 +137,18 @@ pub(in crate::media) fn convert_pixels(
     });
     scaler.context.run(frame, &mut scaler.output)?;
     let output = &scaler.output;
+    let plane = |index| ffmpeg_safe::plane(output, index).context("a scaled plane is missing");
     let pixels = match &reshaping {
         Some(reshaping) => reshaping.render(
             mapper,
-            [0, 1, 2].map(|plane| (output.data(plane), output.stride(plane))),
+            [plane(0)?, plane(1)?, plane(2)?],
             width as usize,
             height as usize,
         ),
-        None => mapper.run(
-            output.data(0),
-            output.stride(0),
-            width as usize,
-            height as usize,
-        ),
+        None => {
+            let (data, stride) = plane(0)?;
+            mapper.run(data, stride, width as usize, height as usize)
+        }
     };
     Ok((width, height, pixels))
 }

@@ -102,6 +102,19 @@ fn planes_are_seen_in_the_colors_they_are_tagged_with() {
     );
     let missing = [(&luma[..], 16)];
     assert!(frame_of(Pixel::NV12, size, &missing, untagged).is_err());
+    let narrow = [(&luma[..], 8), (&interleaved[..], 16)];
+    assert!(
+        frame_of(Pixel::NV12, size, &narrow, untagged).is_err(),
+        "rows narrower than the picture"
+    );
+    // Rows further apart, the last only as long as the picture.
+    let spaced: Vec<u8> = luma
+        .chunks(16)
+        .flat_map(|row| [row, &[0; 4]].concat())
+        .collect();
+    let spaced = [(&spaced[..spaced.len() - 4], 20), (&interleaved[..], 16)];
+    let frame = frame_of(Pixel::NV12, size, &spaced, untagged).unwrap();
+    assert_eq!(ffmpeg_safe::plane(&frame, 0).unwrap().0[..16], luma[..16]);
 }
 
 #[test]

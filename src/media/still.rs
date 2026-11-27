@@ -97,11 +97,15 @@ pub(super) fn frame_of(
         planes.len()
     );
     for (index, &(samples, stride)) in planes.iter().enumerate() {
-        let rows = frame.plane_height(index) as usize;
-        ensure!(samples.len() >= rows * stride, "plane {index} is short");
-        let into_stride = frame.stride(index);
-        let row = stride.min(into_stride);
-        let into = frame.data_mut(index);
+        let (into, into_stride) = ffmpeg_safe::plane_mut(&mut frame, index)
+            .with_context(|| format!("{format:?} has no plane {index} to write"))?;
+        // The picture's bytes a row: all the last row has.
+        let rows = into.len().div_ceil(into_stride);
+        let row = into.len() - (rows - 1) * into_stride;
+        ensure!(
+            row <= stride && samples.len() >= (rows - 1) * stride + row,
+            "plane {index} is short"
+        );
         for y in 0..rows {
             into[y * into_stride..][..row].copy_from_slice(&samples[y * stride..][..row]);
         }
@@ -376,7 +380,7 @@ fn sdr(frame: &frame::Video) -> Result<Still> {
 /// HDR10 or HLG as it is: BT.2020 RGB, still PQ or HLG.
 fn hdr(frame: &frame::Video, transfer: Transfer) -> Result<Still> {
     let (output, width, height) = scale(frame, Pixel::RGB48LE, true)?;
-    let (data, stride) = (output.data(0), output.stride(0));
+    let (data, stride) = ffmpeg_safe::plane(&output, 0).context("the scaled picture has none")?;
     let pixels = rows(width as usize, height as usize, |y, out| {
         let row = &data[y * stride..][..out.len() * 6];
         let (row, _) = row.as_chunks::<6>();
@@ -418,7 +422,8 @@ fn reshaped(frame: &frame::Video, reshaping: &Reshaping, keep_hdr: bool) -> Resu
 fn dolby_vision(frame: &frame::Video, reshaping: &Reshaping) -> Result<Still> {
     // Dolby Vision's samples aren't YCbCr: they are only scaled.
     let (output, width, height) = scale(frame, Pixel::YUV444P16LE, false)?;
-    let planes = [0, 1, 2].map(|plane| (output.data(plane), output.stride(plane)));
+    let plane = |index| ffmpeg_safe::plane(&output, index).context("a scaled plane is missing");
+    let planes = [plane(0)?, plane(1)?, plane(2)?];
     let pq = ToneMapper::new(Transfer::Pq);
     let pixels = rows(width as usize, height as usize, |y, out| {
         let rows = planes.map(|(data, stride)| &data[y * stride..][..out.len() * 2]);

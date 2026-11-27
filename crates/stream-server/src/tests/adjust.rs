@@ -69,9 +69,12 @@ fn crops_a_decoded_picture_evenly_from_either_side() {
 fn crops_a_frame_by_moving_into_its_planes() {
     let mut frame = frame::Video::new(Pixel::YUV420P, 64, 36);
     for (plane, value) in [(0, 1u8), (1, 2), (2, 3)] {
-        frame.data_mut(plane).fill(value);
+        ffmpeg_safe::plane_mut(&mut frame, plane)
+            .unwrap()
+            .0
+            .fill(value);
     }
-    let start = frame.data(0).as_ptr() as usize;
+    let start = ffmpeg_safe::plane(&frame, 0).unwrap().0.as_ptr() as usize;
     crop(
         &mut frame,
         &Adjustments {
@@ -80,7 +83,10 @@ fn crops_a_frame_by_moving_into_its_planes() {
         },
     );
     assert_eq!((frame.width(), frame.height()), (36, 36));
-    assert_eq!(frame.data(0).as_ptr() as usize - start, 14);
+    assert_eq!(
+        ffmpeg_safe::plane(&frame, 0).unwrap().0.as_ptr() as usize - start,
+        14
+    );
     // As it is, it stays.
     crop(&mut frame, &Adjustments::default());
     assert_eq!((frame.width(), frame.height()), (36, 36));
@@ -154,16 +160,17 @@ fn turns_pixels_of_several_bytes_whole() {
 /// after row, and whose chroma pairs are (10 + n, 100 + n).
 fn counted(width: u32, height: u32) -> frame::Video {
     let mut frame = frame::Video::new(Pixel::NV12, width, height);
-    let (luma, chroma) = (frame.stride(0), frame.stride(1));
+    let (luma, stride) = ffmpeg_safe::plane_mut(&mut frame, 0).unwrap();
     for y in 0..height as usize {
         for x in 0..width as usize {
-            frame.data_mut(0)[y * luma + x] = (1 + y * width as usize + x) as u8;
+            luma[y * stride + x] = (1 + y * width as usize + x) as u8;
         }
     }
+    let (chroma, stride) = ffmpeg_safe::plane_mut(&mut frame, 1).unwrap();
     for y in 0..height as usize / 2 {
         for x in 0..width as usize / 2 {
             let n = (y * width as usize / 2 + x) as u8;
-            frame.data_mut(1)[y * chroma + x * 2..][..2].copy_from_slice(&[10 + n, 100 + n]);
+            chroma[y * stride + x * 2..][..2].copy_from_slice(&[10 + n, 100 + n]);
         }
     }
     frame
@@ -171,10 +178,10 @@ fn counted(width: u32, height: u32) -> frame::Video {
 
 /// The rows of `plane` of `frame`, `width` bytes of each.
 fn rows_of(frame: &frame::Video, plane: usize, width: usize) -> Vec<Vec<u8>> {
-    let stride = frame.stride(plane);
+    let (data, stride) = ffmpeg_safe::plane(frame, plane).unwrap();
     let height = frame.plane_height(plane) as usize;
     (0..height)
-        .map(|y| frame.data(plane)[y * stride..][..width].to_vec())
+        .map(|y| data[y * stride..][..width].to_vec())
         .collect()
 }
 
@@ -204,9 +211,10 @@ fn finishes_a_frame_turned_with_its_chroma() {
     assert_eq!(rows_of(&mirrored, 1, 4), [[11, 101, 10, 100]]);
     // As it is, it is the frame itself.
     let plain = counted(4, 2);
-    let pointer = plain.data(0).as_ptr();
+    let pointer = ffmpeg_safe::plane(&plain, 0).unwrap().0.as_ptr();
+    let finished = finish(plain, &Adjustments::default());
     assert_eq!(
-        finish(plain, &Adjustments::default()).data(0).as_ptr(),
+        ffmpeg_safe::plane(&finished, 0).unwrap().0.as_ptr(),
         pointer
     );
 }
@@ -214,12 +222,12 @@ fn finishes_a_frame_turned_with_its_chroma() {
 #[test]
 fn turns_ten_bit_frames_a_sample_of_two_bytes_at_a_time() {
     let mut frame = frame::Video::new(Pixel::P010LE, 2, 2);
-    let stride = frame.stride(0);
+    let (luma, stride) = ffmpeg_safe::plane_mut(&mut frame, 0).unwrap();
     for (at, code) in [(0, 1u16), (2, 2), (stride, 3), (stride + 2, 4)] {
-        frame.data_mut(0)[at..at + 2].copy_from_slice(&(code << 6).to_le_bytes());
+        luma[at..at + 2].copy_from_slice(&(code << 6).to_le_bytes());
     }
     // A chroma pair of two samples.
-    frame.data_mut(1)[..4].copy_from_slice(&[1, 2, 3, 4]);
+    ffmpeg_safe::plane_mut(&mut frame, 1).unwrap().0[..4].copy_from_slice(&[1, 2, 3, 4]);
     let turned = finish(frame, &turned(1));
     let codes = |row: Vec<u8>| -> Vec<u16> {
         row.chunks(2)
@@ -228,14 +236,17 @@ fn turns_ten_bit_frames_a_sample_of_two_bytes_at_a_time() {
     };
     let luma: Vec<Vec<u16>> = rows_of(&turned, 0, 4).into_iter().map(codes).collect();
     assert_eq!(luma, [[3, 1], [4, 2]]);
-    assert_eq!(&turned.data(1)[..4], [1, 2, 3, 4]);
+    assert_eq!(
+        &ffmpeg_safe::plane(&turned, 1).unwrap().0[..4],
+        [1, 2, 3, 4]
+    );
 }
 
 #[test]
 fn bends_luma_by_gamma_and_leaves_chroma() {
     let mut frame = frame::Video::new(Pixel::NV12, 4, 2);
-    frame.data_mut(0)[..4].copy_from_slice(&[16, 126, 235, 240]);
-    frame.data_mut(1)[..4].copy_from_slice(&[90, 160, 91, 161]);
+    ffmpeg_safe::plane_mut(&mut frame, 0).unwrap().0[..4].copy_from_slice(&[16, 126, 235, 240]);
+    ffmpeg_safe::plane_mut(&mut frame, 1).unwrap().0[..4].copy_from_slice(&[90, 160, 91, 161]);
     let lifted = finish(
         frame,
         &Adjustments {
@@ -244,13 +255,20 @@ fn bends_luma_by_gamma_and_leaves_chroma() {
         },
     );
     let expected = table(16, 235, 255, 2.0);
-    let luma: Vec<u16> = lifted.data(0)[..4].iter().map(|&y| y.into()).collect();
+    let luma: Vec<u16> = ffmpeg_safe::plane(&lifted, 0).unwrap().0[..4]
+        .iter()
+        .map(|&y| y.into())
+        .collect();
     assert_eq!(luma, [16, 126, 235, 240].map(|code: usize| expected[code]));
-    assert_eq!(&lifted.data(1)[..4], [90, 160, 91, 161]);
+    assert_eq!(
+        &ffmpeg_safe::plane(&lifted, 1).unwrap().0[..4],
+        [90, 160, 91, 161]
+    );
 
     // Ten-bit samples in the high bits of 16.
     let mut deep = frame::Video::new(Pixel::P010LE, 2, 2);
-    deep.data_mut(0)[..4].copy_from_slice(&[(500u16 << 6).to_le_bytes(), [0, 0]].concat());
+    ffmpeg_safe::plane_mut(&mut deep, 0).unwrap().0[..4]
+        .copy_from_slice(&[(500u16 << 6).to_le_bytes(), [0, 0]].concat());
     let lifted = finish(
         deep,
         &Adjustments {
@@ -259,7 +277,8 @@ fn bends_luma_by_gamma_and_leaves_chroma() {
         },
     );
     let expected = table(64, 940, 1023, 0.5);
-    let code = u16::from_le_bytes([lifted.data(0)[0], lifted.data(0)[1]]);
+    let luma = ffmpeg_safe::plane(&lifted, 0).unwrap().0;
+    let code = u16::from_le_bytes([luma[0], luma[1]]);
     assert_eq!(code, expected[500] << 6);
 }
 

@@ -137,14 +137,15 @@ fn pool() -> Option<&'static rayon::ThreadPool> {
 }
 
 /// Run `row` over each of the rows of `row_len` items `pixels` holds, in
-/// bands of them spread over the cores.
+/// bands of them spread over the cores. The last may be shorter, as a
+/// frame's plane's is, to the end of its picture.
 pub fn in_rows<T: Send>(pixels: &mut [T], row_len: usize, row: impl Fn(usize, &mut [T]) + Sync) {
     if row_len == 0 || pixels.is_empty() {
         return;
     }
-    let height = pixels.len() / row_len;
+    let height = pixels.len().div_ceil(row_len);
     let band = |(band, out): (usize, &mut [T]), band_rows: usize| {
-        for (y, out) in out.chunks_exact_mut(row_len).enumerate() {
+        for (y, out) in out.chunks_mut(row_len).enumerate() {
             row(band * band_rows + y, out);
         }
     };

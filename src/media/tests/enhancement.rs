@@ -1,6 +1,7 @@
 use super::*;
 use crate::media::dovi::tests::attach_rpu;
 use crate::media::hdr::tests::attach_hdr10;
+use crate::media::yuv::tests::stored_bottom_up;
 
 /// A profile 7 RPU, as ffprobe prints a Blu-ray's but plainer: 10-bit
 /// layers, each component mapped as it is, the enhancement layer
@@ -64,8 +65,8 @@ fn frame(
     let mut frame = frame::Video::new(format, width, height);
     let (chroma_width, chroma_height) = (width.div_ceil(2) as usize, height.div_ceil(2) as usize);
     let mut put = |plane: usize, x: usize, y: usize, value: u16| {
-        let stride = frame.stride(plane);
-        frame.data_mut(plane)[y * stride + 2 * x..][..2].copy_from_slice(&value.to_le_bytes());
+        let (data, stride) = ffmpeg_safe::plane_mut(&mut frame, plane).unwrap();
+        data[y * stride + 2 * x..][..2].copy_from_slice(&value.to_le_bytes());
     };
     let shift = if format == Pixel::P010LE { 6 } else { 0 };
     for y in 0..height as usize {
@@ -447,6 +448,17 @@ fn an_enhancement_layer_as_big_as_the_base_layer_goes_sample_for_sample() {
 }
 
 #[test]
+fn refuses_a_layer_stored_bottom_up() {
+    let composer = composer();
+    let flat = || frame(Pixel::YUV420P10LE, (8, 4), |_, _, _| 512);
+    let mut out = frame::Video::empty();
+    assert!(composer.compose(&flat(), &flat(), &mut out).is_ok());
+    let flipped = stored_bottom_up(flat(), 1);
+    assert!(composer.compose(&flipped, &flat(), &mut out).is_err());
+    assert!(composer.compose(&flat(), &flipped, &mut out).is_err());
+}
+
+#[test]
 fn composes_into_its_own_frame_again_unless_its_shared() {
     let composer = composer();
     let base = frame(Pixel::YUV420P10LE, (8, 4), |c, x, _| {
@@ -455,9 +467,13 @@ fn composes_into_its_own_frame_again_unless_its_shared() {
     let flat = |code| frame(Pixel::YUV420P10LE, (8, 4), move |_, _, _| code);
     let mut out = frame::Video::empty();
     composer.compose(&base, &flat(512), &mut out).unwrap();
-    let pictures = out.data(0).as_ptr();
+    let pictures = ffmpeg_safe::plane(&out, 0).unwrap().0.as_ptr();
     composer.compose(&base, &flat(512), &mut out).unwrap();
-    assert_eq!(out.data(0).as_ptr(), pictures, "the same pictures, again");
+    assert_eq!(
+        ffmpeg_safe::plane(&out, 0).unwrap().0.as_ptr(),
+        pictures,
+        "the same pictures, again"
+    );
     // Another reference to them, as a frame shown keeps.
     let mut shown = frame::Video::empty();
     // SAFETY: both frames are valid, and the new one is blank.

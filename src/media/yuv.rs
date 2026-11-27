@@ -121,7 +121,7 @@ impl YuvConverter {
             max_short_side,
         );
         let at_size = size == (frame.width(), frame.height());
-        if at_size && !bottom_up(frame) {
+        if at_size && !ffmpeg_safe::bottom_up(frame) {
             return Some(planes(frame, frame, chroma_siting(frame)));
         }
         // swscale takes chroma to sit between luma samples, in the frames
@@ -174,13 +174,6 @@ impl YuvConverter {
     }
 }
 
-/// Whether `frame` is stored bottom up, its planes' rows going back through
-/// memory (a negative linesize), as Dxtory's flipped frames are: `planes`
-/// can't slice those, so swscale turns them the right way up.
-fn bottom_up(frame: &frame::Video) -> bool {
-    (0..frame.planes()).any(|plane| frame.stride(plane).cast_signed() < 0)
-}
-
 /// `samples`' planes, copied row by row, with the colors `tags` says
 /// (`samples` is `tags` scaled, or `tags` itself) and their chroma samples
 /// where `chroma_siting` says.
@@ -202,14 +195,16 @@ fn planes(
         .enumerate()
         .map(|(index, &(w, h, channels))| {
             let row = w as usize * channels as usize * sample_bytes;
-            let (data, stride) = (samples_frame.data(index), samples_frame.stride(index));
+            // One stored bottom up, swscale has turned the right way up.
+            let (data, stride) =
+                ffmpeg_safe::plane(samples_frame, index).context("a plane can't be read")?;
             let mut plane = Vec::with_capacity(row * h as usize);
             for y in 0..h as usize {
                 plane.extend_from_slice(&data[y * stride..][..row]);
             }
-            plane
+            Ok(plane)
         })
-        .collect();
+        .collect::<Result<_>>()?;
     let transfer = hdr::Transfer::of(tags);
     let colors = Colors::of_frame(tags);
     let full_range = colors.range == color::Range::JPEG
@@ -319,4 +314,4 @@ const BT2020_TO_SRGB: [[f32; 4]; 4] = [
 
 #[cfg(test)]
 #[path = "tests/yuv.rs"]
-mod tests;
+pub(crate) mod tests;

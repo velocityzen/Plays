@@ -29,9 +29,12 @@ fn flat(
         (1, code(cb, 512.0, 896.0)),
         (2, code(cr, 512.0, 896.0)),
     ] {
-        let (stride, width) = (frame.stride(plane), frame.plane_width(plane) as usize);
-        let rows = frame.plane_height(plane) as usize;
-        for row in frame.data_mut(plane).chunks_mut(stride).take(rows) {
+        let (width, rows) = (
+            frame.plane_width(plane) as usize,
+            frame.plane_height(plane) as usize,
+        );
+        let (data, stride) = ffmpeg_safe::plane_mut(&mut frame, plane).unwrap();
+        for row in data.chunks_mut(stride).take(rows) {
             for sample in row[..width * 2].as_chunks_mut::<2>().0 {
                 *sample = value.to_le_bytes();
             }
@@ -43,8 +46,8 @@ fn flat(
 /// The luma in the middle of an NV12 or P010 frame, 0 to 1 over limited
 /// range.
 pub(crate) fn luma(frame: &frame::Video) -> f64 {
-    let row = frame.stride(0) * (frame.height() as usize / 2);
-    let data = frame.data(0);
+    let (data, stride) = ffmpeg_safe::plane(frame, 0).unwrap();
+    let row = stride * (frame.height() as usize / 2);
     match frame.format() {
         Pixel::NV12 => (f64::from(data[row + frame.width() as usize / 2]) - 16.0) / 219.0,
         _ => {
@@ -58,8 +61,8 @@ pub(crate) fn luma(frame: &frame::Video) -> f64 {
 /// P010 frame, as `flat` takes them.
 fn ycbcr(frame: &frame::Video) -> [f64; 3] {
     let (x, y) = (frame.width() as usize / 2, frame.height() as usize / 2);
-    let chroma = frame.stride(1) * (y / 2);
-    let (luma, data) = (luma(frame), frame.data(1));
+    let (data, stride) = ffmpeg_safe::plane(frame, 1).unwrap();
+    let (luma, chroma) = (luma(frame), stride * (y / 2));
     let [cb, cr] = match frame.format() {
         Pixel::NV12 => [0, 1].map(|i| (f64::from(data[chroma + x + i]) - 128.0) / 224.0),
         _ => [0, 2].map(|i| {
@@ -173,7 +176,8 @@ fn shows_hdr_reference_white_nearly_as_sdr_white() {
             assert!((0.8..0.95).contains(&light), "{format:?}: {light}");
             assert!(shown(luma(&fitted)) > 3.0 * shown(0.58), "{format:?}");
             // Grey stays grey.
-            let chroma = fitted.data(1)[fitted.stride(1) * 4 + 8];
+            let (data, stride) = ffmpeg_safe::plane(&fitted, 1).unwrap();
+            let chroma = data[stride * 4 + 8];
             if format == Pixel::NV12 {
                 assert!(chroma.abs_diff(128) <= 1, "{chroma}");
             }
@@ -293,8 +297,8 @@ fn reshapes_ipt_into_hdr10_as_it_was_mastered_or_fits_it_to_sdr() {
 
     let hdr10 = converted(Pixel::P010LE, true);
     assert!((luma(&hdr10) - pq(203.0)).abs() < 0.003, "{}", luma(&hdr10));
-    let at = hdr10.stride(1) * 4 + 16;
-    let chroma = &hdr10.data(1)[at..at + 4];
+    let (data, stride) = ffmpeg_safe::plane(&hdr10, 1).unwrap();
+    let chroma = &data[stride * 4 + 16..][..4];
     for sample in [[chroma[0], chroma[1]], [chroma[2], chroma[3]]] {
         let code = u16::from_le_bytes(sample) >> 6;
         assert!(code.abs_diff(512) <= 1, "{code}");

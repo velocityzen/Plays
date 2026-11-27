@@ -390,7 +390,9 @@ impl Converter {
         if (self.rgb.width(), self.rgb.height()) != (width, height) {
             self.rgb = frame::Video::new(Pixel::RGB48LE, width, height);
         }
-        let stride = self.rgb.stride(0);
+        let stride = ffmpeg_safe::plane(&self.rgb, 0)
+            .expect("a frame made here, stored top down")
+            .1;
         let Tables {
             pq,
             hlg,
@@ -445,8 +447,9 @@ impl Converter {
                 }
                 coding.tag(&mut self.planes);
                 scaler(&mut self.to_work)?.run(&retagged(from, coding)?, &mut self.planes)?;
-                let planes: [(&[u8], usize); 3] =
-                    std::array::from_fn(|i| (self.planes.data(i), self.planes.stride(i)));
+                let planes: [(&[u8], usize); 3] = std::array::from_fn(|i| {
+                    ffmpeg_safe::plane(&self.planes, i).expect("a frame made here, stored top down")
+                });
                 let peak = reshaping
                     .peak_nits()
                     .map(|nits| nits / REFERENCE_WHITE_NITS);
@@ -522,7 +525,9 @@ fn rows(
     height: u32,
     convert: impl Fn(usize, &mut [[u8; 6]]) + Sync,
 ) {
-    rgb.data_mut(0)
+    ffmpeg_safe::plane_mut(rgb, 0)
+        .expect("a frame made here, stored top down")
+        .0
         .par_chunks_mut(stride)
         .take(height as usize)
         .enumerate()

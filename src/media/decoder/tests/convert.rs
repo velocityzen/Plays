@@ -5,8 +5,8 @@ use super::*;
 fn pattern(width: u32, height: u32) -> frame::Video {
     let mut frame = frame::Video::new(Pixel::YUV420P, width, height);
     for plane in 0..3 {
-        let stride = frame.stride(plane);
-        for (y, row) in frame.data_mut(plane).chunks_mut(stride).enumerate() {
+        let (data, stride) = ffmpeg_safe::plane_mut(&mut frame, plane).unwrap();
+        for (y, row) in data.chunks_mut(stride).enumerate() {
             for (x, sample) in row.iter_mut().enumerate() {
                 *sample = (x * 3 + y * 5 + plane * 64) as u8;
             }
@@ -40,9 +40,9 @@ fn sdr_is_scaled_straight_into_the_pictures_pixels() {
         let mut own = frame::Video::empty();
         context.run(&frame, &mut own).unwrap();
         let row = w as usize * 4;
-        let expected: Vec<u8> = own
-            .data(0)
-            .chunks(own.stride(0))
+        let (data, stride) = ffmpeg_safe::plane(&own, 0).unwrap();
+        let expected: Vec<u8> = data
+            .chunks(stride)
             .take(h as usize)
             .flat_map(|line| &line[..row])
             .copied()
@@ -69,7 +69,12 @@ fn hdr10_is_tone_mapped_to_its_peak() {
     frame.set_color_transfer_characteristic(color::TransferCharacteristic::SMPTE2084);
     frame.set_color_range(color::Range::MPEG);
     for (plane, code) in [(0, luma), (1, 512), (2, 512)] {
-        for pair in frame.data_mut(plane).as_chunks_mut::<2>().0 {
+        for pair in ffmpeg_safe::plane_mut(&mut frame, plane)
+            .unwrap()
+            .0
+            .as_chunks_mut::<2>()
+            .0
+        {
             *pair = code.to_le_bytes();
         }
     }
