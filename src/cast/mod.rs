@@ -275,6 +275,7 @@ impl Casting {
             .filter_map(Kept::target)
             .flat_map(|target| target.devices())
             .collect();
+        told_apart(&mut devices);
         devices.sort_by_cached_key(|device| (device.name.to_lowercase(), device.kind));
         devices
     }
@@ -345,3 +346,25 @@ impl Casting {
         Ok(started)
     }
 }
+
+/// Devices of one protocol sharing a name, each named with its address
+/// too: anyone on the network can give a device of theirs another's name,
+/// as UPnP's renderers can, to be cast to in its place.
+fn told_apart(devices: &mut [Device]) {
+    let shared: Vec<bool> = devices
+        .iter()
+        .map(|device| {
+            let alike = |other: &&Device| other.kind == device.kind && other.name == device.name;
+            devices.iter().filter(alike).count() > 1
+        })
+        .collect();
+    for (device, shared) in devices.iter_mut().zip(shared) {
+        if shared {
+            device.name = format!("{} ({})", device.name, device.address.ip());
+        }
+    }
+}
+
+#[cfg(test)]
+#[path = "tests/mod.rs"]
+mod tests;

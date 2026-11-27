@@ -432,3 +432,75 @@ fn only_so_many_addresses_are_remembered() {
     directory.expire(now + REST);
     assert_eq!(directory.addresses.0.len(), 1);
 }
+
+/// A byebye is taken only from where the renderer's adverts came from, as
+/// anyone can send one; there still once it moves, or can't be read.
+#[test]
+fn a_renderer_says_byebye_only_from_where_it_is() {
+    let mut directory = Directory::default();
+    let now = Instant::now();
+    let tv = advert("uuid:tv", MEDIA_RENDERER);
+    let (there, elsewhere): (IpAddr, IpAddr) =
+        ("192.0.2.10".parse().unwrap(), "192.0.2.66".parse().unwrap());
+    directory.alive(&tv, now);
+    directory.described("uuid:tv", &tv.location, Ok(device("TV")));
+    assert_eq!(directory.byebye_from("uuid:tv", elsewhere), None);
+    assert_eq!(directory.devices(), [device("TV")], "kept");
+    let failed = Err(crate::Error::protocol("no"));
+    directory.described("uuid:tv", &tv.location, failed);
+    assert_eq!(
+        directory.byebye_from("uuid:tv", there),
+        Some(Found::Removed(device("TV")))
+    );
+
+    let moved = Advert {
+        location: "http://192.0.2.11/dmr".into(),
+        ..tv.clone()
+    };
+    directory.alive(&tv, now);
+    directory.described("uuid:tv", &tv.location, Ok(device("TV")));
+    directory.alive(&moved, now);
+    assert_eq!(directory.byebye_from("uuid:tv", there), None, "moved");
+    assert_eq!(
+        directory.byebye_from("uuid:tv", "192.0.2.11".parse().unwrap()),
+        Some(Found::Removed(device("TV")))
+    );
+    assert_eq!(directory.byebye_from("uuid:gone", there), None);
+}
+
+/// A byebye heard is taken from where its renderer is, not from elsewhere.
+#[test]
+fn a_byebye_heard_from_elsewhere_is_let_be() {
+    let directory = Arc::new(Mutex::new(Directory::default()));
+    let (describe, _asked) = mpsc::sync_channel(1);
+    let (found, mut told) = unbounded();
+    let socket = || UdpSocket::bind("127.0.0.1:0").unwrap();
+    let browsing = Browsing {
+        network: Network::At(socket().local_addr().unwrap()),
+        search: socket(),
+        search_v6: None,
+        listen: None,
+        listen_v6: None,
+        joined: HashSet::new(),
+        joined_v6: HashSet::new(),
+        directory: Arc::clone(&directory),
+        describe,
+        found,
+    };
+    let tv = advert("uuid:tv", MEDIA_RENDERER);
+    {
+        let mut directory = lock(&directory);
+        directory.alive(&tv, Instant::now());
+        directory.described("uuid:tv", &tv.location, Ok(device("TV")));
+    }
+    let byebye = || Message::Byebye {
+        udn: "uuid:tv".into(),
+        kind: MEDIA_RENDERER.into(),
+    };
+    browsing.heard(byebye(), "192.0.2.66".parse().unwrap());
+    assert_eq!(lock(&directory).devices(), [device("TV")]);
+    assert!(told.try_recv().is_err(), "nothing told");
+    browsing.heard(byebye(), "192.0.2.10".parse().unwrap());
+    assert!(lock(&directory).devices().is_empty());
+    assert_eq!(told.try_recv().ok(), Some(Found::Removed(device("TV"))));
+}

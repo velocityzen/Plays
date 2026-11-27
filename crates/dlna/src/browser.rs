@@ -60,6 +60,9 @@ pub type Found = network::Found<Device>;
 
 struct Entry {
     location: String,
+    /// Where its adverts came from, as `location` says: a byebye is taken
+    /// only from there.
+    from: Option<IpAddr>,
     /// When `location` lapses, unless it's heard of again: till then it's
     /// kept over one at an IPv6 address.
     location_expires: Instant,
@@ -191,6 +194,7 @@ impl Directory {
                     return None;
                 }
                 entry.location.clone_from(&advert.location);
+                entry.from = address_of(&advert.location);
                 entry.location_expires = expires;
                 Some(advert.location.clone())
             }
@@ -206,6 +210,7 @@ impl Directory {
                     advert.udn.clone(),
                     Entry {
                         location: advert.location.clone(),
+                        from: address_of(&advert.location),
                         location_expires: expires,
                         expires,
                         device: None,
@@ -263,6 +268,16 @@ impl Directory {
 
     fn byebye(&mut self, udn: &str) -> Option<Found> {
         self.entries.remove(udn)?.device.map(Found::Removed)
+    }
+
+    /// A byebye heard `from` an address: taken only from where the
+    /// renderer's adverts came from, as anyone can send one.
+    fn byebye_from(&mut self, udn: &str, from: IpAddr) -> Option<Found> {
+        if self.entries.get(udn)?.from != Some(from) {
+            log::debug!("dlna: {from} said byebye for {udn}, which isn't there");
+            return None;
+        }
+        self.byebye(udn)
     }
 
     fn expire(&mut self, now: Instant) -> Vec<Found> {
@@ -348,7 +363,8 @@ fn group_listener(any: IpAddr) -> io::Result<UdpSocket> {
 }
 
 enum Input {
-    Heard(Message),
+    /// A message, and the address it came from.
+    Heard(Message, IpAddr),
     Described {
         udn: String,
         location: String,
@@ -487,12 +503,12 @@ impl Browsing {
         let _ = self.found.unbounded_send(found);
     }
 
-    fn heard(&self, message: Message) {
+    fn heard(&self, message: Message, from: IpAddr) {
         let mut directory = lock(&self.directory);
         match message {
             Message::Alive(advert) => ask_for(&mut directory, &self.describe, &advert),
             Message::Byebye { udn, .. } => {
-                if let Some(found) = directory.byebye(&udn) {
+                if let Some(found) = directory.byebye_from(&udn, from) {
                     drop(directory);
                     self.tell(found);
                 }
@@ -508,7 +524,7 @@ impl Browsing {
         self.search();
         loop {
             match inputs.recv_timeout(TICK) {
-                Ok(Input::Heard(message)) => self.heard(message),
+                Ok(Input::Heard(message, from)) => self.heard(message, from),
                 Ok(Input::Described {
                     udn,
                     location,
@@ -576,7 +592,7 @@ fn hear(socket: &UdpSocket, stop: &AtomicBool, inputs: &mpsc::Sender<Input>) {
                         log::debug!("dlna: {from} told of a description elsewhere");
                         continue;
                     };
-                    if inputs.send(Input::Heard(message)).is_err() {
+                    if inputs.send(Input::Heard(message, from.ip())).is_err() {
                         return;
                     }
                 }

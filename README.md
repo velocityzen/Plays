@@ -248,6 +248,8 @@ mkdir ($nu.user-autoload-dirs | first); plays completions nushell | save -f ($nu
 - HDR reaches a DLNA TV only where it names no codecs and AirPlay at its
   address lists its screen's HDR.
 - A Chromecast's certificate isn't checked against Google's.
+- DLNA devices aren't authenticated: one on the network can take another's
+  name, so devices of one protocol sharing a name show their addresses.
 - DLNA devices' subtitles depend on the TV.
 - The cast stream server listens on every interface, so the firewall may
   ask about it, and on macOS 15 and later looking for devices asks to use
