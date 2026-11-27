@@ -30,7 +30,8 @@ plays do solo.lua --for 10m --fail-fast     # run on 10m, end at a failure
 
 - `plays.window_id`, `plays.block_id`: those `-w` and `-b` name, else the
   window in front and the block keys go to; nil where there's none.
-- `require`: modules beside the script first.
+- `require`: modules beside the script first, then Lua's own; never the
+  folder it's run in, but a script's own there.
 - Lua's standard library, without `debug`, `io.popen`, `os.execute` and C
   modules; [Programs](#programs) run programs.
 - `--for` and `--fail-fast`: see [lua-events.md](lua-events.md#running-on).

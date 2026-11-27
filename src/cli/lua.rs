@@ -280,17 +280,32 @@ fn whereabouts(session: &mut Session) -> Result<Target, Stop> {
 }
 
 /// The standard library as a script has it: without `io.popen` and
-/// `os.execute`, and with `require` looking in the script's folder first.
+/// `os.execute`, and with `require` looking in the script's folder first,
+/// and never in the folder it's run in, which may be anyone's.
 fn set_up(lua: &Lua, folder: Option<&Path>) -> mlua::Result<()> {
     let globals = lua.globals();
     globals.get::<Table>("io")?.set("popen", LuaValue::Nil)?;
     globals.get::<Table>("os")?.set("execute", LuaValue::Nil)?;
-    if let Some(folder) = folder.filter(|folder| !folder.as_os_str().is_empty()) {
-        let package: Table = globals.get("package")?;
-        let path: String = package.get("path")?;
+    let package: Table = globals.get("package")?;
+    let path: String = package.get("path")?;
+    let mut paths: Vec<String> = Vec::new();
+    if let Some(folder) = folder {
+        // A script named alone is in the folder it's run in.
+        let folder = if folder.as_os_str().is_empty() {
+            Path::new(".")
+        } else {
+            folder
+        };
         let folder = folder.display();
-        package.set("path", format!("{folder}/?.lua;{folder}/?/init.lua;{path}"))?;
+        paths.extend([format!("{folder}/?.lua"), format!("{folder}/?/init.lua")]);
     }
+    let here = |entry: &&str| entry.starts_with("./") || entry.starts_with(".\\");
+    paths.extend(
+        path.split(';')
+            .filter(|entry| !here(entry))
+            .map(str::to_owned),
+    );
+    package.set("path", paths.join(";"))?;
     Ok(())
 }
 

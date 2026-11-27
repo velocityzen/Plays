@@ -326,3 +326,32 @@ fn a_wait_longer_than_anything_lasts_as_long_as_it_takes(cx: &mut TestAppContext
         "{ran:?}"
     );
 }
+
+/// `require` looks in the script's folder, the folder it's run in where
+/// the script is named alone, and never there otherwise.
+#[test]
+fn require_looks_in_the_scripts_folder_and_not_where_its_run() {
+    let path = |folder: Option<&str>| -> String {
+        let lua = Lua::new();
+        set_up(&lua, folder.map(Path::new)).unwrap();
+        let package: Table = lua.globals().get("package").unwrap();
+        package.get("path").unwrap()
+    };
+    let here = |path: &str| {
+        path.split(';')
+            .filter(|entry| entry.starts_with("./"))
+            .count()
+    };
+    let given = path(None);
+    assert_eq!(here(&given), 0, "{given}");
+    assert!(given.contains("/?.lua"), "Lua's own: {given}");
+    let beside = path(Some("/scripts"));
+    assert!(
+        beside.starts_with("/scripts/?.lua;/scripts/?/init.lua;"),
+        "{beside}"
+    );
+    assert_eq!(here(&beside), 0, "{beside}");
+    let alone = path(Some(""));
+    assert!(alone.starts_with("./?.lua;./?/init.lua;"), "{alone}");
+    assert_eq!(here(&alone), 2, "{alone}");
+}
