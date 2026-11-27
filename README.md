@@ -27,7 +27,8 @@ GPU-accelerated UI framework.
 - Play/pause, seek, loop, volume and mute in each block
 - Speed from 0.25× to 4×, the sound at its own pitch
 - Frame-accurate scrubbing and frame stepping
-- Hardware decoding: VideoToolbox on macOS; VA-API, NVDEC or VDPAU on Linux
+- Hardware decoding: VideoToolbox on macOS, Dolby Vision profile 20's
+  MV-HEVC too; VA-API, NVDEC or VDPAU on Linux
 - Chapters, and Skip Intro, Skip Credits and Next Episode where they
   mark them
 - Previous and next file in the folder or playlist
@@ -84,8 +85,16 @@ GPU-accelerated UI framework.
 
 ### Casting
 
-- Chromecast, Google TV and Nest; DLNA; Apple TV and AirPlay TVs
+- Chromecast, Google TV and Nest; DLNA; Apple TV, and TVs with AirPlay
+  built in, paired with the PIN they show
 - Files go as they are, repackaged or re-encoded, as the device needs
+- HDR10, HLG and Dolby Vision to devices that show them; Dolby Vision as
+  it is in a file sent as it is, of a profile the device shows, else as
+  HDR10 or HLG
+- HDR fitted to SDR, with Plays' own tone curve, for devices without it
+- DLNA TVs that name no codecs, as a Google TV's player, get the HDR their
+  screen shows, up to its largest picture, as AirPlay at their address
+  lists
 - Subtitles go along
 - Delays, gamma and picture adjustments go along
 - A video's sound to a speaker while its picture plays here
@@ -200,7 +209,7 @@ With `⇧`, they go to every block in every window. Change them in Settings
   on macOS and `~/.config/plays/settings.json` on Linux.
 - **An AirPlay TV or projector**: connect it from Control Center → Screen
   Mirroring as a separate display, then pick it in Video → Output Device.
-  To have an Apple TV play the file itself, cast to it.
+  To have it play the file itself, cast to it.
 - **Auracast**: macOS can't broadcast it. Use a USB Auracast transmitter,
   which is a sound output like any other. On Linux, an LE Audio adapter
   can broadcast with a recent BlueZ, PipeWire and WirePlumber set up for it
@@ -285,6 +294,13 @@ mkdir ($nu.user-autoload-dirs | first); plays completions nushell | save -f ($nu
 - AirPlay speakers with a password, AirPlay 1 speakers with FairPlay or
   MFi, and speakers and TVs that let only their home play to them can't be
   played through. Several speakers aren't played through as a group.
+- TVs with AirPlay built in, other than Apple TVs, get H.264 up to 1080p
+  and stereo AAC, their HDR fitted to SDR: their AirPlay player may show
+  no HEVC.
+- Over AirPlay, and wherever it's repackaged, Dolby Vision goes without
+  its own signalling, as HDR10 or HLG.
+- HDR reaches a DLNA TV only where it names no codecs and AirPlay at its
+  address lists its screen's HDR.
 - A Chromecast's certificate isn't checked against Google's.
 - DLNA devices' subtitles depend on the TV.
 - The cast stream server listens on every interface, so the firewall may
@@ -302,13 +318,17 @@ not on that system (—):
 | AirPlay 2 speaker | ✅ | ⬜ |
 | AirPlay 1 speaker, such as an AirPort Express | ⬜ | ⬜ |
 | Apple TV | ✅ | ⬜ |
-| TV of another make with AirPlay | ⬜ | ⬜ |
+| TV of another make with AirPlay | ✅ | ⬜ |
 | Chromecast | ⬜ | ⬜ |
 | Google TV | ⬜ | ⬜ |
 | Nest speaker or display | ⬜ | ⬜ |
 | DLNA speaker | ✅ | ⬜ |
-| DLNA TV | ⬜ | ⬜ |
+| DLNA TV | ✅ | ⬜ |
 | A TV's speakers, for a window sent to it | ⬜ | — |
+
+Checked with: an Apple TV 4K, HDR10 playing, not yet seen to be in HDR;
+a VisionMaster projector, a Google TV, over AirPlay, and over DLNA in
+HDR10 and Dolby Vision profile 5.
 
 ## Working on Plays
 
