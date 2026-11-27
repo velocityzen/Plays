@@ -35,7 +35,7 @@ use ::dlna::{
 use futures::StreamExt as _;
 use futures::channel::mpsc::UnboundedReceiver;
 use parking_lot::Mutex;
-use stream_server::{AudioCodec, Container, Hdr, Profile, VideoCodec};
+use stream_server::{AudioCodec, Container, FULL_HD, Hdr, Profile, UHD, VideoCodec};
 
 use super::target::{
     Device, Error, FOLLOW_POLL, Load, Session, Shows, State, Status, Subtitles, Target,
@@ -418,9 +418,9 @@ fn profile(capabilities: Option<&[Capability]>, screen: Option<&Screen>) -> Prof
         stream: shows_video,
         sound_stream,
         max_size: Some(if named("UHD") || named("2160") {
-            (3840, 2160)
+            UHD
         } else {
-            (1920, 1080)
+            FULL_HD
         }),
         max_channels: if surround { 6 } else { 2 },
         video,

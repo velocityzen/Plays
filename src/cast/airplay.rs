@@ -16,7 +16,7 @@ use std::time::{Duration, Instant};
 
 use ::airplay::{Browser, Event, PinPairing, PlaybackInfo, PlaybackState, VideoSession};
 use futures::channel::mpsc::UnboundedReceiver;
-use stream_server::{AudioCodec, Hdr, Profile, Segments, VideoCodec};
+use stream_server::{AudioCodec, FULL_HD, Hdr, Profile, Segments, UHD, VideoCodec};
 
 use super::pairings::Pairings;
 use super::target::{
@@ -28,9 +28,6 @@ pub const KIND: &str = "AirPlay";
 /// How long a receiver has to start playing what it was given: one that
 /// can't get it says nothing of why, and shows a spinner till stopped.
 const START_LIMIT: Duration = Duration::from_secs(if cfg!(test) { 2 } else { 30 });
-
-const FULL_HD: (u32, u32) = (1920, 1080);
-const UHD: (u32, u32) = (3840, 2160);
 
 pub struct AirPlayTarget {
     /// Looking for receivers until dropped; tests have their fakes instead.

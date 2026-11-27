@@ -43,7 +43,7 @@ use std::fmt;
 pub use adjust::Adjustments;
 pub use media::{AudioInfo, MediaInfo, Source, StreamInfo, StreamKind, VideoInfo};
 pub use plan::{AudioPlan, Delivery, Pick, Plan, VideoPlan};
-pub use profile::{AudioCodec, Container, Hdr, Profile, Segments, VideoCodec};
+pub use profile::{AudioCodec, Container, FULL_HD, Hdr, Profile, Segments, UHD, VideoCodec};
 pub use server::{Cast, CastRequest, Server};
 pub use subtitles::SubtitleSource;
 

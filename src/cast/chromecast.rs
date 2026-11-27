@@ -15,7 +15,9 @@ use ::chromecast::{
     PlayerState, StreamType, TextTrack, TextTrackStyle,
 };
 use futures::channel::mpsc::UnboundedReceiver;
-use stream_server::{AudioCodec, Container, Hdr, Profile, Segments, SubtitleSource, VideoCodec};
+use stream_server::{
+    AudioCodec, Container, FULL_HD, Hdr, Profile, Segments, SubtitleSource, UHD, VideoCodec,
+};
 
 use super::target::{Device, Error, Load, Session, Shows, State, Status, Subtitles, Target};
 use crate::media::tracks::language_tag;
@@ -28,9 +30,6 @@ const TRACK: u32 = 1;
 
 /// What subtitles go as.
 const WEBVTT: &str = "text/vtt";
-
-const FULL_HD: (u32, u32) = (1920, 1080);
-const UHD: (u32, u32) = (3840, 2160);
 
 /// The containers every Cast device plays as files.
 const FILES: [Container; 7] = [

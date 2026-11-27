@@ -95,6 +95,12 @@ pub struct Profile {
     pub max_channels: u16,
 }
 
+/// Full HD's picture, 1080p: what nearly every TV and streaming stick
+/// shows.
+pub const FULL_HD: (u32, u32) = (1920, 1080);
+/// 4K UHD's picture, 2160p.
+pub const UHD: (u32, u32) = (3840, 2160);
+
 impl Default for Profile {
     /// What nearly every TV and streaming stick plays: H.264 up to 1080p and
     /// AAC stereo, in MP4 files or HLS of MPEG-TS segments.
@@ -108,7 +114,7 @@ impl Default for Profile {
             fetches_urls: true,
             video: vec![VideoCodec::H264],
             audio: vec![AudioCodec::Aac],
-            max_size: Some((1920, 1080)),
+            max_size: Some(FULL_HD),
             max_bit_depth: 8,
             hdr: Vec::new(),
             dolby_vision: None,
