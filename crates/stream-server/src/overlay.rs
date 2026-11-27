@@ -25,6 +25,12 @@ const EPSILON: f64 = 1e-3;
 const PQ_WHITE_NITS: f64 = 203.0;
 /// The scene light giving 75% of HLG's signal, BT.2408's graphics white.
 const HLG_WHITE: f64 = 0.2647;
+/// Linear BT.709 light as BT.2020's primaries have it (BT.2087).
+const BT709_TO_BT2020: [[f64; 3]; 3] = [
+    [0.627_404, 0.329_283, 0.043_313],
+    [0.069_097, 0.919_540, 0.011_362],
+    [0.016_391, 0.088_013, 0.895_595],
+];
 
 /// How a frame codes its colors, which pictures are converted to.
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -43,15 +49,20 @@ enum Transfer {
 }
 
 impl Coding {
-    /// An encoding's: the source's colors it keeps (`encode::kept_colors`),
-    /// else SDR's BT.709.
-    pub fn of(kept: Option<&Colors>) -> Self {
+    /// An encoding's, of pictures `height` high: the source's colors it
+    /// keeps (`encode::kept_colors`), else SDR's BT.709. A matrix kept
+    /// unsaid is BT.709's from 720 lines and BT.601's below, as the player
+    /// takes it.
+    pub fn of(kept: Option<&Colors>, height: u32) -> Self {
         use ffi::AVColorSpace::*;
         use ffi::AVColorTransferCharacteristic::*;
-        let (kr, kb) = match kept.and_then(|colors| colors.space) {
-            Some(AVCOL_SPC_BT2020_NCL | AVCOL_SPC_BT2020_CL) => (0.2627, 0.0593),
-            Some(AVCOL_SPC_BT470BG | AVCOL_SPC_SMPTE170M) => (0.299, 0.114),
-            _ => (0.2126, 0.0722),
+        let (kr, kb) = match kept.map(|colors| colors.space) {
+            None | Some(Some(AVCOL_SPC_BT709)) => (0.2126, 0.0722),
+            Some(Some(AVCOL_SPC_BT2020_NCL | AVCOL_SPC_BT2020_CL)) => (0.2627, 0.0593),
+            Some(Some(AVCOL_SPC_FCC)) => (0.30, 0.11),
+            Some(Some(AVCOL_SPC_SMPTE240M)) => (0.212, 0.087),
+            Some(None) if height >= 720 => (0.2126, 0.0722),
+            _ => (0.299, 0.114),
         };
         let transfer = match kept.and_then(|colors| colors.transfer) {
             Some(AVCOL_TRC_SMPTE2084) => Transfer::Pq,
@@ -65,11 +76,9 @@ impl Coding {
     /// differences (-0.5 to 0.5) and opacity, premultiplied.
     fn color(&self, argb: u32) -> [f32; 4] {
         let alpha = (argb >> 24) as f32 / 255.0;
-        let channel = |shift: u32| {
-            self.transfer
-                .encode(f64::from((argb >> shift) & 0xFF) / 255.0)
-        };
-        let (r, g, b) = (channel(16), channel(8), channel(0));
+        let [r, g, b] = self
+            .transfer
+            .encode([16, 8, 0].map(|shift| f64::from((argb >> shift) & 0xFF) / 255.0));
         let y = self.kr * r + (1.0 - self.kr - self.kb) * g + self.kb * b;
         let cb = (b - y) / (2.0 * (1.0 - self.kb));
         let cr = (r - y) / (2.0 * (1.0 - self.kr));
@@ -78,30 +87,35 @@ impl Coding {
 }
 
 impl Transfer {
-    /// A picture's channel, made for SDR, in this transfer: its white at
-    /// graphics white, not the brightest there is.
-    fn encode(self, value: f64) -> f32 {
+    /// A picture's color, made for SDR in BT.709, in this transfer: its
+    /// white at graphics white, not the brightest there is, and in HDR in
+    /// BT.2020's primaries, as HDR video has them.
+    fn encode(self, rgb: [f64; 3]) -> [f32; 3] {
+        let light = || {
+            let light = rgb.map(|value| value.powf(2.4));
+            BT709_TO_BT2020.map(|row| row[0] * light[0] + row[1] * light[1] + row[2] * light[2])
+        };
         let encoded = match self {
-            Self::Sdr => value,
-            Self::Pq => {
+            Self::Sdr => rgb,
+            Self::Pq => light().map(|light| {
                 // SMPTE ST 2084's inverse EOTF.
                 let (m1, m2) = (2610.0 / 16384.0, 2523.0 / 4096.0 * 128.0);
                 let (c1, c2, c3) = (3424.0 / 4096.0, 2413.0 / 128.0, 2392.0 / 128.0);
-                let light = (value.powf(2.4) * PQ_WHITE_NITS / 10_000.0).powf(m1);
+                let light = (light * PQ_WHITE_NITS / 10_000.0).powf(m1);
                 ((c1 + c2 * light) / (1.0 + c3 * light)).powf(m2)
-            }
-            Self::Hlg => {
+            }),
+            Self::Hlg => light().map(|light| {
                 // BT.2100's HLG OETF.
                 let (a, b, c) = (0.178_832_77, 0.284_668_92, 0.559_910_73);
-                let light = value.powf(2.4) * HLG_WHITE;
+                let light = light * HLG_WHITE;
                 if light <= 1.0 / 12.0 {
                     (3.0 * light).sqrt()
                 } else {
                     a * (12.0 * light - b).ln() + c
                 }
-            }
+            }),
         };
-        encoded as f32
+        encoded.map(|value| value as f32)
     }
 }
 

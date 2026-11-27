@@ -85,6 +85,30 @@ fn converts_palette_colors_premultiplied() {
 }
 
 #[test]
+fn colors_go_into_hdr_in_bt2020s_primaries() {
+    let close = |a: [f32; 3], b: [f32; 3]| a.iter().zip(b).all(|(a, b)| (a - b).abs() < 1e-4);
+    for transfer in [Transfer::Pq, Transfer::Hlg] {
+        // Gray, whose light is the same in either primaries, as coded.
+        let gray = |light: f64| transfer.encode([light.powf(1.0 / 2.4); 3])[0];
+        // BT.709's red is BT.2020's red with some green and blue.
+        let red = transfer.encode([1.0, 0.0, 0.0]);
+        assert!(
+            close(red, [gray(0.627_404), gray(0.069_097), gray(0.016_391)]),
+            "{transfer:?}: {red:?}"
+        );
+        let blue = transfer.encode([0.0, 0.0, 1.0]);
+        assert!(
+            close(blue, [gray(0.043_313), gray(0.011_362), gray(0.895_595)]),
+            "{transfer:?}: {blue:?}"
+        );
+        let white = transfer.encode([1.0; 3]);
+        assert!(close(white, [white[0]; 3]), "white stays white: {white:?}");
+    }
+    // SDR goes as BT.709, as it is.
+    assert_eq!(Transfer::Sdr.encode([1.0, 0.5, 0.0]), [1.0, 0.5, 0.0]);
+}
+
+#[test]
 fn copies_a_picture_at_the_canvas_size() {
     let patch = patch(&bar(2, 1, 4, 3), (8, 8), (8, 8), &SDR).unwrap();
     // A pixel of nothing either side.
@@ -152,7 +176,7 @@ fn takes_the_frames_colors() {
     };
     let hdr10 = colors(AVCOL_SPC_BT2020_NCL, AVCOL_TRC_SMPTE2084);
     assert_eq!(
-        Coding::of(Some(&hdr10)),
+        Coding::of(Some(&hdr10), 2160),
         Coding {
             transfer: Transfer::Pq,
             ..bt2020
@@ -160,18 +184,28 @@ fn takes_the_frames_colors() {
     );
     let hlg = colors(AVCOL_SPC_BT2020_NCL, AVCOL_TRC_ARIB_STD_B67);
     assert_eq!(
-        Coding::of(Some(&hlg)),
+        Coding::of(Some(&hlg), 2160),
         Coding {
             transfer: Transfer::Hlg,
             ..bt2020
         }
     );
-    let sd = colors(AVCOL_SPC_SMPTE170M, AVCOL_TRC_BT709);
-    assert_eq!(Coding::of(Some(&sd)).kr, 0.299);
+    let weights = |space, height| {
+        let coding = Coding::of(Some(&colors(space, AVCOL_TRC_BT709)), height);
+        (coding.kr, coding.kb)
+    };
+    assert_eq!(weights(AVCOL_SPC_SMPTE170M, 480), (0.299, 0.114));
+    assert_eq!(weights(AVCOL_SPC_BT470BG, 576), (0.299, 0.114));
+    assert_eq!(weights(AVCOL_SPC_BT709, 480), (0.2126, 0.0722));
+    assert_eq!(weights(AVCOL_SPC_FCC, 480), (0.30, 0.11));
+    assert_eq!(weights(AVCOL_SPC_SMPTE240M, 1080), (0.212, 0.087));
+    // A matrix unsaid is BT.709's from 720 lines, BT.601's below.
+    let unsaid = |height| Coding::of(Some(&Colors::default()), height);
+    assert_eq!(unsaid(720), SDR);
+    assert_eq!((unsaid(719).kr, unsaid(719).kb), (0.299, 0.114));
     // Encodings not keeping the source's colors are BT.709 SDR, whatever
     // the source was.
-    assert_eq!(Coding::of(None), SDR);
-    assert_eq!(Coding::of(Some(&Colors::default())), SDR);
+    assert_eq!(Coding::of(None, 480), SDR);
 }
 
 #[test]

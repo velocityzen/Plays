@@ -686,7 +686,8 @@ fn video_work(
             let colors = kept_colors(Colors::of(&parameters), *ten_bit, *hdr, reshapes);
             let size = info.map_or((*width, *height), |video| (video.width, video.height));
             let overlay = media.plan.subtitles.and_then(|subtitles| {
-                Overlay::open(input, subtitles, size, Coding::of(colors.as_ref()))
+                // Coded as what's sent is, at its height.
+                Overlay::open(input, subtitles, size, Coding::of(colors.as_ref(), *height))
                     .inspect_err(|err| log::warn!("the subtitles can't be drawn in: {err}"))
                     .ok()
             });
