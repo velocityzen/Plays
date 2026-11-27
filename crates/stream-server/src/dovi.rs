@@ -12,11 +12,10 @@
 
 use ffmpeg::{ffi, frame};
 use ffmpeg_next as ffmpeg;
+use ffmpeg_safe::Rpu;
+use ffmpeg_safe::sys::{self, MAX_PIECES};
 
 use crate::hdr;
-
-/// FFmpeg's `AV_DOVI_MAX_PIECES`.
-const MAX_PIECES: usize = 8;
 
 /// From BT.2020's Hunt-Pointer-Estevez LMS, without crosstalk, to BT.2020
 /// RGB. The RPU's own linear matrix comes first (libplacebo's values).
@@ -25,150 +24,6 @@ const LMS_TO_BT2020: [[f32; 3]; 3] = [
     [-0.656_131_3, 1.785_569_4, -0.129_439_5],
     [0.017_360_633, -0.047_244_53, 1.029_889_5],
 ];
-
-/// The parts of FFmpeg's structs in libavutil/dovi_meta.h that are read
-/// here, which the bindings don't cover. Later FFmpeg versions only add
-/// fields at the ends, and `AVDOVIMetadata` says where each struct starts.
-#[allow(dead_code)]
-pub(crate) mod sys {
-    use super::MAX_PIECES;
-    use ffmpeg_next::ffi::AVRational;
-
-    /// `AVDOVIDecoderConfigurationRecord`, a stream's coded side data.
-    #[repr(C)]
-    pub struct Configuration {
-        pub dv_version_major: u8,
-        pub dv_version_minor: u8,
-        pub dv_profile: u8,
-        pub dv_level: u8,
-        pub rpu_present_flag: u8,
-        pub el_present_flag: u8,
-        pub bl_present_flag: u8,
-        /// What the base layer is without its RPU: 0 nothing shown alone
-        /// (IPT), 1 and 6 HDR10, 2 SDR, 4 HLG.
-        pub dv_bl_signal_compatibility_id: u8,
-        pub dv_md_compression: u8,
-    }
-
-    #[repr(C)]
-    pub struct Metadata {
-        pub header_offset: usize,
-        pub mapping_offset: usize,
-        pub color_offset: usize,
-    }
-
-    #[repr(C)]
-    pub struct RpuDataHeader {
-        pub rpu_type: u8,
-        pub rpu_format: u16,
-        pub vdr_rpu_profile: u8,
-        pub vdr_rpu_level: u8,
-        pub chroma_resampling_explicit_filter_flag: u8,
-        pub coef_data_type: u8,
-        pub coef_log2_denom: u8,
-        pub vdr_rpu_normalized_idc: u8,
-        pub bl_video_full_range_flag: u8,
-        pub bl_bit_depth: u8,
-        pub el_bit_depth: u8,
-        pub vdr_bit_depth: u8,
-        pub spatial_resampling_filter_flag: u8,
-        pub el_spatial_resampling_filter_flag: u8,
-        pub disable_residual_flag: u8,
-    }
-
-    /// `AV_DOVI_MAPPING_MMR`; the other method is polynomial.
-    pub const MAPPING_MMR: i32 = 1;
-
-    #[repr(C)]
-    pub struct ReshapingCurve {
-        pub num_pivots: u8,
-        pub pivots: [u16; MAX_PIECES + 1],
-        pub mapping_idc: [i32; MAX_PIECES],
-        pub poly_order: [u8; MAX_PIECES],
-        pub poly_coef: [[i64; 3]; MAX_PIECES],
-        pub mmr_order: [u8; MAX_PIECES],
-        pub mmr_constant: [i64; MAX_PIECES],
-        pub mmr_coef: [[[i64; 7]; 3]; MAX_PIECES],
-    }
-
-    /// `AVDOVINLQParams`.
-    #[repr(C)]
-    #[derive(Clone, Copy)]
-    pub struct NlqParams {
-        pub nlq_offset: u16,
-        pub vdr_in_max: u64,
-        pub linear_deadzone_slope: u64,
-        pub linear_deadzone_threshold: u64,
-    }
-
-    #[repr(C)]
-    pub struct DataMapping {
-        pub vdr_rpu_id: u8,
-        pub mapping_color_space: u8,
-        pub mapping_chroma_format_idc: u8,
-        pub curves: [ReshapingCurve; 3],
-        pub nlq_method_idc: i32,
-        pub num_x_partitions: u32,
-        pub num_y_partitions: u32,
-        pub nlq: [NlqParams; 3],
-        pub nlq_pivots: [u16; 2],
-    }
-
-    #[repr(C)]
-    pub struct ColorMetadata {
-        pub dm_metadata_id: u8,
-        pub scene_refresh_flag: u8,
-        pub ycc_to_rgb_matrix: [AVRational; 9],
-        pub ycc_to_rgb_offset: [AVRational; 3],
-        pub rgb_to_lms_matrix: [AVRational; 9],
-        pub signal_eotf: u16,
-        pub signal_eotf_param0: u16,
-        pub signal_eotf_param1: u16,
-        pub signal_eotf_param2: u32,
-        pub signal_bit_depth: u8,
-        pub signal_color_space: u8,
-        pub signal_chroma_format: u8,
-        pub signal_full_range_flag: u8,
-        /// The mastering display's black and peak, as 12-bit PQ codes.
-        pub source_min_pq: u16,
-        pub source_max_pq: u16,
-        pub source_diagonal: u16,
-    }
-}
-
-/// A frame's RPU as FFmpeg parsed it, from its side data.
-fn rpu(
-    frame: &frame::Video,
-) -> Option<(&sys::RpuDataHeader, &sys::DataMapping, &sys::ColorMetadata)> {
-    // SAFETY: side data stays valid as long as the frame, which the
-    // references borrow; each struct is checked to be within it before it
-    // is read, and FFmpeg places each aligned for any struct.
-    unsafe {
-        let side = ffi::av_frame_get_side_data(
-            frame.as_ptr(),
-            ffi::AVFrameSideDataType::AV_FRAME_DATA_DOVI_METADATA,
-        );
-        if side.is_null() {
-            return None;
-        }
-        let (data, size) = ((*side).data as *const u8, (*side).size);
-        let within =
-            |offset: usize, len: usize| offset.checked_add(len).is_some_and(|end| end <= size);
-        if data.is_null() || !within(0, size_of::<sys::Metadata>()) {
-            return None;
-        }
-        let metadata = &*(data as *const sys::Metadata);
-        let part = |offset: usize, len: usize| within(offset, len).then(|| data.add(offset));
-        let header = part(metadata.header_offset, size_of::<sys::RpuDataHeader>())?;
-        let mapping = part(metadata.mapping_offset, size_of::<sys::DataMapping>())?;
-        let color = part(metadata.color_offset, size_of::<sys::ColorMetadata>())?;
-        Some((
-            &*(header as *const sys::RpuDataHeader),
-            &*(mapping as *const sys::DataMapping),
-            &*(color as *const sys::ColorMetadata),
-        ))
-    }
-}
 
 #[derive(Clone, Copy, Debug)]
 enum Piece {
@@ -250,7 +105,11 @@ pub(crate) struct Reshaping {
 impl Reshaping {
     /// The reshaping `frame`'s RPU gives, if it has one that can be read.
     pub fn of(frame: &frame::Video) -> Option<Self> {
-        let (header, mapping, color) = rpu(frame)?;
+        let Rpu {
+            header,
+            mapping,
+            color,
+        } = ffmpeg_safe::rpu(frame)?;
         Self::new(header, mapping, color)
     }
 

@@ -1,5 +1,3 @@
-use std::mem::offset_of;
-
 use ffmpeg::util::format::Pixel;
 
 use super::*;
@@ -187,17 +185,6 @@ fn tone_map_keeps_hue() {
         assert!(r < 1.0);
         assert!(close(g / r, 0.5, 1e-6) && close(b / r, 0.25, 1e-6));
     }
-}
-
-#[test]
-fn mirrors_ffmpegs_layout() {
-    // From offsetof() against libavutil/mastering_display_metadata.h.
-    assert_eq!(offset_of!(sys::MasteringDisplay, white_point), 48);
-    assert_eq!(offset_of!(sys::MasteringDisplay, max_luminance), 72);
-    assert_eq!(offset_of!(sys::MasteringDisplay, has_luminance), 84);
-    assert_eq!(size_of::<sys::MasteringDisplay>(), 88);
-    assert_eq!(offset_of!(sys::ContentLightLevel, max_fall), 4);
-    assert_eq!(size_of::<sys::ContentLightLevel>(), 8);
 }
 
 #[test]

@@ -9,7 +9,7 @@ use ffmpeg::format::stream::{Disposition, Stream};
 use ffmpeg::{ffi, media};
 use ffmpeg_next as ffmpeg;
 
-use super::enhancement::Configuration;
+use ffmpeg_safe::DolbyVision;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum TrackKind {
@@ -49,7 +49,7 @@ impl Track {
         let kind = match parameters.medium() {
             media::Type::Video
                 if !disposition.contains(Disposition::ATTACHED_PIC)
-                    && !Configuration::is_layer_only(&parameters) =>
+                    && !DolbyVision::of(&parameters).is_some_and(DolbyVision::is_layer_only) =>
             {
                 TrackKind::Video
             }

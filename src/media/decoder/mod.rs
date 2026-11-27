@@ -56,7 +56,6 @@ pub(super) use video::open_video;
 
 use super::chapters::Chapter;
 use super::details::{AudioDetails, ContainerDetails, VideoDetails};
-use super::enhancement::Configuration;
 use super::external::{self, Reading, SubtitleFile};
 use super::orientation::Orientation;
 use super::picking::Wanted;
@@ -68,6 +67,7 @@ use demux::{
     Demuxer, FILE_READ_AHEAD, Next, PacketQueue, Packets, STREAM_READ_AHEAD, StopOnDrop, demux,
     packet_time,
 };
+use ffmpeg_safe::DolbyVision;
 use video::VideoDecoder;
 
 /// How far ahead of the playhead a subtitle file is decoded.
@@ -787,7 +787,7 @@ fn open_best_video(
     let mut cover: Option<VideoDecoder> = None;
     // Dolby Vision's enhancement layer plays with its base layer.
     let shown = |stream: &ffmpeg::format::stream::Stream| {
-        !Configuration::is_layer_only(&stream.parameters())
+        !DolbyVision::of(&stream.parameters()).is_some_and(DolbyVision::is_layer_only)
     };
     let best = input
         .streams()

@@ -1,5 +1,3 @@
-use std::mem::offset_of;
-
 use super::*;
 use crate::hdr::pq_to_nits;
 
@@ -101,7 +99,7 @@ fn attach_rpu(
     color: &sys::ColorMetadata,
 ) {
     let after = |offset: usize, len: usize| (offset + len).next_multiple_of(8);
-    let header_offset = after(0, size_of::<sys::Metadata>());
+    let header_offset = after(0, size_of::<sys::DoviMetadata>());
     let mapping_offset = after(header_offset, size_of::<sys::RpuDataHeader>());
     let color_offset = after(mapping_offset, size_of::<sys::DataMapping>());
     let len = color_offset + size_of::<sys::ColorMetadata>();
@@ -116,7 +114,7 @@ fn attach_rpu(
         );
         assert!(!side.is_null());
         let data = (*side).data;
-        data.cast::<sys::Metadata>().write(sys::Metadata {
+        data.cast::<sys::DoviMetadata>().write(sys::DoviMetadata {
             header_offset,
             mapping_offset,
             color_offset,
@@ -128,38 +126,13 @@ fn attach_rpu(
 }
 
 #[test]
-fn mirrors_ffmpegs_layout() {
-    // From offsetof() against libavutil/dovi_meta.h.
-    assert_eq!(offset_of!(sys::RpuDataHeader, coef_log2_denom), 8);
-    assert_eq!(offset_of!(sys::RpuDataHeader, bl_bit_depth), 11);
-    assert_eq!(offset_of!(sys::RpuDataHeader, disable_residual_flag), 16);
-    assert_eq!(size_of::<sys::ReshapingCurve>(), 1672);
-    assert_eq!(offset_of!(sys::ReshapingCurve, mapping_idc), 20);
-    assert_eq!(offset_of!(sys::ReshapingCurve, poly_coef), 64);
-    assert_eq!(offset_of!(sys::ReshapingCurve, mmr_constant), 264);
-    assert_eq!(offset_of!(sys::ReshapingCurve, mmr_coef), 328);
-    assert_eq!(offset_of!(sys::DataMapping, curves), 8);
-    assert_eq!(offset_of!(sys::DataMapping, nlq), 5040);
-    assert_eq!(size_of::<sys::DataMapping>(), 5144);
-    assert_eq!(
-        offset_of!(sys::Configuration, dv_bl_signal_compatibility_id),
-        7
-    );
-    assert_eq!(size_of::<sys::Configuration>(), 9);
-    assert_eq!(offset_of!(sys::ColorMetadata, ycc_to_rgb_offset), 76);
-    assert_eq!(offset_of!(sys::ColorMetadata, rgb_to_lms_matrix), 100);
-    assert_eq!(offset_of!(sys::ColorMetadata, source_max_pq), 190);
-    assert_eq!(size_of::<sys::ColorMetadata>(), 196);
-}
-
-#[test]
 fn reads_no_rpu_past_the_end_of_its_side_data() {
     use ffmpeg::util::format::Pixel;
 
     let (header, mapping, color) = profile5();
     // The mapping last, where no part after it vouches for its end.
     let after = |offset: usize, len: usize| (offset + len).next_multiple_of(8);
-    let header_offset = after(0, size_of::<sys::Metadata>());
+    let header_offset = after(0, size_of::<sys::DoviMetadata>());
     let color_offset = after(header_offset, size_of::<sys::RpuDataHeader>());
     let mapping_offset = after(color_offset, size_of::<sys::ColorMetadata>());
     let whole = mapping_offset + size_of::<sys::DataMapping>();
@@ -176,7 +149,7 @@ fn reads_no_rpu_past_the_end_of_its_side_data() {
             );
             assert!(!side.is_null());
             let data = (*side).data;
-            data.cast::<sys::Metadata>().write(sys::Metadata {
+            data.cast::<sys::DoviMetadata>().write(sys::DoviMetadata {
                 header_offset,
                 mapping_offset,
                 color_offset,

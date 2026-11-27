@@ -25,7 +25,7 @@ use ffmpeg::{ffi, frame};
 use ffmpeg_next as ffmpeg;
 
 use super::picture::{apply_gamma, bgra_rows};
-use ffmpeg_safe::Colors;
+use ffmpeg_safe::{Colors, sys};
 
 /// HDR reference white (BT.2408), shown as SDR white.
 pub const REFERENCE_WHITE_NITS: f32 = 203.0;
@@ -194,31 +194,6 @@ pub fn tone_map(rgb: [f32; 3], headroom: f32, peak: Option<f32>) -> [f32; 3] {
     rgb.map(|c| c * scale)
 }
 
-/// FFmpeg's structs in libavutil/mastering_display_metadata.h, which the
-/// bindings don't cover.
-#[allow(dead_code)]
-pub(super) mod sys {
-    use std::ffi::{c_int, c_uint};
-
-    use ffmpeg_next::ffi::AVRational;
-
-    #[repr(C)]
-    pub struct MasteringDisplay {
-        pub display_primaries: [[AVRational; 2]; 3],
-        pub white_point: [AVRational; 2],
-        pub min_luminance: AVRational,
-        pub max_luminance: AVRational,
-        pub has_primaries: c_int,
-        pub has_luminance: c_int,
-    }
-
-    #[repr(C)]
-    pub struct ContentLightLevel {
-        pub max_cll: c_uint,
-        pub max_fall: c_uint,
-    }
-}
-
 /// The brightest the frame's video gets, in nits, as far as anything says.
 /// HLG is always shown as on its nominal display. PQ's HDR10 metadata says:
 /// the brightest pixel of the whole video (MaxCLL), or the peak of the
@@ -229,19 +204,8 @@ pub fn peak_nits(frame: &frame::Video) -> Option<f32> {
     match Transfer::of(frame)? {
         Transfer::Hlg => Some(HLG_PEAK_NITS),
         Transfer::Pq => {
-            // SAFETY: FFmpeg keeps these kinds of side data as these structs.
-            let (light, display) = unsafe {
-                (
-                    side_data::<sys::ContentLightLevel>(
-                        frame,
-                        ffi::AVFrameSideDataType::AV_FRAME_DATA_CONTENT_LIGHT_LEVEL,
-                    ),
-                    side_data::<sys::MasteringDisplay>(
-                        frame,
-                        ffi::AVFrameSideDataType::AV_FRAME_DATA_MASTERING_DISPLAY_METADATA,
-                    ),
-                )
-            };
+            let light = ffmpeg_safe::frame::<sys::ContentLightLevel>(frame);
+            let display = ffmpeg_safe::frame::<sys::MasteringDisplay>(frame);
             let brightest = light.map(|light| light.max_cll as f32);
             // Over nothing, a peak is no number, which isn't plausible.
             let mastered = display
@@ -288,23 +252,6 @@ pub fn attach_peak(frame: &mut frame::Video, nits: f32) -> Result<()> {
             });
     }
     Ok(())
-}
-
-/// The frame's side data of `kind`, if it has some as big as a `T`.
-///
-/// # Safety
-///
-/// FFmpeg must keep that kind of side data as a `T`.
-unsafe fn side_data<T>(frame: &frame::Video, kind: ffi::AVFrameSideDataType) -> Option<&T> {
-    // SAFETY: side data stays valid as long as the frame, and FFmpeg
-    // allocates it aligned for any struct.
-    unsafe {
-        let side = ffi::av_frame_get_side_data(frame.as_ptr(), kind);
-        if side.is_null() || (*side).data.is_null() || ((*side).size as usize) < size_of::<T>() {
-            return None;
-        }
-        Some(&*(*side).data.cast::<T>())
-    }
 }
 
 /// sRGB's encoding of linear light in 0..=1.

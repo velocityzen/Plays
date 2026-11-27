@@ -1,6 +1,5 @@
 use super::*;
 use crate::media::hdr::{REFERENCE_WHITE_NITS, Transfer, pq_to_nits};
-use std::mem::offset_of;
 
 fn rational(num: i32, den: i32) -> ffi::AVRational {
     ffi::AVRational { num, den }
@@ -92,7 +91,7 @@ pub(crate) fn attach_rpu(
     color: &sys::ColorMetadata,
 ) {
     let after = |offset: usize, len: usize| (offset + len).next_multiple_of(8);
-    let header_offset = after(0, size_of::<sys::Metadata>());
+    let header_offset = after(0, size_of::<sys::DoviMetadata>());
     let mapping_offset = after(header_offset, size_of::<sys::RpuDataHeader>());
     let color_offset = after(mapping_offset, size_of::<sys::DataMapping>());
     let len = color_offset + size_of::<sys::ColorMetadata>();
@@ -107,7 +106,7 @@ pub(crate) fn attach_rpu(
         );
         assert!(!side.is_null());
         let data = (*side).data;
-        data.cast::<sys::Metadata>().write(sys::Metadata {
+        data.cast::<sys::DoviMetadata>().write(sys::DoviMetadata {
             header_offset,
             mapping_offset,
             color_offset,
@@ -119,49 +118,13 @@ pub(crate) fn attach_rpu(
 }
 
 #[test]
-fn mirrors_ffmpegs_layout() {
-    // From offsetof() against libavutil/dovi_meta.h.
-    assert_eq!(offset_of!(sys::RpuDataHeader, coef_log2_denom), 8);
-    assert_eq!(offset_of!(sys::RpuDataHeader, bl_bit_depth), 11);
-    assert_eq!(offset_of!(sys::RpuDataHeader, disable_residual_flag), 16);
-    assert_eq!(size_of::<sys::ReshapingCurve>(), 1672);
-    assert_eq!(offset_of!(sys::ReshapingCurve, mapping_idc), 20);
-    assert_eq!(offset_of!(sys::ReshapingCurve, poly_coef), 64);
-    assert_eq!(offset_of!(sys::ReshapingCurve, mmr_constant), 264);
-    assert_eq!(offset_of!(sys::ReshapingCurve, mmr_coef), 328);
-    assert_eq!(offset_of!(sys::DataMapping, curves), 8);
-    assert_eq!(offset_of!(sys::DataMapping, nlq_method_idc), 5024);
-    assert_eq!(offset_of!(sys::DataMapping, num_x_partitions), 5028);
-    assert_eq!(offset_of!(sys::DataMapping, num_y_partitions), 5032);
-    assert_eq!(offset_of!(sys::DataMapping, nlq), 5040);
-    assert_eq!(offset_of!(sys::DataMapping, nlq_pivots), 5136);
-    assert_eq!(size_of::<sys::DataMapping>(), 5144);
-    assert_eq!(size_of::<sys::NlqParams>(), 32);
-    assert_eq!(offset_of!(sys::NlqParams, vdr_in_max), 8);
-    assert_eq!(offset_of!(sys::NlqParams, linear_deadzone_threshold), 24);
-    assert_eq!(offset_of!(sys::Configuration, dv_profile), 2);
-    assert_eq!(offset_of!(sys::Configuration, el_present_flag), 5);
-    assert_eq!(offset_of!(sys::Configuration, bl_present_flag), 6);
-    assert_eq!(size_of::<sys::Configuration>(), 9);
-    assert_eq!(offset_of!(sys::ColorMetadata, ycc_to_rgb_offset), 76);
-    assert_eq!(offset_of!(sys::ColorMetadata, rgb_to_lms_matrix), 100);
-    assert_eq!(offset_of!(sys::ColorMetadata, signal_eotf_param2), 180);
-    assert_eq!(offset_of!(sys::ColorMetadata, source_max_pq), 190);
-    assert_eq!(size_of::<sys::ColorMetadata>(), 196);
-    // `DOVI_PARAMS_SIZE` in vendor/gpui's metal_renderer.rs, which is
-    // within Metal's limit of 4 KB for bytes set straight on an encoder.
-    #[cfg(target_os = "macos")]
-    assert_eq!(size_of::<ShaderParams>(), 2928);
-}
-
-#[test]
 fn reads_no_rpu_past_the_end_of_its_side_data() {
     use ffmpeg::util::format::Pixel;
 
     let (header, mapping, color) = profile5();
     // The mapping last, where no part after it vouches for its end.
     let after = |offset: usize, len: usize| (offset + len).next_multiple_of(8);
-    let header_offset = after(0, size_of::<sys::Metadata>());
+    let header_offset = after(0, size_of::<sys::DoviMetadata>());
     let color_offset = after(header_offset, size_of::<sys::RpuDataHeader>());
     let mapping_offset = after(color_offset, size_of::<sys::ColorMetadata>());
     let whole = mapping_offset + size_of::<sys::DataMapping>();
@@ -178,7 +141,7 @@ fn reads_no_rpu_past_the_end_of_its_side_data() {
             );
             assert!(!side.is_null());
             let data = (*side).data;
-            data.cast::<sys::Metadata>().write(sys::Metadata {
+            data.cast::<sys::DoviMetadata>().write(sys::DoviMetadata {
                 header_offset,
                 mapping_offset,
                 color_offset,
@@ -192,7 +155,7 @@ fn reads_no_rpu_past_the_end_of_its_side_data() {
             );
         }
         assert_eq!(
-            rpu(&frame).is_some(),
+            ffmpeg_safe::rpu(&frame).is_some(),
             len == whole,
             "{len} of {whole} bytes"
         );
@@ -380,8 +343,7 @@ fn plays_profile_20_as_ipt() {
 
     let path = profile_20_media();
     let input = ffmpeg_safe::input_file(&path).unwrap();
-    let configuration =
-        crate::media::enhancement::Configuration::of(&input.stream(0).unwrap().parameters());
+    let configuration = ffmpeg_safe::DolbyVision::of(&input.stream(0).unwrap().parameters());
     assert_eq!(configuration.map(|c| c.profile), Some(20));
     drop(input);
     for hardware in [true, false] {

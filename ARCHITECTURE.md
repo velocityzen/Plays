@@ -120,7 +120,7 @@ on its own. Clippy lints in the root `Cargo.toml` apply to all.
 | `crates/airplay` | Finds, pairs with and sends to AirPlay receivers |
 | `crates/network` | What the casting crates share: connecting, connections taken, bounded HTTP and RTSP, mDNS |
 | `crates/ffmpeg-link` | Links the static FFmpeg into Plays and the stream server's tests |
-| `crates/ffmpeg-safe` | Sound reads of what ffmpeg-next reads unsoundly: colors, channel layouts, tags, frame planes, subtitle text; files opened reaching only files |
+| `crates/ffmpeg-safe` | Sound reads of what ffmpeg-next reads unsoundly, or not at all: colors, channel layouts, tags, frame planes, subtitle text, side data; files opened reaching only files |
 | `crates/completions` | Shell completion scripts for a clap command line |
 | `crates/file-types` | The formats Plays opens, and what macOS and Linux are told of them, with an icon each |
 | `crates/updater` | An app updating itself: a signed feed, whole and delta update files, swapping one in; and `updater`, which makes a release |
@@ -308,9 +308,11 @@ flowchart LR
   one in an uncommon order points into the frame, tags read as text in
   whatever encoding they're in, a frame's planes sliced to its
   pictures, none stored bottom up, a subtitle's text checked for UTF-8,
-  and a file opened reaching only files (`input_file`), never what a
-  playlist in it names on the network; `clippy.toml` bans the calls that
-  don't
+  side data read as FFmpeg's structs (`sys`) once checked as big as one
+  (`coded`, `frame`, `rpu`): HDR10's, the display matrix, Dolby Vision's
+  configuration and RPU, and a file opened reaching only files
+  (`input_file`), never what a playlist in it names on the network;
+  `clippy.toml` bans the calls that don't
 - `src/media/tracks.rs`: tracks, their menu names, and languages
 - `src/media/picking.rs`: which tracks play (`Wanted`): those picked
   before (`Picked`), else preferred languages, else FFmpeg's best

@@ -22,12 +22,12 @@
 
 use anyhow::{Context as _, Result, bail, ensure};
 use ffmpeg::ffi;
+use ffmpeg::frame;
 use ffmpeg::util::color;
 use ffmpeg::util::format::Pixel;
-use ffmpeg::{codec, frame};
 use ffmpeg_next as ffmpeg;
+use ffmpeg_safe::{Rpu, sys};
 
-use super::dovi::{self, sys};
 use super::{hdr, picture};
 
 /// Bits a composed sample has.
@@ -35,57 +35,6 @@ const OUT_DEPTH: u32 = 10;
 /// Bits each layer's samples have: Blu-rays' both, and all the frames
 /// read here (`Planes`) have.
 const DEPTH: u32 = 10;
-
-/// What a stream's Dolby Vision configuration record says it carries.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Configuration {
-    pub profile: u8,
-    pub level: u8,
-    /// What its base layer shows as without Dolby Vision: 1 HDR10, 2 SDR,
-    /// 4 HLG, 6 a Blu-ray's HDR10; 0 nothing else can show it.
-    pub compatibility: u8,
-    /// The base layer: the picture players without Dolby Vision show.
-    pub base: bool,
-    pub enhancement: bool,
-}
-
-impl Configuration {
-    /// What a stream's parameters say, if it is Dolby Vision.
-    pub fn of(parameters: &codec::Parameters) -> Option<Self> {
-        // SAFETY: the parameters' coded side data stays valid while they
-        // do. A DOVI_CONF entry is an `AVDOVIDecoderConfigurationRecord`,
-        // checked to be as big as one; it is all bytes, so any address
-        // will do.
-        unsafe {
-            let raw = parameters.as_ptr();
-            let side = ffi::av_packet_side_data_get(
-                (*raw).coded_side_data,
-                (*raw).nb_coded_side_data,
-                ffi::AVPacketSideDataType::AV_PKT_DATA_DOVI_CONF,
-            );
-            if side.is_null()
-                || (*side).data.is_null()
-                || (*side).size < size_of::<sys::Configuration>()
-            {
-                return None;
-            }
-            let record = &*(*side).data.cast::<sys::Configuration>();
-            Some(Self {
-                profile: record.dv_profile,
-                level: record.dv_level,
-                compatibility: record.dv_bl_signal_compatibility_id,
-                base: record.bl_present_flag != 0,
-                enhancement: record.el_present_flag != 0,
-            })
-        }
-    }
-
-    /// Whether a stream is only an enhancement layer: a track of its own
-    /// beside the base layer's, which never shows alone.
-    pub fn is_layer_only(parameters: &codec::Parameters) -> bool {
-        Self::of(parameters).is_some_and(|c| c.enhancement && !c.base)
-    }
-}
 
 /// One piece of a component's mapping.
 #[derive(Clone, Copy, Debug)]
@@ -182,7 +131,11 @@ impl Composer {
     /// this can compose: one residual over the whole picture, dequantized
     /// linearly with a dead zone, onto Y'CbCr.
     pub fn of(frame: &frame::Video) -> Option<Self> {
-        let (header, mapping, color) = dovi::rpu(frame)?;
+        let Rpu {
+            header,
+            mapping,
+            color,
+        } = ffmpeg_safe::rpu(frame)?;
         Self::new(header, mapping, color)
     }
 

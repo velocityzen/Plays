@@ -7,8 +7,7 @@ use ffmpeg::util::{color, format::Pixel, format::Sample};
 use ffmpeg::{codec, ffi};
 use ffmpeg_next as ffmpeg;
 
-use super::enhancement::Configuration;
-use ffmpeg_safe::Colors;
+use ffmpeg_safe::{Colors, DolbyVision};
 
 /// The file or stream as a whole.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -90,7 +89,7 @@ impl VideoDetails {
                 .and_then(|transfer| transfer.name()),
             full_range,
             bit_rate: positive(decoder.bit_rate() as i64),
-            dolby_vision: Configuration::of(&codec::Parameters::from(decoder)).is_some(),
+            dolby_vision: DolbyVision::of(&codec::Parameters::from(decoder)).is_some(),
         }
     }
 

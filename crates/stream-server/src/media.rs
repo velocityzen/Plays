@@ -10,11 +10,10 @@ use ffmpeg::ffi;
 use ffmpeg::format::context::Input;
 use ffmpeg::media::Type;
 use ffmpeg_next as ffmpeg;
-use ffmpeg_safe::tag;
+use ffmpeg_safe::{DisplayMatrix, DolbyVision, tag};
 
 use crate::Error;
 use crate::adjust::Adjustments;
-use crate::dovi;
 use crate::profile::{AudioCodec, Container, Hdr, VideoCodec};
 
 /// How long a network read may stall before it gives up, in microseconds.
@@ -245,56 +244,31 @@ fn video_info(stream: &ffmpeg::format::stream::Stream) -> VideoInfo {
     let ffmpeg_safe::Tags {
         transfer, space, ..
     } = ffmpeg_safe::Tags::of_parameters(&parameters);
+    // Its profile, its base layer's compatibility, and whether it's only
+    // an enhancement layer, if its configuration is long enough to say.
+    let dolby_vision = DolbyVision::is_tagged(&parameters).then(|| DolbyVision::of(&parameters));
     // SAFETY: the parameters belong to an open stream. They are read through
-    // the pointer, never a reference. The Dolby Vision configuration, all
-    // bytes, is read only from side data as long as it.
-    let (width, height, format, dolby_vision, picture) = unsafe {
+    // the pointer, never a reference.
+    let (width, height, format, picture) = unsafe {
         let raw = parameters.as_ptr();
-        let configuration = ffi::av_packet_side_data_get(
-            (*raw).coded_side_data,
-            (*raw).nb_coded_side_data,
-            ffi::AVPacketSideDataType::AV_PKT_DATA_DOVI_CONF,
-        );
-        // Its profile, its base layer's compatibility, and whether it's
-        // only an enhancement layer, if the side data is long enough to say.
-        let dolby_vision = (!configuration.is_null()).then(|| {
-            let (data, size) = ((*configuration).data, (*configuration).size);
-            (!data.is_null() && size >= size_of::<dovi::sys::Configuration>()).then(|| {
-                let record = &*data.cast::<dovi::sys::Configuration>();
-                (
-                    record.dv_profile,
-                    record.dv_bl_signal_compatibility_id,
-                    record.el_present_flag != 0 && record.bl_present_flag == 0,
-                )
-            })
-        });
         let disposition = (*stream.as_ptr()).disposition;
         (
             (*raw).width.max(0) as u32,
             (*raw).height.max(0) as u32,
             (*raw).format,
-            dolby_vision,
             disposition & ffi::AV_DISPOSITION_ATTACHED_PIC != 0,
         )
     };
-    // SAFETY: as above; the matrix's size is checked before it's read, and
-    // the shapes are plain pairs of numbers.
-    let (matrix, container_shape, coded_shape) = unsafe {
-        let raw = parameters.as_ptr();
-        let side = ffi::av_packet_side_data_get(
-            (*raw).coded_side_data,
-            (*raw).nb_coded_side_data,
-            ffi::AVPacketSideDataType::AV_PKT_DATA_DISPLAYMATRIX,
-        );
-        let matrix = (!side.is_null() && !(*side).data.is_null() && (*side).size >= 9 * 4)
-            .then(|| std::ptr::read_unaligned((*side).data.cast::<[i32; 9]>()));
+    // SAFETY: as above; the shapes are plain pairs of numbers.
+    let (container_shape, coded_shape) = unsafe {
         (
-            matrix,
             shape((*stream.as_ptr()).sample_aspect_ratio),
-            shape((*raw).sample_aspect_ratio),
+            shape((*parameters.as_ptr()).sample_aspect_ratio),
         )
     };
-    let (turns, mirrored) = matrix.as_ref().and_then(orientation).unwrap_or((0, false));
+    let (turns, mirrored) = ffmpeg_safe::coded::<DisplayMatrix>(&parameters)
+        .and_then(|matrix| matrix.turns())
+        .unwrap_or((0, false));
     let pixel = pixel_shape(container_shape, coded_shape);
     let own = Adjustments {
         turns,
@@ -317,7 +291,7 @@ fn video_info(stream: &ffmpeg::format::stream::Stream) -> VideoInfo {
     // A base layer with nothing to fall back on, as its configuration
     // says, or as its colors do where that doesn't: tagged IPT, or not HDR.
     let ipt = match dolby_vision {
-        Some(Some((_, compatibility, _))) => compatibility == 0,
+        Some(Some(configuration)) => configuration.compatibility == 0,
         Some(None) => space == ffi::AVColorSpace::AVCOL_SPC_IPT_C2 as u32 || !(pq || hlg),
         None => false,
     };
@@ -337,11 +311,13 @@ fn video_info(stream: &ffmpeg::format::stream::Stream) -> VideoInfo {
         hdr,
         base_hdr,
         ipt,
-        dolby_vision: dolby_vision.flatten().map(|(profile, _, _)| profile),
+        dolby_vision: dolby_vision
+            .flatten()
+            .map(|configuration| configuration.profile),
         picture,
         layer_only: dolby_vision
             .flatten()
-            .is_some_and(|(_, _, layer_only)| layer_only),
+            .is_some_and(DolbyVision::is_layer_only),
         own,
         container_aspect: container_shape
             .is_some_and(|shape| (shape - coded_shape.unwrap_or(1.0)).abs() > 1e-9),
@@ -372,43 +348,6 @@ fn pixel_shape(container: Option<f64>, coded: Option<f64>) -> f64 {
     container.or(coded).map_or(1.0, |shape| {
         shape.clamp(1.0 / MOST_PIXEL_SHAPE, MOST_PIXEL_SHAPE)
     })
-}
-
-/// The quarter turns clockwise, after mirroring if so, nearest to what
-/// FFmpeg's display `matrix` asks: it takes a pixel (p, q) to
-/// (a p + c q, b p + d q), with a, b, c, d its first two columns of its
-/// first two rows. None where it squashes the picture flat.
-pub(crate) fn orientation(matrix: &[i32; 9]) -> Option<(u8, bool)> {
-    let fixed = |i: usize| f64::from(matrix[i]) / 65536.0;
-    let wanted = [[fixed(0), fixed(3)], [fixed(1), fixed(4)]];
-    if (wanted[0][0] * wanted[1][1] - wanted[0][1] * wanted[1][0]).abs() < 1e-6 {
-        return None;
-    }
-    let likeness = |way: (u8, bool)| {
-        let taken = takes(way);
-        (0..2)
-            .flat_map(|row| (0..2).map(move |column| (row, column)))
-            .map(|(row, column)| taken[row][column] * wanted[row][column])
-            .sum::<f64>()
-    };
-    (0..8)
-        .map(|way| (way % 4, way >= 4))
-        .max_by(|a, b| likeness(*a).total_cmp(&likeness(*b)))
-}
-
-/// Where `turns` quarter turns clockwise, after mirroring if `mirrored`,
-/// take a point, as `[[xx, xy], [yx, yy]]` (`x' = xx x + xy y`), with x to
-/// the right and y down.
-fn takes((turns, mirrored): (u8, bool)) -> [[f64; 2]; 2] {
-    let sign = if mirrored { -1.0 } else { 1.0 };
-    // A quarter turn clockwise takes (x, y) to (-y, x); mirroring first
-    // negates x.
-    match turns {
-        0 => [[sign, 0.0], [0.0, 1.0]],
-        1 => [[0.0, -1.0], [sign, 0.0]],
-        2 => [[-sign, 0.0], [0.0, -1.0]],
-        _ => [[0.0, 1.0], [-sign, 0.0]],
-    }
 }
 
 /// Bits per sample of a pixel format, by its first component; 8 when unknown.

@@ -43,40 +43,40 @@ fn composes_like_its_matrices() {
     );
 }
 
-/// FFmpeg's own matrices, as its demuxers make them, come back as the
-/// turns and flips they describe.
+/// A stream's display matrix comes back as the turn and flip it asks for,
+/// and none, or one that squashes the picture flat, as upright.
 #[test]
-fn reads_ffmpeg_display_matrices() {
-    let matrix = |rotation: f64, hflip: bool| {
-        let mut m = [0i32; 9];
-        // SAFETY: both write nine i32s.
-        unsafe {
-            ffi::av_display_rotation_set(m.as_mut_ptr(), rotation);
-            ffi::av_display_matrix_flip(m.as_mut_ptr(), hflip.into(), 0);
+fn reads_a_streams_display_matrix() {
+    let read = |matrix: Option<[i32; 9]>| {
+        let mut parameters = codec::Parameters::new();
+        if let Some(matrix) = matrix {
+            // SAFETY: FFmpeg allocates the side data as big as asked, owned
+            // by the parameters, and nine i32s are copied into it.
+            unsafe {
+                let raw = parameters.as_mut_ptr();
+                let side = ffmpeg::ffi::av_packet_side_data_new(
+                    &raw mut (*raw).coded_side_data,
+                    &raw mut (*raw).nb_coded_side_data,
+                    ffmpeg::ffi::AVPacketSideDataType::AV_PKT_DATA_DISPLAYMATRIX,
+                    size_of::<[i32; 9]>(),
+                    0,
+                );
+                assert!(!side.is_null());
+                std::ptr::copy_nonoverlapping(matrix.as_ptr(), (*side).data.cast(), 9);
+            }
         }
-        Orientation::from_display_matrix(&m).unwrap()
+        Orientation::of(&parameters)
     };
-    // `av_display_rotation_set` takes degrees clockwise, while
-    // `av_display_rotation_get` (and ffprobe) give them counterclockwise:
-    // a phone held upright records -90, and players turn it a quarter
-    // clockwise.
-    assert_eq!(matrix(0.0, false), Orientation::UPRIGHT);
-    assert_eq!(matrix(90.0, false), Orientation::new(1, false));
-    assert_eq!(matrix(-90.0, false), Orientation::new(3, false));
-    assert_eq!(matrix(180.0, false), Orientation::new(2, false));
-    assert_eq!(matrix(88.0, false), Orientation::new(1, false));
-    let mut phone = [0i32; 9];
-    // SAFETY: both take nine i32s.
-    let rotation = unsafe {
-        ffi::av_display_rotation_set(phone.as_mut_ptr(), 90.0);
-        ffi::av_display_rotation_get(phone.as_ptr())
-    };
-    assert_eq!(rotation.round(), -90.0);
-    // The flip comes after the turn.
-    assert_eq!(matrix(0.0, true), Orientation::new(0, true));
+    let mut flipped = [0i32; 9];
+    // SAFETY: both write nine i32s.
+    unsafe {
+        ffmpeg::ffi::av_display_rotation_set(flipped.as_mut_ptr(), 90.0);
+        ffmpeg::ffi::av_display_matrix_flip(flipped.as_mut_ptr(), 1, 0);
+    }
     assert_eq!(
-        matrix(90.0, true),
+        read(Some(flipped)),
         Orientation::new(1, false).flipped_horizontally()
     );
-    assert_eq!(Orientation::from_display_matrix(&[0; 9]), None);
+    assert_eq!(read(None), Orientation::UPRIGHT);
+    assert_eq!(read(Some([0; 9])), Orientation::UPRIGHT);
 }

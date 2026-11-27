@@ -2,8 +2,9 @@
 //! asks for in its display matrix (phones record sideways and say so), and
 //! the ones the viewer adds.
 
-use ffmpeg::{codec, ffi};
+use ffmpeg::codec;
 use ffmpeg_next as ffmpeg;
+use ffmpeg_safe::DisplayMatrix;
 
 /// One of the eight ways to lay a picture back on its rectangle: mirrored
 /// left to right or not, then turned clockwise by some quarter turns.
@@ -89,45 +90,11 @@ impl Orientation {
     /// parameters (upright without one). Turns that aren't quarter turns go
     /// to the nearest one.
     pub fn of(parameters: &codec::Parameters) -> Self {
-        // SAFETY: the parameters and their side data are valid while
-        // `parameters` is; the matrix's size is checked before it's read.
-        // Read through the pointer, never a reference: a file can hold
-        // numbers their Rust enums have no variant for.
-        unsafe {
-            let raw = parameters.as_ptr();
-            let side = ffi::av_packet_side_data_get(
-                (*raw).coded_side_data,
-                (*raw).nb_coded_side_data,
-                ffi::AVPacketSideDataType::AV_PKT_DATA_DISPLAYMATRIX,
-            );
-            if side.is_null() || (*side).data.is_null() || (*side).size < 9 * 4 {
-                return Self::UPRIGHT;
-            }
-            let matrix = std::ptr::read_unaligned((*side).data as *const [i32; 9]);
-            Self::from_display_matrix(&matrix).unwrap_or_default()
-        }
-    }
-
-    /// The nearest of the eight to FFmpeg's display matrix, which takes a
-    /// pixel (p, q) to (a p + c q, b p + d q) with a, b, c, d its first two
-    /// columns of the first two rows. `None` when it squashes the picture
-    /// flat.
-    pub fn from_display_matrix(matrix: &[i32; 9]) -> Option<Self> {
-        let fixed = |i: usize| f64::from(matrix[i]) / 65536.0;
-        let wanted = [[fixed(0), fixed(3)], [fixed(1), fixed(4)]];
-        if (wanted[0][0] * wanted[1][1] - wanted[0][1] * wanted[1][0]).abs() < 1e-6 {
-            return None;
-        }
-        (0..8).map(|i| Self::new(i % 4, i >= 4)).max_by(|a, b| {
-            let likeness = |o: Self| {
-                let m = o.matrix();
-                (0..2)
-                    .flat_map(|r| (0..2).map(move |c| (r, c)))
-                    .map(|(r, c)| f64::from(m[r][c]) * wanted[r][c])
-                    .sum::<f64>()
-            };
-            likeness(*a).total_cmp(&likeness(*b))
-        })
+        ffmpeg_safe::coded::<DisplayMatrix>(parameters)
+            .and_then(|matrix| matrix.turns())
+            .map_or(Self::UPRIGHT, |(turns, mirrored)| {
+                Self::new(turns.into(), mirrored)
+            })
     }
 }
 

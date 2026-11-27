@@ -606,7 +606,10 @@ fn a_composed_frame_is_hdr10_at_the_masters_peak() {
     assert_eq!(colors.primaries, color::Primaries::BT2020);
     assert_eq!(colors.transfer, color::TransferCharacteristic::SMPTE2084);
     assert_eq!(colors.range, color::Range::MPEG);
-    assert!(dovi::rpu(&out).is_none(), "composed by its RPU already");
+    assert!(
+        ffmpeg_safe::rpu(&out).is_none(),
+        "composed by its RPU already"
+    );
     // 3,696 as 12-bit PQ, as a whole number of nits.
     assert_eq!(hdr::peak_nits(&out), Some(4000.0));
     // SAFETY: reading the count of a valid frame's side data.
@@ -619,7 +622,7 @@ fn a_composed_frame_is_hdr10_at_the_masters_peak() {
     let composer = Composer::new(&header, &mapping, &metadata).unwrap();
     composer.compose(&base, &layer, &mut out).unwrap();
     assert_eq!(hdr::peak_nits(&out), Some(1000.0));
-    assert!(dovi::rpu(&out).is_none());
+    assert!(ffmpeg_safe::rpu(&out).is_none());
     // SAFETY: as above.
     let kinds = unsafe { (*out.as_ptr()).nb_side_data };
     assert_eq!(
@@ -636,55 +639,6 @@ fn takes_its_rpu_from_a_frames_side_data() {
     attach_rpu(&mut frame, &header, &mapping, &color);
     let composer = Composer::of(&frame).unwrap();
     assert_eq!(composer.peak_nits, Some(3999.685));
-}
-
-/// Codec parameters with a Dolby Vision configuration record, if given.
-fn parameters(record: Option<&[u8]>) -> codec::Parameters {
-    let mut parameters = codec::Parameters::new();
-    if let Some(record) = record {
-        // SAFETY: FFmpeg allocates the side data as big as asked, owned by
-        // the parameters.
-        unsafe {
-            let raw = parameters.as_mut_ptr();
-            let side = ffi::av_packet_side_data_new(
-                &mut (*raw).coded_side_data,
-                &mut (*raw).nb_coded_side_data,
-                ffi::AVPacketSideDataType::AV_PKT_DATA_DOVI_CONF,
-                record.len(),
-                0,
-            );
-            assert!(!side.is_null());
-            std::ptr::copy_nonoverlapping(record.as_ptr(), (*side).data, record.len());
-        }
-    }
-    parameters
-}
-
-#[test]
-fn a_streams_configuration_says_which_layers_it_has() {
-    // Version 1.0, profile 7, level 6, an RPU, then the enhancement layer
-    // and the base layer.
-    let record = |el, bl| parameters(Some(&[1, 0, 7, 6, 1, el, bl, 6, 0]));
-    assert_eq!(
-        Configuration::of(&record(1, 1)),
-        Some(Configuration {
-            profile: 7,
-            level: 6,
-            compatibility: 6,
-            base: true,
-            enhancement: true,
-        })
-    );
-    assert!(!Configuration::is_layer_only(&record(1, 1)));
-    assert!(Configuration::is_layer_only(&record(1, 0)));
-    assert!(!Configuration::is_layer_only(&record(0, 1)));
-    assert_eq!(Configuration::of(&parameters(None)), None);
-    assert!(!Configuration::is_layer_only(&parameters(None)));
-    assert_eq!(
-        Configuration::of(&parameters(Some(&[1, 0, 7, 6, 1, 1, 0, 6]))),
-        None,
-        "cut short"
-    );
 }
 
 /// Bits written most significant first, as an RPU's are.
@@ -901,7 +855,7 @@ fn ffmpeg_reads_a_written_rpu_with_the_frame_it_comes_with() {
     let path = crate::media::tests::pq_media();
     let mut input = ffmpeg_safe::input_file(&path).unwrap();
     let parameters = input.stream(0).unwrap().parameters();
-    let mut decoder = codec::Context::from_parameters(parameters)
+    let mut decoder = ffmpeg::codec::Context::from_parameters(parameters)
         .unwrap()
         .decoder()
         .video()

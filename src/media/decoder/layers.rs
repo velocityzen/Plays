@@ -15,7 +15,7 @@ use ffmpeg::{Packet, Rational, codec, ffi, frame};
 use ffmpeg_next as ffmpeg;
 
 use super::video::open_video;
-use crate::media::enhancement::Configuration;
+use ffmpeg_safe::DolbyVision;
 
 /// Enhancement layer frames kept ahead of the base layer's, at most.
 const MOST_AHEAD: usize = 32;
@@ -73,7 +73,7 @@ impl Layers {
         if base.parameters.id() != codec::Id::HEVC {
             return Ok(None);
         }
-        let (stream, split, parameters) = match Configuration::of(base.parameters) {
+        let (stream, split, parameters) = match DolbyVision::of(base.parameters) {
             Some(both) if both.base && both.enhancement => {
                 let split = Split::new(base.parameters, base.time_base)?;
                 let parameters = split.parameters()?;
@@ -83,7 +83,7 @@ impl Layers {
                 let Some(layer) = streams.iter().find(|s| {
                     s.index != base.index
                         && s.parameters.id() == codec::Id::HEVC
-                        && Configuration::is_layer_only(s.parameters)
+                        && DolbyVision::of(s.parameters).is_some_and(DolbyVision::is_layer_only)
                 }) else {
                     return Ok(None);
                 };

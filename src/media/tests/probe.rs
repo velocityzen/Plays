@@ -155,7 +155,7 @@ fn with_hdr_metadata(from: &Path, to: &Path) -> Result<(), ffmpeg_next::Error> {
     stream.set_parameters(parameters);
     stream.set_time_base(time_base);
     // SAFETY: all numbers, which nothing is.
-    let mut display: hdr::sys::MasteringDisplay = unsafe { std::mem::zeroed() };
+    let mut display: ffmpeg_safe::sys::MasteringDisplay = unsafe { std::mem::zeroed() };
     display.max_luminance = ffi::AVRational { num: 1000, den: 1 };
     display.min_luminance = ffi::AVRational {
         num: 1,
@@ -168,7 +168,7 @@ fn with_hdr_metadata(from: &Path, to: &Path) -> Result<(), ffmpeg_next::Error> {
     display.display_primaries = [at(35_400, 14_600), at(8_500, 39_850), at(6_550, 2_300)];
     display.white_point = at(15_635, 16_450);
     display.has_primaries = 1;
-    let light = hdr::sys::ContentLightLevel {
+    let light = ffmpeg_safe::sys::ContentLightLevel {
         max_cll: 1000,
         max_fall: 400,
     };
@@ -568,12 +568,13 @@ fn a_stream_has_no_size_nor_files_beside_it_and_a_file_may_have_no_duration() {
 fn hdr_is_named_as_players_without_dolby_vision_show_it() {
     use color::TransferCharacteristic::*;
     let dolby_vision = |profile, compatibility| {
-        DolbyVision::of(Configuration {
+        DolbyVision::of(ffmpeg_safe::DolbyVision {
             profile,
             level: 6,
             compatibility,
-            base: true,
+            rpu: true,
             enhancement: false,
+            base: true,
         })
     };
     assert_eq!(hdr_name(SMPTE2084, None), Some("HDR10"));
@@ -621,13 +622,13 @@ fn light_is_read_where_it_says_it_is_and_has_some() {
     use ffi::AVPacketSideDataType::*;
     assert_eq!(light(&codec::Parameters::new()), (None, None, None));
     // SAFETY: all numbers, which nothing is.
-    let mut display: hdr::sys::MasteringDisplay = unsafe { std::mem::zeroed() };
+    let mut display: ffmpeg_safe::sys::MasteringDisplay = unsafe { std::mem::zeroed() };
     display.max_luminance = ffi::AVRational { num: 4000, den: 1 };
     let unsaid = with_side_data(AV_PKT_DATA_MASTERING_DISPLAY_METADATA, display);
     assert_eq!(light(&unsaid).0, None, "its luminance isn't said");
     let unlit = with_side_data(
         AV_PKT_DATA_CONTENT_LIGHT_LEVEL,
-        hdr::sys::ContentLightLevel {
+        ffmpeg_safe::sys::ContentLightLevel {
             max_cll: 0,
             max_fall: 0,
         },

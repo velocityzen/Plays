@@ -144,33 +144,6 @@ fn reads_dolby_visions_base_layer_as_hdr10_or_hlg() {
     }
 }
 
-/// FFmpeg's own matrices, as its demuxers make them, come back as the
-/// turns and mirroring they ask for. `av_display_rotation_set` takes
-/// degrees clockwise, where ffprobe gives them counterclockwise.
-#[test]
-fn reads_display_matrices_as_turns_and_mirroring() {
-    let read = |rotation: f64, flipped: bool| {
-        let mut matrix = [0i32; 9];
-        // SAFETY: both write nine i32s.
-        unsafe {
-            ffi::av_display_rotation_set(matrix.as_mut_ptr(), rotation);
-            ffi::av_display_matrix_flip(matrix.as_mut_ptr(), flipped.into(), 0);
-        }
-        orientation(&matrix)
-    };
-    assert_eq!(read(0.0, false), Some((0, false)));
-    assert_eq!(read(90.0, false), Some((1, false)));
-    assert_eq!(read(-90.0, false), Some((3, false)));
-    assert_eq!(read(180.0, false), Some((2, false)));
-    assert_eq!(read(88.0, false), Some((1, false)));
-    // The flip comes after the turn: mirrored first, it turns the other
-    // way.
-    assert_eq!(read(0.0, true), Some((0, true)));
-    assert_eq!(read(90.0, true), Some((3, true)));
-    assert_eq!(read(180.0, true), Some((2, true)));
-    assert_eq!(orientation(&[0; 9]), None);
-}
-
 /// A video's file asks for it turned as its display matrix says, and
 /// shown at its pixels' shape, its container's before its coded
 /// pictures'.

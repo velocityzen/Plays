@@ -17,12 +17,11 @@ use serde::Serialize;
 
 use super::chapters::Chapter;
 use super::decoder::{self, container_aspect};
-use super::enhancement::Configuration;
 use super::orientation::Orientation;
 use super::source::Source;
 use super::tracks::{self, Track};
-use super::{details, external, hdr};
-use ffmpeg_safe::Colors;
+use super::{details, external};
+use ffmpeg_safe::{Colors, sys};
 
 /// FFmpeg's time base for a file's duration.
 const AV_TIME_BASE: f64 = 1_000_000.0;
@@ -291,7 +290,7 @@ impl VideoProbe {
         });
         let (pixel_format, bit_depth) = pixel_format(format);
         let colors = Colors::of_parameters(parameters);
-        let dolby_vision = Configuration::of(parameters).map(DolbyVision::of);
+        let dolby_vision = ffmpeg_safe::DolbyVision::of(parameters).map(DolbyVision::of);
         let orientation = Orientation::of(parameters);
         let (mastering_peak, max_cll, max_fall) = light(parameters);
         Self {
@@ -392,7 +391,7 @@ fn hdr_name(
 }
 
 impl DolbyVision {
-    fn of(configuration: Configuration) -> Self {
+    fn of(configuration: ffmpeg_safe::DolbyVision) -> Self {
         // Profiles 8 to 10 have a base layer of a choice of kinds.
         let name = match configuration.profile {
             8..=10 => format!("{}.{}", configuration.profile, configuration.compatibility),
@@ -412,17 +411,8 @@ impl DolbyVision {
 /// The peak of the display the video was mastered on, and its MaxCLL and
 /// MaxFALL, as its stream's HDR10 metadata says.
 fn light(parameters: &codec::Parameters) -> (Option<f64>, Option<u32>, Option<u32>) {
-    use ffi::AVPacketSideDataType::*;
-    // SAFETY: FFmpeg keeps these kinds of side data as these structs.
-    let (display, light) = unsafe {
-        (
-            side_data::<hdr::sys::MasteringDisplay>(
-                parameters,
-                AV_PKT_DATA_MASTERING_DISPLAY_METADATA,
-            ),
-            side_data::<hdr::sys::ContentLightLevel>(parameters, AV_PKT_DATA_CONTENT_LIGHT_LEVEL),
-        )
-    };
+    let display = ffmpeg_safe::coded::<sys::MasteringDisplay>(parameters);
+    let light = ffmpeg_safe::coded::<sys::ContentLightLevel>(parameters);
     let peak = display
         .filter(|display| display.has_luminance != 0)
         .and_then(|display| ratio(display.max_luminance.into()));
@@ -432,28 +422,6 @@ fn light(parameters: &codec::Parameters) -> (Option<f64>, Option<u32>, Option<u3
         light.as_ref().and_then(|light| level(light.max_cll)),
         light.as_ref().and_then(|light| level(light.max_fall)),
     )
-}
-
-/// A copy of `parameters`' side data of `kind`, if it has some as big as a
-/// `T`.
-///
-/// # Safety
-/// Side data of `kind` is a `T`.
-unsafe fn side_data<T>(
-    parameters: &codec::Parameters,
-    kind: ffi::AVPacketSideDataType,
-) -> Option<T> {
-    // SAFETY: the parameters' side data stays valid while they do; its
-    // size is checked before it's read, unaligned.
-    unsafe {
-        let raw = parameters.as_ptr();
-        let side =
-            ffi::av_packet_side_data_get((*raw).coded_side_data, (*raw).nb_coded_side_data, kind);
-        if side.is_null() || (*side).data.is_null() || (*side).size < size_of::<T>() {
-            return None;
-        }
-        Some(ptr::read_unaligned((*side).data.cast::<T>()))
-    }
 }
 
 impl AudioProbe {

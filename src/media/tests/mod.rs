@@ -2835,8 +2835,6 @@ fn decoded_first_frame_of(path: &std::path::Path, index: usize) -> ffmpeg_next::
 /// profiles it's about.
 #[cfg(target_os = "macos")]
 fn dolby_vision_samples(profiles: &[u8]) -> Vec<PathBuf> {
-    use super::enhancement::Configuration;
-
     let folder = std::env::var_os("PLAYS_DOLBY_VISION_SAMPLES")
         .map(PathBuf::from)
         .expect("PLAYS_DOLBY_VISION_SAMPLES names a folder of Dolby Vision files");
@@ -2848,7 +2846,7 @@ fn dolby_vision_samples(profiles: &[u8]) -> Vec<PathBuf> {
             path.is_file()
                 && ffmpeg_safe::input_file(path).is_ok_and(|input| {
                     input.streams().any(|stream| {
-                        Configuration::of(&stream.parameters())
+                        ffmpeg_safe::DolbyVision::of(&stream.parameters())
                             .is_some_and(|c| profiles.contains(&c.profile))
                     })
                 })
@@ -2943,8 +2941,8 @@ fn channel(still: &super::still::Still) -> impl Fn(usize, usize, usize) -> f64 +
 #[test]
 #[ignore = "needs Dolby Vision files in the folder PLAYS_DOLBY_VISION_SAMPLES names"]
 fn dolby_vision_profile_7_shows_both_layers() {
-    use super::enhancement::Configuration;
     use super::hdr::{peak_nits, plausible_peak, pq_to_nits};
+    use ffmpeg_safe::DolbyVision;
 
     for path in &dolby_vision_samples(&[7]) {
         let name = path.file_name().unwrap().to_string_lossy();
@@ -2954,7 +2952,11 @@ fn dolby_vision_profile_7_shows_both_layers() {
         let videos: Vec<(usize, bool)> = input
             .streams()
             .filter(|s| s.parameters().medium() == ffmpeg_next::media::Type::Video)
-            .map(|s| (s.index(), Configuration::is_layer_only(&s.parameters())))
+            .map(|s| {
+                let layer =
+                    DolbyVision::of(&s.parameters()).is_some_and(DolbyVision::is_layer_only);
+                (s.index(), layer)
+            })
             .collect();
         drop(input);
         let base_index = videos.iter().find(|(_, layer)| !layer).unwrap().0;
@@ -2963,7 +2965,7 @@ fn dolby_vision_profile_7_shows_both_layers() {
             .iter()
             .map(|&(index, _)| decoded_first_frame_of(path, index))
             .find_map(|frame| {
-                let (_, _, color) = super::dovi::rpu(&frame)?;
+                let color = ffmpeg_safe::rpu(&frame)?.color;
                 plausible_peak(pq_to_nits(f32::from(color.source_max_pq) / 4095.0))
             });
         let software = shown_alike(
@@ -2999,7 +3001,6 @@ fn dolby_vision_profile_7_shows_both_layers() {
 #[test]
 #[ignore = "needs Dolby Vision files in the folder PLAYS_DOLBY_VISION_SAMPLES names"]
 fn dolby_vision_over_hdr10_or_hlg_shows_its_base_layer() {
-    use super::enhancement::Configuration;
     use super::hdr::{Transfer, peak_nits};
 
     for path in &dolby_vision_samples(&[8, 10]) {
@@ -3007,7 +3008,12 @@ fn dolby_vision_over_hdr10_or_hlg_shows_its_base_layer() {
         let input = ffmpeg_safe::input_file(path).unwrap();
         let (index, profile) = input
             .streams()
-            .find_map(|s| Some((s.index(), Configuration::of(&s.parameters())?.profile)))
+            .find_map(|s| {
+                Some((
+                    s.index(),
+                    ffmpeg_safe::DolbyVision::of(&s.parameters())?.profile,
+                ))
+            })
             .unwrap();
         drop(input);
         let base = decoded_first_frame_of(path, index);
@@ -3016,7 +3022,7 @@ fn dolby_vision_over_hdr10_or_hlg_shows_its_base_layer() {
             "{name}: its base layer is HDR"
         );
         assert!(
-            super::dovi::rpu(&base).is_some(),
+            ffmpeg_safe::rpu(&base).is_some(),
             "{name}: the RPU comes with each frame"
         );
         assert!(
