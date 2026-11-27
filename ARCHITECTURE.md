@@ -639,7 +639,8 @@ gpui or FFmpeg; it blocks, and says what happens over a channel.
 Chromecast crate.
 
 - `ssdp.rs`, `browser.rs`: SSDP on `239.255.255.250:1900` and `[ff02::c]:1900`;
-  a link-local renderer is reached in the zone it was heard in
+  a link-local renderer is reached in the zone it was heard in; an address
+  described at most 8 times a minute, and let be 10 minutes after 3 failures
 - `device.rs`, `xml.rs`: device descriptions, read into capabilities
 - `http.rs`, `soap.rs`: just enough HTTP/1.1, and SOAP actions
 - `media.rs`: DIDL-Lite, subtitles as Samsung's `sec:CaptionInfoEx` too

@@ -1,9 +1,11 @@
 //! Finding renderers: SSDP searches on every interface, over IPv4 and
 //! IPv6, and the NOTIFYs renderers multicast as they come and go. Each
 //! renderer found is read from its description; one that says byebye, or
-//! isn't heard from within the max-age it gave, is dropped.
+//! isn't heard from within the max-age it gave, is dropped. An address is
+//! described only so often, as an advert can be forged to point anywhere
+//! on the network.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::io;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV6, UdpSocket};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -41,6 +43,16 @@ const MOST_KEPT: usize = 256;
 /// How many descriptions are read at once, and how many more may wait.
 const DESCRIBERS: usize = 4;
 const WAITING: usize = 64;
+/// Descriptions read from one address a minute at most.
+const DESCRIBED_A_MINUTE: usize = 8;
+const MINUTE: Duration = Duration::from_secs(60);
+/// Descriptions of one address failing in a row before it's let be, and
+/// for how long.
+const FAILS: u32 = 3;
+const REST: Duration = Duration::from_secs(10 * 60);
+/// The most addresses remembered; others aren't described until some are
+/// forgotten.
+const MOST_ADDRESSES: usize = 4 * MOST_KEPT;
 
 /// A change in what's found: a renderer added, or its description
 /// changed, or gone.
@@ -60,6 +72,97 @@ struct Entry {
 #[derive(Default)]
 struct Directory {
     entries: HashMap<String, Entry>,
+    addresses: Addresses,
+}
+
+/// What's been asked of an address descriptions are read from.
+#[derive(Default)]
+struct Address {
+    /// When its descriptions were asked for, in the last minute or so.
+    asked: VecDeque<Instant>,
+    /// How many of them failed in a row.
+    failed: u32,
+    /// None asked for till then, as they kept failing.
+    resting: Option<Instant>,
+}
+
+impl Address {
+    /// Whether it's still to be remembered at `now`: asked of in the last
+    /// minute, resting, or failing lately.
+    fn remembered(&self, now: Instant) -> bool {
+        let since = |within| self.asked.back().is_some_and(|&asked| now < asked + within);
+        self.resting.is_some_and(|until| now < until)
+            || since(MINUTE)
+            || (self.failed > 0 && since(REST))
+    }
+}
+
+/// The addresses descriptions are read from, by IP: but this computer's
+/// loopback, which can't be heard from off it.
+#[derive(Default)]
+struct Addresses(HashMap<IpAddr, Address>);
+
+/// The IP address `location` is at.
+fn address_of(location: &str) -> Option<IpAddr> {
+    let url = Url::parse(location)?;
+    url.host.split('%').next()?.parse().ok()
+}
+
+impl Addresses {
+    /// Whether a description may be read from `location` at `now`; it's
+    /// counted if so.
+    fn may_describe(&mut self, location: &str, now: Instant) -> bool {
+        let Some(address) = address_of(location) else {
+            return false;
+        };
+        if address.is_loopback() {
+            return true;
+        }
+        if !self.0.contains_key(&address) && self.0.len() >= MOST_ADDRESSES {
+            self.forget(now);
+            if self.0.len() >= MOST_ADDRESSES {
+                log::debug!("dlna: {MOST_ADDRESSES} addresses described; not {address}");
+                return false;
+            }
+        }
+        let at = self.0.entry(address).or_default();
+        if at.resting.is_some_and(|until| now < until) {
+            return false;
+        }
+        while at.asked.front().is_some_and(|&asked| asked + MINUTE <= now) {
+            at.asked.pop_front();
+        }
+        if at.asked.len() >= DESCRIBED_A_MINUTE {
+            log::debug!("dlna: {address} described {DESCRIBED_A_MINUTE} times this minute");
+            return false;
+        }
+        at.asked.push_back(now);
+        true
+    }
+
+    /// A description from `location` read, or not: one failing too often
+    /// in a row lets its address be for a while.
+    fn told(&mut self, location: &str, read: bool) {
+        let Some(at) = address_of(location).and_then(|address| self.0.get_mut(&address)) else {
+            return;
+        };
+        if read {
+            at.failed = 0;
+            at.resting = None;
+            return;
+        }
+        at.failed += 1;
+        if at.failed >= FAILS {
+            log::debug!("dlna: {location} failed {FAILS} times; let be");
+            at.failed = 0;
+            at.resting = at.asked.back().map(|&asked| asked + REST);
+        }
+    }
+
+    /// Those there's nothing to remember of at `now`, forgotten.
+    fn forget(&mut self, now: Instant) {
+        self.0.retain(|_, at| at.remembered(now));
+    }
 }
 
 impl Directory {
@@ -84,7 +187,7 @@ impl Directory {
                     && entry.location_expires > now
                     && over_ipv6(&advert.location)
                     && !over_ipv6(&entry.location);
-                if kept {
+                if kept || !self.addresses.may_describe(&advert.location, now) {
                     return None;
                 }
                 entry.location.clone_from(&advert.location);
@@ -96,6 +199,9 @@ impl Directory {
                 None
             }
             None if advert.is_renderer() => {
+                if !self.addresses.may_describe(&advert.location, now) {
+                    return None;
+                }
                 self.entries.insert(
                     advert.udn.clone(),
                     Entry {
@@ -113,6 +219,7 @@ impl Directory {
 
     /// The description from `location` read, or not.
     fn described(&mut self, udn: &str, location: &str, device: Result<Device>) -> Option<Found> {
+        self.addresses.told(location, device.is_ok());
         let entry = self.entries.get_mut(udn)?;
         if entry.location != location {
             return None;
@@ -159,6 +266,7 @@ impl Directory {
     }
 
     fn expire(&mut self, now: Instant) -> Vec<Found> {
+        self.addresses.forget(now);
         let over: Vec<String> = self
             .entries
             .iter()

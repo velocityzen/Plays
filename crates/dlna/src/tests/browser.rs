@@ -11,6 +11,14 @@ fn advert(udn: &str, kind: &str) -> Advert {
     }
 }
 
+/// `advert` for a renderer at an address of its own, the `n`th.
+fn renderer_at(n: usize) -> Advert {
+    Advert {
+        location: format!("http://10.0.{}.{}/dmr", n / 256, n % 256),
+        ..advert(&format!("uuid:tv-{n}"), MEDIA_RENDERER)
+    }
+}
+
 fn device(name: &str) -> Device {
     Device {
         id: format!("uuid:{name}"),
@@ -33,9 +41,7 @@ fn device(name: &str) -> Device {
 fn no_more_renderers_are_kept_than_the_most() {
     let mut directory = Directory::default();
     let now = Instant::now();
-    let tvs: Vec<_> = (0..=MOST_KEPT)
-        .map(|n| advert(&format!("uuid:tv-{n}"), MEDIA_RENDERER))
-        .collect();
+    let tvs: Vec<_> = (0..=MOST_KEPT).map(renderer_at).collect();
     for tv in &tvs[..MOST_KEPT] {
         assert!(directory.alive(tv, now).is_some());
     }
@@ -318,4 +324,111 @@ fn a_renderer_that_cant_be_described_is_tried_again() {
     );
     assert_eq!(directory.byebye("uuid:tv"), None, "not found, so not gone");
     assert!(directory.alive(&tv, Instant::now()).is_some());
+}
+
+/// However many renderers say they're at one address, it's described only
+/// so many times a minute; but this computer's own loopback, as a fake
+/// renderer's is.
+#[test]
+fn an_address_is_described_only_so_often() {
+    let mut directory = Directory::default();
+    let now = Instant::now();
+    let at = |udn: &str, host: &str| Advert {
+        location: format!("http://{host}:{}/dmr", udn.len()),
+        ..advert(udn, MEDIA_RENDERER)
+    };
+    let tvs: Vec<_> = (0..=DESCRIBED_A_MINUTE)
+        .map(|n| at(&format!("uuid:tv-{}", "x".repeat(n)), "192.0.2.10"))
+        .collect();
+    for tv in &tvs[..DESCRIBED_A_MINUTE] {
+        assert!(directory.alive(tv, now).is_some(), "{}", tv.udn);
+    }
+    let one_more = &tvs[DESCRIBED_A_MINUTE];
+    assert_eq!(directory.alive(one_more, now), None, "one too many");
+    let elsewhere = at("uuid:elsewhere", "192.0.2.11");
+    assert!(
+        directory.alive(&elsewhere, now).is_some(),
+        "another address"
+    );
+    let moved = Advert {
+        location: "http://192.0.2.10/moved".into(),
+        ..elsewhere
+    };
+    assert_eq!(directory.alive(&moved, now), None, "nor moving there");
+    let later = now + MINUTE;
+    assert!(directory.alive(one_more, later).is_some(), "a minute on");
+    for n in 0..=2 * DESCRIBED_A_MINUTE {
+        let fake = at(&format!("uuid:fake-{n}"), "127.0.0.1");
+        assert!(directory.alive(&fake, now).is_some(), "on loopback");
+    }
+    directory.expire(later + MINUTE);
+    assert!(directory.addresses.0.is_empty(), "forgotten in time");
+}
+
+/// An address whose descriptions fail some times in a row is let be for
+/// a while, as one an advert forged to point anywhere gives; one read
+/// between failures starts them over.
+#[test]
+fn an_address_whose_descriptions_keep_failing_is_let_be() {
+    let mut directory = Directory::default();
+    let now = Instant::now();
+    let tv = advert("uuid:tv", MEDIA_RENDERER);
+    let fail = |directory: &mut Directory, at| {
+        assert_eq!(directory.alive(&tv, at), Some(tv.location.clone()));
+        let failed = Err(crate::Error::protocol("no"));
+        directory.described("uuid:tv", &tv.location, failed);
+    };
+    for _ in 1..FAILS {
+        fail(&mut directory, now);
+    }
+    assert_eq!(directory.alive(&tv, now), Some(tv.location.clone()));
+    directory.described("uuid:tv", &tv.location, Ok(device("TV")));
+    directory.byebye("uuid:tv");
+    for _ in 0..FAILS {
+        fail(&mut directory, now);
+    }
+    assert_eq!(directory.alive(&tv, now + REST / 2), None, "let be");
+    directory.expire(now + REST / 2);
+    assert_eq!(directory.alive(&tv, now + REST / 2), None, "remembered");
+    let rested = now + REST;
+    assert_eq!(
+        directory.alive(&tv, rested),
+        Some(tv.location.clone()),
+        "described again once rested"
+    );
+    let failed = Err(crate::Error::protocol("no"));
+    directory.described("uuid:tv", &tv.location, failed);
+    assert_eq!(
+        directory.alive(&tv, rested),
+        Some(tv.location.clone()),
+        "its failures counted over"
+    );
+}
+
+/// Only so many addresses are remembered; another isn't described till
+/// some are forgotten, once there's nothing to remember of them.
+#[test]
+fn only_so_many_addresses_are_remembered() {
+    let mut directory = Directory::default();
+    let now = Instant::now();
+    let failed = || Err(crate::Error::protocol("no"));
+    for n in 0..MOST_ADDRESSES {
+        let tv = renderer_at(n);
+        assert!(directory.alive(&tv, now).is_some(), "{}", tv.location);
+        directory.described(&tv.udn, &tv.location, failed());
+    }
+    assert!(directory.entries.is_empty(), "none could be described");
+    let one_more = renderer_at(MOST_ADDRESSES);
+    assert_eq!(directory.alive(&one_more, now), None, "one too many");
+    assert_eq!(
+        directory.alive(&one_more, now + MINUTE),
+        None,
+        "failing ones remembered"
+    );
+    assert!(
+        directory.alive(&one_more, now + REST).is_some(),
+        "once forgotten"
+    );
+    directory.expire(now + REST);
+    assert_eq!(directory.addresses.0.len(), 1);
 }
