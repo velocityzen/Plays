@@ -155,6 +155,15 @@ One Plays runs at a time: `plays FILE…` hands files to the one running.
 - **An AirPlay TV or projector**: connect it from Control Center → Screen
   Mirroring as a separate display, then pick it in Video → Output Device.
   To have it play the file itself, cast to it.
+- **Live streams**: a screenshot is the picture as it plays, at the size
+  it plays at.
+- **An HLS playlist on disk** plays only segments on disk: a file FFmpeg
+  opens never reaches the network.
+- **Updates**: Plays updates itself only where it's its own, not run from
+  where it was built (`target/`) or installed by a package manager,
+  Flatpak or Snap, which update it themselves.
+- **Devices sharing a name** show their addresses, so a look-alike stands
+  out.
 - **Auracast**: macOS can't broadcast it. Use a USB Auracast transmitter,
   which is a sound output like any other. On Linux, an LE Audio adapter
   can broadcast with a recent BlueZ, PipeWire and WirePlumber set up for it
@@ -210,52 +219,31 @@ mkdir ($nu.user-autoload-dirs | first); plays completions nushell | save -f ($nu
 
 ## Limitations
 
-- Live streams but HLS can't be seeked. A live stream's screenshot is the
-  picture as it plays, at the size it plays at.
-- An HLS playlist on disk plays only segments on disk.
-- HDR goes brighter than SDR white only on macOS. Of HDR metadata, only
-  peaks are used (MaxCLL, the mastering display's).
-- Dolby Vision profile 7's enhancement layer is composed on the CPU.
+What Plays could do and doesn't yet. What platforms, devices and protocols
+don't allow is in [docs/failures.md](docs/failures.md).
+
+- Live streams but HLS can't be seeked.
+- HDR goes brighter than SDR white only on macOS, and is tone mapped by
+  its peak alone (MaxCLL, the mastering display's), not scene by scene.
 - ASS and SSA lines don't move, fade, turn, scale, blur or clip
   (`\move` stays where it starts), keep one size and font per line, and
   lines placed alike stack rather than dodge each other. Drawings aren't
   drawn.
 - On Linux, frames decoded on the GPU are copied back to memory to be
   drawn. Lower Settings → Video → Resolution limit for many large videos.
-- On Linux, ALSA names a TV's HDMI output after the sound card, so a window
-  sent to a TV keeps its sound.
-- On Wayland, windows can't float on top or be placed, full screen on
-  another display is up to the compositor, and other displays aren't
-  blacked out. On GNOME, windows have no resize handles.
-- Plays doesn't update itself run from where it was built (`target/`),
-  on a Mac from where it was downloaded, or installed by a package
-  manager, Flatpak or Snap.
-- Casting re-encodes video only with a hardware encoder. While a block
-  casts, speed and frame steps don't apply; a device that takes only
-  files gets them without delays or picture adjustments, and one that
-  plays nothing this computer encodes, without picture adjustments and,
-  in MPEG-TS, phone video sideways.
-- Cast subtitles go where they're placed only to a third of the picture,
-  and on DLNA TVs at the bottom; picture subtitles (PGS, VobSub, DVB)
-  don't reach a device that takes only files or plays neither H.264 nor
-  HEVC.
-- AirPlay speakers with a password, AirPlay 1 speakers with FairPlay or
-  MFi, and speakers and TVs that let only their home play to them can't be
-  played through. Several speakers aren't played through as a group.
-- TVs with AirPlay built in, other than Apple TVs, get H.264 up to 1080p
-  and stereo AAC, their HDR fitted to SDR: their AirPlay player may show
-  no HEVC.
+- On Linux, a window sent to a TV keeps its sound: ALSA names a TV's HDMI
+  output after the sound card, which Plays doesn't match to the display.
+- On Wayland, other displays aren't blacked out. On GNOME, windows have no
+  resize handles.
+- A Mac app opened where it was downloaded doesn't update itself.
+- Casting re-encodes video only with a hardware encoder.
+- Cast text subtitles go where they're placed only to a third of the
+  picture, and on DLNA TVs as the TV shows them.
 - Over AirPlay, and wherever it's repackaged, Dolby Vision goes without
   its own signalling, as HDR10 or HLG.
-- HDR reaches a DLNA TV only where it names no codecs and AirPlay at its
-  address lists its screen's HDR.
+- AirPlay speakers with a password can't be played through, and several
+  speakers aren't played through as a group.
 - A Chromecast's certificate isn't checked against Google's.
-- DLNA devices aren't authenticated: one on the network can take another's
-  name, so devices of one protocol sharing a name show their addresses.
-- DLNA devices' subtitles depend on the TV.
-- The cast stream server listens on every interface, so the firewall may
-  ask about it, and on macOS 15 and later looking for devices asks to use
-  the local network.
 
 ### Casting hardware checklist
 
