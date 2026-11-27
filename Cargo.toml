@@ -1,6 +1,6 @@
 [package]
 name = "plays"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 description = "A small multi-media player built on gpui that can play many videos and audio files at once"
 license = "MIT"
