@@ -412,7 +412,9 @@ fn pick(media: &MediaInfo, pick: Pick, video: bool) -> Result<Option<usize>, Err
         Pick::Off => Ok(None),
         Pick::Best => Ok(media.first(video)),
         Pick::Stream(index) => match media.stream(index).map(|stream| &stream.kind) {
-            Some(StreamKind::Video(info)) if video && !info.picture => Ok(Some(index)),
+            Some(StreamKind::Video(info)) if video && !info.picture && !info.layer_only => {
+                Ok(Some(index))
+            }
             Some(StreamKind::Audio(_)) if !video => Ok(Some(index)),
             _ => Err(Error::Unsupported(format!(
                 "stream {index} isn't {}",

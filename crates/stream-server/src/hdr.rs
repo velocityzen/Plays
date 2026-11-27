@@ -69,16 +69,16 @@ pub(crate) enum Transfer {
 }
 
 impl Transfer {
-    /// `frame`'s, where it's HDR in YCbCr this fits: BT.2020's (or said
-    /// nothing of), not IPT, as Dolby Vision's profile 20 is, which only
-    /// its reshaping makes HDR10.
+    /// `frame`'s, where it's HDR in YCbCr, whatever its matrix, as the
+    /// player takes it: not IPT, as Dolby Vision's profile 20 is, which
+    /// only its reshaping makes HDR10.
     pub fn of(frame: &frame::Video) -> Option<Self> {
-        use ffi::AVColorSpace::{AVCOL_SPC_BT2020_NCL, AVCOL_SPC_UNSPECIFIED};
+        use ffi::AVColorSpace::AVCOL_SPC_IPT_C2;
         use ffi::AVColorTransferCharacteristic::{AVCOL_TRC_ARIB_STD_B67, AVCOL_TRC_SMPTE2084};
         let Tags {
             transfer, space, ..
         } = Tags::of(frame);
-        if space != AVCOL_SPC_BT2020_NCL as u32 && space != AVCOL_SPC_UNSPECIFIED as u32 {
+        if space == AVCOL_SPC_IPT_C2 as u32 {
             return None;
         }
         if transfer == AVCOL_TRC_SMPTE2084 as u32 {
@@ -400,15 +400,15 @@ impl Converter {
         } = &self.tables;
         let out = match conversion {
             Conversion::ToSdr(transfer) => {
-                // From BT.2020's matrix, in the range the frame says, to RGB
-                // in the same light.
+                // From its matrix, in the range the frame says, to RGB in
+                // the same light, in BT.2020's primaries.
                 let coding = Coding {
                     primaries: color::Primaries::BT2020,
                     transfer: match transfer {
                         Transfer::Pq => color::TransferCharacteristic::SMPTE2084,
                         Transfer::Hlg => color::TransferCharacteristic::ARIB_STD_B67,
                     },
-                    space: color::Space::BT2020NCL,
+                    space: matrix(from),
                     range,
                 };
                 coding.rgb().tag(&mut self.rgb);
@@ -584,6 +584,25 @@ impl Drop for Scaler {
 }
 
 /// A new reference to `frame`'s pictures, tagged as `coding`.
+/// The matrix HDR `frame`'s YCbCr is decoded by: its own, as the player
+/// takes it, else BT.2020's, as HDR10's and HLG's is, where it says none or
+/// one swscale doesn't decode (BT.2020's constant luminance, whose weights
+/// are the same).
+fn matrix(frame: &frame::Video) -> color::Space {
+    use ffi::AVColorSpace::*;
+    let space = Tags::of(frame).space;
+    [
+        AVCOL_SPC_BT709,
+        AVCOL_SPC_FCC,
+        AVCOL_SPC_BT470BG,
+        AVCOL_SPC_SMPTE170M,
+        AVCOL_SPC_SMPTE240M,
+    ]
+    .into_iter()
+    .find(|known| *known as u32 == space)
+    .map_or(color::Space::BT2020NCL, color::Space::from)
+}
+
 fn retagged(frame: &frame::Video, coding: Coding) -> Result<frame::Video, Error> {
     let mut retagged = frame::Video::empty();
     // SAFETY: both frames are valid, and the new one empty; it refers to

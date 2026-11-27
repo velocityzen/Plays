@@ -213,12 +213,15 @@ fn fits_highlights_by_the_videos_peak() {
 }
 
 #[test]
-fn reads_hdr_by_its_transfer_in_bt2020_only() {
+fn reads_hdr_by_its_transfer_in_any_matrix_but_ipt() {
     use color::{Space, TransferCharacteristic as Trc};
     let of = |transfer, space| Transfer::of(&grey(transfer, space, 0.5));
     assert_eq!(of(Trc::SMPTE2084, Space::BT2020NCL), Some(Transfer::Pq));
     assert_eq!(of(Trc::ARIB_STD_B67, Space::BT2020NCL), Some(Transfer::Hlg));
     assert_eq!(of(Trc::SMPTE2084, Space::Unspecified), Some(Transfer::Pq));
+    // Tagged with another matrix, as the player still takes it for HDR.
+    assert_eq!(of(Trc::SMPTE2084, Space::BT709), Some(Transfer::Pq));
+    assert_eq!(of(Trc::ARIB_STD_B67, Space::SMPTE170M), Some(Transfer::Hlg));
     assert_eq!(of(Trc::BT709, Space::BT2020NCL), None);
     assert_eq!(of(Trc::BT2020_10, Space::BT2020NCL), None);
     // IPT, as Dolby Vision's profile 20 is tagged, isn't YCbCr to fit.
@@ -364,4 +367,47 @@ fn fits_hdr10s_colors_by_their_matrices() {
             "{format:?}: want {want:?}, got {got:?}"
         );
     }
+}
+
+/// HDR coded in another matrix than BT.2020's is decoded by its own, as
+/// the player decodes it: a color coded in each comes out as it does coded
+/// in BT.2020's.
+#[test]
+fn fits_hdr_by_the_matrix_its_coded_in() {
+    // Nonlinear R'G'B' coded as luma and differences by (Kr, Kb).
+    let coded = |(kr, kb): (f64, f64)| {
+        let [r, g, b] = [0.55, 0.45, 0.3];
+        let y = kr * r + (1.0 - kr - kb) * g + kb * b;
+        [
+            y,
+            (b - y) / (2.0 * (1.0 - kb)),
+            (r - y) / (2.0 * (1.0 - kr)),
+        ]
+    };
+    let pq = color::TransferCharacteristic::SMPTE2084;
+    let want = ycbcr(&fitted(
+        &flat(pq, color::Space::BT2020NCL, coded((0.2627, 0.0593))),
+        Pixel::P010LE,
+    ));
+    for (space, weights) in [
+        (color::Space::BT709, (0.2126, 0.0722)),
+        (color::Space::SMPTE170M, (0.299, 0.114)),
+        (color::Space::BT470BG, (0.299, 0.114)),
+        (color::Space::FCC, (0.30, 0.11)),
+        (color::Space::SMPTE240M, (0.212, 0.087)),
+        (color::Space::BT2020CL, (0.2627, 0.0593)),
+    ] {
+        let got = ycbcr(&fitted(&flat(pq, space, coded(weights)), Pixel::P010LE));
+        assert!(
+            want.iter().zip(got).all(|(a, b)| (a - b).abs() < 0.004),
+            "{space:?}: want {want:?}, got {got:?}"
+        );
+    }
+    // Said nothing of, it's BT.2020's.
+    let unsaid = flat(pq, color::Space::Unspecified, coded((0.2627, 0.0593)));
+    let got = ycbcr(&fitted(&unsaid, Pixel::P010LE));
+    assert!(
+        want.iter().zip(got).all(|(a, b)| (a - b).abs() < 0.004),
+        "{got:?}"
+    );
 }

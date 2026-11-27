@@ -121,6 +121,9 @@ pub struct VideoInfo {
     pub dolby_vision: Option<u8>,
     /// Cover art in an audio file, not a video.
     pub picture: bool,
+    /// Dolby Vision's enhancement layer alone, a track of its own beside
+    /// its base layer's, which never shows alone.
+    pub layer_only: bool,
     /// What a player does to show it as its file says: turns and mirrors
     /// it as its display matrix asks, and shows it at the shape its pixels
     /// make where they aren't square, by its container's else its coded
@@ -158,7 +161,8 @@ impl MediaInfo {
                 StreamInfo {
                     index: stream.index(),
                     kind,
-                    language: tag(&metadata, c"language").filter(|language| language != "und"),
+                    language: tag(&metadata, c"language")
+                        .filter(|language| !matches!(language.as_str(), "und" | "zxx")),
                     title: tag(&metadata, c"title"),
                     default: disposition.contains(ffmpeg::format::stream::Disposition::DEFAULT),
                 }
@@ -205,7 +209,7 @@ impl MediaInfo {
     /// the one marked default, else the first.
     pub(crate) fn first(&self, video: bool) -> Option<usize> {
         let of_kind = |stream: &&StreamInfo| match &stream.kind {
-            StreamKind::Video(info) => video && !info.picture,
+            StreamKind::Video(info) => video && !info.picture && !info.layer_only,
             StreamKind::Audio(_) => !video,
             _ => false,
         };
@@ -253,13 +257,17 @@ fn video_info(stream: &ffmpeg::format::stream::Stream) -> VideoInfo {
             (*raw).nb_coded_side_data,
             ffi::AVPacketSideDataType::AV_PKT_DATA_DOVI_CONF,
         );
-        // Its profile and its base layer's compatibility, if the side data
-        // is long enough to say.
+        // Its profile, its base layer's compatibility, and whether it's
+        // only an enhancement layer, if the side data is long enough to say.
         let dolby_vision = (!configuration.is_null()).then(|| {
             let (data, size) = ((*configuration).data, (*configuration).size);
             (!data.is_null() && size >= size_of::<dovi::sys::Configuration>()).then(|| {
                 let record = &*data.cast::<dovi::sys::Configuration>();
-                (record.dv_profile, record.dv_bl_signal_compatibility_id)
+                (
+                    record.dv_profile,
+                    record.dv_bl_signal_compatibility_id,
+                    record.el_present_flag != 0 && record.bl_present_flag == 0,
+                )
             })
         });
         let disposition = (*stream.as_ptr()).disposition;
@@ -314,7 +322,7 @@ fn video_info(stream: &ffmpeg::format::stream::Stream) -> VideoInfo {
     // A base layer with nothing to fall back on, as its configuration
     // says, or as its colors do where that doesn't: tagged IPT, or not HDR.
     let ipt = match dolby_vision {
-        Some(Some((_, compatibility))) => compatibility == 0,
+        Some(Some((_, compatibility, _))) => compatibility == 0,
         Some(None) => space == ffi::AVColorSpace::AVCOL_SPC_IPT_C2 as u32 || !(pq || hlg),
         None => false,
     };
@@ -325,22 +333,33 @@ fn video_info(stream: &ffmpeg::format::stream::Stream) -> VideoInfo {
         Some(Hdr::DolbyVision) => None,
         other => other,
     };
-    let rate = stream.avg_frame_rate();
     VideoInfo {
         codec: video_codec(parameters.id()),
         width,
         height,
         bit_depth: bit_depth(format),
-        frame_rate: (rate.numerator() > 0 && rate.denominator() > 0).then(|| f64::from(rate)),
+        frame_rate: frame_rate(stream).map(f64::from),
         hdr,
         base_hdr,
         ipt,
-        dolby_vision: dolby_vision.flatten().map(|(profile, _)| profile),
+        dolby_vision: dolby_vision.flatten().map(|(profile, _, _)| profile),
         picture,
+        layer_only: dolby_vision
+            .flatten()
+            .is_some_and(|(_, _, layer_only)| layer_only),
         own,
         container_aspect: container_shape
             .is_some_and(|shape| (shape - coded_shape.unwrap_or(1.0)).abs() > 1e-9),
     }
+}
+
+/// How often `stream`'s frames come, as the player takes it: their
+/// average, else the rate FFmpeg guesses, from 1 to 480 a second.
+pub(crate) fn frame_rate(stream: &ffmpeg::format::stream::Stream) -> Option<ffmpeg::Rational> {
+    [stream.avg_frame_rate(), stream.rate()]
+        .into_iter()
+        .find(|rate| rate.numerator() > 0 && rate.denominator() > 0)
+        .filter(|rate| (1.0..=480.0).contains(&f64::from(*rate)))
 }
 
 /// A pixel's width over its height, where `ratio` says one.
@@ -454,12 +473,13 @@ pub(crate) fn audio_codec(id: Id) -> AudioCodec {
     }
 }
 
-/// Subtitle codecs whose cues are text.
+/// Subtitles whose cues are text, as FFmpeg's table says.
 fn is_text(id: Id) -> bool {
-    matches!(
-        id,
-        Id::SUBRIP | Id::SRT | Id::ASS | Id::SSA | Id::MOV_TEXT | Id::WEBVTT | Id::TEXT
-    )
+    // SAFETY: the table lives as long as the program.
+    unsafe {
+        let descriptor = ffi::avcodec_descriptor_get(id.into());
+        !descriptor.is_null() && (*descriptor).props & ffi::AV_CODEC_PROP_TEXT_SUB != 0
+    }
 }
 
 #[cfg(test)]

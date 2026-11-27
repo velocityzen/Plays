@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use ffmpeg::format::context::Input;
+
 use super::*;
 
 /// `name`, in `tests/fixtures`.
@@ -225,4 +227,152 @@ fn reads_no_shape_from_too_little() {
     assert!(!read(120, (0, 1), (4, 3)).1, "the coded pictures say it");
     let coded = read(120, (0, 1), (4, 3)).0.expect("the coded shape");
     assert!((coded - 16.0 / 9.0).abs() < 1e-9, "{coded}");
+}
+
+/// Opened `name`, in `tests/fixtures`, and its video's index.
+fn opened(name: &str) -> (Input, usize) {
+    crate::init();
+    let input = open(&Source::File(fixture(name)), Arc::default()).unwrap();
+    let index = input.streams().best(Type::Video).unwrap().index();
+    (input, index)
+}
+
+/// Dolby Vision's enhancement layer in a track of its own, its base layer
+/// in another, is read as one alone, as the player takes it, and never
+/// picked to play.
+#[test]
+fn reads_an_enhancement_layer_alone() {
+    let (mut input, index) = opened("clip-odd-colors.mkv");
+    let mut alone = |enhancement: u8, base: u8| {
+        let mut stream = input.stream_mut(index).unwrap();
+        // SAFETY: the stream is ours and open; the side data FFmpeg
+        // allocates is written within its size.
+        unsafe {
+            let parameters = (*stream.as_mut_ptr()).codecpar;
+            ffi::av_packet_side_data_remove(
+                (*parameters).coded_side_data,
+                &raw mut (*parameters).nb_coded_side_data,
+                ffi::AVPacketSideDataType::AV_PKT_DATA_DOVI_CONF,
+            );
+            let made = ffi::av_packet_side_data_new(
+                &raw mut (*parameters).coded_side_data,
+                &raw mut (*parameters).nb_coded_side_data,
+                ffi::AVPacketSideDataType::AV_PKT_DATA_DOVI_CONF,
+                24,
+                0,
+            );
+            assert!(!made.is_null());
+            std::ptr::write_bytes((*made).data, 0, 24);
+            (*made).data.add(2).write(7);
+            (*made).data.add(5).write(enhancement);
+            (*made).data.add(6).write(base);
+        }
+        video_info(&input.stream(index).unwrap()).layer_only
+    };
+    assert!(alone(1, 0));
+    assert!(!alone(1, 1), "both layers in one track");
+    assert!(!alone(0, 1), "the base layer's track");
+    assert!(!alone(0, 0));
+
+    let video = |index, default, layer_only| StreamInfo {
+        index,
+        kind: StreamKind::Video(VideoInfo {
+            layer_only,
+            ..video_info(&input.stream(0).unwrap())
+        }),
+        language: None,
+        title: None,
+        default,
+    };
+    let media = MediaInfo {
+        container: Container::Mp4,
+        duration: None,
+        start: 0.0,
+        bit_rate: None,
+        streams: vec![video(0, true, true), video(1, false, false)],
+    };
+    assert_eq!(media.first(true), Some(1));
+}
+
+/// Subtitles are text where FFmpeg's table says so, as the player asks it:
+/// TTML, SAMI, MicroDVD and broadcast captions too, never pictures.
+#[test]
+fn takes_subtitles_for_text_as_ffmpeg_does() {
+    for id in [
+        Id::SUBRIP,
+        Id::ASS,
+        Id::MOV_TEXT,
+        Id::WEBVTT,
+        Id::TTML,
+        Id::SAMI,
+        Id::MICRODVD,
+        Id::EIA_608,
+    ] {
+        assert!(is_text(id), "{id:?}");
+    }
+    for id in [
+        Id::HDMV_PGS_SUBTITLE,
+        Id::DVD_SUBTITLE,
+        Id::DVB_SUBTITLE,
+        Id::XSUB,
+        Id::H264,
+        Id::None,
+    ] {
+        assert!(!is_text(id), "{id:?}");
+    }
+}
+
+/// A stream's frame rate is its average, else the rate FFmpeg guesses,
+/// from 1 to 480 a second, as the player takes it.
+#[test]
+fn reads_the_frame_rate_as_the_player_does() {
+    let (mut input, index) = opened("clip.mp4");
+    let mut rate = |average: (i32, i32), guessed: (i32, i32)| {
+        let ratio = |(num, den)| ffi::AVRational { num, den };
+        let mut stream = input.stream_mut(index).unwrap();
+        // SAFETY: the stream is ours and open, and these plain numbers.
+        unsafe {
+            (*stream.as_mut_ptr()).avg_frame_rate = ratio(average);
+            (*stream.as_mut_ptr()).r_frame_rate = ratio(guessed);
+        }
+        let stream = input.stream(index).unwrap();
+        let rate = frame_rate(&stream).map(f64::from);
+        assert_eq!(video_info(&stream).frame_rate, rate, "as the video says");
+        rate
+    };
+    assert_eq!(rate((25, 1), (50, 1)), Some(25.0));
+    assert_eq!(rate((0, 0), (30_000, 1001)), Some(30_000.0 / 1001.0));
+    assert_eq!(rate((0, 1), (25, 1)), Some(25.0));
+    assert_eq!(rate((25, 0), (30, 1)), Some(30.0));
+    assert_eq!(rate((0, 1), (24, 0)), None);
+    assert_eq!(rate((480, 1), (0, 0)), Some(480.0));
+    assert_eq!(rate((1, 1), (0, 0)), Some(1.0));
+    // Not plausible, whatever the other says.
+    assert_eq!(rate((481, 1), (25, 1)), None);
+    assert_eq!(rate((1, 2), (25, 1)), None);
+    assert_eq!(rate((0, 0), (90_000, 1)), None);
+}
+
+/// A stream tagged as in no language, or one unknown, has none.
+#[test]
+fn reads_no_language_from_none_or_an_unknown_one() {
+    let (mut input, index) = opened("clip.mp4");
+    let mut language = |code: &std::ffi::CStr| {
+        let mut stream = input.stream_mut(index).unwrap();
+        // SAFETY: the stream is ours and open; FFmpeg copies the strings.
+        unsafe {
+            let raw = stream.as_mut_ptr();
+            ffi::av_dict_set(
+                &raw mut (*raw).metadata,
+                c"language".as_ptr(),
+                code.as_ptr(),
+                0,
+            );
+        }
+        let info = MediaInfo::read(&input, "clip.mp4");
+        info.stream(index).unwrap().language.clone()
+    };
+    assert_eq!(language(c"fra").as_deref(), Some("fra"));
+    assert_eq!(language(c"und"), None);
+    assert_eq!(language(c"zxx"), None, "no linguistic content");
 }

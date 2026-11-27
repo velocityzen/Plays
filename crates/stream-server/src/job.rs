@@ -796,9 +796,7 @@ fn stream_details(
     let stream = input
         .stream(index)
         .ok_or_else(|| Error::Source(format!("there is no stream {index}")))?;
-    let rate = [stream.avg_frame_rate(), stream.rate()]
-        .into_iter()
-        .find(|rate| rate.numerator() > 0 && rate.denominator() > 0);
+    let rate = media::frame_rate(&stream);
     Ok((index, stream.parameters(), stream.time_base(), rate))
 }
 

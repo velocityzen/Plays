@@ -256,3 +256,35 @@ fn makes_a_few_segments_ahead_and_restarts_far_away() {
     assert!(vod.segment(1).is_err());
     assert!(lock(&vod.state).job.is_none());
 }
+
+/// The video re-encoded is given the rate its frames come at as the probe
+/// takes it: none where it isn't plausible.
+#[test]
+fn encodes_video_at_its_plausible_frame_rate() {
+    crate::init();
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/clip.mp4");
+    let mut input = crate::media::open(&Source::File(path), Arc::default()).unwrap();
+    let index = input
+        .streams()
+        .best(ffmpeg::media::Type::Video)
+        .unwrap()
+        .index();
+    let copied = VideoPlan::Copy {
+        stream: index,
+        codec: crate::VideoCodec::H264,
+    };
+    let mut rate = |average: (i32, i32), guessed: (i32, i32)| {
+        let ratio = |(num, den)| ffi::AVRational { num, den };
+        let mut stream = input.stream_mut(index).unwrap();
+        // SAFETY: the stream is ours and open, and these plain numbers.
+        unsafe {
+            (*stream.as_mut_ptr()).avg_frame_rate = ratio(average);
+            (*stream.as_mut_ptr()).r_frame_rate = ratio(guessed);
+        }
+        let (_, _, _, rate) = stream_details(&input, &copied).unwrap();
+        rate.map(f64::from)
+    };
+    assert_eq!(rate((25, 1), (50, 1)), Some(25.0));
+    assert_eq!(rate((0, 0), (30, 1)), Some(30.0));
+    assert_eq!(rate((0, 0), (90_000, 1)), None);
+}

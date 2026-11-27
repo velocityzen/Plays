@@ -28,6 +28,7 @@ fn with_pictures(codec: VideoCodec) -> MediaInfo {
         ipt: false,
         dolby_vision: None,
         picture: false,
+        layer_only: false,
         own: Adjustments::default(),
         container_aspect: false,
     };
@@ -359,6 +360,19 @@ fn re_encoding_video_for_its_keyframes_shows_it_as_its_file_says() {
         })
     ));
     assert_eq!(plan.adjustments, Some(own));
+}
+
+#[test]
+fn never_plays_an_enhancement_layer_alone() {
+    let mut media = with_pictures(VideoCodec::Hevc);
+    if let StreamKind::Video(video) = &mut media.streams[0].kind {
+        video.layer_only = true;
+    }
+    let request = CastRequest {
+        video: Pick::Stream(0),
+        ..CastRequest::new(Source::File("film.mkv".into()), Profile::default())
+    };
+    assert!(matches!(plan(&media, &request), Err(Error::Unsupported(_))));
 }
 
 #[test]
